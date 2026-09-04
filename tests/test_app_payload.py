@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,9 +23,15 @@ sys.path.insert(0, str(ROOT))
 import app_payload  # noqa: E402
 import app_payload_build  # noqa: E402
 import app_payload_mobile  # noqa: E402
+import rba_decisions  # noqa: E402
+import rba_official  # noqa: E402
+from tests.support_observation import (  # noqa: E402
+    write_finalized_observation,
+    write_verified_observation,
+)
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
-HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
+HAS_SAMPLE = (SAMPLE_EXPORTS / "observation-v1.json").exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -35,6 +42,42 @@ def test_sample_seed_publisher_is_not_available():
     with pytest.raises(SystemExit) as exc:
         app_payload.main(["seed"])
     assert exc.value.code == 2
+
+
+def test_payload_calendar_refreshes_from_official_sources(monkeypatch):
+    base = {"timezone": "Australia/Sydney", "decisions": [], "schedule": []}
+    refreshed = {
+        "timezone": "Australia/Sydney",
+        "decisions": [{"date": "2026-09-29"}],
+        "schedule": [],
+    }
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(rba_decisions, "calendar_payload", lambda: base)
+    monkeypatch.setattr(
+        rba_official,
+        "load_calendar",
+        lambda calendar, *, now=None: refreshed if calendar is base else None,
+    )
+
+    assert app_payload_build._official_rba_calendar() is refreshed
+
+
+def test_offline_payload_rejects_an_overdue_unresolved_meeting(monkeypatch):
+    stale = {
+        "timezone": "Australia/Sydney",
+        "decisions": [],
+        "schedule": [
+            {"date": "2026-09-29", "announce_utc": "2026-09-29T04:30:00+00:00"}
+        ],
+    }
+    monkeypatch.delenv("AR_LOCAL_APP_PAYLOAD", raising=False)
+    monkeypatch.delenv("AR_LOCAL_RBA_OFFICIAL_FETCH", raising=False)
+    monkeypatch.setattr(rba_decisions, "calendar_payload", lambda: stale)
+
+    with pytest.raises(rba_official.RbaOfficialError, match="2026-09-29"):
+        app_payload_build._official_rba_calendar(
+            now=datetime(2026, 9, 29, 4, 30, tzinfo=timezone.utc)
+        )
 
 
 def test_section_filter_mortgage_excludes_discount():
@@ -64,38 +107,42 @@ def test_aggregate_ribbon_stats():
     assert agg["range"]["mean"] == pytest.approx(0.05)
 
 
-def test_aggregate_ribbon_handles_percent_style():
-    # A product whose raw rate is > 1 is treated as percent-style and divided by 100.
+def test_aggregate_ribbon_rejects_non_cdr_percent_style():
     rows = [{"provider": "A", "product_key": "A|1", "rate": "5.0"}]
     agg = app_payload.aggregate_ribbon(rows, "Savings")
-    assert agg["range"]["min"] == pytest.approx(0.05)
+    assert agg["counts"]["rates"] == 0
+    assert agg["range"]["min"] is None
 
 
-def test_rba_series_parsed_from_dashboard_js():
-    series = app_payload.load_rba_series(ROOT / "dashboard")
-    assert series, "expected RBA entries parsed from dashboard/rba-cash-rate.js"
+def test_rba_series_uses_recorded_decisions():
+    series = app_payload.load_rba_series(ROOT)
+    assert series, "expected recorded RBA decisions"
     assert all(set(e) == {"date", "rate"} for e in series)
     assert series == sorted(series, key=lambda e: e["date"]), "entries should be ascending by date"
 
 
-def test_rba_holds_parsed_from_dashboard_js():
-    holds = app_payload.load_rba_holds(ROOT / "dashboard")
-    assert holds, "expected RBA hold dates parsed from dashboard/rba-cash-rate.js"
+def test_rba_holds_use_recorded_decisions():
+    holds = app_payload.load_rba_holds(ROOT)
+    assert holds, "expected recorded RBA hold dates"
     assert all(isinstance(d, str) and len(d) == 10 for d in holds)
     # The known 16 Jun 2026 hold (RBA met, held at 4.35%) must be present.
     assert "2026-06-16" in holds
     assert "2026-08-11" in holds
     # Holds must not collide with change dates (a hold left the rate unchanged).
-    change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT / "dashboard")}
+    change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT)}
     assert not (set(holds) & change_dates), "hold dates must not also be change dates"
 
 
-def test_rba_holds_empty_when_no_holds_block(tmp_path):
-    # A source file with no HOLDS array yields no holds (and never raises).
+def test_rba_holds_ignore_untrusted_source_files(tmp_path):
+    # Payload facts come from rba_decisions, never arbitrary executable text.
     (tmp_path / "rba-cash-rate.js").write_text(
         "const ENTRIES = [{ date: '2026-05-06', rate: 4.35 }];", encoding="utf-8"
     )
-    assert app_payload.load_rba_holds(tmp_path) == []
+    assert app_payload.load_rba_holds(tmp_path) == [
+        decision.date.isoformat()
+        for decision in rba_decisions.decisions()
+        if decision.delta_bps == 0
+    ]
 
 
 def test_future_effective_rba_change_is_not_yet_prevailing():
@@ -234,7 +281,7 @@ def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
 
     loaded = app_payload.load_brand_logos(dashboard, logos)
 
-    assert set(loaded) == {"anz", "anz bank"}
+    assert set(loaded) == {"anz"}
     assert loaded["anz"].startswith("data:image/png;base64,")
     brands = app_payload.build_brands(
         ["ANZ Bank Australia Limited", "No Logo Bank"],
@@ -312,6 +359,17 @@ def _history_assets_from(exports, run_date):
         section_filter=app_payload.section_filter,
         normalized_rate_value=app_payload._normalized_rate_value,
     )
+
+
+def test_history_excludes_valid_but_unfinalized_observations(tmp_path):
+    write_finalized_observation(tmp_path, observation_date="2026-09-02")
+    unfinalized = tmp_path / "runs" / "2026-09-03" / "_exports"
+    write_verified_observation(unfinalized, observation_date="2026-09-03")
+
+    history, bank_history = _history_assets_from(unfinalized, "2026-09-03")
+
+    assert history["run_dates"] == ["2026-09-02"]
+    assert bank_history["run_dates"] == ["2026-09-02"]
 
 
 def test_build_history_assets_includes_behaviour(tmp_path):
@@ -742,6 +800,14 @@ def test_build_is_deterministic(tmp_path):
     assert a["files"]["details"]["sha256"] == b["files"]["details"]["sha256"]
 
 
+def test_gzip_bytes_are_canonical_and_platform_neutral():
+    left = app_payload_build._gzip_bytes({"z": 1, "a": 2})
+    right = app_payload_build._gzip_bytes({"a": 2, "z": 1})
+    assert left == right
+    assert left[:10] == bytes.fromhex("1f8b08000000000002ff")
+    assert gzip.decompress(left) == b'{"a":2,"z":1}'
+
+
 @pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")
 def test_build_and_publish_dual_computes_payload_once(tmp_path, monkeypatch):
     import shutil
@@ -1031,111 +1097,22 @@ def test_aggregate_ribbon_prefers_comparison_rate():
     assert round(ribbon["range"]["max"], 4) == 0.061
 
 
-def test_ribbon_kernel_is_shared_with_dashboard_server():
-    # Single source of truth: both the payload builder and the dashboard server
-    # must use the same callable, so web and mobile can never diverge on the ribbon
-    # rate metric. Guard against a future re-inlining of either copy.
-    import cdr_ribbon_normalize
-    import cdr_dashboard_server
-
-    assert app_payload.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
-    # The dashboard server binds the same kernel at import; if it ever re-inlined
-    # its own ribbon aggregate, this assertion (the bug this PR fixes) would fail.
-    assert cdr_dashboard_server.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
-
-
 def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
     # The dashboard server projects comparison_rate as '' on legacy DBs that lack
     # the column, and deposits carry no comparison rate at all. Non-positive and
     # non-parsable comparison rates must also fall back to the headline rate, never
     # dropping the product from the ribbon.
     rows = [
-        {"product_key": "A", "provider": "X", "rate": "4.5", "comparison_rate": ""},
-        {"product_key": "B", "provider": "Y", "rate": "5.0", "comparison_rate": None},
-        {"product_key": "C", "provider": "Z", "rate": "4.0", "comparison_rate": "0"},
-        {"product_key": "D", "provider": "W", "rate": "4.2", "comparison_rate": "-1"},
-        {"product_key": "E", "provider": "V", "rate": "4.8", "comparison_rate": "foo"},
+        {"product_key": "A", "provider": "X", "rate": "0.045", "comparison_rate": ""},
+        {"product_key": "B", "provider": "Y", "rate": "0.05", "comparison_rate": None},
+        {"product_key": "C", "provider": "Z", "rate": "0.04", "comparison_rate": "0"},
+        {"product_key": "D", "provider": "W", "rate": "0.042", "comparison_rate": "-1"},
+        {"product_key": "E", "provider": "V", "rate": "0.048", "comparison_rate": "foo"},
     ]
     ribbon = app_payload.aggregate_ribbon(rows, "Savings")
     assert ribbon["counts"]["rates"] == 5  # none dropped
     assert round(ribbon["range"]["min"], 4) == 0.04  # C: 4.0 headline (comparison "0")
     assert round(ribbon["range"]["max"], 4) == 0.05  # B: 5.0 headline (comparison None)
-
-
-def test_compact_history_reshapes_per_day_aggregates():
-    import cdr_ribbon_normalize as crn
-
-    d1, d2 = "2026-06-10", "2026-06-11"
-    aggs = {
-        d1: crn.aggregate_ribbon(
-            [
-                {"product_key": "A", "provider": "X", "rate": "5.0"},
-                {"product_key": "B", "provider": "Y", "rate": "4.0"},
-            ],
-            "Savings",
-        ),
-        d2: crn.aggregate_ribbon(
-            [{"product_key": "A", "provider": "X", "rate": "5.5"}],
-            "Savings",
-        ),
-    }
-    # A gap day (d3) with no aggregate must carry nulls, keeping the series aligned.
-    out = crn.compact_history([d1, d2, "2026-06-12"], aggs)
-    assert out["run_dates"] == [d1, d2, "2026-06-12"]
-    assert [p["date"] for p in out["points"]] == [d1, d2, "2026-06-12"]
-    assert round(out["points"][0]["max"], 4) == 0.05  # d1 overall max = 5.0%
-    assert out["points"][2]["min"] is None and out["points"][2]["count"] == 0  # gap day
-    provider_x = next(p for p in out["providers"] if p["provider"] == "X")
-    assert set(provider_x["by_date"]) == {d1, d2}  # X present both days, not the gap
-    assert round(provider_x["by_date"][d2]["median"], 4) == 0.055
-    # Compact: a handful of points/providers, never the raw per-product rows.
-    assert "rates" not in out
-
-
-def test_compact_history_field_contract_matches_dashboard_client():
-    # dashboard/app.js compactChartItems() reads these exact fields off the
-    # compact payload to build the chart model; lock them so a server-side reshape
-    # change can't silently break the client (which has no JS test harness).
-    import cdr_ribbon_normalize as crn
-
-    d1, d2 = "2026-06-10", "2026-06-11"
-    aggs = {
-        d1: crn.aggregate_ribbon(
-            [
-                {"product_key": "A", "provider": "X", "rate": "5.0", "comparison_rate": "5.1"},
-                {"product_key": "B", "provider": "Y", "rate": "4.0"},
-            ],
-            "Mortgage",
-        ),
-        d2: crn.aggregate_ribbon(
-            [{"product_key": "A", "provider": "X", "rate": "5.5", "comparison_rate": "5.6"}],
-            "Mortgage",
-        ),
-    }
-    out = crn.compact_history([d1, d2], aggs)
-    assert set(out) >= {"run_dates", "points", "providers"}
-    point_fields = {"date", "min", "max", "mean", "median", "count"}
-    for point in out["points"]:
-        assert set(point) == point_fields
-    stat_fields = {"min", "max", "mean", "median", "count"}
-    for provider in out["providers"]:
-        assert set(provider) == {"provider", "by_date"}
-        for stats in provider["by_date"].values():
-            assert set(stats) == stat_fields
-
-
-def test_history_index_key_matches_dashboard_contract():
-    import cdr_dashboard_server as srv
-
-    row = {"provider": "X", "product_key": "P1", "rate": "5.0", "lvr_tier": "70_80"}
-    key = srv.history_index_key(row)
-    # Joined with the same  separator the dashboard's historyIndexKey uses.
-    assert "" in key
-    # Rate is intentionally excluded from identity, so two samples of the same
-    # product at different rates share a key (a product's history is one series).
-    assert srv.history_index_key({**row, "rate": "9.9"}) == key
-    # A different product key is a different identity (current-catalogue filtering).
-    assert srv.history_index_key({**row, "product_key": "P2"}) != key
 
 
 def _write_revised_history_day(runs, date, rows, *, stamp="stamp0001"):
@@ -1199,6 +1176,18 @@ def test_history_includes_prior_days_that_exist_only_as_revisions(tmp_path):
 
     assert bank_history["run_dates"] == ["2026-08-15", "2026-08-16"]
     assert bank_history["events"]
+
+
+def test_history_prefers_a_finalized_revision_over_the_primary_snapshot(tmp_path):
+    runs = tmp_path / "runs"
+    _write_history_day(runs, "2026-08-15", [_savings_row("Bank", "Bank|1", "0.0400")])
+    revised = _write_revised_history_day(
+        runs, "2026-08-15", [_savings_row("Bank", "Bank|1", "0.0450")]
+    )
+
+    assert app_payload_mobile._banks_for_date(runs, "2026-08-15") == (
+        revised / "dashboard-cache" / "2026-08-15" / "banks.json"
+    )
 
 
 def test_collapsed_history_window_is_reported(tmp_path, capsys):

@@ -19,9 +19,9 @@ PI_SITE_ROOT = PI_SITE_REPO / "site"
 PI_DATA_ROOT = PI_PORTABLE_ROOT / "data"
 _UID_SUFFIX = os.getuid() if hasattr(os, "getuid") else "shared"
 PI_RAM_ROOT = Path(os.environ.get("AR_LOCAL_RAM_ROOT", f"/dev/shm/ar-local-{_UID_SUFFIX}"))
-PI_DASHBOARD_HOST = "0.0.0.0"
-PI_DASHBOARD_PORT = 8808
-PI_DASHBOARD_PROXY_PORT = 80
+PI_STATUS_HOST = "127.0.0.1"
+PI_STATUS_PORT = 8808
+PI_STATUS_PROXY_PORT = 80
 # Operational Tailscale IP from docs/UNIVERSAL_ROADMAP.md (override via AR_PI_TAILSCALE_IP / AR_PI_BASE_URL).
 PI_TAILSCALE_IP = (os.environ.get("AR_PI_TAILSCALE_IP", "100.78.28.10") or "100.78.28.10").strip()
 _pi_base_url = (os.environ.get("AR_PI_BASE_URL", "") or "").strip().rstrip("/")
@@ -129,12 +129,36 @@ def manifest_banks_rate_count(manifest: Mapping[str, Any]) -> int:
 
 
 def export_manifest_is_valid(manifest: Mapping[str, Any]) -> bool:
-    """A dashboard export is usable when banking rates were exported."""
+    """A current observation is usable; legacy exports require banking rates."""
+    if manifest.get("contract") == "observation-v1":
+        return bool(
+            manifest.get("run_date")
+            and manifest.get("observation_state") in {"complete", "degraded"}
+        )
     return manifest_banks_rate_count(manifest) > 0
 
 
 def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
     exports_root = exports_root.expanduser().resolve()
+    observation_path = exports_root / "observation-v1.json"
+    if observation_path.is_file():
+        try:
+            observation = json.loads(observation_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(observation, dict) or observation.get("schema_version") != 1:
+            return None
+        row_counts = observation.get("row_counts")
+        return {
+            "contract": "observation-v1",
+            "run_date": observation.get("observation_date"),
+            "observed_at": observation.get("observed_at"),
+            "normalization_version": observation.get("normalization_version"),
+            "observation_state": observation.get("state"),
+            "banks_counts": row_counts if isinstance(row_counts, dict) else {},
+        }
+
+    # Read-only compatibility for already-finalized historical observations.
     manifest_path = exports_root / "dashboard-cache" / "latest.json"
     if not manifest_path.is_file():
         return None
@@ -145,7 +169,7 @@ def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def latest_exports_root(runs_root: Path) -> Optional[Path]:
+def latest_exports_root(runs_root: Path, *, allow_legacy: bool = False) -> Optional[Path]:
     runs_root = runs_root.expanduser().resolve()
     if not runs_root.is_dir():
         return None
@@ -154,6 +178,8 @@ def latest_exports_root(runs_root: Path) -> Optional[Path]:
         if not child.is_dir():
             continue
         exports = child / "_exports"
+        if not allow_legacy and not (exports / "observation-v1.json").is_file():
+            continue
         manifest = load_exports_manifest(exports)
         if manifest is not None and export_manifest_is_valid(manifest):
             candidates.append((child.name, exports))

@@ -79,13 +79,13 @@ def main() -> int:
                 return 2
             if wait.returncode == 2:
                 print(
-                    "ship_closeout_strict: bot wait not satisfied — run npm run wait-for-bots until exit 0.",
+                    "ship_closeout_strict: required CI is still pending — re-run npm run wait-for-bots.",
                     file=sys.stderr,
                 )
                 return 2
             if wait.returncode == 1:
                 print(
-                    "ship_closeout_strict: bot wait failed (required bots missing or error) — do not merge.",
+                    "ship_closeout_strict: required CI failed or could not be read — do not merge.",
                     file=sys.stderr,
                 )
                 return 2

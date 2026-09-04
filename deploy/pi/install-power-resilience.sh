@@ -4,7 +4,7 @@
 # Root cause this addresses: a power cut mid-write corrupts the SD card.
 # On the next boot the Pi then either (a) halts at an fsck prompt, (b) comes
 # up read-only, or (c) loses regenerated SSH host keys / app state — so the
-# CDR ingest+dashboard silently stop and the box may be unreachable.
+# CDR ingest/status silently stop and the box may be unreachable.
 #
 # This script is idempotent. cmdline.txt / config.txt edits only take effect
 # after a reboot; everything else applies immediately.

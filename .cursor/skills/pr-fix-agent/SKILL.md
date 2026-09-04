@@ -17,7 +17,7 @@ You own **one assigned open PR’s** full ship bar: CI failures, bot/human inlin
 
 ## Environment URLs (do not hardcode)
 
-When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROADMAP.md`** § **Remote dashboard access** — do not introduce new hardcoded Tailscale IPs in review replies.
+When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROADMAP.md`** operator access facts; do not introduce new hardcoded Tailscale IPs in review replies.
 
 ## Invocation phrases
 

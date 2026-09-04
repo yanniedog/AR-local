@@ -1,4 +1,4 @@
-"""Post-ingest sanity check: flag suspicious day-over-day rate changes.
+"""Fail-closed day-over-day checks for suspicious rate changes.
 
 Background — 2026-05-26 CommBank Foreign Currency Account incident:
   CBA's public CDR endpoint briefly served a partial/intermediate set of
@@ -6,14 +6,12 @@ Background — 2026-05-26 CommBank Foreign Currency Account incident:
   captured the bad data exactly as published. The same family of glitch
   also occurred on 2026-05-20. Neither event tripped any existing
   validation — failure counts and row counts were normal — so they
-  silently entered the historical record and were only detected by
-  visual review of the dashboard chart.
+  silently entered the historical record.
 
 This module is the per-product/per-tier guard. It compares the freshly
-built bank_rates table to the previous day's export and writes a
-``sanity-report.json`` next to the daily marker. It does NOT block the
-ingest — large legitimate rate moves do happen — but a non-empty
-report means a human should eyeball the dashboard before publishing.
+built bank_rates table to the previous finalized export and writes a
+``sanity-report.json`` beside the canonical observation. The daily runner
+withholds finalization when HIGH or STRUCTURAL findings exist.
 
 Heuristic (intentionally simple, no time-window memory):
   For each (provider, product_id, application_type, ribbon_rate_structure)
@@ -28,22 +26,97 @@ The report is JSON-formatted and small enough to tail in journalctl.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cdr_atomic import atomic_write_json
+from cdr_observation_db import APPLICATION_ID, SCHEMA_VERSION
+from cdr_product_change_runs import previous_finalized_run, run_date as observation_date_for
+
 # Tiers can legitimately move by ~50 bp on the day of an RBA decision.
 # 100 bp moves are rare but happen (term-deposit specials, neobank promos).
 # 200 bp moves are essentially never legitimate same-day.
 LOW_BP = 100.0
 HIGH_BP = 200.0
+APPROVAL_SCHEMA_VERSION = 1
 
 
-def _ladder_query(con: sqlite3.Connection) -> List[Tuple[str, str, str, str, str, str, float]]:
-    """Return rows of (provider, product_id, application_type, ribbon_rate_structure,
-    product_name, dataset, rate). Caller buckets by the first four columns."""
+def persist_sanity_approval(
+    report_path: Path,
+    approval_path: Path,
+    exports_dir: Path,
+) -> Path:
+    """Validate an explicit human approval bound to one exact sanity report."""
+    try:
+        report_bytes = report_path.read_bytes()
+        report = json.loads(report_bytes)
+        approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("sanity approval or report is unreadable") from error
+    if not isinstance(report, dict) or not isinstance(approval, dict):
+        raise ValueError("sanity approval and report must be objects")
+    expected_fields = {
+        "schema_version",
+        "decision",
+        "run_date",
+        "compared_against",
+        "sanity_report_sha256",
+        "reviewer",
+        "reason",
+    }
+    if set(approval) != expected_fields:
+        raise ValueError("sanity approval fields are invalid")
+    expected = {
+        "schema_version": APPROVAL_SCHEMA_VERSION,
+        "decision": "approve",
+        "run_date": report.get("run_date"),
+        "compared_against": report.get("compared_against"),
+        "sanity_report_sha256": hashlib.sha256(report_bytes).hexdigest(),
+    }
+    if any(approval.get(field) != value for field, value in expected.items()):
+        raise ValueError("sanity approval does not bind the current report")
+    for field, limit in (("reviewer", 200), ("reason", 2000)):
+        value = approval.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            raise ValueError(f"sanity approval {field} is invalid")
+    output = exports_dir / "sanity-approval.json"
+    atomic_write_json(output, approval, create_once=True)
+    return output
+
+
+def _ladder_query(
+    con: sqlite3.Connection,
+) -> List[Tuple[str, str, str, str, str, str, str, float]]:
+    """Return stable identity, display metadata, tier dimensions, and rate."""
+    if con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
+        if con.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
+            raise ValueError("canonical observation database application ID is invalid")
+        output = []
+        for stored_uid, raw in con.execute(
+            "SELECT product_uid,document_json FROM bank_rates "
+            "ORDER BY product_uid,rate_index,rate_uid"
+        ):
+            try:
+                row = json.loads(raw)
+                output.append(
+                    (
+                        str(stored_uid),
+                        str(row["provider"]),
+                        str(row["product_id"]),
+                        str(row.get("application_type") or ""),
+                        str(row.get("ribbon_rate_structure") or ""),
+                        str(row.get("product_name") or ""),
+                        str(row["dataset"]),
+                        float(row["rate"]),
+                    )
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                raise ValueError("canonical rate document is invalid") from error
+        return output
     cur = con.execute(
         """
         select provider, product_id,
@@ -56,28 +129,41 @@ def _ladder_query(con: sqlite3.Connection) -> List[Tuple[str, str, str, str, str
         where rate is not null and rate != ''
         """
     )
-    return cur.fetchall()
+    return [
+        (f"legacy:{provider}\0{product_id}", provider, product_id, app, structure,
+         name, dataset, rate)
+        for provider, product_id, app, structure, name, dataset, rate in cur.fetchall()
+    ]
 
 
-def _bucket(rows: List[Tuple[Any, ...]]) -> Dict[Tuple[str, str, str, str], Dict[str, Any]]:
-    out: Dict[Tuple[str, str, str, str], Dict[str, Any]] = {}
-    for provider, pid, app, struct, name, dataset, rate in rows:
-        key = (provider, pid, app, struct)
-        slot = out.setdefault(key, {"name": name, "dataset": dataset, "rates": []})
+def _bucket(rows: List[Tuple[Any, ...]]) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
+    out: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for identity, provider, pid, app, struct, name, dataset, rate in rows:
+        key = (identity, app, struct)
+        slot = out.setdefault(
+            key,
+            {
+                "provider": provider,
+                "product_id": pid,
+                "name": name,
+                "dataset": dataset,
+                "rates": [],
+            },
+        )
         slot["rates"].append(float(rate))
     for slot in out.values():
         slot["rates"].sort()
     return out
 
 
-def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str, str], Dict[str, Any]]:
+def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
     """Open a read-only connection and return bucketed ladders.
 
     Uses ``Path.resolve().as_uri()`` so paths with spaces/reserved characters
     encode correctly, and ``contextlib.closing`` because the sqlite3 connection
     context manager only commits/rolls back — it does not close the handle.
     """
-    uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    uri = f"{db_path.resolve().as_uri()}?mode=ro&immutable=1"
     with closing(sqlite3.connect(uri, uri=True)) as con:
         return _bucket(_ladder_query(con))
 
@@ -85,7 +171,7 @@ def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str, str], Dict[str, An
 def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     """Return a list of finding dicts. Empty list means no concerns."""
     if not curr_db.is_file() or not prev_db.is_file():
-        return []
+        raise FileNotFoundError("sanity comparison database is absent")
     curr = _read_ladders(curr_db)
     prev = _read_ladders(prev_db)
     findings: List[Dict[str, Any]] = []
@@ -97,8 +183,8 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
         if len(cv) != len(pv):
             findings.append({
                 "severity": "STRUCTURAL",
-                "provider": key[0], "product_id": key[1],
-                "application_type": key[2], "ribbon_rate_structure": key[3],
+                "provider": slot["provider"], "product_id": slot["product_id"],
+                "application_type": key[1], "ribbon_rate_structure": key[2],
                 "product_name": slot["name"], "dataset": slot["dataset"],
                 "tier_count_prev": len(pv), "tier_count_curr": len(cv),
             })
@@ -114,8 +200,8 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
             severity = "HIGH" if worst_delta_bp >= HIGH_BP else "LOW"
             findings.append({
                 "severity": severity,
-                "provider": key[0], "product_id": key[1],
-                "application_type": key[2], "ribbon_rate_structure": key[3],
+                "provider": slot["provider"], "product_id": slot["product_id"],
+                "application_type": key[1], "ribbon_rate_structure": key[2],
                 "product_name": slot["name"], "dataset": slot["dataset"],
                 "worst_delta_bp": round(worst_delta_bp, 1),
                 "tiers": per_tier,
@@ -127,17 +213,22 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     return findings
 
 
-def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Optional[Path]:
+def write_sanity_report(
+    exports_dir: Path,
+    run_date: str,
+    runs_root: Path,
+    state_dir: Optional[Path] = None,
+) -> Optional[Path]:
     """Write sanity-report.json into exports_dir. Returns the path written, or
     None if there is no previous day to compare against (first ingest)."""
     curr_db = exports_dir / "local-cdr.sqlite"
-    prev_db = _find_previous_export_db(runs_root, run_date)
+    prev_db = _find_previous_export_db(runs_root, run_date, state_dir)
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
     summary = {
         "run_date": run_date,
-        "compared_against": prev_db.parent.parent.name,
+        "compared_against": observation_date_for(prev_db.parent),
         "thresholds_bp": {"low": LOW_BP, "high": HIGH_BP},
         "counts": {
             "HIGH": sum(1 for f in findings if f["severity"] == "HIGH"),
@@ -147,22 +238,17 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Op
         "findings": findings,
     }
     out = exports_dir / "sanity-report.json"
-    out.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(out, summary, create_once=True)
     return out
 
 
-def _find_previous_export_db(runs_root: Path, run_date: str) -> Optional[Path]:
+def _find_previous_export_db(
+    runs_root: Path, run_date: str, state_dir: Optional[Path] = None
+) -> Optional[Path]:
     """Find the most recent prior date's local-cdr.sqlite under runs_root."""
-    if not runs_root.is_dir():
+    previous = previous_finalized_run(runs_root / run_date, state_dir=state_dir)
+    if previous is None:
         return None
-    candidates = []
-    for child in runs_root.iterdir():
-        if not child.is_dir() or child.name >= run_date:
-            continue
-        db = child / "_exports" / "local-cdr.sqlite"
-        if db.is_file():
-            candidates.append((child.name, db))
-    if not candidates:
-        return None
-    candidates.sort()
-    return candidates[-1][1]
+    export_root = previous if previous.name == "_exports" else previous / "_exports"
+    database = export_root / "local-cdr.sqlite"
+    return database if database.is_file() else None

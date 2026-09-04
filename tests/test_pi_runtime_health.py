@@ -46,7 +46,7 @@ def test_check_fail_increments_streak(isolated_state):
     with mock.patch.object(
         pi_runtime_health,
         "run_http_probes",
-        return_value=(False, ["http://127.0.0.1/api/latest: timeout"]),
+        return_value=(False, ["http://127.0.0.1/api/status: timeout"]),
     ):
         rc = pi_runtime_health.cmd_check(_ns(check=True, check_tailscale=False, timeout=5.0, retries=0))
     assert rc == 1
@@ -59,7 +59,7 @@ def test_heal_restarts_at_threshold(isolated_state):
     state_path.write_text(json.dumps({"http_fail_streak": 2, "tailscale_fail_streak": 0}) + "\n", encoding="utf-8")
     with mock.patch.object(pi_runtime_health, "run_http_probes", side_effect=[(False, ["fail"]), (True, ["ok"])]):
         with mock.patch.object(pi_runtime_health, "check_tailscale", return_value=(True, ["tailnet ok"])):
-            with mock.patch.object(pi_runtime_health, "restart_dashboard_and_nginx", return_value=0) as heal_mock:
+            with mock.patch.object(pi_runtime_health, "restart_status_and_nginx", return_value=0) as heal_mock:
                 rc = pi_runtime_health.cmd_heal(
                     _ns(
                         dry_run=False,
@@ -77,5 +77,161 @@ def test_heal_restarts_at_threshold(isolated_state):
 
 def test_probe_urls_include_nginx_and_backend():
     urls = pi_runtime_health.probe_urls()
-    assert "http://127.0.0.1/api/latest" in urls
-    assert "http://127.0.0.1:8808/api/latest" in urls
+    assert "http://127.0.0.1/api/status" in urls
+    assert "http://127.0.0.1:8808/api/status" in urls
+
+
+def _probe_response(payload):
+    response = mock.MagicMock()
+    response.status = 200
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+    return response
+
+
+def test_http_probe_rejects_liveness_only_payload(monkeypatch):
+    monkeypatch.setattr(
+        pi_runtime_health.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _probe_response(
+            {"schema_version": 1, "service": "ar-local", "status": "ok"}
+        ),
+    )
+
+    ok, detail = pi_runtime_health.http_probe(
+        "http://127.0.0.1/api/status", timeout=1, retries=0
+    )
+
+    assert ok is False
+    assert detail == "missing observation"
+
+
+def test_http_probe_accepts_verified_observation_identity(monkeypatch):
+    providers = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["providers"]
+    }
+    providers.update(registered=1, attempted=1, complete=1)
+    products = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["products"]
+    }
+    products.update(discovered=1, published_full=1, consumer_visible=1)
+    payload = {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "ok",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-03T01:02:03+10:00",
+            "state": "complete",
+            "accounting_id": "ingest-20260903T010203Z-abcdef123456",
+            "providers": providers,
+            "products": products,
+            "issues": {
+                field: 0
+                for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["issues"]
+            },
+        },
+    }
+    monkeypatch.setattr(
+        pi_runtime_health.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _probe_response(payload),
+    )
+
+    ok, detail = pi_runtime_health.http_probe(
+        "http://127.0.0.1/api/status", timeout=1, retries=0
+    )
+
+    assert ok is True
+    assert detail == "OK status='ok'"
+
+
+def test_http_probe_rejects_incomplete_summary_and_mismatched_date(monkeypatch):
+    payload = {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "degraded",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-04T01:02:03+10:00",
+            "state": "degraded",
+            "accounting_id": "ingest-20260903T010203Z-abcdef123456",
+            **{
+                key: {field: 0 for field in fields}
+                for key, fields in pi_runtime_health.STATUS_SUMMARY_FIELDS.items()
+            },
+        },
+    }
+    assert pi_runtime_health.status_contract_error(payload) == (
+        "observation timestamp and date disagree"
+    )
+    payload["observation"]["observed_at"] = "2026-09-03T01:02:03+10:00"
+    payload["observation"]["providers"].pop("registered")
+    assert pi_runtime_health.status_contract_error(payload) == "invalid providers summary"
+
+
+def test_status_contract_rejects_unreconciled_complete_summary() -> None:
+    providers = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["providers"]
+    }
+    providers.update(registered=1, attempted=1, failed=1, population_unknown=1)
+    products = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["products"]
+    }
+    products.update(discovered=1, published_full=1, consumer_visible=1)
+    payload = {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "ok",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-03T01:02:03+10:00",
+            "state": "complete",
+            "accounting_id": "ingest-20260903T010203Z-abcdef123456",
+            "providers": providers,
+            "products": products,
+            "issues": {
+                field: 0
+                for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["issues"]
+            },
+        },
+    }
+
+    assert pi_runtime_health.status_contract_error(payload) == (
+        "status summaries do not reconcile"
+    )
+
+
+def test_backup_preflight_prefers_status_without_writing_state(monkeypatch):
+    monkeypatch.setattr(
+        pi_runtime_health, "http_probe", lambda *_args, **_kwargs: (True, "status")
+    )
+    legacy = mock.Mock(return_value=(True, "legacy"))
+    monkeypatch.setattr(pi_runtime_health, "legacy_http_probe", legacy)
+
+    assert pi_runtime_health.cmd_backup_preflight(_ns(timeout=1, retries=0)) == 0
+    legacy.assert_not_called()
+
+
+def test_backup_preflight_accepts_legacy_contract_during_cutover(monkeypatch):
+    monkeypatch.setattr(
+        pi_runtime_health, "http_probe", lambda *_args, **_kwargs: (False, "missing")
+    )
+    monkeypatch.setattr(
+        pi_runtime_health,
+        "legacy_http_probe",
+        lambda *_args, **_kwargs: (True, "legacy"),
+    )
+
+    assert pi_runtime_health.cmd_backup_preflight(_ns(timeout=1, retries=0)) == 0
+
+
+def test_backup_installers_use_transition_aware_runtime_preflight() -> None:
+    for name in (
+        "install_laptop_backup_dispatcher.ps1",
+        "install_laptop_backup_nonadmin_dispatcher.ps1",
+        "install_laptop_backup_trusted_dispatcher.ps1",
+        "repair_laptop_backup_restricted_runner.ps1",
+    ):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert "pi_runtime_health.py --backup-preflight" in source

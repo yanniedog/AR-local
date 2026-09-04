@@ -148,6 +148,39 @@ def test_tampered_committed_event_or_body_fails_verification(tmp_path):
         second.summary()
 
 
+def test_summary_uses_latest_completion_across_out_of_order_events(tmp_path):
+    journal = RawAttemptJournal(tmp_path, "session-1")
+    journal.record(
+        "attempt-1",
+        **{
+            **FIXED,
+            "started_at": "2026-08-15T00:00:00Z",
+            "completed_at": "2026-08-15T00:00:10Z",
+        },
+    )
+    journal.record(
+        "attempt-2",
+        **{
+            **FIXED,
+            "started_at": "2026-08-15T00:00:02Z",
+            "completed_at": "2026-08-15T00:00:03Z",
+        },
+    )
+
+    assert journal.summary()["observed_at"] == "2026-08-15T00:00:10Z"
+
+
+def test_current_timestamp_must_match_the_head_event(tmp_path):
+    journal = RawAttemptJournal(tmp_path, "session-1")
+    journal.record("attempt-1", **FIXED)
+    current = json.loads(journal.current_path.read_text(encoding="utf-8"))
+    current["updated_at"] = "2026-08-16T00:00:00Z"
+    journal.current_path.write_text(json.dumps(current), encoding="utf-8")
+
+    with pytest.raises(AttemptJournalError, match="timestamp does not match"):
+        journal.summary(recover=False)
+
+
 @pytest.mark.parametrize(
     "session_id",
     ["", "../escape", "two/parts", "bad space", "CON", "lpt1.txt", "trailing."],

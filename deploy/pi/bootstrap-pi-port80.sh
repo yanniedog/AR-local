@@ -8,12 +8,13 @@ repo_dir="${1:-/srv/ar-local/AR-local}"
 repo_dir="$(cd "$repo_dir" && pwd)"
 
 sudo bash "$repo_dir/deploy/pi/install-pi-sudoers.sh" "$repo_dir"
-sudo bash "$repo_dir/deploy/pi/install-pi-dashboard-proxy.sh" "$repo_dir"
-sudo systemctl restart ar-local-dashboard.service
+sudo bash "$repo_dir/deploy/pi/install-pi-status-proxy.sh" "$repo_dir"
+sudo systemctl restart ar-local-status.service
 nginx_state="$(systemctl is-active nginx.service)"
-dash_state="$(systemctl is-active ar-local-dashboard.service)"
-if [ "$nginx_state" != active ] || [ "$dash_state" != active ]; then
-  echo "bootstrap-pi-port80: failed nginx=$nginx_state dashboard=$dash_state" >&2
+status_state="$(systemctl is-active ar-local-status.service)"
+if [ "$nginx_state" != active ] || [ "$status_state" != active ]; then
+  echo "bootstrap-pi-port80: failed nginx=$nginx_state status=$status_state" >&2
   exit 1
 fi
-echo "bootstrap-pi-port80: OK — http://<pi-ip>/ and http://<pi-ip>:8808/"
+curl -fsS --max-time 10 http://127.0.0.1/healthz >/dev/null
+echo "bootstrap-pi-port80: OK — http://<pi-ip>/"

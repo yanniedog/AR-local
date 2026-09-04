@@ -1,12 +1,11 @@
 name: app-ci
 
-# Run the complete producer-side Python suite for payload, ingest, ledger, dashboard,
+# Run the complete producer-side Python suite for payload, ingest, ledger,
 # and Pi safety changes. The installable app and its CI live in yanniedog/AR-app.
 on:
   pull_request:
     paths:
       - 'app_payload*.py'
-      - 'app_sample.py'
       - 'contracts/**'
       - 'cdr_*.py'
       - 'pi_*.py'
@@ -22,8 +21,7 @@ on:
       - 'run_laptop_backup_dispatcher.ps1'
       - 'run_laptop_backup_nonadmin_dispatcher.ps1'
       - 'run_laptop_backup_trusted_child.ps1'
-      - 'payload_crypto.py'
-      - 'ar_local_pi_runtime.py'
+      - 'ar_local_*.py'
       - 'cleanup_removed_cdr_sector.py'
       - 'requirements.txt'
       - 'tests/**'
@@ -32,7 +30,6 @@ on:
     branches: [main]
     paths:
       - 'app_payload*.py'
-      - 'app_sample.py'
       - 'contracts/**'
       - 'cdr_*.py'
       - 'pi_*.py'
@@ -48,8 +45,7 @@ on:
       - 'run_laptop_backup_dispatcher.ps1'
       - 'run_laptop_backup_nonadmin_dispatcher.ps1'
       - 'run_laptop_backup_trusted_child.ps1'
-      - 'payload_crypto.py'
-      - 'ar_local_pi_runtime.py'
+      - 'ar_local_*.py'
       - 'cleanup_removed_cdr_sector.py'
       - 'requirements.txt'
       - 'tests/**'
@@ -65,10 +61,8 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install deps
-        # cryptography is an optional runtime dep (lazy import) but tests exercise the
-        # payload-encryption path, so install it here to run those rather than skip.
         # openpyxl is test-only: production XLSX output remains stdlib-only.
-        run: python -m pip install --quiet -r requirements.txt cryptography openpyxl pytest
+        run: python -m pip install --quiet -r requirements.txt openpyxl pytest
       - name: Verify PowerShell 7 for installer regression
         run: pwsh --version
       - name: Parse laptop backup PowerShell helpers

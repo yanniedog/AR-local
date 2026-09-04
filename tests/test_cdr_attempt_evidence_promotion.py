@@ -22,6 +22,7 @@ from cdr_atomic import atomic_write_json
 from cdr_export_contract import load_contract
 from cdr_finalization import finalize_observation, verify_completion_marker
 from cdr_raw_attempt_journal import RawAttemptJournal
+from tests.support_observation import write_verified_observation
 
 
 DATE = "2026-08-15"
@@ -105,15 +106,10 @@ def _source(
                 "sha256": hashlib.sha256(body).hexdigest(),
             }
         ],
-        "providers_registered": 1,
-        "providers_attempted": 1,
-        "provider_states": [
-            {
-                "provider_uid": "legacy-prd:" + "a" * 64,
-                "state": "complete",
-                "failure_records": 0,
-            }
-        ],
+        "coverage_evidence_complete": True,
+        "providers_registered": 0,
+        "providers_attempted": 0,
+        "provider_states": [],
         "raw_attempt_journal": {
             **summary,
             "path": f"_raw-attempt-journals-v1/{session_id}",
@@ -548,8 +544,34 @@ def test_finalization_hash_binds_status_manifest_and_every_journal_file(tmp_path
     run_root = tmp_path / "ram" / "runs" / DATE
     export_root = data_root / "runs" / DATE / "_exports"
     state = data_root / "state"
-    _source(run_root)
+    journal, status = _source(run_root)
     _export(export_root)
+    observation = write_verified_observation(
+        export_root,
+        observation_date=DATE,
+        observed_at="2026-08-15T00:00:01Z",
+        raw_attempt_journal_digest=str(journal.summary()["head_digest"]),
+        product_evidence_id=journal.evidence_records()[1]["body_sha256"],
+        accounting_id=journal.session_id,
+    )
+    status.update(
+        providers_registered=1,
+        providers_attempted=1,
+        provider_states=[
+            {
+                "provider_uid": observation["products"][0]["provider_uid"],
+                "provider_dir": "Bank of Melbourne",
+                "brand_name": "Bank of Melbourne",
+                "legal_entity_name": "",
+                "endpoint_url": "https://bank.example/cds-au/v1/banking/products",
+                "state": "complete",
+                "population_known": True,
+                "products_in_scope": 1,
+            }
+        ],
+        provider_state_counts={"complete": 1},
+    )
+    atomic_write_json(run_root / "banks/ingest-status.json", status)
     promoted = promote_attempt_evidence(run_root, export_root)
     assert promoted is not None
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backfill per-date app-payload GitHub releases from Pi run exports.
 
-For each ``runs/<YYYY-MM-DD>/_exports`` with valid dashboard data, builds and publishes
+For each verified finalized observation, builds and publishes
 an immutable dated release ``app-payload-<date>``. After all dates, refreshes the rolling
 ``app-payload-latest`` manifest to the newest run_date on disk (without downgrading a
 newer live manifest).
@@ -50,16 +50,15 @@ def observation_gate(
 ) -> Tuple[bool, str, Optional[dict]]:
     """Apply the daily path's publication policy to a backfill candidate.
 
-    This script used to publish any date with parseable dashboard data, with no
+    This script used to publish any date with parseable legacy export data, with no
     reference to the observation's contract at all — which is how the broken
     2026-08-15 run (1,195 failure records against 1,856 products) became a public
     dated release while ``pi_daily_sync`` was correctly refusing it. ``--force``
-    still overrides, so an operator can deliberately republish a known-bad day.
+    may replace a release, but never bypasses observation acceptance.
     """
+    del force
     contract = gate.contract_for_run_date(state_root, run_date)
     allowed, reason = gate.publication_allowed(contract)
-    if not allowed and force:
-        return True, f"forced_over_{reason}", contract
     return allowed, reason, contract
 
 
@@ -98,6 +97,16 @@ def refresh_rolling_latest(
             f"reason={gate_reason}"
         )
         return False
+    verified_exports = gate.finalized_export_root(
+        resolve_state_root(runs_root), run_date, contract
+    )
+    if verified_exports is None:
+        print(
+            f"[backfill_app_payload] rolling latest withheld run_date={run_date} "
+            "reason=unverified_contract_generation"
+        )
+        return False
+    exports = verified_exports
     if dry_run:
         return False
     out_dir = exports / "app-payload-latest"
@@ -156,7 +165,6 @@ def backfill(
     )
     for run_date, exports in dates:
         tag = app_payload.dated_tag(run_date)
-        out_dir = exports / "app-payload"
         row = {
             "run_date": run_date,
             "tag": tag,
@@ -183,6 +191,21 @@ def backfill(
                 print(f"[backfill_app_payload] run_date={run_date} tag={tag} skipped=already_published")
                 results.append(row)
                 continue
+            verified_exports = gate.finalized_export_root(
+                state_root, run_date, contract
+            )
+            if verified_exports is None:
+                row["skipped"] = True
+                row["gate"] = "unverified_contract_generation"
+                print(
+                    f"[backfill_app_payload] run_date={run_date} tag={tag} "
+                    "skipped=withheld reason=unverified_contract_generation"
+                )
+                results.append(row)
+                continue
+            exports = verified_exports
+            row["exports"] = str(exports)
+            out_dir = exports / "app-payload"
             if dry_run:
                 manifest_path = out_dir / "manifest.json"
                 if manifest_path.exists():

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify or apply Raspberry Pi deploy for AR-local (sync + smoke /api/latest).
+"""Verify or apply Raspberry Pi deploy for AR-local (sync + status smoke).
 
 Non-interactive CLI for agents, orchestrator post-merge, and scheduled CI.
 
@@ -12,7 +12,7 @@ Exit codes:
 
 Environment (optional):
   AR_PI_SSH_HOST       SSH target (default: ar-local-pi5)
-  AR_PI_BASE_URL       Dashboard smoke URL (default: http://100.78.28.10/ via nginx :80)
+  AR_PI_BASE_URL       Status API URL (default: http://100.78.28.10/ via nginx :80)
   AR_PI_AR_LOCAL_REPO  Pi checkout (default: /srv/ar-local/AR-local)
   AR_PI_SITE_REPO      Pi shell checkout (default: /srv/ar-local/australianrates)
   AR_PI_GITHUB_REMOTE  Remote name on Pi (default: origin)
@@ -27,7 +27,7 @@ Examples:
 
 from __future__ import annotations
 
-import argparse
+import base64
 import json
 import os
 import re
@@ -35,21 +35,23 @@ import shlex
 import subprocess
 import sys
 import time
-from pathlib import Path
-from typing import Optional, Sequence
+from pathlib import Path, PurePosixPath
+from typing import Mapping, Optional, Sequence
 
 from ar_local_pi_runtime import (
     PI_DATA_ROOT,
-    PI_DASHBOARD_PORT,
+    PI_STATUS_PORT,
     PI_PUBLIC_BASE_URL,
     PI_REPO_ROOT,
     PI_SITE_REPO,
     is_raspberry_pi,
-    manifest_banks_rate_count,
 )
+import pi_deploy_http
+import pi_deploy_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parent
 SUBPROCESS_TIMEOUT_SEC = 120
+DATA_VERIFY_TIMEOUT_SEC = 900
 
 EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
@@ -83,10 +85,12 @@ FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
     "app_payload",
-    "dashboard/",
     "cdr_",
     "deploy/pi/",
     "pi_daily_sync.py",
+    "pi_deploy_cli.py",
+    "pi_deploy_http.py",
+    "pi_deploy_snapshot.py",
     "pi_deploy_verify.py",
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
@@ -96,10 +100,12 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "ar_local_backup_scope.py",
     "ar_local_boot_proof.py",
     "ar_local_checkout.py",
+    "ar_local_daily_reconciliation.py",
     "ar_local_deployment_chain.py",
     "ar_local_operation_lock.py",
     "ar_local_rollback_record.py",
     "ar_local_restore_verification.py",
+    "ar_local_sqlite_health.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "contracts/export-contract-v2.schema.json",
@@ -109,7 +115,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "contracts/pi-restore-acceptance-v1.schema.json",
     "contracts/pi-rollback-acceptance-v1.schema.json",
     "verify_local.py",
-    "cdr_dashboard_server.py",
+    "cdr_status_server.py",
     "package.json",
 )
 
@@ -145,7 +151,7 @@ def pi_data_root() -> str:
 
 def pi_base_url() -> str:
     if on_pi_host():
-        default = f"http://127.0.0.1:{PI_DASHBOARD_PORT}/"
+        default = f"http://127.0.0.1:{PI_STATUS_PORT}/"
         return _env("AR_PI_BASE_URL", default).rstrip("/") + "/"
     return _env("AR_PI_BASE_URL", DEFAULT_BASE_URL).rstrip("/") + "/"
 
@@ -224,7 +230,12 @@ def _strip_success_sentinel(stdout: str) -> str:
     return "\n".join(lines).strip()
 
 
-def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
+def run_shell(
+    shell_cmd: str,
+    *,
+    dry_run: bool = False,
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_SEC,
+) -> tuple[int, str, str]:
     if on_pi_host():
         if dry_run:
             print(f"pi_deploy_verify: dry-run local {shell_cmd!r}")
@@ -236,7 +247,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
             text=True,
             cwd=str(REPO_ROOT),
             check=False,
-            timeout=SUBPROCESS_TIMEOUT_SEC,
+            timeout=timeout_seconds,
         )
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
@@ -262,7 +273,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
                 text=True,
                 shell=False,
                 check=False,
-                timeout=SUBPROCESS_TIMEOUT_SEC,
+                timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
             if last:
@@ -319,8 +330,15 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
     return proc.returncode, out, err
 
 
-def run_ssh(remote_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
-    return run_shell(remote_cmd, dry_run=dry_run)
+def run_ssh(
+    remote_cmd: str,
+    *,
+    dry_run: bool = False,
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_SEC,
+) -> tuple[int, str, str]:
+    return run_shell(
+        remote_cmd, dry_run=dry_run, timeout_seconds=timeout_seconds
+    )
 
 
 def origin_main_sha_local() -> Optional[str]:
@@ -368,7 +386,7 @@ def _snap_has_dirty_repos(snap: dict[str, str], *, context: str = "") -> bool:
 
 
 def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
-    """One SSH round-trip for SHAs, dirty trees, and dashboard state."""
+    """One SSH round-trip for SHAs, dirty trees, and status-service state."""
     remote = pi_remote()
     ar = pi_ar_repo()
     site = pi_site_repo()
@@ -388,9 +406,9 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
         f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
         f"site_d=$(git -C {q_site} status --porcelain | tr '\\n' ';'); "
-        f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
-        f"dash_wd=$(systemctl show ar-local-dashboard.service -p WorkingDirectory --value 2>/dev/null); "
-        f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
+        f"status=$(systemctl is-active ar-local-status.service 2>/dev/null || echo inactive); "
+        f"status_wd=$(systemctl show ar-local-status.service -p WorkingDirectory --value 2>/dev/null); "
+        f"status_exec=$(systemctl show ar-local-status.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
         f"daily_wd=$(systemctl show ar-local-daily.service -p WorkingDirectory --value 2>/dev/null); "
         f"daily_exec=$(systemctl show ar-local-daily.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
         f"daily_timer_enabled=$(systemctl is-enabled ar-local-daily.timer 2>/dev/null); "
@@ -405,18 +423,18 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"watchdog_start_timeout=$(systemctl show ar-local-daily-watchdog.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"manual_kill_mode=$(systemctl show ar-local-ingest-now.service -p KillMode --value 2>/dev/null); "
         f"manual_start_timeout=$(systemctl show ar-local-ingest-now.service -p TimeoutStartUSec --value 2>/dev/null); "
-        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null); "
+        f"status_env=$(systemctl show ar-local-status.service -p Environment --value 2>/dev/null); "
         f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null); "
         f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_site=$(df -P {q_site} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_data=$(df -P {q_data} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
-        f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\"; "
-        f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
+        f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nSTATUS=%s\\n' \"$ar_d\" \"$site_d\" \"$status\"; "
+        f"printf 'STATUS_WD=%s\\nSTATUS_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$status_wd\" \"$status_exec\" \"$daily_wd\" \"$daily_exec\"; "
         f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
         f"printf 'DAILY_KILL_MODE=%s\\nDAILY_START_TIMEOUT=%s\\nWATCHDOG_KILL_MODE=%s\\nWATCHDOG_START_TIMEOUT=%s\\nMANUAL_KILL_MODE=%s\\nMANUAL_START_TIMEOUT=%s\\n' \"$daily_kill_mode\" \"$daily_start_timeout\" \"$watchdog_kill_mode\" \"$watchdog_start_timeout\" \"$manual_kill_mode\" \"$manual_start_timeout\"; "
         f"printf 'CAPACITY_TIMER_ENABLED=%s\\nCAPACITY_TIMER_ACTIVE=%s\\n' \"$capacity_timer_enabled\" \"$capacity_timer_active\"; "
-        f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
+        f"printf 'STATUS_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$status_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
     )
     code, stdout, _ = run_ssh(script, dry_run=dry_run)
     if dry_run:
@@ -427,9 +445,9 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "SITE_ORIGIN": "dry",
             "AR_DIRTY": "",
             "SITE_DIRTY": "",
-            "DASHBOARD": "active",
-            "DASHBOARD_WD": "dry",
-            "DASHBOARD_EXEC": "dry",
+            "STATUS": "active",
+            "STATUS_WD": "dry",
+            "STATUS_EXEC": "dry",
             "DAILY_WD": "dry",
             "DAILY_EXEC": "dry",
             "DAILY_TIMER_ENABLED": "enabled",
@@ -444,14 +462,14 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "WATCHDOG_START_TIMEOUT": "6h 15min",
             "MANUAL_KILL_MODE": "control-group",
             "MANUAL_START_TIMEOUT": "6h 15min",
-            "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
+            "STATUS_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
             "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
             "DF_AR": "dry",
             "DF_SITE": "dry",
             "DF_DATA": "dry",
         }
     snap = _parse_kv_lines(stdout)
-    required = ("AR_HEAD", "AR_ORIGIN", "SITE_HEAD", "SITE_ORIGIN", "DASHBOARD")
+    required = ("AR_HEAD", "AR_ORIGIN", "SITE_HEAD", "SITE_ORIGIN", "STATUS")
     if all(snap.get(k) for k in required):
         return snap
     if code != 0:
@@ -476,175 +494,273 @@ def pi_tree_clean(repo_path: str, *, dry_run: bool = False) -> bool:
     return True
 
 
-def dashboard_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = None) -> bool:
+def status_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = None) -> bool:
     if snap is None:
         snap = pi_remote_snapshot(dry_run=dry_run)
     if snap is None:
         return False
-    return snap.get("DASHBOARD") == "active"
+    return snap.get("STATUS") == "active"
 
 
 def pi_service_paths_ok(snap: dict[str, str]) -> bool:
-    ok = True
-    path_fields = {
-        "dashboard WorkingDirectory": snap.get("DASHBOARD_WD", ""),
-        "dashboard ExecStart": snap.get("DASHBOARD_EXEC", ""),
-        "daily WorkingDirectory": snap.get("DAILY_WD", ""),
-        "daily ExecStart": snap.get("DAILY_EXEC", ""),
-    }
-    environment_fields = {
-        "dashboard Environment": snap.get("DASHBOARD_ENV", ""),
-        "daily Environment": snap.get("DAILY_ENV", ""),
-    }
-    for label, value in {**path_fields, **environment_fields}.items():
-        print(f"pi_deploy_verify: {label}: {value}")
-    for label, value in path_fields.items():
-        if FORBIDDEN_PI_BOOTSTRAP_RE.search(value):
-            print(f"pi_deploy_verify: forbidden bootstrap path in {label}: {value}", file=sys.stderr)
-            ok = False
-    for label, value in environment_fields.items():
-        try:
-            assignments = shlex.split(value)
-        except ValueError:
-            assignments = [value]
-        for assignment in assignments:
-            name, separator, path = assignment.partition("=")
-            name = name.strip()
-            path = path.strip()
-            if not separator or not FORBIDDEN_PI_BOOTSTRAP_RE.search(path):
-                continue
-            if (name, path) in {
-                ("HOME", "/home/pi"),
-                ("XDG_CONFIG_HOME", "/home/pi/.config"),
-            }:
-                continue
-            print(
-                f"pi_deploy_verify: forbidden bootstrap path in {label}: {assignment}",
-                file=sys.stderr,
-            )
-            ok = False
-
-    dash_exec = snap.get("DASHBOARD_EXEC", "")
-    repo_local_runs = f"{pi_ar_repo().rstrip('/')}/runs"
-    bad_runs_tokens = ("--runs runs", "--runs=.", "--runs ./runs", f"--runs {repo_local_runs}", f"--runs={repo_local_runs}")
-    if any(token in dash_exec for token in bad_runs_tokens):
-        print(f"pi_deploy_verify: dashboard --runs points inside the service checkout: {dash_exec}", file=sys.stderr)
-        ok = False
-    if "AR_LOCAL_DATA_ROOT=" not in (snap.get("DASHBOARD_ENV", "") + ";" + snap.get("DAILY_ENV", "")):
-        print("pi_deploy_verify: AR_LOCAL_DATA_ROOT missing from Pi service environments", file=sys.stderr)
-        ok = False
-
-    for label, key in (("repo", "DF_AR"), ("site", "DF_SITE"), ("data", "DF_DATA")):
-        print(f"pi_deploy_verify: df {label}: {snap.get(key, '')}")
-    return ok
+    return pi_deploy_snapshot.service_paths_ok(
+        snap,
+        repo_path=pi_ar_repo(),
+        forbidden_bootstrap_path=FORBIDDEN_PI_BOOTSTRAP_RE,
+    )
 
 
 def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_TIMER_ENABLED": "enabled",
-        "DAILY_TIMER_ACTIVE": "active",
-        "WATCHDOG_TIMER_ENABLED": "enabled",
-        "WATCHDOG_TIMER_ACTIVE": "active",
-        "CAPACITY_TIMER_ENABLED": "enabled",
-        "CAPACITY_TIMER_ACTIVE": "active",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
-    if not ok:
-        print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
-    return ok
+    return pi_deploy_snapshot.ingest_timers_ok(snap)
 
 
 def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_KILL_MODE": "control-group",
-        "DAILY_START_TIMEOUT": "6h 15min",
-        "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_START_TIMEOUT": "6h 15min",
-        "MANUAL_KILL_MODE": "control-group",
-        "MANUAL_START_TIMEOUT": "6h 15min",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
-    if not ok:
-        print("pi_deploy_verify: ingest process fencing is not active", file=sys.stderr)
-    return ok
+    return pi_deploy_snapshot.ingest_service_fences_ok(snap)
 
 
 def http_smoke(
     base_url: str,
     *,
-    require_rates: bool = True,
     timeout_seconds: float = 30.0,
 ) -> int:
-    import urllib.error
-    import urllib.request
+    return pi_deploy_http.status_smoke(
+        base_url, timeout_seconds=timeout_seconds
+    )
 
-    latest = base_url.rstrip("/") + "/api/latest"
-    try:
-        with urllib.request.urlopen(latest, timeout=timeout_seconds) as resp:
-            if int(resp.status) != 200:
-                print(f"pi_deploy_verify: {latest} HTTP {resp.status}", file=sys.stderr)
-                return EXIT_VERIFY_FAIL
-            payload = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        print(f"pi_deploy_verify: {latest} HTTP {exc.code}", file=sys.stderr)
-        return EXIT_VERIFY_FAIL
-    except Exception as exc:
-        print(f"pi_deploy_verify: {latest} failed: {exc}", file=sys.stderr)
-        return EXIT_VERIFY_FAIL
 
-    rates = manifest_banks_rate_count(payload)
-    run_date = payload.get("run_date")
-    if require_rates and rates <= 0:
-        print(
-            f"pi_deploy_verify: /api/latest run_date={run_date!r} banks_counts.rates={rates}",
-            file=sys.stderr,
-        )
-        return EXIT_VERIFY_FAIL
-    print(f"pi_deploy_verify: HTTP OK {latest} run_date={run_date} rates={rates}")
-    return EXIT_OK
+def legacy_http_smoke(
+    base_url: str,
+    *,
+    timeout_seconds: float = 30.0,
+) -> int:
+    return pi_deploy_http.legacy_smoke(
+        base_url, timeout_seconds=timeout_seconds
+    )
 
 
 def wait_for_http_smoke(
     base_url: str,
     *,
-    require_rates: bool = True,
-    attempts: int = 13,
-    delay_seconds: float = 10.0,
-    budget_seconds: float = 120.0,
+    attempts: int = 10,
+    delay_seconds: float = 2.0,
+    budget_seconds: float = 30.0,
 ) -> int:
-    """Allow the dashboard's preload phase to finish after a service restart."""
-    deadline = time.monotonic() + max(0.0, budget_seconds)
-    result = EXIT_VERIFY_FAIL
-    for attempt in range(1, attempts + 1):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        result = http_smoke(
-            base_url,
-            require_rates=require_rates,
-            timeout_seconds=min(30.0, remaining),
+    """Allow systemd and nginx a bounded interval to complete a restart."""
+    return pi_deploy_http.wait_for_smoke(
+        http_smoke,
+        base_url,
+        attempts=attempts,
+        delay_seconds=delay_seconds,
+        budget_seconds=budget_seconds,
+    )
+
+
+def wait_for_legacy_http_smoke(
+    base_url: str,
+    *,
+    attempts: int = 10,
+    delay_seconds: float = 2.0,
+    budget_seconds: float = 30.0,
+) -> int:
+    return pi_deploy_http.wait_for_smoke(
+        legacy_http_smoke,
+        base_url,
+        attempts=attempts,
+        delay_seconds=delay_seconds,
+        budget_seconds=budget_seconds,
+    )
+
+
+def production_data_script() -> bytes:
+    """Return a repository-compatible, read-only production data verifier."""
+
+    return b'''import hashlib,json,re,sqlite3,sys
+from contextlib import closing
+from pathlib import Path
+from ar_local_restore_verification import verify_restored_state
+root=Path(sys.argv[1]).resolve(strict=True)
+def require(condition,message):
+ if not condition: raise RuntimeError(message)
+def sha256_file(path):
+ digest=hashlib.sha256()
+ with path.open("rb") as stream:
+  for block in iter(lambda:stream.read(1048576),b""):
+   digest.update(block)
+ return digest.hexdigest()
+report=verify_restored_state(root)
+require(report.get("ok") is True,f"restored state failed: {report.get('findings')}")
+selected=report.get("selected_observation")
+require(isinstance(selected,dict),"selected observation is missing")
+for key in ("observation_date","generation_id","ledger_event_digest","database_path","database_sha256","export_contract_digest"):
+ require(selected.get(key),f"selected observation lacks {key}")
+require(re.fullmatch(r"[0-9a-f]{64}",str(selected["database_sha256"])),"database digest is invalid")
+require(isinstance(report.get("ledger"),dict) and report["ledger"].get("ok") is True,"ledger is invalid")
+databases=[]
+for path in sorted(root.rglob("*.sqlite")):
+ require(path.is_file() and not path.is_symlink(),f"unsafe SQLite path: {path}")
+ with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro&immutable=1",uri=True)) as connection:
+  quick=[str(row[0]) for row in connection.execute("PRAGMA quick_check")]
+  integrity=[str(row[0]) for row in connection.execute("PRAGMA integrity_check")]
+  foreign_key=connection.execute("PRAGMA foreign_key_check").fetchone()
+  require(quick==["ok"] and integrity==["ok"] and foreign_key is None,f"SQLite health failed: {path}")
+  user_version=int(connection.execute("PRAGMA user_version").fetchone()[0])
+  tables={str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+  schema_version=user_version
+  if path.name=="local-cdr.sqlite" and user_version==0 and "schema_meta" in tables:
+   row=connection.execute("SELECT value FROM schema_meta WHERE key='version'").fetchone()
+   schema_version=row[0] if row else None
+ digest=sha256_file(path)
+ databases.append({"path":path.relative_to(root).as_posix(),"sha256":digest,"schema_version":schema_version,"quick_check":"ok","integrity_check":"ok","foreign_key_check":"ok"})
+require(bool(databases),"no SQLite databases found")
+selected_matches=[item for item in databases if item["path"]==selected["database_path"]]
+require(len(selected_matches)==1,"selected database identity is ambiguous")
+selected_db=selected_matches[0]
+require(selected_db["sha256"]==selected["database_sha256"],"selected database digest mismatch")
+require(str(selected_db["schema_version"]) in {"8","11"},"selected database schema is unsupported")
+print(json.dumps({"result":"PASS","observation_date":selected["observation_date"],"generation_id":selected["generation_id"],"ledger_event_digest":selected["ledger_event_digest"],"database":selected_db,"sqlite_databases":len(databases)},sort_keys=True))
+'''
+
+
+def production_data_report_is_valid(value: object) -> bool:
+    if not isinstance(value, Mapping) or value.get("result") != "PASS":
+        return False
+    date = str(value.get("observation_date") or "")
+    generation = str(value.get("generation_id") or "")
+    ledger_digest = str(value.get("ledger_event_digest") or "")
+    database = value.get("database")
+    if not isinstance(database, Mapping):
+        return False
+    path = str(database.get("path") or "")
+    relative = PurePosixPath(path)
+    return bool(
+        re.fullmatch(r"\d{4}-\d{2}-\d{2}", date)
+        and re.fullmatch(r"obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", generation)
+        and re.fullmatch(r"[0-9a-f]{64}", ledger_digest)
+        and re.fullmatch(r"[0-9a-f]{64}", str(database.get("sha256") or ""))
+        and not relative.is_absolute()
+        and "\\" not in path
+        and ".." not in relative.parts
+        and path.endswith("/_exports/local-cdr.sqlite")
+        and str(database.get("schema_version")) in {"8", "11"}
+        and isinstance(value.get("sqlite_databases"), int)
+        and int(value["sqlite_databases"]) > 0
+    )
+
+
+def verify_production_data(*, dry_run: bool = False) -> int:
+    """Verify ledger, pointer, observation, digest, schema, and every SQLite DB."""
+
+    encoded = base64.b64encode(production_data_script()).decode("ascii")
+    python = f"import base64;exec(base64.b64decode({encoded!r}))"
+    command = (
+        f"cd {shell_quote(pi_ar_repo())} && "
+        f"python3 -c {shell_quote(python)} {shell_quote(pi_data_root())}"
+    )
+    code, output, error = run_ssh(
+        command, dry_run=dry_run, timeout_seconds=DATA_VERIFY_TIMEOUT_SEC
+    )
+    if dry_run:
+        print("pi_deploy_verify: dry-run would verify ledger, observation, and SQLite data")
+        return EXIT_OK
+    if code != 0:
+        print(error or output or "pi_deploy_verify: production data verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    try:
+        report = json.loads(output)
+    except (TypeError, ValueError):
+        report = None
+    if not production_data_report_is_valid(report):
+        print("pi_deploy_verify: production data verifier returned invalid evidence", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    print(
+        "pi_deploy_verify: data OK "
+        f"observation={report.get('observation_date')} "
+        f"database={report.get('database', {}).get('sha256')}"
+    )
+    return EXIT_OK
+
+
+def bootstrap_observation(
+    expected_commit: str,
+    *,
+    timeout_seconds: float,
+    poll_seconds: float = 15.0,
+    dry_run: bool = False,
+) -> int:
+    """Run one explicit systemd-managed ingest and wait for its exact invocation."""
+
+    if not FULL_COMMIT_RE.fullmatch(expected_commit) or timeout_seconds <= 0:
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    start = (
+        f"set -e; test \"$(git -C {shell_quote(ar)} rev-parse HEAD)\" = "
+        f"{shell_quote(expected_commit)}; "
+        "if systemctl is-active --quiet ar-local-ingest-now.service; then exit 75; fi; "
+        "before=$(systemctl show ar-local-ingest-now.service -p InvocationID --value); "
+        "sudo systemctl reset-failed ar-local-ingest-now.service; "
+        "sudo systemctl start --no-block ar-local-ingest-now.service; "
+        "sleep 1; after=$(systemctl show ar-local-ingest-now.service -p InvocationID --value); "
+        "printf 'BEFORE=%s\\nINVOCATION=%s\\n' \"$before\" \"$after\""
+    )
+    code, output, error = run_ssh(start, dry_run=dry_run)
+    if dry_run:
+        print("pi_deploy_verify: dry-run would run one explicit canonical ingest")
+        return EXIT_OK
+    if code == EXIT_BUSY:
+        print("pi_deploy_verify: ingest is already active", file=sys.stderr)
+        return EXIT_BUSY
+    if code != 0:
+        print(error or output or "pi_deploy_verify: ingest start failed", file=sys.stderr)
+        return EXIT_SSH
+    started = _parse_kv_lines(output)
+    before = started.get("BEFORE", "")
+    after = started.get("INVOCATION", "")
+    invocation = after if after and after != before else ""
+    deadline = time.monotonic() + timeout_seconds
+    last_state = ""
+    while time.monotonic() < deadline:
+        check = (
+            "set -e; "
+            "inv=$(systemctl show ar-local-ingest-now.service -p InvocationID --value); "
+            "active=$(systemctl show ar-local-ingest-now.service -p ActiveState --value); "
+            "sub=$(systemctl show ar-local-ingest-now.service -p SubState --value); "
+            "result=$(systemctl show ar-local-ingest-now.service -p Result --value); "
+            "status=$(systemctl show ar-local-ingest-now.service -p ExecMainStatus --value); "
+            "printf 'INVOCATION=%s\\nACTIVE=%s\\nSUB=%s\\nRESULT=%s\\nSTATUS=%s\\n' "
+            "\"$inv\" \"$active\" \"$sub\" \"$result\" \"$status\""
         )
-        if result == EXIT_OK:
-            return EXIT_OK
-        remaining = deadline - time.monotonic()
-        if attempt < attempts and remaining > 0:
-            sleep_seconds = min(delay_seconds, remaining)
-            print(
-                f"pi_deploy_verify: dashboard not ready after restart "
-                f"(attempt {attempt}/{attempts}); retrying in {sleep_seconds:g}s"
-            )
-            time.sleep(sleep_seconds)
-    return result
+        code, output, error = run_ssh(check, dry_run=False)
+        if code != 0:
+            print(error or output or "pi_deploy_verify: ingest state unavailable", file=sys.stderr)
+            return EXIT_SSH
+        state = _parse_kv_lines(output)
+        current_invocation = state.get("INVOCATION", "")
+        if current_invocation and current_invocation != before:
+            invocation = current_invocation
+        description = "/".join(
+            (state.get("ACTIVE", "unknown"), state.get("SUB", "unknown"))
+        )
+        if description != last_state:
+            print(f"pi_deploy_verify: ingest {invocation or 'pending'} {description}")
+            last_state = description
+        if invocation and current_invocation == invocation:
+            active = state.get("ACTIVE")
+            result = state.get("RESULT")
+            status = state.get("STATUS")
+            if active == "inactive" and result == "success" and status == "0":
+                return EXIT_OK
+            if active == "failed" or (
+                active == "inactive" and result not in {"", "success"}
+            ):
+                print(
+                    f"pi_deploy_verify: canonical ingest failed "
+                    f"(state={description}, result={result}, status={status})",
+                    file=sys.stderr,
+                )
+                return EXIT_VERIFY_FAIL
+        time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))
+    print("pi_deploy_verify: canonical ingest timed out", file=sys.stderr)
+    return EXIT_VERIFY_FAIL
 
 
 def verify_sync(
@@ -706,8 +822,8 @@ def verify_sync(
             print(f"pi_deploy_verify: DRIFT {item}", file=sys.stderr)
         return EXIT_VERIFY_FAIL
 
-    if not dashboard_active(dry_run=dry_run, snap=snap):
-        print("pi_deploy_verify: ar-local-dashboard.service not active", file=sys.stderr)
+    if not status_active(dry_run=dry_run, snap=snap):
+        print("pi_deploy_verify: ar-local-status.service not active", file=sys.stderr)
         return EXIT_VERIFY_FAIL
 
     return EXIT_OK
@@ -830,15 +946,24 @@ def rollback_to_protected_commit(
     if code != 0:
         print(err or "pi_deploy_verify: rollback checkout failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
-    if deploy_services(dry_run=False) != EXIT_OK:
+    runtime_kind = restore_protected_runtime(dry_run=False)
+    if runtime_kind is None:
         print("pi_deploy_verify: rollback service restoration failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
     snap = pi_remote_snapshot(dry_run=False)
     if snap is None or snap.get("AR_HEAD") != protected_commit:
         print("pi_deploy_verify: rollback SHA verification failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
-    if wait_for_http_smoke(pi_base_url()) != EXIT_OK:
-        print("pi_deploy_verify: rollback dashboard verification failed", file=sys.stderr)
+    smoke = (
+        wait_for_legacy_http_smoke(pi_base_url())
+        if runtime_kind == "legacy"
+        else wait_for_http_smoke(pi_base_url())
+    )
+    if smoke != EXIT_OK:
+        print("pi_deploy_verify: rollback HTTP verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if verify_production_data(dry_run=False) != EXIT_OK:
+        print("pi_deploy_verify: rollback data verification failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
     record_script = (
         f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-rollback "
@@ -847,7 +972,7 @@ def rollback_to_protected_commit(
         f"--protected-code-sha {shell_quote(protected_commit)} "
         f"--candidate-sha {shell_quote(failed_candidate)} "
         f"--parent-command {shell_quote(parent_command)} "
-        f"--parent-command {shell_quote(script)} --dashboard-verified --services-verified"
+        "--dashboard-verified --services-verified"
     )
     code, out, err = run_ssh(record_script, dry_run=False)
     if code != 0:
@@ -859,11 +984,47 @@ def rollback_to_protected_commit(
     return EXIT_OK
 
 
+def restore_protected_runtime(*, dry_run: bool = False) -> Optional[str]:
+    """Activate whichever runtime contract exists in the restored checkout."""
+
+    ar = pi_ar_repo()
+    site = pi_site_repo()
+    data = pi_data_root()
+    apply_runtime = f"{ar}/deploy/pi/apply-pi-runtime-units.sh"
+    legacy_proxy = f"{ar}/deploy/pi/install-pi-dashboard-proxy.sh"
+    status_proxy = f"{ar}/deploy/pi/install-pi-status-proxy.sh"
+    script = (
+        f"set -e; test -x {shell_quote(apply_runtime)}; "
+        f"if test -f {shell_quote(legacy_proxy)}; then "
+        "sudo systemctl disable ar-local-status.service >/dev/null 2>&1 || true; "
+        "sudo systemctl stop ar-local-status.service >/dev/null 2>&1 || true; "
+        f"sh {shell_quote(apply_runtime)} {shell_quote(ar)} {shell_quote(site)} {shell_quote(data)}; "
+        "sudo rm -f /etc/systemd/system/ar-local-status.service "
+        "/etc/nginx/sites-enabled/ar-local-status /etc/nginx/sites-available/ar-local-status; "
+        "sudo systemctl daemon-reload; "
+        f"sudo sh {shell_quote(legacy_proxy)} {shell_quote(ar)}; "
+        "printf 'ROLLBACK_RUNTIME=legacy\\n'; "
+        f"elif test -f {shell_quote(status_proxy)}; then "
+        f"sh {shell_quote(apply_runtime)} {shell_quote(ar)} {shell_quote(site)} {shell_quote(data)}; "
+        f"sudo sh {shell_quote(status_proxy)} {shell_quote(ar)}; "
+        "printf 'ROLLBACK_RUNTIME=status\\n'; "
+        "else echo 'protected runtime has no proxy installer' >&2; exit 1; fi"
+    )
+    code, output, error = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        return "status"
+    if code != 0:
+        print(error or output or "pi_deploy_verify: protected runtime failed", file=sys.stderr)
+        return None
+    kind = _parse_kv_lines(output).get("ROLLBACK_RUNTIME")
+    return kind if kind in {"legacy", "status"} else None
+
+
 def deploy_services(*, dry_run: bool = False) -> int:
     ar_repo = pi_ar_repo()
     site_repo = pi_site_repo()
     data = pi_data_root()
-    install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
+    install_proxy = f"{ar_repo}/deploy/pi/install-pi-status-proxy.sh"
     apply_runtime = f"{ar_repo}/deploy/pi/apply-pi-runtime-units.sh"
     deploy_watchdog_script = (
         f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.sh"
@@ -879,11 +1040,11 @@ def deploy_services(*, dry_run: bool = False) -> int:
         "systemctl cat ar-local-deploy-watchdog.service | "
         f"grep -Fqx {shell_quote(f'ExecStart={deploy_watchdog_script}')} && "
         "("
-        "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
+        "if [ -f /etc/nginx/sites-enabled/ar-local-status ]; then "
         "sudo nginx -t && sudo systemctl reload-or-restart nginx; "
         f"elif [ -f {shell_quote(install_proxy)} ]; then "
         f"sudo sh {shell_quote(install_proxy)} {shell_quote(ar_repo)}; "
-        "else echo 'pi_deploy_verify: nginx proxy not installed (run deploy/pi/install-pi-dashboard-proxy.sh)' >&2; "
+        "else echo 'pi_deploy_verify: nginx proxy not installed (run deploy/pi/install-pi-status-proxy.sh)' >&2; "
         "fi"
         ")"
     )
@@ -917,168 +1078,26 @@ def changed_files_since(ref: str) -> list[str]:
     return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
 
 
-def cmd_verify(args: argparse.Namespace) -> int:
-    code = verify_sync(dry_run=args.dry_run)
-    if code != EXIT_OK:
-        return code
-    if args.dry_run:
-        print(f"pi_deploy_verify: dry-run would smoke {pi_base_url()}")
-        return EXIT_OK
-    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
-    if smoke != EXIT_OK:
-        return smoke
-    print("pi_deploy_verify: verify OK (sync + dashboard + /api/latest)")
-    return EXIT_OK
+def _cli():
+    import pi_deploy_cli
+
+    return pi_deploy_cli
 
 
-def cmd_deploy(args: argparse.Namespace) -> int:
-    expected_commit = str(args.expected_commit or "").strip().lower()
-    if not FULL_COMMIT_RE.fullmatch(expected_commit):
-        print(
-            "pi_deploy_verify: --deploy requires --expected-commit with an exact "
-            "40-character lowercase SHA",
-            file=sys.stderr,
-        )
-        return EXIT_CONFIG
-    if args.allow_empty_rates:
-        print("pi_deploy_verify: --allow-empty-rates is forbidden for controlled deployment", file=sys.stderr)
-        return EXIT_CONFIG
-    local_main = origin_main_sha_local()
-    if local_main != expected_commit:
-        print(
-            "pi_deploy_verify: approved commit is not the current local origin/main",
-            file=sys.stderr,
-        )
-        return EXIT_CONFIG
-    if args.dry_run:
-        rc = deployment_backup_gate(expected_commit, expected_commit, dry_run=True)
-        if rc != EXIT_OK:
-            return rc
-        rc = deploy_pull_all(expected_commit, dry_run=True)
-        if rc != EXIT_OK:
-            return rc
-        rc = deploy_services(dry_run=True)
-        if rc != EXIT_OK:
-            return rc
-        print("pi_deploy_verify: dry-run deploy complete (no changes applied)")
-        return EXIT_OK
-    snap = pi_remote_snapshot(dry_run=args.dry_run)
-    if snap is None:
-        print("pi_deploy_verify: could not read Pi state before deploy", file=sys.stderr)
-        return EXIT_SSH
-    if _snap_has_dirty_repos(snap, context="— resolve before deploy"):
-        return EXIT_VERIFY_FAIL
-    if not pi_service_paths_ok(snap):
-        return EXIT_VERIFY_FAIL
-    if snap["AR_ORIGIN"] != expected_commit:
-        print(
-            "pi_deploy_verify: Pi origin/main does not match approved commit",
-            file=sys.stderr,
-        )
-        return EXIT_VERIFY_FAIL
-    if snap["SITE_HEAD"] != snap["SITE_ORIGIN"]:
-        print(
-            "pi_deploy_verify: australianrates checkout is behind origin/main; "
-            "refusing an unrelated site mutation",
-            file=sys.stderr,
-        )
-        return EXIT_VERIFY_FAIL
-    rc = deployment_backup_gate(expected_commit, snap["AR_HEAD"], dry_run=False)
-    if rc != EXIT_OK:
-        return rc
-    rc = deploy_pull_all(expected_commit, dry_run=args.dry_run)
-    if rc != EXIT_OK:
-        return rc
-    rc = deploy_services(dry_run=args.dry_run)
-    if rc != EXIT_OK:
-        return rc
-    sync_rc = verify_sync(dry_run=False, expected_commit=expected_commit)
-    if sync_rc != EXIT_OK:
-        return sync_rc
-    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
-    if smoke != EXIT_OK:
-        return smoke
-    acceptance = record_deployment_acceptance(
-        expected_commit,
-        snap["AR_HEAD"],
-        args.effective_command,
-        dry_run=False,
-    )
-    if acceptance != EXIT_OK:
-        rollback = rollback_to_protected_commit(
-            snap["AR_HEAD"], expected_commit, args.effective_command, dry_run=False
-        )
-        if rollback != EXIT_OK:
-            print(
-                "pi_deploy_verify: CRITICAL acceptance failed and rollback was not verified",
-                file=sys.stderr,
-            )
-        return acceptance
-    print("pi_deploy_verify: deploy OK")
-    return EXIT_OK
+def cmd_verify(args) -> int:
+    return _cli().cmd_verify(args, sys.modules[__name__])
 
 
-def cmd_needs_pi(args: argparse.Namespace) -> int:
-    files = changed_files_since(args.ref)
-    if not files:
-        print(f"pi_deploy_verify: no changed files since {args.ref}")
-        return EXIT_OK
-    if paths_touch_pi_deploy(files):
-        print(f"pi_deploy_verify: Pi deploy recommended ({len(files)} files; pi-touching paths present)")
-        for path in sorted(files):
-            if paths_touch_pi_deploy([path]):
-                print(f"  {path}")
-        return EXIT_OK
-    print(f"pi_deploy_verify: no Pi-touching paths in {len(files)} files since {args.ref}")
-    return 1
+def cmd_deploy(args) -> int:
+    return _cli().cmd_deploy(args, sys.modules[__name__])
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Verify or apply Pi deploy (sync /srv/ar-local to origin/main, smoke dashboard).",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print SSH actions without executing remote changes (deploy) or HTTP (verify).",
-    )
-    parser.add_argument(
-        "--allow-empty-rates",
-        action="store_true",
-        help="Pass HTTP smoke when /api/latest has zero banks_counts.rates.",
-    )
-    parser.add_argument(
-        "--expected-commit",
-        default=os.environ.get("AR_PI_EXPECTED_COMMIT", ""),
-        help=(
-            "Exact 40-character lowercase AR-local main commit approved by the "
-            "canary gate; required for --deploy."
-        ),
-    )
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--verify",
-        action="store_true",
-        help="Check Pi SHAs vs origin/main, dashboard active, and GET /api/latest.",
-    )
-    mode.add_argument(
-        "--deploy",
-        action="store_true",
-        help="Install the exact approved AR-local commit, restart runtime, then verify.",
-    )
-    mode.add_argument(
-        "--needs-pi",
-        action="store_true",
-        help="Exit 0 if changed files since --ref touch Pi deploy paths (orchestrator gate).",
-    )
-    parser.add_argument(
-        "--ref",
-        default="origin/main~1",
-        help="Git ref for --needs-pi diff base (default: origin/main~1).",
-    )
-    return parser
+def cmd_needs_pi(args) -> int:
+    return _cli().cmd_needs_pi(args, sys.modules[__name__])
+
+
+def build_parser():
+    return _cli().build_parser()
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

@@ -11,7 +11,11 @@ import pytest
 
 import cdr_outputs
 import cdr_product_changes as changes
-import cdr_product_change_runs
+import cdr_product_change_runs as change_runs
+from cdr_attempt_evidence_promotion import promote_attempt_evidence
+from cdr_finalization import finalize_observation
+from tests.support_observation import write_finalized_observation
+from tests.test_cdr_outputs import _captured_run
 
 
 def fact(
@@ -385,7 +389,6 @@ def test_streamed_failure_suppression_matches_flat_legacy_semantics() -> None:
     for row in previous:
         row["product_id"] = row.pop("productId")
     failures = [{"phase": "product_detail", "bank": "Example Bank", "product_id": "FAILED"}]
-    expected, expected_count = cdr_outputs._exclude_failed_missing_products(previous, [], failures)
     filtered, result = cdr_outputs._exclude_failed_missing_product_groups(
         iter([
             (("Example Bank", "FAILED", "Mortgage"), previous[:2]),
@@ -397,8 +400,8 @@ def test_streamed_failure_suppression_matches_flat_legacy_semantics() -> None:
 
     actual = [row for _key, rows in filtered for row in rows]
 
-    assert actual == expected
-    assert result["suppressed"] == expected_count == 1
+    assert actual == previous[2:]
+    assert result["suppressed"] == 1
 
 
 def test_missing_identity_fails_closed_and_ambiguous_duplicates_require_review() -> None:
@@ -564,7 +567,7 @@ def test_previous_finalized_run_ignores_partial_sibling(tmp_path: Path) -> None:
     (partial / "banks").mkdir(parents=True)
     current.mkdir()
 
-    assert changes.previous_finalized_run(current) == finalized
+    assert changes.previous_finalized_run(current) == finalized / "_exports"
 
 
 def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_path: Path) -> None:
@@ -578,7 +581,57 @@ def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_p
     (missing_artifact / "_exports" / "local-cdr.sqlite").unlink()
     current.mkdir()
 
-    assert changes.previous_finalized_run(current) == finalized
+    assert changes.previous_finalized_run(current) == finalized / "_exports"
+
+
+def test_previous_finalized_run_rejects_unfinalized_canonical_outputs(
+    tmp_path: Path,
+) -> None:
+    rejected = tmp_path / "runs" / "2026-08-12"
+    export = rejected / "_exports"
+    export.mkdir(parents=True)
+    for name in ("observation-v1.json", "product-accounting-v1.json", "local-cdr.sqlite"):
+        (export / name).write_bytes(b"unfinalized")
+    current = tmp_path / "runs" / "2026-08-13"
+    current.mkdir()
+    assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
+
+
+def test_previous_finalized_run_rejects_a_stray_canonical_database(tmp_path: Path) -> None:
+    rejected = tmp_path / "runs" / "2026-08-12" / "_exports"
+    rejected.mkdir(parents=True)
+    (rejected / "local-cdr.sqlite").write_bytes(b"not finalized")
+    current = tmp_path / "runs" / "2026-08-13"
+    current.mkdir()
+
+    assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
+
+
+def test_previous_finalized_run_fully_reverifies_canonical_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observation_date = "2026-09-02"
+    write_finalized_observation(tmp_path, observation_date=observation_date)
+    database = tmp_path / f"runs/{observation_date}/_exports/local-cdr.sqlite"
+    with sqlite3.connect(database) as connection:
+        document = json.loads(
+            connection.execute(
+                "SELECT document_json FROM bank_product_facts LIMIT 1"
+            ).fetchone()[0]
+        )
+        document["value_text"] = "tampered but schema-compatible"
+        connection.execute(
+            "UPDATE bank_product_facts SET document_json = ?",
+            (json.dumps(document, sort_keys=True, separators=(",", ":")),),
+        )
+        connection.commit()
+    current = tmp_path / "runs/2026-09-03"
+    current.mkdir()
+    monkeypatch.setattr(change_runs, "is_finalized_export_root", lambda *_args: True)
+
+    assert change_runs.previous_finalized_run(
+        current, state_dir=tmp_path / "state"
+    ) is None
 
 
 def test_normalization_version_mismatch_is_not_compared_as_product_churn(tmp_path: Path) -> None:
@@ -593,7 +646,7 @@ def test_normalization_version_mismatch_is_not_compared_as_product_churn(tmp_pat
     )
     current.mkdir()
 
-    assert changes.previous_finalized_run(current) == compatible
+    assert changes.previous_finalized_run(current) == compatible / "_exports"
     with pytest.raises(ValueError, match="normalization version mismatch"):
         changes.load_run_facts(incompatible)
 
@@ -607,173 +660,45 @@ def test_previous_finalized_run_skips_legacy_export_without_facts(tmp_path: Path
     write_finalized_export(compatible, [fact("access", "Text")])
     current = tmp_path / "2026-08-13"
     current.mkdir()
-    assert changes.previous_finalized_run(current) == compatible
+    assert changes.previous_finalized_run(current) == compatible / "_exports"
 
 
-def test_finalized_run_reads_facts_from_sqlite_without_loading_large_json(
+def test_previous_finalized_run_selects_latest_verified_revision(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    run = tmp_path / "2026-08-12"
-    export = run / "_exports"
-    export.mkdir(parents=True)
-    banks = export / "banks-2026-08-12.json"
-    banks.write_text(json.dumps({"large_unrelated_payload": "x" * 1_000_000}), encoding="utf-8")
-    (export / "banks-2026-08-12.xlsx").write_bytes(b"complete")
-    database = export / "local-cdr.sqlite"
-    with sqlite3.connect(database) as connection:
-        cdr_outputs.ensure_db(connection)
-        cdr_outputs.insert_rows(connection, "bank_product_facts", [{
-            "run_date": "2026-08-12",
-            "dataset": "Mortgage",
-            "provider": "Example Bank",
-            "product_id": "P1",
-            "product_key": "Example Bank|P1",
-            "product_name": "Clear Home Loan",
-            "fact_id": "condition-1",
-            "kind": "condition",
-            "canonical_key": "condition.text",
-            "value_type": "text",
-            "value_text": "Customers may redraw.",
-            "value_json": '"Customers may redraw."',
-            "unit": "",
-            "mapping": "canonical_text",
-            "source_path": "features[0]",
-            "source_pattern": "features[]",
-            "source_value_json": '"Customers may redraw."',
-            "qualifiers_json": "{}",
-        }])
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    cache = export / "dashboard-cache"
-    cache.mkdir()
-    (cache / "latest.json").write_text(json.dumps({
-        "run_date": run.name,
-        "files": {
-            "banks_json": banks.name,
-            "banks_xlsx": "banks-2026-08-12.xlsx",
-            "db": database.name,
-        },
-    }), encoding="utf-8")
-    original_load_json = cdr_product_change_runs.load_json
-
-    def fail_on_banks_json(path: Path):
-        if path == banks:
-            raise AssertionError("full banks JSON must not be decoded for normalized facts")
-        return original_load_json(path)
-
-    monkeypatch.setattr(cdr_product_change_runs, "load_json", fail_on_banks_json)
-
-    assert changes.previous_finalized_run(tmp_path / "2026-08-13") == run
-    rows = changes.load_run_facts(run)
-    assert len(rows) == 1
-    assert rows[0]["canonical_key"] == "condition.text"
-
-
-def test_sqlite_fact_groups_close_connection_when_consumer_stops_early(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    run = tmp_path / "2026-08-12"
-    export = run / "_exports"
-    export.mkdir(parents=True)
-    database = export / "local-cdr.sqlite"
-    with sqlite3.connect(database) as connection:
-        cdr_outputs.ensure_db(connection)
-        cdr_outputs.insert_rows(connection, "bank_product_facts", [{
-            "run_date": run.name,
-            "dataset": "Mortgage",
-            "provider": "Example Bank",
-            "product_id": "P1",
-            "product_key": "Example Bank|P1",
-            "product_name": "Clear Home Loan",
-            "fact_id": "condition-1",
-            "kind": "condition",
-            "canonical_key": "condition.text",
-            "value_type": "text",
-            "value_text": "Customers may redraw.",
-            "value_json": '"Customers may redraw."',
-            "unit": "",
-            "mapping": "canonical_text",
-            "source_path": "features[0]",
-            "source_pattern": "features[]",
-            "source_value_json": '"Customers may redraw."',
-            "qualifiers_json": "{}",
-        }])
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    real_connect = sqlite3.connect
-    closed: list[bool] = []
-
-    class TrackingConnection:
-        def __init__(self, connection):
-            object.__setattr__(self, "connection", connection)
-
-        def __getattr__(self, name):
-            return getattr(self.connection, name)
-
-        def __setattr__(self, name, value):
-            setattr(self.connection, name, value)
-
-        def close(self) -> None:
-            self.connection.close()
-            closed.append(True)
-
-    monkeypatch.setattr(
-        cdr_product_change_runs.sqlite3,
-        "connect",
-        lambda *args, **kwargs: TrackingConnection(real_connect(*args, **kwargs)),
+    observation_date = "2026-09-02"
+    write_finalized_observation(tmp_path, observation_date=observation_date)
+    state = tmp_path / "state"
+    primary_exports = tmp_path / "runs" / observation_date / "_exports"
+    primary_marker = json.loads(
+        (state / f"{observation_date}.done.json").read_text(encoding="utf-8")
     )
-    groups = cdr_product_change_runs._iter_sqlite_fact_groups(export)
+    revision_source = _captured_run(
+        tmp_path / "revision-source", run_date=observation_date, rate="0.06"
+    )
+    revision_exports = (
+        tmp_path
+        / "runs"
+        / observation_date
+        / "_revisions"
+        / "later"
+        / "_exports"
+    )
+    revision_result = cdr_outputs.build_outputs(revision_source, revision_exports)
+    promote_attempt_evidence(revision_source, revision_exports)
+    finalize_observation(
+        revision_exports,
+        state,
+        state / f"{observation_date}.revision.later.json",
+        observation_date=observation_date,
+        result=revision_result,
+        parent_generation_id=primary_marker["generation_id"],
+    )
+    current = tmp_path / "runs" / "2026-09-03"
+    current.mkdir()
 
-    assert next(groups)[0] == ("Example Bank", "P1", "Mortgage")
-    groups.close()
+    selected = changes.previous_finalized_run(current, state_dir=state)
 
-    assert closed == [True]
-
-
-def test_sqlite_fact_groups_order_by_normalized_identity(tmp_path: Path) -> None:
-    run = tmp_path / "2026-08-12"
-    export = run / "_exports"
-    export.mkdir(parents=True)
-    database = export / "local-cdr.sqlite"
-
-    def row(product_id: str, fact_id: str) -> dict[str, object]:
-        return {
-            "run_date": run.name,
-            "dataset": "Mortgage",
-            "provider": "Example Bank",
-            "product_id": product_id,
-            "product_key": f"Example Bank|{product_id.strip()}",
-            "product_name": "Clear Home Loan",
-            "fact_id": fact_id,
-            "kind": "condition",
-            "canonical_key": "condition.text",
-            "value_type": "text",
-            "value_text": fact_id,
-            "value_json": json.dumps(fact_id),
-            "unit": "",
-            "mapping": "canonical_text",
-            "source_path": f"features[{fact_id}]",
-            "source_pattern": "features[]",
-            "source_value_json": json.dumps(fact_id),
-            "qualifiers_json": "{}",
-        }
-
-    with sqlite3.connect(database) as connection:
-        cdr_outputs.ensure_db(connection)
-        cdr_outputs.insert_rows(connection, "bank_product_facts", [
-            row(" P", "a"),
-            row(" P0", "b"),
-            row("P", "c"),
-        ])
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-
-    groups = list(cdr_product_change_runs.iter_run_fact_groups(run))
-
-    assert [key for key, _facts in groups] == [
-        ("Example Bank", "P", "Mortgage"),
-        ("Example Bank", "P0", "Mortgage"),
-    ]
-    assert [fact["fact_id"] for fact in groups[0][1]] == ["a", "c"]
+    assert selected == revision_exports.resolve()
+    assert changes.run_date(selected) == observation_date
+    assert changes.load_run_facts(selected) != changes.load_run_facts(primary_exports)

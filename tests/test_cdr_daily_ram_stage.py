@@ -13,16 +13,80 @@ import cdr_daily
 import cdr_outputs
 from cdr_atomic import atomic_write_json
 from cdr_attempt_evidence_promotion import ARTIFACT_NAMESPACE
+from cdr_contracts import provider_uid
 from cdr_finalization import verify_completion_marker
 from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 DATE = "2026-08-15"
 SESSION = "ingest-20260815T010000000000Z-112233445566"
-EVIDENCE_BODY = b'{"data":{"products":[]}}'
+EVIDENCE_BODY = json.dumps(
+    {
+        "data": [
+            {
+                "dataHolderId": "holder-1",
+                "dataHolderBrandId": "brand-1",
+                "brandName": "Example Bank",
+                "publicBaseUri": "https://bank.example/cds-au/v1/banking/products",
+            }
+        ]
+    },
+    separators=(",", ":"),
+).encode()
+PROVIDER_UID, IDENTITY_STATUS = provider_uid(
+    data_holder_id="holder-1",
+    data_holder_brand_id="brand-1",
+    endpoint_urls=(),
+    display_name="Example Bank",
+)
 
 
-def _write_ingest(run_root):
+def _write_ingest(run_root, *, rates=1):
+    banks = run_root / "banks"
+    detail = banks / "Savings" / "Example Bank" / "save-1" / "save-1__token"
+    detail.mkdir(parents=True)
+    (detail / "product-id.txt").write_text("save-1\n", encoding="utf-8")
+    detail_payload = {
+        "data": {
+            "productId": "save-1",
+            "name": "Example Saver",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "depositRates": (
+                [{"depositRateType": "VARIABLE", "rate": "0.05"}] if rates else []
+            ),
+        }
+    }
+    atomic_write_json(detail / "product-detail.json", detail_payload)
+    holder = banks / "_holders" / "Example Bank"
+    atomic_write_json(
+        holder / "_register-brand.json",
+        {
+            "provider_uid": PROVIDER_UID,
+            "provider_identity_status": IDENTITY_STATUS,
+            "data_holder_id": "holder-1",
+            "data_holder_brand_id": "brand-1",
+            "brand_name": "Example Bank",
+            "legal_entity_name": "",
+            "endpoint_url": "https://bank.example/cds-au/v1/banking/products",
+            "interim_id": "",
+            "identity_authority": "bank.example",
+        },
+    )
+    atomic_write_json(
+        holder / "_products-index" / "index-summary.json",
+        {
+            "schema_version": 1,
+            "provider_uid": PROVIDER_UID,
+            "state": "complete",
+            "population_known": True,
+            "population_errors": [],
+            "duplicate_conflicts": [],
+            "unique_product_ids": 1,
+            "relevant_products": 1,
+            "details_present": 1,
+        },
+    )
+    (banks / "failures.jsonl").write_bytes(b"")
     journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
     body = EVIDENCE_BODY
     journal.record(
@@ -39,6 +103,36 @@ def _write_ingest(run_root):
         peer_ip="8.8.8.8",
         context={"phase": "register_discovery"},
     )
+    index_body = b'{"data":{"products":[{"productId":"save-1"}]}}'
+    journal.record(
+        "index:save-1",
+        request_url="https://bank.example/products",
+        status=200,
+        outcome="success",
+        body=index_body,
+        started_at="2026-08-15T01:00:01.000000Z",
+        completed_at="2026-08-15T01:00:02.000000Z",
+        context={
+            "phase": "products_index",
+            "provider": "Example Bank",
+            "page": 1,
+        },
+    )
+    detail_body = (detail / "product-detail.json").read_bytes()
+    journal.record(
+        "detail:save-1",
+        request_url="https://bank.example/products/save-1",
+        status=200,
+        outcome="success",
+        body=detail_body,
+        started_at="2026-08-15T01:00:01.000000Z",
+        completed_at="2026-08-15T01:00:02.000000Z",
+        context={
+            "phase": "product_detail",
+            "provider": "Example Bank",
+            "product_id": "save-1",
+        },
+    )
     summary = journal.summary()
     atomic_write_json(
         run_root / "banks" / "ingest-status.json",
@@ -47,6 +141,7 @@ def _write_ingest(run_root):
             "corrupt_records": 0,
             "unattributed_records": 0,
             "failure_provenance_complete": True,
+            "coverage_evidence_complete": True,
             "incomplete": False,
             "by_phase": {},
             "by_status": {},
@@ -66,9 +161,15 @@ def _write_ingest(run_root):
             "providers_attempted": 1,
             "provider_states": [
                 {
-                    "provider_uid": "legacy-prd:" + "a" * 64,
+                    "provider_uid": PROVIDER_UID,
+                    "provider_dir": "Example Bank",
+                    "brand_name": "Example Bank",
                     "state": "complete",
                     "failure_records": 0,
+                    "population_known": True,
+                    "products_discovered": 1,
+                    "products_in_scope": 1,
+                    "products_indexed": 1,
                 }
             ],
             "raw_attempt_journal": {
@@ -93,10 +194,12 @@ def _configure(tmp_path, monkeypatch, *, rates=1):
 
     def ingest(_script_dir, out_dir, date, _extra):
         assert date == DATE
-        _write_ingest(out_dir / date)
+        _write_ingest(out_dir / date, rates=rates)
 
     def build(_run_root, export_root, _db, *, previous_run_root=None):
         assert previous_run_root is None
+        if rates:
+            return cdr_outputs.build_outputs(_run_root, export_root, _db)
         cache = export_root / "dashboard-cache"
         cache.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
@@ -174,39 +277,85 @@ def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     assert not (ram / "exports" / DATE).exists()
 
 
+def test_suspicious_rate_change_never_reaches_finalized_history(tmp_path, monkeypatch):
+    args, runs, state, _ram = _configure(tmp_path, monkeypatch)
+
+    def suspicious(export_root, *_args):
+        report = export_root / "sanity-report.json"
+        atomic_write_json(
+            report,
+            {
+                "compared_against": "2026-08-14",
+                "counts": {"HIGH": 1, "STRUCTURAL": 0, "LOW": 0},
+                "findings": [
+                    {
+                        "severity": "HIGH",
+                        "provider": "Example Bank",
+                        "product_name": "Example Saver",
+                        "worst_delta_bp": 300.0,
+                    }
+                ],
+            },
+        )
+        return report
+
+    monkeypatch.setattr(cdr_daily, "write_sanity_report", suspicious)
+
+    assert cdr_daily.run_once(args) == 2
+    assert not (runs / DATE / "_exports").exists()
+    assert not (state / f"{DATE}.done.json").exists()
+
+
+def test_exact_reviewed_sanity_report_can_be_explicitly_approved(tmp_path, monkeypatch):
+    args, runs, state, _ram = _configure(tmp_path, monkeypatch)
+    report_payload = {
+        "run_date": DATE,
+        "compared_against": "2026-08-14",
+        "counts": {"HIGH": 1, "STRUCTURAL": 0, "LOW": 0},
+        "findings": [
+            {
+                "severity": "HIGH",
+                "provider": "Example Bank",
+                "product_name": "Example Saver",
+                "worst_delta_bp": 300.0,
+            }
+        ],
+    }
+    reference = tmp_path / "reviewed-report.json"
+    atomic_write_json(reference, report_payload)
+    approval = tmp_path / "approval.json"
+    atomic_write_json(
+        approval,
+        {
+            "schema_version": 1,
+            "decision": "approve",
+            "run_date": DATE,
+            "compared_against": "2026-08-14",
+            "sanity_report_sha256": hashlib.sha256(reference.read_bytes()).hexdigest(),
+            "reviewer": "operations",
+            "reason": "Confirmed against the source disclosure.",
+        },
+    )
+
+    def suspicious(export_root, *_args):
+        report = export_root / "sanity-report.json"
+        atomic_write_json(report, report_payload)
+        return report
+
+    monkeypatch.setattr(cdr_daily, "write_sanity_report", suspicious)
+    args.sanity_approval = approval
+
+    assert cdr_daily.run_once(args) == 1
+    persisted = runs / DATE / "_exports" / "sanity-approval.json"
+    assert json.loads(persisted.read_text(encoding="utf-8"))["reviewer"] == "operations"
+    assert (state / f"{DATE}.done.json").is_file()
+
+
 def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch):
     args, runs, state, ram = _configure(tmp_path, monkeypatch)
     args.ram_stage = False
     monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
     expected_stage = runs.parent / ".daily-export-stage" / DATE / "_exports"
-    configured_ingest = cdr_daily.run_ingest
-
-    def ingest(script_dir, out_dir, date, extra):
-        configured_ingest(script_dir, out_dir, date, extra)
-        detail = out_dir / date / "banks" / "Mortgage" / "Example Bank" / "loan-1"
-        detail.mkdir(parents=True)
-        (detail / "product-detail.json").write_text(
-            json.dumps({
-                "data": {
-                    "productId": "loan-1",
-                    "name": "Example variable home loan",
-                    "brand": "Example Bank",
-                    "features": [],
-                    "eligibility": [],
-                    "constraints": [],
-                    "fees": [],
-                    "lendingRates": [{
-                        "lendingRateType": "VARIABLE",
-                        "rate": "5.50",
-                        "comparisonRate": "5.70",
-                    }],
-                },
-            }),
-            encoding="utf-8",
-        )
-
-    monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
-
     def build(run_root, export_root, db_path, *, previous_run_root=None):
         assert export_root == expected_stage
         assert not str(export_root).startswith(str(ram))
@@ -222,9 +371,9 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
     assert cdr_daily.run_once(args) == 1
 
     exported = json.loads(
-        (runs / DATE / "_exports" / f"banks-{DATE}.json").read_text(encoding="utf-8")
+        (runs / DATE / "_exports" / "observation-v1.json").read_text(encoding="utf-8")
     )
-    assert len(exported["rates"]) == 1
+    assert exported["row_counts"]["rates"] == 1
     assert not (ram / "runs" / DATE).exists()
     assert not (ram / "exports").exists()
     assert not expected_stage.exists()
@@ -478,7 +627,7 @@ def _assert_evidence_preserved(ram: Path) -> None:
     assert promoted.is_dir()
     summary = RawAttemptJournal(promoted.parent, SESSION).summary()
     assert summary["verified"] is True
-    assert summary["attempts"] == 1
+    assert summary["attempts"] == 3
     digest = hashlib.sha256(EVIDENCE_BODY).hexdigest()
     assert (promoted / "bodies" / f"{digest}.body").read_bytes() == EVIDENCE_BODY
 

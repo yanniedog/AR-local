@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 import laptop_backup_scheduled as scheduled
+import laptop_backup_scheduled_lineage as lineage
 import laptop_pull_backup as receiver
 
 
@@ -162,3 +163,39 @@ def test_scheduled_record_mutex_serializes_independent_processes(tmp_path: Path)
             holder.kill()
         if contender is not None and contender.poll() is None:
             contender.kill()
+
+
+def test_legacy_predecessor_requires_explicit_transition_candidate() -> None:
+    old_candidate = "d" * 40
+    record = {
+        "schema_version": 1,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": "1.4",
+        "plan_git_commit": "14dd066099bba393cccf61a280243e43162eedc9",
+        "plan_sha256": "78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713",
+        "plan_raw_sha256": "a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d",
+        "plan_normalized_raw_sha256": "c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4",
+        "candidate_code_sha": old_candidate,
+        "protected_code_sha": "9" * 40,
+        "operator": "pytest",
+        "timestamps": {"completed_at": "2026-08-30T07:35:43Z"},
+        "exact_commands": ["python laptop_backup_scheduled.py --check-only"],
+        "action": "NO_BACKUP_DATA_WRITE",
+        "result": "PASS",
+        "detail": {},
+        "deviations": [],
+        "deviation_authorization": None,
+    }
+    expected = {
+        "candidate_code_sha": "c" * 40,
+        "protected_code_sha": "9" * 40,
+        "operator": "pytest",
+        "allowed_predecessor_candidates": (old_candidate,),
+    }
+
+    lineage._validate_owned_record(record, expected, predecessor=True)
+    with pytest.raises(ValueError, match="candidate"):
+        lineage._validate_owned_record(record, expected)
+    record["plan_normalized_raw_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="plan identity"):
+        lineage._validate_owned_record(record, expected, predecessor=True)

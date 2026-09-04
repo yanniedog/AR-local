@@ -33,7 +33,7 @@ A bot with **both** a limit notice **and** later substantive feedback is classif
 
 ## Bot roster
 
-Columns match `scripts/lib/bot-wait-config.mjs` plus optional reviewers:
+Columns come from the reporting-only `scripts/lib/pr-bot-roster.mjs`:
 
 | Column | GitHub logins |
 |--------|---------------|
@@ -58,13 +58,13 @@ After sync, the job commits matrix artifacts **directly to `main`** via `npm run
 
 ### Direct commit to main (one-time GitHub setup)
 
-Protected `main` requires `bot-presence-gate` and `bot-feedback-gate`. A workflow push does not run those checks first, so GitHub rejects the push unless **GitHub Actions** is on the ruleset bypass list.
+Protected `main` requires `bot-feedback-gate`. Reviewer presence is advisory. A workflow push does not run the required check first, so GitHub rejects the push unless **GitHub Actions** is on the ruleset bypass list.
 
 **API limitation:** `gh api` cannot add a GitHub Actions ruleset bypass on this personal repo (`yanniedog/AR-local` returns HTTP **422** when POSTing `bypass_actors` with `actor_id` 15368). Use the GitHub UI — import [`.github/rulesets/main-bot-gates.json`](../.github/rulesets/main-bot-gates.json) per [`docs/GITHUB_RULESET_IMPORT.md`](GITHUB_RULESET_IMPORT.md).
 
 **Legacy → ruleset migration** (repo still has legacy branch protection on `main`):
 
-1. **Import** the ruleset JSON (Settings → Rules → Rulesets → Import) — mirrors legacy protection: required checks `bot-feedback-gate` + `bot-presence-gate`, strict up-to-date, required conversation resolution (do not add repository administrators to the bypass list — rulesets have no `enforce_admins` toggle; omitting admins from bypass mirrors legacy behavior).
+1. **Import** the ruleset JSON (Settings → Rules → Rulesets → Import) — requires `bot-feedback-gate`, strict up-to-date, and conversation resolution (do not add repository administrators to the bypass list — rulesets have no `enforce_admins` toggle; omitting admins from bypass mirrors legacy behavior).
 2. Confirm **Bypass list → GitHub Actions** (mode: **Always**, included in the import file). Optionally scope it to `.github/workflows/pr-bot-spreadsheet.yml` when path scoping is available.
 3. **Save**, verify with the commands below, then **remove duplicate legacy branch protection** on `main` (Settings → Branches → `main` → Delete rule). Keeping both layers blocks workflow pushes even when the ruleset bypass is correct.
 

@@ -1,8 +1,7 @@
 /**
  * Bot column roster for the PR bot spreadsheet (rows = PRs, columns = bots).
- * Extends bot-wait-config.mjs with optional reviewers tracked in the matrix.
+ * Reviewer services are advisory; this roster is reporting-only.
  */
-import { BOT_ALIASES, loginMatchesRequiredKey } from './bot-wait-config.mjs';
 
 /** Column order for the spreadsheet (after PR metadata columns). */
 export const SPREADSHEET_BOT_KEYS = ['gemini', 'codex', 'sourcery', 'copilot', 'coderabbit', 'greptile'];
@@ -16,8 +15,15 @@ export const BOT_KEY_LABELS = {
   greptile: 'Greptile',
 };
 
-/** Optional bots not in BOT_ALIASES but tracked as columns. */
-const OPTIONAL_KEY_LOGINS = {
+const BOT_LOGINS = {
+  gemini: [
+    'gemini-code-assist',
+    'gemini-code-assist[bot]',
+    'google-github-actions-bot[bot]',
+    'google-github-actions[bot]',
+  ],
+  codex: ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]'],
+  sourcery: ['sourcery-ai', 'sourcery-ai[bot]'],
   copilot: ['copilot-pull-request-reviewer[bot]'],
   coderabbit: ['coderabbitai[bot]'],
   greptile: ['greptile-apps[bot]'],
@@ -30,8 +36,7 @@ const OPTIONAL_KEY_LOGINS = {
  */
 export function loginMatchesBotKey(login, key) {
   if (!login || !key) return false;
-  if (BOT_ALIASES[key] && loginMatchesRequiredKey(login, key)) return true;
-  const aliases = OPTIONAL_KEY_LOGINS[key];
+  const aliases = BOT_LOGINS[key];
   if (!aliases) return false;
   const lower = login.toLowerCase();
   return aliases.some((alias) => lower === alias.toLowerCase());

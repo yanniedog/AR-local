@@ -480,14 +480,17 @@ def validate_preserved_scheduled_records(
             raise ValueError("preserved scheduled record result is invalid")
 
 
-def validate_scheduled_record_structure(value: Mapping[str, object]) -> None:
+def validate_scheduled_record_structure(
+    value: Mapping[str, object], *, allow_legacy_plan: bool = False
+) -> tuple[str, str, str, str]:
     """Validate the immutable execution-record envelope, including legacy records."""
     if value.get("schema_version") != 1:
         raise ValueError("preserved scheduled record schema is invalid")
-    if value.get("plan_raw_sha256") not in receiver.PLAN_VALID_RAW_SHA256S:
-        raise ValueError("preserved scheduled record plan_raw_sha256 is invalid")
-    if value.get("plan_normalized_raw_sha256") != receiver.PLAN_NORMALIZED_RAW_SHA256:
-        raise ValueError("preserved scheduled record plan_normalized_raw_sha256 is invalid")
+    plan_identity = receiver.supported_normalized_plan_identity(
+        value, allow_legacy=allow_legacy_plan
+    )
+    if plan_identity is None:
+        raise ValueError("preserved scheduled record plan identity is invalid")
     timestamps = value.get("timestamps")
     completed_at = timestamps.get("completed_at") if isinstance(timestamps, Mapping) else None
     if not isinstance(completed_at, str):
@@ -528,6 +531,7 @@ def validate_scheduled_record_structure(value: Mapping[str, object]) -> None:
         or not SHA256.fullmatch(str(previous["record_sha256"]))
     ):
         raise ValueError("preserved scheduled record lineage is invalid")
+    return plan_identity
 
 
 def reconcile_scheduled_pointer(
@@ -690,11 +694,14 @@ def validate_execution_record(
     plan_sha256: str,
     operator: str,
     expected_date: str,
+    allow_legacy_plan: bool = False,
 ) -> None:
-    validate_scheduled_record_structure(record)
+    plan_identity = validate_scheduled_record_structure(
+        record, allow_legacy_plan=allow_legacy_plan
+    )
     expected = {
-        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
-        "plan_version": receiver.PLAN_VERSION,
+        "plan_document_id": plan_identity[0],
+        "plan_version": plan_identity[1],
         "plan_git_commit": plan_commit,
         "plan_sha256": plan_sha256,
         "candidate_code_sha": candidate_sha,
@@ -790,24 +797,56 @@ def receipt_evidence(paths: Mapping[str, str]) -> dict[str, dict[str, str]]:
     return result
 
 
-def validate_catalog_delta(
+def validate_catalog_job_delta(
     baseline_bytes: bytes,
     current_path: Path,
     *,
-    receipt_paths: Mapping[str, str],
+    expected_jobs: Sequence[tuple[str, str | None]],
+    candidate_sha: str,
+    protected_sha: str,
+    plan_commit: str,
 ) -> Sequence[Mapping[str, object]]:
-    current_bytes = current_path.read_bytes()
+    if baseline_bytes and not baseline_bytes.endswith(b"\n"):
+        raise ValueError("backup catalog baseline is not line-complete")
+    target = current_path.parent.parent.resolve(strict=True)
+    catalog = require_descendant(current_path, target, "backup catalog")
+    if catalog != target / "catalog/generations.jsonl":
+        raise ValueError("backup catalog path is not canonical")
+    current_bytes = catalog.read_bytes()
     if not current_bytes.startswith(baseline_bytes):
         raise ValueError("backup catalog does not preserve the exact prefix")
-    entries = receiver.catalog_entries(current_path)
+    entries = receiver.catalog_entries(catalog)
     baseline_count = len(baseline_bytes.splitlines())
     appended = entries[baseline_count:]
-    if [item.get("kind") for item in appended] != list(EXPECTED_KINDS):
-        raise ValueError("backup catalog appended unexpected generation kinds")
-    expected_paths = [receipt_paths[kind] for kind in EXPECTED_KINDS]
-    actual_paths = [str((current_path.parent.parent / str(item.get("receipt_path"))).resolve()) for item in appended]
-    if actual_paths != expected_paths or any(item.get("result") != "PASS" for item in appended):
-        raise ValueError("backup catalog appended unexpected receipts")
+    if len(appended) != len(expected_jobs):
+        raise ValueError("backup catalog append count is not exact")
+    for entry, (kind, run_date) in zip(appended, expected_jobs, strict=True):
+        if (
+            kind not in {"observation", "diagnostic", "control", "macro"}
+            or entry.get("kind") != kind
+            or entry.get("result") != "PASS"
+            or entry.get("observation_date") != (run_date if kind == "observation" else None)
+            or entry.get("run_date") != (run_date if kind == "diagnostic" else None)
+        ):
+            raise ValueError("backup catalog appended an unexpected generation")
+        receipt_path = entry.get("receipt_path")
+        if not isinstance(receipt_path, str):
+            raise ValueError("backup catalog appended a receipt without a path")
+        receipt, _manifest, _path = scheduled.verified_receipt(
+            target,
+            receipt_path,
+            entry,
+            kind,
+            candidate_sha=candidate_sha,
+            protected_sha=protected_sha,
+            plan_commit=plan_commit,
+        )
+        if (
+            receipt.get("observation_date") != (run_date if kind == "observation" else None)
+            or receipt.get("run_date") != (run_date if kind == "diagnostic" else None)
+            or not scheduled.has_component_restore_evidence(receipt.get("checks"), kind)
+        ):
+            raise ValueError("backup catalog appended invalid restore evidence")
     return appended
 
 

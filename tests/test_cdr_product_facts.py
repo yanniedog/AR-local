@@ -1,12 +1,8 @@
 import json
-import sqlite3
-import tracemalloc
 from copy import deepcopy
 from pathlib import Path
 
 import app_payload_mobile
-import cdr_outputs
-import openpyxl
 import pytest
 from cdr_product_facts import audit_records, clean_fact_rows, compact_facts, extract_product_facts
 
@@ -16,39 +12,6 @@ FIXTURE = Path(__file__).parent / "fixtures" / "product_facts_real_2026-05-19.js
 
 def captured():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))["products"]
-
-
-def test_large_json_output_streams_without_building_a_second_full_copy(tmp_path: Path) -> None:
-    output = tmp_path / "large.json"
-    repeated = "x" * 1_000
-    payload = {"rows": [repeated] * 8_000}
-
-    tracemalloc.start()
-    cdr_outputs.write_json(output, payload)
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-
-    assert peak < 4_000_000
-    assert output.stat().st_size > 8_000_000
-    assert json.loads(output.read_text(encoding="utf-8")) == payload
-    assert not (tmp_path / ".large.json.tmp").exists()
-
-
-def test_json_output_failure_preserves_the_existing_file(tmp_path: Path, monkeypatch) -> None:
-    output = tmp_path / "stable.json"
-    output.write_text('{"stable":true}', encoding="utf-8")
-
-    def fail_after_partial_write(_data, stream, **_kwargs) -> None:
-        stream.write("partial")
-        raise RuntimeError("injected JSON serialization failure")
-
-    monkeypatch.setattr(cdr_outputs.json, "dump", fail_after_partial_write)
-
-    with pytest.raises(RuntimeError, match="injected JSON serialization failure"):
-        cdr_outputs.write_json(output, {"replacement": True})
-
-    assert output.read_text(encoding="utf-8") == '{"stable":true}'
-    assert not (tmp_path / ".stable.json.tmp").exists()
 
 
 def test_real_cdr_facts_are_typed_unique_grouped_and_currency_safe():
@@ -98,13 +61,6 @@ def test_non_numeric_rate_and_range_values_are_preserved_without_invalid_sql_typ
     assert (advertised["value_type"], advertised["value"], advertised["unit"]) == ("text", "POA", "text")
     assert not any(fact["value_type"] == "range" for fact in facts)
 
-    rows = [{**row, "run_date": "2026-05-19"} for row in clean_fact_rows(record, base)]
-    with sqlite3.connect(":memory:") as con:
-        cdr_outputs.ensure_db(con)
-        cdr_outputs.insert_rows(con, "bank_product_facts", rows)
-        assert con.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0] == len(rows)
-
-
 def test_numeric_product_id_is_preserved_as_opaque_text():
     facts = extract_product_facts({"productId": "001234567890123456789"}, "Mortgage|Bank|stable")
     product_id = next(fact for fact in facts if fact["canonical_key"] == "product.id")
@@ -113,26 +69,26 @@ def test_numeric_product_id_is_preserved_as_opaque_text():
     )
 
 
-def test_percent_style_rates_are_normalized_to_fractions_everywhere():
+def test_percent_style_rates_are_preserved_as_invalid_evidence_not_guessed():
     record = {
         "productId": "percent-rates",
         "lendingRates": [{"lendingRateType": "VARIABLE", "rate": "5.0", "comparisonRate": "5.25"}],
     }
     facts = extract_product_facts(record, "Mortgage|Bank|percent-rates")
-    assert next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")["value"] == 0.05
-    assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == 0.0525
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")["value"] == "5.0"
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == "5.25"
     compact = next(fact for fact in compact_facts(record, "Mortgage|Bank|percent-rates") if fact["kind"] == "rate")
-    assert (compact["value"], compact["comparisonValue"]) == (0.05, 0.0525)
+    assert (compact["value"], compact["comparisonValue"]) == ("5.0", "5.25")
 
 
 @pytest.mark.parametrize(
     ("key", "type_key", "rate", "comparison", "expected_rate", "expected_comparison"),
     [
-        ("depositRates", "depositRateType", "0.85", "0.90", 0.0085, 0.009),
-        ("lendingRates", "lendingRateType", "0.55", "0.60", 0.055, 0.06),
+        ("depositRates", "depositRateType", "0.85", "0.90", 0.85, 0.90),
+        ("lendingRates", "lendingRateType", "0.55", "0.60", 0.55, 0.60),
     ],
 )
-def test_legacy_sub_one_rates_use_the_same_family_normalization_in_all_facts(
+def test_cdr_fraction_rates_are_never_rescaled_by_family(
     key, type_key, rate, comparison, expected_rate, expected_comparison,
 ):
     record = {
@@ -360,111 +316,3 @@ def test_compact_payload_has_a_bounded_entity_count_and_size():
     encoded = json.dumps(all_facts, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     assert len(all_facts) < 100
     assert len(encoded) < 40_000
-
-
-def test_sqlite_fact_constraints_and_filter_indexes_are_used():
-    record = captured()[0]["record"]
-    base = {"dataset": "Mortgage", "provider": "Up", "product_id": "up-home", "product_key": "Up|up-home", "product_name": "Up Home Loan"}
-    rows = clean_fact_rows(record, base)
-    with sqlite3.connect(":memory:") as con:
-        cdr_outputs.ensure_db(con)
-        cdr_outputs.insert_rows(con, "bank_product_facts", [{"run_date": "2026-05-19", **row} for row in rows])
-        numeric = con.execute("EXPLAIN QUERY PLAN SELECT product_key FROM bank_product_facts WHERE run_date=? AND dataset=? AND canonical_key=? AND value_number>=?", ("2026-05-19", "Mortgage", "rate.advertised", 0.05)).fetchall()
-        categorical = con.execute("EXPLAIN QUERY PLAN SELECT product_key FROM bank_product_facts WHERE run_date=? AND dataset=? AND canonical_key=? AND value_text=?", ("2026-05-19", "Mortgage", "loan.purpose", "OWNER_OCCUPIED")).fetchall()
-        assert any("idx_bank_product_facts_numeric" in row[-1] for row in numeric)
-        assert any("idx_bank_product_facts_categorical" in row[-1] for row in categorical)
-
-
-def test_normal_outputs_include_facts_json_xlsx_and_sqlite(tmp_path: Path):
-    run = tmp_path / "2026-05-19"
-    for index, product in enumerate(captured()):
-        path = run / "banks" / product["dataset"] / product["provider"] / f"product-{index}" / "id"
-        path.mkdir(parents=True)
-        (path / "product-detail.json").write_text(json.dumps({"data": product["record"]}), encoding="utf-8")
-    out = tmp_path / "exports"
-    cdr_outputs.build_outputs(run, out_dir=out)
-    exported = json.loads((out / "banks-2026-05-19.json").read_text(encoding="utf-8"))
-    assert exported["product_facts"]
-    assert exported["product_change_summary"]["normalization_version"] == "cdr-product-facts-2"
-    workbook = openpyxl.load_workbook(out / "banks-2026-05-19.xlsx", read_only=True)
-    assert "product_facts" in workbook.sheetnames
-    with sqlite3.connect(out / "local-cdr.sqlite") as con:
-        assert con.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0] == len(exported["product_facts"])
-
-
-def test_normal_outputs_index_previous_run_product_changes(tmp_path: Path):
-    def write_run(day: str, description: str) -> Path:
-        run = tmp_path / day
-        path = run / "banks" / "Mortgage" / "Example Bank" / "Home Loan" / "stable-id"
-        path.mkdir(parents=True)
-        record = {
-            "productId": "stable-id", "name": "Home Loan", "brand": "Example Bank",
-            "description": description, "features": [], "eligibility": [], "constraints": [],
-            "fees": [], "lendingRates": [],
-        }
-        (path / "product-detail.json").write_text(json.dumps({"data": record}), encoding="utf-8")
-        return run
-
-    previous = write_run("2026-05-18", "An offset account is available.")
-    current = write_run("2026-05-19", "No offset account is available.")
-    cdr_outputs.build_outputs(previous)
-    cdr_outputs.build_outputs(current)
-    exported = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
-    assert exported["product_change_summary"]["previous_run_date"] == "2026-05-18"
-    assert exported["product_change_summary"]["change_count"] == len(exported["product_changes"])
-    assert exported["product_changes"]
-    workbook = openpyxl.load_workbook(current / "_exports" / "banks-2026-05-19.xlsx", read_only=True)
-    assert {"product_changes", "change_summary"} <= set(workbook.sheetnames)
-    with sqlite3.connect(current / "_exports" / "local-cdr.sqlite") as con:
-        assert con.execute("SELECT COUNT(*) FROM bank_product_changes").fetchone()[0] == len(exported["product_changes"])
-        plan = con.execute(
-            "EXPLAIN QUERY PLAN SELECT product_id FROM bank_product_changes WHERE run_date=? AND provider=? AND event_type=? AND canonical_key=?",
-            ("2026-05-19", "Example Bank", "condition_changed", "feature.offset"),
-        ).fetchall()
-        assert any("idx_bank_product_changes_lookup" in row[-1] for row in plan)
-
-    current_detail = next((current / "banks").rglob("product-detail.json"))
-    refreshed = json.loads(current_detail.read_text(encoding="utf-8"))
-    refreshed["data"]["description"] = "Offset access now requires an eligible transaction account."
-    current_detail.write_text(json.dumps(refreshed), encoding="utf-8")
-    cdr_outputs.build_outputs(current)
-    rebuilt = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
-    assert "eligible transaction account" in json.dumps(rebuilt["product_changes"])
-
-
-def test_cross_day_source_paths_do_not_create_metadata_changes(tmp_path: Path):
-    def write(day: str) -> Path:
-        run = tmp_path / day
-        detail = run / "banks" / "Mortgage" / "Example Bank" / "Home Loan" / "stable-id"
-        detail.mkdir(parents=True)
-        record = {"productId": "stable-id", "name": "Home Loan", "features": [{"featureType": "OFFSET"}]}
-        (detail / "product-detail.json").write_text(json.dumps({"data": record}), encoding="utf-8")
-        return run
-
-    previous, current = write("2026-05-18"), write("2026-05-19")
-    cdr_outputs.build_outputs(previous)
-    cdr_outputs.build_outputs(current)
-    exported = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
-    assert exported["product_changes"] == []
-
-
-def test_failed_current_detail_does_not_report_product_removal(tmp_path: Path):
-    previous = tmp_path / "2026-05-18"
-    detail = previous / "banks" / "Mortgage" / "Example Bank" / "Home Loan" / "stable-id"
-    detail.mkdir(parents=True)
-    (detail / "product-detail.json").write_text(
-        json.dumps({"data": {"productId": "stable-id", "name": "Home Loan", "features": []}}),
-        encoding="utf-8",
-    )
-    current = tmp_path / "2026-05-19"
-    banks = current / "banks"
-    banks.mkdir(parents=True)
-    (banks / "failures.jsonl").write_text(
-        json.dumps({"phase": "product_detail", "bank": "Example Bank", "product_id": "stable-id", "status": 503}) + "\n",
-        encoding="utf-8",
-    )
-    cdr_outputs.build_outputs(previous)
-    cdr_outputs.build_outputs(current)
-    exported = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
-    assert exported["product_changes"] == []
-    assert exported["product_change_summary"]["suppressed_incomplete_products"] == 1

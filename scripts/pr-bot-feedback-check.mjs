@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
-import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
-import { checkRequiredBotsOnPr, readBotWaitState } from './lib/bot-wait-presence.mjs';
 import {
   GhRateLimitError,
   classifyThreads,
@@ -26,8 +24,6 @@ function parseArgs(argv) {
     limit: 20,
     json: false,
     quiet: false,
-    skipBotPresence: false,
-    requireBots: null,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -36,12 +32,7 @@ function parseArgs(argv) {
     else if (a === '--limit' && argv[i + 1]) out.limit = Number(argv[++i]);
     else if (a === '--json') out.json = true;
     else if (a === '--quiet') out.quiet = true;
-    else if (a === '--skip-bot-presence') out.skipBotPresence = true;
-    else if (a === '--require-bots' && argv[i + 1]) {
-      out.requireBots = parseRequiredKeys(argv[++i]);
-    } else if (a.startsWith('--require-bots=')) {
-      out.requireBots = parseRequiredKeys(a.slice('--require-bots='.length));
-    } else if (a === '--help' || a === '-h') out.help = true;
+    else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
 }
@@ -84,7 +75,7 @@ function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
     console.log(
-      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots gemini,codex,sourcery]',
+      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json]',
     );
     process.exit(0);
   }
@@ -142,37 +133,8 @@ function main() {
 
   const exempt = gateExemptReason(prNumber);
   if (exempt) {
-    if (!args.quiet) console.log(`pr-bot-feedback-check: skip PR #${prNumber} (${exempt} — human bot review not required)`);
+    if (!args.quiet) console.log(`pr-bot-feedback-check: skip PR #${prNumber} (${exempt} — review-thread gate not required)`);
     process.exit(0);
-  }
-
-  let botPresence = null;
-  if (!args.skipBotPresence) {
-    const state = readBotWaitState(prNumber);
-    const cliOverride = args.requireBots !== null;
-    const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
-    const requiredKeys = cliOverride
-      ? resolveRequiredKeys(args.requireBots)
-      : envOverride
-        ? resolveRequiredKeys()
-        : state?.requiredKeys?.length
-          ? state.requiredKeys
-          : resolveRequiredKeys();
-    try {
-      botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
-    } catch (e) {
-      console.error(`pr-bot-feedback-check: bot presence check failed: ${e.message}`);
-      process.exit(1);
-    }
-    if (!botPresence.ok) {
-      console.error(
-        `pr-bot-feedback-check: merge blocked — required bot(s) have not posted on PR #${prNumber}: ${botPresence.missing.join(', ')}`,
-      );
-      console.error(`  Expected: ${botPresence.detail}`);
-      console.error(`  Seen since anchor: ${botPresence.botsSeen.join(', ') || '(none)'}`);
-      console.error('  Run: npm run wait-for-bots -- --pr', prNumber, 'until exit 0 before merge.');
-      process.exit(1);
-    }
   }
 
   let result;
@@ -187,7 +149,7 @@ function main() {
     throw e;
   }
   if (args.json) {
-    console.log(JSON.stringify({ ...result, botPresence }, null, 2));
+    console.log(JSON.stringify(result, null, 2));
   } else if (result.violations.length) {
     printViolations(result);
     console.error(

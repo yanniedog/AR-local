@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import shlex
-import subprocess
 import sys
 import time
 from datetime import datetime
@@ -21,19 +20,15 @@ from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
     ensure_runtime_data_writable,
-    is_raspberry_pi,
 )
 from ar_local_subprocess import run_checked
 import app_payload_observation_gate as gate
 from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
-from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 from pi_ingest_terminal import record_failure
 
 REPO_ROOT = Path(__file__).resolve().parent
 PENDING_PAYLOAD_FILENAME = "app-payload-publication-pending.json"
-DASHBOARD_UNIT = "ar-local-dashboard.service"
-DASHBOARD_CONTROL_TIMEOUT_SEC = 120
 
 # Outcomes of maybe_publish_app_payload. "withheld" is a deliberate policy no-op
 # (nothing was eligible to publish), so it neither raises a pending retry nor
@@ -48,60 +43,6 @@ PUBLISH_FAILED = "failed"
 PARTIAL_V1_MAX_FAILURE_RECORDS = gate.PARTIAL_V1_MAX_FAILURE_RECORDS
 PARTIAL_V1_MAX_FAILURE_RATIO = gate.PARTIAL_V1_MAX_FAILURE_RATIO
 PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO = gate.PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
-
-
-def pause_dashboard_for_ingest() -> bool:
-    """Reserve dashboard preload memory for the mandatory Pi ingest."""
-    if not is_raspberry_pi():
-        return False
-    try:
-        result = subprocess.run(
-            ["sudo", "systemctl", "stop", DASHBOARD_UNIT],
-            check=False,
-            shell=False,
-            timeout=DASHBOARD_CONTROL_TIMEOUT_SEC,
-        )
-    except (FileNotFoundError, subprocess.SubprocessError) as exc:
-        print(f"[pi_daily_sync] dashboard pause failed (non-fatal): {exc}", file=sys.stderr)
-        return False
-    if result.returncode != 0:
-        print(
-            f"[pi_daily_sync] dashboard pause failed (non-fatal) exit={result.returncode}",
-            file=sys.stderr,
-        )
-        return False
-    print("[pi_daily_sync] dashboard paused for daily ingest")
-    return True
-
-
-def resume_dashboard_after_ingest() -> None:
-    """Best-effort dashboard recovery without changing ingest outcome."""
-    try:
-        result = subprocess.run(
-            ["sudo", "systemctl", "start", DASHBOARD_UNIT],
-            check=False,
-            shell=False,
-            timeout=DASHBOARD_CONTROL_TIMEOUT_SEC,
-        )
-    except (FileNotFoundError, subprocess.SubprocessError) as exc:
-        print(f"[pi_daily_sync] dashboard resume failed (non-fatal): {exc}", file=sys.stderr)
-        return
-    if result.returncode != 0:
-        print(
-            f"[pi_daily_sync] dashboard resume failed (non-fatal) exit={result.returncode}",
-            file=sys.stderr,
-        )
-        return
-    print("[pi_daily_sync] dashboard resumed after daily ingest")
-
-
-def v2_publication_allowed() -> bool:
-    """V2 is plaintext-only today; preserve ciphertext-only mode when enabled."""
-    return (os.environ.get("AR_LOCAL_PAYLOAD_ENC") or "").strip().lower() not in {
-        "1",
-        "true",
-        "yes",
-    }
 
 
 def prune_payload_staging(out_dir: Path, manifest_name: str) -> int:
@@ -380,20 +321,18 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
         # missing or the live manifest check errors, and build_and_publish_dual
         # swallows a failed dated upload. The rolling app-payload-latest manifest is
         # what the mobile app actually polls, so confirm against it.
-        v2_eligible = published_latest
         rolling_superseded = False
         rolling_confirmed = published_latest
-        if not v2_eligible:
+        if not rolling_confirmed:
             try:
                 live_status, live_v1 = app_payload._live_manifest_status(
                     app_payload.DEFAULT_REPO, app_payload.DEFAULT_TAG
                 )
                 if live_status == "present" and live_v1 is not None:
-                    v2_eligible = _same_payload_revision(manifest, live_v1)
-                    rolling_confirmed = v2_eligible
+                    rolling_confirmed = _same_payload_revision(manifest, live_v1)
                     # A backfill may legitimately hold a newer run_date on the
                     # rolling tag; that is a correct skip, not a lost upload.
-                    rolling_superseded = not v2_eligible and (
+                    rolling_superseded = not rolling_confirmed and (
                         str(live_v1.get("run_date") or "") > run_date
                     )
             except Exception as live_exc:  # noqa: BLE001 - optional sidecar check
@@ -406,44 +345,19 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             if (rolling_confirmed or rolling_superseded)
             else PUBLISH_FAILED
         )
-        if v2_eligible and not v2_publication_allowed():
-            print(
-                "[pi_daily_sync] app_payload v2 skipped "
-                "reason=payload_encryption_enabled_plaintext_v2_forbidden"
-            )
-        elif v2_eligible:
-            try:
-                v2_manifest, published_v2 = app_payload.build_and_publish_v2(
-                    exports,
-                    v1_manifest=manifest,
-                    out_dir=payload_state / "v2",
-                    economic_store_path=DEFAULT_MACRO_STORE_PATH,
-                )
-                pruned_v2 = prune_payload_staging(
-                    payload_state / "v2", app_payload.V2_MANIFEST_FILENAME
-                )
-                print(
-                    "[pi_daily_sync] app_payload v2 finished "
-                    f"run_date={v2_manifest.get('run_date', '')} "
-                    f"capabilities={v2_manifest.get('capabilities', [])} "
-                    f"published={published_v2} pruned_local_assets={pruned_v2} exit=0"
-                )
-            except Exception as v2_exc:  # noqa: BLE001 - v1 is already complete
-                print(
-                    "[pi_daily_sync] app_payload v2 failed "
-                    f"(non-fatal; v1 preserved) error={v2_exc!r} exit=0"
-                )
-        if published_dated or published_latest:
+        if outcome == PUBLISH_PUBLISHED:
             try:
                 runs_root = data_runs_root(repo_root)
-                app_payload.refresh_dates_index(
+                index_published = app_payload.refresh_dates_index(
                     runs_root, out_dir=payload_state / "v1-dates-index"
                 )
             except Exception as idx_exc:  # noqa: BLE001 - index is informational
                 print(
-                    f"[pi_daily_sync] app_payload dates-index refresh failed "
-                    f"(non-fatal) error={idx_exc!r}"
+                    f"[pi_daily_sync] app_payload dates-index refresh failed error={idx_exc!r}"
                 )
+                index_published = False
+            if not index_published:
+                outcome = PUBLISH_FAILED
         if outcome != PUBLISH_PUBLISHED:
             print(
                 "[pi_daily_sync] app_payload publication incomplete "
@@ -528,40 +442,35 @@ def main(argv: Optional[list[str]] = None) -> int:
             date_args = ["--date", args.date] if args.date else []
             run_date = args.date or datetime.now(ZoneInfo("Australia/Hobart")).date().isoformat()
             ingest_started_at = utc_now()
-            dashboard_paused = pause_dashboard_for_ingest()
             try:
+                run_checked(
+                    [
+                        sys.executable,
+                        str(REPO_ROOT / "cdr_daily.py"),
+                        "--workers",
+                        str(DAILY_WORKER_COUNT),
+                        "--archive-failed-ram-stage",
+                        *sector_args,
+                        *force_args,
+                        *date_args,
+                    ],
+                    cwd=REPO_ROOT,
+                )
+            except Exception as exc:
                 try:
-                    run_checked(
-                        [
-                            sys.executable,
-                            str(REPO_ROOT / "cdr_daily.py"),
-                            "--workers",
-                            str(DAILY_WORKER_COUNT),
-                            "--archive-failed-ram-stage",
-                            *sector_args,
-                            *force_args,
-                            *date_args,
-                        ],
-                        cwd=REPO_ROOT,
+                    record_path = record_failure(
+                        REPO_ROOT,
+                        data_state_root(REPO_ROOT),
+                        run_date,
+                        os.environ.get("USER", "unknown"),
+                        exact_command,
+                        ingest_started_at,
+                        exc,
                     )
-                except Exception as exc:
-                    try:
-                        record_path = record_failure(
-                            REPO_ROOT,
-                            data_state_root(REPO_ROOT),
-                            run_date,
-                            os.environ.get("USER", "unknown"),
-                            exact_command,
-                            ingest_started_at,
-                            exc,
-                        )
-                        print(f"[pi_daily_sync] terminal failure recorded path={record_path}", file=sys.stderr)
-                    except Exception as record_exc:
-                        print(f"[pi_daily_sync] terminal failure record failed: {record_exc}", file=sys.stderr)
-                    raise
-            finally:
-                if dashboard_paused:
-                    resume_dashboard_after_ingest()
+                    print(f"[pi_daily_sync] terminal failure recorded path={record_path}", file=sys.stderr)
+                except Exception as record_exc:
+                    print(f"[pi_daily_sync] terminal failure record failed: {record_exc}", file=sys.stderr)
+                raise
             if _app_payload_enabled():
                 pointer = current_publication_pointer(REPO_ROOT)
                 outcome = maybe_publish_app_payload(REPO_ROOT, pointer or None)

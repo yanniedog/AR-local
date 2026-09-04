@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
 from cdr_atomic import ImmutablePathError, atomic_write_json
+from cdr_attempt_evidence_promotion import (
+    AttemptEvidencePromotionError,
+    verify_promoted_attempt_evidence,
+)
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
@@ -16,8 +21,13 @@ from cdr_ledger_v2 import (
     ledger_root,
     verify_event,
     verify_event_artifacts,
+    verify_reachable_generation,
 )
 from cdr_file_lock import FileLock
+from cdr_journal_evidence import validate_journal_evidence
+from cdr_observation import load_verified_observation
+from cdr_raw_attempt_journal import RawAttemptJournal
+from cdr_provider_identity_registry import REGISTRY_FILENAME
 
 
 def _ingest_status(export_root: Path) -> dict[str, Any]:
@@ -51,18 +61,76 @@ def _coverage(
 ]:
     manifest = load_exports_manifest(export_root)
     if manifest is None:
-        raise ValueError("cannot finalize without dashboard-cache/latest.json")
-    counts = manifest.get("banks_counts")
-    counts = counts if isinstance(counts, Mapping) else {}
-    status = _ingest_status(export_root)
-    failures = int(status.get("total") or 0)
-    corrupt = int(status.get("corrupt_records") or 0)
-    unattributed = int(status.get("unattributed_records") or 0)
-    provider_states = [
-        dict(item)
-        for item in (status.get("provider_states") or [])
+        raise ValueError("cannot finalize without a valid observation")
+    if manifest.get("contract") != "observation-v1":
+        raise ValueError("current finalization requires an ObservationV1 export")
+    return _observation_coverage(export_root)
+
+
+def _verified_promoted_journal(
+    export_root: Path,
+    status: Mapping[str, Any],
+    expected_digest: str,
+    expected_session: str,
+) -> RawAttemptJournal:
+    pointer = status.get("raw_attempt_journal")
+    if not isinstance(pointer, Mapping):
+        raise ValueError("promoted ingest evidence pointer is absent")
+    try:
+        journal = verify_promoted_attempt_evidence(
+            export_root,
+            pointer,
+            expected_head_digest=expected_digest,
+            expected_session_id=expected_session,
+        )
+    except AttemptEvidencePromotionError as error:
+        raise ValueError(str(error)) from error
+    relative = PurePosixPath(str(pointer["path"]))
+    registry = status.get("provider_identity_registry")
+    fallback_present = any(
+        str(item.get("provider_uid") or "").startswith("provider-fallback:")
+        for item in status.get("provider_states") or []
         if isinstance(item, Mapping)
-    ]
+    )
+    if registry is None and fallback_present:
+        raise ValueError("provider identity registry pointer is absent")
+    if registry is None:
+        return journal
+    if not isinstance(registry, Mapping):
+        raise ValueError("provider identity registry pointer is invalid")
+    registry_relative = PurePosixPath(str(registry.get("path") or ""))
+    expected_registry = relative / REGISTRY_FILENAME
+    if (
+        registry_relative != expected_registry
+        or registry.get("path_resolution") != "relative_to_finalized_export_root"
+        or registry.get("retention") != "hash_bound_finalized_artifact"
+        or registry.get("verified") is not True
+    ):
+        raise ValueError("provider identity registry pointer is invalid")
+    try:
+        registry_bytes = export_root.joinpath(*registry_relative.parts).read_bytes()
+    except OSError as error:
+        raise ValueError("provider identity registry snapshot is unreadable") from error
+    if (
+        registry.get("bytes") != len(registry_bytes)
+        or registry.get("sha256") != hashlib.sha256(registry_bytes).hexdigest()
+    ):
+        raise ValueError("provider identity registry snapshot does not match its pointer")
+    return journal
+
+
+def _observation_coverage(
+    export_root: Path,
+) -> tuple[str, dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    observation, accounting = load_verified_observation(export_root)
+    status = _ingest_status(export_root)
+    journal = _verified_promoted_journal(
+        export_root,
+        status,
+        accounting["raw_attempt_journal_digest"],
+        accounting["accounting_id"],
+    )
+    validate_journal_evidence(accounting, status.get("provider_states"), journal)
     register_attempts = [
         dict(item)
         for item in (status.get("register_attempts") or [])
@@ -70,60 +138,92 @@ def _coverage(
         and isinstance(item.get("sha256"), str)
         and len(str(item["sha256"])) == 64
     ]
-    register_provenance_complete = (
+    register_complete = (
         status.get("register_provenance_complete") is True
         and bool(register_attempts)
         and all(item.get("ok") is True for item in register_attempts)
     )
-    registered = int(status.get("providers_registered") or 0)
-    attempted = int(status.get("providers_attempted") or 0)
+    provider_states = [
+        {
+            "provider_uid": provider["provider_uid"],
+            "state": provider["state"],
+            "failure_records": provider["issue_count"],
+        }
+        for provider in accounting["providers"]
+    ]
+    provider_summary = accounting["summary"]["providers"]
+    status_states = {
+        str(item.get("provider_uid") or ""): item
+        for item in (status.get("provider_states") or [])
+        if isinstance(item, Mapping)
+    }
+    accounting_providers = {
+        provider["provider_uid"]: provider for provider in accounting["providers"]
+    }
+
+    def state_reconciles(item: Mapping[str, Any]) -> bool:
+        raw = status_states[item["provider_uid"]]
+        raw_state = raw.get("state")
+        normalized_state = item["state"]
+        state_ok = raw_state == normalized_state or (
+            normalized_state == "partial" and raw_state in {"complete", "partial"}
+        )
+        provider = accounting_providers[item["provider_uid"]]
+        return bool(
+            state_ok
+            and raw.get("population_known") is provider["population_known"]
+            and raw.get("products_in_scope") == provider["discovered_count"]
+        )
+
     providers_reconcile = (
-        bool(provider_states)
-        and attempted == len(provider_states)
-        and registered == attempted
+        status.get("providers_registered") == provider_summary["registered"]
+        and status.get("providers_attempted") == provider_summary["attempted"]
+        and set(status_states) == {item["provider_uid"] for item in provider_states}
+        and all(state_reconciles(item) for item in provider_states)
     )
     provenance_complete = (
         status.get("failure_provenance_complete") is True
+        and status.get("coverage_evidence_complete") is True
+        and register_complete
         and providers_reconcile
-        and register_provenance_complete
     )
-    incomplete = (
-        status.get("incomplete") is not False
-        or failures > 0
-        or corrupt > 0
-        or not provenance_complete
-        or any(item.get("state") in {"partial", "failed"} for item in provider_states)
-    )
-    observation_state = "partial" if incomplete or not provenance_complete else "complete"
-    coverage = {
-        "products_discovered": int(counts.get("products") or 0),
-        "eligible_rate_rows": int(counts.get("rates") or 0),
-        "fee_rows": int(counts.get("fees") or 0),
-        "feature_rows": int(counts.get("features") or 0),
-        "eligibility_rows": int(counts.get("eligibility") or 0),
-        "constraint_rows": int(counts.get("constraints") or 0),
-        "providers_registered": registered,
-        "providers_attempted": attempted,
-        "providers_complete": sum(item.get("state") == "complete" for item in provider_states),
-        "providers_partial": sum(item.get("state") == "partial" for item in provider_states),
-        "providers_failed": sum(item.get("state") == "failed" for item in provider_states),
-        "failure_records": failures,
-        "corrupt_failure_records": corrupt,
-        "unattributed_failure_records": unattributed,
-        "register_sources_attempted": len(register_attempts),
-        "register_sources_complete": sum(
-            item.get("ok") is True for item in register_attempts
-        ),
-        "register_provenance_complete": register_provenance_complete,
-        "failure_provenance_complete": provenance_complete,
-        "reconciliation_status": "partial" if observation_state == "partial" else "reconciled",
-        "unavailable_populations": [
-            "consumer_eligible_products",
-            "priced_products",
-            "rate_tiers_by_classification",
-        ],
+    if not provenance_complete:
+        raise ValueError("promoted ingest provenance is incomplete")
+    products = accounting["summary"]["products"]
+    issues = accounting["summary"]["issues"]
+    rows = observation["row_counts"]
+    item_counts = {
+        group: sum(item["item_group"] == group for item in observation["items"])
+        for group in ("fees", "features", "eligibility", "constraints")
     }
-    return observation_state, coverage, provider_states, register_attempts
+    coverage = {
+        "products_discovered": products["discovered"],
+        "products_published": products["consumer_visible"],
+        "products_published_core_only": products["published_core_only"],
+        "products_omitted": products["omitted_valid"],
+        "products_quarantined": products["quarantined_invalid"],
+        "eligible_rate_rows": rows["rates"],
+        "fee_rows": item_counts["fees"],
+        "feature_rows": item_counts["features"],
+        "eligibility_rows": item_counts["eligibility"],
+        "constraint_rows": item_counts["constraints"],
+        "providers_registered": provider_summary["registered"],
+        "providers_attempted": provider_summary["attempted"],
+        "providers_complete": provider_summary["complete"],
+        "providers_partial": provider_summary["partial"],
+        "providers_failed": provider_summary["failed"],
+        "failure_records": int(status.get("total") or 0),
+        "corrupt_failure_records": issues["corrupt"],
+        "unattributed_failure_records": issues["unattributed"],
+        "register_sources_attempted": len(register_attempts),
+        "register_sources_complete": len(register_attempts),
+        "register_provenance_complete": True,
+        "failure_provenance_complete": True,
+        "reconciliation_status": "reconciled",
+        "unavailable_populations": [],
+    }
+    state = "complete" if observation["state"] == "complete" else "partial"
+    return state, coverage, provider_states, register_attempts
 
 
 def validate_finalization_layout(export_root: Path, state_dir: Path) -> str:
@@ -156,6 +256,9 @@ def finalize_observation(
     observation_state, coverage, provider_states, register_hashes = _coverage(
         export_root
     )
+    manifest = load_exports_manifest(export_root)
+    if manifest is None:
+        raise ValueError("cannot finalize without a valid observation")
     source_path = validate_finalization_layout(export_root, state_dir)
     artifacts = artifact_records(export_root)
     append_lock = ledger_root(state_dir) / ".append.lock"
@@ -171,6 +274,10 @@ def finalize_observation(
             register_hashes=register_hashes,
             prior_ledger_head=_current_head_digest(state_dir),
             artifacts=artifacts,
+            observed_at=manifest.get("observed_at"),
+            normalization_version=str(
+                manifest.get("normalization_version") or "legacy-v1"
+            ),
         )
         finalized = find_contract_event_locked(
             state_dir,
@@ -313,6 +420,80 @@ def verified_pointer_marker_for_date(
         )
         else None
     )
+
+
+def verified_pointer_export_root(
+    state_dir: Path, pointer_name: str = "latest-observation.json"
+) -> Optional[Path]:
+    """Resolve a finalized export pointer without repairing or mutating state."""
+
+    state_dir = state_dir.expanduser().resolve()
+    try:
+        pointer = json.loads(
+            (state_dir / "observation-pointers-v2" / pointer_name).read_text(
+                encoding="utf-8"
+            )
+        )
+        if not isinstance(pointer, Mapping) or pointer.get("schema_version") != 2:
+            return None
+        observation_date = str(pointer.get("observation_date") or "")
+        marker_path = _safe_state_path(state_dir, pointer.get("marker_path"))
+        if marker_path is None:
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, Mapping) or not verify_completion_marker(
+            marker, state_dir, observation_date
+        ):
+            return None
+        contract_path = _safe_state_path(
+            state_dir, marker.get("export_contract_path")
+        )
+        if contract_path is None:
+            return None
+        contract = load_contract(contract_path)
+        expected = {
+            "observation_date": observation_date,
+            "generation_id": marker.get("generation_id"),
+            "observation_state": marker.get("observation_state"),
+            "ledger_event_digest": marker.get("ledger_event_digest"),
+            "export_path": contract.get("source_path"),
+        }
+        if any(pointer.get(key) != value for key, value in expected.items()):
+            return None
+        return _source_root_for_contract(state_dir, contract)
+    except (KeyError, OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def verified_contract_export_root(
+    state_dir: Path, contract: Mapping[str, Any]
+) -> Optional[Path]:
+    """Resolve the exact finalized export generation named by a contract."""
+
+    state_dir = state_dir.expanduser().resolve()
+    try:
+        observation_date = str(contract.get("observation_date") or "")
+        marker_path = _safe_state_path(
+            state_dir, contract.get("completion_marker_path")
+        )
+        if marker_path is None:
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, Mapping) or not verify_completion_marker(
+            marker, state_dir, observation_date
+        ):
+            return None
+        contract_path = _safe_state_path(
+            state_dir, marker.get("export_contract_path")
+        )
+        if contract_path is None:
+            return None
+        verified = load_contract(contract_path)
+        if verified != dict(contract):
+            return None
+        return _source_root_for_contract(state_dir, verified)
+    except (KeyError, OSError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def recover_pending_finalization(
@@ -571,14 +752,40 @@ def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: s
             return False
         if contract["contract_digest"] != marker.get("export_contract_digest"):
             return False
-        event_path = (
-            ledger_root(state_dir)
-            / "events"
-            / date
-            / f"{contract['generation_id']}.json"
+        event = verify_reachable_generation(
+            state_dir, date, str(contract["generation_id"])
         )
-        event = json.loads(event_path.read_text(encoding="utf-8"))
-        verify_event_artifacts(state_dir, event)
         return event["event_digest"] == marker.get("ledger_event_digest")
     except (KeyError, OSError, ValueError, json.JSONDecodeError):
         return False
+
+
+def is_finalized_export_root(export_root: Path, state_dir: Path, date: str) -> bool:
+    """Whether one exact export generation has a verified, reachable marker."""
+
+    state_dir = state_dir.expanduser().resolve()
+    export_root = export_root.expanduser().resolve()
+    markers = [state_dir / f"{date}.done.json"]
+    markers.extend(sorted(state_dir.glob(f"{date}.revision.*.json"), reverse=True))
+    for marker_path in markers:
+        try:
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            if not isinstance(marker, Mapping) or not verify_completion_marker(
+                marker, state_dir, date
+            ):
+                continue
+            contract_path = _safe_state_path(
+                state_dir, marker.get("export_contract_path")
+            )
+            if contract_path is None:
+                continue
+            contract = load_contract(contract_path)
+            marker_relative = marker_path.relative_to(state_dir).as_posix()
+            if (
+                contract.get("completion_marker_path") == marker_relative
+                and _source_root_for_contract(state_dir, contract) == export_root
+            ):
+                return True
+        except (KeyError, OSError, ValueError, json.JSONDecodeError):
+            continue
+    return False

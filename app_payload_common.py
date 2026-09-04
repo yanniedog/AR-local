@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -30,10 +29,10 @@ MAX_EMBEDDED_LOGO_BYTES = 64 * 1024
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 
-# Curated subset of the flattened rate-row columns (a superset of the dashboard's
-# BANK_SECTION_COLUMNS, plus comparison_rate / last_updated which banks.json carries
-# but the section API drops). Empty values are stripped per-row before encoding.
+# Curated consumer-safe rate fields from ObservationV1.
 CORE_RATE_FIELDS = (
+    "provider_uid",
+    "product_uid",
     "provider",
     "product_id",
     "product_key",
@@ -68,21 +67,17 @@ CORE_RATE_FIELDS = (
 # --------------------------------------------------------------------------- #
 # Small shared helpers
 # --------------------------------------------------------------------------- #
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def _is_blank(value: Any) -> bool:
     return value is None or value == "" or value == [] or value == {}
 
 
 def compact(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop absent/empty fields before JSON encoding (matches the dashboard)."""
+    """Drop absent/empty fields before JSON encoding."""
     return {key: value for key, value in row.items() if not _is_blank(value)}
 
 
 def section_filter(dataset: str, row: Dict[str, Any]) -> bool:
-    """Mirror cdr_dashboard_server.bank_section_rate_filter."""
+    """Keep only current, consumer-relevant rows for each section."""
     rate = row.get("rate")
     if _is_blank(rate):
         return False

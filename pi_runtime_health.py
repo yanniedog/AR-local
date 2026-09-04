@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Pi runtime health probes and self-heal (dashboard, nginx, tailscaled)."""
+"""Pi runtime health probes and self-heal (status API, nginx, tailscaled)."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
+from zoneinfo import ZoneInfo
 
 from ar_local_pi_runtime import (
-    PI_DASHBOARD_PORT,
+    PI_STATUS_PORT,
     PI_TAILSCALE_IP,
     data_state_root,
     ensure_runtime_data_writable,
@@ -24,14 +26,14 @@ from ar_local_pi_runtime import (
     is_raspberry_pi,
 )
 from ar_local_pi_service_heal import (
-    restart_dashboard_and_nginx,
+    restart_status_and_nginx,
     restart_tailscaled,
     unit_is_active,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
 STATE_NAME = "runtime_health.json"
-PROBE_PATH = "/api/latest"
+PROBE_PATH = "/api/status"
 DEFAULT_PROBE_TIMEOUT_SEC = 15.0
 DEFAULT_PROBE_RETRIES = 2
 DEFAULT_FAIL_THRESHOLD = 3
@@ -42,6 +44,23 @@ JOURNAL_LOOKBACK_SEC = 300
 EXIT_OK = 0
 EXIT_UNHEALTHY = 1
 EXIT_CONFIG = 2
+ACCOUNTING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+WINDOW_TZ = ZoneInfo("Australia/Hobart")
+MAX_HTTP_BYTES = 64 * 1024
+STATUS_SUMMARY_FIELDS = {
+    "providers": frozenset({
+        "registered", "attempted", "complete", "partial", "empty", "failed",
+        "not_attempted", "population_unknown",
+    }),
+    "products": frozenset({
+        "discovered", "published_full", "published_core_only",
+        "quarantined_invalid", "omitted_valid", "consumer_visible",
+    }),
+    "issues": frozenset({
+        "total", "corrupt", "unattributed", "affected_providers",
+        "affected_products",
+    }),
+}
 
 
 def _utc_now() -> datetime:
@@ -79,8 +98,126 @@ def save_state(state: dict[str, Any]) -> None:
 def probe_urls() -> tuple[str, ...]:
     return (
         f"http://127.0.0.1{PROBE_PATH}",
-        f"http://127.0.0.1:{PI_DASHBOARD_PORT}{PROBE_PATH}",
+        f"http://127.0.0.1:{PI_STATUS_PORT}{PROBE_PATH}",
     )
+
+
+def _summaries_reconcile(
+    state: object,
+    providers: object,
+    products: object,
+    issues: object,
+) -> bool:
+    if not all(isinstance(value, Mapping) for value in (providers, products, issues)):
+        return False
+    assert isinstance(providers, Mapping)
+    assert isinstance(products, Mapping)
+    assert isinstance(issues, Mapping)
+    provider_terminal = sum(
+        providers[key]
+        for key in ("complete", "partial", "empty", "failed", "not_attempted")
+    )
+    provider_attempted = sum(
+        providers[key] for key in ("complete", "partial", "empty", "failed")
+    )
+    product_terminal = sum(
+        products[key]
+        for key in (
+            "published_full", "published_core_only", "quarantined_invalid",
+            "omitted_valid",
+        )
+    )
+    degraded_provider_count = sum(
+        providers[key] for key in ("partial", "failed", "not_attempted")
+    )
+    if not (
+        providers["registered"] > 0
+        and providers["registered"] == provider_terminal
+        and providers["attempted"] == provider_attempted
+        and providers["population_unknown"] <= degraded_provider_count
+        and products["discovered"] == product_terminal
+        and products["consumer_visible"]
+        == products["published_full"] + products["published_core_only"]
+        and products["consumer_visible"] > 0
+        and issues["corrupt"] + issues["unattributed"] <= issues["total"]
+        and issues["affected_providers"] <= min(
+            providers["registered"], issues["total"]
+        )
+        and issues["affected_products"] <= min(
+            products["discovered"], issues["total"]
+        )
+    ):
+        return False
+    if state == "complete":
+        return bool(
+            degraded_provider_count == 0
+            and providers["population_unknown"] == 0
+            and products["published_full"] == products["discovered"]
+            and products["published_core_only"] == 0
+            and products["quarantined_invalid"] == 0
+            and products["omitted_valid"] == 0
+            and all(issues[key] == 0 for key in STATUS_SUMMARY_FIELDS["issues"])
+        )
+    return bool(state == "degraded" and (
+        issues["total"] > 0 or degraded_provider_count > 0
+    ))
+
+
+def status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
+    if payload.get("schema_version") != 1 or payload.get("service") != "ar-local":
+        return "invalid status contract"
+    status = payload.get("status")
+    if status not in {"ok", "degraded"}:
+        return f"status={status!r}"
+    observation = payload.get("observation")
+    if not isinstance(observation, Mapping):
+        return "missing observation"
+    observed_date = observation.get("date")
+    if not isinstance(observed_date, str):
+        return "invalid observation date"
+    try:
+        if date.fromisoformat(observed_date).isoformat() != observed_date:
+            return "invalid observation date"
+    except ValueError:
+        return "invalid observation date"
+    observed_at = observation.get("observed_at")
+    if not isinstance(observed_at, str):
+        return "invalid observation timestamp"
+    try:
+        timestamp = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return "invalid observation timestamp"
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return "invalid observation timestamp"
+    if timestamp.astimezone(WINDOW_TZ).date().isoformat() != observed_date:
+        return "observation timestamp and date disagree"
+    state = observation.get("state")
+    if state not in {"complete", "degraded"}:
+        return "invalid observation state"
+    if status != ("ok" if state == "complete" else "degraded"):
+        return "status and observation state disagree"
+    accounting_id = observation.get("accounting_id")
+    if (
+        not isinstance(accounting_id, str)
+        or ACCOUNTING_ID_RE.fullmatch(accounting_id) is None
+    ):
+        return "invalid accounting identity"
+    for key, required in STATUS_SUMMARY_FIELDS.items():
+        summary = observation.get(key)
+        if (
+            not isinstance(summary, Mapping)
+            or not required.issubset(summary)
+            or any(type(summary[field]) is not int or summary[field] < 0 for field in required)
+        ):
+            return f"invalid {key} summary"
+    if not _summaries_reconcile(
+        state,
+        observation["providers"],
+        observation["products"],
+        observation["issues"],
+    ):
+        return "status summaries do not reconcile"
+    return None
 
 
 def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
@@ -91,14 +228,19 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
                 if int(resp.status) != 200:
                     last_err = f"HTTP {resp.status}"
                     continue
-                payload = json.loads(resp.read().decode("utf-8"))
+                raw = resp.read(MAX_HTTP_BYTES + 1)
+                if len(raw) > MAX_HTTP_BYTES:
+                    last_err = "status response too large"
+                    continue
+                payload = json.loads(raw.decode("utf-8"))
                 if not isinstance(payload, dict):
                     last_err = "invalid JSON object"
                     continue
-                if not export_manifest_is_valid(payload):
-                    last_err = "manifest missing rates"
+                contract_error = status_contract_error(payload)
+                if contract_error is not None:
+                    last_err = contract_error
                     continue
-                return True, f"OK run_date={payload.get('run_date')!r}"
+                return True, f"OK status={payload.get('status')!r}"
         except urllib.error.HTTPError as exc:
             last_err = f"HTTP {exc.code}"
         except Exception as exc:
@@ -106,6 +248,57 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
         if attempt < retries:
             time.sleep(0.5)
     return False, last_err
+
+
+def legacy_http_probe(url: str, *, timeout: float) -> tuple[bool, str]:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            raw = response.read(MAX_HTTP_BYTES + 1)
+            if len(raw) > MAX_HTTP_BYTES:
+                return False, "legacy response too large"
+            payload = json.loads(raw.decode("utf-8"))
+            if int(response.status) != 200 or not isinstance(payload, Mapping):
+                return False, "invalid legacy response"
+            run_date = payload.get("run_date")
+            generated_at = payload.get("generated_at")
+            files = payload.get("files")
+            if not isinstance(run_date, str) or date.fromisoformat(run_date).isoformat() != run_date:
+                return False, "invalid legacy observation date"
+            if not isinstance(generated_at, str):
+                return False, "invalid legacy observation timestamp"
+            timestamp = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                return False, "invalid legacy observation timestamp"
+            if (
+                not export_manifest_is_valid(payload)
+                or not isinstance(files, Mapping)
+                or files.get("db") != "local-cdr.sqlite"
+            ):
+                return False, "invalid legacy export contract"
+            return True, f"OK legacy run_date={run_date}"
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return False, "legacy endpoint unavailable"
+
+
+def cmd_backup_preflight(args: argparse.Namespace) -> int:
+    status_url = f"http://127.0.0.1:{PI_STATUS_PORT}/api/status"
+    status_ok, status_detail = http_probe(
+        status_url, timeout=args.timeout, retries=args.retries
+    )
+    if status_ok:
+        print(f"pi_runtime_health: backup preflight {status_detail}")
+        return EXIT_OK
+    legacy_url = f"http://127.0.0.1:{PI_STATUS_PORT}/api/latest"
+    legacy_ok, legacy_detail = legacy_http_probe(legacy_url, timeout=args.timeout)
+    if legacy_ok:
+        print(f"pi_runtime_health: backup preflight {legacy_detail}")
+        return EXIT_OK
+    print(
+        f"pi_runtime_health: backup preflight failed: "
+        f"status={status_detail}; legacy={legacy_detail}",
+        file=sys.stderr,
+    )
+    return EXIT_UNHEALTHY
 
 
 def run_http_probes(*, timeout: float, retries: int) -> tuple[bool, list[str]]:
@@ -267,8 +460,8 @@ def cmd_heal(args: argparse.Namespace) -> int:
     http_streak = int(state.get("http_fail_streak") or 0)
     if not http_ok and http_streak >= args.fail_threshold:
         if cooldown_elapsed(state, "last_http_heal_at", args.heal_cooldown):
-            print(f"pi_runtime_health: HTTP fail streak {http_streak}; restarting dashboard + nginx")
-            if restart_dashboard_and_nginx(dry_run=args.dry_run) != 0:
+            print(f"pi_runtime_health: HTTP fail streak {http_streak}; restarting status API + nginx")
+            if restart_status_and_nginx(dry_run=args.dry_run) != 0:
                 save_state(state)
                 return EXIT_UNHEALTHY
             state["last_http_heal_at"] = _utc_iso()
@@ -316,6 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--heal", action="store_true")
+    mode.add_argument("--backup-preflight", action="store_true")
     parser.add_argument("--check-tailscale", action="store_true")
     return parser
 
@@ -330,6 +524,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return cmd_check(args)
     if args.heal:
         return cmd_heal(args)
+    if args.backup_preflight:
+        return cmd_backup_preflight(args)
     return EXIT_CONFIG
 
 

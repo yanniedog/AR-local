@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 from urllib.parse import urlsplit
 
+from cdr_contracts import parse_rate_string, product_uid, provider_uid
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
 from cdr_product_facts import clean_fact_rows
 from cdr_rate_normalize import normalized_rate_value, rate_divisor
@@ -26,6 +28,10 @@ NOISE_KEYS = {
 
 URL_KEY_RE = re.compile(r"(uri|url|href|link)$", re.I)
 URL_TEXT_RE = re.compile(r"https?://\S+", re.I)
+SENSITIVE_KEY_RE = re.compile(
+    r"(?:authorization|cookie|credential|password|secret|signature|token|api[_-]?key|"
+    r"request[_-]?headers?|response[_-]?body|exception|traceback)", re.I
+)
 SPACE_RE = re.compile(r"\s+")
 OFFICIAL_PRODUCT_LINK_FIELDS = (
     "overviewUri",
@@ -62,7 +68,11 @@ def clean_value(value: Any) -> Any:
         out: Dict[str, Any] = {}
         for key, raw in value.items():
             lowered = str(key).lower()
-            if lowered in NOISE_KEYS or URL_KEY_RE.search(str(key)):
+            if (
+                lowered in NOISE_KEYS
+                or URL_KEY_RE.search(str(key))
+                or SENSITIVE_KEY_RE.search(str(key))
+            ):
                 continue
             cleaned = clean_value(raw)
             if cleaned not in ("", None, [], {}):
@@ -92,23 +102,15 @@ def number_text(value: Any) -> str:
 
 
 def rate_text(value: Any, divisor: float = 1.0) -> str:
-    raw = number_text(value)
-    if not raw:
+    del divisor
+    if value is None or (isinstance(value, str) and not value.strip()):
         return ""
-    try:
-        number = float(raw)
-    except ValueError:
-        return raw
-    if divisor != 1:
-        number = number / divisor
-    elif number > 1:
-        number = number / 100
-    return f"{number:.6g}"
+    return parse_rate_string(value)
 
 
 def normalized_rate_text(value: Any, divisor: float, family: str) -> str:
-    number = normalized_rate_value(value, divisor, family)
-    return f"{number:.6g}" if number is not None else number_text(value)
+    del divisor, family
+    return rate_text(value)
 
 
 def _official_https_url(value: Any) -> str:
@@ -250,19 +252,30 @@ def bank_product_key(row: Mapping[str, str]) -> str:
     return "|".join(parts)
 
 
-def bank_base_row(path: Path, banks_root: Path, rec: Mapping[str, Any]) -> Dict[str, str]:
+def bank_base_row(
+    path: Path,
+    banks_root: Path,
+    rec: Mapping[str, Any],
+    provider_record: Mapping[str, Any],
+) -> Dict[str, Any]:
     rel = path.relative_to(banks_root)
     parts = rel.parts
     dataset = parts[0] if len(parts) > 0 else ""
     provider = parts[1] if len(parts) > 1 else text(rec.get("brandName") or rec.get("brand"))
     name = text(rec.get("name") or rec.get("productName") or (parts[2] if len(parts) > 2 else ""))
+    cdr_product_id = text(rec.get("productId") or rec.get("id"))
+    stable_provider_uid = str(provider_record.get("provider_uid") or "")
+    if not stable_provider_uid or not cdr_product_id:
+        raise ValueError("product identity evidence is incomplete")
     row = {
         "sector": "banks",
         "dataset": dataset,
         "provider": provider,
         "brand": text(rec.get("brand")),
         "brand_name": text(rec.get("brandName")),
-        "product_id": text(rec.get("productId") or rec.get("id")),
+        "provider_uid": stable_provider_uid,
+        "provider_identity_status": str(provider_record.get("provider_identity_status") or ""),
+        "product_id": cdr_product_id,
         "product_name": name,
         "category": text(rec.get("productCategory") or rec.get("category")),
         "last_updated": text(rec.get("lastUpdated")),
@@ -270,10 +283,100 @@ def bank_base_row(path: Path, banks_root: Path, rec: Mapping[str, Any]) -> Dict[
         "effective_to": text(rec.get("effectiveTo")),
         "is_tailored": text(rec.get("isTailored")),
         "description": text(rec.get("description")),
-        "source_file": str(path),
+        "source_file": rel.as_posix(),
+        "evidence_id": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "details_complete": True,
     }
     row["product_key"] = bank_product_key(row)
+    row["legacy_product_key"] = row["product_key"]
+    row["product_uid"] = product_uid(stable_provider_uid, dataset, cdr_product_id)
     return row
+
+
+def _provider_records(holders_root: Path) -> Dict[str, Dict[str, Any]]:
+    records: Dict[str, Dict[str, Any]] = {}
+    if not holders_root.is_dir():
+        return records
+    for holder in sorted(path for path in holders_root.iterdir() if path.is_dir()):
+        try:
+            record = load_json(holder / "_register-brand.json")
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(record, Mapping):
+            continue
+        normalized = dict(record)
+        if not normalized.get("provider_uid"):
+            try:
+                uid, status = provider_uid(
+                    data_holder_id=normalized.get("data_holder_id"),
+                    data_holder_brand_id=normalized.get("data_holder_brand_id"),
+                    interim_id=normalized.get("interim_id"),
+                    endpoint_urls=(str(normalized.get("endpoint_url") or ""),),
+                    display_name=str(
+                        normalized.get("brand_name")
+                        or normalized.get("legal_entity_name")
+                        or holder.name
+                    ),
+                )
+            except ValueError:
+                continue
+            normalized["provider_uid"] = uid
+            normalized["provider_identity_status"] = status
+        summary_path = holder / "_products-index" / "index-summary.json"
+        try:
+            summary = load_json(summary_path)
+        except (OSError, json.JSONDecodeError):
+            summary = None
+        if isinstance(summary, Mapping):
+            normalized["population"] = dict(summary)
+        records[holder.name] = normalized
+    return records
+
+
+def _validate_core_rates(record: Mapping[str, Any], dataset: str) -> None:
+    wanted = {"Mortgage": ("lendingRates",), "Savings": ("depositRates",), "TD": ("depositRates",)}.get(
+        dataset,
+        (),
+    )
+    for key in wanted:
+        raw = record.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, list) or any(not isinstance(item, Mapping) for item in raw):
+            raise ValueError(f"{key} must be an array of objects")
+        for item in raw:
+            parse_rate_string(item.get("rate"))
+            comparison = item.get("comparisonRate")
+            if comparison not in (None, ""):
+                parse_rate_string(comparison)
+
+
+def _invalid_detail_arrays(record: Mapping[str, Any]) -> list[str]:
+    invalid = []
+    for key in ("fees", "features", "eligibility", "constraints"):
+        if key not in record:
+            continue
+        raw = record[key]
+        if not isinstance(raw, list) or any(
+            not isinstance(item, Mapping) for item in raw
+        ):
+            invalid.append(key)
+    return invalid
+
+
+def _validate_rate_facts(rows: List[Dict[str, Any]]) -> None:
+    for row in rows:
+        if row.get("value_type") != "rate":
+            continue
+        number = row.get("value_number")
+        if number is None:
+            continue
+        if (
+            isinstance(number, bool)
+            or not isinstance(number, (int, float))
+            or not 0 <= number <= 1
+        ):
+            raise ValueError("rate fact must contain a decimal fraction from 0 to 1")
 
 
 def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
@@ -390,19 +493,100 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "constraints": [],
         "product_facts": [],
         "failures": read_failures(banks_root),
+        "quarantines": [],
         "holder_attempts": [],
+        "provider_observations": [],
     }
     if not banks_root.exists():
         return dataset
     holders_root = banks_root / "_holders"
-    if holders_root.exists():
-        dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
+    providers = _provider_records(holders_root)
+    if holders_root.is_dir():
+        dataset["holder_attempts"] = sorted(
+            path.name for path in holders_root.iterdir() if path.is_dir()
+        )
     for path in sorted(banks_root.rglob("product-detail.json")):
-        rec = inner_record(load_json(path))
-        base = bank_base_row(path, banks_root, rec)
-        dataset["products"].append({**base, "details_json": detail_json(rec)})
-        append_bank_details(dataset, base, rec)
-        dataset["product_facts"].extend(clean_fact_rows(rec, base))
+        relative = path.relative_to(banks_root)
+        provider_dir = relative.parts[1] if len(relative.parts) > 1 else ""
+        evidence_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        rec: Dict[str, Any] = {}
+        code = "detail_invalid_json"
+        try:
+            rec = inner_record(load_json(path))
+            code = "identity_mismatch"
+            if provider_dir not in providers:
+                raise ValueError("product identity evidence is incomplete")
+            base = bank_base_row(path, banks_root, rec, providers[provider_dir])
+            invalid_details = _invalid_detail_arrays(rec)
+            filtered = {
+                key: value for key, value in rec.items() if key not in invalid_details
+            }
+            safe_record = json.loads(detail_json(filtered))
+            base = bank_base_row(path, banks_root, safe_record, providers[provider_dir])
+            code = "rate_invalid"
+            _validate_core_rates(safe_record, str(base["dataset"]))
+            facts = clean_fact_rows(safe_record, base)
+            _validate_rate_facts(facts)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            product_id = text(rec.get("productId") or rec.get("id"))
+            if not product_id:
+                try:
+                    product_id = (path.parent / "product-id.txt").read_text(
+                        encoding="utf-8"
+                    ).strip()
+                except (OSError, UnicodeError):
+                    product_id = ""
+            issue = {
+                "phase": "normalization",
+                "bank": provider_dir or "unknown",
+                "product_id": product_id,
+                "status": code,
+                "evidence_digest": evidence_digest,
+                "source_file": relative.as_posix(),
+            }
+            dataset["failures"].append(issue)
+            dataset["quarantines"].append(issue)
+            continue
+        base["details_complete"] = not invalid_details
+        dataset["products"].append(
+            {
+                **base,
+                "details_json": json.dumps(
+                    safe_record, ensure_ascii=False, sort_keys=True
+                ),
+            }
+        )
+        for group in invalid_details:
+            dataset["quarantines"].append(
+                {
+                    "phase": "normalization",
+                    "bank": provider_dir,
+                    "product_id": base["product_id"],
+                    "status": "field_omitted_invalid",
+                    "affected_sections": [group],
+                    "evidence_digest": evidence_digest,
+                    "source_file": relative.as_posix(),
+                }
+            )
+        append_bank_details(dataset, base, safe_record)
+        dataset["product_facts"].extend(facts)
+    dataset["provider_observations"] = [
+        {
+            "provider_dir": provider_dir,
+            "provider_uid": record.get("provider_uid"),
+            "provider_identity_status": record.get("provider_identity_status"),
+            "brand_name": record.get("brand_name") or record.get("legal_entity_name") or provider_dir,
+            "legal_entity_name": record.get("legal_entity_name") or "",
+            "endpoint_url": record.get("endpoint_url") or "",
+            "data_holder_id": record.get("data_holder_id") or "",
+            "data_holder_brand_id": record.get("data_holder_brand_id") or "",
+            "interim_id": record.get("interim_id") or "",
+            "identity_authority": record.get("identity_authority") or "",
+            "provider_identity_held": record.get("provider_identity_held") is True,
+            "population": record.get("population"),
+        }
+        for provider_dir, record in sorted(providers.items())
+    ]
     return dataset
 
 

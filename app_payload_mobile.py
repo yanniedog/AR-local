@@ -9,6 +9,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import bank_behaviour
 import rba_decisions
 from app_payload_contracts import ALL_PRODUCTS_COHORT
+from cdr_finalization import is_finalized_export_root
+from cdr_observation import load_verified_observation
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 _WS = re.compile(r"\s+")
@@ -87,37 +89,51 @@ def _runs_root(exports_dir: Path):
             return ancestor
     return None
 
+def _snapshot_in(exports: Path, run_date: str, runs_root: Optional[Path] = None):
+    observation = exports / "observation-v1.json"
+    if observation.is_file():
+        root = runs_root or _runs_root(exports)
+        if root and is_finalized_export_root(
+            exports, root.parent / "state", run_date
+        ):
+            return observation
+        return None
+    # Read-only compatibility for already-retained pre-observation history.
+    legacy = exports / "dashboard-cache" / run_date / "banks.json"
+    return legacy if legacy.is_file() else None
+
+
 def _banks_for_date(root: Path, run_date: str):
-    """Return a day's ``banks.json`` under either the plain or revised layout."""
+    """Return a canonical snapshot, or a retained historical legacy snapshot."""
     day = root / run_date
-    direct = day / "_exports" / "dashboard-cache" / run_date / "banks.json"
-    if direct.is_file():
-        return direct
     revisions = day / "_revisions"
     if revisions.is_dir():
-        # Newest stamp wins, so a revised day contributes its latest observation.
+        # A finalized revision supersedes the original snapshot for this date.
         for stamp in sorted((p for p in revisions.iterdir() if p.is_dir()), reverse=True):
-            candidate = stamp / "_exports" / "dashboard-cache" / run_date / "banks.json"
-            if candidate.is_file():
+            candidate = _snapshot_in(stamp / "_exports", run_date, root)
+            if candidate is not None:
                 return candidate
-    return None
+    return _snapshot_in(day / "_exports", run_date, root)
 
 def _banks(exports_dir: Path, run_date: str):
-    direct = exports_dir / "dashboard-cache" / run_date / "banks.json"
-    if direct.is_file(): return direct
     root = _runs_root(exports_dir)
+    direct = _snapshot_in(exports_dir, run_date, root)
+    if direct is not None: return direct
     return _banks_for_date(root, run_date) if root else None
 
 def _history_dates(exports_dir: Path, run_date: str) -> List[str]:
     dates = set()
+    root = _runs_root(exports_dir)
+    if _snapshot_in(exports_dir, run_date, root) is not None:
+        dates.add(run_date)
+    # Retained legacy snapshots may contain several dates under one export root.
     direct = exports_dir / "dashboard-cache"
-    if direct.is_dir():
+    if direct.is_dir() and not (exports_dir / "observation-v1.json").is_file():
         dates.update(
             child.name
             for child in direct.iterdir()
             if child.is_dir() and child.name <= run_date and (child / "banks.json").is_file()
         )
-    root = _runs_root(exports_dir)
     if root:
         dates.update(
             child.name
@@ -228,7 +244,7 @@ def build_history_assets(
     schema_version=1,
     rba_calendar=None,
 ):
-    """Single pass over the daily banks.json snapshots producing BOTH mobile history assets:
+    """Single pass over verified observations and retained historical snapshots.
 
     1. ``history_banks`` — per-section daily aggregate ribbon points (existing asset).
     2. ``bank_history`` — per-provider daily median/best/count series per section, plus
@@ -257,7 +273,15 @@ def build_history_assets(
         stats_for_day: Dict[str, Dict[str, Tuple[float, float, int]]] = {}
         path = _banks(exports_dir, date)
         if path:
-            rates = [row for row in (load_json(path).get("rates") or []) if isinstance(row, dict)]
+            if path.name == "observation-v1.json":
+                observation, _accounting = load_verified_observation(path.parent)
+                rates = [row["document"] for row in observation["rates"]]
+            else:
+                rates = [
+                    row
+                    for row in (load_json(path).get("rates") or [])
+                    if isinstance(row, dict)
+                ]
             for section in VALID_SECTIONS:
                 rows = [
                     row

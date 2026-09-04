@@ -234,7 +234,7 @@ When `chief:scan` exit 1, path overlap, worktree duplicate, or branch/PR mismatc
 
 ## Routing (chief assigns; orchestrator executes)
 
-Chief handles **coordination-level** routing only: PR number, branch lock, worker type (pr-fix, orchestrator, sync). **Path-specific** task delegation (ingest, dashboard, docs partitions, etc.) lives solely in **workflow-orchestrator** § Task → owner routing — chief does not duplicate that table.
+Chief handles **coordination-level** routing only: PR number, branch lock, worker type (pr-fix, orchestrator, sync). **Path-specific** task delegation lives solely in **workflow-orchestrator**; chief does not duplicate it.
 
 | Concern | Delegate to | Notes |
 |---------|-------------|-------|

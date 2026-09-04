@@ -23,6 +23,25 @@ from cdr_http_policy import (
     pagination_next_url,
     request_https,
 )
+from cdr_contracts import canonical_authority, provider_uid
+from cdr_provider_identity_registry import resolve_provider_rows
+from cdr_ingest_parsing import (
+    DATASET_CATEGORY_ALIASES,
+    DATASET_TO_FOLDER,
+    as_array,
+    dataset_from_cdr_category,
+    detail_inner_record,
+    extract_cdr_product_category,
+    has_deposit_structured_signals,
+    has_mortgage_structured_signals,
+    infer_cdr_dataset,
+    infer_dataset_from_name,
+    infer_dataset_from_structured_signals,
+    is_record,
+    normalize_category_token,
+    normalize_cdr_product_category,
+    pick_text,
+)
 from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
 
 # -----------------------------------------------------------------------------
@@ -52,41 +71,6 @@ DEFAULT_LOGICAL_FETCH_ATTEMPTS = 8
 # P&N Bank, Teachers Mutual, Beyond Bank, UBank and Rabobank.
 DEFAULT_USER_AGENT = "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)"
 
-DATASET_CATEGORY_ALIASES: Dict[str, List[str]] = {
-    "home_loans": [
-        "RESIDENTIAL_MORTGAGES",
-        "RESIDENTIAL_MORTGAGE",
-        "MORTGAGES",
-        "MORTGAGE",
-        "HOME_LOANS",
-        "HOME_LOAN",
-    ],
-    "savings": [
-        "TRANS_AND_SAVINGS_ACCOUNTS",
-        "TRANS_AND_SAVINGS_ACCOUNT",
-        "TRANS_AND_SAVINGS",
-        "SAVINGS_ACCOUNTS",
-        "SAVINGS_ACCOUNT",
-        "SAVINGS",
-        "TRANSACTION_AND_SAVINGS_ACCOUNTS",
-    ],
-    "term_deposits": [
-        "TERM_DEPOSITS",
-        "TERM_DEPOSIT",
-        "FIXED_TERM_DEPOSITS",
-        "FIXED_TERM_DEPOSIT",
-        "FIXED_DEPOSITS",
-        "FIXED_DEPOSIT",
-    ],
-}
-
-DATASET_TO_FOLDER = {
-    "home_loans": "Mortgage",
-    "savings": "Savings",
-    "term_deposits": "TD",
-}
-
-
 @dataclass
 class RegisterSnapshot:
     register_ok: bool
@@ -94,34 +78,7 @@ class RegisterSnapshot:
     register_attempts: List[Dict[str, Any]]
     banking_brands: List[Dict[str, str]]
     banking_count_before_filter: int
-
-
-# -----------------------------------------------------------------------------
-# JSON primitives (subset of workers/api/src/ingest/cdr/primitives.ts)
-# -----------------------------------------------------------------------------
-
-
-def is_record(value: Any) -> bool:
-    return isinstance(value, dict)
-
-
-def as_array(value: Any) -> List[Any]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return []
-
-
-def pick_text(record: Mapping[str, Any], keys: Iterable[str]) -> str:
-    for key in keys:
-        raw = record.get(key)
-        if raw is None:
-            continue
-        text = str(raw).strip()
-        if text:
-            return text
-    return ""
+    provider_identity_registry_bytes: bytes = b'{"bindings":[],"schema_version":1}\n'
 
 
 def safe_url(value: str) -> str:
@@ -171,122 +128,6 @@ def parse_supported_versions(body: str) -> List[int]:
 
 
 # -----------------------------------------------------------------------------
-# Classification (mirror workers/api/src/ingest/cdr/product-classification.ts)
-# -----------------------------------------------------------------------------
-
-
-def normalize_category_token(value: str) -> str:
-    text = str(value or "").strip().upper()
-    text = re.sub(r"[^A-Z0-9]+", "_", text)
-    return text.strip("_")
-
-
-def normalize_cdr_product_category(value: Any) -> Optional[str]:
-    token = normalize_category_token(str(value or ""))
-    return token if token else None
-
-
-def extract_cdr_product_category(product: Mapping[str, Any]) -> Optional[str]:
-    raw = pick_text(product, ["productCategory", "category", "type"])
-    return normalize_cdr_product_category(raw)
-
-
-def dataset_from_cdr_category(category: Optional[str]) -> Optional[str]:
-    normalized = normalize_cdr_product_category(category or "")
-    if not normalized:
-        return None
-    for dataset, aliases in DATASET_CATEGORY_ALIASES.items():
-        if normalized in aliases:
-            return dataset
-    if "MORTGAGE" in normalized or "HOME_LOAN" in normalized:
-        return "home_loans"
-    if "TERM_DEPOSIT" in normalized or "FIXED_DEPOSIT" in normalized:
-        return "term_deposits"
-    if "SAVINGS" in normalized or "TRANS_AND_SAVINGS" in normalized:
-        return "savings"
-    return None
-
-
-def has_mortgage_structured_signals(product: Mapping[str, Any]) -> bool:
-    rates = [x for x in as_array(product.get("lendingRates")) if is_record(x)]
-    if not rates:
-        return False
-    for rate in rates:
-        if not is_record(rate):
-            continue
-        lp = pick_text(rate, ["loanPurpose"])
-        rt = pick_text(rate, ["repaymentType"])
-        lrt = pick_text(rate, ["lendingRateType"])
-        if lp or rt or lrt:
-            return True
-    return False
-
-
-def has_deposit_structured_signals(product: Mapping[str, Any]) -> bool:
-    dr = [x for x in as_array(product.get("depositRates")) if is_record(x)]
-    if dr:
-        return True
-    generic = [x for x in as_array(product.get("rates")) if is_record(x)]
-    for rate in generic:
-        if not is_record(rate):
-            continue
-        dt = pick_text(rate, ["depositRateType", "rateType"])
-        at = pick_text(rate, ["applicationType", "rateApplicabilityType"])
-        if dt or at:
-            return True
-    return False
-
-
-def infer_dataset_from_structured_signals(product: Mapping[str, Any]) -> Optional[str]:
-    if has_mortgage_structured_signals(product):
-        return "home_loans"
-    if has_deposit_structured_signals(product):
-        cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
-        if cat_ds:
-            return cat_ds
-        return "savings"
-    return None
-
-
-def infer_dataset_from_name(product: Mapping[str, Any]) -> Optional[str]:
-    name = pick_text(product, ["name", "productName"]).upper()
-    if not name:
-        return None
-    if "MORTGAGE" in name or "HOME LOAN" in name:
-        return "home_loans"
-    if "TERM DEPOSIT" in name or "FIXED DEPOSIT" in name:
-        return "term_deposits"
-    if "SAVINGS" in name or "SAVER" in name or "AT CALL" in name:
-        return "savings"
-    return None
-
-
-def infer_cdr_dataset(
-    product: Mapping[str, Any],
-    *,
-    allow_name_fallback: bool = True,
-) -> Optional[str]:
-    cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
-    if cat_ds:
-        return cat_ds
-    structured = infer_dataset_from_structured_signals(product)
-    if structured:
-        return structured
-    if not allow_name_fallback:
-        return None
-    return infer_dataset_from_name(product)
-
-
-def detail_inner_record(parsed: Any) -> Optional[Dict[str, Any]]:
-    if not is_record(parsed):
-        return None
-    inner = parsed.get("data")
-    if is_record(inner):
-        return inner
-    return parsed  # type: ignore[return-value]
-
-
-# -----------------------------------------------------------------------------
 # Register + product list parsing (discovery.ts)
 # -----------------------------------------------------------------------------
 
@@ -296,6 +137,58 @@ def normalize_banking_products_url(endpoint_raw: str) -> str:
     if "/cds-au/v1/banking/products" in raw:
         return safe_url(raw.split("?")[0])
     return safe_url(raw) + "/cds-au/v1/banking/products"
+
+
+def _register_https_urls(value: Any) -> Iterable[str]:
+    """Yield every HTTPS string in one bounded Register provider record."""
+
+    pending = [value]
+    visited = 0
+    while pending:
+        current = pending.pop()
+        visited += 1
+        if visited > 10_000:
+            raise ValueError("register provider record is too deeply populated")
+        if isinstance(current, str):
+            if current.strip().lower().startswith("https://"):
+                yield current
+        elif isinstance(current, Mapping):
+            pending.extend(current.values())
+        elif isinstance(current, list):
+            pending.extend(current)
+
+
+def _banking_brand_row(
+    item: Mapping[str, Any],
+    *,
+    endpoint_raw: str,
+    brand_name: str,
+    legal_name: str,
+) -> Dict[str, str]:
+    endpoint_url = normalize_banking_products_url(endpoint_raw)
+    data_holder_id = pick_text(item, ["dataHolderId"])
+    data_holder_brand_id = pick_text(item, ["dataHolderBrandId"])
+    interim_id = pick_text(item, ["interimId"])
+    display_name = brand_name or legal_name
+    identity_urls = (*_register_https_urls(item), endpoint_url)
+    uid, identity_status = provider_uid(
+        data_holder_id=data_holder_id,
+        data_holder_brand_id=data_holder_brand_id,
+        interim_id=interim_id,
+        endpoint_urls=identity_urls,
+        display_name=display_name,
+    )
+    return {
+        "brand_name": brand_name,
+        "legal_entity_name": legal_name,
+        "endpoint_url": endpoint_url,
+        "data_holder_id": data_holder_id,
+        "data_holder_brand_id": data_holder_brand_id,
+        "interim_id": interim_id,
+        "provider_uid": uid,
+        "provider_identity_status": identity_status,
+        "identity_authority": canonical_authority(identity_urls),
+    }
 
 
 def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
@@ -320,11 +213,12 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
             if "banking" in inds:
-                yield {
-                    "brand_name": brand_name,
-                    "legal_entity_name": legal_name,
-                    "endpoint_url": normalize_banking_products_url(base),
-                }
+                yield _banking_brand_row(
+                    item,
+                    endpoint_raw=base,
+                    brand_name=brand_name,
+                    legal_name=legal_name,
+                )
             continue
 
         # Legacy register row (e.g. banking data-holders/brands) — no industries array.
@@ -341,35 +235,63 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
         legal_name = ""
         if is_record(legal_entity):
             legal_name = pick_text(legal_entity, ["legalEntityName"])
-        endpoint_url = normalize_banking_products_url(endpoint_raw)
-        yield {
-            "brand_name": brand_name,
-            "legal_entity_name": legal_name,
-            "endpoint_url": endpoint_url,
-        }
+        yield _banking_brand_row(
+            item,
+            endpoint_raw=endpoint_raw,
+            brand_name=brand_name,
+            legal_name=legal_name,
+        )
 
 
 def extract_products(payload: Any) -> List[Dict[str, Any]]:
     if not is_record(payload):
-        return []
+        raise ValueError("products response must be an object")
     data = payload.get("data")
-    if is_record(data):
-        inner = data.get("products")
-        seq = as_array(inner)
-    else:
-        seq = as_array(data)
-    return [x for x in seq if is_record(x)]
+    if not is_record(data) or "products" not in data:
+        raise ValueError("products response must contain data.products")
+    products = data.get("products")
+    if not isinstance(products, list) or any(not is_record(item) for item in products):
+        raise ValueError("data.products must be an array of objects")
+    return list(products)
 
 
 def next_link(payload: Any, current_url: str) -> Optional[str]:
     if not is_record(payload):
-        return None
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination response must be an object"
+        )
     links = payload.get("links")
     if not is_record(links):
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links must be an object"
+        )
+    self_link = links.get("self")
+    if not isinstance(self_link, str) or not self_link.strip():
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.self must be a URL"
+        )
+    try:
+        pagination_next_url(current_url, self_link)
+    except HttpPolicyError as error:
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.self is invalid"
+        ) from error
+    if "next" not in links:
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.next is required"
+        )
+    raw_next = links["next"]
+    if raw_next is None:
         return None
-    nxt = str(links.get("next") or "").strip()
+    if not isinstance(raw_next, str):
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.next must be a URL or null"
+        )
+    nxt = raw_next.strip()
     if not nxt:
-        return None
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.next must be a URL or null"
+        )
     return pagination_next_url(current_url, nxt)
 
 
@@ -904,6 +826,7 @@ def collect_register_snapshot(
     sleep_ms: int,
     holders_filter: Optional[str],
     attempt_journal: Optional[RawAttemptJournal] = None,
+    provider_registry_path: Optional[Path] = None,
 ) -> RegisterSnapshot:
     """Merge banking holder rows from all register URLs."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
@@ -968,6 +891,25 @@ def collect_register_snapshot(
             merged_banking[key] = b
 
     banking_all = list(merged_banking.values())
+    registry_bytes = b'{"bindings":[],"schema_version":1}\n'
+    if provider_registry_path is not None:
+        banking_all, registry_bytes = resolve_provider_rows(
+            banking_all, provider_registry_path
+        )
+    by_uid: dict[str, list[Dict[str, Any]]] = {}
+    for row in banking_all:
+        by_uid.setdefault(str(row["provider_uid"]), []).append(row)
+    banking_all = []
+    for uid in sorted(by_uid):
+        rows = by_uid[uid]
+        row = dict(rows[0])
+        if len(rows) > 1:
+            row["provider_identity_status"] = "identity_collision"
+            row["provider_identity_held"] = True
+            row["provider_identity_evidence_digest"] = hashlib.sha256(
+                json.dumps(rows, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+        banking_all.append(row)
     count_banking = len(banking_all)
 
     if holders_filter:
@@ -997,5 +939,6 @@ def collect_register_snapshot(
         register_attempts=register_attempts,
         banking_brands=banking_brands,
         banking_count_before_filter=count_banking,
+        provider_identity_registry_bytes=registry_bytes,
     )
 

@@ -309,8 +309,8 @@ echo timer_last=$(systemctl show ar-local-daily.timer -p LastTriggerUSec --value
 echo timer_next=$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)
 if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi
 if pgrep -f '[p]i_daily_sync.py|[c]dr_daily.py' >/dev/null; then echo competing_process=PRESENT; exit 43; else echo competing_process=ABSENT; fi
-curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest | python3 -c "import json,sys;v=json.load(sys.stdin);b=v.get('banks_counts')or{{}};assert v.get('run_date')=='{run_day.isoformat()}';assert int(b.get('products',0))>0;assert int(b.get('rates',0))>0"
-echo dashboard=HEALTHY
+curl -fsS --max-time 10 http://127.0.0.1:8808/api/status | python3 -c "import json,sys;v=json.load(sys.stdin);o=v.get('observation')or{{}};assert v.get('service')=='ar-local';assert v.get('status') in ('ok','degraded');assert o.get('date')=='{run_day.isoformat()}';assert o.get('accounting_id')"
+echo status_api=HEALTHY
 case "$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)" in *"{next_day.isoformat()} 01:00:00 AEST") ;; *) exit 46 ;; esac
 """
     return script.encode()
@@ -370,19 +370,19 @@ unavailable=set(v.get('unavailable_populations') or []);assert {'consumer_eligib
 source=(data/c['source_path']).resolve();source.relative_to(data);dbs=[x for x in c['artifacts'] if x['path'].endswith('.sqlite')];assert len(dbs)==1
 meta=dbs[0];db=(source/meta['path']).resolve();db.relative_to(source);digest=h(db);assert db.stat().st_size==int(meta['bytes']) and digest==meta['sha256']
 with sqlite3.connect(f'file:{db}?mode=ro',uri=True) as con:
- qc=con.execute('PRAGMA quick_check').fetchone()[0];assert qc=='ok';tables={r[0] for r in con.execute("select name from sqlite_master where type='table'")}
+ qc=[r[0] for r in con.execute('PRAGMA quick_check')];integrity=[r[0] for r in con.execute('PRAGMA integrity_check')];foreign_key=con.execute('PRAGMA foreign_key_check').fetchone();assert qc==['ok'] and integrity==['ok'] and foreign_key is None;tables={r[0] for r in con.execute("select name from sqlite_master where type='table'")}
  required={'runs','schema_meta','bank_products','bank_rates','bank_items','bank_product_facts','bank_product_changes'};assert required<=tables
  counts={t:con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in sorted(required)};assert all(counts[t]>0 for t in ('bank_products','bank_rates','bank_items','bank_product_facts'))
  banks=m.get('banks') or {};assert counts['bank_products']==int(banks.get('products') or 0)==discovered;assert counts['bank_rates']==int(banks.get('rates') or 0);assert counts['bank_product_facts']==int(banks.get('product_facts') or 0);assert counts['bank_product_changes']==int(banks.get('product_changes') or 0);assert counts['bank_items']==sum(int(banks.get(k) or 0) for k in ('fees','features','eligibility','constraints'))
 assert sum(int(x.get('failure_records') or 0) for x in states)==failures
 local_v1={}
-for key,folder,tag,required,allowed in (('dated','v1-dated',f'app-payload-{D}',{'core','details'},{'core','details'}),('rolling','v1-latest','app-payload-latest',{'core','details'},{'bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'})):
+for key,folder,tag,required,allowed in (('dated','v1-dated',f'app-payload-{D}',{'core','details'},{'core','details'}),('rolling','v1-latest','app-payload-latest',{'core','details'},{'bank_history','core','details','history_banks','rba_calendar','search_index'})):
  root=(state/'app-payload/v1'/folder).resolve();root.relative_to(state);manifest_path=(root/'manifest.json').resolve();manifest_path.relative_to(root);payload=json.loads(manifest_path.read_text())
  assert payload.get('schema_version')==1 and payload.get('run_date')==D and payload.get('tag')==tag;roles=set((payload.get('files') or {}).keys());assert required<=roles<=allowed;assets={}
  for role,item in payload['files'].items():
   name=item['name'];assert Path(name).name==name;asset=(root/name).resolve();asset.relative_to(root);asset_sha=h(asset);asset_bytes=asset.stat().st_size;assert asset_sha==item['sha256'] and asset_bytes==int(item['bytes']);assets[role]={'name':name,'sha256':asset_sha,'bytes':asset_bytes}
  local_v1[key]={'tag':tag,'manifest_sha256':h(manifest_path),'assets':assets}
-print(json.dumps({'result':'PASS','date':D,'pointer':p,'marker_sha256':h(m_path),'contract_digest':c['contract_digest'],'banks':m.get('banks') or {},'attempt_evidence':a,'coverage':v,'provider_states':states,'quarantines':c.get('quarantines',[]),'sqlite':{'path':str(db),'bytes':db.stat().st_size,'sha256':digest,'quick_check':qc,'populations':counts},'local_v1':local_v1},sort_keys=True))
+print(json.dumps({'result':'PASS','date':D,'pointer':p,'marker_sha256':h(m_path),'contract_digest':c['contract_digest'],'banks':m.get('banks') or {},'attempt_evidence':a,'coverage':v,'provider_states':states,'quarantines':c.get('quarantines',[]),'sqlite':{'path':str(db),'bytes':db.stat().st_size,'sha256':digest,'quick_check':'ok','integrity_check':'ok','foreign_key_check':'ok','populations':counts},'local_v1':local_v1},sort_keys=True))
 '''
     return template.replace("__DATE__", repr(run_day.isoformat())).encode()
 
@@ -478,7 +478,7 @@ def validate_service(args: argparse.Namespace, writer: EvidenceWriter) -> dict[s
         raise VerificationError("natural start identity is invalid")
     terminal_raw = require_success(ssh(args, "bash", "-s", input_bytes=remote_terminal_script(args.date)), "terminal-service", writer)
     terminal = parse_key_values(terminal_raw, "terminal")
-    require_keys(terminal, ("head", "checkout_clean", "active", "invocation", "start_timestamp", "start_iso", "exit_iso", "status", "code", "result", "restarts", "timer_enabled", "timer_active", "timer_last", "timer_next", "lock", "competing_process", "dashboard"), "terminal values")
+    require_keys(terminal, ("head", "checkout_clean", "active", "invocation", "start_timestamp", "start_iso", "exit_iso", "status", "code", "result", "restarts", "timer_enabled", "timer_active", "timer_last", "timer_next", "lock", "competing_process", "status_api"), "terminal values")
     exit_at = datetime.fromisoformat(terminal["exit_iso"].replace("Z", "+00:00"))
     started_at = datetime.fromisoformat(terminal["start_iso"].replace("Z", "+00:00"))
     if (
@@ -499,7 +499,7 @@ def validate_service(args: argparse.Namespace, writer: EvidenceWriter) -> dict[s
         or terminal["timer_active"] != "active"
         or terminal["lock"] != "ABSENT"
         or terminal["competing_process"] != "ABSENT"
-        or terminal["dashboard"] != "HEALTHY"
+        or terminal["status_api"] != "HEALTHY"
     ):
         raise VerificationError("natural terminal service gate failed")
     writer.write_json("terminal-service-values.json", terminal)

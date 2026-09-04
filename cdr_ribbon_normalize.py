@@ -3,8 +3,8 @@
 Imports cdr_taxonomy at call-time (not module-load) to avoid a circular
 dependency — cdr_taxonomy is a leaf module with no upward imports.
 
-Logic mirrors dashboard/cdr-ribbon-map.js so export JSON/SQLite can stay slim without
-embedding full cleaned rate payloads in ``details_json``.
+The canonical normalization keeps export JSON/SQLite slim without embedding
+full cleaned rate payloads in ``details_json``.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ from __future__ import annotations
 import math
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
+
+from cdr_contracts import parse_rate_string
 
 _ISO_DURATION = re.compile(r"^P(\d+)([DMYW])$", re.IGNORECASE)
 _MONTH_RE = re.compile(r"(\d+)\s*(?:MONTH|MTH|MO)", re.IGNORECASE)
@@ -32,23 +34,17 @@ _BUNDLE_VARIABLE = re.compile(r"^bundle[_-]?discount[_-]?variable\b", re.IGNOREC
 
 
 # --------------------------------------------------------------------------- #
-# Ribbon aggregate - the SINGLE source of truth shared by the dashboard server
-# (cdr_dashboard_server.bank_ribbon_payload) and the mobile payload builder
-# (app_payload.build_payload). Both must rank/aggregate on the same rate metric,
-# so the implementation lives here and is imported by both. Do not re-inline it.
+# Single source of truth for mobile rate ranking and aggregation. Do not re-inline.
 # --------------------------------------------------------------------------- #
 def normalized_rate_value(raw: Any, dataset: str, percent_style: bool) -> Optional[float]:
+    del dataset, percent_style
     try:
-        value = float(raw)
-    except (TypeError, ValueError):
+        value = float(parse_rate_string(raw))
+    except ValueError:
         return None
     if not value or value <= 0:
         return None
-    if percent_style:
-        return value / 100.0
-    if dataset == "Mortgage" and 0.3 < value <= 1:
-        return value / 10.0
-    return value / 100.0 if value > 1 else value
+    return value
 
 
 def ribbon_stats(values: List[float]) -> Dict[str, Optional[float]]:
@@ -84,20 +80,11 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
         str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
         for row in rows
     ]
-    percent_style: set[str] = set()
-    for key, row in zip(keys, rows):
-        try:
-            raw = float(effective_rate(row))
-        except (TypeError, ValueError):
-            continue
-        if key and raw > 1:
-            percent_style.add(key)
-
     providers: Dict[str, Dict[str, Any]] = {}
     rates: List[float] = []
     products: set[str] = set()
     for key, row in zip(keys, rows):
-        rate = normalized_rate_value(effective_rate(row), section, key in percent_style)
+        rate = normalized_rate_value(effective_rate(row), section, False)
         if rate is None:
             continue
         provider = str(row.get("provider") or "Unknown")
@@ -124,53 +111,6 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
             for provider, bucket in sorted(providers.items())
         ],
     }
-
-
-def compact_history(
-    run_dates: List[str],
-    aggregates: Mapping[str, Mapping[str, Any]],
-) -> Dict[str, Any]:
-    """Reshape per-day ``aggregate_ribbon`` outputs into a compact history series.
-
-    ``aggregates`` maps each run_date to ``aggregate_ribbon(rows, section)`` for
-    that day. ``points`` is dense — one entry per ``run_dates`` day, with nulls on
-    days that have no data. ``providers[*].by_date`` is a SPARSE date->stats map
-    (only the days a provider published), so callers index it by date, not by
-    position. This compact shape replaces shipping raw per-product history rows to
-    the client, while staying on the same comparison-rate metric the live ribbon uses.
-    """
-    ordered = list(run_dates)
-    points: List[Dict[str, Any]] = []
-    prov_series: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    for date in ordered:
-        agg = aggregates.get(date)
-        if not agg:
-            points.append({"date": date, "min": None, "max": None, "mean": None, "median": None, "count": 0})
-            continue
-        rng = agg.get("range") or {}
-        counts = agg.get("counts") or {}
-        points.append({
-            "date": date,
-            "min": rng.get("min"),
-            "max": rng.get("max"),
-            "mean": rng.get("mean"),
-            "median": rng.get("median"),
-            "count": counts.get("rates", 0),
-        })
-        for prov in agg.get("providers") or []:
-            name = prov.get("provider") or "Unknown"
-            prov_series.setdefault(name, {})[date] = {
-                "min": prov.get("min"),
-                "max": prov.get("max"),
-                "mean": prov.get("mean"),
-                "median": prov.get("median"),
-                "count": prov.get("rates", 0),
-            }
-    providers = [
-        {"provider": name, "by_date": series}
-        for name, series in sorted(prov_series.items())
-    ]
-    return {"run_dates": ordered, "points": points, "providers": providers}
 
 
 def _lower_join(*parts: Any) -> str:
@@ -695,7 +635,7 @@ def normalize_interest_payment(
         return "annually"
     if fq is not None and fq >= 12:
         return "annually"
-    # Parity with dashboard/cdr-ribbon-map.js normalizeInterestPayment: fq==6 (P6M) → monthly here.
+    # CDR frequency 6 (P6M) normalizes to monthly here.
     # Canonical rules live in this module; mirror changes in JS when adjusting cadence buckets.
     if "monthly" in t or (fq is not None and (fq == 1 or fq == 6)):
         return "monthly"

@@ -1,4 +1,4 @@
-"""Shared Pi service restart helpers (dashboard, nginx, tailscaled)."""
+"""Shared Pi service restart helpers (status API, nginx, tailscaled)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 SUBPROCESS_TIMEOUT_SEC = 120
 
-DASHBOARD_UNIT = "ar-local-dashboard.service"
+STATUS_UNIT = "ar-local-status.service"
 NGINX_UNIT = "nginx.service"
 TAILSCALED_UNIT = "tailscaled.service"
 
@@ -33,21 +33,21 @@ def _run(cmd: list[str], *, dry_run: bool = False) -> tuple[int, str, str]:
 
 
 def nginx_config_present() -> bool:
-    return Path("/etc/nginx/sites-enabled/ar-local-dashboard").is_file()
+    return Path("/etc/nginx/sites-enabled/ar-local-status").is_file()
 
 
-def restart_dashboard(*, dry_run: bool = False) -> int:
-    code, _, err = _run(["sudo", "systemctl", "restart", DASHBOARD_UNIT], dry_run=dry_run)
+def restart_status(*, dry_run: bool = False) -> int:
+    code, _, err = _run(["sudo", "systemctl", "restart", STATUS_UNIT], dry_run=dry_run)
     if code != 0:
-        print(f"ar_local_pi_service_heal: restart {DASHBOARD_UNIT} failed: {err}", file=sys.stderr)
+        print(f"ar_local_pi_service_heal: restart {STATUS_UNIT} failed: {err}", file=sys.stderr)
     else:
-        print(f"ar_local_pi_service_heal: restarted {DASHBOARD_UNIT}")
+        print(f"ar_local_pi_service_heal: restarted {STATUS_UNIT}")
     return code
 
 
 def reload_or_restart_nginx(*, dry_run: bool = False) -> int:
     if not nginx_config_present():
-        install_proxy = REPO_ROOT / "deploy" / "pi" / "install-pi-dashboard-proxy.sh"
+        install_proxy = REPO_ROOT / "deploy" / "pi" / "install-pi-status-proxy.sh"
         if install_proxy.is_file():
             code, _, err = _run(["sudo", "sh", str(install_proxy), str(REPO_ROOT)], dry_run=dry_run)
             if code != 0:
@@ -67,9 +67,9 @@ def reload_or_restart_nginx(*, dry_run: bool = False) -> int:
     return code
 
 
-def restart_dashboard_and_nginx(*, dry_run: bool = False) -> int:
-    """Restart dashboard backend and reload/restart nginx front proxy."""
-    rc = restart_dashboard(dry_run=dry_run)
+def restart_status_and_nginx(*, dry_run: bool = False) -> int:
+    """Restart the status API and reload or restart its nginx proxy."""
+    rc = restart_status(dry_run=dry_run)
     if rc != 0:
         return rc
     return reload_or_restart_nginx(dry_run=dry_run)

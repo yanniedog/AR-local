@@ -531,6 +531,8 @@ def _metadata(fact: Mapping[str, Any]) -> Dict[str, Any]:
         "category", "canonical_key", "canonicalKey", "fact_key", "factKey", "path",
         "name", "label", "title", "source_value_json", "value_json", "qualifiers", "qualifiers_json",
         "source_path", "product_key", "source_file",
+        "provider_uid", "provider_identity_status", "product_uid", "legacy_product_key",
+        "evidence_id", "details_complete",
         *_DUPLICATED_PRODUCT_FIELDS,
         *_TEXT_FIELDS, *_VALUE_FIELDS, *_RANGE_FIELDS, *_CADENCE_FIELDS,
     }
@@ -961,7 +963,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     previous = args.previous.resolve() if args.previous else previous_finalized_run(current)
     report = compare_runs(previous, current) if previous else {
         "schema_version": SCHEMA_VERSION, "normalization_version": NORMALIZATION_VERSION,
-        "previous_run_date": None, "run_date": current.name, "current_run_date": current.name,
+        "previous_run_date": None, "run_date": run_date(current),
+        "current_run_date": run_date(current),
         "products": {"previous": 0, "current": 0, "joined": 0},
         "change_count": 0, "events": [], "changes": [],
     }

@@ -53,9 +53,11 @@ for name in \
   ar_local_boot_proof.py \
   ar_local_checkout.py \
   ar_local_deployment_chain.py \
+  ar_local_daily_reconciliation.py \
   ar_local_operation_lock.py \
   ar_local_rollback_record.py \
   ar_local_restore_verification.py \
+  ar_local_sqlite_health.py \
   pi_backup_foundation.py \
   pi_ingest_terminal.py \
   cdr_atomic.py \
@@ -77,9 +79,11 @@ done
     ar_local_boot_proof.py \
     ar_local_checkout.py \
     ar_local_deployment_chain.py \
+    ar_local_daily_reconciliation.py \
     ar_local_operation_lock.py \
     ar_local_rollback_record.py \
     ar_local_restore_verification.py \
+    ar_local_sqlite_health.py \
     pi_backup_foundation.py \
     pi_ingest_terminal.py \
     cdr_atomic.py \

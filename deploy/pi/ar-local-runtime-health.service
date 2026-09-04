@@ -1,6 +1,6 @@
 [Unit]
 Description=AR-local runtime health check and self-heal
-After=network-online.target ar-local-dashboard.service
+After=network-online.target ar-local-status.service
 Wants=network-online.target
 
 [Service]

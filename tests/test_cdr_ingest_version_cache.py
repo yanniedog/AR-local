@@ -35,7 +35,9 @@ def test_ingest_brand_caches_holder_version(tmp_path, monkeypatch):
     def fake_fetch(url, *, versions=None, timeout, max_retries, sleep_ms, **_kw):
         versions_seen.append(versions)
         # The product-index page negotiates to v4; details echo OK.
-        return FetchResult(ok=True, status=200, url=url, text='{"data": {}}', version=4)
+        product_id = url.rsplit("/", 1)[-1]
+        body = '{"data": {}}' if product_id == "products" else f'{{"data": {{"productId": "{product_id}"}}}}'
+        return FetchResult(ok=True, status=200, url=url, text=body, version=4)
 
     monkeypatch.setattr(lib, "fetch_cdr_json", fake_fetch)
     monkeypatch.setattr(lib, "extract_products", lambda parsed: [{"productId": "P1", "name": "Acct"}])
@@ -44,7 +46,11 @@ def test_ingest_brand_caches_holder_version(tmp_path, monkeypatch):
     monkeypatch.setattr(lib, "classify_product_for_ingest", lambda *a, **k: (ds_key, None))
 
     lib.ingest_brand(
-        {"endpoint_url": "http://holder/cds-au/v1/banking/products"},
+        {
+            "endpoint_url": "http://holder/cds-au/v1/banking/products",
+            "provider_uid": "provider-fallback:v1:" + "a" * 64,
+            "provider_identity_status": "fallback",
+        },
         date_root=tmp_path,
         resume=False,
         sleep_ms=0,

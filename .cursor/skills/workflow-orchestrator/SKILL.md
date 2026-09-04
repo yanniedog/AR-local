@@ -83,7 +83,7 @@ npm run close-loop:check -- --pr <n>
 npm run close-loop:check -- --post-merge-gap
 ```
 
-9. Restart local dashboard if UI/server changed
+9. Verify the deployed Pi status API after an authorized deploy
 10. `npm run verify:local -- --base-url=<url>/`
 
 Exit **1** ? open `agent/close-loop-pr-<n>-followup` in the **same cycle**; do not report merged until fix SHAs are on `origin/main`.

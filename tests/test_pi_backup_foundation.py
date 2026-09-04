@@ -24,9 +24,13 @@ import ar_local_checkout  # noqa: E402
 import ar_local_deployment_chain as deployment_chain  # noqa: E402
 import ar_local_operation_lock as operation_lock  # noqa: E402
 import ar_local_rollback_record as rollback_record  # noqa: E402
+import ar_local_restore_verification as restore_verification  # noqa: E402
 import pi_backup_foundation as backup  # noqa: E402
-import cdr_outputs  # noqa: E402
 import cdr_finalization  # noqa: E402
+from cdr_attempt_evidence_promotion import promote_attempt_evidence  # noqa: E402
+from cdr_outputs import build_outputs  # noqa: E402
+from tests.support_observation import write_verified_observation  # noqa: E402
+from tests.test_cdr_outputs import _captured_run  # noqa: E402
 
 COMMIT = "a" * 40
 DIGEST = "b" * 64
@@ -272,6 +276,10 @@ def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> Non
     report = backup._sqlite_backup(source, destination)
     connection.close()
     assert report["quick_check"] == "ok"
+    assert report["integrity_check"] == "ok"
+    assert report["foreign_key_check"] == "ok"
+    assert report["source_integrity_check"] == "ok"
+    assert report["source_foreign_key_check"] == "ok"
     with sqlite3.connect(destination) as restored:
         assert restored.execute("SELECT COUNT(*) FROM series_observations").fetchone()[0] == 1
         assert restored.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
@@ -580,115 +588,39 @@ def test_snapshot_reserve_includes_complete_staged_code_payload(monkeypatch, tmp
     assert not list(policy.backup_dir.glob(".partial-*"))
 
 
-def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path: Path) -> None:
+def test_daily_export_reconciliation_binds_canonical_observation(tmp_path: Path) -> None:
     run_date = "2026-08-24"
     exports = tmp_path / "runs" / run_date / "_exports"
-    exports.mkdir(parents=True)
-    banks = {
-        "products": [], "rates": [], "fees": [], "features": [],
-        "eligibility": [], "constraints": [], "product_facts": [],
-        "product_changes": [], "failures": [], "holder_attempts": [],
-    }
+    observation = write_verified_observation(
+        exports,
+        observation_date=run_date,
+        observed_at=f"{run_date}T00:00:00Z",
+    )
     database = exports / "local-cdr.sqlite"
-    cdr_outputs.rebuild_run_db(database, run_date, banks)
     assert not Path(f"{database}-wal").exists()
     assert not Path(f"{database}-shm").exists()
-    (exports / f"banks-{run_date}.json").write_text(json.dumps(banks), encoding="utf-8")
-    cache = exports / "dashboard-cache"
-    cache.mkdir()
-    expected = {key: len(value) for key, value in banks.items()}
-    (cache / "latest.json").write_text(
-        json.dumps({"run_date": run_date, "banks_counts": expected}), encoding="utf-8"
-    )
-    report = backup._daily_export_reconciliation(exports / "local-cdr.sqlite")
-    assert report["run_date"] == run_date
-    banks["products"].append({"product_id": "missing-from-db"})
-    (exports / f"banks-{run_date}.json").write_text(json.dumps(banks), encoding="utf-8")
-    with pytest.raises(ValueError, match="runs metadata"):
-        backup._daily_export_reconciliation(exports / "local-cdr.sqlite")
+    record, findings = restore_verification._verify_daily_database(database, tmp_path)
+    assert findings == []
+    assert record["schema_version"] == 11
+    assert record["export_reconciliation"]["counts"] == observation["row_counts"]
+    with database.open("ab") as stream:
+        stream.write(b"tamper")
+    _record, findings = restore_verification._verify_daily_database(database, tmp_path)
+    assert any("daily_reconciliation_mismatch" in finding for finding in findings)
 
 
 def _write_finalized_observation(data_root: Path, run_date: str = "2026-08-24") -> None:
-    exports = data_root / "runs" / run_date / "_exports"
-    exports.mkdir(parents=True)
-    product = {
-        "dataset": "banking",
-        "provider": "provider-a",
-        "product_id": "product-a",
-        "product_key": "provider-a:product-a",
-        "product_name": "Product A",
-        "source_file": "fixture.json",
-        "details_json": "{}",
-    }
-    rate = {
-        **product,
-        "rate_family": "variable",
-        "rate": "5.00",
-        "comparison_rate": "5.10",
-    }
-    banks = {
-        "products": [product],
-        "rates": [rate],
-        "fees": [],
-        "features": [],
-        "eligibility": [],
-        "constraints": [],
-        "product_facts": [],
-        "product_changes": [],
-        "failures": [],
-    }
-    cdr_outputs.rebuild_run_db(exports / "local-cdr.sqlite", run_date, banks)
-    (exports / f"banks-{run_date}.json").write_text(
-        json.dumps(banks), encoding="utf-8"
-    )
-    counts = {key: len(value) for key, value in banks.items()}
-    dashboard = exports / "dashboard-cache"
-    dashboard.mkdir()
-    (dashboard / "latest.json").write_text(
-        json.dumps({"run_date": run_date, "banks_counts": counts}),
-        encoding="utf-8",
-    )
-    (exports / "ingest-status.json").write_text(
-        json.dumps(
-            {
-                "total": 0,
-                "corrupt_records": 0,
-                "failure_provenance_complete": True,
-                "incomplete": False,
-                "by_phase": {},
-                "by_status": {},
-                "by_provider": {},
-                "register_provenance_complete": True,
-                "register_attempts": [
-                    {
-                        "source_url": "https://register.example/holders",
-                        "mode": "plain",
-                        "ok": True,
-                        "status": 200,
-                        "bytes": 2,
-                        "sha256": "a" * 64,
-                    }
-                ],
-                "providers_registered": 1,
-                "providers_attempted": 1,
-                "provider_states": [
-                    {
-                        "provider_uid": "provider-a",
-                        "state": "complete",
-                        "failure_records": 0,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+    run = _captured_run(data_root / "runs", run_date=run_date)
+    result = build_outputs(run)
+    exports = run / "_exports"
+    promote_attempt_evidence(run, exports)
     state = data_root / "state"
     cdr_finalization.finalize_observation(
         exports,
         state,
         state / f"{run_date}.done.json",
         observation_date=run_date,
-        result={"run_date": run_date, "banks_counts": counts},
+        result=result,
     )
 
 
@@ -797,7 +729,7 @@ def test_restored_state_accepts_fully_bound_latest_observation(tmp_path: Path) -
     )
 
 
-def test_restored_state_preserves_older_schema_without_current_reconciliation(
+def test_restored_state_rejects_nonselected_unsupported_daily_schema(
     tmp_path: Path,
 ) -> None:
     historical = tmp_path / "runs/2026-08-23/_exports"
@@ -812,7 +744,11 @@ def test_restored_state_preserves_older_schema_without_current_reconciliation(
     ledger_report = verify_ledger(tmp_path / "state")
     assert ledger_report["ok"], ledger_report
     report = backup._verify_restored_state(tmp_path)
-    assert report["ok"], report["findings"]
+    assert not report["ok"]
+    assert any(
+        finding.startswith("daily_reconciliation_mismatch:")
+        for finding in report["findings"]
+    )
     historical_record = next(
         item
         for item in report["sqlite"]

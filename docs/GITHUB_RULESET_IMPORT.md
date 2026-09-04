@@ -1,6 +1,6 @@
-# Import GitHub ruleset for `main` (bot gates + Actions bypass)
+# Import GitHub ruleset for `main` (feedback gate + Actions bypass)
 
-One-time operator setup so workflow jobs can push directly to `main` (PR bot matrix sync, mobile auto-release) while keeping bot merge gates for **human** PRs only.
+One-time operator setup so workflow jobs can push directly to `main` (PR bot matrix sync, mobile auto-release) while keeping the review-thread merge gate for **human** PRs.
 
 **Operator script (prints policy + import steps + local verify):**
 
@@ -9,7 +9,7 @@ npm run github:bot-gates:operator
 npm run github:bot-gates:operator -- --verify-pr 310
 ```
 
-**Bot skip policy** (chore + `github-actions[bot]` PRs) lives in repo code (`scripts/lib/pr-gate-exempt.mjs`), not in the ruleset JSON. The ruleset always lists the two gate checks; workflows skip them when exempt.
+**Thread-gate skip policy** (chore + `github-actions[bot]` PRs) lives in repo code (`scripts/lib/pr-gate-exempt.mjs`), not in the ruleset JSON. The workflow reports a passing required check when exempt.
 
 **Artifact:** [`.github/rulesets/main-bot-gates.json`](../.github/rulesets/main-bot-gates.json)
 
@@ -17,7 +17,7 @@ Mirrors legacy branch protection on `main` (verified via `gh api repos/yanniedog
 
 | Setting | Value |
 |---------|-------|
-| Required checks | `bot-feedback-gate`, `bot-presence-gate` (strict / up-to-date) |
+| Required check | `bot-feedback-gate` (strict / up-to-date) |
 | Conversation resolution | Required |
 | Force push | Blocked |
 | Branch deletion | Blocked |

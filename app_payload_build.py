@@ -3,24 +3,22 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 import math
 import os
-import shutil
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
-import app_payload_bank_spread
-import cdr_brand_logos
-import payload_crypto
 import rba_decisions
 import rba_official
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
 from cdr_clean_export import app_coverage_aliases, coverage_summary
+from cdr_observation import load_verified_observation
 
 from app_payload_contracts import validate_coverage
 
@@ -46,41 +44,51 @@ from app_payload_common import (
     dated_tag,
     is_rolling_tag,
     section_filter,
-    utc_now_iso,
     _load_json,
 )
 from app_payload_details import build_details
 from app_payload_publish import publish_payload
 
-def _find_banks_json(exports_dir: Path, run_date: str) -> Path:
-    # Require the banks.json that matches latest.json's run_date. Never substitute a
-    # different date's file — that would publish older rates under a newer run_date.
-    candidate = exports_dir / "dashboard-cache" / run_date / "banks.json"
-    if not candidate.exists():
-        raise FileNotFoundError(
-            f"banks.json for run_date {run_date} not found at {candidate}; "
-            "refusing to package a different run's data"
-        )
-    return candidate
-
-
 def _ingest_schedule() -> Dict[str, Any]:
     try:
         import ar_local_ingest_schedule as sched  # local module
 
-        now = datetime.now(timezone.utc)
-        return {
-            "label": sched.DAILY_INGEST_SCHEDULE_LABEL,
-            "next_due_utc": sched.next_daily_due_utc(now).isoformat().replace("+00:00", "Z"),
-        }
+        return {"label": sched.DAILY_INGEST_SCHEDULE_LABEL}
     except Exception:  # pragma: no cover - schedule is informational only
         return {"label": "Daily"}
 
 
 def _gzip_bytes(obj: Any) -> bytes:
-    raw = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    # mtime=0 keeps output stable across runs for the same input.
-    return gzip.compress(raw, compresslevel=9, mtime=0)
+    raw = json.dumps(
+        obj,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        sort_keys=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    stream = io.BytesIO()
+    # GzipFile fixes filename, mtime, compression, and the cross-platform OS byte.
+    with gzip.GzipFile(
+        filename="", mode="wb", fileobj=stream, compresslevel=9, mtime=0
+    ) as archive:
+        archive.write(raw)
+    encoded = stream.getvalue()
+    if encoded[9] != 255:
+        raise RuntimeError("gzip OS header is not reproducible")
+    return encoded
+
+
+def _official_rba_calendar(*, now: Optional[datetime] = None) -> dict[str, Any]:
+    calendar = rba_decisions.calendar_payload()
+    refresh = os.environ.get(
+        "AR_LOCAL_RBA_OFFICIAL_FETCH",
+        os.environ.get("AR_LOCAL_APP_PAYLOAD", ""),
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if refresh:
+        return rba_official.load_calendar(calendar, now=now)
+    # Offline builds remain deterministic, but never package an elapsed meeting
+    # whose result is absent from every checked-in decision source.
+    return rba_official.merge_calendar(calendar, (), now=now)
 
 
 def _asset(
@@ -89,26 +97,20 @@ def _asset(
     run_date: str,
     gz: bytes,
     release_base: str,
-    enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     # Content-addressed name (kind-<run_date>-<sha12>.json.gz[.enc]): a new/corrected
     # payload gets a NEW filename, so uploading it never overwrites an asset the
     # previously published manifest still references. Old manifests stay internally
-    # consistent until the new manifest.json is published last. Encryption uses a
-    # plaintext-derived nonce, so encrypted bytes are equally rebuild-stable.
-    data = payload_crypto.encrypt_asset(gz, enc_key) if enc_key else gz
-    sha = hashlib.sha256(data).hexdigest()
-    suffix = ".json.gz.enc" if enc_key else ".json.gz"
-    name = f"{kind}-{run_date}-{sha[:12]}{suffix}"
-    (out_dir / name).write_bytes(data)
+    # consistent until the new manifest.json is published last.
+    sha = hashlib.sha256(gz).hexdigest()
+    name = f"{kind}-{run_date}-{sha[:12]}.json.gz"
+    (out_dir / name).write_bytes(gz)
     entry: Dict[str, Any] = {
         "name": name,
-        "bytes": len(data),
+        "bytes": len(gz),
         "sha256": sha,
         "url": f"{release_base}/{name}",
     }
-    if enc_key:
-        entry["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     return entry
 
 
@@ -213,7 +215,7 @@ def build_payload(
     *,
     repo: str = DEFAULT_REPO,
     tag: str = DEFAULT_TAG,
-    dashboard_dir: Path = BASE_DIR / "dashboard",
+    asset_dir: Path = BASE_DIR / "payload_assets",
     contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
@@ -221,7 +223,7 @@ def build_payload(
     # is_rolling_tag gate), so a dated build needn't compute them at all.
     data = _compute_payload(
         exports_dir,
-        dashboard_dir=dashboard_dir,
+        asset_dir=asset_dir,
         include_history=is_rolling_tag(tag),
         contract_coverage=contract_coverage,
     )
@@ -295,31 +297,112 @@ def _stable_payload_coverage(
     return coverage
 
 
+def _canonical_coverage(
+    observation: Mapping[str, Any], accounting: Mapping[str, Any]
+) -> Dict[str, Any]:
+    products = [row["document"] for row in observation["products"]]
+    rates = [row["document"] for row in observation["rates"]]
+    providers = accounting["summary"]["providers"]
+    product_counts = accounting["summary"]["products"]
+    issue_counts = accounting["summary"]["issues"]
+    sections: Dict[str, Any] = {}
+    for section in VALID_SECTIONS:
+        section_rates = [row for row in rates if row.get("dataset") == section]
+        sections[section] = {
+            "rates": len(section_rates),
+            "products": len({str(row.get("product_uid") or "") for row in section_rates} - {""}),
+            "providers": len({str(row.get("provider_uid") or "") for row in section_rates} - {""}),
+            "standard_rates": sum(row.get("account_class") == "standard" for row in section_rates),
+            "non_standard_rates": sum(row.get("account_class") == "non_standard" for row in section_rates),
+            "unclassified_rates": sum(
+                row.get("account_class") not in {"standard", "non_standard"}
+                for row in section_rates
+            ),
+        }
+    names = {row["provider_uid"]: row["brand_name"] for row in accounting["providers"]}
+    grouped: Dict[tuple[str, str, str], int] = {}
+    for issue in accounting["issues"]:
+        if issue["public_safe"] is not True:
+            continue
+        provider = names.get(issue["provider_uid"], "Observation")
+        key = (provider, issue["phase"], issue["code"])
+        grouped[key] = grouped.get(key, 0) + issue["occurrence_count"]
+    failures = [
+        {"provider": provider, "phase": phase, "status": status, "count": count}
+        for (provider, phase, status), count in sorted(grouped.items())
+    ]
+    coverage = {
+        "schema_version": 1,
+        "observed_on": observation["observation_date"],
+        "observed_at": observation["observed_at"],
+        "source": "consumer_data_right_observation_v1",
+        "counts": {
+            "brands_observed": len({row["provider_uid"] for row in observation["products"]}),
+            "products": len(products),
+            "rates": len(rates),
+            "issues": issue_counts["total"],
+            "providers_registered": providers["registered"],
+            "providers_attempted": providers["attempted"],
+            "providers_succeeded": providers["attempted"] - providers["failed"],
+            "providers_complete": providers["complete"],
+            "providers_partial": providers["partial"],
+            "providers_failed": providers["failed"],
+            "products_discovered": product_counts["discovered"],
+            "products_published_core_only": product_counts["published_core_only"],
+            "products_omitted": product_counts["omitted_valid"],
+            "products_quarantined": product_counts["quarantined_invalid"],
+        },
+        "sections": sections,
+        "provider_failures": failures,
+        "failures": failures,
+    }
+    validate_coverage(coverage)
+    return coverage
+
+
+def _verify_contract_coverage(
+    supplied: Mapping[str, Any], observation: Mapping[str, Any], accounting: Mapping[str, Any]
+) -> None:
+    providers = accounting["summary"]["providers"]
+    products = accounting["summary"]["products"]
+    expected = {
+        "providers_registered": providers["registered"],
+        "providers_attempted": providers["attempted"],
+        "providers_complete": providers["complete"],
+        "providers_partial": providers["partial"],
+        "providers_failed": providers["failed"],
+        "products_discovered": products["discovered"],
+        "products_published": products["consumer_visible"],
+        "products_published_core_only": products["published_core_only"],
+        "products_omitted": products["omitted_valid"],
+        "products_quarantined": products["quarantined_invalid"],
+        "eligible_rate_rows": observation["row_counts"]["rates"],
+    }
+    mismatches = {
+        key: (supplied.get(key), value)
+        for key, value in expected.items()
+        if key in supplied and supplied.get(key) != value
+    }
+    if mismatches:
+        raise ValueError(f"export contract disagrees with canonical observation: {mismatches}")
+
+
 def _compute_payload(
     exports_dir: Path,
     *,
-    dashboard_dir: Path = BASE_DIR / "dashboard",
+    asset_dir: Path = BASE_DIR / "payload_assets",
     include_history: bool = True,
     state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Parse the run's exports into the (tag-independent) payload data.
-
-    Parsing the multi-MB current banks.json is always needed (core/details). The
-    search index and history scan — the most expensive part, and rolling-only — are
-    computed only when ``include_history`` is set, so the dated build and the
-    skip-rolling backfill path don't pay for assets no release will ship.
-    """
-    latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
-    run_date = str(latest.get("run_date") or "")
-    if not run_date:
-        raise ValueError("latest.json has no run_date")
-    banks = _load_json(_find_banks_json(exports_dir, run_date))
-    rates: List[Dict[str, Any]] = banks.get("rates") or []
-    products: List[Dict[str, Any]] = banks.get("products") or []
-    coverage = _stable_payload_coverage(
-        banks, latest, run_date, contract_coverage=contract_coverage
-    )
+    """Build tag-independent mobile data from one verified observation."""
+    observation, accounting = load_verified_observation(exports_dir)
+    run_date = observation["observation_date"]
+    rates: List[Dict[str, Any]] = [row["document"] for row in observation["rates"]]
+    products: List[Dict[str, Any]] = [row["document"] for row in observation["products"]]
+    coverage = _canonical_coverage(observation, accounting)
+    if contract_coverage:
+        _verify_contract_coverage(contract_coverage, observation, accounting)
 
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
@@ -334,28 +417,13 @@ def _compute_payload(
             "ribbon": aggregate_ribbon(section_rows, section),
         }
 
-    shortcodes = load_brand_shortcodes(dashboard_dir)
-    logos = load_brand_logos(dashboard_dir)
+    shortcodes = load_brand_shortcodes(asset_dir)
+    logos = load_brand_logos(asset_dir)
     # NB: no wall-clock field inside core/details. They are content-hashed (sha256
     # in the manifest) and the app skips re-download when the hash is unchanged, so
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
-    # v2: cache name bumped when SVG logoUris started being kept, so a fresh
-    # raster-only cache can't suppress SVG entries for up to 7 days.
-    legacy_logo_cache = exports_dir / "cdr-brand-logos-v2.json"
-    logo_cache = legacy_logo_cache
-    if state_dir is not None:
-        logo_cache = state_dir / "register-logos" / run_date / "cdr-brand-logos-v2.json"
-        if not logo_cache.exists() and legacy_logo_cache.is_file():
-            logo_cache.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(legacy_logo_cache, logo_cache)
-    register_logos = cdr_brand_logos.fetch_register_logos(cache_path=logo_cache)
-    rba_calendar = rba_decisions.calendar_payload()
-    fetch_official = os.environ.get(
-        "AR_LOCAL_RBA_OFFICIAL_FETCH",
-        os.environ.get("AR_LOCAL_APP_PAYLOAD", ""),
-    ).strip().lower() in ("1", "true", "yes", "on")
-    if fetch_official:
-        rba_calendar = rba_official.load_calendar(rba_calendar)
+    del state_dir
+    rba_calendar = _official_rba_calendar()
     rba_decision_models = [
         rba_decisions.Decision(
             date.fromisoformat(decision["date"]),
@@ -366,9 +434,9 @@ def _compute_payload(
         for decision in rba_calendar["decisions"]
     ]
 
-    rba_series = load_rba_series(dashboard_dir)
+    rba_series = load_rba_series(asset_dir)
     series_by_date = {str(item.get("date") or ""): item for item in rba_series}
-    rba_holds = set(load_rba_holds(dashboard_dir))
+    rba_holds = set(load_rba_holds(asset_dir))
     for decision in rba_calendar["decisions"]:
         if decision["outcome"] == "hold":
             rba_holds.add(decision["date"])
@@ -382,7 +450,7 @@ def _compute_payload(
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
-        "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
+        "brands": build_brands(providers_seen, shortcodes, logos),
         "rba": sorted(series_by_date.values(), key=lambda item: item["date"]),
         "rba_holds": sorted(rba_holds),
         "coverage": coverage,
@@ -396,7 +464,6 @@ def _compute_payload(
     search_index = None
     history_banks = None
     bank_history = None
-    bank_spread_history = None
     if include_history:
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
@@ -413,24 +480,18 @@ def _compute_payload(
             schema_version=SCHEMA_VERSION,
             rba_calendar=rba_decision_models,
         )
-        bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
-            exports_dir,
-            run_date=run_date,
-            history_dates=app_payload_mobile._history_dates,
-            banks_path=app_payload_mobile._banks,
-            load_json=_load_json,
-            schema_version=SCHEMA_VERSION,
-        )
-    counts = latest.get("banks_counts") or banks.get("counts") or {}
+    counts = dict(observation["row_counts"])
+    counts["providers"] = accounting["summary"]["providers"]["registered"]
+    counts["issues"] = accounting["summary"]["issues"]["total"]
     return {
         "core": core,
         "details": details,
         "run_date": run_date,
+        "observed_at": observation["observed_at"],
         "counts": counts,
         "search_index": search_index,
         "history_banks": history_banks,
         "bank_history": bank_history,
-        "bank_spread_history": bank_spread_history,
         "rba_calendar": rba_calendar,
     }
 
@@ -461,11 +522,8 @@ def _package_payload(
         search_index=data["search_index"],
         history_banks=data["history_banks"],
         bank_history=data["bank_history"],
-        bank_spread_history=data.get("bank_spread_history"),
         rba_calendar=data.get("rba_calendar"),
-        # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
-        # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
-        enc_key=payload_crypto.resolve_key_from_env(),
+        observed_at=data.get("observed_at"),
     )
 
 
@@ -481,42 +539,36 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
-    bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
-    enc_key: Optional[bytes] = None,
+    observed_at: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     files: Dict[str, Any] = {
-        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base, enc_key),
-        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base, enc_key),
+        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base),
+        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base),
     }
     if is_rolling_tag(tag) and search_index and search_index.get("products"):
         files["search_index"] = _asset(
-            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base, enc_key
+            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base
         )
     if is_rolling_tag(tag) and history_banks and history_banks.get("sections"):
         files["history_banks"] = _asset(
-            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base, enc_key
+            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base
         )
     if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
         files["bank_history"] = _asset(
-            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
-        )
-    if is_rolling_tag(tag) and bank_spread_history and bank_spread_history.get("banks"):
-        files["bank_spread_history"] = _asset(
-            out_dir, "bank-spread-history", run_date,
-            _gzip_bytes(bank_spread_history), release_base, enc_key,
+            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base
         )
     if is_rolling_tag(tag) and rba_calendar is not None:
         files["rba_calendar"] = _asset(
-            out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
+            out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base
         )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
-        "generated_at": utc_now_iso(),
+        "generated_at": observed_at or f"{run_date}T00:00:00Z",
         "app_min_version": APP_MIN_VERSION,
         "repo": repo,
         "tag": tag,
@@ -524,8 +576,6 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
-    if enc_key:
-        manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
     from app_payload_network_budget import validate_payload_network_budget
 
@@ -604,10 +654,8 @@ def build_and_publish_dual(
     # expensive compute (one live-manifest check, reused below): if a newer release
     # is already live (e.g. a backfill), the rolling build is skipped — and so is
     # the rolling-only history/search scan.
-    latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
-    run_date = str(latest.get("run_date") or "")
-    if not run_date:
-        raise ValueError("latest.json has no run_date")
+    observation, _accounting = load_verified_observation(exports_dir)
+    run_date = observation["observation_date"]
 
     need_latest = False
     live_run_date = ""

@@ -39,7 +39,7 @@ from cdr_finalization import (
 )
 from cdr_outputs import build_outputs
 from cdr_product_changes import previous_finalized_run
-from cdr_ingest_sanity import write_sanity_report
+from cdr_ingest_sanity import persist_sanity_approval, write_sanity_report
 
 
 def local_date() -> str:
@@ -395,7 +395,9 @@ def run_once(args: argparse.Namespace) -> int:
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
-    previous_run_root = previous_finalized_run(persistent_runs_root / date)
+    previous_run_root = previous_finalized_run(
+        persistent_runs_root / date, state_dir=state_dir
+    )
     marker_exists = marker.exists()
     marker_trusted = marker_exists and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
@@ -499,7 +501,12 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    extra_args = [*sector_ingest_args(args), *args.ingest_arg]
+    extra_args = [
+        *sector_ingest_args(args),
+        *args.ingest_arg,
+        "--provider-registry",
+        str(state_dir / "provider-identity-registry-v1.json"),
+    ]
     use_ram_stage = args.ram_stage or automatic_pi_stage
     ram_cleanup_paths: Optional[tuple[Path, Path]] = None
     staged_exports_to_install: Optional[Path] = None
@@ -570,17 +577,19 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if staged_exports_to_install is not None:
-        copytree_atomic(staged_exports_to_install, target_export_root)
-
-    # Post-ingest sanity check (non-blocking). Flags per-product rate
-    # ladders that moved >= LOW_BP vs the previous day's export. See
-    # cdr_ingest_sanity.py module docstring for the 2026-05-20/26
-    # CommBank repricing-window incident that motivated this guard.
+    # Compare before a RAM-staged generation reaches persistent history. Any
+    # broken comparison or suspicious high-impact change stays unfinalized.
+    sanity_root = staged_exports_to_install or target_export_root
     try:
-        report_path = write_sanity_report(target_export_root, date, persistent_runs_root)
-    except Exception as exc:  # never let the guard fail the ingest
-        print(f"sanity-check: error writing report: {type(exc).__name__}: {exc}", file=sys.stderr)
+        report_path = write_sanity_report(
+            sanity_root, date, persistent_runs_root, state_dir
+        )
+    except Exception as exc:
+        print(
+            f"ERROR: sanity-check failed closed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return 2
     else:
         if report_path is not None:
             report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -600,6 +609,30 @@ def run_once(args: argparse.Namespace) -> int:
                         f"worst_delta={finding.get('worst_delta_bp', '-')}bp",
                         file=sys.stderr,
                     )
+            if high or structural:
+                approval_path = getattr(args, "sanity_approval", None)
+                if approval_path is None:
+                    print(
+                        "ERROR: suspicious rate changes remain unfinalized for review.",
+                        file=sys.stderr,
+                    )
+                    return 2
+                try:
+                    persisted_approval = persist_sanity_approval(
+                        report_path,
+                        approval_path.expanduser().resolve(),
+                        sanity_root,
+                    )
+                except Exception as exc:
+                    print(
+                        f"ERROR: sanity approval failed closed: {type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                print(f"sanity-check explicitly approved: {persisted_approval}")
+
+    if staged_exports_to_install is not None:
+        copytree_atomic(staged_exports_to_install, target_export_root)
 
     if is_revision:
         # Preserve the primary day marker; record the revision under its own
@@ -643,6 +676,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=None, help="SQLite path; default <exports>/local-cdr.sqlite")
     parser.add_argument("--state", type=Path, default=None, help="Daily completion marker folder")
     parser.add_argument("--date", default=None, help="Override run date YYYY-MM-DD")
+    parser.add_argument(
+        "--sanity-approval",
+        type=Path,
+        default=None,
+        help="Approval JSON bound to the exact sanity report for reviewed HIGH/STRUCTURAL changes.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",

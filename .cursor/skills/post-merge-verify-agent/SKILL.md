@@ -1,128 +1,16 @@
 ---
 name: post-merge-verify-agent
-description: >-
-  After merge: verify the merged local tree and collect read-only Pi drift and
-  runtime evidence. Never activate production merely because a PR merged.
+description: Verify the merged commit and Pi status runtime after an authorized deploy.
 ---
 
-# Post-merge verify agent (AR-local)
+# Post-merge verify agent
 
-You execute the post-merge verification steps after code is on `main`: the local
-server matches the merged tree, HTTP smoke passes, and optional Pi evidence is
-read-only. Production activation remains separately canary-gated.
+1. Confirm the PR merged and identify the exact main SHA.
+2. Confirm backup acceptance before any deploy.
+3. Verify or deploy that exact SHA with the guarded scripts.
+4. Run `npm run verify:pi` against `http://100.78.28.10/`.
+5. Confirm current observation date, status contract, listener scope, service and
+   timer state, and clean Pi checkout.
 
-You **do not** merge PRs or reply to review threads (→ **pr-fix-agent**, **workflow-orchestrator**).
-
-**Reports to:** chief agent. Required for close-loop: `npm run close-loop:check -- --post-merge-gap`.
-
-## Environment URLs (do not hardcode)
-
-Pi dashboard and smoke URLs are in `docs/UNIVERSAL_ROADMAP.md`. Delegate the
-verify-only `pi-deploy-watchdog` for probes; do not hardcode Tailscale IPs here.
-
-## Invocation phrases
-
-- **"run post-merge verify"**
-- Chief/orchestrator after step 7 merge: *Follow `.cursor/skills/post-merge-verify-agent/SKILL.md` for PR #N.*
-
-## Path locks
-
-| Allowed | Forbidden |
-|---------|-----------|
-| Restart local dashboard process; run npm/python verify commands | Feature edits on `main` without new branch |
-| Delegate **pi-deploy-watchdog** for read-only Pi evidence | Claiming verify without exit code |
-| Browser MCP screenshots (read-only) | Skipping verify when dashboard/server changed |
-
-## When to run
-
-- Immediately after squash merge to `main`.
-- Chief `close-loop:check` flags missing verify on recent merge.
-- User asks for post-merge sign-off evidence.
-
-## Step 8 — Local server / assets
-
-From fresh `main`:
-
-```sh
-git fetch origin && git checkout main && git pull origin main
-```
-
-Restart dashboard so running code matches `main`:
-
-```powershell
-python cdr_dashboard_server.py --exports <path-to-latest-_exports> --runs runs --host 127.0.0.1 --port 8808 --site-root <path-to-australianrates>/site --preload
-```
-
-Or **`START_HERE.cmd`** / **`open_dashboard.cmd`** if that is the user’s normal launcher.
-
-- Confirm `--site-root` has `foundation.css` and ideally `assets/banks/*.png`.
-- Hard-refresh browser if cached `index.html` references stale scripts.
-
-If only non-dashboard files merged, document skip rationale — still run `verify:local` when server or static dashboard paths changed.
-
-## Step 9 — Local verify
-
-```sh
-npm run verify:local -- --base-url=http://127.0.0.1:<port>/
-```
-
-Use port from server stdout (often `8808`). **Exit code must be 0** unless user waived in writing.
-
-Loop: fix on topic branch → PR → merge → repeat 8–9 until 0.
-
-## Optional Pi verify
-
-When merge affects runtime on Pi:
-
-```sh
-npm run pi:needs-deploy -- --ref origin/main~1
-npm run pi:deploy:verify
-# on drift exit 1: record exact SHAs and preserve the running commit
-```
-
-Or delegate **pi-deploy-watchdog**. Pi-local over SSH:
-`npm run verify:local -- --base-url=http://127.0.0.1:8808/`. Do not invoke the
-deploy agent unless a reviewed immutable canary manifest and protected approval
-already exist.
-
-## Optional UI evidence
-
-When user/chief requires UI proof (not replacing HTTP smoke):
-
-- **deep-browser-explore** — functional pass on local URL
-- **parity-agent** — only if task was explicit prod comparison
-
-Minimal evidence: landing screenshot + `/api/latest` JSON snippet (run_date, keys).
-
-## Close-loop commands
-
-```sh
-npm run close-loop:check -- --pr <n>
-npm run close-loop:check -- --post-merge-gap
-```
-
-Exit **1** → chief opens follow-up PR in same cycle; do not report “merged and done”.
-
-## Return format
-
-| Check | Result |
-|-------|--------|
-| main SHA | short |
-| Server restarted | yes/no |
-| verify:local | exit code + URL |
-| Pi /api/latest | optional status |
-| Screenshots | paths |
-| close-loop:check | exit code |
-
-## Anti-patterns
-
-- “Merged” without verify exit 0 when dashboard/server changed.
-- Using www.australianrates.com as acceptance URL.
-- Leaving long-lived Python process on pre-merge code.
-
-## Related
-
-- `WORKFLOW.md` steps 8–9
-- `pi-deploy-agent` — exceptional exact-commit canary-approved activation
-- `deep-browser-explore` — supplemental UI QA
-- `dashboard-agent` — fixes if verify fails
+Return PASS, FAIL, or BLOCKED with current command evidence. Local green tests
+are not Pi runtime proof.

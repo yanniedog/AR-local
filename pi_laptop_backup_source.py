@@ -43,6 +43,30 @@ TIMER_NEXT_RE = re.compile(
     r"^(?P<weekday>[A-Z][a-z]{2}) (?P<date>\d{4}-\d{2}-\d{2}) "
     r"01:00:00 (?P<zone>AEST|AEDT)$"
 )
+
+
+def sqlite_health(connection: sqlite3.Connection) -> dict[str, object]:
+    """Portable copy of the receiver's fail-closed SQLite health contract."""
+
+    quick = [str(row[0]) for row in connection.execute("PRAGMA quick_check")]
+    integrity = [
+        str(row[0]) for row in connection.execute("PRAGMA integrity_check")
+    ]
+    foreign_key_violation = connection.execute("PRAGMA foreign_key_check").fetchone()
+    report: dict[str, object] = {
+        "quick_check": "ok" if quick == ["ok"] else quick,
+        "integrity_check": "ok" if integrity == ["ok"] else integrity,
+        "foreign_key_check": "ok" if foreign_key_violation is None else "failed",
+    }
+    if foreign_key_violation is not None:
+        report["foreign_key_violation"] = list(foreign_key_violation)
+    if any(report[name] != "ok" for name in (
+        "quick_check", "integrity_check", "foreign_key_check"
+    )):
+        raise ValueError(f"SQLite health check failed: {report}")
+    return report
+
+
 STATUS_PROVIDER_COUNTS = frozenset({
     "registered", "attempted", "complete", "partial", "empty", "failed",
     "not_attempted", "population_unknown",
@@ -564,11 +588,14 @@ def sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
         with closing(sqlite3.connect(destination)) as dst:
             src.backup(dst)
     with closing(sqlite3.connect(f"file:{destination.as_posix()}?mode=ro&immutable=1", uri=True)) as check:
-        quick = check.execute("PRAGMA quick_check").fetchone()[0]
+        health = sqlite_health(check)
         tables = sorted(row[0] for row in check.execute("SELECT name FROM sqlite_master WHERE type='table'"))
-    if quick != "ok":
-        raise ValueError("macro SQLite backup failed quick_check")
-    return {"source": str(source), "path": "macro/local-macro.sqlite", "quick_check": quick, "tables": tables}
+    return {
+        "source": str(source),
+        "path": "macro/local-macro.sqlite",
+        **health,
+        "tables": tables,
+    }
 
 
 def write_command(path: Path, args: Sequence[str]) -> None:

@@ -1,10 +1,5 @@
-﻿#!/usr/bin/env python3
-"""HTTP smoke checks for the CDR dashboard (replaces verify:prod for this repo).
-
-Default base URL: http://127.0.0.1:8808/ (local dev). For Pi acceptance, set
-AR_PI_BASE_URL (e.g. http://100.78.28.10/) or pass --base-url. See
-.cursor/rules/pi-host-not-localhost.mdc and npm run verify:pi.
-"""
+#!/usr/bin/env python3
+"""Verify the read-only AR-local status API."""
 
 from __future__ import annotations
 
@@ -14,136 +9,89 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from typing import Any
 
-_DEFAULT_LOCAL = "http://127.0.0.1:8808/"
-
-from ar_local_pi_runtime import manifest_banks_rate_count
+from pi_runtime_health import status_contract_error
 
 
-def http_get(url: str, timeout: float = 30.0) -> int:
-    req = urllib.request.Request(url, method="GET")
+DEFAULT_LOCAL_URL = "http://127.0.0.1:8808/"
+
+
+def request_json(url: str, *, timeout: float) -> tuple[int, dict[str, Any], dict[str, str]]:
+    request = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return int(resp.status)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(response.status)
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            raw = response.read()
     except urllib.error.HTTPError as exc:
-        return int(exc.code)
-    except Exception as exc:
-        print(f"verify_local: failed {url}: {exc}", file=sys.stderr)
-        return -1
+        status = int(exc.code)
+        headers = {key.lower(): value for key, value in exc.headers.items()}
+        raw = exc.read()
+    if status == 404:
+        return status, {}, headers
+    value = json.loads(raw.decode("utf-8")) if raw else {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{url} did not return a JSON object")
+    return status, value, headers
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke-verify local CDR dashboard HTTP endpoints.")
-    env_base = os.environ.get("AR_PI_BASE_URL", "").strip()
-    default_base = env_base if env_base else _DEFAULT_LOCAL
+def validate_headers(url: str, headers: dict[str, str]) -> None:
+    if not headers.get("content-type", "").lower().startswith("application/json"):
+        raise ValueError(f"{url} has a non-JSON content type")
+    if headers.get("cache-control", "").lower() != "no-store":
+        raise ValueError(f"{url} is cacheable")
+    if headers.get("x-content-type-options", "").lower() != "nosniff":
+        raise ValueError(f"{url} lacks nosniff")
+
+
+def validate_status(value: dict[str, Any], *, expected_date: str) -> None:
+    error = status_contract_error(value)
+    if error is not None:
+        raise ValueError(error)
+    observation = value["observation"]
+    observed_date = str(observation["date"])
+    if expected_date and observed_date != expected_date:
+        raise ValueError(f"observation date {observed_date!r}, expected {expected_date!r}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-url",
-        default=default_base,
-        help="Dashboard root URL (trailing slash optional). Default: %(default)s (AR_PI_BASE_URL when set).",
+        default=os.environ.get("AR_PI_BASE_URL", "").strip() or DEFAULT_LOCAL_URL,
     )
-    parser.add_argument(
-        "--require-banks-rates",
-        action="store_true",
-        help="Fail unless /api/latest reports banks_counts.rates > 0.",
-    )
-    parser.add_argument(
-        "--expect-run-date",
-        default="",
-        help="Fail unless /api/latest run_date equals this YYYY-MM-DD date.",
-    )
-    args = parser.parse_args()
+    parser.add_argument("--expect-run-date", default="")
+    parser.add_argument("--timeout", type=float, default=30.0)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     base = args.base_url.strip().rstrip("/") + "/"
-    paths = [
-        "",
-        "savings/",
-        "savings",
-        "term-deposits/",
-        "term-deposits",
-        "home-loans/",
-        "home-loans",
-        "assets/app.css",
-        "assets/app.js",
-        "assets/ar-bank-brand.js",
-        "assets/chart.js",
-        "assets/local-brand.js",
-        "assets/cdr-taxonomy-tree.js",
-        "site/theme.js",
-        "site/foundation.css",
-        "site/ar-ribbon-format.js",
-        "site/ar-ribbon-tree.js",
-        "api/latest",
-        "api/ingest-schedule",
-        "economic-data/",
-        "api/economic-data/catalog",
-        "api/home-loan-rates/rba/history",
-    ]
-    failures: list[tuple[str, int]] = []
-    for path in paths:
-        url = base + path
-        code = http_get(url)
-        if code != 200:
-            failures.append((url, code))
-    if failures:
-        for url, code in failures:
-            print(f"verify_local: {code} {url}", file=sys.stderr)
-        return 1
-    latest_url = base + "api/latest"
     try:
-        with urllib.request.urlopen(latest_url, timeout=30.0) as resp:
-            latest_payload = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
+        health_code, health, health_headers = request_json(base + "healthz", timeout=args.timeout)
+        status_code, status, status_headers = request_json(base + "api/status", timeout=args.timeout)
+        if health_code != 200 or status_code != 200:
+            raise ValueError(f"health={health_code}, status={status_code}")
+        validate_headers(base + "healthz", health_headers)
+        validate_headers(base + "api/status", status_headers)
+        validate_status(status, expected_date=args.expect_run_date)
+        if health != {
+            "schema_version": 1,
+            "service": "ar-local",
+            "status": "ok",
+        }:
+            raise ValueError("invalid health contract")
+        removed_code, _, _ = request_json(base + "api/latest", timeout=args.timeout)
+        if removed_code != 404:
+            raise ValueError("removed dashboard API is still exposed")
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"verify_local: FAIL {base}: {exc}", file=sys.stderr)
         return 1
-    run_date = latest_payload.get("run_date")
-    if args.expect_run_date and run_date != args.expect_run_date:
-        print(
-            f"verify_local: /api/latest run_date={run_date!r}, expected {args.expect_run_date!r}",
-            file=sys.stderr,
-        )
-        return 1
-    if run_date:
-        for section in ("Mortgage", "Savings", "TD"):
-            for path in (
-                f"api/banks/ribbon?date={run_date}&section={section}",
-                f"api/banks/section?date={run_date}&section={section}",
-                f"api/banks/history/section?date={run_date}&section={section}",
-            ):
-                url = base + path
-                code = http_get(url)
-                if code != 200:
-                    print(f"verify_local: {code} {url}", file=sys.stderr)
-                    return 1
-        for path in (
-            "api/term-deposit-rates/latest?min_rate=0.01&limit=20000",
-            "api/home-loan-rates/latest?rate_structure=fixed_1yr&security_purpose=owner_occupied&repayment_type=principal_and_interest&min_rate=0.01&limit=20000",
-        ):
-            url = base + path
-            code = http_get(url)
-            if code != 200:
-                print(f"verify_local: {code} {url}", file=sys.stderr)
-                return 1
-    removed_endpoint = "api/" + "en" + "ergy"
-    removed_code = http_get(base + removed_endpoint)
-    if removed_code != 404:
-        print(f"verify_local: expected 404 for removed CDR sector endpoint, got {removed_code}", file=sys.stderr)
-        return 1
-    removed_key = "en" + "ergy"
-    if removed_key + "_counts" in latest_payload or removed_key in latest_payload:
-        print("verify_local: /api/latest still exposes removed CDR sector keys", file=sys.stderr)
-        return 1
-    if args.require_banks_rates:
-        rates = manifest_banks_rate_count(latest_payload)
-        if rates <= 0:
-            print(
-                f"verify_local: /api/latest run_date={run_date!r} has banks_counts.rates={rates}",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"verify_local: OK {base} (run_date={run_date}, banks_rates={rates})")
-        return 0
-    print(f"verify_local: OK {base}")
+    print(f"verify_local: OK {base} observation={status['observation']['date']}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

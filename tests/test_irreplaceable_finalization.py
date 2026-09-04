@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from copy import deepcopy
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from cdr_atomic import ImmutablePathError, atomic_write_json
+from cdr_attempt_evidence_promotion import promote_attempt_evidence
 import cdr_atomic
 import cdr_finalization
 import cdr_ledger_v2
@@ -19,6 +21,8 @@ from cdr_finalization import (
     verify_completion_marker,
 )
 from cdr_ledger_v2 import verify_ledger
+from cdr_outputs import build_outputs
+from tests.test_cdr_outputs import _captured_run
 
 
 DATE = "2026-08-14"
@@ -34,60 +38,24 @@ def schema(name):
 def make_export(
     root, *, failures=0, provenance_complete=True, observation_date=DATE
 ):
-    cache = root / "dashboard-cache"
-    cache.mkdir(parents=True)
-    (cache / "latest.json").write_text(
-        json.dumps(
-            {
+    if failures or not provenance_complete:
+        cache = root / "dashboard-cache"
+        cache.mkdir(parents=True)
+        (cache / "latest.json").write_text(
+            json.dumps({
                 "run_date": observation_date,
-                "banks_counts": {
-                    "products": 4,
-                    "rates": 7,
-                    "fees": 3,
-                    "features": 2,
-                    "eligibility": 1,
-                    "constraints": 1,
-                    "failures": failures,
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    (root / "banks.json").write_text('{"rates":[]}', encoding="utf-8")
-    (root / "ingest-status.json").write_text(
-        json.dumps(
-            {
-                "total": failures,
-                "corrupt_records": 0,
-                "failure_provenance_complete": provenance_complete,
-                "incomplete": failures > 0,
-                "by_phase": {},
-                "by_status": {},
-                "by_provider": {"provider-a": failures} if failures else {},
-                "register_provenance_complete": True,
-                "register_attempts": [
-                    {
-                        "source_url": "https://register.example/holders",
-                        "mode": "plain",
-                        "ok": True,
-                        "status": 200,
-                        "bytes": 2,
-                        "sha256": "a" * 64,
-                    }
-                ],
-                "providers_registered": 1,
-                "providers_attempted": 1,
-                "provider_states": [
-                    {
-                        "provider_uid": "provider-a",
-                        "state": "partial" if failures else "complete",
-                        "failure_records": failures,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+                "generated_at": f"{observation_date}T01:00:00+10:00",
+                "banks_counts": {"products": 7, "rates": 7, "failures": failures},
+                "files": {"db": "local-cdr.sqlite"},
+            }),
+            encoding="utf-8",
+        )
+        return
+    source_base = root.parent / f".{root.name}-finalization-source"
+    run = _captured_run(source_base, run_date=observation_date)
+    build_outputs(run)
+    promote_attempt_evidence(run, run / "_exports")
+    shutil.copytree(run / "_exports", root)
 
 
 def test_atomic_create_once_is_idempotent_but_never_overwrites(tmp_path):
@@ -128,7 +96,7 @@ def test_finalization_binds_contract_event_marker_and_pointers(tmp_path):
     assert verify_completion_marker(completion, state, DATE)
     contract = load_contract(state / completion["export_contract_path"])
     schema("export-contract-v2.schema.json").validate(contract)
-    assert contract["coverage"]["eligible_rate_rows"] == 7
+    assert contract["coverage"]["eligible_rate_rows"] == 1
     assert contract["coverage"]["failure_provenance_complete"] is True
     assert (state / "ledger-v2" / "head.json").is_file()
     assert (state / "observation-pointers-v2" / "latest-observation.json").is_file()
@@ -343,7 +311,6 @@ def test_recovery_repairs_each_pointer_before_advancing_the_next_event(
         export = tmp_path / "runs" / observation_date / "_exports"
         make_export(
             export,
-            failures=1 if index == 2 else 0,
             observation_date=observation_date,
         )
         completions.append(
@@ -591,7 +558,8 @@ def test_revision_marker_rejects_changed_parent_artifacts(tmp_path):
         parent_generation_id=first["generation_id"],
     )
 
-    (primary / "banks.json").write_text('{"rates":["changed-parent"]}', encoding="utf-8")
+    with (primary / "observation-v1.json").open("ab") as stream:
+        stream.write(b"tamper")
 
     assert verify_completion_marker(second, state, DATE) is False
 
@@ -721,7 +689,8 @@ def test_ledger_verifier_detects_changed_source_bytes(tmp_path):
         observation_date=DATE,
         result={"run_date": DATE, "banks_counts": {"rates": 7}},
     )
-    (export / "banks.json").write_text('{"rates":["changed"]}', encoding="utf-8")
+    with (export / "observation-v1.json").open("ab") as stream:
+        stream.write(b"tamper")
     report = verify_ledger(state)
     assert report["ok"] is False
     assert any(item["issue"] == "ARTIFACT_MISMATCH" for item in report["findings"])
@@ -834,20 +803,19 @@ def test_orphan_candidate_rebases_safely_after_another_event_advances_head(tmp_p
     assert verify_ledger(state)["ok"] is True
 
 
-def test_partial_observation_advances_observation_but_not_complete_pointer(tmp_path):
+def test_legacy_partial_export_cannot_enter_current_finalization(tmp_path):
     export = tmp_path / "runs" / DATE / "_exports"
     make_export(export, failures=2)
     state = tmp_path / "state"
-    completion = finalize_observation(
-        export,
-        state,
-        state / f"{DATE}.done.json",
-        observation_date=DATE,
-        result={"run_date": DATE, "banks_counts": {"rates": 7}},
-    )
-    assert completion["observation_state"] == "partial"
-    assert (state / "observation-pointers-v2" / "latest-observation.json").is_file()
-    assert not (state / "observation-pointers-v2" / "latest-complete.json").exists()
+    with pytest.raises(ValueError, match="ObservationV1"):
+        finalize_observation(
+            export,
+            state,
+            state / f"{DATE}.done.json",
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        )
+    assert not (state / "ledger-v2").exists()
 
 
 def test_external_completion_marker_is_rejected_before_ledger_write(tmp_path):
@@ -865,15 +833,15 @@ def test_external_completion_marker_is_rejected_before_ledger_write(tmp_path):
     assert not (state / "ledger-v2").exists()
 
 
-def test_missing_failure_provenance_can_never_finalize_complete(tmp_path):
+def test_legacy_export_without_failure_provenance_cannot_finalize(tmp_path):
     export = tmp_path / "runs" / DATE / "_exports"
     make_export(export, provenance_complete=False)
     state = tmp_path / "state"
-    completion = finalize_observation(
-        export,
-        state,
-        state / f"{DATE}.done.json",
-        observation_date=DATE,
-        result={"run_date": DATE, "banks_counts": {"rates": 7}},
-    )
-    assert completion["observation_state"] == "partial"
+    with pytest.raises(ValueError, match="ObservationV1"):
+        finalize_observation(
+            export,
+            state,
+            state / f"{DATE}.done.json",
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        )

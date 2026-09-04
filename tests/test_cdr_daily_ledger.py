@@ -280,7 +280,7 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
         "--ram-stage", "--ram-root", str(tmp_path / "ram"), "--keep-ram-stage",
     ])
     assert cdr_daily.run_once(args) == 1
-    assert captured["previous"] == previous
+    assert captured["previous"] == export
 
 
 def test_stale_marker_is_preserved_and_rerun_is_refused_before_ingest(tmp_path, monkeypatch, capsys):

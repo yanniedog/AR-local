@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RULESET_JSON = join(repoRoot, '.github', 'rulesets', 'main-bot-gates.json');
-const REQUIRED_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+const REQUIRED_CHECKS = ['bot-feedback-gate'];
 
 function parseArgs(argv) {
   const out = { verifyPr: null, dryRunProtection: false, help: false };
@@ -35,17 +35,19 @@ function printPolicy() {
 === Bot review policy (repo code — NOT in GitHub ruleset) ===
 
 Required on merge (human work PRs):
-  - bot-presence-gate   (waits for gemini on human feat/fix/agent PRs)
-  - bot-feedback-gate   (thread closure on human PRs)
+  - required product CI reported for the exact PR head
+  - bot-feedback-gate (substantive review-thread closure)
+
+Reviewer services are advisory. Their absence, quota, or outage does not block merge.
 
 Skipped automatically (scripts/lib/pr-gate-exempt.mjs):
   - PR author is a GitHub bot (login ends with [bot], e.g. github-actions[bot])
   - Title is conventional chore (chore: or chore(scope):)
   - Known automation titles (PR bot matrix)
 
-Human PR example (bots required):  yanniedog + feat/fix/agent/*
-Chore example (bots skipped):      chore: update generated reports
-Bot PR example (bots skipped):      github-actions[bot] opens any title
+Human PR example (threads enforced): yanniedog + feat/fix/agent/*
+Chore example (thread gate skipped): chore: update generated reports
+Bot PR example (thread gate skipped): github-actions[bot] opens any title
 `);
 }
 
@@ -61,7 +63,7 @@ Steps:
   2. Select the JSON file above
   3. Confirm:
        Target branches: refs/heads/main, ~DEFAULT_BRANCH
-       Required checks:  bot-presence-gate, bot-feedback-gate (strict)
+       Required check:   bot-feedback-gate (strict)
        PR rule:          squash only, conversation resolution ON, 0 approvals
        Bypass list:      GitHub Actions — mode Always (actor_id 15368)
   4. Save → Enforcement: Active
@@ -87,6 +89,10 @@ function validateRulesetJson() {
   const missing = REQUIRED_CHECKS.filter((c) => !checks.includes(c));
   if (missing.length) {
     throw new Error(`ruleset JSON missing checks: ${missing.join(', ')}`);
+  }
+  const obsolete = checks.filter((check) => check === 'bot-presence-gate');
+  if (obsolete.length) {
+    throw new Error(`ruleset JSON contains obsolete checks: ${obsolete.join(', ')}`);
   }
   const hasActionsBypass = (ruleset.bypass_actors || []).some(
     (a) => a.actor_type === 'Integration' && a.actor_id === 15368,
@@ -140,7 +146,7 @@ function verifyPrExemption(prNumber) {
     console.log(`PR #${prNumber}: gate-exempt (${reason}) — bot review NOT required for merge`);
     return;
   }
-  console.log(`PR #${prNumber}: NOT gate-exempt — gemini + thread closure required for merge`);
+  console.log(`PR #${prNumber}: NOT gate-exempt — substantive thread closure required for merge`);
 }
 
 function dryRunBranchProtection() {

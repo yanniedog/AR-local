@@ -172,18 +172,6 @@ def test_api_payload_generated_at_is_utc_and_truncated():
     assert ga == now.replace(microsecond=0)
 
 
-def test_server_rba_payload_is_small_and_valid_json():
-    import cdr_dashboard_server as srv
-
-    body = srv.rba_payload()
-    assert isinstance(body, bytes)
-    assert len(body) < 16 * 1024  # tiny reference payload (audit: budgets are tests)
-    data = json.loads(body)
-    assert data["current_rate"] is not None
-    assert {"generated_at", "timezone", "next_meeting", "decisions", "schedule"} <= set(data)
-    assert isinstance(data["generated_at"], str)
-
-
 def test_calendar_payload_is_stable_and_has_no_wallclock():
     a = rba.calendar_payload()
     b = rba.calendar_payload()

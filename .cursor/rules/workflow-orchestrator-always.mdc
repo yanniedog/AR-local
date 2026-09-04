@@ -20,7 +20,7 @@ Chief dedupes locks and assigns orchestrator for git/PR/Pi work. **Manual orches
 
 ## After substantive subagent work
 
-When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, **PR babysit**, or **orchestrator** cycle:
+When a `Task` subagent returns after **implementation**, **ingest**, **status runtime**, **docs**, **PR babysit**, or **orchestrator** cycle:
 
 1. Spawn or resume **chief** (not orchestrator directly) unless chief is in flight or waived.
 2. Chief re-scans, updates locks, and delegates orchestrator or path owners per the chief skill.
@@ -29,7 +29,7 @@ When a `Task` subagent returns after **implementation**, **ingest**, **dashboard
 ## One PR per task (hard)
 
 - **Do not** bundle removed-sector cleanup, economic data UI, docs, and unrelated banking fixes in one PR.
-- Partition by disjoint file sets; see skill table patterns such as `agent/economic-data-ui-*` and `agent/dashboard-*`.
+- Partition by disjoint file sets such as ingest, observation/database, payload, status runtime, backup, and docs.
 - Meta orchestrator plumbing stays its own PR (`agent/workflow-orchestrator-*`).
 
 ## Manual invoke

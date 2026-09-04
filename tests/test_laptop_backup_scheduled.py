@@ -883,6 +883,65 @@ def test_main_current_state_records_no_write_without_backup(
     assert records == [("PASS", "NO_BACKUP_DATA_WRITE")]
 
 
+@pytest.mark.parametrize("state", ["UP_TO_DATE", "STALE"])
+def test_status_only_reports_without_mutating_lineage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+) -> None:
+    target = tmp_path / "backup"
+    target.mkdir()
+    recovery = tmp_path / "recovery.img"
+    recovery.write_bytes(b"")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        scheduled,
+        "invoke_receiver",
+        lambda _args, command, *_extra: (
+            calls.append(command) or 0,
+            json.dumps({"target": str(target)}),
+            "",
+        ),
+    )
+    monkeypatch.setattr(
+        scheduled,
+        "scheduled_status",
+        lambda *_args: {
+            "status": state,
+            "backup_command": "backup-latest",
+            "backfill_dates": [],
+        },
+    )
+    monkeypatch.setattr(
+        scheduled,
+        "record_execution",
+        lambda *_args, **_kwargs: pytest.fail("status-only mutated scheduled lineage"),
+    )
+
+    code = scheduled.main([
+        "--target", str(target),
+        "--recovery-image", str(recovery),
+        "--candidate-code-sha", CANDIDATE,
+        "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", receiver.PLAN_GIT_COMMIT,
+        "--status-only",
+    ])
+
+    output = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert calls == ["preflight"]
+    assert output["action"] == "STATUS_ONLY"
+    assert output["status"] == state
+    assert output["preflight_identity"] == {
+        "candidate_code_sha": CANDIDATE,
+        "protected_code_sha": PROTECTED,
+        "plan_git_commit": receiver.PLAN_GIT_COMMIT,
+        "target": str(target.resolve()),
+        "checked_at": output["preflight_identity"]["checked_at"],
+    }
+
+
 def test_main_records_post_backup_metadata_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
