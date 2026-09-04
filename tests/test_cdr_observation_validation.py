@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from cdr_contracts import provider_uid
+from cdr_contracts import parse_rate_string, provider_uid
 from cdr_observation import (
     ObservationError,
     _fact_projections,
@@ -95,6 +95,12 @@ def test_rate_fact_projection_rejects_percentage_scaled_value() -> None:
             evidence_by_uid={"a" * 64: "e" * 64},
             observation_date="2026-09-03",
         )
+
+
+@pytest.mark.parametrize("value", ["-0", "-0.00"])
+def test_rate_parser_rejects_signed_zero(value: str) -> None:
+    with pytest.raises(ValueError):
+        parse_rate_string(value)
 
 
 @pytest.mark.parametrize(
