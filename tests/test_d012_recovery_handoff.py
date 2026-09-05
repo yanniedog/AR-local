@@ -430,19 +430,19 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    assert pointer["sequence"] == 18
-    assert pointer["predecessor"] == "C-20260904T090500+1000"
-    assert pointer["correction"] == "C-20260905T090000+1000"
-    assert pointer["base_main_sha"] == BASE_MAIN_18
+    assert pointer["sequence"] == 19
+    assert pointer["predecessor"] == "C-20260905T090000+1000"
+    assert pointer["correction"] == "C-20260906T090000+1000"
+    assert pointer["base_main_sha"] == "bf3e302acb46cb1f033b2cf50e3f79d6cdd17918"
     assert pointer["candidate_sha"] == CANDIDATE_13
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
-        "a5bddc425f284fd70bb591ae2e3029d9360b718df46802d13a6c1eb79757a18e"
+        "2a90bbdfa4ad6b2530dc5f994407865e638d9053a4e95cbf0854fc35d32847f1"
     )
     assert pointer["clean_runtime"]["windows_powershell_inventory_sha256"] == (
         "1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260905T090000")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260905T090000")
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260906T090000")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260906T090000")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -453,6 +453,8 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
 
 def test_current_observation_probes_compile() -> None:
     for name in (
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260906T090000",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260906T090000",
         "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T114000",
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T114000",
         "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T125200",
