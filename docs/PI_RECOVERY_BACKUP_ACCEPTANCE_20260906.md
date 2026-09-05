@@ -1,11 +1,14 @@
 # September 6 ordinary-user backup acceptance
 
-Status: **backup acceptance PASS; physical recovery boot UNPROVEN**.
+Status: **operator-triggered backup verification PASS; D-015/A3 natural-scheduled-backup gate RUNNING; physical recovery boot BLOCKED and UNPROVEN**.
 Authority: ARL-OPS-001 v1.5, as amended by D-015 and the operator's D-016
 instruction to execute immediately instead of waiting for 06:00. No Windows
 elevation, consent prompt, policy change or stored administrator credential was
 used. These executions were operator-triggered; they are not natural-trigger
-proof.
+proof. D-016 changed the timing of the requested execution; it did not retire
+D-015's natural scheduled-backup requirement. This report accepts the restored
+backup data only. A3 has not reached terminal PASS, and writable A4 preparation
+or boot must not begin on the strength of this report.
 
 ## Exact evidence
 
@@ -51,6 +54,13 @@ backup. Its existing catalog has now been initialized; a future receiver
 transition must preserve validated lineage rather than rewriting receipts.
 
 ## Remaining physical recovery requirement
+
+First, observe an actual natural trigger of the unchanged ordinary-user task,
+its completed execution and current restore/freshness evidence. The September 6
+06:00 attempted trigger was suppressed by IgnoreNew while the operator-requested
+backfill was running; it is not a successful natural backup. Do not manufacture
+that proof by relabelling a manual start or substituting a test trigger. Record
+terminal A3 acceptance only after its remaining requirements are met.
 
 The current production root is NVMe partition `nvme0n1p2`, UUID
 `4cbd4874-d326-4496-bee2-7fda775a3c4c`. Read-only inspection identified the

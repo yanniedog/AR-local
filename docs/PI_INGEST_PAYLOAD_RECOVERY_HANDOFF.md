@@ -20707,3 +20707,39 @@ are satisfied.
 ```json
 {"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-017-BACKUP-ACCEPTANCE","backup":"PASS","elevation":"PROHIBITED","timing":"OPERATOR_REQUESTED","acceptance_sha256":"91a48ab11a5fdc084455e2f6a07de61716f94935ab44e7992f749cb2e15105f0","next":"complete guarded physical recovery preparation and actual boot proof","a4":"UNPROVEN","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
 ```
+
+## D-018-ACCEPTANCE-SCOPE-CORRECTION — natural scheduler gate remains open
+
+This append-only correction supersedes D-017's ambiguous backup acceptance and
+its next-action pointer. PR #624 review correctly identified that D-016's early
+execution authority does not prove D-015's natural scheduled-backup requirement.
+The operator-triggered backup data and independent restore verification remain
+PASS, with acceptance report SHA256
+`91a48ab11a5fdc084455e2f6a07de61716f94935ab44e7992f749cb2e15105f0`.
+A3 remains RUNNING. A4 writable preparation and physical boot remain BLOCKED.
+The suppressed September 6 06:00 trigger is not a completed natural execution.
+
+Next: observe the unchanged daily 06:00 or genuine operator sign-in trigger,
+verify its completed ordinary-token execution and current receipts, then record
+terminal A3 evidence only if every requirement passes. Do not invoke a manual
+start, artificial sign-in or replacement test trigger and call it natural proof.
+The requested immediate backup has already executed and passed; this remaining
+scheduler check does not reverse that completed work or require a Windows Yes.
+
+Read-only SD inspection found whole-device SHA256
+`ce0bcd6f1cb4364df2b97fb6324d0871a053fed6ed7738dcb0a65ef174d371d2`,
+which differs from the preserved historical image. A bounded, read-only capture
+of that SD baseline is in progress in the local `A4-20260906` evidence directory.
+Only a completed capture whose decompressed bytes match that independently
+measured device digest may become accepted preservation evidence. A previous
+incomplete raw capture remains explicitly unaccepted. Neither capture is boot
+proof or authority to alter media. No writable mount, device overwrite, boot
+selection, EEPROM change, reboot or production deployment has occurred.
+
+Keep PR #607 draft and retain its recovery freezes. All subsequent work uses the
+ordinary-user route; legacy task, backup history, quarantine evidence, protected
+production SHA and independent 01:00 ingestion remain unchanged.
+
+```json
+{"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-018-ACCEPTANCE-SCOPE-CORRECTION","operator_backup_verification":"PASS","natural_scheduled_backup":"UNPROVEN","elevation":"PROHIBITED","next":"observe genuine unchanged scheduled execution and complete remaining A3 acceptance before writable A4 preparation","a3":"RUNNING","a4":"BLOCKED","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
+```
