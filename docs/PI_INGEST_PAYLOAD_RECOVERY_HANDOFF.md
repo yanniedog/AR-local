@@ -20682,3 +20682,28 @@ execution continues without a Windows consent prompt.
 ```json
 {"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-016-EARLY-BACKUP","result":"RUNNING_BACKUP","elevation":"PROHIBITED","timing_authority":"Do it now rather than 6am.","trigger":"OPERATOR_REQUESTED","next":"verify the active early backup and actual restore receipts","a3":"RUNNING","a4":"BLOCKED","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
 ```
+
+## D-017-BACKUP-ACCEPTANCE — September 6 complete receiver proof
+
+The ordinary-user backup acceptance described in
+`docs/PI_RECOVERY_BACKUP_ACCEPTANCE_20260906.md` is PASS. The complete backfill
+preserved 107 observations; the final refresh produced current configuration
+and macro receipts and returned exit zero at 09:23:59 Hobart. All retained
+inventory is current. The independent audit verified every accepted receipt,
+manifest and archive digest, all 116 SQLite check sets, and absence of partial
+archives and active receiver locks. Earlier FAIL records remain bound into
+execution lineage. The ordinary-user/no-UAC route remains the only continuation.
+
+This accepts the backup workflow under D-015/D-016. It does not invent a natural
+trigger or a physical boot. The physical A4 step remains unproven and must
+follow the controlled runbook with exact media identification, production
+isolation, current-data restoration and a bounded return to the protected
+NVMe system. Read-only SD geometry and UUID checks match the historical image;
+a full SD-device hash check is in progress before any writable mount. No disk,
+boot selection, production service or publication setting has been changed by
+this acceptance entry. PR #607 remains draft until the actual recovery gates
+are satisfied.
+
+```json
+{"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-017-BACKUP-ACCEPTANCE","backup":"PASS","elevation":"PROHIBITED","timing":"OPERATOR_REQUESTED","acceptance_sha256":"91a48ab11a5fdc084455e2f6a07de61716f94935ab44e7992f749cb2e15105f0","next":"complete guarded physical recovery preparation and actual boot proof","a4":"UNPROVEN","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
+```
