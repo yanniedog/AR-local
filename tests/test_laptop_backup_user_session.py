@@ -4,12 +4,51 @@ import json
 import sqlite3
 import shutil
 import subprocess
+import hashlib
+import os
+import sys
 
 import pytest
 
 import laptop_backup_user_session as user
 import laptop_backup_transport as transport
 import laptop_pull_backup as receiver
+
+
+def test_fresh_user_target_can_prepare_scheduled_lineage(tmp_path):
+    from types import SimpleNamespace
+    import laptop_backup_scheduled as scheduled
+    args = SimpleNamespace(plan_git_commit=receiver.PLAN_GIT_COMMIT,
+                           candidate_code_sha="a" * 40, protected_code_sha="b" * 40,
+                           operator="test")
+    user.initialize_catalog(tmp_path)
+    scheduled.prepare_execution_lineage(tmp_path, args)
+    assert (tmp_path / "catalog/scheduled-runs").is_dir()
+    assert not (tmp_path / "catalog/latest-scheduled.json").exists()
+
+
+@pytest.mark.parametrize("shell", ["powershell", "pwsh"])
+def test_launcher_preserves_stderr_and_native_exit_code(shell, tmp_path):
+    if os.name != "nt" or not shutil.which(shell):
+        pytest.skip("requires a Windows PowerShell host")
+    source = tmp_path / "source with spaces"
+    source.mkdir()
+    (source / "laptop_backup_user_session.py").write_text(
+        "import sys\nprint('stdout evidence')\nprint('stderr evidence', file=sys.stderr)\nsys.exit(7)\n")
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"python_path": sys.executable,
+                                 "python_sha256": user.digest(Path(sys.executable)),
+                                 "receiver": str(source)}))
+    wrapper = Path(user.__file__).with_name("run_laptop_backup_user_session.ps1")
+    # Each host needs its own default modules, as it gets under Task Scheduler.
+    environment = {key: value for key, value in os.environ.items() if key.lower() != "psmodulepath"}
+    result = subprocess.run([shutil.which(shell), "-NoProfile", "-NonInteractive", "-File",
+                             str(wrapper), "-ConfigPath", str(config), "-ConfigSha256",
+                             hashlib.sha256(config.read_bytes()).hexdigest(), "-Mode", "probe"],
+                            capture_output=True, text=True, timeout=30, env=environment)
+    assert result.returncode == 7, result.stdout + result.stderr
+    assert "stdout evidence" in next((tmp_path / "logs").glob("*.log")).read_text()
+    assert "stderr evidence" in next((tmp_path / "logs").glob("*.stderr")).read_text()
 
 
 @pytest.mark.parametrize("hour,allowed", [(0, False), (1, False), (5, False), (6, True),

@@ -12,5 +12,8 @@ if((Get-FileHash -LiteralPath $config.python_path -Algorithm SHA256).Hash.ToLowe
 $logs=Join-Path (Split-Path -Parent $ConfigPath) 'logs'
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $log=Join-Path $logs (([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))+'-'+[guid]::NewGuid().ToString('N')+'.log')
-& $config.python_path -B (Join-Path $config.receiver 'laptop_backup_user_session.py') $Mode --config $ConfigPath --config-sha256 $ConfigSha256 *> $log
-exit $LASTEXITCODE
+$errorLog=$log+'.stderr'
+$runner=Join-Path $config.receiver 'laptop_backup_user_session.py'
+$arguments='-B "{0}" {1} --config "{2}" --config-sha256 {3}' -f $runner,$Mode,$ConfigPath,$ConfigSha256
+$process=Start-Process -FilePath $config.python_path -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $log -RedirectStandardError $errorLog
+exit $process.ExitCode
