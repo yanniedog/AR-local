@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import re
 from pathlib import Path
@@ -18,6 +19,18 @@ BASE_MAIN_15 = "5fcb0df28d7ef3b35ec4d5530f68fb7c45ada012"
 BASE_MAIN_16 = "c04b76e813e120de0668b19769463e9913e91d68"
 BASE_MAIN_17 = "591a9a619c01ffb4804db908f5d8ec6ce2c63327"
 BASE_MAIN_18 = "699f8bd9e4ca5ddb1cda046eee90725afd5f6212"
+
+
+def _frozen_source(relative: str) -> bytes:
+    # D-015 retires the UAC route. Preserve its exact source evidence while the
+    # two explicitly authorized user-session implementation files evolve.
+    path = relative.replace("\\", "/")
+    if path in {"laptop_backup_transport.py", "laptop_pull_backup.py"}:
+        assert "D-015-USER-SESSION-NO-UAC" in HANDOFF.read_text(encoding="utf-8")
+        archive = (ROOT / "tests/fixtures/d012-retired-sources-ec008b26.json.gz").read_bytes()
+        assert hashlib.sha256(archive).hexdigest() == "6f81466cb70907be0e20e9af6e483a2c0e0f8298667f8e49914ea73a822285f5"
+        return json.loads(gzip.decompress(archive))[path].encode()
+    return (ROOT / path).read_bytes()
 
 
 def _block(name: str) -> str:
@@ -96,7 +109,7 @@ def test_sequence11_source_map_matches_lf_checkout() -> None:
     )
     assert len(sources) == 30
     for relative, expected in sources.items():
-        payload = (ROOT / relative.replace("\\", "/")).read_bytes()
+        payload = _frozen_source(relative)
         assert hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest() == expected
 
 
@@ -143,7 +156,7 @@ def test_sequence12_generator_status_is_read_only_and_source_maps_are_split() ->
     )
     assert "laptop_backup_transition_state.py" not in authority
     for relative, expected in authority.items():
-        source = (ROOT / relative.replace("\\", "/")).read_bytes()
+        source = _frozen_source(relative)
         assert hashlib.sha256(source.replace(b"\r\n", b"\n")).hexdigest() == expected
     assert "RequireHash (Join-Path $candidate $item.Key) $item.Value" in script
     assert "RequireHash (Join-Path $authority $item.Key) $item.Value" in script
