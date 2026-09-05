@@ -145,6 +145,14 @@ def legacy_idle(name: str) -> None:
         raise ValueError("legacy backup task is running or its state cannot be verified")
 
 
+def initialize_catalog(target: Path) -> None:
+    """Create a fresh catalog before the scheduled lineage mutex needs it."""
+    catalog = unlinked(target) / "catalog"
+    unlinked(catalog)
+    catalog.mkdir(exist_ok=True)
+    unlinked(catalog)
+
+
 def record(config: dict, result: str, detail: str, **extra) -> Path:
     from laptop_backup_atomic import atomic_create
     root = unlinked(Path(config["target"])) / "user-session-executions"
@@ -196,6 +204,7 @@ def execute(config: dict, mode: str, config_sha256: str) -> int:
     lock_root = unlinked(Path(config["target"])) / "user-session-lock"
     lock_root.mkdir(parents=True, exist_ok=True)
     with ReceiverLock(lock_root):
+        initialize_catalog(Path(config["target"]))
         code = scheduled.main(args)
     record(config, "PASS" if code == 0 else "FAIL", "scheduled receiver returned", exit_code=code)
     return code

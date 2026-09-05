@@ -20625,3 +20625,60 @@ by this same user; no administrator consent is required.
 ```json
 {"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-015-USER-SESSION-NO-UAC","result":"RUNNING_IMPLEMENTATION","elevation":"PROHIBITED","old_uac_sequences":"RETIRED_WITH_EVIDENCE_PRESERVED","next":"merge, install and probe ordinary-user scheduler; then prove natural backup and restore","a3":"RUNNING","a4":"BLOCKED","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
 ```
+
+## D-016-EARLY-BACKUP — explicit September 6 timing override and first-run repair
+
+At 04:09 Hobart on 2026-09-06, the operator instructed: "Do it now rather than
+6am." This explicitly replaces the preceding wait-for-06:00 instruction for
+this execution. The no-UAC requirement remains absolute. The controlled
+00:30-03:30 ingest quiet window, production identity, capacity, transport,
+lineage, archive, restore and SQLite checks remain in force. The independent
+01:00 ingest had completed before this backup was started. This invocation is
+operator-triggered and must never be labelled a natural timer execution.
+
+The installed ordinary-user task was started at 04:11 with a single-use,
+date/window-bound adapter outside its clean immutable source release. The
+adapter retains configuration/executable/SID checks and both catalog locks;
+only the explicitly superseded 06:00 start restriction differs. Task settings
+remain Interactive/Limited, IgnoreNew and a six-hour limit. Its normal daily
+action was restored after launch, so a 06:00 trigger cannot start a concurrent
+instance of the same running task. No legacy task, catalog or recovery evidence
+was altered. Attempt files and diagnostic logs remain in the adjacent release
+and `C:\code\backups\AR-local-user-session`.
+
+The initial attempt registered the historical recovery image after verifying
+its exact 31,902,400,512 bytes and expected SHA256. It did not accept a current
+backup. Direct diagnostics on the next attempt identified a missing first-run
+`catalog` directory: scheduled lineage opens its mutex before the receiver has
+created that directory. At 04:16-04:17 the empty directory was created only in
+the separate new target, after proving the task idle, and the corrected attempt
+was started. At 04:18 it was creating observation archives and restore-drill
+files. These are RUNNING evidence, not terminal PASS.
+
+The permanent repair initializes a canonical, non-linked new catalog inside
+the full-invocation lock before scheduled lineage runs. PowerShell launches the
+pinned interpreter with separate stdout/stderr files and preserves its exit
+code, including under Windows PowerShell 5.1. Regression checks exercise fresh
+scheduled lineage and real child stderr/nonzero exits in both installed hosts.
+The installed receiver remains pinned to its prior release for the active
+backup; do not change that immutable checkout or its configuration mid-run.
+
+The operator also asked why the app lacks today's interest rates. Live checks
+show the September 6 ingest process completed, but its observation is partial:
+31 failed requests across 2,555 products (1.213%, allowed maximum 1%) and 21 of
+119 providers partial (17.647%, allowed maximum 15%). The Pi explicitly withheld
+app promotion with `outside_bounded_v1_policy`. The public rolling v1 manifest
+and dates index still advertise September 5. Process exit zero is not evidence
+of complete coverage or successful publication. Preserve the honest date and
+publication checks; do not relabel yesterday or relax quality thresholds.
+
+Next: inspect the running task, current logs and immutable receipts. Prove real
+archive restoration and all SQLite checks before terminal recovery claims.
+The operator's instruction authorizes executing now, not inventing natural-run
+or physical-boot proof. A4 remains distinct; PR #607 remains draft and undeployed
+until the actual recovery acceptance requirements are met. Every subsequent
+execution continues without a Windows consent prompt.
+
+```json
+{"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-016-EARLY-BACKUP","result":"RUNNING_BACKUP","elevation":"PROHIBITED","timing_authority":"Do it now rather than 6am.","trigger":"OPERATOR_REQUESTED","next":"verify the active early backup and actual restore receipts","a3":"RUNNING","a4":"BLOCKED","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
+```
