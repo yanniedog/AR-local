@@ -137,11 +137,11 @@ def verify_release(config: dict) -> None:
 def legacy_idle(name: str) -> None:
     # Task name goes through an environment value, never shell interpolation.
     env = dict(os.environ, AR_USER_BACKUP_LEGACY_TASK=name)
-    script = "$ErrorActionPreference='Stop'; $t=Get-ScheduledTask -TaskName $env:AR_USER_BACKUP_LEGACY_TASK -ErrorAction Stop; if($t.State -eq 'Running'){exit 2}"
+    script = "$ErrorActionPreference='Stop'; $t=Get-ScheduledTask -TaskName $env:AR_USER_BACKUP_LEGACY_TASK -ErrorAction Stop; Write-Output $t.State"
     ps = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     result = subprocess.run([str(ps), "-NoProfile", "-NonInteractive", "-Command", script],
                             capture_output=True, text=True, timeout=30, env=env)
-    if result.returncode:
+    if result.returncode or result.stdout.strip() not in {"Ready", "Disabled"}:
         raise ValueError("legacy backup task is running or its state cannot be verified")
 
 

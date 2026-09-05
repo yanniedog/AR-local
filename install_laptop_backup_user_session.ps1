@@ -10,6 +10,7 @@ if($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 
   throw 'Run this installer as the ordinary user; elevation is prohibited.'
 }
 if($TaskName -cne 'AR-local user-session backup'){throw 'Task name is not the user-session backup task.'}
+if([TimeZoneInfo]::Local.Id -cne 'Tasmania Standard Time'){throw 'The daily 06:00 trigger requires the Windows Australia/Hobart time zone.'}
 if((Get-FileHash -LiteralPath $ConfigPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ConfigSha256){throw 'Config hash changed.'}
 $config=Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 if($config.schema -cne 'ARL-USER-SESSION-BACKUP-V1' -or $config.operator_sid -cne $identity.User.Value){throw 'Config identity mismatch.'}

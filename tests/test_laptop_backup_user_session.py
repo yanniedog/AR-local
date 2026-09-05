@@ -31,6 +31,23 @@ def test_targets_cannot_overlap(tmp_path):
     user.separate_targets(tmp_path / "new", legacy)
 
 
+@pytest.mark.parametrize("state", ["Unknown", "Queued", "Running", "", "Unexpected"])
+def test_legacy_task_non_idle_states_block(state, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setenv("SystemRoot", str(tmp_path))
+    monkeypatch.setattr(user.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=state))
+    with pytest.raises(ValueError, match="cannot be verified"):
+        user.legacy_idle("legacy")
+
+
+@pytest.mark.parametrize("state", ["Ready", "Disabled"])
+def test_legacy_task_idle_states_are_accepted(state, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setenv("SystemRoot", str(tmp_path))
+    monkeypatch.setattr(user.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=state))
+    user.legacy_idle("legacy")
+
+
 def test_duplicate_config_is_rejected():
     with pytest.raises(ValueError, match="duplicate"):
         json.loads('{"schema":1,"schema":2}', object_pairs_hook=user.strict_pairs)
