@@ -57,11 +57,14 @@ def _windows_contract_path(value: str, platform: str) -> Path | PureWindowsPath:
 
 
 def _trusted_contract(platform: str) -> dict[str, object] | None:
-    """Load the protected install contract; direct Windows source runs fail closed."""
+    """Load the protected contract or an explicit ordinary-user release contract."""
     if platform != "nt":
         return None
     root = Path(__file__).resolve().parent.parent
     path = root / "trusted-child.json"
+    if not path.exists() and (root / "user-session-backup.json").is_file():
+        from laptop_backup_user_session import transport_contract
+        return transport_contract()
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

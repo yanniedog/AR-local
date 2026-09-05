@@ -439,10 +439,15 @@ def sqlite_checks(root: Path, *, required: bool = True) -> list[dict[str, object
     for path in sorted(root.rglob("*.sqlite")):
         with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro&immutable=1", uri=True)) as connection:
             quick = connection.execute("PRAGMA quick_check").fetchone()[0]
+            integrity = [row[0] for row in connection.execute("PRAGMA integrity_check")]
+            foreign_key = connection.execute("PRAGMA foreign_key_check").fetchone()
             tables = sorted(row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'"))
         if quick != "ok":
             raise ValueError(f"SQLite quick_check failed: {path.relative_to(root)}")
-        reports.append({"path": path.relative_to(root).as_posix(), "quick_check": quick, "tables": tables})
+        if integrity != ["ok"] or foreign_key is not None:
+            raise ValueError(f"SQLite integrity or foreign-key check failed: {path.relative_to(root)}")
+        reports.append({"path": path.relative_to(root).as_posix(), "quick_check": quick,
+                        "integrity_check": "ok", "foreign_key_check": "ok", "tables": tables})
     if required and not reports:
         raise ValueError("archive contains no SQLite database")
     return reports

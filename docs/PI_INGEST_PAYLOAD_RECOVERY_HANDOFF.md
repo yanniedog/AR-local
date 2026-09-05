@@ -20553,3 +20553,75 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "terminal_status": "BLOCKED_UNTIL_SEQUENCE19_MATERIALIZER_FRESH_PREFLIGHT_AND_USER_UAC_CONSENT"
 }
 ```
+
+## D-015-USER-SESSION-NO-UAC — operator-directed replacement of the elevation route
+
+Authorization: on 2026-09-05 the operator instructed: "You MUST find a work around
+which does not require me to ever click Yes on windows prompt". This decision
+supersedes D-007's attended elevation requirement and every unexecuted UAC
+continuation, including sequence 19. No old payload may be launched. Earlier
+PASS/FAIL/BLOCKED evidence and the controlled v1.5 source document remain intact.
+
+Reason: the existing S4U/Limited task receives a token which the installed
+non-elevated dispatcher rejects as elevated. The latest dispatcher records
+confirm rejection before child execution or backup writes. Repeated attended
+bootstrap attempts have not activated a replacement. A fresh local probe
+successfully registered and removed a disabled current-user Interactive/Limited
+task with daily and SID-specific logon triggers, with no elevation or prompt.
+
+The authorized replacement is a task named `AR-local user-session backup`, using
+only the signed-in operator's ordinary token. It runs daily at 06:00 Hobart and
+10 minutes after that operator logs on; only starts between 06:00 and 14:00 are
+allowed. Its six-hour execution limit leaves the ingest freeze protected.
+It stores no Windows password, changes no UAC policy, requests no elevated
+privilege, and does not modify the administrator-owned legacy task, its action,
+its files, or its catalog. A locked session remains eligible; a signed-out
+laptop waits until ordinary sign-in. This availability tradeoff is explicit:
+no successful backup may be claimed for a missed or blocked trigger.
+
+Use a separate target, `AR-local-pi5-user`, beside the legacy target. There is
+one candidate-bound writer per catalog. Neither catalog may be copied over,
+linked into, or used as a writable continuation of the other. The old catalog
+remains evidence, never fresh acceptance for this replacement. Before any Pi
+access, the new runner requires a normal token, exact SID, hash-pinned local
+configuration, clean immutable release, unchanged interpreter/Git executables,
+a permissible clock window and an idle legacy task. Unknown task state blocks.
+The existing receiver lock, 50 GiB free-space floor, immutable archive/receipt
+and restoration checks remain mandatory. SQLite restoration now also requires
+full integrity and foreign-key checks before any archive is accepted.
+
+The SSH transport gains a separate explicitly ordinary-user configuration mode.
+It does not claim administrator protection. It retains the absolute executable
+hashes, SSH key file hashes, fixed Pi host-key pin, exact logical identity,
+bounded LAN discovery and no-password/no-interactive SSH options. An existing
+invalid protected contract must never fall back to this mode. The runner pins
+all subsequent configuration reloads to its scheduled command's digest.
+
+Implementation is confined to the new user-session runner/installer/tests,
+`laptop_backup_transport.py` for that explicit mode, and `laptop_pull_backup.py`
+for stronger SQLite restore checks. The sequence-11/12 source-map tests continue
+to verify the preserved versions of those two files from immutable commit
+`ec008b26b00c525c82804520e175c9599c29f06d`; all other source freezes remain active.
+This is a documented retirement of the elevation route, not a declaration of
+recovery PASS or authorization to deploy PR #607 prematurely.
+
+Acceptance: merge and verify the exact implementation; install only the
+ordinary-user task with a hash-bound release; demonstrate a Task Scheduler
+probe returns the exact SID and a non-elevated token without invoking backup;
+then require a natural scheduled backup, independent archive restore,
+quick_check/integrity_check/foreign_key_check, and truthful freshness receipts.
+The next natural ingest remains independent. A3 is RUNNING until those proofs;
+physical boot/A4 remains a separate unproven gate. No installation or backup
+check may silently waive an error. Before 06:00, only local installation and
+no-backup probes are authorized for this route; Pi mutation remains prohibited.
+
+Rollback: disable/remove only the new ordinary-user task through its normal
+owner permissions, preserve its release, logs, catalog and partial transfers,
+and report the replacement BLOCKED. Leave all legacy state untouched. Never
+fall back to elevation, old canceled payloads, or a second writer to either
+catalog. Subsequent release updates use a freshly validated task action owned
+by this same user; no administrator consent is required.
+
+```json
+{"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-015-USER-SESSION-NO-UAC","result":"RUNNING_IMPLEMENTATION","elevation":"PROHIBITED","old_uac_sequences":"RETIRED_WITH_EVIDENCE_PRESERVED","next":"merge, install and probe ordinary-user scheduler; then prove natural backup and restore","a3":"RUNNING","a4":"BLOCKED","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
+```
