@@ -29,6 +29,13 @@ SERVICE_TEMPLATES = (
 INGEST_PROCESS_TEMPLATES = SERVICE_TEMPLATES[:3]
 
 
+@pytest.fixture(autouse=True)
+def isolate_scheduled_macro_transport(monkeypatch):
+    # Scheduled CDR/payload tests do not contact official macro sources or
+    # create the real macro store. The refresh contract has dedicated tests.
+    monkeypatch.setattr(pi_daily_sync, "refresh_macro_store", lambda *a, **k: {"status": "test-isolated"})
+
+
 def test_watchdog_never_accepts_markerless_nonzero_export(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

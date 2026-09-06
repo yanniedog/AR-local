@@ -23,7 +23,17 @@ from cdr_http_policy import (
     pagination_next_url,
     request_https,
 )
+from cdr_product_classification import (
+    DATASET_CATEGORY_ALIASES, DATASET_TO_FOLDER, as_array, dataset_from_cdr_category,
+    detail_inner_record, extract_cdr_product_category, has_deposit_structured_signals,
+    has_mortgage_structured_signals, infer_cdr_dataset, infer_dataset_from_name,
+    infer_dataset_from_structured_signals, is_record, normalize_category_token,
+    normalize_cdr_product_category, pick_text, safe_url,
+)
 from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
+from cdr_compatibility import (
+    classify_fetch_failure, parse_supported_versions, response_shape_error,
+)
 
 # -----------------------------------------------------------------------------
 # Constants (mirror workers/api/src/ingest/cdr/discovery.ts + http.ts order)
@@ -52,41 +62,6 @@ DEFAULT_LOGICAL_FETCH_ATTEMPTS = 8
 # P&N Bank, Teachers Mutual, Beyond Bank, UBank and Rabobank.
 DEFAULT_USER_AGENT = "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)"
 
-DATASET_CATEGORY_ALIASES: Dict[str, List[str]] = {
-    "home_loans": [
-        "RESIDENTIAL_MORTGAGES",
-        "RESIDENTIAL_MORTGAGE",
-        "MORTGAGES",
-        "MORTGAGE",
-        "HOME_LOANS",
-        "HOME_LOAN",
-    ],
-    "savings": [
-        "TRANS_AND_SAVINGS_ACCOUNTS",
-        "TRANS_AND_SAVINGS_ACCOUNT",
-        "TRANS_AND_SAVINGS",
-        "SAVINGS_ACCOUNTS",
-        "SAVINGS_ACCOUNT",
-        "SAVINGS",
-        "TRANSACTION_AND_SAVINGS_ACCOUNTS",
-    ],
-    "term_deposits": [
-        "TERM_DEPOSITS",
-        "TERM_DEPOSIT",
-        "FIXED_TERM_DEPOSITS",
-        "FIXED_TERM_DEPOSIT",
-        "FIXED_DEPOSITS",
-        "FIXED_DEPOSIT",
-    ],
-}
-
-DATASET_TO_FOLDER = {
-    "home_loans": "Mortgage",
-    "savings": "Savings",
-    "term_deposits": "TD",
-}
-
-
 @dataclass
 class RegisterSnapshot:
     register_ok: bool
@@ -101,33 +76,6 @@ class RegisterSnapshot:
 # -----------------------------------------------------------------------------
 
 
-def is_record(value: Any) -> bool:
-    return isinstance(value, dict)
-
-
-def as_array(value: Any) -> List[Any]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return []
-
-
-def pick_text(record: Mapping[str, Any], keys: Iterable[str]) -> str:
-    for key in keys:
-        raw = record.get(key)
-        if raw is None:
-            continue
-        text = str(raw).strip()
-        if text:
-            return text
-    return ""
-
-
-def safe_url(value: str) -> str:
-    return value.rstrip("/")
-
-
 def has_cdr_errors(data: Any) -> bool:
     if not is_record(data):
         return False
@@ -139,151 +87,9 @@ def has_cdr_errors(data: Any) -> bool:
     return bool(ec or em)
 
 
-def parse_supported_versions(body: str) -> List[int]:
-    def bounded(parts: Iterable[str]) -> List[int]:
-        return [
-            int(part)
-            for part in (item.strip() for item in parts)
-            if part.isdigit() and 0 < int(part) <= 99
-        ]
-
-    available = re.search(r"Versions available:\s*([0-9,\s]+)", body, re.I)
-    if available:
-        return bounded(available.group(1).split(","))
-
-    # Current data holders also emit the compact form
-    # "Requested: 1-1 Available: 7".
-    compact = re.search(r"\bAvailable:\s*([0-9,\s]+)", body, re.I)
-    if compact:
-        return bounded(compact.group(1).split(","))
-
-    range_m = re.search(
-        r"Minimum version supported is\s*(\d+)\s*and\s*Maximum version supported is\s*(\d+)",
-        body,
-        re.I,
-    )
-    if not range_m:
-        return []
-    lo, hi = int(range_m.group(1)), int(range_m.group(2))
-    if lo > hi or lo < 1 or hi > 99:
-        return []
-    return list(range(hi, lo - 1, -1))
-
-
 # -----------------------------------------------------------------------------
 # Classification (mirror workers/api/src/ingest/cdr/product-classification.ts)
 # -----------------------------------------------------------------------------
-
-
-def normalize_category_token(value: str) -> str:
-    text = str(value or "").strip().upper()
-    text = re.sub(r"[^A-Z0-9]+", "_", text)
-    return text.strip("_")
-
-
-def normalize_cdr_product_category(value: Any) -> Optional[str]:
-    token = normalize_category_token(str(value or ""))
-    return token if token else None
-
-
-def extract_cdr_product_category(product: Mapping[str, Any]) -> Optional[str]:
-    raw = pick_text(product, ["productCategory", "category", "type"])
-    return normalize_cdr_product_category(raw)
-
-
-def dataset_from_cdr_category(category: Optional[str]) -> Optional[str]:
-    normalized = normalize_cdr_product_category(category or "")
-    if not normalized:
-        return None
-    for dataset, aliases in DATASET_CATEGORY_ALIASES.items():
-        if normalized in aliases:
-            return dataset
-    if "MORTGAGE" in normalized or "HOME_LOAN" in normalized:
-        return "home_loans"
-    if "TERM_DEPOSIT" in normalized or "FIXED_DEPOSIT" in normalized:
-        return "term_deposits"
-    if "SAVINGS" in normalized or "TRANS_AND_SAVINGS" in normalized:
-        return "savings"
-    return None
-
-
-def has_mortgage_structured_signals(product: Mapping[str, Any]) -> bool:
-    rates = [x for x in as_array(product.get("lendingRates")) if is_record(x)]
-    if not rates:
-        return False
-    for rate in rates:
-        if not is_record(rate):
-            continue
-        lp = pick_text(rate, ["loanPurpose"])
-        rt = pick_text(rate, ["repaymentType"])
-        lrt = pick_text(rate, ["lendingRateType"])
-        if lp or rt or lrt:
-            return True
-    return False
-
-
-def has_deposit_structured_signals(product: Mapping[str, Any]) -> bool:
-    dr = [x for x in as_array(product.get("depositRates")) if is_record(x)]
-    if dr:
-        return True
-    generic = [x for x in as_array(product.get("rates")) if is_record(x)]
-    for rate in generic:
-        if not is_record(rate):
-            continue
-        dt = pick_text(rate, ["depositRateType", "rateType"])
-        at = pick_text(rate, ["applicationType", "rateApplicabilityType"])
-        if dt or at:
-            return True
-    return False
-
-
-def infer_dataset_from_structured_signals(product: Mapping[str, Any]) -> Optional[str]:
-    if has_mortgage_structured_signals(product):
-        return "home_loans"
-    if has_deposit_structured_signals(product):
-        cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
-        if cat_ds:
-            return cat_ds
-        return "savings"
-    return None
-
-
-def infer_dataset_from_name(product: Mapping[str, Any]) -> Optional[str]:
-    name = pick_text(product, ["name", "productName"]).upper()
-    if not name:
-        return None
-    if "MORTGAGE" in name or "HOME LOAN" in name:
-        return "home_loans"
-    if "TERM DEPOSIT" in name or "FIXED DEPOSIT" in name:
-        return "term_deposits"
-    if "SAVINGS" in name or "SAVER" in name or "AT CALL" in name:
-        return "savings"
-    return None
-
-
-def infer_cdr_dataset(
-    product: Mapping[str, Any],
-    *,
-    allow_name_fallback: bool = True,
-) -> Optional[str]:
-    cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
-    if cat_ds:
-        return cat_ds
-    structured = infer_dataset_from_structured_signals(product)
-    if structured:
-        return structured
-    if not allow_name_fallback:
-        return None
-    return infer_dataset_from_name(product)
-
-
-def detail_inner_record(parsed: Any) -> Optional[Dict[str, Any]]:
-    if not is_record(parsed):
-        return None
-    inner = parsed.get("data")
-    if is_record(inner):
-        return inner
-    return parsed  # type: ignore[return-value]
 
 
 # -----------------------------------------------------------------------------
@@ -392,6 +198,9 @@ class FetchResult:
     # The CDR x-v version that produced a successful fetch, so a caller can cache it
     # per holder and try it first instead of re-negotiating from the top each time.
     version: Optional[int] = None
+    failure_category: Optional[str] = None
+    retryable: bool = False
+    validation_error: Optional[str] = None
 
     @cached_property
     def data(self) -> Any:
@@ -552,14 +361,17 @@ def fetch_with_retries(
             )
         last_status, last_text = status, text
         last_retry_after = retry_after
-        if status < 400 or not retry_on(status):
+        failure = classify_fetch_failure(status, text)
+        if status < 400 or not retry_on(status) or not failure.retryable:
             return FetchResult(
-                ok=status < 400,
+                ok=200 <= status < 300,
                 status=status,
                 url=url,
                 text=text,
                 attempts=attempt,
                 retry_after=retry_after,
+                failure_category=None if 200 <= status < 300 else failure.category,
+                retryable=failure.retryable,
             )
         if attempt > max_retries:
             break
@@ -575,9 +387,11 @@ def fetch_with_retries(
             if delay <= 0:
                 break
         time.sleep(delay)
+    failure = classify_fetch_failure(last_status, last_text)
     return FetchResult(
         ok=False, status=last_status, url=url, text=last_text, attempts=attempt,
         retry_after=last_retry_after,
+        failure_category=failure.category, retryable=failure.retryable,
     )
 
 
@@ -698,7 +512,11 @@ def fetch_cdr_json(
         total_attempts += res.attempts
         last = res
         data = res.data
-        if res.ok and data is not None and not has_cdr_errors(data):
+        shape_error = response_shape_error(
+            data, phase=str((attempt_context or {}).get("phase") or ""),
+            product_id=str((attempt_context or {}).get("product_id") or ""),
+        ) if res.ok and data is not None and not has_cdr_errors(data) else None
+        if res.ok and data is not None and not has_cdr_errors(data) and shape_error is None:
             return FetchResult(
                 ok=True, status=res.status, url=url, text=res.text,
                 attempts=total_attempts, version=v,
@@ -707,10 +525,14 @@ def fetch_cdr_json(
         # A subsequent unsupported-version probe must not hide the holder's
         # actual rejection (inactive product, invalid rate, outage, etc.). Keep
         # the first non-negotiation failure; raw attempts still retain every try.
-        if res.status != 406 and substantive_failure is None:
+        failure = classify_fetch_failure(res.status, res.text)
+        res.failure_category = failure.category
+        res.retryable = failure.retryable
+        res.validation_error = shape_error
+        if failure.category != "incompatible_version" and substantive_failure is None:
             substantive_failure = res
 
-        if res.status == 406:
+        if failure.category == "incompatible_version":
             # A holder's advertised capability is stronger evidence than our
             # baked fallback order. Probe it next, while retaining the shared
             # request budget and the remaining compatibility fallbacks.
@@ -719,6 +541,11 @@ def fetch_cdr_json(
                     if x in queue:
                         queue.remove(x)
                     queue.insert(0, x)
+
+        # Version changes cannot repair DNS, authentication, missing endpoints
+        # or explicit invalid provider data. Keep the real error and stop here.
+        if not failure.negotiate:
+            break
 
         # Pace version switches on a retryable failure so the shared-budget walk
         # doesn't burst against a rate-limited / failing holder. Honor the server's
@@ -741,6 +568,8 @@ def fetch_cdr_json(
     return FetchResult(
         ok=False, status=failure.status, url=url, text=failure.text,
         attempts=total_attempts, retry_after=failure.retry_after,
+        failure_category=failure.failure_category,
+        retryable=failure.retryable, validation_error=failure.validation_error,
     )
 
 
@@ -844,6 +673,8 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     by_phase: Dict[str, int] = {}
     by_status: Dict[str, int] = {}
     by_provider: Dict[str, int] = {}
+    by_failure_category: Dict[str, int] = {}
+    by_retryable: Dict[str, int] = {}
     total = 0
     corrupt_records = 0
     unattributed_records = 0
@@ -883,6 +714,12 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 by_phase[phase] = by_phase.get(phase, 0) + 1
                 by_status[status] = by_status.get(status, 0) + 1
                 by_provider[provider] = by_provider.get(provider, 0) + 1
+                classified = classify_fetch_failure(rec.get("status"), rec.get("snippet") or "")
+                category = str(rec.get("failure_category") or classified.category)
+                retryable = rec.get("retryable")
+                retry_key = str(retryable if isinstance(retryable, bool) else classified.retryable).lower()
+                by_failure_category[category] = by_failure_category.get(category, 0) + 1
+                by_retryable[retry_key] = by_retryable.get(retry_key, 0) + 1
     return {
         "total": total,
         "corrupt_records": corrupt_records,
@@ -902,6 +739,8 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
         "by_phase": by_phase,
         "by_status": by_status,
         "by_provider": by_provider,
+        "by_failure_category": by_failure_category,
+        "by_retryable": by_retryable,
     }
 
 

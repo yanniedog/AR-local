@@ -1,0 +1,572 @@
+{
+  "provenance": "Captured finalized 2026-09-07 raw CDR HTTP attempt journal; deduplicated exact status/body pairs.",
+  "responses": [
+    {
+      "provider": "AMP Bank GO",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://pub.cdr-sme.amp.com.au/api/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"x-v. Supported max version 5 and min version 4\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\"}}]}"
+    },
+    {
+      "provider": "ANZ Plus",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://cdr.apix.anz/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n    \"errors\": [\n        {\n            \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n            \"title\": \"Unsupported Version\",\n            \"detail\": \"Supported minimum version 4 and maximum versions 5\"\n        }\n    ]\n}"
+    },
+    {
+      "provider": "AMP - My AMP",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.cdr-api.amp.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\", \"title\":\"Unsupported Version\", \"detail\":\"Requested x-v version is not supported\", \"meta\":{}}]}"
+    },
+    {
+      "provider": "Alex.Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.cdr.alex.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"supported versions include: [3, 4, 5]\"}]}\n"
+    },
+    {
+      "provider": "AFG Home Loans Alpha",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.afg.app.bendigobank.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"The requested version of the endpoint, via `x-v` is not supported. Supported versions are: 3, 4, 5.\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\"}}]}"
+    },
+    {
+      "provider": "AFG Home Loans Alpha",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 7,
+      "url": "https://api.afg.app.bendigobank.com.au/cds-au/v1/banking/products/bbc91f98-05e3-4711-ab53-a984c66398a4",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"The requested version of the endpoint, via `x-v` is not supported. Supported versions are: 6, 1, 3, 5, 4, 2.\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\"}}]}"
+    },
+    {
+      "provider": "Aussie Home Loans",
+      "phase": "products_index",
+      "status": 404,
+      "version": 6,
+      "url": "https://aussie.openportal.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "\n                {\n                    \"errors\": [\n                        {\n                            \"code\": \"404\",\n                            \"title\": \"Not found\",\n                            \"detail\": \"Resource not found\",\n                            \"meta\": {}\n                        }\n                    ]\n                }\n            "
+    },
+    {
+      "provider": "Australian Military Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.open.australianmilitarybank.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version constraints: {x-v: 6, x-min-v: 6}. Supported versions: [5, 4, 3]\",\"meta\":null}]}"
+    },
+    {
+      "provider": "ANZ",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.anz/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unable to select an endpoint version. Supported versions: min = 5, max = 5.\"}]}\n"
+    },
+    {
+      "provider": "Bank Australia",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.cdr.bankaust.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Min version supported: 1, Max version supported: 5\"}]}"
+    },
+    {
+      "provider": "Auswide Bank Ltd",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.auswidebank.com.au/openbanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 6-6 Available: 4\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Australian Mutual Bank LTD",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://ob.tmbl.com.au/ambank/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 6-6 Available: 5\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Auswide Bank Ltd",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 7,
+      "url": "https://api.auswidebank.com.au/openbanking/cds-au/v1/banking/products/5dab416d-1eab-4066-8fc8-ef7ca7ecb8fa",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 7-7 Available: 6\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Bank of China",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api-gateway.bankofchina.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Requested endpoint version 6 is not supported\"}]}"
+    },
+    {
+      "provider": "Bank of Melbourne",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": " { \"errors\":[ { \"code\": 406, \"title\": \"Unsupported Version\", \"detail\": \"Value 6 is invalid for the x-v header. Versions available: 4 and 5\", \"meta\": { \"urn\" : \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\" } } ] }"
+    },
+    {
+      "provider": "Bank of Queensland Limited",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.cds.boq.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"PCUA006\",\"title\":\"Unsupported Version\",\"detail\":\"Unable to find the version requested in x-v\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\"}}]}"
+    },
+    {
+      "provider": "Bank of Sydney",
+      "phase": "product_detail",
+      "status": 422,
+      "version": 7,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/gbp_fccy_account",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}"
+    },
+    {
+      "provider": "Bank of Queensland Limited",
+      "phase": "product_detail",
+      "status": 500,
+      "version": 7,
+      "url": "https://api.cds.boq.com.au/cds-au/v1/banking/products/19906e88-5c03-ee11-8f6e-00224814d330",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"PCBS021\",\"title\":\"Expected Error Encountered\",\"detail\":\"Validation failed with Invalid data received for DepositRateTiers ApplicabilityConditions additionalValue of Type::MIN_DEPOSIT_AMOUNT. Value must be in AmountString format\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}"
+    },
+    {
+      "provider": "Bank of Queensland Limited",
+      "phase": "product_detail",
+      "status": 504,
+      "version": 7,
+      "url": "https://api.cds.boq.com.au/cds-au/v1/banking/products/b2176288-5c03-ee11-8f6e-00224814dce7",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"PCUA015\",\"title\":\"Unexpected Error Encountered\",\"detail\":\"Upstream server was unable to respond in a timely manner\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Unexpected\"}}]}"
+    },
+    {
+      "provider": "Bankwest",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://open-api.bankwest.com.au/bwpublic/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"None of the versions requested are supported\"}]}"
+    },
+    {
+      "provider": "Bendigo Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.cdr.bendigobank.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"title\":\"Unsupported Version\",\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"detail\":\"Unsupported Version Requested\"}]}"
+    },
+    {
+      "provider": "BCU Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.cdr-api.bcu.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported Version(s)\"}]}"
+    },
+    {
+      "provider": "Coles Credit Cards",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.openbanking.secure.coles.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Minimum version supported is 4 and Maximum version supported is 5\"}]}"
+    },
+    {
+      "provider": "Credit Union SA",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://openbanking.api.creditunionsa.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Acceptable version is between 5 and 4\"}]}"
+    },
+    {
+      "provider": "Darling Downs Bank",
+      "phase": "products_index",
+      "status": 599,
+      "version": 6,
+      "url": "https://openbanking.ddbank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": "Public DNS resolution failed",
+      "body": ""
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 400,
+      "version": 7,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The Open Banking Product is inactive. (2.6141)\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 6,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 6-6 Available: 7\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 5,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 5-5 Available: 7\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "DDH Graham",
+      "phase": "products_index",
+      "status": 500,
+      "version": 5,
+      "url": "https://api.cds.ddhgraham.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"DBAS041\",\"title\":\"Unexpected Error Encountered\",\"detail\":\"Error getting the response from data holder\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Unexpected\"}}]}"
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 4,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 4-4 Available: 7\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 3,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 3-3 Available: 7\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 2,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 2-2 Available: 7\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "CommFCU",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 1,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 1-1 Available: 7\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Family First",
+      "phase": "products_index",
+      "status": 503,
+      "version": 6,
+      "url": "https://public.cdr.familyfirst.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "<html>\n<head><title>503 Service Temporarily Unavailable</title></head>\n<body>\n<center><h1>503 Service Temporarily Unavailable</h1></center>\n<hr><center>nginx</center>\n</body>\n</html>\n"
+    },
+    {
+      "provider": "Geelong Bank",
+      "phase": "products_index",
+      "status": 400,
+      "version": 5,
+      "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The service xxxxxxxxxxxxxx requires API Key. (2.8231)\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Geelong Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 4,
+      "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 4-4 Available: 5\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Geelong Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 3,
+      "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 3-3 Available: 5\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Geelong Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 2,
+      "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 2-2 Available: 5\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Geelong Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 1,
+      "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 1-1 Available: 5\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Great Southern Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.open-banking.greatsouthernbank.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Please send appropriate x-v value.\"}]}"
+    },
+    {
+      "provider": "HSBC",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.ob.hsbc.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"x-v header must be in a range of supported versions.\"}]}"
+    },
+    {
+      "provider": "ING BANK (Australia) Ltd",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://id.ob.ing.com.au/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Not acceptable value in headers x-v or x-min-v\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Liberty Financial",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://services.liberty.com.au/api/data-holder-public/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"\",\"meta\":{\"urn\":null}}]}"
+    },
+    {
+      "provider": "Macquarie Bank Limited",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.macquariebank.io/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Could not find a version for x-v=[6], x-min-v =[6]. Supported versions are [3, 4, 5].\"}]}"
+    },
+    {
+      "provider": "Maitland Mutual Limited",
+      "phase": "product_detail",
+      "status": 500,
+      "version": 7,
+      "url": "https://openbanking.themutual.com.au/OpenBanking/cds-au/v1/banking/products/Christmas_Club",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Unexpected\",\n      \"title\": \"Unexpected Error Encountered\",\n      \"detail\": \"Sorry, an unexpected error has occurred.\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "MyState Bank",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 7,
+      "url": "https://public.cdr.mystate.com.au/cds-au/v1/banking/products/47e17301-bbc9-436e-a9b0-5c9f10d3fa89",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Invalid Version\",\"detail\":\"UnSupportedVersion x-v=7 and x-minV=7\",\"meta\":null}]}"
+    },
+    {
+      "provider": "MyState Bank",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.cdr.mystate.com.au/cds-au/v1/banking/products/13002307",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Invalid Version\",\"detail\":\"UnSupportedVersion x-v=6 and x-minV=6\",\"meta\":null}]}"
+    },
+    {
+      "provider": "PayPal Australia",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://api.paypal.com/v1/identity/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Available min version is 3 and Available max version is 5\"}]}"
+    },
+    {
+      "provider": "QBANK",
+      "phase": "products_index",
+      "status": 406,
+      "version": 5,
+      "url": "https://banking.qbank.com.au/openbanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 5-5 Available: 4\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "QBANK",
+      "phase": "products_index",
+      "status": 406,
+      "version": 3,
+      "url": "https://banking.qbank.com.au/openbanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 3-3 Available: 4\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "QBANK",
+      "phase": "products_index",
+      "status": 406,
+      "version": 2,
+      "url": "https://banking.qbank.com.au/openbanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 2-2 Available: 4\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "QBANK",
+      "phase": "products_index",
+      "status": 406,
+      "version": 1,
+      "url": "https://banking.qbank.com.au/openbanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 1-1 Available: 4\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Rabobank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://openbanking.api.rabobank.com.au/public/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"No versions supported in the requested range of x-min-v to x-v.\"}]}"
+    },
+    {
+      "provider": "Revolut",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://au-cdr-public.revolut.com/public/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version value\"}]}"
+    },
+    {
+      "provider": "SWSbank",
+      "phase": "product_detail",
+      "status": 400,
+      "version": 7,
+      "url": "https://online.swsbank.com.au/openbanking/cds-au/v1/banking/products/L23_Disc_HL%2A%2A4",
+      "error": null,
+      "body": "<!DOCTYPE html>\n<html>\n    <head>\n        <title>Runtime Error</title>\n        <meta name=\"viewport\" content=\"width=device-width\" />\n        <style>\n         body {font-family:\"Verdana\";font-weight:normal;font-size: .7em;color:black;} \n         p {font-family:\"Verdana\";font-weight:normal;color:black;margin-top: -5px}\n         b {font-family:\"Verdana\";font-weight:bold;color:black;margin-top: -5px}\n         H1 { font-family:\"Verdana\";font-weight:normal;font-size:18pt;color:red }\n         H2 { font-family:\"Verdana\";font-weight:normal;font-size:14pt;color:maroon }\n         pre {font-family:\"Consolas\",\"Lucida Console\",Monospace;font-size:11pt;margin:0;padding:0.5em;line-height:14pt}\n         .marker {font-weight: bold; color: black;text-decoration: none;}\n         .version {color: gray;}\n         .error {margin-bottom: 10px;}\n         .expandable { text-decoration:underline; font-weight:bold; color:navy; cursor:pointer; }\n         @media screen and (max-width: 639px) {\n          pre { width: 440px; overflow: auto; white-space: pre-wrap; word-wrap: break-word; }\n         }\n         @media screen and (max-width: 479px) {\n          pre { width: 280px; }\n         }\n        </style>\n    </head>\n\n    <body bgcolor=\"white\">\n\n            <span><H1>Server Error in '/openbanking' Application.<hr width=100% size=1 color=silver></H1>\n\n            <h2> <i>Runtime Error</i> </h2></span>\n\n            <font face=\"Arial, Helvetica, Geneva, SunSans-Regular, sans-serif \">\n\n            <b> Description: </b>An application error occurred on the server. The current custom error settings for this application prevent the details of the application error from being viewed remotely (for security reasons). It could, however, be viewed by browsers running on the local server machine.\n            <br><br"
+    },
+    {
+      "provider": "Tyro Payments",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.cdr.tyro.com/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version constraints: {x-v: 6, x-min-v: 6}. Supported versions: [3]\",\"meta\":null}]}"
+    },
+    {
+      "provider": "Tyro Payments",
+      "phase": "products_index",
+      "status": 406,
+      "version": 5,
+      "url": "https://public.cdr.tyro.com/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version constraints: {x-v: 5, x-min-v: 5}. Supported versions: [3]\",\"meta\":null}]}"
+    },
+    {
+      "provider": "Tyro Payments",
+      "phase": "products_index",
+      "status": 406,
+      "version": 4,
+      "url": "https://public.cdr.tyro.com/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version constraints: {x-v: 4, x-min-v: 4}. Supported versions: [3]\",\"meta\":null}]}"
+    },
+    {
+      "provider": "Tyro Payments",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 7,
+      "url": "https://public.cdr.tyro.com/cds-au/v1/banking/products/a072f9d4-082b-4d23-8ddc-d9db7d88d417",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version constraints: {x-v: 7, x-min-v: 7}. Supported versions: [5, 4]\",\"meta\":null}]}"
+    },
+    {
+      "provider": "Tyro Payments",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 6,
+      "url": "https://public.cdr.tyro.com/cds-au/v1/banking/products/93efba95-f852-4455-a965-807c0de3812c",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"Unsupported version constraints: {x-v: 6, x-min-v: 6}. Supported versions: [5, 4]\",\"meta\":null}]}"
+    },
+    {
+      "provider": "Woolworths Team Bank",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://online.woolworthsteambank.com.au/OpenBanking/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 6-6 Available: 3\"\n    }\n  ]\n}"
+    },
+    {
+      "provider": "Wise",
+      "phase": "products_index",
+      "status": 406,
+      "version": 6,
+      "url": "https://au-cdrbanking-pub.wise.com/cds-au/v1/banking/products",
+      "error": null,
+      "body": "{\"errors\":[{\"code\":\"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\"title\":\"Unsupported Version\",\"detail\":\"\"}]}"
+    },
+    {
+      "provider": "Woolworths Team Bank",
+      "phase": "product_detail",
+      "status": 406,
+      "version": 7,
+      "url": "https://online.woolworthsteambank.com.au/OpenBanking/cds-au/v1/banking/products/S2",
+      "error": null,
+      "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:Header/UnsupportedVersion\",\n      \"title\": \"Unsupported Version\",\n      \"detail\": \"Requested: 7-7 Available: 4\"\n    }\n  ]\n}"
+    }
+  ]
+}

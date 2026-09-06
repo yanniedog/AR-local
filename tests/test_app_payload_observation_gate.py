@@ -18,6 +18,13 @@ import app_payload_observation_gate as gate  # noqa: E402
 import pi_daily_sync  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def isolate_scheduled_macro_transport(monkeypatch):
+    # Scheduled CDR/payload tests do not contact official macro sources or
+    # create the real macro store. The refresh contract has dedicated tests.
+    monkeypatch.setattr(pi_daily_sync, "refresh_macro_store", lambda *a, **k: {"status": "test-isolated"})
+
+
 def _load_backfill():
     """Import the backfill script by path; it is not an importable module name."""
     spec = importlib.util.spec_from_file_location(

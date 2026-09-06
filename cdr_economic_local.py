@@ -9,10 +9,8 @@ otherwise the caller falls back to the upstream proxy.
 
 The catalog metadata (series IDs, labels, units, source URLs, descriptions,
 preset groupings) is vendored at ``dashboard/economic-data-catalog.json``.
-Freshness fields in the vendored file reflect the upstream snapshot at the
-time of vendoring and are returned verbatim until the corresponding local
-ingest lands; the frontend treats them as advisory and falls back gracefully
-when ``last_observation_date`` is missing.
+Only descriptive metadata is vendored. Freshness always comes from the live
+macro store and is aged at read time, including when source refresh fails.
 """
 
 from __future__ import annotations
@@ -25,61 +23,15 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Tuple
 
-from cdr_public_api_shims import connect_readonly
+from cdr_macro_store import read_store
+from cdr_macro_sources import LOCAL_SERIES_IDS, SERIES_VISIBLE_FROM
+from cdr_macro_freshness import (
+    assess_freshness, observation_value, series_metadata, source_definition_current,
+)
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "dashboard" / "economic-data-catalog.json"
 _CATALOG_TTL_SECONDS = 5.0
 _MACRO_STORE_PATH = Path(__file__).resolve().parent / "state" / "local-macro.sqlite"
-
-# Series IDs supplied locally. Anything else still round-trips to the
-# upstream proxy via cdr_economic_proxy.
-#   PR1b: RBA H5 (unemployment_rate, participation_rate)
-#   PR1c: ABS CPI_M (monthly_cpi_indicator, monthly_trimmed_mean_cpi)
-#   PR1c.2: ABS LF_UNDER + LF_HOURS (employment_to_population,
-#           underemployment_rate, underutilisation_rate, hours_worked)
-#   PR1c.3: ABS HSI_M + LEND_HOUSING (household_spending_indicator,
-#           lending_indicator_housing)
-#   PR1c.4: ABS BA_GCCSA (building_approvals_abs)
-#   PR1b.x: RBA H3 (dwelling_approvals, consumer_sentiment, business_conditions)
-#   PR1c.5: ABS WPI + JV (abs_wage_price_index, job_vacancies)
-#   PR1b.y: RBA G1 + G3 (trimmed_mean_cpi, inflation_expectations)
-#   PR1b.z: RBA H4 + H2 (wage_growth, household_consumption, public_demand)
-#   PR1b.aa: RBA F1.1 + F11 + I2 + D1 (bank_bill_30d/90d/180d, aud_twi,
-#            commodity_prices, housing_credit_growth)
-#   PR1b.bb: RBA J1 star-variables (neutral_rate, capacity_utilisation_proxy)
-LOCAL_SERIES_IDS: frozenset[str] = frozenset(
-    {
-        "unemployment_rate",
-        "participation_rate",
-        "monthly_cpi_indicator",
-        "monthly_trimmed_mean_cpi",
-        "employment_to_population",
-        "underemployment_rate",
-        "underutilisation_rate",
-        "hours_worked",
-        "household_spending_indicator",
-        "lending_indicator_housing",
-        "building_approvals_abs",
-        "dwelling_approvals",
-        "consumer_sentiment",
-        "business_conditions",
-        "abs_wage_price_index",
-        "job_vacancies",
-        "trimmed_mean_cpi",
-        "inflation_expectations",
-        "wage_growth",
-        "household_consumption",
-        "public_demand",
-        "bank_bill_30d",
-        "bank_bill_90d",
-        "bank_bill_180d",
-        "aud_twi",
-        "commodity_prices",
-        "housing_credit_growth",
-        "neutral_rate",
-        "capacity_utilisation_proxy",
-    }
-)
 
 _catalog_lock = threading.Lock()
 _catalog_cache: dict | None = None
@@ -149,11 +101,21 @@ def economic_catalog_payload() -> Tuple[bytes, str]:
         catalog = _load_catalog()
     except CatalogUnavailableError as exc:
         return _error_body(str(exc)), "application/json; charset=utf-8"
+    categories = []
+    for category in catalog.get("categories", []):
+        entries = []
+        for original in category.get("series", []):
+            sid = original.get("id", "")
+            meta = series_metadata(sid, original)
+            stored = _read_freshness(_MACRO_STORE_PATH, sid)
+            meta["freshness"] = assess_freshness(sid, stored, frequency=meta.get("frequency"))
+            entries.append(meta)
+        categories.append({**category, "series": entries})
     payload = {
         "ok": True,
         "generated_at": _now_iso(),
         "presets": catalog.get("presets", []),
-        "categories": catalog.get("categories", []),
+        "categories": categories,
     }
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return body, "application/json; charset=utf-8"
@@ -211,7 +173,7 @@ def _read_observations(
     helper used for run-export DBs.
     """
     try:
-        with connect_readonly(store_path) as con:
+        with read_store(store_path) as con:
             rows = con.execute(
                 """SELECT observation_date, raw_value, release_date
                    FROM series_observations
@@ -227,16 +189,18 @@ def _read_observations(
         parsed = _parse_iso_date(obs_date_str)
         if parsed is None:
             continue
-        out.append((parsed, float(raw_value), release_date))
+        value = observation_value(series_id, raw_value)
+        if value is not None and obs_date_str >= SERIES_VISIBLE_FROM.get(series_id, ""):
+            out.append((parsed, value, release_date))
     return out
 
 
 def _read_freshness(store_path: Path, series_id: str) -> dict | None:
     try:
-        with connect_readonly(store_path) as con:
+        with read_store(store_path) as con:
             row = con.execute(
                 """SELECT last_checked_at, last_success_at, last_observation_date,
-                          last_value, status, message
+                          last_value, status, message, source_url
                    FROM ingest_runs WHERE series_id = ?""",
                 (series_id,),
             ).fetchone()
@@ -251,6 +215,7 @@ def _read_freshness(store_path: Path, series_id: str) -> dict | None:
         "last_value": row[3],
         "status": row[4],
         "message": row[5],
+        "source_url": row[6],
     }
 
 
@@ -317,28 +282,24 @@ def is_series_request_local(ids: Iterable[str]) -> bool:
 def economic_series_payload(
     ids: list[str], start: str | None, end: str | None
 ) -> Tuple[bytes, str] | None:
-    """Build the locally-served /series response, or return ``None`` if local
-    data is incomplete and the caller should fall back to the upstream proxy.
+    """Serve local observations with explicit missing/stale/error metadata.
 
-    Caller is expected to have checked ``is_series_request_local(ids)`` first
-    so unmapped ids never reach this path. The additional empty-points check
-    handles a fresh Pi where the code has deployed but ``cdr_macro_ingest.py``
-    has not yet populated ``state/local-macro.sqlite`` — proxy fallback keeps
-    the page rendering until ingest catches up.
+    Caller first checks ``is_series_request_local(ids)``. A failed local source
+    never falls back to the vendored catalog or a different upstream service.
     """
     start_date, end_date = _resolve_window(start, end)
     catalog_meta = _catalog_index()
     series_out: list[dict] = []
     for series_id in ids:
-        meta = catalog_meta.get(series_id) or {"id": series_id}
+        meta = series_metadata(series_id, catalog_meta.get(series_id) or {"id": series_id})
+        stored = _read_freshness(_MACRO_STORE_PATH, series_id)
         observations = _read_observations(_MACRO_STORE_PATH, series_id, end_date)
+        if not source_definition_current(series_id, stored):
+            observations = []
         points, baseline_date, baseline_value = _build_series_points(
             observations, start_date, end_date
         )
-        if not points:
-            # Signal proxy fallback rather than serving an empty chart.
-            return None
-        freshness = _read_freshness(_MACRO_STORE_PATH, series_id) or meta.get("freshness")
+        freshness = assess_freshness(series_id, stored, frequency=meta.get("frequency"))
         entry = {
             "id": series_id,
             "label": meta.get("label", series_id),
@@ -375,13 +336,22 @@ def economic_health_payload() -> Tuple[bytes, str]:
         catalog = _load_catalog()
     except CatalogUnavailableError as exc:
         return _error_body(str(exc)), "application/json; charset=utf-8"
+    states = {}
+    catalog_meta = _catalog_index()
+    for sid in sorted(LOCAL_SERIES_IDS):
+        meta = series_metadata(sid, catalog_meta.get(sid, {}))
+        states[sid] = assess_freshness(sid, _read_freshness(_MACRO_STORE_PATH, sid), frequency=meta.get("frequency"))["status"]
+    counts = {status: list(states.values()).count(status) for status in ("ok", "stale", "error", "missing")}
     payload = {
-        "ok": True,
+        "ok": counts["ok"] == len(LOCAL_SERIES_IDS),
         "service": "economic-data",
         "api_base_path": "/api/economic-data",
         "series_count": _series_count(catalog),
         "preset_count": len(catalog.get("presets", [])),
         "served_by": "ar-local",
+        "local_series_count": len(LOCAL_SERIES_IDS),
+        "freshness_counts": counts,
+        "series_status": states,
     }
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return body, "application/json; charset=utf-8"

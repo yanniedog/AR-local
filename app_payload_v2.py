@@ -42,6 +42,9 @@ from app_payload_contracts import (
 from app_payload_publish import _gh_authed, _gh_available, _live_manifest_status
 from app_payload_network_budget import validate_v2_network_budget
 from cdr_public_api_shims import connect_readonly
+from cdr_macro_store import read_store
+from cdr_macro_sources import LOCAL_SERIES_IDS, SERIES_VISIBLE_FROM
+from cdr_macro_freshness import assess_freshness, observation_value, series_metadata, source_definition_current
 from pi_payload_freshness import fresh_document_url
 
 V2_SCHEMA_VERSION = 2
@@ -248,10 +251,13 @@ def _latest_observations(con: sqlite3.Connection) -> Dict[str, List[Dict[str, An
     ).fetchall()
     out: Dict[str, List[Dict[str, Any]]] = {}
     for series_id, observed_on, value, released_on in rows:
+        value = observation_value(series_id, value)
+        if value is None or observed_on < SERIES_VISIBLE_FROM.get(series_id, ""):
+            continue
         bucket = out.setdefault(str(series_id), [])
         if len(bucket) < 2:
             bucket.append(
-                {"observed_on": observed_on, "value": float(value), "released_on": released_on}
+                {"observed_on": observed_on, "value": value, "released_on": released_on}
             )
     return out
 
@@ -282,17 +288,18 @@ def build_economic_outlook(store_path: Path, *, generated_at: str) -> Dict[str, 
         "signal_label": "signal_balance",
         "series": [],
     }
-    if not store_path.is_file():
-        return payload
+    observations, freshness = {}, {}
     try:
-        with connect_readonly(store_path) as con:
+        with read_store(store_path) as con:
             observations = _latest_observations(con)
             freshness = _freshness(con)
     except sqlite3.Error:
-        return payload
+        pass
     catalog = _catalog_index(BASE_DIR / "dashboard" / "economic-data-catalog.json")
-    for series_id in sorted(observations):
-        meta = catalog.get(series_id, {})
+    for series_id in sorted(LOCAL_SERIES_IDS | observations.keys()):
+        meta = series_metadata(series_id, catalog.get(series_id, {}))
+        stored = freshness.get(series_id)
+        series_observations = observations.get(series_id, []) if source_definition_current(series_id, stored) else []
         payload["series"].append(
             {
                 "id": series_id,
@@ -303,8 +310,8 @@ def build_economic_outlook(store_path: Path, *, generated_at: str) -> Dict[str, 
                 "source_url": _public_https_url(
                     (freshness.get(series_id) or {}).get("source_url") or meta.get("source_url")
                 ),
-                "freshness": freshness.get(series_id),
-                "observations": list(reversed(observations[series_id])),
+                "freshness": assess_freshness(series_id, stored, frequency=meta.get("frequency"), now=generated_at),
+                "observations": list(reversed(series_observations)),
             }
         )
     validate_economic_outlook(payload)

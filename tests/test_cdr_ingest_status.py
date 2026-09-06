@@ -173,6 +173,8 @@ def test_summarize_failures_complete_run_has_no_failures(tmp_path):
         "by_phase": {},
         "by_status": {},
         "by_provider": {},
+        "by_failure_category": {},
+        "by_retryable": {},
     }
 
 
