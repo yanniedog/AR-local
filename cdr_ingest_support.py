@@ -667,6 +667,7 @@ def fetch_cdr_json(
         }
 
     last: Optional[FetchResult] = None
+    substantive_failure: Optional[FetchResult] = None
     while queue and remaining > 0 and (deadline is None or time.monotonic() < deadline):
         v = queue.pop(0)
         if v in tried:
@@ -703,12 +704,20 @@ def fetch_cdr_json(
                 attempts=total_attempts, version=v,
             )
 
+        # A subsequent unsupported-version probe must not hide the holder's
+        # actual rejection (inactive product, invalid rate, outage, etc.). Keep
+        # the first non-negotiation failure; raw attempts still retain every try.
+        if res.status != 406 and substantive_failure is None:
+            substantive_failure = res
+
         if res.status == 406:
             # A holder's advertised capability is stronger evidence than our
             # baked fallback order. Probe it next, while retaining the shared
             # request budget and the remaining compatibility fallbacks.
             for x in reversed(parse_supported_versions(res.text)):
-                if x not in tried and x not in queue:
+                if x not in tried:
+                    if x in queue:
+                        queue.remove(x)
                     queue.insert(0, x)
 
         # Pace version switches on a retryable failure so the shared-budget walk
@@ -728,7 +737,11 @@ def fetch_cdr_json(
 
     if last is None:
         return FetchResult(ok=False, status=0, url=url, text="", attempts=total_attempts)
-    return FetchResult(ok=False, status=last.status, url=url, text=last.text, attempts=total_attempts)
+    failure = substantive_failure or last
+    return FetchResult(
+        ok=False, status=failure.status, url=url, text=failure.text,
+        attempts=total_attempts, retry_after=failure.retry_after,
+    )
 
 
 # -----------------------------------------------------------------------------
