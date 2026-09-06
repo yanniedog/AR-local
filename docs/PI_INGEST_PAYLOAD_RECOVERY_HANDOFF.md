@@ -20743,3 +20743,57 @@ production SHA and independent 01:00 ingestion remain unchanged.
 ```json
 {"schema":"ARL-USER-SESSION-RESUME-V1","decision":"D-018-ACCEPTANCE-SCOPE-CORRECTION","operator_backup_verification":"PASS","natural_scheduled_backup":"UNPROVEN","elevation":"PROHIBITED","next":"observe genuine unchanged scheduled execution and complete remaining A3 acceptance before writable A4 preparation","a3":"RUNNING","a4":"BLOCKED","pr607":"DRAFT_UNTIL_RECOVERY_ACCEPTANCE"}
 ```
+
+## Entry `HANDOFF-20260906T235300+1000-D019-DATA-REPAIR-COMPLETE`
+
+Recorded by Codex on the operator's instruction to finish the September 6 data
+repair; timestamp 2026-09-06 23:53 Hobart / 13:53 UTC. Previous handoff entry:
+`D-018-ACCEPTANCE-SCOPE-CORRECTION`. This records the completed D-019 activation
+already authorized and documented in
+[`DATA_RUNTIME_FINALIZATION_20260906.md`](DATA_RUNTIME_FINALIZATION_20260906.md).
+It supersedes D-018's protected-code and blocked-deployment snapshot only for
+that exact six-file data repair. It introduces no further runtime authority.
+
+Plan: ARL-OPS-001 v1.5, document commit
+`9094a8e115958fcaf2cb36525736bd5e297e6b04`, controlled SHA-256
+`a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`,
+Windows raw SHA-256
+`d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4`.
+
+Terminal results are PASS for runtime activation, dated/rolling v1, dates index,
+v2, Pi dashboard smoke and operator-requested incremental backup. Production
+`/srv/ar-local/AR-local` is clean at
+`6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2`; exact rollback remains
+`9302890fcc752cbf90da97d597e972c157d913e3`. Receiver
+`835067f474e8a771f7cbf710c08d5cde835f2618` uses the ordinary-user task and
+separate `AR-local-pi5-user` catalog. The task is Ready/Interactive/Limited;
+neither the legacy task nor the no-UAC requirement changed.
+
+Fresh downloads verify September 6 across both feeds and the index, all nine
+asset hashes/sizes, v2 schema and exact v1 base hashes. The independently
+verified current backup generations are 112 (observation), 113 (control), and
+114 (macro); scheduled receipt SHA-256 is
+`d09632fa263ec7efdbbc4889fe194c2c4994ad75378fe17d95de52d3cd81d088`.
+The revised observation is `obs-2026-09-06-1d92edd47cbaa071`; source capture,
+finalization and original-preservation proof remain in the earlier recovery
+evidence. Partial provider coverage remains disclosed.
+
+Read [the terminal report](DATA_RUNTIME_FINALIZATION_20260906.md#terminal-verification-september-6-at-2353-hobart)
+for exact evidence paths, hashes, retained review disposition and 188 passing
+tests. The public closeout archive is 7,577 bytes, SHA-256
+`220ca80a96932fe74ce2c3ee953ce9ebe56826c47d73bf19c33d9fe7b98d8fee`;
+the complete local verification report SHA-256 is
+`ccef99bffeb35f1f5d6b8ed4d20ffd88e9167e59e5ac46fafc6003ad3bdbd633`.
+
+Next: allow the unchanged September 7 01:00 ingest and 06:00 ordinary-user
+backup to run naturally. During the 00:30 freeze, use read-only observation;
+do not repeat the completed activation, sidecar publication or manual backup.
+After ingest, run `npm run verify:pi` and
+`python scripts/pi_ingest_manifest_check.py --json` from the verified Pi runtime;
+check the new date, observation identity and later scheduled receipt before
+recording natural-run acceptance. Preserve any failed result and the previous
+accepted payload. No new deployment or recovery-media operation is authorized.
+
+Natural scheduled-backup/A3 and physical-boot/A4 proof remain unproven; PR #607
+remains draft. These are separate from the completed D-019 data repair and must
+never cause its successful backup or public-feed results to be relabelled.

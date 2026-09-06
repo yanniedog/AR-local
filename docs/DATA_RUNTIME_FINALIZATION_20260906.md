@@ -84,3 +84,50 @@ Evidence is append-only under
 `/srv/ar-local/canary/evidence/ARL-OPS-001/FINALIZE-20260906` and the corresponding
 local off-device backup/evidence directory. Terminal results distinguish the
 deployed data repair, v2 publication, verified backup and next natural execution.
+
+## Terminal verification, September 6 at 23:53 Hobart
+
+The D-019 data repair is complete. The Pi is clean at exact runtime
+`6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2`; its six-file activation completed
+at 23:22 and the daily 01:00 timer remains scheduled. The ordinary-user receiver
+is installed at merged commit `835067f474e8a771f7cbf710c08d5cde835f2618`.
+
+Fresh public downloads independently verified September 6 dated v1, rolling v1,
+the dates index and v2. All nine assets match their sizes and SHA-256 values;
+v2 JSON/schema and core/details base identities pass. V2 has advanced from
+August 21 to September 6. `npm run verify:pi` passes against the Pi URL.
+
+The operator-requested incremental backup completed at 23:31:53 with PASS.
+Catalog generations 112, 113 and 114 preserve the revised observation, current
+control state and macro store. The catalog now has 114 accepted generations.
+Independent closeout rehashed these three archives, manifests and receipts,
+validated catalog integrity and the scheduled-receipt digest, and checked that
+all recorded SQLite restore results are `ok`. The original primary observation
+and all earlier receipts remain preserved.
+
+The existing task is Ready, Interactive/Limited, with its next run at 06:00 on
+September 7. Its configuration SHA-256 remains
+`14e71e6569bc4cab7d4e2c4f7c80ba0272e24a5cd3cba1455c0999bcc6e38318`.
+This is operator-triggered backup proof. The next natural ingest, a genuine
+scheduled backup and physical boot proof remain distinct, unproven events.
+They are outside this completed D-019 repair; PR #607 remains a separate draft.
+
+The late #629 review concerned `laptop_backup_transition.validate_backup_state`.
+That unchanged legacy harness permits only `AR-local laptop backup` and the
+legacy target, with one fixed production identity. It does not run the new
+ordinary-user task or its separate catalog. The installed route calls
+`scheduled_status`, which supplies the validated predecessor identity. Extending
+the retired harness is unnecessary for this release; its rejection of a
+different production identity remains intentional. All 188 focused legacy,
+ordinary-user and predecessor-transition tests pass.
+
+Evidence: [final closeout archive](https://github.com/yanniedog/AR-local/releases/download/diagnostic-quality-20260906/september6-finalization-closeout-20260906T135034Z.zip).
+The archive is 7,577 bytes, SHA-256
+`220ca80a96932fe74ce2c3ee953ce9ebe56826c47d73bf19c33d9fe7b98d8fee`.
+Its terminal receipt SHA-256 is
+`8a7b0f019c641ec33bd7fa4159c85568c19ea8ed68049994cf318b67efda9aa0`.
+The local complete verification report is under
+`C:\code\backups\AR-local-user-session\data-runtime-20260906\closeout-20260906T135034Z`,
+SHA-256 `ccef99bffeb35f1f5d6b8ed4d20ffd88e9167e59e5ac46fafc6003ad3bdbd633`.
+Earlier diagnostic evidence remains unchanged; this terminal receipt supersedes
+its stale-v2 and blocked-runtime status only.
