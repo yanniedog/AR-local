@@ -26,9 +26,10 @@ from zoneinfo import ZoneInfo
 from ar_local_pi_runtime import data_state_root
 from cdr_atomic import atomic_write_json, canonical_json_bytes
 from cdr_observation_selection import captured_identities, provider_directories, selected_observation
-from cdr_recovery_legacy import legacy_recovery_requests
+from cdr_recovery_legacy import legacy_recovery_requests, terminal_index_failure
 from cdr_reuse_identity import captured_provider_directories
 from pi_cdr_recovery_probe import current_target_url, probe_register, probe_request
+from pi_cdr_selection_recovery import reconsider_saved_selection
 
 HOBART = ZoneInfo("Australia/Hobart")
 MAX_PROBES_PER_TICK = 4
@@ -252,7 +253,9 @@ def _legacy_requests(observation: dict, providers: dict) -> list[dict]:
             continue
         if phase != "products_index" and (not pid or (provider, pid) in present):
             continue
-        if phase == "products_index" and (status.get("index_diagnostics") or {}).get(provider, {}).get("pagination_complete") is True:
+        if (phase == "products_index"
+                and (status.get("index_diagnostics") or {}).get(provider, {}).get("pagination_complete") is True
+                and not terminal_index_failure(status, provider)):
             continue
         result.append({"provider_dir": provider, "phase": phase, "product_id": pid,
                        "url": row.get("url") or providers[provider]["endpoint_url"],
@@ -390,6 +393,9 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     observation = selected_observation(state, run_date)
     if observation is None:
         return {"status": "no_verified_same_day_observation"}
+    reconsidered = reconsider_saved_selection(repo_root, state, run_date, observation)
+    if reconsidered:
+        return reconsidered
     health = _coverage_health(observation)
     if observation["contract"]["observation_state"] == "complete":
         return {"status": "complete", **health}

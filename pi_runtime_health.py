@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ar_local_operation_lock import production_lock
 from ar_local_pi_runtime import (
     PI_DASHBOARD_PORT,
     PI_TAILSCALE_IP,
@@ -183,7 +184,7 @@ def tailscale_check_applicable() -> bool:
     return proc.returncode == 0 and "tailscaled.service" in (proc.stdout or "")
 
 
-def check_tailscale(*, http_timeout: float) -> tuple[bool, list[str]]:
+def check_tailscale(*, http_timeout: float, probe_application: bool = True) -> tuple[bool, list[str]]:
     messages: list[str] = []
     if not tailscale_check_applicable():
         messages.append("tailscale checks skipped (tailscaled unit not present)")
@@ -198,19 +199,23 @@ def check_tailscale(*, http_timeout: float) -> tuple[bool, list[str]]:
         return True, messages
     ip = tailnet_ip()
     messages.append(f"tailnet ip={ip}")
-    tailnet_http_ok = False
+    tailnet_ok = False
     if tcp_probe(ip, 80, timeout=min(http_timeout, 8.0)):
-        ok, detail = http_probe(f"http://{ip}{PROBE_PATH}", timeout=http_timeout, retries=1)
-        if ok:
-            messages.append(f"tailnet HTTP: OK {detail}")
-            tailnet_http_ok = True
+        if not probe_application:
+            messages.append("tailnet TCP :80 OK; application probe deferred during coordinated work")
+            tailnet_ok = True
         else:
-            messages.append(f"tailnet HTTP failed: {detail}")
+            ok, detail = http_probe(f"http://{ip}{PROBE_PATH}", timeout=http_timeout, retries=1)
+            if ok:
+                messages.append(f"tailnet HTTP: OK {detail}")
+                tailnet_ok = True
+            else:
+                messages.append(f"tailnet HTTP failed: {detail}")
     else:
         messages.append(f"TCP :80 on {ip} failed")
     journal_bad, journal_detail = tailscale_journal_unhealthy()
     messages.append(f"journal: {journal_detail}")
-    return tailnet_http_ok and not journal_bad, messages
+    return tailnet_ok and not journal_bad, messages
 
 
 def cooldown_elapsed(state: dict[str, Any], key: str, cooldown_sec: int) -> bool:
@@ -252,35 +257,88 @@ def cmd_check(args: argparse.Namespace) -> int:
     return EXIT_UNHEALTHY
 
 
-def cmd_heal(args: argparse.Namespace) -> int:
+def _production_activity_block_reason(*, include_ingest_lock: bool = True) -> str:
+    # The shared lease below applies on every host; systemd and /proc are Pi-only.
+    if not is_raspberry_pi():
+        return ""
+    try:
+        # Lazy import keeps the health CLI independent of ingest module loading.
+        from pi_cdr_recovery import recovery_block_reason
+
+        return recovery_block_reason(REPO_ROOT, include_ingest_lock=include_ingest_lock)
+    except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        return "production_activity_unavailable"
+
+
+def _guarded_dashboard_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
+    """Serialize both service mutations with ingest, backup and deployment."""
+    reason = _production_activity_block_reason()
+    if reason:
+        return None, reason
+    if dry_run:
+        return restart_dashboard_and_nginx(dry_run=True), ""
+    try:
+        with production_lock(data_state_root(REPO_ROOT) / "daily-ingest.lock", "runtime-health"):
+            reason = _production_activity_block_reason(include_ingest_lock=False)
+            if reason:
+                return None, reason
+            return restart_dashboard_and_nginx(dry_run=False), ""
+    except (OSError, RuntimeError):
+        return None, "production_lock_unavailable"
+
+
+def _heal_http(args: argparse.Namespace, state: dict[str, Any]) -> tuple[bool, bool, str]:
+    """A planned pause is deferred, never counted or recorded as a successful heal."""
+    reason = _production_activity_block_reason()
+    if reason:
+        return False, False, reason
     http_ok, http_msgs = run_http_probes(timeout=args.timeout, retries=args.retries)
     for line in http_msgs:
         print(f"pi_runtime_health: {line}")
-    tail_ok, tail_msgs = check_tailscale(http_timeout=args.timeout)
-    for line in tail_msgs:
-        print(f"pi_runtime_health: tailscale {line}")
+    reason = _production_activity_block_reason()
+    if reason:
+        return http_ok, False, reason
+    previous_streak = int(state.get("http_fail_streak") or 0)
+    state["http_fail_streak"] = 0 if http_ok else previous_streak + 1
+    if http_ok or state["http_fail_streak"] < args.fail_threshold:
+        return http_ok, False, ""
+    if not cooldown_elapsed(state, "last_http_heal_at", args.heal_cooldown):
+        print("pi_runtime_health: HTTP heal skipped (cooldown)", file=sys.stderr)
+        return http_ok, False, ""
+    code, reason = _guarded_dashboard_heal(dry_run=args.dry_run)
+    if reason:
+        state["http_fail_streak"] = previous_streak
+        return http_ok, False, reason
+    if code != 0:
+        return False, False, ""
+    state["last_http_heal_at"] = _utc_iso()
+    state["http_fail_streak"] = 0
+    if not args.dry_run:
+        time.sleep(8)
+        reason = _production_activity_block_reason()
+        if reason:
+            return False, True, reason
+        http_ok, http_msgs = run_http_probes(timeout=args.timeout, retries=args.retries)
+        for line in http_msgs:
+            print(f"pi_runtime_health: post-heal {line}")
+    return http_ok, True, ""
+
+
+def cmd_heal(args: argparse.Namespace) -> int:
     state = load_state()
     state["last_check_at"] = _utc_iso()
-    state["http_fail_streak"] = 0 if http_ok else int(state.get("http_fail_streak") or 0) + 1
+    http_ok, healed, deferred_reason = _heal_http(args, state)
+    if deferred_reason:
+        state["http_heal_deferred_reason"] = deferred_reason
+        state["last_http_heal_deferred_at"] = _utc_iso()
+        print(f"pi_runtime_health: HTTP heal deferred ({deferred_reason})")
+        tail_ok, tail_msgs = check_tailscale(http_timeout=args.timeout, probe_application=False)
+    else:
+        state.pop("http_heal_deferred_reason", None)
+        tail_ok, tail_msgs = check_tailscale(http_timeout=args.timeout)
+    for line in tail_msgs:
+        print(f"pi_runtime_health: tailscale {line}")
     state["tailscale_fail_streak"] = 0 if tail_ok else int(state.get("tailscale_fail_streak") or 0) + 1
-    healed = False
-    http_streak = int(state.get("http_fail_streak") or 0)
-    if not http_ok and http_streak >= args.fail_threshold:
-        if cooldown_elapsed(state, "last_http_heal_at", args.heal_cooldown):
-            print(f"pi_runtime_health: HTTP fail streak {http_streak}; restarting dashboard + nginx")
-            if restart_dashboard_and_nginx(dry_run=args.dry_run) != 0:
-                save_state(state)
-                return EXIT_UNHEALTHY
-            state["last_http_heal_at"] = _utc_iso()
-            state["http_fail_streak"] = 0
-            healed = True
-            if not args.dry_run:
-                time.sleep(8)
-                http_ok, http_msgs = run_http_probes(timeout=args.timeout, retries=args.retries)
-                for line in http_msgs:
-                    print(f"pi_runtime_health: post-heal {line}")
-        else:
-            print("pi_runtime_health: HTTP heal skipped (cooldown)", file=sys.stderr)
     tail_streak = int(state.get("tailscale_fail_streak") or 0)
     if not tail_ok and tail_streak >= args.tailscale_fail_threshold:
         if cooldown_elapsed(state, "last_tailscale_heal_at", args.tailscale_heal_cooldown):
@@ -294,6 +352,9 @@ def cmd_heal(args: argparse.Namespace) -> int:
         else:
             print("pi_runtime_health: tailscale heal skipped (cooldown)", file=sys.stderr)
     save_state(state)
+    if deferred_reason and tail_ok:
+        print("pi_runtime_health: coordinated work active; dashboard heal deferred")
+        return EXIT_OK
     if http_ok and tail_ok:
         print("pi_runtime_health: heal OK (healthy)")
         return EXIT_OK

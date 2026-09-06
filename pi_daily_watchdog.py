@@ -238,6 +238,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
     if recovery.get("capture_attempted"):
         should_retry_payload = False  # The normal wrapper already publishes its selection.
+    elif recovery.get("publication_required"):
+        payload_pending = True
+        should_retry_payload = True
     if should_start:
         if args.dry_run:
             run_daily_ingest(run_date, args.dry_run)
@@ -321,7 +324,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         if publication_failed:
             print("pi_daily_watchdog: " + ", ".join(publication["publication_issues"]), file=sys.stderr)
-    if catch_up_failed or payload_retry_failed or publication_failed or recovery.get("status") == "capture_failed":
+    if catch_up_failed or payload_retry_failed or publication_failed or recovery.get("status") in {
+        "capture_failed", "recovery_evidence_unavailable", "unresolved_request_evidence_unavailable",
+    }:
         return 1
     return 0
 

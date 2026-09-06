@@ -13,6 +13,20 @@ from cdr_observation_selection import captured_identities, read_bound_bytes, saf
 
 MAX_LEGACY_EVENTS = 20000
 MAX_LEGACY_METADATA_BYTES = 64 * 1024 * 1024
+LEGACY_QUEUE_SCHEMA_VERSION = 2
+
+
+def terminal_index_failure(status: dict, provider: str) -> bool:
+    """Read terminal local validation separately from individual HTTP outcomes.
+
+    The caller supplies contract-bound ingest status. Provider-level detail
+    failures and absent diagnostics do not establish an index failure.
+    """
+    diagnostic = (status.get("index_diagnostics") or {}).get(provider) or {}
+    conflicts = diagnostic.get("conflicting_duplicate_records")
+    return diagnostic.get("pagination_complete") is False or (
+        isinstance(conflicts, int) and not isinstance(conflicts, bool) and conflicts > 0
+    )
 
 
 def _bound_events(observation: dict, providers: dict) -> list[dict]:
@@ -60,7 +74,7 @@ def _still_missing(observation: dict, event: dict, present: set[tuple[str, str]]
     if has_cdr_errors(parsed) or response_shape_error(parsed, phase=phase, product_id=pid):
         return True
     if phase == "products_index":
-        return False
+        return terminal_index_failure(observation["status"], provider)
     inner = detail_inner_record(parsed)
     return bool(inner and infer_cdr_dataset(inner, allow_name_fallback=True) in DATASET_TO_FOLDER)
 
@@ -72,12 +86,16 @@ def legacy_recovery_requests(observation: dict, providers: dict, cache_root: Pat
         "contract_digest": observation["contract"]["contract_digest"],
         "event_digest": observation["event"]["event_digest"],
     }
-    cache = cache_root / f"legacy-queue-{binding['event_digest']}.json"
+    # Earlier derivations discarded successful pages despite terminal local
+    # index failures. Keep those immutable caches and derive corrected metadata
+    # under a new version, including when the old request list was empty.
+    cache = cache_root / f"legacy-queue-v{LEGACY_QUEUE_SCHEMA_VERSION}-{binding['event_digest']}.json"
     if cache.is_file():
         if cache.stat().st_size > 4 * 1024 * 1024:
             raise ValueError("legacy recovery queue cache exceeds its budget")
         saved = json.loads(cache.read_bytes())
-        if saved.get("source") != binding or not isinstance(saved.get("requests"), list):
+        if (saved.get("schema_version") != LEGACY_QUEUE_SCHEMA_VERSION
+                or saved.get("source") != binding or not isinstance(saved.get("requests"), list)):
             raise ValueError("legacy recovery queue cache source mismatch")
         return saved["requests"]
     present = captured_identities(observation)
@@ -103,6 +121,6 @@ def legacy_recovery_requests(observation: dict, providers: dict, cache_root: Pat
                 "failure_category": "legacy_unresolved_request",
                 "source_attempt_event_digest": event["event_digest"],
             })
-    atomic_write_json(cache, {"schema_version": 1, "source": binding, "requests": requests,
+    atomic_write_json(cache, {"schema_version": LEGACY_QUEUE_SCHEMA_VERSION, "source": binding, "requests": requests,
                              "queue_is_complete_failure_inventory": False}, create_once=True)
     return requests
