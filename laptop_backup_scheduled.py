@@ -299,7 +299,7 @@ def inventory_status(
     protected_sha: str,
     plan_commit: str,
     after_date: str = "2026-05-21",
-    previous_protected_sha: str | None = None,
+    previous_runtime: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     if plan_commit != receiver.PLAN_GIT_COMMIT:
         raise ValueError("inventory plan commit is not current")
@@ -323,8 +323,11 @@ def inventory_status(
                 receipt.get("result") == "PASS"
                 and receipt.get("kind") == "observation"
                 and receiver.supported_receipt_plan_identity(receipt, allow_legacy=True) is not None
-                and receipt.get("protected_code_sha") in (
-                    {protected_sha, previous_protected_sha} if previous_protected_sha else {protected_sha}
+                and (receipt.get("protected_code_sha") == protected_sha or (
+                    previous_runtime
+                    and receipt.get("protected_code_sha") == previous_runtime["production_sha"]
+                    and receipt.get("candidate_code_sha") == previous_runtime["receiver_sha"]
+                )
                 )
                 and receipt.get("deviations") == []
                 and isinstance(checks, Mapping)
@@ -349,13 +352,18 @@ def inventory_status(
                 try:
                     if not isinstance(remote, Mapping):
                         raise ValueError("invalid remote identity")
+                    receipt_path = local_path(target, str(entry["receipt_path"]))
+                    identity = json.loads(receipt_path.read_bytes())
+                    if not isinstance(identity, Mapping):
+                        raise ValueError("invalid receipt identity")
+                    prior = bool(previous_runtime and identity.get("protected_code_sha") == previous_runtime["production_sha"])
                     _receipt, manifest, _path = verified_receipt(
                         target,
                         str(entry["receipt_path"]),
                         entry,
                         "diagnostic",
-                        candidate_sha=None,
-                        protected_sha=protected_sha,
+                        candidate_sha=previous_runtime["receiver_sha"] if prior else None,
+                        protected_sha=previous_runtime["production_sha"] if prior else protected_sha,
                         plan_commit=plan_commit,
                     )
                     if content_revision(manifest) == remote.get("content_revision"):
@@ -596,7 +604,7 @@ def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse
         identities,
         protected_sha=args.protected_code_sha,
         plan_commit=args.plan_git_commit,
-        previous_protected_sha=previous_runtime.get("production_sha"),
+        previous_runtime=previous_runtime,
     )
     status = "UP_TO_DATE" if all(
         item["status"] == "UP_TO_DATE"
