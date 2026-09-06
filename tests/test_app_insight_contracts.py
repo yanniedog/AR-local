@@ -25,6 +25,13 @@ REAL_MACRO_STORE = (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_scheduled_macro_transport(monkeypatch):
+    # Scheduled CDR/payload tests do not contact official macro sources or
+    # create the real macro store. The refresh contract has dedicated tests.
+    monkeypatch.setattr(pi_daily_sync, "refresh_macro_store", lambda *a, **k: {"status": "test-isolated"})
+
+
 def test_official_product_links_preserve_only_allowlisted_https_metadata():
     # Captured from the real 2026-05-19 AMP Essential Home Loan CDR response.
     record = {

@@ -28,6 +28,7 @@ import app_payload_observation_gate as gate
 from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
+from cdr_macro_refresh import refresh_macro_store
 from pi_ingest_terminal import record_failure
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -48,6 +49,16 @@ PUBLISH_FAILED = "failed"
 PARTIAL_V1_MAX_FAILURE_RECORDS = gate.PARTIAL_V1_MAX_FAILURE_RECORDS
 PARTIAL_V1_MAX_FAILURE_RATIO = gate.PARTIAL_V1_MAX_FAILURE_RATIO
 PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO = gate.PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
+
+
+def refresh_economic_data(repo_root: Path) -> dict:
+    """Source outages must not suppress or invalidate a completed bank capture."""
+    try:
+        result = refresh_macro_store(DEFAULT_MACRO_STORE_PATH, repo_root=repo_root)
+    except Exception as error:
+        result = {"status": "error", "message": type(error).__name__}
+    print(f"[pi_daily_sync] macro refresh {json.dumps(result, sort_keys=True)}")
+    return result
 
 
 def pause_dashboard_for_ingest() -> bool:
@@ -413,6 +424,7 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             )
         elif v2_eligible:
             try:
+                refresh_economic_data(repo_root)
                 v2_manifest, published_v2 = app_payload.build_and_publish_v2(
                     exports,
                     v1_manifest=manifest,
@@ -562,6 +574,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             finally:
                 if dashboard_paused:
                     resume_dashboard_after_ingest()
+                refresh_economic_data(REPO_ROOT)
             if _app_payload_enabled():
                 pointer = current_publication_pointer(REPO_ROOT)
                 outcome = maybe_publish_app_payload(REPO_ROOT, pointer or None)

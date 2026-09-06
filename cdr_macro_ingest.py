@@ -46,6 +46,7 @@ import calendar
 import csv
 import io
 import json
+import math
 import sqlite3
 import sys
 import urllib.error
@@ -53,324 +54,56 @@ import urllib.request
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from concurrent.futures import ThreadPoolExecutor
+
+from cdr_macro_http import HTTP_TIMEOUT_SECONDS, USER_AGENT, fetch_url
+from cdr_macro_sources import RBA_SERIES_CODES, RBA_UNITS, SOURCE_FAMILIES
+from cdr_macro_transition import archive_cpi_predecessor, archive_schema_sql
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_STORE_PATH = BASE_DIR / "state" / "local-macro.sqlite"
 
-USER_AGENT = "Mozilla/5.0 (compatible; AR-local macro ingest)"
-HTTP_TIMEOUT_SECONDS = 60.0
-
-# Mapping from AR catalog series_id -> CSV column header in the RBA H5 table.
-# RBA H5 ("Labour force") CSV column headers come from the "Title" header row.
-# The dashboard catalog uses friendlier IDs (`unemployment_rate`,
-# `participation_rate`) — those are the IDs the frontend sends. The CSV
-# column header is what we look up inside the table.
-RBA_H5_URL = "https://www.rba.gov.au/statistics/tables/csv/h5-data.csv"
-RBA_H5_COLUMNS: dict[str, str] = {
-    "unemployment_rate": "Unemployment rate",
-    "participation_rate": "Participation rate",
-}
-
-# RBA H3 "Monthly Activity Indicators". Same CSV layout as H5; the
-# "Title" header row carries the human column names we map from. The
-# three series we expose are all seasonally-adjusted monthly headlines
-# the dashboard already references.
-RBA_H3_URL = "https://www.rba.gov.au/statistics/tables/csv/h3-data.csv"
-RBA_H3_COLUMNS: dict[str, str] = {
-    "dwelling_approvals": "Private dwelling approvals",
-    "consumer_sentiment": "Consumer sentiment",
-    "business_conditions": "Business conditions",
-}
-
-# RBA G1 "Consumer Price Inflation" (quarterly). The Title row uses an
-# en-dash (U+2013) in several column headers -- copy verbatim from the
-# CSV to avoid a silent missing-column error. Column 10 is the headline
-# RBA-trimmed-mean YoY measure the RBA tracks for monetary policy.
-RBA_G1_URL = "https://www.rba.gov.au/statistics/tables/csv/g1-data.csv"
-RBA_G1_COLUMNS: dict[str, str] = {
-    "trimmed_mean_cpi": "Year-ended trimmed mean inflation – excluding interest charges and tax changes",
-}
-
-# RBA G3 "Inflation Expectations" (quarterly). Headline column is the
-# Westpac-MI consumer 1-year-ahead measure (trimmed mean for 1-year
-# ahead annual inflation rate; end-quarter observation).
-RBA_G3_URL = "https://www.rba.gov.au/statistics/tables/csv/g3-data.csv"
-RBA_G3_COLUMNS: dict[str, str] = {
-    "inflation_expectations": "Consumer inflation expectations – 1-year ahead",
-}
-
-# RBA H4 "Labour Costs" (quarterly). Headline wage growth measure.
-RBA_H4_URL = "https://www.rba.gov.au/statistics/tables/csv/h4-data.csv"
-RBA_H4_COLUMNS: dict[str, str] = {
-    "wage_growth": "Year-ended wage growth",
-}
-
-# RBA H2 "Household and Business Sector Demand and Income" (quarterly).
-# Levels in $ millions; growth rates are sibling columns. Catalog
-# advertises the level for household_consumption and public_demand.
-RBA_H2_URL = "https://www.rba.gov.au/statistics/tables/csv/h2-data.csv"
-RBA_H2_COLUMNS: dict[str, str] = {
-    "household_consumption": "Household consumption",
-    "public_demand": "Public demand",
-}
-
-# RBA F1.1 "Interest Rates and Yields - Money Market - Daily". Despite
-# the name the catalog treats bank bills as monthly headlines; the
-# upserter's PK is (series_id, observation_date) so daily upserts are
-# safe and the dashboard forward-fill works either way.
-RBA_F1_1_URL = "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv"
-RBA_F1_1_COLUMNS: dict[str, str] = {
-    "bank_bill_30d": "1-month BABs/NCDs",
-    "bank_bill_90d": "3-month BABs/NCDs",
-    "bank_bill_180d": "6-month BABs/NCDs",
-}
-
-# RBA F11 "Exchange Rates - Monthly". Date column is DD-Mon-YYYY
-# (handled by the dual-format _parse_rba_date).
-RBA_F11_URL = "https://www.rba.gov.au/statistics/tables/csv/f11-data.csv"
-RBA_F11_COLUMNS: dict[str, str] = {
-    "aud_twi": "Trade-weighted Index May 1970 = 100",
-}
-
-# RBA I2 "Commodity Prices" (monthly). Catalog wants the A$-denominated
-# headline index.
-RBA_I2_URL = "https://www.rba.gov.au/statistics/tables/csv/i2-data.csv"
-RBA_I2_COLUMNS: dict[str, str] = {
-    "commodity_prices": "Commodity prices – A$",
-}
-
-# RBA D1 "Growth in Selected Financial Aggregates" (monthly). Catalog
-# wants the housing-credit YoY growth rate.
-RBA_D1_URL = "https://www.rba.gov.au/statistics/tables/csv/d1-data.csv"
-RBA_D1_COLUMNS: dict[str, str] = {
-    "housing_credit_growth": "Credit; Housing; 12-month ended growth",
-}
-
-# RBA J1 star-variables (RBA survey of professional forecasters, ~45
-# semi-annual rows since 2015). Each row records the median, mean and
-# range of forecaster estimates for the medium-to-long-term inflation,
-# potential GDP growth, NAIRU, neutral interest rate and output gap.
-# We expose the medians: neutral_rate (nominal neutral interest rate)
-# and capacity_utilisation_proxy (output gap -- positive means demand
-# is above capacity).
-RBA_J1_URL = "https://www.rba.gov.au/statistics/tables/csv/j1-star-variables.csv"
-RBA_J1_COLUMNS: dict[str, str] = {
-    "neutral_rate": "Nominal neutral interest rate estimates – median",
-    "capacity_utilisation_proxy": "Output gap – median",
-}
-
-# ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
-# key fetches every series in the dataflow; we filter client-side against
-# ``ABS_CPI_M_SERIES`` so the URL is stable even if dimension ordering
-# changes. Codes verified against a live response from CPI_M v1.2.0:
-#   MEASURE=3   Percentage change from corresponding month previous year
-#   INDEX=10001  All groups CPI
-#   INDEX=999905 Annual trimmed mean
-#   TSEST=10    Original (only TSEST published for these % change measures)
-#   REGION=50   Australia (the only REGION present in CPI_M)
-#   FREQ=M      Monthly
-# The dataflow identifier is bare ``CPI_M``; the fully-qualified form
-# ``ABS,CPI_M,<version>`` 404s on the /rest/data endpoint. If upstream
-# renames or removes a code, the affected series matches zero rows and
-# ingest_runs.status flips to error -- same drift-detection pattern as
-# RBA H5.
-ABS_DATA_API_BASE = "https://data.api.abs.gov.au/rest/data"
-ABS_CPI_M_URL = f"{ABS_DATA_API_BASE}/CPI_M/all?format=csv"
-ABS_CPI_M_SERIES: dict[str, dict[str, str]] = {
-    "monthly_cpi_indicator": {
-        "MEASURE": "3",
-        "INDEX": "10001",
-        "TSEST": "10",
-        "REGION": "50",
-        "FREQ": "M",
-    },
-    "monthly_trimmed_mean_cpi": {
-        "MEASURE": "3",
-        "INDEX": "999905",
-        "TSEST": "10",
-        "REGION": "50",
-        "FREQ": "M",
-    },
-}
-
-# ABS Data API dataflow LF_UNDER (Labour Force: underemployment and
-# underutilisation). Same dimension layout as LF but with PARM_ITEM
-# instead of MEASURE for the measure axis; carries the standard M*
-# labour codes (M16 employment-to-pop, M23 underemployment rate,
-# M24 underutilisation rate). Codes verified against LF_UNDER v1.0.1.
-ABS_LF_UNDER_URL = f"{ABS_DATA_API_BASE}/LF_UNDER/all?format=csv"
-ABS_LF_UNDER_SERIES: dict[str, dict[str, str]] = {
-    "employment_to_population": {
-        "PARM_ITEM": "M16",
-        "SEX": "3",  # Persons
-        "AGE": "1599",  # Total
-        "TSEST": "20",  # Seasonally Adjusted (headline reporting convention)
-        "REGION": "AUS",
-        "FREQ": "M",
-    },
-    "underemployment_rate": {
-        "PARM_ITEM": "M23",
-        "SEX": "3",
-        "AGE": "1599",
-        "TSEST": "20",
-        "REGION": "AUS",
-        "FREQ": "M",
-    },
-    "underutilisation_rate": {
-        "PARM_ITEM": "M24",
-        "SEX": "3",
-        "AGE": "1599",
-        "TSEST": "20",
-        "REGION": "AUS",
-        "FREQ": "M",
-    },
-}
-
-# ABS Data API dataflow LF_HOURS (Hours worked by sector). Adds a
-# HOURS dimension on top of LF's layout; we filter to HOURS=TOT
-# (Industry Total). M18 = Employed Persons - Monthly hours worked
-# in all jobs (the standard "hours worked" headline). Codes verified
-# against LF_HOURS v1.0.0.
-ABS_LF_HOURS_URL = f"{ABS_DATA_API_BASE}/LF_HOURS/all?format=csv"
-ABS_LF_HOURS_SERIES: dict[str, dict[str, str]] = {
-    "hours_worked": {
-        "MEASURE": "M18",
-        "SEX": "3",
-        "AGE": "1599",
-        "HOURS": "TOT",
-        "TSEST": "20",
-        "REGION": "AUS",
-        "FREQ": "M",
-    },
-}
-
-# ABS Data API dataflow HSI_M (Monthly Household Spending Indicator).
-# Codes verified against HSI_M v1.6.0:
-#   MEASURE=9       Through the year percentage change (headline reporting)
-#   CATEGORY=TOT    Total household spending
-#   PRICE_ADJUSTMENT=CUR  Current Price (only option published)
-#   TSEST=20        Seasonally Adjusted
-#   STATE=AUS       Australia
-#   FREQ=M          Monthly
-# Note this dataflow uses ``STATE`` (not ``REGION``) for geography.
-ABS_HSI_M_URL = f"{ABS_DATA_API_BASE}/HSI_M/all?format=csv"
-ABS_HSI_M_SERIES: dict[str, dict[str, str]] = {
-    "household_spending_indicator": {
-        "MEASURE": "9",
-        "CATEGORY": "TOT",
-        "PRICE_ADJUSTMENT": "CUR",
-        "TSEST": "20",
-        "STATE": "AUS",
-        "FREQ": "M",
-    },
-}
-
-# ABS Data API dataflow LEND_HOUSING (Lending Indicators Housing
-# Finance). Codes verified against LEND_HOUSING v1.1:
-#   MEASURE=FIN_VAL    Value ($m)
-#   DATA_ITEM=NEWCOMMITS  New loan commitments
-#   LOAN_TYPE=DV8368   Total fixed term loans and revolving credit
-#   LOAN_PURPOSE=TOTDWELL  Total dwellings excluding refinancing
-#                       (the only purpose combinable with HOUSING_PURPOSE=TOT)
-#   LENDER_TYPE=TOT    Total lender type
-#   HOUSING_PURPOSE=TOT  Total housing purpose
-#   TSEST=20           Seasonally Adjusted
-#   REGION=AUS         Australia
-#   FREQ=Q             Quarterly (ABS discontinued the monthly series in 2024)
-# The catalog describes ``lending_indicator_housing`` as monthly; ABS
-# now publishes only the quarterly aggregate -- the forward-fill in
-# cdr_economic_local handles arbitrary observation cadences so this
-# does not require a contract change.
-ABS_LEND_HOUSING_URL = f"{ABS_DATA_API_BASE}/LEND_HOUSING/all?format=csv"
-ABS_LEND_HOUSING_SERIES: dict[str, dict[str, str]] = {
-    "lending_indicator_housing": {
-        "MEASURE": "FIN_VAL",
-        "DATA_ITEM": "NEWCOMMITS",
-        "LOAN_TYPE": "DV8368",
-        "LOAN_PURPOSE": "TOTDWELL",
-        "LENDER_TYPE": "TOT",
-        "HOUSING_PURPOSE": "TOT",
-        "TSEST": "20",
-        "REGION": "AUS",
-        "FREQ": "Q",
-    },
-}
-
-# ABS Data API dataflow BA_GCCSA (Building Approvals by GCCSA and above).
-# Unlike the other ABS dataflows we already ingest, the unfiltered ``/all``
-# response is ~3.6 GB (every measure x value-range x sector x work-type x
-# building-type x TSEST x region x freq combination). We pin specific
-# dimension values in the URL key (SDMX REST: positional dim values
-# separated by ``.``) so the server returns only the headline residential
-# approvals time series -- 53 KB, ~844 monthly observations since 1956.
-#
-# Codes verified against BA_GCCSA v1.0.0:
-#   MEASURE=1        Number of dwelling units
-#   VALUE=1          Total (i.e. not the $50K+/$1M+ value-range slices)
-#   SECTOR=9         Total Sectors
-#   WORK_TYPE=1      New (excludes alterations/additions/conversions)
-#   BUILDING_TYPE=100  Total Residential
-#   TSEST=10         Original (no SA published at AUS national monthly)
-#   REGION=AUS
-#   FREQ=M
-# Key order matches the dataflow's dimension order:
-# MEASURE.VALUE.SECTOR.WORK_TYPE.BUILDING_TYPE.TSEST.REGION.FREQ
-ABS_BA_GCCSA_URL = (
-    f"{ABS_DATA_API_BASE}/BA_GCCSA/1.1.9.1.100.10.AUS.M?format=csv"
+from cdr_macro_sources import (
+    RBA_H5_URL,
+    RBA_H5_COLUMNS,
+    RBA_H3_URL,
+    RBA_H3_COLUMNS,
+    RBA_G1_URL,
+    RBA_G1_COLUMNS,
+    RBA_G3_URL,
+    RBA_G3_COLUMNS,
+    RBA_H4_URL,
+    RBA_H4_COLUMNS,
+    RBA_H2_URL,
+    RBA_H2_COLUMNS,
+    RBA_F1_1_URL,
+    RBA_F1_1_COLUMNS,
+    RBA_F11_URL,
+    RBA_F11_COLUMNS,
+    RBA_I2_URL,
+    RBA_I2_COLUMNS,
+    RBA_D1_URL,
+    RBA_D1_COLUMNS,
+    RBA_J1_URL,
+    RBA_J1_COLUMNS,
+    ABS_DATA_API_BASE,
+    ABS_CPI_M_URL,
+    ABS_CPI_M_SERIES,
+    ABS_LF_UNDER_URL,
+    ABS_LF_UNDER_SERIES,
+    ABS_LF_HOURS_URL,
+    ABS_LF_HOURS_SERIES,
+    ABS_HSI_M_URL,
+    ABS_HSI_M_SERIES,
+    ABS_LEND_HOUSING_URL,
+    ABS_LEND_HOUSING_SERIES,
+    ABS_BA_GCCSA_URL,
+    ABS_BA_GCCSA_SERIES,
+    ABS_WPI_URL,
+    ABS_WPI_SERIES,
+    ABS_JV_URL,
+    ABS_JV_SERIES,
 )
-ABS_BA_GCCSA_SERIES: dict[str, dict[str, str]] = {
-    "building_approvals_abs": {
-        "MEASURE": "1",
-        "VALUE": "1",
-        "SECTOR": "9",
-        "WORK_TYPE": "1",
-        "BUILDING_TYPE": "100",
-        "TSEST": "10",
-        "REGION": "AUS",
-        "FREQ": "M",
-    },
-}
-
-# ABS Data API dataflow WPI (Wage Price Index). Codes verified against
-# WPI v1.0.0: MEASURE=3 (% change YoY), INDEX=THRPEB (Total hourly rates
-# excluding bonuses -- the only INDEX with TSEST=20 published at the
-# AUS combined-sector aggregate), SECTOR=7 (Private and Public),
-# INDUSTRY=TOT (All Industries), TSEST=20 (SA), REGION=AUS, FREQ=Q.
-# Note: INDEX=THRPIB (including bonuses) is published only as TSEST=10
-# at this aggregate, so the headline SA wage measure uses THRPEB.
-# URL key pins all 7 dimensions (MEASURE.INDEX.SECTOR.INDUSTRY.TSEST.REGION.FREQ)
-# so the server returns only this series, mirroring the BA_GCCSA pattern
-# (Gemini PR #126). Drops the response from ~11 MB to ~7 KB.
-ABS_WPI_URL = f"{ABS_DATA_API_BASE}/WPI/3.THRPEB.7.TOT.20.AUS.Q?format=csv"
-ABS_WPI_SERIES: dict[str, dict[str, str]] = {
-    "abs_wage_price_index": {
-        "MEASURE": "3",
-        "INDEX": "THRPEB",
-        "SECTOR": "7",
-        "INDUSTRY": "TOT",
-        "TSEST": "20",
-        "REGION": "AUS",
-        "FREQ": "Q",
-    },
-}
-
-# ABS Data API dataflow JV (Job Vacancies). Codes verified against
-# JV v1.0.0: MEASURE=M1 (Job Vacancies, '000), SECTOR=7 (Private and
-# Public), INDUSTRY=TOT, TSEST=20 (SA), REGION=AUS, FREQ=Q.
-# URL key pins all 6 dimensions (MEASURE.SECTOR.INDUSTRY.TSEST.REGION.FREQ)
-# so the server returns only this series (Gemini PR #126). Drops the
-# response from ~2.5 MB to ~10 KB.
-ABS_JV_URL = f"{ABS_DATA_API_BASE}/JV/M1.7.TOT.20.AUS.Q?format=csv"
-ABS_JV_SERIES: dict[str, dict[str, str]] = {
-    "job_vacancies": {
-        "MEASURE": "M1",
-        "SECTOR": "7",
-        "INDUSTRY": "TOT",
-        "TSEST": "20",
-        "REGION": "AUS",
-        "FREQ": "Q",
-    },
-}
 
 
 def _now_iso() -> str:
@@ -396,7 +129,7 @@ def _schema_sql() -> list[str]:
             message TEXT,
             source_url TEXT
         )""",
-    ]
+    ] + archive_schema_sql()
 
 
 def open_store(store_path: Path = DEFAULT_STORE_PATH) -> sqlite3.Connection:
@@ -407,7 +140,7 @@ def open_store(store_path: Path = DEFAULT_STORE_PATH) -> sqlite3.Connection:
     responsible for ``con.close()``.
     """
     store_path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(store_path.resolve().as_uri(), uri=True)
+    con = sqlite3.connect(store_path.resolve().as_uri(), uri=True, timeout=10.0)
     con.execute("PRAGMA journal_mode=WAL")
     for stmt in _schema_sql():
         con.execute(stmt)
@@ -487,6 +220,8 @@ def parse_rba_csv(text: str, columns: dict[str, str]) -> dict[str, list[tuple[st
     reader = csv.reader(io.StringIO(text))
     title_row: list[str] | None = None
     publication_row: list[str] | None = None
+    series_row: list[str] | None = None
+    units_row: list[str] | None = None
     for row in reader:
         if not row:
             continue
@@ -495,9 +230,12 @@ def parse_rba_csv(text: str, columns: dict[str, str]) -> dict[str, list[tuple[st
             title_row = row
         elif first == "Publication date":
             publication_row = row
+        elif first == "Units":
+            units_row = row
         elif first == "Series ID":
             # Marker that the header section is over; the very next non-empty
             # row begins the data.
+            series_row = row
             break
     if title_row is None:
         raise ValueError("RBA CSV is missing a 'Title' header row")
@@ -505,10 +243,18 @@ def parse_rba_csv(text: str, columns: dict[str, str]) -> dict[str, list[tuple[st
     # Map AR series_id -> column index in the data rows.
     col_index_for: dict[str, int] = {}
     for series_id, header in columns.items():
-        try:
-            col_index_for[series_id] = title_row.index(header)
-        except ValueError:
-            continue  # column not present in this table — caller can detect
+        code = RBA_SERIES_CODES.get(series_id)
+        candidates = series_row if code and series_row else title_row
+        selector = code if code and series_row else header
+        if candidates.count(selector) != 1:
+            continue  # absent or ambiguous identity; never guess a neighbour
+        idx = candidates.index(selector)
+        if code:
+            expected_unit = RBA_UNITS[series_id]
+            unit = units_row[idx].strip() if units_row and idx < len(units_row) else ""
+            if unit != expected_unit and not (expected_unit == "Index" and unit.startswith("Index,")):
+                continue  # scale drift is an error for this series only
+        col_index_for[series_id] = idx
 
     # Map AR series_id -> publication date (release_date for every obs in the column).
     release_date_for: dict[str, str | None] = {}
@@ -534,15 +280,17 @@ def parse_rba_csv(text: str, columns: dict[str, str]) -> dict[str, list[tuple[st
             try:
                 value = float(cell)
             except ValueError:
-                continue
+                raise ValueError(f"invalid numeric observation for {series_id} at {obs_date}")
+            if not math.isfinite(value):
+                raise ValueError(f"non-finite observation for {series_id} at {obs_date}")
             out[series_id].append((obs_date, value, release_date_for.get(series_id)))
+    for rows in out.values():
+        rows.sort(key=lambda row: row[0])
     return out
 
 
 def _fetch_url(url: str, accept: str = "text/csv") -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
-        return resp.read().decode("utf-8-sig")
+    return fetch_url(url, accept)
 
 
 def _parse_abs_period(raw: str) -> str | None:
@@ -612,6 +360,8 @@ def parse_abs_sdmx_csv(
         pairs: list[tuple[int, str]] = []
         ok = True
         for dim_name, expected in filt.items():
+            if dim_name.startswith("UNIT_"):
+                continue
             idx = col_for.get(dim_name)
             if idx is None:
                 ok = False
@@ -629,14 +379,22 @@ def parse_abs_sdmx_csv(
         cell = (row[value_idx] or "").strip()
         if not cell:
             continue
-        try:
-            value = float(cell)
-        except ValueError:
-            continue
         for sid, pairs in matchers.items():
             if pairs is None:
                 continue
             if all(idx < len(row) and (row[idx] or "").strip() == expected for idx, expected in pairs):
+                for name, expected in series_filters[sid].items():
+                    if not name.startswith("UNIT_"):
+                        continue
+                    idx = col_for.get(name)
+                    if idx is None or idx >= len(row) or row[idx].strip() != expected:
+                        raise ValueError(f"source unit changed for {sid}: expected {name}={expected}")
+                try:
+                    value = float(cell)
+                except ValueError:
+                    raise ValueError(f"invalid numeric observation for {sid} at {obs_date}")
+                if not math.isfinite(value):
+                    raise ValueError(f"non-finite observation for {sid} at {obs_date}")
                 out[sid].append((obs_date, value, None))
     for sid in out:
         out[sid].sort(key=lambda r: r[0])
@@ -658,7 +416,6 @@ def _ingest_abs_sdmx_csv(
     results: dict[str, dict[str, object]] = {}
     try:
         text = _fetch_url(source_url, accept="text/csv, application/vnd.sdmx.data+csv")
-        parsed = parse_abs_sdmx_csv(text, series_filters)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         message = f"fetch or parse failed: {exc}"
         for series_id in series_filters:
@@ -674,33 +431,60 @@ def _ingest_abs_sdmx_csv(
         con.commit()
         return results
 
-    for series_id in series_filters:
-        rows = parsed.get(series_id, [])
-        if not rows:
-            message = "no rows matched filter (upstream schema or codes may have changed)"
-            record_run(con, series_id, status="error", message=message, source_url=source_url, success=False)
+    parsed, parse_errors = _parse_series_independently(text, series_filters, parse_abs_sdmx_csv)
+    if not con.in_transaction:
+        con.execute("BEGIN IMMEDIATE")
+    con.execute("SAVEPOINT macro_source_update")
+    try:
+        for series_id in series_filters:
+            rows = parsed.get(series_id, [])
+            if not rows:
+                message = parse_errors.get(series_id) or "no rows matched filter (upstream schema or codes may have changed)"
+                record_run(con, series_id, status="error", message=message, source_url=source_url, success=False)
+                results[series_id] = {"status": "error", "message": message, "rows": 0}
+                continue
+            archive_cpi_predecessor(con, series_id, source_url)
+            upsert_observations(con, series_id, rows)
+            last_obs_date, last_value, _ = rows[-1]
+            record_run(
+                con,
+                series_id,
+                status="ok",
+                message=f"Source checked; {len(rows)} observations ingested.",
+                source_url=source_url,
+                last_observation_date=last_obs_date,
+                last_value=last_value,
+                success=True,
+            )
+            results[series_id] = {
+                "status": "ok",
+                "rows": len(rows),
+                "last_observation_date": last_obs_date,
+                "last_value": last_value,
+            }
+        con.execute("RELEASE SAVEPOINT macro_source_update")
+    except (sqlite3.Error, ValueError) as exc:
+        con.execute("ROLLBACK TO SAVEPOINT macro_source_update")
+        con.execute("RELEASE SAVEPOINT macro_source_update")
+        message = f"source update rolled back: {exc}"
+        results = {}
+        for series_id in series_filters:
+            record_run(con, series_id, status="error", message=message,
+                       source_url=source_url, success=False)
             results[series_id] = {"status": "error", "message": message, "rows": 0}
-            continue
-        upsert_observations(con, series_id, rows)
-        last_obs_date, last_value, _ = rows[-1]
-        record_run(
-            con,
-            series_id,
-            status="ok",
-            message=f"Source checked; {len(rows)} observations ingested.",
-            source_url=source_url,
-            last_observation_date=last_obs_date,
-            last_value=last_value,
-            success=True,
-        )
-        results[series_id] = {
-            "status": "ok",
-            "rows": len(rows),
-            "last_observation_date": last_obs_date,
-            "last_value": last_value,
-        }
     con.commit()
     return results
+
+
+def _parse_series_independently(text: str, selectors: dict, parser) -> tuple[dict, dict]:
+    """Fetch once, isolate unit/numeric/identity drift to the affected series."""
+    parsed, errors = {}, {}
+    for series_id, selector in selectors.items():
+        try:
+            parsed.update(parser(text, {series_id: selector}))
+        except (ValueError, csv.Error) as exc:
+            errors[series_id] = f"source parse failed: {exc}"
+    return parsed, errors
 
 
 def ingest_abs_cpi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
@@ -791,7 +575,8 @@ def record_run(
               last_value = COALESCE(excluded.last_value, ingest_runs.last_value),
               status = excluded.status,
               message = excluded.message,
-              source_url = excluded.source_url""",
+              source_url = CASE WHEN excluded.status = 'ok' THEN excluded.source_url
+                  ELSE COALESCE(ingest_runs.source_url, excluded.source_url) END""",
         (
             series_id,
             now,
@@ -823,7 +608,6 @@ def _ingest_rba_csv(
     results: dict[str, dict[str, object]] = {}
     try:
         text = _fetch_url(source_url)
-        parsed = parse_rba_csv(text, columns)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         message = f"fetch or parse failed: {exc}"
         for series_id in columns:
@@ -839,9 +623,10 @@ def _ingest_rba_csv(
         con.commit()
         return results
 
+    parsed, parse_errors = _parse_series_independently(text, columns, parse_rba_csv)
     missing_columns = set(columns) - set(parsed)
     for series_id in missing_columns:
-        message = f"upstream column missing: {columns[series_id]!r}"
+        message = parse_errors.get(series_id) or f"upstream column missing: {columns[series_id]!r}"
         record_run(con, series_id, status="error", message=message, source_url=source_url, success=False)
         results[series_id] = {"status": "error", "message": message, "rows": 0}
 
@@ -928,83 +713,32 @@ def ingest_rba_j1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
     return _ingest_rba_csv(con, RBA_J1_URL, RBA_J1_COLUMNS)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Ingest macro time series into state/local-macro.sqlite")
-    parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
-    parser.add_argument(
-        "--source",
-        choices=[
-            "rba_h5",
-            "rba_h3",
-            "rba_g1",
-            "rba_g3",
-            "rba_h4",
-            "rba_h2",
-            "rba_f1_1",
-            "rba_f11",
-            "rba_i2",
-            "rba_d1",
-            "rba_j1",
-            "abs_cpi_m",
-            "abs_lf_under",
-            "abs_lf_hours",
-            "abs_hsi_m",
-            "abs_lend_housing",
-            "abs_ba_gccsa",
-            "abs_wpi",
-            "abs_jv",
-            "all",
-        ],
-        default="all",
-        help="Which source family to ingest (default: %(default)s)",
-    )
-    args = parser.parse_args(argv)
-
-    con = open_store(args.store)
+def _refresh_family(item: tuple[str, tuple], store: Path) -> tuple[str, dict]:
+    name, (url, selectors) = item
+    con = open_store(store)
     try:
-        report: dict[str, object] = {}
-        if args.source in ("rba_h5", "all"):
-            report["rba_h5"] = ingest_rba_h5(con)
-        if args.source in ("rba_h3", "all"):
-            report["rba_h3"] = ingest_rba_h3(con)
-        if args.source in ("rba_g1", "all"):
-            report["rba_g1"] = ingest_rba_g1(con)
-        if args.source in ("rba_g3", "all"):
-            report["rba_g3"] = ingest_rba_g3(con)
-        if args.source in ("rba_h4", "all"):
-            report["rba_h4"] = ingest_rba_h4(con)
-        if args.source in ("rba_h2", "all"):
-            report["rba_h2"] = ingest_rba_h2(con)
-        if args.source in ("rba_f1_1", "all"):
-            report["rba_f1_1"] = ingest_rba_f1_1(con)
-        if args.source in ("rba_f11", "all"):
-            report["rba_f11"] = ingest_rba_f11(con)
-        if args.source in ("rba_i2", "all"):
-            report["rba_i2"] = ingest_rba_i2(con)
-        if args.source in ("rba_d1", "all"):
-            report["rba_d1"] = ingest_rba_d1(con)
-        if args.source in ("rba_j1", "all"):
-            report["rba_j1"] = ingest_rba_j1(con)
-        if args.source in ("abs_cpi_m", "all"):
-            report["abs_cpi_m"] = ingest_abs_cpi_m(con)
-        if args.source in ("abs_lf_under", "all"):
-            report["abs_lf_under"] = ingest_abs_lf_under(con)
-        if args.source in ("abs_lf_hours", "all"):
-            report["abs_lf_hours"] = ingest_abs_lf_hours(con)
-        if args.source in ("abs_hsi_m", "all"):
-            report["abs_hsi_m"] = ingest_abs_hsi_m(con)
-        if args.source in ("abs_lend_housing", "all"):
-            report["abs_lend_housing"] = ingest_abs_lend_housing(con)
-        if args.source in ("abs_ba_gccsa", "all"):
-            report["abs_ba_gccsa"] = ingest_abs_ba_gccsa(con)
-        if args.source in ("abs_wpi", "all"):
-            report["abs_wpi"] = ingest_abs_wpi(con)
-        if args.source in ("abs_jv", "all"):
-            report["abs_jv"] = ingest_abs_jv(con)
-        print(json.dumps(report, indent=2, ensure_ascii=False))
-        return 0
+        ingest = _ingest_rba_csv if name.startswith("rba_") else _ingest_abs_sdmx_csv
+        return name, ingest(con, url, selectors)
     finally:
         con.close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Refresh official macro sources with bounded concurrency")
+    parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH)
+    parser.add_argument("--source", choices=[*SOURCE_FAMILIES, "all"], default="all")
+    parser.add_argument("--workers", type=int, choices=range(1, 4), default=3)
+    args = parser.parse_args(argv)
+    # Initialise once before parallel readers/writers. Each source commits on
+    # its own connection; a timed-out batch preserves completed source refreshes.
+    open_store(args.store).close()
+    sources = [(name, spec) for name, spec in SOURCE_FAMILIES.items()
+               if args.source in (name, "all")]
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        results = pool.map(lambda item: _refresh_family(item, args.store), sources)
+        report = dict(results)
+    print(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
+    return int(any(row.get("status") != "ok" for family in report.values() for row in family.values()))
 
 
 if __name__ == "__main__":

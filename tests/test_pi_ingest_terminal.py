@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -15,6 +17,13 @@ import pi_ingest_terminal  # noqa: E402
 
 COMMIT = "a" * 40
 DIGEST = "b" * 64
+
+
+@pytest.fixture(autouse=True)
+def isolate_scheduled_macro_transport(monkeypatch):
+    # Scheduled CDR/payload tests do not contact official macro sources or
+    # create the real macro store. The refresh contract has dedicated tests.
+    monkeypatch.setattr(pi_daily_sync, "refresh_macro_store", lambda *a, **k: {"status": "test-isolated"})
 
 
 def _config(tmp_path: Path) -> Path:

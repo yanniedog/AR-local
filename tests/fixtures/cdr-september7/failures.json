@@ -1,0 +1,155 @@
+[
+  {
+    "provider": "Aussie Home Loans",
+    "phase": "products_index",
+    "status": 404,
+    "version": 6,
+    "url": "https://aussie.openportal.com.au/cds-au/v1/banking/products",
+    "error": null,
+    "body": "\n                {\n                    \"errors\": [\n                        {\n                            \"code\": \"404\",\n                            \"title\": \"Not found\",\n                            \"detail\": \"Resource not found\",\n                            \"meta\": {}\n                        }\n                    ]\n                }\n            "
+  },
+  {
+    "provider": "Bank of Sydney",
+    "phase": "product_detail",
+    "status": 422,
+    "version": 7,
+    "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/gbp_fccy_account",
+    "error": null,
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}"
+  },
+  {
+    "provider": "Bank of Queensland Limited",
+    "phase": "product_detail",
+    "status": 500,
+    "version": 7,
+    "url": "https://api.cds.boq.com.au/cds-au/v1/banking/products/19906e88-5c03-ee11-8f6e-00224814d330",
+    "error": null,
+    "body": "{\"errors\":[{\"code\":\"PCBS021\",\"title\":\"Expected Error Encountered\",\"detail\":\"Validation failed with Invalid data received for DepositRateTiers ApplicabilityConditions additionalValue of Type::MIN_DEPOSIT_AMOUNT. Value must be in AmountString format\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}"
+  },
+  {
+    "provider": "Darling Downs Bank",
+    "phase": "products_index",
+    "status": 599,
+    "version": 6,
+    "url": "https://openbanking.ddbank.com.au/OpenBanking/cds-au/v1/banking/products",
+    "error": "Public DNS resolution failed",
+    "body": ""
+  },
+  {
+    "provider": "CommFCU",
+    "phase": "product_detail",
+    "status": 400,
+    "version": 7,
+    "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The Open Banking Product is inactive. (2.6141)\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "DDH Graham",
+    "phase": "products_index",
+    "status": 500,
+    "version": 5,
+    "url": "https://api.cds.ddhgraham.com.au/cds-au/v1/banking/products",
+    "error": null,
+    "body": "{\"errors\":[{\"code\":\"DBAS041\",\"title\":\"Unexpected Error Encountered\",\"detail\":\"Error getting the response from data holder\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Unexpected\"}}]}"
+  },
+  {
+    "provider": "Family First",
+    "phase": "products_index",
+    "status": 503,
+    "version": 6,
+    "url": "https://public.cdr.familyfirst.com.au/cds-au/v1/banking/products",
+    "error": null,
+    "body": "<html>\n<head><title>503 Service Temporarily Unavailable</title></head>\n<body>\n<center><h1>503 Service Temporarily Unavailable</h1></center>\n<hr><center>nginx</center>\n</body>\n</html>\n"
+  },
+  {
+    "provider": "Geelong Bank",
+    "phase": "products_index",
+    "status": 400,
+    "version": 5,
+    "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The service xxxxxxxxxxxxxx requires API Key. (2.8231)\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "Hume Bank",
+    "phase": "products_index",
+    "status": 400,
+    "version": 5,
+    "url": "https://ibankob.humebank.com.au/OpenBanking/cds-au/v1/banking/products",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The service xxxxxxxxxxxxxx requires API Key. (2.8231)\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "Maitland Mutual Limited",
+    "phase": "product_detail",
+    "status": 500,
+    "version": 7,
+    "url": "https://openbanking.themutual.com.au/OpenBanking/cds-au/v1/banking/products/Christmas_Club",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Unexpected\",\n      \"title\": \"Unexpected Error Encountered\",\n      \"detail\": \"Sorry, an unexpected error has occurred.\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "ME Bank - ME Go",
+    "phase": "product_detail",
+    "status": 500,
+    "version": 7,
+    "url": "https://api.cds.mebank.com.au/cds-au/v1/banking/products/98f3781e-102c-ee11-9966-002248e1d7d5",
+    "error": null,
+    "body": "{\"errors\":[{\"code\":\"PCBS021\",\"title\":\"Expected Error Encountered\",\"detail\":\"Validation failed with Invalid data received for DepositRateTiers ApplicabilityConditions additionalValue of Type::MIN_DEPOSIT_AMOUNT. Value must be in AmountString format\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}"
+  },
+  {
+    "provider": "Police Credit Union Ltd",
+    "phase": "products_index",
+    "status": 400,
+    "version": 5,
+    "url": "https://api.policecu.com.au/OpenBanking/cds-au/v1/banking/products",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The service xxxxxxxxxxxxxx requires API Key. (2.8231)\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "QBANK",
+    "phase": "products_index",
+    "status": 400,
+    "version": 4,
+    "url": "https://banking.qbank.com.au/openbanking/cds-au/v1/banking/products",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The service xxxxxxxxxxxxxx requires API Key. (2.8231)\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "Southern Cross Credit Union",
+    "phase": "product_detail",
+    "status": 500,
+    "version": 7,
+    "url": "https://cdr.sccu.com.au/openbanking/cds-au/v1/banking/products/BROKER_HOME_LOAN",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Unexpected\",\n      \"title\": \"Unexpected Error Encountered\",\n      \"detail\": \"Sorry, an unexpected error has occurred.\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "SWSbank",
+    "phase": "product_detail",
+    "status": 400,
+    "version": 7,
+    "url": "https://online.swsbank.com.au/openbanking/cds-au/v1/banking/products/L23_Disc_HL%2A%2A4",
+    "error": null,
+    "body": "<!DOCTYPE html>\n<html>\n    <head>\n        <title>Runtime Error</title>\n        <meta name=\"viewport\" content=\"width=device-width\" />\n        <style>\n         body {font-family:\"Verdana\";font-weight:normal;font-size: .7em;color:black;} \n         p {font-family:\"Verdana\";font-weight:normal;color:black;margin-top: -5px}\n         b {font-family:\"Verdana\";font-weight:bold;color:black;margin-top: -5px}\n         H1 { font-family:\"Verdana\";font-weight:normal;font-size:18pt;color:red }\n         H2 { font-family:\"Verdana\";font-weight:normal;font-size:14pt;color:maroon }\n         pre {font-family:\"Consolas\",\"Lucida Console\",Monospace;font-size:11pt;margin:0;padding:0.5em;line-height:14pt}\n         .marker {font-weight: bold; color: black;text-decoration: none;}\n         .version {color: gray;}\n         .error {margin-bottom: 10px;}\n         .expandable { text-decoration:underline; font-weight:bold; color:navy; cursor:pointer; }\n         @media screen and (max-width: 639px) {\n          pre { width: 440px; overflow: auto; white-space: pre-wrap; word-wrap: break-word; }\n         }\n         @media screen and (max-width: 479px) {\n          pre { width: 280px; }\n         }\n        </style>\n    </head>\n\n    <body bgcolor=\"white\">\n\n            <span><H1>Server Error in '/openbanking' Application.<hr width=100% size=1 color=silver></H1>\n\n            <h2> <i>Runtime Error</i> </h2></span>\n\n            <font face=\"Arial, Helvetica, Geneva, SunSans-Regular, sans-serif \">\n\n            <b> Description: </b>An application error occurred on the server. The current custom error settings for this application prevent the details of the application error from being viewed remotely (for security reasons). It could, however, be viewed by browsers running on the local server machine.\n            <br><br"
+  },
+  {
+    "provider": "Teachers Mutual Bank",
+    "phase": "product_detail",
+    "status": 500,
+    "version": 7,
+    "url": "https://ob.tmbl.com.au/tmbank/cds-au/v1/banking/products/031f8f9a-4e33-469e-b650-a54873bd3d44",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Unexpected\",\n      \"title\": \"Unexpected Error Encountered\",\n      \"detail\": \"Sorry, an unexpected error has occurred.\"\n    }\n  ]\n}"
+  },
+  {
+    "provider": "Unity Bank",
+    "phase": "products_index",
+    "status": 400,
+    "version": 5,
+    "url": "https://ibank.unity.bank/OpenBanking/cds-au/v1/banking/products",
+    "error": null,
+    "body": "{\n  \"errors\": [\n    {\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\n      \"title\": \"Expected Error Encountered\",\n      \"detail\": \"The service xxxxxxxxxxxxxx requires API Key. (2.8231)\"\n    }\n  ]\n}"
+  }
+]

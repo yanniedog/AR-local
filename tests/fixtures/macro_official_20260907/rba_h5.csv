@@ -1,0 +1,13 @@
+H5 LABOUR FORCE
+Title,Labour force,Participation rate,Part-time employment,Full-time employment,Employment,Year-ended employment growth,Year-ended employment trend growth,Employment to population ratio,Unemployment,Unemployment rate,Unemployment rate trend,Hours worked,Hours worked trend,Year-ended hours worked trend growth,Average hours worked trend,Job vacancies,Private sector job vacancies,Vacancies to labour force ratio
+Description,Labour force persons,Labour force participation rate,Part-time employed persons,Full-time employed persons,Employed persons,Employed persons; Year-ended change (in per cent),Employed persons; Trend; Year-ended change (in per cent),Employed persons as percentage of working age civilian population,Unemployed persons,Unemployed persons as percentage of labour force,Unemployed persons as percentage of labour force; Trend,Total hours worked per month,Total hours worked per month; Trend,Total hours worked per month; Trend; Year-ended change (in per cent),Average hours worked per week,Number of job vacancies,Number of job vacancies in private sector,Job vacancies as percentage of labour force
+Frequency,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Monthly,Quarterly,Quarterly,Quarterly
+Type,Seasonally adjusted,Seasonally adjusted,Seasonally adjusted,Seasonally adjusted,Seasonally adjusted,Seasonally adjusted,Trend,Seasonally adjusted,Seasonally adjusted,Seasonally adjusted,Trend,Seasonally adjusted,Trend,Trend,Trend,Seasonally adjusted,Seasonally adjusted,Seasonally adjusted
+Units,'000,Per cent,'000,'000,'000,Per cent,Per cent,Per cent,'000,Per cent,Per cent,'000,'000,Per cent,Hours,'000,'000,Per cent
+
+
+Source,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS,ABS
+Publication date,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,21-Aug-2026,26-Jun-2026,26-Jun-2026,26-Jun-2026
+Series ID,GLFSLFSA,GLFSPRSA,GLFSEPPSA,GLFSEPFSA,GLFSEPTSA,GLFSEPTSYP,GLFSEPTTYP,GLFSEPTPOP,GLFSUPSA,GLFSURSA,GLFSURTR,GLFMHW,GLFMHWTR,GLFMHWTRYP,GLFMHWAV,GLFOSVT,GLFOSVPS,GLFOSVTLF
+30/06/2026,15510.4,67.0,4628.9,10194.2,14823.1,1.7,1.5,64.0,687.4,4.4,4.4,2010341.7,2005469.1,1.3,31.2
+31/07/2026,15498.8,66.9,4596.7,10210.5,14807.2,1.3,1.6,63.9,691.5,4.5,4.5,1997868.8,2004010.7,1.1,31.1

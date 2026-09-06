@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
 
 from cdr_atomic import atomic_write_json
+from cdr_compatibility import (
+    HolderVersionCache, classify_fetch_failure, pagination_accounting_error,
+)
+from cdr_ingest_resume import existing_product_leaves, usable_cached_detail
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
 from cdr_ingest_support import (
     DATASET_TO_FOLDER,
@@ -112,6 +116,46 @@ class _BankWork(NamedTuple):
     prefetched: Optional[FetchResult]
 
 
+def _fetch_failure_fields(result: FetchResult) -> Dict[str, Any]:
+    failure = classify_fetch_failure(result.status, result.text)
+    category = result.failure_category or failure.category
+    return {
+        "status": "recovery_budget_exhausted" if category == "recovery_budget_exhausted" else result.status,
+        "failure_category": category,
+        "retryable": result.retryable if result.failure_category else failure.retryable,
+        **({"validation_error": result.validation_error} if result.validation_error else {}),
+    }
+
+
+def _pace_fetch(sleep_ms: int, deadline: Optional[float]) -> None:
+    delay = max(0.0, sleep_ms / 1000.0)
+    if deadline is not None:
+        delay = min(delay, max(0.0, deadline - time.monotonic()))
+    if delay > 0:
+        time.sleep(delay)
+
+
+def _fetch_detail(
+    url: str, *, timeout: float, max_retries: int, sleep_ms: int,
+    version_cache: Optional[HolderVersionCache], deadline: Optional[float],
+    attempt_journal: Optional[RawAttemptJournal], context: Mapping[str, Any],
+) -> FetchResult:
+    remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+    if remaining == 0:
+        return FetchResult(False, 0, url, "", attempts=0, failure_category="recovery_budget_exhausted")
+    order = version_cache.order() if version_cache is not None else _detail_version_list()
+    result = fetch_cdr_json(
+        url, versions=order, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
+        **({"max_total_seconds": remaining} if remaining is not None else {}),
+        attempt_journal=attempt_journal, attempt_context=context,
+    )
+    if version_cache is not None and (result.ok or result.failure_category in {
+        "incompatible_version", "invalid_response",
+    }):
+        version_cache.record(ok=result.ok, version=result.version, attempted=order[0])
+    return result
+
+
 def _fetch_bank_detail(
     work: _BankWork,
     endpoint_url: str,
@@ -124,6 +168,8 @@ def _fetch_bank_detail(
     failure_lock: Optional[threading.Lock],
     preferred_version: Optional[int] = None,
     attempt_journal: Optional[RawAttemptJournal] = None,
+    detail_version_cache: Optional[HolderVersionCache] = None,
+    deadline: Optional[float] = None,
 ) -> bool:
     """Write product-detail.json for one bank product (called from thread pool).
 
@@ -136,13 +182,14 @@ def _fetch_bank_detail(
     if prefetched is not None:
         res = prefetched
     else:
-        time.sleep(sleep_ms / 1000.0)
+        _pace_fetch(sleep_ms, deadline)
         url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
-        res = fetch_cdr_json(
-            url, versions=_detail_version_list(),
+        res = _fetch_detail(
+            url,
             timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
+            version_cache=detail_version_cache, deadline=deadline,
             attempt_journal=attempt_journal,
-            attempt_context={
+            context={
                 "phase": "product_detail",
                 "provider": bank_dir_name,
                 "product_id": pid,
@@ -160,7 +207,7 @@ def _fetch_bank_detail(
             "phase": "product_detail",
             "bank": bank_dir_name,
             "product_id": pid,
-            "status": res.status,
+            **_fetch_failure_fields(res),
             "snippet": (res.text or "")[:500],
         },
         lock=failure_lock,
@@ -181,6 +228,8 @@ def classify_product_for_ingest(
     breaker: "Optional[_HolderBreaker]" = None,
     bank_dir_name: str = "unknown",
     attempt_journal: Optional[RawAttemptJournal] = None,
+    detail_version_cache: Optional[HolderVersionCache] = None,
+    deadline: Optional[float] = None,
 ) -> Tuple[Optional[str], Optional[FetchResult]]:
     """Returns (dataset_kind or None, optional detail_fetch_if_unknown_path)."""
     ds = infer_cdr_dataset(product, allow_name_fallback=True)
@@ -200,15 +249,15 @@ def classify_product_for_ingest(
         return None, None
 
     detail_url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
-    time.sleep(sleep_ms / 1000.0)
-    detail_res = fetch_cdr_json(
+    _pace_fetch(sleep_ms, deadline)
+    detail_res = _fetch_detail(
         detail_url,
-        versions=_detail_version_list(),
         timeout=timeout,
         max_retries=max_retries,
         sleep_ms=sleep_ms,
+        version_cache=detail_version_cache, deadline=deadline,
         attempt_journal=attempt_journal,
-        attempt_context={
+        context={
             "phase": "classification_detail",
             "provider": bank_dir_name,
             "product_id": pid,
@@ -244,6 +293,7 @@ def ingest_brand(
     log: Callable[[str], None],
     failure_lock: Optional[threading.Lock] = None,
     attempt_journal: Optional[RawAttemptJournal] = None,
+    deadline: Optional[float] = None,
 ) -> None:
     """Ingest one banking holder.
 
@@ -275,16 +325,23 @@ def ingest_brand(
         DEFAULT_HTTP_POLICY.max_pages,
         max(0, int(max_pages)) if max_pages is not None else DEFAULT_HTTP_POLICY.max_pages,
     )
-    # Per-holder version cache: once a fetch succeeds we remember the x-v that
-    # worked and try it first for this holder's remaining pages + every product
-    # detail, instead of re-negotiating from the top each time. Set serially in
-    # Phase 1, then read-only in the Phase 2 thread pool (no shared-state race).
+    # Index and detail contracts version independently. Cache detail success for
+    # this holder/run only, including classification probes and parallel fetches.
     preferred_version: Optional[int] = None
+    detail_version_cache = HolderVersionCache(PRODUCT_DETAIL_VERSION_ORDER)
+    product_ids: Set[str] = set()
+    existing_leaves, resume_conflicts = existing_product_leaves(date_root, bank_dir_name) if resume else ({}, set())
     # Per-holder circuit breaker, shared across Phase-1 classification probes and
     # the Phase-2 detail workers (so a down detail endpoint trips in either phase).
     breaker = _HolderBreaker()
 
     while url and not capped:
+        if deadline is not None and time.monotonic() >= deadline:
+            append_failure(date_root, {
+                "phase": "products_index", "bank": bank_dir_name,
+                "status": "recovery_budget_exhausted", "retryable": False,
+            }, lock=failure_lock)
+            break
         if url in visited:
             append_failure(
                 date_root,
@@ -314,10 +371,11 @@ def ingest_brand(
             )
             break
 
-        time.sleep(sleep_ms / 1000.0)
+        _pace_fetch(sleep_ms, deadline)
         res = fetch_cdr_json(
             url, versions=_index_version_list(preferred_version),
             timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
+            **({"max_total_seconds": max(0.0, deadline - time.monotonic())} if deadline is not None else {}),
             attempt_journal=attempt_journal,
             attempt_context={
                 "phase": "products_index",
@@ -337,7 +395,7 @@ def ingest_brand(
                     "phase": "products_index",
                     "bank": bank_dir_name,
                     "url": url,
-                    "status": res.status,
+                    **_fetch_failure_fields(res),
                     "snippet": (res.text or "")[:500],
                 },
                 lock=failure_lock,
@@ -348,6 +406,13 @@ def ingest_brand(
             preferred_version = res.version
 
         for product in extract_products(parsed):
+            if deadline is not None and time.monotonic() >= deadline:
+                append_failure(date_root, {
+                    "phase": "products_index", "bank": bank_dir_name,
+                    "status": "recovery_budget_exhausted", "retryable": False,
+                }, lock=failure_lock)
+                capped = True
+                break
             if max_products is not None and products_seen >= max_products:
                 log(f"max-products reached for {bank_dir_name}")
                 append_failure(
@@ -370,6 +435,24 @@ def ingest_brand(
             pid = pick_text(product, ["productId", "id"])
             if not pid:
                 continue
+            if pid in product_ids:
+                append_failure(date_root, {
+                    "phase": "products_index", "bank": bank_dir_name,
+                    "status": "duplicate_product_identity", "product_id": pid,
+                    "failure_category": "invalid_response", "retryable": False,
+                }, lock=failure_lock)
+                continue
+            product_ids.add(pid)
+            if pid in resume_conflicts:
+                append_failure(date_root, {
+                    "phase": "products_index", "bank": bank_dir_name,
+                    "status": "resume_identity_conflict", "product_id": pid,
+                    "failure_category": "invalid_response", "retryable": False,
+                }, lock=failure_lock)
+                continue
+            existing_leaf = existing_leaves.get(pid)
+            if existing_leaf is not None and usable_cached_detail(existing_leaf, pid):
+                continue
 
             ds, prefetched = classify_product_for_ingest(
                 product,
@@ -382,8 +465,16 @@ def ingest_brand(
                 breaker=breaker,
                 bank_dir_name=bank_dir_name,
                 attempt_journal=attempt_journal,
+                detail_version_cache=detail_version_cache,
+                deadline=deadline,
             )
             if ds not in DATASET_TO_FOLDER:
+                if prefetched is not None and not prefetched.ok:
+                    append_failure(date_root, {
+                        "phase": "classification_detail", "bank": bank_dir_name,
+                        "product_id": pid, **_fetch_failure_fields(prefetched),
+                        "snippet": (prefetched.text or "")[:500],
+                    }, lock=failure_lock)
                 continue
 
             folder = DATASET_TO_FOLDER[ds]
@@ -391,21 +482,27 @@ def ingest_brand(
                 pick_text(product, ["name", "productName"]) or "_unnamed"
             )
             id_dir = filesystem_product_id_directory(pid)
-            leaf = date_root / folder / bank_dir_name / pname / id_dir
+            leaf = existing_leaf or date_root / folder / bank_dir_name / pname / id_dir
             leaf.mkdir(parents=True, exist_ok=True)
 
             id_file = leaf / "product-id.txt"
             if not id_file.exists():
                 id_file.write_text(pid + "\n", encoding="utf-8")
 
-            detail_path = leaf / "product-detail.json"
-            if resume and detail_path.exists() and detail_path.stat().st_size > 0:
-                continue
-
             pending.append(_BankWork(pid=pid, leaf=leaf, prefetched=prefetched))
 
         try:
             url = next_link(parsed, url)
+            accounting_error = pagination_accounting_error(
+                parsed, pages=pages, products=products_seen, has_next=bool(url),
+            ) if not capped else None
+            if accounting_error:
+                append_failure(date_root, {
+                    "phase": "products_index", "bank": bank_dir_name,
+                    "status": "pagination_incomplete", "validation_error": accounting_error,
+                    "failure_category": "invalid_response", "retryable": False,
+                }, lock=failure_lock)
+                break
         except HttpPolicyError as error:
             append_failure(
                 date_root,
@@ -436,6 +533,13 @@ def ingest_brand(
         # (Codex). The open-circuit skip applies only to work that still needs a
         # network fetch. File I/O stays OUTSIDE the breaker lock (Gemini).
         needs_fetch = work.prefetched is None
+        if needs_fetch and deadline is not None and time.monotonic() >= deadline:
+            append_failure(date_root, {
+                "phase": "product_detail", "bank": bank_dir_name,
+                "product_id": work.pid, "status": "recovery_budget_exhausted",
+                "failure_category": "recovery_budget_exhausted", "retryable": False,
+            }, lock=failure_lock)
+            return
         if needs_fetch and breaker.is_open():
             append_failure(
                 date_root,
@@ -459,6 +563,8 @@ def ingest_brand(
             failure_lock=failure_lock,
             preferred_version=preferred_version,
             attempt_journal=attempt_journal,
+            detail_version_cache=detail_version_cache,
+            deadline=deadline,
         )
         # Only true network fetches feed the breaker; a Phase-1 prefetched result
         # was already counted in classify_product_for_ingest.
@@ -716,7 +822,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # ─── Sector runner closures ───────────────────────────────────────────────
 
-    def do_banks() -> None:
+    def do_banks() -> Callable:
         banks_root.mkdir(parents=True, exist_ok=True)
         # Start each run with a clean failure log so the end-of-run status rollup
         # reflects THIS run, not stale failures left by a prior same-day --resume
@@ -742,25 +848,26 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"--workers {workers}, --detail-workers {detail_workers}",
         )
 
-        def run_one(item: Tuple[Dict[str, str], str]) -> None:
+        def run_one(item: Tuple[Dict[str, str], str], *, recovery_deadline: Optional[float] = None) -> None:
             brand, bdir = item
             log_ts(f"[banks] Ingesting {bdir} ({brand['endpoint_url']})")
             try:
                 ingest_brand(
                     brand,
                     date_root=banks_root,
-                    resume=args.resume,
+                    resume=args.resume or recovery_deadline is not None,
                     sleep_ms=args.sleep_ms,
                     timeout=args.timeout,
-                    max_retries=args.max_retries,
+                    max_retries=min(args.max_retries, 1) if recovery_deadline is not None else args.max_retries,
                     max_pages=args.max_pages,
                     max_products=args.max_products,
                     fetch_unknown_detail=args.fetch_unknown_detail,
                     bank_dir_name=bdir,
-                    detail_workers=detail_workers,
+                    detail_workers=1 if recovery_deadline is not None else detail_workers,
                     log=log_ts,
                     failure_lock=failure_lock,
                     attempt_journal=attempt_journal,
+                    **({"deadline": recovery_deadline} if recovery_deadline is not None else {}),
                 )
             except Exception as exc:  # noqa: BLE001
                 # A holder worker that crashes before/while recording its own
@@ -786,7 +893,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                     except Exception as exc:
                         log_ts(f"ERROR: banking ingest for {futs[fut]} failed: {exc}")
 
-    do_banks()
+        return run_one
+
+    run_one = do_banks()
+    # Recovery stays inside the original current-day staging transaction.
+    # Export and ledger finalization only see reconciled terminal failures.
+    from cdr_ingest_recovery import recover_transient_providers
+
+    recovery = recover_transient_providers(
+        banks_root, bank_work, run_one, log=log_ts,
+        budget_seconds=0 if args.max_pages is not None or args.max_products is not None else 180.0,
+    )
     status = _persist_ingest_status(
         banks_root=banks_root,
         run_root=run_root,
@@ -794,6 +911,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         bank_work=bank_work,
         attempt_journal=attempt_journal,
     )
+    status["recovery"] = recovery
+    atomic_write_json(banks_root / "ingest-status.json", status)
     if status["incomplete"]:
         log(
             f"Ingest INCOMPLETE: {status['total']} failure(s) "

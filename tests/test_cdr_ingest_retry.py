@@ -66,13 +66,11 @@ def test_first_version_success_costs_one_attempt(monkeypatch):
 
 
 def test_non_retryable_status_does_not_burn_budget_on_one_version(monkeypatch):
-    # 404 is not retryable: each version is tried exactly once, so the walk can
-    # still negotiate across versions cheaply (no amplification).
+    # A missing registered endpoint cannot be repaired with a version header.
     calls = _count_calls(monkeypatch, 404)
     res = cis.fetch_cdr_json("http://x", timeout=1, max_retries=6, sleep_ms=0)
     assert res.ok is False
-    assert calls["n"] == len(cis.CDR_VERSION_ORDER)
-    assert calls["n"] <= 8
+    assert calls["n"] == 1
     assert res.attempts == calls["n"]
 
 
@@ -248,7 +246,9 @@ def test_real_holder_rejection_survives_later_version_negotiation(monkeypatch, s
     )
     assert not result.ok
     assert result.status == status and result.text == body
-    assert result.attempts == 7
+    # Explicit inactive/schema errors stop immediately; generic outages still
+    # retain their cause while trying bounded compatibility fallbacks.
+    assert result.attempts == (7 if status == 500 else 1)
 
 
 def test_real_rejection_does_not_prevent_successful_lower_version(monkeypatch):
@@ -319,7 +319,9 @@ def test_retry_attempts_are_immutably_journaled_with_version_context(tmp_path, m
 
     def fake_request(url, headers, *, timeout):
         status = next(replies)
-        body = b'{"data":{}}' if status == 200 else b"unavailable"
+        # An actual products array is required; a 200 with an empty object must
+        # no longer masquerade as a completely captured empty provider.
+        body = b'{"data":{"products":[]}}' if status == 200 else b"unavailable"
         return PolicyResponse(
             status=status,
             url=url,
