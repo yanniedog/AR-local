@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
-from cdr_atomic import ImmutablePathError, atomic_write_json
+from cdr_atomic import ImmutablePathError, atomic_write_json, canonical_json_bytes
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
@@ -18,6 +19,7 @@ from cdr_ledger_v2 import (
     verify_event_artifacts,
 )
 from cdr_file_lock import FileLock
+from cdr_observation_selection import same_day_selection_reason
 
 
 def _ingest_status(export_root: Path) -> dict[str, Any]:
@@ -237,8 +239,8 @@ def finalize_observation(
         "export_path": str(contract["source_path"]),
     }
     pointers = state_dir / "observation-pointers-v2"
-    _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
-    if observation_state == "complete":
+    selectable = _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
+    if observation_state == "complete" and selectable:
         _advance_pointer(pointers / "latest-complete.json", pointer, state_dir)
     return completion
 
@@ -275,8 +277,8 @@ def repair_observation_pointers(
         "export_path": contract["source_path"],
     }
     pointers = state_dir / "observation-pointers-v2"
-    _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
-    if contract["observation_state"] == "complete":
+    selectable = _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
+    if contract["observation_state"] == "complete" and selectable:
         _advance_pointer(pointers / "latest-complete.json", pointer, state_dir)
     return True
 
@@ -517,7 +519,8 @@ def _ledger_precedence(
 
 def _advance_pointer(
     path: Path, incoming: Mapping[str, Any], state_dir: Path
-) -> None:
+) -> bool:
+    """Advance eligible observations; False means a same-day quality refusal."""
     with FileLock(path.parent / ".pointer.lock"):
         try:
             current = json.loads(path.read_text(encoding="utf-8"))
@@ -527,12 +530,12 @@ def _advance_pointer(
             current_date = str(current.get("observation_date") or "")
             incoming_date = str(incoming.get("observation_date") or "")
             if current_date > incoming_date:
-                return
+                return True
             if (
                 current_date == incoming_date
                 and current.get("ledger_event_digest") == incoming.get("ledger_event_digest")
             ):
-                return
+                return True
             if current_date == incoming_date:
                 precedence = _ledger_precedence(
                     state_dir,
@@ -540,8 +543,30 @@ def _advance_pointer(
                     str(incoming.get("ledger_event_digest") or ""),
                 )
                 if precedence != 1:
-                    return
+                    return True
+                if path.name == "latest-observation.json":
+                    try:
+                        reason = same_day_selection_reason(state_dir, current, incoming)
+                    except (KeyError, OSError, ValueError) as error:
+                        reason = f"selection_evidence_unavailable:{type(error).__name__}"
+                    record = {
+                        "schema_version": 1,
+                        "observation_date": incoming_date,
+                        "candidate_generation_id": incoming["generation_id"],
+                        "previous_generation_id": current["generation_id"],
+                        "candidate_event_digest": incoming["ledger_event_digest"],
+                        "previous_event_digest": current["ledger_event_digest"],
+                        "selected": not bool(reason),
+                        "reason": reason or "same_day_coverage_preserved",
+                    }
+                    receipt = state_dir / "observation-selections-v1" / incoming_date / (
+                        f"{hashlib.sha256(canonical_json_bytes(record)).hexdigest()}.json"
+                    )
+                    atomic_write_json(receipt, record, create_once=True)
+                    if reason:
+                        return False
         atomic_write_json(path, incoming)
+        return True
 
 
 def _current_head_digest(state_dir: Path) -> Optional[str]:

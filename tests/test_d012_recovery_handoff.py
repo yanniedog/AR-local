@@ -36,6 +36,16 @@ def _frozen_source(relative: str) -> bytes:
         archive = (ROOT / f"tests/fixtures/d019-retired-{name}-5518f0af.py.gz").read_bytes()
         assert hashlib.sha256(gzip.decompress(archive)).hexdigest() == digest
         return gzip.decompress(archive)
+    if path == "cdr_attempt_evidence_promotion.py":
+        # D-020 updates the live verifier for legacy journals. D-012 evidence
+        # remains bound to the exact 381e578f authority source, including in
+        # shallow CI checkouts that do not contain that historical commit.
+        archive = ROOT / "tests/fixtures/d020-retired-attempt-promotion-381e578f.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == (
+            "a697bc5006f7d937eba7c18baba57cb728834f683dba40054e18a1b0447fa2d4"
+        )
+        return payload
     if path in {"laptop_backup_transport.py", "laptop_pull_backup.py"}:
         assert "D-015-USER-SESSION-NO-UAC" in HANDOFF.read_text(encoding="utf-8")
         archive = (ROOT / "tests/fixtures/d012-retired-sources-ec008b26.json.gz").read_bytes()

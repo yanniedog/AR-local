@@ -40,6 +40,10 @@ from cdr_finalization import (
 from cdr_outputs import build_outputs
 from cdr_product_changes import previous_finalized_run
 from cdr_ingest_sanity import write_sanity_report
+from cdr_same_day_reuse import (
+    attach_same_day_reuse_status, prepare_same_day_reuse,
+    reconcile_same_day_reuse, seed_same_day_reuse, validate_reuse_destination,
+)
 
 
 def local_date() -> str:
@@ -73,6 +77,7 @@ def persist_ingest_status(run_dir: Path, export_root: Path) -> Optional[dict]:
     finalizes only ``_exports``. Promotion rewrites the copied status to a verified,
     export-root-relative evidence path while leaving the source journal untouched.
     """
+    attach_same_day_reuse_status(run_dir)
     return promote_attempt_evidence(run_dir, export_root)
 
 
@@ -357,6 +362,10 @@ def run_once(args: argparse.Namespace) -> int:
     ensure_runtime_data_writable(script_dir)
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
+    resume_same_day = bool(getattr(args, "resume_same_day", False))
+    if resume_same_day and (not args.force or date != local_date() or args.daemon or args.db is not None):
+        print("ERROR: --resume-same-day requires --force, today, no --daemon, and the default immutable export database.", file=sys.stderr)
+        return 2
     automatic_pi_stage = is_raspberry_pi() and not args.no_ram_stage
     persistent_output_stage = automatic_pi_stage and not args.ram_stage
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
@@ -368,6 +377,13 @@ def run_once(args: argparse.Namespace) -> int:
         print(f"ERROR: unsafe finalization layout: {exc}", file=sys.stderr)
         return 2
     state_dir.mkdir(parents=True, exist_ok=True)
+    reuse_plan = None
+    if resume_same_day:
+        try:
+            reuse_plan = prepare_same_day_reuse(state_dir, date)
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
+            print(f"ERROR: refusing unsafe same-day reuse before ingest: {exc}", file=sys.stderr)
+            return 2
     if not args.force:
         selected_marker = verified_pointer_marker_for_date(state_dir, date)
         if selected_marker is not None:
@@ -397,7 +413,7 @@ def run_once(args: argparse.Namespace) -> int:
             return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
-    marker_trusted = marker_exists and marker_is_trustworthy(marker, export_root, date)
+    marker_trusted = marker_exists and not resume_same_day and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
         if marker_trusted:
             try:
@@ -431,7 +447,7 @@ def run_once(args: argparse.Namespace) -> int:
             date,
             today,
             args.force,
-            marker_evidence=marker_exists,
+            marker_evidence=marker_exists or reuse_plan is not None,
         )
     except LedgerImmutabilityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -445,7 +461,10 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if is_revision:
+    if reuse_plan is not None:
+        validate_reuse_destination(reuse_plan, target_export_root)
+        revision_parent_generation_id = reuse_plan.manifest["baseline"]["generation_id"]
+    elif is_revision:
         # A revision is valid only when it can name an already verified ledger-v2
         # generation.  A stale/corrupt marker is evidence that bytes exist (and
         # therefore keeps the primary immutable), but it is not parent evidence.
@@ -513,6 +532,9 @@ def run_once(args: argparse.Namespace) -> int:
         )
         staged_run = ram_root / "runs" / date
         staged_export_date = staged_exports.parent
+        if reuse_plan is not None:
+            validate_reuse_destination(reuse_plan, staged_run)
+            validate_reuse_destination(reuse_plan, staged_exports)
         if args.archive_failed_ram_stage:
             archived = archive_failed_ram_stage(
                 staged_run,
@@ -523,8 +545,11 @@ def run_once(args: argparse.Namespace) -> int:
                 print(f"Archived failed RAM-stage evidence at {archived}")
         prepare_ram_stage(staged_run)
         prepare_ram_stage(staged_exports)
+        if reuse_plan is not None:
+            seed_same_day_reuse(reuse_plan, staged_run)
         try:
             run_ingest(script_dir, staged_runs, date, extra_args)
+            reconcile_same_day_reuse(staged_run)
         finally:
             # staged_exports is the persistent .daily-export-stage on the Pi
             # (--ram-stage on a dev box keeps it in RAM, where nothing can help).
@@ -552,7 +577,10 @@ def run_once(args: argparse.Namespace) -> int:
         # Pi path is RAM-staged (raw files never persist), so this guards the
         # --no-ram-stage / dev path.
         run_root = target_export_root.parent if is_revision else persistent_runs_root
+        if reuse_plan is not None:
+            seed_same_day_reuse(reuse_plan, run_root / date)
         run_ingest(script_dir, run_root, date, extra_args)
+        reconcile_same_day_reuse(run_root / date)
         result = build_outputs(
             run_root / date,
             target_export_root,
@@ -649,6 +677,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Request a same-day revision; historical dates remain unavailable to live ingest",
     )
     parser.add_argument("--banks-only", action="store_true", help="Accepted for compatibility; banking is the only sector.")
+    parser.add_argument("--resume-same-day", action="store_true",
+                        help="Repair today's selected observation using verified same-day raw captures; requires --force.")
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
     parser.add_argument(
         "--ram-stage",

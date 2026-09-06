@@ -7,6 +7,8 @@ here; an error response is never converted into invented product/rate data.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 import threading
@@ -96,14 +98,13 @@ def response_shape_error(data: Any, *, phase: str, product_id: str = "") -> Opti
         products = inner.get("products") if isinstance(inner, dict) else inner
         if not isinstance(products, list):
             return "product index has no products array"
-        identities = []
         for row in products:
             pid = row.get("productId", row.get("id")) if isinstance(row, dict) else None
             if not isinstance(pid, str) or not pid.strip():
                 return "product index contains a missing or invalid product identity"
-            identities.append(pid)
-        if len(set(identities)) != len(identities):
-            return "product index contains duplicate product identities"
+        # Repeated identities can occur within a page or across page boundaries.
+        # The ingest-wide tracker deduplicates identical entries and records
+        # conflicts without discarding unrelated entries or remaining pages.
         for name in ("links", "meta"):
             if name in data and not isinstance(data[name], dict):
                 return f"product index {name} is not an object"
@@ -117,11 +118,14 @@ def response_shape_error(data: Any, *, phase: str, product_id: str = "") -> Opti
         if product_id and pid != product_id:
             return "product detail identity does not match the requested product"
         for name in ("lendingRates", "depositRates"):
-            if name in inner and (not isinstance(inner[name], list) or any(
-                not isinstance(rate, dict) for rate in inner[name]
-            )):
+            rates = inner.get(name)
+            # Holders also serialize an irrelevant optional rate section as
+            # null (for example, depositRates on a mortgage). It adds no rates.
+            if rates is None:
+                continue
+            if not isinstance(rates, list) or any(not isinstance(rate, dict) for rate in rates):
                 return f"product detail {name} is not an array of objects"
-            for rate in inner.get(name, []):
+            for rate in rates:
                 value = rate.get("rate")
                 try:
                     valid = not isinstance(value, bool) and math.isfinite(float(value))
@@ -148,6 +152,44 @@ def pagination_accounting_error(data: dict, *, pages: int, products: int, has_ne
         if actual > total or (not has_next and actual != total):
             return f"pagination {name} does not match the captured index"
     return None
+
+
+class ProductIndexTracker:
+    """Track unique identities without confusing repeated records with failed pages."""
+
+    def __init__(self) -> None:
+        self._fingerprints: dict[str, str] = {}
+        self.identical_duplicates = 0
+        self.conflicting_duplicates = 0
+
+    def observe(self, product_id: str, product: dict) -> str:
+        fingerprint = hashlib.sha256(json.dumps(
+            product, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        previous = self._fingerprints.get(product_id)
+        if previous is None:
+            self._fingerprints[product_id] = fingerprint
+            return "new"
+        if previous == fingerprint:
+            self.identical_duplicates += 1
+            return "identical"
+        self.conflicting_duplicates += 1
+        return "conflicting"
+
+    def summary(self, *, pages: int, raw_records: int, complete: bool, meta: dict) -> dict:
+        def total(name):
+            value = meta.get(name)
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+        return {
+            "schema_version": 1, "pages": pages, "raw_records": raw_records,
+            "unique_products": len(self._fingerprints),
+            "identical_duplicate_records": self.identical_duplicates,
+            "conflicting_duplicate_records": self.conflicting_duplicates,
+            "declared_total_records": total("totalRecords"),
+            "declared_total_pages": total("totalPages"),
+            "pagination_complete": complete,
+        }
 
 
 class HolderVersionCache:
