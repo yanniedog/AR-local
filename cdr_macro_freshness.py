@@ -66,12 +66,13 @@ def assess_freshness(
     check_overdue = check_age is None or check_age > MAX_SOURCE_CHECK_AGE_HOURS
     observation_overdue = observation_age is None or observation_age > max_observation_age
     source_status = row.get("status") or "missing"
-    if not source_definition_current(series_id, row):
+    if (not stored or observed is None or success is None
+            or (series_id in SERIES_VISIBLE_FROM and not str(row.get("source_url") or "").strip())):
+        status, message = "missing", "No successful local source observation is available."
+    elif not source_definition_current(series_id, row):
         status, message = "error", "Source definition changed; the retired CPI indicator is not current monthly CPI."
     elif source_status not in {"ok", "missing"}:
         status, message = "error", str(row.get("message") or "The latest source refresh failed.")[:400]
-    elif not stored or observed is None or success is None:
-        status, message = "missing", "No successful local source observation is available."
     elif success > stamp or checked is None or checked > stamp:
         status, message = "error", "Invalid or future source-check timestamp."
     elif check_overdue or observation_overdue:

@@ -11,7 +11,10 @@ It never invents a rate or substitutes yesterday's product for today's failure.
   that endpoint during the run; an invalid hint does not disable negotiation.
 - Keep index and detail capabilities separate. New fields and enum values are
   retained, while invalid envelopes, product identity mismatches, malformed rate
-  values, duplicate index IDs and inconsistent pagination are recorded failures.
+  values, conflicting duplicate index IDs and inconsistent pagination are
+  recorded failures. Absent or null optional rate sections are accepted.
+  Identical index entries are counted against the raw pagination totals and
+  fetched once; their counts remain in the observation's diagnostics.
 - Distinguish transient transport/service failures from access requirements,
   inactive products, missing endpoints, server validation errors and unsupported
   versions. Do not cycle API versions for an explicit deterministic rejection.
@@ -30,6 +33,51 @@ It never invents a rate or substitutes yesterday's product for today's failure.
 and the recovery outcome. Request evidence distinguishes negotiation attempts
 from unresolved product/provider failures. A high number of HTTP requests is
 not itself a count of missing products.
+
+## Automatic same-day gap recovery
+
+The existing 15-minute watchdog also checks incomplete current-day observations
+between 03:30 and 22:00 Hobart. It persists request reservations and outcomes
+before doing work, so a crash or restart cannot reset the day's retry budget.
+Provider backoff grows from 15 minutes to two hours. Every failure category stays
+eligible for a later probe, including an access or schema error that the provider
+may have fixed since the original capture.
+
+Each tick refreshes the public register and probes at most four affected
+providers, within a shared 60-second budget. Each GET is limited to two attempts,
+12 seconds and 2 MiB. A probe is availability evidence only. It never clears an
+observation failure or publishes a rate. A validated response can trigger one
+same-day revision, with a one-hour capture cooldown, at most four captures per
+day, and a 30-minute process-tree budget that finishes before 22:00.
+
+`pi_daily_sync.py --force --resume-same-day --banks-only` fills gaps using the
+selected observation for today. Before any live request it verifies the ledger,
+export artifacts and retained request journal. Each reused product must match
+an original successful same-day response and its normalized SQLite record.
+Only the untouched HTTP body is copied into the new isolated scratch tree.
+The new observation records original capture times, source generations, event
+digests and body hashes; it does not count reuse as a fresh HTTP request.
+
+Fresh register and product indexes determine which missing or new details to
+fetch. An endpoint move requires a unique match for the same brand and legal
+entity in the bound register evidence; the old/new endpoints and derived
+identities are retained with the reused captures. Temporary register omissions
+retain source identity separately from the fresh registered-provider count.
+Ambiguous identity changes remain explicit and do not erase the selected data.
+A failed index preserves already verified same-day products. Removing an
+old product requires an unambiguous, complete fresh listing and retained evidence
+that the ID is absent. Repeated identical entries can confirm a retained ID but
+cannot prove a withdrawal. Every revision remains in the immutable ledger; a
+revision that loses prior product coverage without withdrawal proof does not
+replace the selected observation. Transient evidence-read failures can be
+rechecked without overwriting the earlier refusal receipt.
+
+Recovery acquires the daily ingest lock and rechecks backup activity before
+pausing the dashboard. Timeout cleanup terminates the entire child process tree.
+Dashboard restoration also checks lock ownership, so a failed repair cannot
+resume the dashboard during another ingest's pause. The watchdog service's
+`ExecStopPost` uses the same guarded cleanup after supervisor termination.
+The 01:00 daily timer and ordinary-user backup schedule are preserved.
 
 ## Economic sources
 
@@ -70,10 +118,16 @@ previous generation and keep the 01:00 Hobart production timer unchanged.
 Complete `npm run verify:pi` and verify the public v1/v2 manifests and asset
 hashes after activation.
 
-Client resilience cannot repair a provider's DNS, API-key configuration or
-invalid source database. These remain attributable coverage gaps, checked again
-on the next scheduled capture. Changing code or loosening validation is not
-the routine response to such incidents.
+Client resilience cannot repair a provider's DNS, access configuration or invalid
+source database. Such failures remain explicit, with their request evidence,
+until a later source response proves recovery. An HTTP error is never evidence
+that a provider has no products.
+
+Public CDR product-reference endpoints are documented as unauthenticated. An
+error string mentioning an API key does not establish a client enrollment
+requirement. Verify the official endpoint and access documentation before
+seeking credentials; do not substitute customer account credentials or invent
+an authentication header. See the [September 7 access investigation](CDR_ACCESS_20260907.md).
 
 The version negotiation rules follow the [Consumer Data Standards HTTP header
 contract](https://consumerdatastandardsaustralia.github.io/standards/#request-headers).

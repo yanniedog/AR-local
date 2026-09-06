@@ -23,6 +23,9 @@ from cdr_daily import marker_is_trustworthy, marker_path
 from cdr_finalization import verified_pointer_marker_for_date
 from pi_daily_sync import _app_payload_enabled, payload_publication_pending
 from pi_payload_freshness import check_publication
+from pi_cdr_recovery import (
+    EXPECTED_GENERATION_ENV, HOBART, restore_dashboard_if_idle, run_same_day_recovery,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent
 GRACE_MINUTES = 30
@@ -69,7 +72,8 @@ def service_active() -> bool:
     )
 
 
-def run_ingest_process_group(cmd: list[str]) -> None:
+def run_ingest_process_group(cmd: list[str], *, timeout_seconds: Optional[float] = None,
+                             env: Optional[dict[str, str]] = None) -> None:
     """Fence and reap the entire catch-up tree if its long timeout expires."""
     grouped = PROCESS_GROUPS_SUPPORTED
     process = subprocess.Popen(
@@ -77,9 +81,10 @@ def run_ingest_process_group(cmd: list[str]) -> None:
         cwd=REPO_ROOT,
         shell=False,
         start_new_session=grouped,
+        **({"env": env} if env is not None else {}),
     )
     try:
-        return_code = process.wait(timeout=SUBPROCESS_INGEST_TIMEOUT_SEC)
+        return_code = process.wait(timeout=SUBPROCESS_INGEST_TIMEOUT_SEC if timeout_seconds is None else timeout_seconds)
     except subprocess.TimeoutExpired:
         try:
             if grouped:
@@ -111,7 +116,9 @@ def run_ingest_process_group(cmd: list[str]) -> None:
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
-def run_daily_ingest(date_text: str, dry_run: bool) -> None:
+def run_daily_ingest(date_text: str, dry_run: bool, *, resume_same_day: bool = False,
+                     timeout_seconds: Optional[float] = None,
+                     expected_generation: Optional[str] = None) -> None:
     date_text = str(date_text)
     cmd = [
         sys.executable,
@@ -121,10 +128,33 @@ def run_daily_ingest(date_text: str, dry_run: bool) -> None:
         "--date",
         date_text,
     ]
+    if resume_same_day:
+        cmd.extend(["--force", "--resume-same-day"])
     if dry_run:
         print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
-    run_ingest_process_group(cmd)
+    if not resume_same_day:
+        run_ingest_process_group(cmd)
+        return
+    environment = dict(os.environ)
+    if expected_generation:
+        environment[EXPECTED_GENERATION_ENV] = expected_generation
+    try:
+        run_ingest_process_group(cmd, timeout_seconds=timeout_seconds, env=environment)
+    except subprocess.TimeoutExpired:
+        # A killed Python wrapper cannot execute its own finally block. The
+        # watchdog remains alive to restore serving within the cleanup budget.
+        restore_dashboard_if_idle(REPO_ROOT)
+        raise
+    except subprocess.CalledProcessError as error:
+        if error.returncode < 0:
+            restore_dashboard_if_idle(REPO_ROOT)
+        raise
+
+
+def run_recovery_ingest(date_text: str, timeout_seconds: float, generation: str) -> None:
+    run_daily_ingest(date_text, False, resume_same_day=True,
+                     timeout_seconds=timeout_seconds, expected_generation=generation)
 
 
 def run_payload_retry(dry_run: bool) -> None:
@@ -190,7 +220,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     now_utc = datetime.now(timezone.utc)
     due_utc = latest_daily_due_utc(now_utc)
     run_date = expected_run_date_for_due(due_utc)
-    local_today = datetime.now().astimezone().date().isoformat()
+    local_today = now_utc.astimezone(HOBART).date().isoformat()
     ready_at = due_utc + timedelta(minutes=max(0, args.grace_minutes))
     complete = run_complete(run_date)
     active = service_active()
@@ -200,6 +230,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     should_retry_payload = payload_pending and complete and not active
     catch_up_failed = False
     payload_retry_failed = False
+    recovery = {"status": "not_due", "capture_attempted": False}
+    if (not writable_error and complete and not active and current_day_due
+            and now_utc >= ready_at):
+        recovery = run_same_day_recovery(
+            REPO_ROOT, now_utc=now_utc, dry_run=args.dry_run, launch=run_recovery_ingest,
+        )
+    if recovery.get("capture_attempted"):
+        should_retry_payload = False  # The normal wrapper already publishes its selection.
     if should_start:
         if args.dry_run:
             run_daily_ingest(run_date, args.dry_run)
@@ -264,6 +302,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "payload_pending": payload_pending,
         "payload_retry_attempted": should_retry_payload and not args.dry_run,
         "payload_retry_failed": payload_retry_failed,
+        "same_day_recovery": recovery,
         "dry_run": bool(args.dry_run),
     }
     if args.json:
@@ -282,7 +321,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         if publication_failed:
             print("pi_daily_watchdog: " + ", ".join(publication["publication_issues"]), file=sys.stderr)
-    if catch_up_failed or payload_retry_failed or publication_failed:
+    if catch_up_failed or payload_retry_failed or publication_failed or recovery.get("status") == "capture_failed":
         return 1
     return 0
 

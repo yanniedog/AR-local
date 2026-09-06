@@ -484,6 +484,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Forward --force to cdr_daily.py, ignoring today's completion marker.",
     )
+    parser.add_argument(
+        "--resume-same-day",
+        action="store_true",
+        help="Fill coverage gaps using verified source responses from today's selected observation.",
+    )
     parser.add_argument("--date", default="", help="Run date YYYY-MM-DD; defaults to cdr_daily.py local date.")
     parser.add_argument("--banks-only", action="store_true", help="Run the daily banking ingest only.")
     parser.add_argument(
@@ -492,6 +497,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Retry a pending app-payload publication from existing exports without ingesting.",
     )
     args = parser.parse_args(argv)
+    if args.resume_same_day and not args.force:
+        parser.error("--resume-same-day requires --force")
     if args.publish_existing_payload and (args.force or args.date or args.banks_only):
         parser.error("--publish-existing-payload cannot be combined with ingest options")
     return args
@@ -506,6 +513,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         lock_context = DailyIngestLock(lock_path)
         with lock_context:
+            if getattr(args, "resume_same_day", False):
+                from pi_cdr_recovery import assert_recovery_start_safe
+
+                assert_recovery_start_safe(REPO_ROOT)
             if args.publish_existing_payload:
                 if not payload_publication_pending(REPO_ROOT):
                     print("[pi_daily_sync] app_payload retry skipped reason=no_pending_marker")
@@ -537,6 +548,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.banks_only:
                 sector_args = ["--banks-only"]
             force_args = ["--force"] if args.force else []
+            resume_args = ["--resume-same-day"] if getattr(args, "resume_same_day", False) else []
             date_args = ["--date", args.date] if args.date else []
             run_date = args.date or datetime.now(ZoneInfo("Australia/Hobart")).date().isoformat()
             ingest_started_at = utc_now()
@@ -552,6 +564,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                             "--archive-failed-ram-stage",
                             *sector_args,
                             *force_args,
+                            *resume_args,
                             *date_args,
                         ],
                         cwd=REPO_ROOT,

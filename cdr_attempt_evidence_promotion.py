@@ -390,15 +390,28 @@ def verify_promoted_attempt_evidence(
         raise AttemptEvidencePromotionError(
             "promoted attempt journal verification failed"
         ) from error
+    # Older finalized captures predate the derived observed_at summary field.
+    # Read their original canonical manifest only when both bound summaries omit
+    # it; never rewrite historical artifacts or relax any inventory/digest check.
+    legacy_summary = (
+        isinstance(manifest.get("journal"), Mapping)
+        and "observed_at" not in manifest["journal"]
+        and "observed_at" not in pointer
+    )
+    if legacy_summary:
+        summary = {key: value for key, value in summary.items() if key != "observed_at"}
     expected_manifest = _manifest(
         artifact_path=relative,
         source_path=source_relative,
         summary=summary,
         records=records,
     )
-    verified, manifest_digest = _verify_promoted(
-        destination, session_id, expected_manifest
-    )
+    if legacy_summary:
+        if manifest_bytes != canonical_json_bytes(expected_manifest):
+            raise AttemptEvidencePromotionError("promoted evidence manifest conflicts with source")
+        verified, manifest_digest = summary, hashlib.sha256(manifest_bytes).hexdigest()
+    else:
+        verified, manifest_digest = _verify_promoted(destination, session_id, expected_manifest)
     for field in (
         "schema_version",
         "session_id",

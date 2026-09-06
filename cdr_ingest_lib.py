@@ -683,6 +683,7 @@ def _persist_ingest_status(
             {
                 "provider_uid": f"legacy-prd:{hashlib.sha256(identity_material).hexdigest()}",
                 "identity_status": "derived_legacy",
+                "provider_dir": bdir,
                 "brand_name": brand.get("brand_name") or None,
                 "legal_entity_name": brand.get("legal_entity_name") or None,
                 "endpoint_url": brand.get("endpoint_url") or None,
@@ -698,6 +699,9 @@ def _persist_ingest_status(
     attempt_summary["path_resolution"] = "relative_to_ingest_run_root"
     attempt_summary["retention"] = "follows_ingest_run_root"
     status["raw_attempt_journal"] = attempt_summary
+    from cdr_recovery_queue import add_recovery_requests
+
+    add_recovery_requests(status, banks_root, bank_work)
     atomic_write_json(banks_root / "ingest-status.json", status)
     return status
 

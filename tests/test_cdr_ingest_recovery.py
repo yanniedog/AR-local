@@ -3,7 +3,7 @@ import json
 import hashlib
 from pathlib import Path
 
-from cdr_ingest_recovery import _reconcile, recover_transient_providers
+from cdr_ingest_recovery import _index_captured, _reconcile, recover_transient_providers
 
 CAPTURE = Path(__file__).parent / "fixtures" / "cdr-september7"
 
@@ -87,3 +87,32 @@ def test_corrupt_journal_is_not_rewritten(tmp_path):
     result = recover_transient_providers(tmp_path, [], lambda *a: None, log=lambda _: None)
     assert result["result"] == "invalid_failure_evidence"
     assert (tmp_path / "failures.jsonl").read_text() == "{broken"
+
+
+def test_recovered_shorter_index_ignores_but_preserves_old_failed_page(tmp_path):
+    body = json.loads((CAPTURE / "defence.json").read_text())["products_index"]["body"]
+    # Keep the real products; vary only pagination to reproduce a shorter listing.
+    body["meta"] = {"totalRecords": len(body["data"]["products"]), "totalPages": 1}
+    body["links"].pop("next", None)
+    pages = tmp_path / "_holders" / "Defence Bank" / "_products-index"
+    pages.mkdir(parents=True)
+    (pages / "page-0001.json").write_text(json.dumps(body))
+    stale = b'{"errors":[{"code":"503","title":"Temporarily unavailable"}]}'
+    (pages / "page-0002.json").write_bytes(stale)
+    failure = {"bank": "Defence Bank", "phase": "products_index", "status": 503}
+
+    assert _index_captured(tmp_path, "Defence Bank")
+    assert _reconcile(tmp_path, [failure], [failure], "Defence Bank") == []
+    assert (pages / "page-0002.json").read_bytes() == stale
+
+
+def test_incomplete_current_index_does_not_clear_old_failure(tmp_path):
+    body = json.loads((CAPTURE / "defence.json").read_text())["products_index"]["body"]
+    pages = tmp_path / "_holders" / "Defence Bank" / "_products-index"
+    pages.mkdir(parents=True)
+    (pages / "page-0001.json").write_text(json.dumps(body))
+    (pages / "page-0002.json").write_text('{"errors":[{"code":"503"}]}')
+    failure = {"bank": "Defence Bank", "phase": "products_index", "status": 503}
+
+    assert not _index_captured(tmp_path, "Defence Bank")
+    assert _reconcile(tmp_path, [failure], [failure], "Defence Bank") == [failure]

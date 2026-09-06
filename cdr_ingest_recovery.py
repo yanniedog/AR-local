@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Callable
 
 from cdr_atomic import atomic_write_json
+from cdr_compatibility import pagination_accounting_error, response_shape_error
+from cdr_http_policy import DEFAULT_HTTP_POLICY
 
 RECOVERY_SECONDS = 180.0
 RECOVERY_PROVIDERS = 12
@@ -53,15 +55,27 @@ def _captured_products(root: Path, provider: str) -> set[str]:
 
 
 def _index_captured(root: Path, provider: str) -> bool:
-    pages = sorted((root / "_holders" / provider / "_products-index").glob("page-*.json"))
-    if not pages:
-        return False
+    directory = root / "_holders" / provider / "_products-index"
+    products = 0
     try:
-        values = [json.loads(path.read_text(encoding="utf-8")) for path in pages]
-        return all(isinstance(value.get("data", {}).get("products"), list) and not value.get("errors")
-                   for value in values) and not (values[-1].get("links") or {}).get("next")
+        for number in range(1, DEFAULT_HTTP_POLICY.max_pages + 1):
+            path = directory / f"page-{number:04d}.json"
+            if path.stat().st_size > DEFAULT_HTTP_POLICY.max_body_bytes:
+                return False
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if response_shape_error(value, phase="products_index") or value.get("errors"):
+                return False
+            products += len(value["data"]["products"])
+            has_next = bool((value.get("links") or {}).get("next"))
+            if pagination_accounting_error(value, pages=number, products=products, has_next=has_next):
+                return False
+            # A recovered catalog can shrink. Files beyond its validated final
+            # page are earlier request evidence, not pages of the current index.
+            if not has_next:
+                return True
     except (OSError, ValueError, AttributeError):
         return False
+    return False
 
 
 def _reconcile(root: Path, before: list[dict], after: list[dict], provider: str) -> list[dict]:

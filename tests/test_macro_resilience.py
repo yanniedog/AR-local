@@ -222,6 +222,42 @@ def test_unavailable_series_is_explicit_and_does_not_fall_back_to_vendored_data(
     assert json.loads(local.economic_health_payload()[0])["ok"] is False
 
 
+@pytest.mark.parametrize("store_state", ["absent", "unreadable", "empty"])
+def test_missing_cpi_store_is_missing_in_every_public_reader(tmp_path, monkeypatch, store_state):
+    store = tmp_path / "macro.sqlite"
+    if store_state == "unreadable":
+        store.write_bytes(b"not a SQLite database")
+    elif store_state == "empty":
+        ingest.open_store(store).close()
+    monkeypatch.setattr(local, "_MACRO_STORE_PATH", store)
+    payload = app_payload_v2.build_economic_outlook(store, generated_at=NOW)
+    series = {row["id"]: row for row in payload["series"]}
+    catalog = json.loads(local.economic_catalog_payload()[0])
+    catalog_series = {row["id"]: row for group in catalog["categories"] for row in group["series"]}
+    health = json.loads(local.economic_health_payload()[0])
+    for sid in ABS_CPI_M_SERIES:
+        assert series[sid]["freshness"]["status"] == "missing"
+        assert series[sid]["observations"] == []
+        assert catalog_series[sid]["freshness"]["status"] == "missing"
+        assert health["series_status"][sid] == "missing"
+    assert health["freshness_counts"]["error"] == 0
+    assert health["ok"] is False
+    if store_state == "absent":
+        assert not store.exists()
+
+
+@pytest.mark.parametrize("stored", [
+    None, {},
+    {"status": "ok", "source_url": "https://data.api.abs.gov.au/rest/data/CPI_M/all?format=csv"},
+    {"status": "ok", "last_checked_at": NOW, "last_success_at": NOW, "last_observation_date": "2026-07-31"},
+])
+def test_incomplete_cpi_metadata_cannot_prove_a_retired_definition(stored):
+    for sid in ABS_CPI_M_SERIES:
+        result = freshness.assess_freshness(sid, stored, frequency="monthly", now=NOW)
+        assert result["status"] == "missing"
+        assert "retired" not in result["message"]
+
+
 def test_fresh_check_cannot_make_retired_or_overdue_observations_current():
     stored = {"last_checked_at": NOW, "last_success_at": NOW, "last_observation_date": "2025-09-30", "status": "ok"}
     result = freshness.assess_freshness("unemployment_rate", stored, frequency="monthly", now=NOW)
