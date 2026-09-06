@@ -36,6 +36,16 @@
     {
       "file": "Defence Bank-index-00001401-98bbbb8c67988b7a.json",
       "sha256": "b68fc6c9208eb60dbe2e22632dd72c138ae5e736fbe92395cd60b08a72ee2c8c"
+    },
+    {
+      "file": "Bank of Melbourne-null-detail.json",
+      "sha256": "4055bc2d018baf1408a6bcd773f337b1aa5a16658ba6c69eebde360555ae5c68",
+      "source": "resilience-20260907 product detail, 2026-09-06T20:10:01.041177Z; event 455"
+    },
+    {
+      "file": "Bank of Melbourne-empty-index.json",
+      "sha256": "2e7d33409e69839835eea65c433a40033f5c273188795c5f419768bcabd12db2",
+      "source": "resilience-20260907-v3 recovery, 2026-09-06T22:31:56.337880Z; event 46, x-v 5 after advertised-version fallback"
     }
   ]
 }

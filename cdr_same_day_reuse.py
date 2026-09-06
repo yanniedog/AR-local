@@ -453,6 +453,11 @@ def reconcile_same_day_reuse(run_root: Path) -> None:
             retained.append({**identity, "retained_from_generation_id": manifest["baseline"]["generation_id"]})
         proof = None if fresh is None or identity_blocked else _fresh_index(
             banks, provider, diagnostics.get(provider) or {}, journal, events, str(fresh["endpoint_url"]))
+        # A provider can transiently return a valid empty catalogue (including
+        # during version fallback). That cannot withdraw an already captured
+        # population. Keep its original bodies and queue reconfirmation.
+        if proof and not proof["observed_product_ids"]:
+            proof = None
         seen = set(proof["observed_product_ids"]) if proof else set()
         if proof and proof["complete"]:
             manifest["withdrawal_indexes"][provider] = proof

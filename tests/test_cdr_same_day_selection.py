@@ -60,16 +60,17 @@ def baseline(tmp_path):
     return state, root, marker
 
 
-def add_withdrawal_evidence(root: Path, state: Path, parent: dict, status: dict, *, corrupt=False):
+def add_withdrawal_evidence(root: Path, state: Path, parent: dict, status: dict, *, corrupt=False, empty=False):
     namespace = root / "attempt-evidence" / "raw-attempt-journals-v1"
     journal = RawAttemptJournal(namespace, "current")
-    body = json.dumps({"data": {"products": [{"productId": "p2"}]},
-                       "meta": {"totalPages": 1, "totalRecords": 1}, "links": {}}).encode()
+    products = [] if empty else [{"productId": "p2"}]
+    body = json.dumps({"data": {"products": products},
+                       "meta": {"totalPages": 1, "totalRecords": len(products)}, "links": {}}).encode()
     event = journal.record("current-page-1", request_url=ENDPOINT, status=200, outcome="success", body=body,
                            started_at=DATE + "T00:00:00Z", completed_at=DATE + "T00:00:01Z",
                            context={"provider": "Provider", "phase": "products_index", "page": 1})
     digest = event["response"]["body_sha256"]
-    proof = {"complete": True, "observed_product_ids": ["p2"],
+    proof = {"complete": True, "observed_product_ids": [] if empty else ["p2"],
              "pages": [{"body_sha256": digest, "event_digest": event["event_digest"],
                         "event_seq": event["sequence"], "journal_session_id": journal.session_id}],
              "fresh_index_sha256": hashlib.sha256(canonical_json_bytes({"page_body_sha256": [digest]})).hexdigest()}
@@ -77,7 +78,7 @@ def add_withdrawal_evidence(root: Path, state: Path, parent: dict, status: dict,
     status.update(
         raw_attempt_journal={"path": journal.root.relative_to(root).as_posix(), "session_id": journal.session_id},
         index_diagnostics={"Provider": {"pages": 1, "pagination_complete": True,
-                           "raw_records": 1, "declared_total_records": 1, "declared_total_pages": 1}},
+                           "raw_records": len(products), "declared_total_records": len(products), "declared_total_pages": 1}},
         same_day_reuse={"schema_version": 1, "reconciled": True, "baseline": {
             "run_date": DATE, "generation_id": parent["generation_id"],
             "export_contract_sha256": hash_file(state / parent["export_contract_path"]),
@@ -119,6 +120,15 @@ def test_withdrawal_list_cannot_disagree_with_contract_bound_raw_index(tmp_path)
     status = make_export(revision, ["p2"], failures=0)
     add_withdrawal_evidence(revision, state, parent, status, corrupt=True)
     finish(revision, state, "revision.r1", parent["generation_id"])
+    assert selected_observation(state, DATE)["contract"]["generation_id"] == parent["generation_id"]
+
+
+def test_bound_empty_catalogue_cannot_remove_previously_captured_population(tmp_path):
+    state, _, parent = baseline(tmp_path)
+    revision = tmp_path / "runs" / DATE / "_revisions" / "empty" / "_exports"
+    status = make_export(revision, [], failures=0)
+    add_withdrawal_evidence(revision, state, parent, status, empty=True)
+    finish(revision, state, "revision.empty", parent["generation_id"])
     assert selected_observation(state, DATE)["contract"]["generation_id"] == parent["generation_id"]
 
 

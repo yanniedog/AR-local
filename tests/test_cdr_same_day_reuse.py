@@ -301,13 +301,12 @@ def _complete_listing_without(row, *, empty=False):
              "meta": {"totalRecords": len(selected), "totalPages": 1}}]
 
 
-@pytest.mark.parametrize("empty", [False, True])
-def test_only_complete_fresh_index_withdraws_absent_seed_and_retains_body(tmp_path, empty):
+def test_only_complete_nonempty_index_withdraws_absent_seed_and_retains_body(tmp_path):
     row = _record("Defence Bank")
     state, _, _ = _observation(tmp_path, records=[row])
     stage = tmp_path / "repair" / DATE
     reuse.seed_same_day_reuse(reuse.prepare_same_day_reuse(state, DATE), stage)
-    journal = _fresh_run(stage, row, _complete_listing_without(row, empty=empty))
+    journal = _fresh_run(stage, row, _complete_listing_without(row))
     attempts = journal.summary()["attempts"]
     reuse.reconcile_same_day_reuse(stage)
     status = json.loads((stage / "banks" / "ingest-status.json").read_bytes())
@@ -320,6 +319,25 @@ def test_only_complete_fresh_index_withdraws_absent_seed_and_retains_body(tmp_pa
     assert journal.summary()["attempts"] == attempts
     expected_digest = reuse._digest({key: value for key, value in manifest.items() if key != "manifest_sha256"})
     assert manifest["manifest_sha256"] == expected_digest
+
+
+def test_real_empty_catalogue_retains_captured_product_and_queues_reconfirmation(tmp_path):
+    row = _record("Bank of Melbourne")
+    state, _, _ = _observation(tmp_path, records=[row])
+    stage = tmp_path / "repair" / DATE
+    reuse.seed_same_day_reuse(reuse.prepare_same_day_reuse(state, DATE), stage)
+    empty = json.loads((CANARY / "Bank of Melbourne-empty-index.json").read_bytes())
+    _fresh_run(stage, row, [empty])
+    reuse.reconcile_same_day_reuse(stage)
+    status = json.loads((stage / "banks" / "ingest-status.json").read_bytes())
+    manifest = status["same_day_reuse"]
+    assert not manifest["withdrawals"] and not manifest["withdrawal_indexes"]
+    assert manifest["unconfirmed"] == [{"provider_dir": row["provider"], "product_id": row["pid"]}]
+    assert (_leaf(stage, row) / "product-detail.json").read_bytes() == row["body"]
+    assert len(parse_banks_run(stage)["products"]) == 1
+    assert status["incomplete"] and status["by_provider"][row["provider"]] == 1
+    assert any(q["provider_dir"] == row["provider"] and q["phase"] == "products_index"
+               for q in status["unresolved_requests"])
 
 
 def test_real_identical_duplicates_confirm_present_seed_without_extra_failure(tmp_path):

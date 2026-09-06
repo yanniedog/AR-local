@@ -205,6 +205,8 @@ def _verified_withdrawal_index(observation: Mapping, provider: str, proof: dict)
                 or bool(expected_url) != (number < len(pages))
                 or pagination_accounting_error(parsed, pages=number, products=len(observed), has_next=bool(expected_url))):
             raise ValueError("withdrawal index totals do not reconcile")
+    if not observed:
+        raise ValueError("empty index cannot prove withdrawal of captured products")
     if observed != set(proof.get("observed_product_ids") or []):
         raise ValueError("withdrawal membership does not match captured page bodies")
     return observed

@@ -131,3 +131,13 @@ an authentication header. See the [September 7 access investigation](CDR_ACCESS_
 
 The version negotiation rules follow the [Consumer Data Standards HTTP header
 contract](https://consumerdatastandardsaustralia.github.io/standards/#request-headers).
+
+## Unexpected empty catalogues
+
+A valid HTTP 200 empty index is not sufficient to withdraw previously captured
+products during same-day repair. The September 7 canary observed this after
+Bank of Melbourne negotiated from version 6 to version 5. Recovery retains
+those original bodies and timestamps, marks them unconfirmed and queues index
+rechecks. The independent selection gate also rejects empty-catalogue withdrawal
+evidence, including hash-valid evidence. Nonempty complete listings still
+support ordinary product withdrawal under the existing evidence checks.
