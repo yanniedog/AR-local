@@ -20872,3 +20872,61 @@ The separate updater used on September 6 authenticated the actual predecessor
 before changing the task and preserved/read back its settings; the new receipt
 already carries the current production/receiver pair. Do not re-run that
 completed transition, revive retired UAC sequences or rewrite old evidence.
+
+## Entry `HANDOFF-20260907-NATURAL-BACKUP-VERIFIED`
+
+The September 7 unchanged 06:00 ordinary-user scheduled backup completed at
+06:08:07 Hobart with exit zero and a non-elevated token. The natural scheduled
+backup requirement is PASS for receiver
+`835067f474e8a771f7cbf710c08d5cde835f2618` and protected runtime
+`6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2`. This supersedes the preceding
+UNPROVEN natural-backup snapshot only. It does not authorize a deployment or
+claim physical boot, current freshness after a new deployment, or consolidated
+terminal A3 acceptance beyond the explicitly verified requirements.
+
+Read `docs/NATURAL_BACKUP_PROOF_20260907.md` for scheduler evidence and its event-log
+limitation, source/archive/receipt identities and the independent fresh restore.
+All 117 catalog entries and receipt hashes passed, and generations 115-117
+restored 9,933 files / 2,768,231,227 bytes. All four SQLite check sets, both Git
+bundles and secret-exclusion metadata passed. No backup partial remained. Earlier
+manual PASS and FAIL records remain in the verified predecessor chain.
+
+The Pi natural ingest exited zero at 01:16:49. Current-date manifest/index
+validation and the dashboard smoke passed at 08:18; exact protected SHA,
+cleanliness, inactive ingest and NVMe root were rechecked at 08:22:44. Another
+operator-directed data-reliability task is preparing runtime work. Before physical
+recovery, let that work settle, bind acceptance to the resulting approved runtime
+and matching backup, then consolidate A3 and finish the guarded A4 plan. Do not
+reboot concurrently or replay the already successful scheduled backup. PR #607
+remains draft and physical boot remains unproven.
+
+```json
+{
+  "entry_id": "HANDOFF-20260907-NATURAL-BACKUP-VERIFIED",
+  "previous_entry_id": "HANDOFF-20260907T000341+1000-D019-EVIDENCE-CLARIFICATION",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_windows_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "receiver_sha": "835067f474e8a771f7cbf710c08d5cde835f2618",
+  "production_sha": "6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2",
+  "natural_scheduled_backup": "PASS",
+  "scheduled_started_at": "2026-09-07T06:00:01+10:00",
+  "scheduled_completed_at": "2026-09-07T06:08:07+10:00",
+  "scheduled_receipt_sha256": "a35d3ad599892c56717fc84ddb94cc20741c26f2ed55bba8b9e962a89cb69d03",
+  "independent_restore_sha256": "f4b5541fb6a410106a9a1e5721e53223e7fd458085095dc349996da0bb512702",
+  "trigger_identity_sha256": "c6a742f933373a3dcc7a90bb012e1c0a81d0bf22c511f99771529baa33ac5dd6",
+  "evidence_root": "C:/code/backups/AR-local-user-session/natural-proof-20260907",
+  "exact_verification_command": "python -B C:/code/backups/AR-local-user-session/natural-proof-20260907/verify_natural_backup.py",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "result": "PASS",
+  "deviations": [],
+  "elevation": "PROHIBITED",
+  "next_action": "Settle concurrent authorized runtime work, revalidate its matching current backup, consolidate A3 acceptance and prepare guarded physical A4 proof",
+  "stop_conditions": "Concurrent runtime work, unexpected SHA or dirt, active ingest, stale or mismatched backup, unidentified media, insufficient capacity or unproven bounded return: do not advance to a writable mount or reboot"
+}
+```
