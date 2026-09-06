@@ -42,6 +42,7 @@ from app_payload_contracts import (
 from app_payload_publish import _gh_authed, _gh_available, _live_manifest_status
 from app_payload_network_budget import validate_v2_network_budget
 from cdr_public_api_shims import connect_readonly
+from pi_payload_freshness import fresh_document_url
 
 V2_SCHEMA_VERSION = 2
 V2_MANIFEST_FILENAME = "manifest-v2.json"
@@ -423,7 +424,7 @@ def _validate_local_assets(payload_dir: Path, manifest: Mapping[str, Any]) -> No
 
 
 def _live_v2_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[str, Any]]]:
-    url = f"https://github.com/{repo}/releases/download/{tag}/{V2_MANIFEST_FILENAME}"
+    url = fresh_document_url(f"https://github.com/{repo}/releases/download/{tag}/{V2_MANIFEST_FILENAME}")
     try:
         with urllib.request.urlopen(url, timeout=SUBPROCESS_TIMEOUT_SEC) as response:  # nosec B310
             return "present", json.loads(response.read().decode("utf-8"))

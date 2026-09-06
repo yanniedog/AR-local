@@ -8,6 +8,7 @@ version negotiation (and per-version reserve) working.
 
 import hashlib
 import json
+import pytest
 
 import cdr_ingest_support as cis
 from cdr_http_policy import PolicyResponse
@@ -210,6 +211,53 @@ def test_compact_406_advertisement_is_tried_next(monkeypatch):
     )
     assert result.ok is True and result.version == 8
     assert seen == [6, 8]
+
+
+def test_advertised_version_already_in_queue_moves_ahead_of_fallbacks(monkeypatch):
+    seen = []
+
+    def fake_http(url, headers, *, timeout):
+        version = int(headers["x-v"])
+        seen.append(version)
+        if version == 4:
+            return 200, '{"data":{}}', None
+        return 406, '{"detail":"Requested: 6-6 Available: 4"}', None
+
+    monkeypatch.setattr(cis, "http_request", fake_http)
+    result = cis.fetch_cdr_json(
+        "https://holder.example/products", versions=[6, 5, 4, 3, 2, 1],
+        timeout=1, max_retries=0, sleep_ms=0, max_total_attempts=2,
+    )
+    assert result.ok and result.version == 4
+    assert seen == [6, 4]
+    assert result.attempts == 2
+
+
+@pytest.mark.parametrize("status,body", [
+    (422, '{"errors":[{"detail":"data/data/depositRates/0 should have required property applicationType"}]}'),
+    (400, '{"errors":[{"detail":"The Open Banking Product is inactive. (2.6141)"}]}'),
+    (500, '{"errors":[{"detail":"Error getting product details"}]}'),
+])
+def test_real_holder_rejection_survives_later_version_negotiation(monkeypatch, status, body):
+    # September 6: the valid API version rejected these products. The old walk
+    # replaced that cause with the final unsupported-version response.
+    _seq_http(monkeypatch, [(status, body, None), (406, '{"errors":[{"title":"Unsupported Version"}]}', None)])
+    result = cis.fetch_cdr_json(
+        "https://holder.example/products/id", versions=[7, 6, 5, 4, 3, 2, 1],
+        timeout=1, max_retries=0, sleep_ms=0,
+    )
+    assert not result.ok
+    assert result.status == status and result.text == body
+    assert result.attempts == 7
+
+
+def test_real_rejection_does_not_prevent_successful_lower_version(monkeypatch):
+    _seq_http(monkeypatch, [(422, '{"errors":[{"detail":"invalid"}]}', None), (200, '{"data":{}}', None)])
+    result = cis.fetch_cdr_json(
+        "https://holder.example/products/id", versions=[7, 6],
+        timeout=1, max_retries=0, sleep_ms=0,
+    )
+    assert result.ok and result.version == 6
 
 
 def test_out_of_range_long_advertisement_cannot_consume_attempt(monkeypatch):

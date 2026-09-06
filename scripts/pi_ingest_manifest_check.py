@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -23,6 +21,7 @@ from ar_local_ingest_schedule import (
     expected_run_date_for_due,
     latest_daily_due_utc,
 )
+from pi_payload_freshness import check_publication, configured_publication_urls, fetch_document
 
 MANIFEST_URL = (
     "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json"
@@ -31,8 +30,7 @@ DEFAULT_GRACE_MINUTES = 90
 
 
 def fetch_manifest(url: str = MANIFEST_URL, timeout: int = 30) -> dict:
-    with urllib.request.urlopen(url, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return fetch_document(url, timeout=timeout)
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -43,7 +41,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="IANA timezone; expected run_date is today's calendar date in this zone.",
     )
     parser.add_argument("--grace-minutes", type=int, default=DEFAULT_GRACE_MINUTES)
-    parser.add_argument("--manifest-url", default=MANIFEST_URL)
+    parser.add_argument("--manifest-url", default=configured_publication_urls()[0])
+    parser.add_argument("--dates-index-url", default=None)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--alert", action="store_true", help="Send SMTP email when stale (Pi-side).")
     return parser.parse_args(argv)
@@ -53,19 +52,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     now_utc = datetime.now(timezone.utc)
 
-    manifest_error: Optional[str] = None
-    run_date = ""
-    generated_at = ""
-    try:
-        manifest = fetch_manifest(args.manifest_url)
-        if isinstance(manifest, dict):
-            run_date = str(manifest.get("run_date") or "")
-            generated_at = str(manifest.get("generated_at") or "")
-        else:
-            manifest_error = f"Expected JSON object, got {type(manifest).__name__}"
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        manifest_error = str(exc)
-
     if args.expected_tz:
         try:
             tz = ZoneInfo(args.expected_tz)
@@ -73,36 +59,37 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"Error: invalid timezone {args.expected_tz!r}", file=sys.stderr)
             return 1
         expected = datetime.now(tz).date().isoformat()
-        stale = manifest_error is not None or not run_date or run_date < expected
         payload = {
             "now_utc": now_utc.isoformat(),
             "expected_tz": args.expected_tz,
             "expected_run_date": expected,
-            "manifest_run_date": run_date,
-            "generated_at": generated_at,
-            "stale": stale,
-            "manifest_error": manifest_error,
         }
+        check_due = True
     else:
         due_utc = latest_daily_due_utc(now_utc)
         expected = expected_run_date_for_due(due_utc)
         ready_at = due_utc + timedelta(minutes=max(0, args.grace_minutes))
-        stale = manifest_error is not None or (run_date < expected and now_utc >= ready_at)
+        check_due = now_utc >= ready_at
         payload = {
             "now_utc": now_utc.isoformat(),
             "due_utc": due_utc.isoformat(),
             "ready_at_utc": ready_at.isoformat(),
             "expected_run_date": expected,
-            "manifest_run_date": run_date,
-            "generated_at": generated_at,
-            "stale": stale,
             "schedule": DAILY_INGEST_SCHEDULE_LABEL,
             "schedule_local_hour": DAILY_INGEST_LOCAL_HOUR,
             "schedule_timezone": DAILY_INGEST_TZ_KEY,
-            "manifest_error": manifest_error,
         }
-
-
+    publication = check_publication(
+        expected, manifest_url=args.manifest_url,
+        index_url=args.dates_index_url or args.manifest_url.rsplit("/", 1)[0] + "/dates-index.json",
+        fetch=fetch_manifest,
+    )
+    stale = check_due and not publication["publication_current"]
+    payload.update(publication)
+    payload["stale"] = stale
+    run_date = publication["manifest_run_date"]
+    generated_at = publication["generated_at"]
+    manifest_error = publication["manifest_error"]
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
@@ -113,18 +100,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         if manifest_error:
             print(f"pi_ingest_manifest_check: manifest_error={manifest_error}")
+        if publication["publication_issues"]:
+            print("pi_ingest_manifest_check: " + ", ".join(publication["publication_issues"]))
 
     if stale and args.alert:
         from pi_ingest_alert import main as alert_main
 
         details = (
-            f"GitHub manifest run_date={run_date or 'missing'} is older than expected {expected}.\n"
+            f"GitHub app publication is unavailable or inconsistent for {expected}.\n"
+            f"manifest_run_date={run_date or 'missing'}\n"
+            f"dates_index_latest_date={publication['dates_index_latest_date'] or 'missing'}\n"
             f"generated_at={generated_at}\n"
             f"manifest_url={args.manifest_url}"
+            f"\npublication_issues={','.join(publication['publication_issues'])}"
         )
         if manifest_error:
             details += f"\nmanifest_error={manifest_error}"
-        return alert_main(
+        alert_main(
             [
                 "--reason",
                 "manifest-stale",

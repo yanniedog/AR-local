@@ -21,7 +21,8 @@ from ar_local_pi_runtime import (
 )
 from cdr_daily import marker_is_trustworthy, marker_path
 from cdr_finalization import verified_pointer_marker_for_date
-from pi_daily_sync import payload_publication_pending
+from pi_daily_sync import _app_payload_enabled, payload_publication_pending
+from pi_payload_freshness import check_publication
 
 REPO_ROOT = Path(__file__).resolve().parent
 GRACE_MINUTES = 30
@@ -53,7 +54,7 @@ def run_complete(date_text: str) -> bool:
 def service_active() -> bool:
     try:
         result = subprocess.run(
-            ["systemctl", "is-active", SERVICE_NAME],
+            ["systemctl", "is-active", SERVICE_NAME, "ar-local-ingest-now.service"],
             check=False,
             shell=False,
             capture_output=True,
@@ -62,7 +63,10 @@ def service_active() -> bool:
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return False
-    return (result.stdout or "").strip() in ("active", "activating")
+    return any(
+        state.strip() in ("active", "activating")
+        for state in (result.stdout or "").splitlines()
+    )
 
 
 def run_ingest_process_group(cmd: list[str]) -> None:
@@ -234,12 +238,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         and not active
     ):
         send_missed_ingest_alert(run_date, writable_error)
+    publication = {"publication_current": None, "publication_issues": []}
+    publication_state = "disabled"
+    if _app_payload_enabled():
+        publication_state = "not_checked"
+        if complete and not active and not should_start and now_utc >= ready_at:
+            publication = check_publication(run_date)
+            publication_state = "current" if publication["publication_current"] else "stale_or_withheld"
+    publication_failed = publication["publication_current"] is False
     payload = {
         "now_utc": now_utc.isoformat(),
         "due_utc": due_utc.isoformat(),
         "ready_at_utc": ready_at.isoformat(),
         "run_date": run_date,
         "complete": complete,
+        "capture_finalized": complete,
+        "publication_state": publication_state,
+        **publication,
         "service_active": active,
         "current_day_due": current_day_due,
         "runtime_writable": not bool(writable_error),
@@ -254,15 +269,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
-        status = "complete" if complete else "missing"
+        status = "capture finalized" if complete else "capture missing"
         if payload["started"]:
             action = "started"
         elif payload["payload_retry_attempted"]:
             action = "payload retry attempted"
         else:
             action = "no action"
-        print(f"pi_daily_watchdog: {run_date} is {status}; service_active={active}; {action}")
-    if catch_up_failed or payload_retry_failed:
+        print(
+            f"pi_daily_watchdog: {run_date} {status}; publication={publication_state}; "
+            f"service_active={active}; {action}"
+        )
+        if publication_failed:
+            print("pi_daily_watchdog: " + ", ".join(publication["publication_issues"]), file=sys.stderr)
+    if catch_up_failed or payload_retry_failed or publication_failed:
         return 1
     return 0
 
