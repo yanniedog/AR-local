@@ -1,0 +1,41 @@
+{
+  "source": "Retained decoded HTTP 200 response bodies from the isolated resilience-20260907 Pi canary, run_date 2026-09-07. Index filenames retain original attempt event identities.",
+  "files": [
+    {
+      "file": "Border Bank-null-detail.json",
+      "sha256": "51541a11b369ba4444993488cbc4bffeec9d7f7944588c931477379d8d8117b5"
+    },
+    {
+      "file": "Greater Bank Limited-null-detail.json",
+      "sha256": "e331867348c8607248a1c286b280387c33c603a098d8680f90e3ac20f56d44f3"
+    },
+    {
+      "file": "Police Bank-null-detail.json",
+      "sha256": "0f655a4e6cc416e3805028382c0e833b1923fb8270b75e5ad74a60e060bce5d0"
+    },
+    {
+      "file": "Credit Union SA-index-00001284-ef300c7880541bcd.json",
+      "sha256": "7d82b5f299e60f3fa5aef7c89c5db66da526cce35fd59069700fc5fa13b6b8f8"
+    },
+    {
+      "file": "Credit Union SA-index-00001287-983213198a4895a2.json",
+      "sha256": "fff23dedaa9a47075646ab7c18a88eac7efbda9a1abd068fa8dada400528fc6e"
+    },
+    {
+      "file": "Credit Union SA-index-00001290-4a8f53918c293a45.json",
+      "sha256": "e8c0e8d214293b5b464d16d9a6b6644d90a49ebb9b6a44c116caa2429cb2959d"
+    },
+    {
+      "file": "Defence Bank-index-00001399-692b0f2b404a34cc.json",
+      "sha256": "ea9a87cf41479ec2c8d60d959bb07e2333687ae12e74caf2331049a9f2ec7807"
+    },
+    {
+      "file": "Defence Bank-index-00001400-7d27eb4913d59925.json",
+      "sha256": "36e8d210a5f7af752f1f6037cf45d7514b9c5dc73345dd07d81d303b82678a0b"
+    },
+    {
+      "file": "Defence Bank-index-00001401-98bbbb8c67988b7a.json",
+      "sha256": "b68fc6c9208eb60dbe2e22632dd72c138ae5e736fbe92395cd60b08a72ee2c8c"
+    }
+  ]
+}

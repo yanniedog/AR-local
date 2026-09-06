@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set
 
 from cdr_atomic import atomic_write_json
 from cdr_compatibility import (
-    HolderVersionCache, classify_fetch_failure, pagination_accounting_error,
+    HolderVersionCache, ProductIndexTracker, classify_fetch_failure, pagination_accounting_error,
 )
 from cdr_ingest_resume import existing_product_leaves, usable_cached_detail
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
@@ -116,6 +116,18 @@ class _BankWork(NamedTuple):
     prefetched: Optional[FetchResult]
 
 
+class _DetailOutcome(NamedTuple):
+    ok: bool
+    provider_available: Optional[bool]
+
+
+def _provider_available(result: FetchResult) -> Optional[bool]:
+    if result.attempts == 0:
+        return None
+    retryable = result.retryable if result.failure_category else classify_fetch_failure(result.status, result.text).retryable
+    return result.ok or not retryable
+
+
 def _fetch_failure_fields(result: FetchResult) -> Dict[str, Any]:
     failure = classify_fetch_failure(result.status, result.text)
     category = result.failure_category or failure.category
@@ -170,11 +182,12 @@ def _fetch_bank_detail(
     attempt_journal: Optional[RawAttemptJournal] = None,
     detail_version_cache: Optional[HolderVersionCache] = None,
     deadline: Optional[float] = None,
-) -> bool:
+    with_availability: bool = False,
+) -> bool | _DetailOutcome:
     """Write product-detail.json for one bank product (called from thread pool).
 
-    Returns True when the detail was fetched and written, False on failure, so the
-    caller's per-holder circuit breaker can track the failure rate.
+    The default return remains a row-success boolean. Ingest also requests the
+    independent provider-availability outcome for its transport circuit breaker.
     """
     pid, leaf, prefetched = work
     detail_path = leaf / "product-detail.json"
@@ -200,7 +213,7 @@ def _fetch_bank_detail(
     parsed = res.data
     if res.ok and parsed is not None and not has_cdr_errors(parsed):
         detail_path.write_text(res.text, encoding="utf-8")
-        return True
+        return _DetailOutcome(True, _provider_available(res)) if with_availability else True
     append_failure(
         date_root,
         {
@@ -213,7 +226,7 @@ def _fetch_bank_detail(
         lock=failure_lock,
     )
     (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
-    return False
+    return _DetailOutcome(False, _provider_available(res)) if with_availability else False
 
 
 def classify_product_for_ingest(
@@ -264,8 +277,9 @@ def classify_product_for_ingest(
             "request_id": f"holder:{bank_dir_name}:classify:{pid}",
         },
     )
-    if breaker is not None:
-        breaker.record(detail_res.ok)
+    availability = _provider_available(detail_res)
+    if breaker is not None and availability is not None:
+        breaker.record(availability)
     parsed = detail_res.data
     inner = detail_inner_record(parsed)
     if inner is None:
@@ -329,7 +343,9 @@ def ingest_brand(
     # this holder/run only, including classification probes and parallel fetches.
     preferred_version: Optional[int] = None
     detail_version_cache = HolderVersionCache(PRODUCT_DETAIL_VERSION_ORDER)
-    product_ids: Set[str] = set()
+    index_tracker = ProductIndexTracker()
+    last_meta: Dict[str, Any] = {}
+    accounting_error: Optional[str] = None
     existing_leaves, resume_conflicts = existing_product_leaves(date_root, bank_dir_name) if resume else ({}, set())
     # Per-holder circuit breaker, shared across Phase-1 classification probes and
     # the Phase-2 detail workers (so a down detail endpoint trips in either phase).
@@ -404,6 +420,7 @@ def ingest_brand(
 
         if res.version is not None:
             preferred_version = res.version
+        last_meta = parsed.get("meta") or {}
 
         for product in extract_products(parsed):
             if deadline is not None and time.monotonic() >= deadline:
@@ -435,14 +452,15 @@ def ingest_brand(
             pid = pick_text(product, ["productId", "id"])
             if not pid:
                 continue
-            if pid in product_ids:
-                append_failure(date_root, {
-                    "phase": "products_index", "bank": bank_dir_name,
-                    "status": "duplicate_product_identity", "product_id": pid,
-                    "failure_category": "invalid_response", "retryable": False,
-                }, lock=failure_lock)
+            identity_state = index_tracker.observe(pid, product)
+            if identity_state != "new":
+                if identity_state == "conflicting":
+                    append_failure(date_root, {
+                        "phase": "products_index", "bank": bank_dir_name,
+                        "status": "conflicting_product_identity", "product_id": pid,
+                        "failure_category": "invalid_response", "retryable": False,
+                    }, lock=failure_lock)
                 continue
-            product_ids.add(pid)
             if pid in resume_conflicts:
                 append_failure(date_root, {
                     "phase": "products_index", "bank": bank_dir_name,
@@ -518,6 +536,10 @@ def ingest_brand(
 
     # ─── Phase 2: parallel detail fetches ────────────────────────────────────
 
+    atomic_write_json(index_dir / "diagnostics.json", index_tracker.summary(
+        pages=pages, raw_records=products_seen,
+        complete=not url and not capped and accounting_error is None, meta=last_meta,
+    ))
     if not pending:
         return
 
@@ -552,7 +574,7 @@ def ingest_brand(
                 lock=failure_lock,
             )
             return
-        ok = _fetch_bank_detail(
+        outcome = _fetch_bank_detail(
             work,
             endpoint_url,
             timeout=timeout,
@@ -565,14 +587,15 @@ def ingest_brand(
             attempt_journal=attempt_journal,
             detail_version_cache=detail_version_cache,
             deadline=deadline,
+            with_availability=True,
         )
         # Only true network fetches feed the breaker; a Phase-1 prefetched result
         # was already counted in classify_product_for_ingest.
-        if needs_fetch and breaker.record(ok):  # log() runs outside the breaker lock
+        if needs_fetch and outcome.provider_available is not None and breaker.record(outcome.provider_available):
             failures, attempts = breaker.snapshot()
             log(
                 f"[banks] {bank_dir_name}: circuit opened "
-                f"({failures}/{attempts} detail fetches failed) — skipping remaining details"
+                f"({failures}/{attempts} detail requests unavailable) — skipping remaining details"
             )
 
     if n_workers <= 1:
@@ -608,6 +631,22 @@ def ingest_brand(
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
+def _provider_index_diagnostics(banks_root: Path, bank_work: list) -> Dict[str, Any]:
+    diagnostics = {}
+    for _, provider in bank_work:
+        path = banks_root / "_holders" / provider / "_products-index" / "diagnostics.json"
+        try:
+            if path.stat().st_size > 4096:
+                raise ValueError("index diagnostics exceed the bounded metadata size")
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("schema_version") != 1:
+                raise ValueError("index diagnostics are invalid")
+            diagnostics[provider] = data
+        except (OSError, ValueError):
+            diagnostics[provider] = {"available": False}
+    return diagnostics
+
+
 def _persist_ingest_status(
     *,
     banks_root: Path,
@@ -619,6 +658,7 @@ def _persist_ingest_status(
     """Publish a discoverable evidence pointer on success and every early exit."""
     banks_root.mkdir(parents=True, exist_ok=True)
     status = summarize_failures(banks_root)
+    status["index_diagnostics"] = _provider_index_diagnostics(banks_root, bank_work)
     status["register_attempts"] = snapshot.register_attempts
     status["register_provenance_complete"] = snapshot.register_provenance_complete
     status["failure_provenance_complete"] = bool(
