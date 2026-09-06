@@ -67,6 +67,11 @@ _run_pi_*
 # Local runtime data store (state/stream stores; not source)
 /data/
 
+# Macro coordination and receipts when the store is configured under state/.
+/state/macro-refresh-status.json
+/state/macro-refresh-status.lock
+/state/macro-refresh-status.*.tmp
+
 # projectmem persistent memory — local per-machine (CLAUDE.md is committed; memory is not)
 /.projectmem/
 

@@ -70,3 +70,42 @@ its existing authenticated `previous_runtime` mechanism. Preserve task principal
 triggers and settings. Verify a real same-day revision, public manifests and
 asset hashes, economic freshness, the Pi dashboard and an independent backup
 restore. Record the exact commits and results before closing the repair.
+
+## Verified production run and follow-up guards
+
+Source PRs #633 and #634 merged. The exact runtime backport
+`b92e9cb41856bbb298ccadfd0134bb510a45d2f9` passed its isolated Linux tests and
+real-data recovery gates, then activated at 09:13:56 Hobart on September 7.
+The first cutover checked HTTP before the existing dashboard preload completed;
+it rolled back. Code, unit and macro preimages were verified restored, and the
+retry used a bounded 300-second HTTP-readiness wait. Actual readiness took
+110.6 seconds. Failed and successful activation receipts are both retained.
+
+The operator-requested production recovery ran 09:14:55–09:30:48. Its new
+generation `obs-2026-09-07-3222a5e50bccfb68` retained all 2,577 original products
+and 16,013 rate rows. A newly empty BankSA catalogue left 20 retained products
+unconfirmed and raised the attempt's failure count to 25. The selection gate
+therefore retained `obs-2026-09-07-359b23e789d193d5`, with 24 failures, rather
+than promoting an observation with additional uncertainty and no coverage gain.
+Both immutable observations and the refusal receipt remain available.
+
+Dated v1, rolling v1, v2 and the 116-date index were published successfully.
+An independent download verified all 11 data assets against the exact production
+build manifests, including decompression and v2 schema validation. All 29 local
+economic series had current source checks. Remaining source failures are visible;
+the repair does not label inaccessible products as captured.
+
+Late review identified and corrected three recovery paths: legacy valid-HTTP-200
+index failures now retain terminal pagination/conflict diagnostics; the watchdog
+reconsiders a saved finalized candidate before another network capture; and local
+recovery-evidence failures return failure to systemd. Versioned derived queue
+caches preserve earlier cache bytes. Selection retry reserves publication before
+pointer advancement and distinguishes its own interrupted pre-selection work from
+an existing upload. Unknown ledger precedence blocks recapture.
+
+The live run also exposed a service conflict: the runtime health monitor restarted
+the intentionally paused dashboard during ingest. The follow-up guard holds the
+shared production lock across dashboard/nginx healing and rechecks active ingest
+and backup processes. Planned pauses do not count as HTTP or Tailscale application
+failures. The narrow follow-up runtime and its receiver transition must be verified
+before this repair's operational closeout is recorded.

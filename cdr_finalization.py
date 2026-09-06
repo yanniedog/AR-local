@@ -250,6 +250,8 @@ def repair_observation_pointers(
     state_dir: Path,
     observation_date: str,
     marker_path: Path,
+    *,
+    require_selection_evidence: bool = False,
 ) -> bool:
     """Idempotently rebuild observation pointers from a verified marker."""
 
@@ -277,7 +279,10 @@ def repair_observation_pointers(
         "export_path": contract["source_path"],
     }
     pointers = state_dir / "observation-pointers-v2"
-    selectable = _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
+    selectable = _advance_pointer(
+        pointers / "latest-observation.json", pointer, state_dir,
+        require_selection_evidence=require_selection_evidence,
+    )
     if contract["observation_state"] == "complete" and selectable:
         _advance_pointer(pointers / "latest-complete.json", pointer, state_dir)
     return True
@@ -518,7 +523,8 @@ def _ledger_precedence(
 
 
 def _advance_pointer(
-    path: Path, incoming: Mapping[str, Any], state_dir: Path
+    path: Path, incoming: Mapping[str, Any], state_dir: Path,
+    *, require_selection_evidence: bool = False,
 ) -> bool:
     """Advance eligible observations; False means a same-day quality refusal."""
     with FileLock(path.parent / ".pointer.lock"):
@@ -542,6 +548,8 @@ def _advance_pointer(
                     str(current.get("ledger_event_digest") or ""),
                     str(incoming.get("ledger_event_digest") or ""),
                 )
+                if precedence is None and require_selection_evidence:
+                    raise ValueError("selection_evidence_unavailable:ledger_precedence")
                 if precedence != 1:
                     return True
                 if path.name == "latest-observation.json":
@@ -564,6 +572,8 @@ def _advance_pointer(
                     )
                     atomic_write_json(receipt, record, create_once=True)
                     if reason:
+                        if require_selection_evidence and reason.startswith("selection_evidence_unavailable:"):
+                            raise ValueError(reason)
                         return False
         atomic_write_json(path, incoming)
         return True
