@@ -109,16 +109,23 @@ def _validate_owned_record(
         "plan_git_commit": expected["plan_git_commit"],
         "plan_sha256": receiver.PLAN_SHA256,
         "plan_normalized_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
-        "protected_code_sha": expected["protected_code_sha"],
         "operator": expected["operator"],
         "deviations": [],
         "deviation_authorization": None,
     }
     if any(value.get(key) != item for key, item in fixed.items()):
         raise ValueError("orphaned scheduled record identity is invalid")
+    runtime = expected.get("runtime_predecessor") or {}
+    protected = {expected["protected_code_sha"]}
+    if predecessor and runtime:
+        protected.add(runtime["production_sha"])
+    if value.get("protected_code_sha") not in protected:
+        raise ValueError("orphaned scheduled record production identity is invalid")
     allowed_candidates = {expected["candidate_code_sha"]}
     if predecessor:
         allowed_candidates.update(expected.get("allowed_predecessor_candidates", ()))
+        if runtime:
+            allowed_candidates.add(runtime["receiver_sha"])
     if value.get("candidate_code_sha") not in allowed_candidates:
         raise ValueError("orphaned scheduled record candidate is invalid")
     timestamp = value.get("timestamps")
@@ -174,6 +181,11 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
         if not isinstance(pointed_value, Mapping):
             raise ValueError("pointed scheduled predecessor is invalid")
         _validate_owned_record(pointed_value, expected, predecessor=True)
+        runtime = expected.get("runtime_predecessor") or {}
+        if runtime and (pointed_value.get("protected_code_sha") != expected["protected_code_sha"]
+                        or pointed_value.get("candidate_code_sha") != expected["candidate_code_sha"]):
+            if current["record_sha256"] != runtime["record_sha256"]:
+                raise ValueError("runtime predecessor differs from the pinned receipt")
     seen = {current["record_path"]}
     while True:
         matches: list[tuple[str, str, Mapping[str, object]]] = []
