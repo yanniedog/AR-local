@@ -25,6 +25,17 @@ def _frozen_source(relative: str) -> bytes:
     # D-015 retires the UAC route. Preserve its exact source evidence while the
     # two explicitly authorized user-session implementation files evolve.
     path = relative.replace("\\", "/")
+    retired = {
+        "laptop_backup_scheduled.py": ("scheduled", "0fc1b475822ec8ff43b0bd0ce95839f229aa9ca2d85b43dbf02994a27b19126e"),
+        "laptop_backup_scheduled_lineage.py": ("lineage", "b5caca584836f853edf241932f96dbb1bdb2df12b1caca2f74d8f47130f43666"),
+    }
+    if path in retired:
+        # D-019 advances the live receiver; retired D-012 hashes still bind the
+        # original source, never today's implementation.
+        name, digest = retired[path]
+        archive = (ROOT / f"tests/fixtures/d019-retired-{name}-5518f0af.py.gz").read_bytes()
+        assert hashlib.sha256(gzip.decompress(archive)).hexdigest() == digest
+        return gzip.decompress(archive)
     if path in {"laptop_backup_transport.py", "laptop_pull_backup.py"}:
         assert "D-015-USER-SESSION-NO-UAC" in HANDOFF.read_text(encoding="utf-8")
         archive = (ROOT / "tests/fixtures/d012-retired-sources-ec008b26.json.gz").read_bytes()
