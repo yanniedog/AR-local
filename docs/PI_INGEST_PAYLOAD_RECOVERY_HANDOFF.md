@@ -20930,3 +20930,28 @@ remains draft and physical boot remains unproven.
   "stop_conditions": "Concurrent runtime work, unexpected SHA or dirt, active ingest, stale or mismatched backup, unidentified media, insufficient capacity or unproven bounded return: do not advance to a writable mount or reboot"
 }
 ```
+
+## Entry `HANDOFF-20260907-NATURAL-PROOF-ARTIFACT-ADDENDUM`
+
+This entry follows `HANDOFF-20260907-NATURAL-BACKUP-VERIFIED` and records an
+artifact-availability correction only. Read
+`docs/NATURAL_BACKUP_EVIDENCE_ADDENDUM_20260907.md` for the durable 19-entry archive,
+source scheduled/token records, explicit XML encoding derivatives and exact
+byte identities. The original PR #635 proof is restored to its original bytes;
+the PR #636 document variant and original ZIP remain preserved in the new archive
+and Git history. The original scheduled PASS and independent restore report are
+unchanged. No backup, runtime, schedule, gate, media or boot operation is changed.
+
+Archive SHA256:
+`7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48`,
+25,778 bytes; manifest SHA256:
+`9f6e3708a38f8b28b43187350bfca54c1d9cce668e4adddfbd6ceb676b9a4bee`.
+All entries were reopened and rehashed; standard XML parsing and task-section
+comparison passed; the included source records prove non-elevated exit zero and
+terminal UP_TO_DATE under the historical runtime pair. Operational event history
+remains unavailable as already disclosed. This does not create event evidence.
+
+Next remains unchanged: settle concurrent authorized runtime work, bind current
+backup freshness to its resulting approved identity, consolidate remaining A3
+acceptance and prepare the guarded A4 proof. Natural scheduled-backup evidence
+is PASS; consolidated A3 and physical A4 remain unfinished. PR #607 remains draft.

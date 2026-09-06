@@ -57,23 +57,6 @@ Local evidence is under
 `C:\code\backups\AR-local-user-session\natural-proof-20260907`; the backup
 catalog remains in the separate ordinary-user target.
 
-The [durable evidence archive](evidence/natural-backup-20260907/ab8fe3db72d0e787e79c06508afd02a4f6cf4e52f2404fe0008dfcec46e8be1d.zip)
-is committed with this report: 5,944 bytes, SHA256
-`ab8fe3db72d0e787e79c06508afd02a4f6cf4e52f2404fe0008dfcec46e8be1d`.
-A fresh checkout can open that ZIP directly. Its `artifact-manifest.json` lists
-the exact bytes and SHA256 of all six files: both acceptance reports, the
-historical verifier, scheduler readback, task XML and Pi readback. Compare the
-two report hashes above and inspect the verifier without relying on the original
-Windows evidence directory. The archive's six entries were reopened and rehashed
-before commit.
-
-The verifier records the exact historical execution, including its pinned local
-receiver and private backup paths. Re-execution requires those original private
-archives and the recorded catalog state; the ZIP does not contain them and is
-not a portable replacement backup. Do not replay it against a later catalog.
-It contains no database contents, backup archives, configuration secrets or
-private keys.
-
 ## Production and continuation boundary
 
 The September 7 natural ingest ran from 01:00:00 to 01:16:49 and exited zero.
