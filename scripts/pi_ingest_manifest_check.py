@@ -21,7 +21,7 @@ from ar_local_ingest_schedule import (
     expected_run_date_for_due,
     latest_daily_due_utc,
 )
-from pi_payload_freshness import check_publication, fetch_document
+from pi_payload_freshness import check_publication, configured_publication_urls, fetch_document
 
 MANIFEST_URL = (
     "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json"
@@ -41,7 +41,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="IANA timezone; expected run_date is today's calendar date in this zone.",
     )
     parser.add_argument("--grace-minutes", type=int, default=DEFAULT_GRACE_MINUTES)
-    parser.add_argument("--manifest-url", default=MANIFEST_URL)
+    parser.add_argument("--manifest-url", default=configured_publication_urls()[0])
     parser.add_argument("--dates-index-url", default=None)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--alert", action="store_true", help="Send SMTP email when stale (Pi-side).")
@@ -107,7 +107,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         from pi_ingest_alert import main as alert_main
 
         details = (
-            f"GitHub manifest run_date={run_date or 'missing'} is older than expected {expected}.\n"
+            f"GitHub app publication is unavailable or inconsistent for {expected}.\n"
+            f"manifest_run_date={run_date or 'missing'}\n"
+            f"dates_index_latest_date={publication['dates_index_latest_date'] or 'missing'}\n"
             f"generated_at={generated_at}\n"
             f"manifest_url={args.manifest_url}"
             f"\npublication_issues={','.join(publication['publication_issues'])}"

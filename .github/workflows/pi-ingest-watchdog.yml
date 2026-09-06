@@ -42,6 +42,8 @@ jobs:
           print(f"stale={'true' if data.get('stale') else 'false'}")
           print(f"expected={data.get('expected_run_date', '')}")
           print(f"manifest={data.get('manifest_run_date', '')}")
+          print(f"index={data.get('dates_index_latest_date', '')}")
+          print(f"issues={','.join(data.get('publication_issues', []))}")
           PY
 
       - name: Close resolved ingest-missed issues
@@ -62,7 +64,7 @@ jobs:
           fi
           for num in "${nums[@]}"; do
             gh issue close "$num" \
-              --comment "Manifest run_date is current (${expected}). Closed by pi-ingest-watchdog."
+              --comment "Rolling manifest and dates index are current (${expected}). Closed by pi-ingest-watchdog."
           done
 
       - name: Open ingest-missed issue when stale
@@ -82,13 +84,18 @@ jobs:
             2>/dev/null || true
           expected="${{ steps.check.outputs.expected }}"
           manifest="${{ steps.check.outputs.manifest }}"
+          index="${{ steps.check.outputs.index }}"
+          issues="${{ steps.check.outputs.issues }}"
           title="Pi ingest missed: ${expected}"
           body=$(cat <<EOF
-          GitHub \`app-payload-latest\` manifest is stale after the scheduled Australia/Brisbane watchdog.
+          GitHub \`app-payload-latest\` publication is unavailable or inconsistent after the scheduled watchdog.
 
           - expected \`run_date\`: **${expected}**
           - manifest \`run_date\`: **${manifest:-missing}**
+          - dates index \`latest_date\`: **${index:-missing}**
+          - publication issues: **${issues:-unknown}**
           - manifest URL: https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json
+          - dates index URL: https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json
 
           Pi ingest is scheduled for 01:00 local (see \`deploy/pi/ar-local-daily.timer\`). This check is scheduled for 03:17 Brisbane (2h17m buffer) and may start later if GitHub Actions is queued.
           EOF
@@ -100,7 +107,7 @@ jobs:
             --jq ".[] | select(.title == \"${title}\") | .number")
           if [ "${#existing[@]}" -gt 0 ]; then
             echo "Open issue #${existing[0]} already tracks ${expected}"
-            gh issue comment "${existing[0]}" --body "Watchdog still stale: manifest run_date=${manifest:-missing}, expected=${expected}."
+            gh issue comment "${existing[0]}" --body "Publication check failed: expected=${expected}, manifest=${manifest:-missing}, index=${index:-missing}, issues=${issues:-unknown}."
           else
             gh issue create --title "$title" --label ingest-missed --body "$body"
           fi
@@ -108,5 +115,5 @@ jobs:
       - name: Fail workflow for GitHub email notification
         if: steps.check.outputs.stale == 'true'
         run: |
-          echo "::error::Manifest stale — expected run_date ${{ steps.check.outputs.expected }}"
+          echo "::error::App publication check failed — expected ${{ steps.check.outputs.expected }}, index ${{ steps.check.outputs.index }}, issues ${{ steps.check.outputs.issues }}"
           exit 1
