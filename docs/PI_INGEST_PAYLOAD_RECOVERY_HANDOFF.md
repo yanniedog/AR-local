@@ -20797,3 +20797,78 @@ accepted payload. No new deployment or recovery-media operation is authorized.
 Natural scheduled-backup/A3 and physical-boot/A4 proof remain unproven; PR #607
 remains draft. These are separate from the completed D-019 data repair and must
 never cause its successful backup or public-feed results to be relabelled.
+
+## Entry `HANDOFF-20260907T000341+1000-D019-EVIDENCE-CLARIFICATION`
+
+This append-only clarification completes the preceding entry's explicit control
+record and binds its evidence inventory. It changes no runtime acceptance
+result and authorizes no deployment, backup transfer, source recapture or media
+operation. The September 6 data repair remains complete under D-019.
+
+```json
+{
+  "entry_id": "HANDOFF-20260907T000341+1000-D019-EVIDENCE-CLARIFICATION",
+  "previous_entry_id": "HANDOFF-20260906T235300+1000-D019-DATA-REPAIR-COMPLETE",
+  "created_at_hobart": "2026-09-07T00:03:41+10:00",
+  "created_at_utc": "2026-09-06T14:03:41Z",
+  "operator": "Codex on the operator's request to finish the September 6 data repair",
+  "result": "PASS",
+  "current_phase": "D-019 terminal data-repair closeout",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_windows_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2",
+  "production_clean": true,
+  "production_observed_at": "2026-09-06T23:47:40+10:00",
+  "last_public_freshness_check": "2026-09-06T13:56:58.840027+00:00",
+  "receiver_sha": "835067f474e8a771f7cbf710c08d5cde835f2618",
+  "receiver_path": "C:/code/backups/AR-local-user-session/data-runtime-20260906/source",
+  "backup_root": "C:/code/backups/AR-local-pi5-user",
+  "backup_sequences": [112, 113, 114],
+  "observation_generation": "obs-2026-09-06-1d92edd47cbaa071",
+  "capture": "PASS",
+  "finalization": "PASS",
+  "dated_v1": "PASS",
+  "rolling_v1": "PASS",
+  "dates_index": "PASS",
+  "v2": "PASS",
+  "dashboard": "PASS",
+  "operator_backup": "PASS",
+  "natural_scheduled_backup": "UNPROVEN",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "Separate draft outside D-019",
+  "future_transition_hardening": "DEFERRED: https://github.com/yanniedog/AR-local/issues/631",
+  "artifact_manifest_bytes": 10215,
+  "artifact_manifest_sha256": "20fd3d8358b44d52fbecc5e400bc144929a481f63f325d3a10ebce48385243d9",
+  "evidence_archive_bytes": 9391,
+  "evidence_archive_sha256": "2a93b8a51aee01ed67b600560d2a9d6fa697a44cd81578f0ac1ac674a618a7d5",
+  "rollback_sha": "9302890fcc752cbf90da97d597e972c157d913e3",
+  "next_natural_ingest": "2026-09-07T01:00:00+10:00",
+  "next_natural_backup": "2026-09-07T06:00:00+10:00",
+  "next_action": "Read-only observation of the unchanged natural schedules; validate the new observation and later scheduled receipt independently",
+  "freeze": "From 00:30 until the natural ingest and production validation finish, read-only observation only",
+  "stop_conditions": "Unexpected production SHA or dirt, active ingest, pointer/hash mismatch, failed restore or publication verification: preserve evidence and stop advancement",
+  "rollback_boundary": "No automatic rollback is newly authorized. Preserve the exact D-019 previous SHA and archived task action; use a separately authorized controlled rollback if a runtime failure is established",
+  "deviations": ["D-019 one-release data-repair exception; no new deviation"]
+}
+```
+
+The authoritative inventory is `artifact-manifest.json` in the
+[evidence addendum](https://github.com/yanniedog/AR-local/releases/download/diagnostic-quality-20260906/september6-evidence-addendum-20260906T140341Z.zip).
+Each of its 25 entries carries an exact path, byte size and SHA-256; backup
+archive/manifest/receipt entries also carry catalog sequence and kind. The local
+archive and inventory are under
+`C:\code\backups\AR-local-user-session\data-runtime-20260906\evidence-addendum-20260906T140341Z`.
+Read the preceding terminal report for the verification commands and completed
+188-test/Pi-smoke evidence. The prior archive name marks the verification start;
+its terminal receipt was recorded at 23:53:35 Hobart after the checks.
+
+The four future receiver-transition findings in #631 remain explicitly deferred.
+The separate updater used on September 6 authenticated the actual predecessor
+before changing the task and preserved/read back its settings; the new receipt
+already carries the current production/receiver pair. Do not re-run that
+completed transition, revive retired UAC sequences or rewrite old evidence.

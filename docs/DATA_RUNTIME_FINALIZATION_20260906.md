@@ -131,3 +131,38 @@ The local complete verification report is under
 SHA-256 `ccef99bffeb35f1f5d6b8ed4d20ffd88e9167e59e5ac46fafc6003ad3bdbd633`.
 Earlier diagnostic evidence remains unchanged; this terminal receipt supersedes
 its stale-v2 and blocked-runtime status only.
+
+## Evidence clarification, September 7 at 00:03 Hobart
+
+The prior archive's `20260906T135034Z` suffix names the verification directory's
+start time, 23:50:34 Hobart. Its authenticated terminal receipt records creation
+at `2026-09-06T13:53:35.252204+00:00`; the archive was also created at 23:53:35,
+after the recorded checks. The directory name is not the terminal timestamp.
+No earlier receipt, archive or handoff entry has been rewritten.
+
+The [immutable evidence addendum](https://github.com/yanniedog/AR-local/releases/download/diagnostic-quality-20260906/september6-evidence-addendum-20260906T140341Z.zip)
+contains `artifact-manifest.json`: the exact authoritative path, byte size and
+SHA-256 of all nine public assets; every archive, source manifest and receipt
+for backup generations 112-114; the catalog and scheduled pointer/receipt; and
+the before/after task XML, installation receipt and receiver configuration.
+The backup entries include their kind and catalog sequence. Public assets also
+include their download URLs. This explicitly binds the closeout claims to a
+reproducible inventory; it does not expose backup contents or credentials.
+
+The addendum was recorded at `2026-09-06T14:03:41.616908+00:00`, is 9,391 bytes,
+and has SHA-256
+`2a93b8a51aee01ed67b600560d2a9d6fa697a44cd81578f0ac1ac674a618a7d5`.
+The contained artifact manifest is 10,215 bytes, SHA-256
+`20fd3d8358b44d52fbecc5e400bc144929a481f63f325d3a10ebce48385243d9`.
+Its local root is
+`C:\code\backups\AR-local-user-session\data-runtime-20260906\evidence-addendum-20260906T140341Z`.
+It also retains the executed one-shot receiver updater and installation receipt.
+
+Four later #628 findings concern mixed predecessor identities, old-runtime
+orphan recovery, predecessor validation during a future installation probe and
+a reusable checked-in updater. They are deferred in [issue #631](https://github.com/yanniedog/AR-local/issues/631)
+before another receiver transition. The completed installation independently
+checked its predecessor digest and both identities; its live pointer now names
+the successful current-runtime receipt. No old-runtime orphan recovery was
+needed. This is evidence for the completed D-019 execution, not a claim that
+every future receiver-transition edge case is fixed.
