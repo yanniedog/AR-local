@@ -299,6 +299,7 @@ def inventory_status(
     protected_sha: str,
     plan_commit: str,
     after_date: str = "2026-05-21",
+    previous_protected_sha: str | None = None,
 ) -> dict[str, object]:
     if plan_commit != receiver.PLAN_GIT_COMMIT:
         raise ValueError("inventory plan commit is not current")
@@ -322,7 +323,9 @@ def inventory_status(
                 receipt.get("result") == "PASS"
                 and receipt.get("kind") == "observation"
                 and receiver.supported_receipt_plan_identity(receipt, allow_legacy=True) is not None
-                and receipt.get("protected_code_sha") == protected_sha
+                and receipt.get("protected_code_sha") in (
+                    {protected_sha, previous_protected_sha} if previous_protected_sha else {protected_sha}
+                )
                 and receipt.get("deviations") == []
                 and isinstance(checks, Mapping)
                 and isinstance(checks.get("observation"), Mapping)
@@ -561,6 +564,8 @@ def validate_source_listing(
 
 
 def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
+    from laptop_backup_runtime_transition import authority
+    previous_runtime = authority(args)
     try:
         identities, retained = validate_source_listing(
             listing, protected_sha=args.protected_code_sha
@@ -591,6 +596,7 @@ def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse
         identities,
         protected_sha=args.protected_code_sha,
         plan_commit=args.plan_git_commit,
+        previous_protected_sha=previous_runtime.get("production_sha"),
     )
     status = "UP_TO_DATE" if all(
         item["status"] == "UP_TO_DATE"
@@ -621,6 +627,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--check-only", action="store_true")
     value.add_argument("--transition-id")
     value.add_argument("--allowed-predecessor-candidate-sha", action="append", default=[])
+    value.add_argument("--user-runtime-transition", action="store_true")
     return value
 
 
@@ -648,6 +655,8 @@ def open_transition_allows_invocation(args: argparse.Namespace) -> tuple[bool, s
         if not guarded:
             if args.transition_id or getattr(args, "allowed_predecessor_candidate_sha", ()):
                 return False, "transition-only lineage authority requires an active A3 transition"
+            from laptop_backup_runtime_transition import authority
+            authority(args)
             return True, None
         lease = json.loads((root / ".transition-runtime.lock").read_text(encoding="utf-8"))
         lease_pid = lease.get("pid") if isinstance(lease, Mapping) else None
@@ -727,15 +736,14 @@ scheduled_record_mutex = lineage.scheduled_record_mutex
 def prepare_execution_lineage(target: Path, args: argparse.Namespace) -> None:
     """Authenticate or repair the predecessor before any backup-data mutation."""
     receiver.verify_plan_document()
+    from laptop_backup_runtime_transition import lineage_fields
     with scheduled_record_mutex(target):
         lineage.repair_orphaned_suffix(target, {
             "plan_git_commit": args.plan_git_commit,
             "candidate_code_sha": args.candidate_code_sha,
             "protected_code_sha": args.protected_code_sha,
             "operator": args.operator or "scheduled-task",
-            "allowed_predecessor_candidates": tuple(
-                getattr(args, "allowed_predecessor_candidate_sha", ())
-            ),
+            **lineage_fields(args),
         })
 
 
@@ -748,6 +756,7 @@ def record_execution(
 ) -> Path:
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     plan = receiver.verify_plan_document()
+    from laptop_backup_runtime_transition import lineage_fields
     with scheduled_record_mutex(target):
         pointer_path = target / "catalog/latest-scheduled.json"
         previous = lineage.repair_orphaned_suffix(target, {
@@ -755,9 +764,7 @@ def record_execution(
             "candidate_code_sha": args.candidate_code_sha,
             "protected_code_sha": args.protected_code_sha,
             "operator": args.operator or "scheduled-task",
-            "allowed_predecessor_candidates": tuple(
-                getattr(args, "allowed_predecessor_candidate_sha", ())
-            ),
+            **lineage_fields(args),
         })
         previous_execution = (
             {key: previous[key] for key in ("record_path", "record_sha256")}

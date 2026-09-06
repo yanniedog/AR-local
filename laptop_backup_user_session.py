@@ -82,8 +82,11 @@ def load_config(path: Path, expected_digest: str | None = None) -> dict:
     if expected_digest is not None and digest(path) != expected_digest:
         raise ValueError("user-session configuration changed")
     value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=strict_pairs)
-    if not isinstance(value, dict) or set(value) != KEYS or value["schema"] != SCHEMA:
+    if not isinstance(value, dict) or set(value) not in (KEYS, KEYS | {"previous_runtime"}) or value["schema"] != SCHEMA:
         raise ValueError("user-session configuration schema is invalid")
+    if "previous_runtime" in value:
+        from laptop_backup_runtime_transition import validate_previous
+        validate_previous(value["previous_runtime"])
     if value["operator_sid"] != ordinary_identity():
         raise ValueError("user-session operator SID changed")
     receiver = unlinked(Path(value["receiver"]))
@@ -200,6 +203,8 @@ def execute(config: dict, mode: str, config_sha256: str) -> int:
         args.extend(("--" + arg, transport[field]))
     if mode == "check":
         args.append("--check-only")
+    if config.get("previous_runtime"):
+        args.append("--user-runtime-transition")
     # Separate lock root: the receiver owns target/catalog/.receiver.lock itself.
     lock_root = unlinked(Path(config["target"])) / "user-session-lock"
     lock_root.mkdir(parents=True, exist_ok=True)
