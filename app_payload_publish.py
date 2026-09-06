@@ -11,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from pi_payload_freshness import fresh_document_url
+
 from app_payload_common import (
     DATED_TAG_PREFIX,
     DATES_INDEX_FILENAME,
@@ -283,7 +285,7 @@ def _live_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[str, 
     """Return the live release manifest's state, distinguishing a transient failure from
     a genuinely missing manifest: ("present", dict) | ("missing", None) | ("error", None).
     Uses the public asset URL (follows the 302 redirect) so a 404 is unambiguous."""
-    url = f"https://github.com/{repo}/releases/download/{tag}/manifest.json"
+    url = fresh_document_url(f"https://github.com/{repo}/releases/download/{tag}/manifest.json")
     try:
         with urllib.request.urlopen(url, timeout=SUBPROCESS_TIMEOUT_SEC) as resp:  # nosec B310 - https URL
             return "present", json.loads(resp.read().decode("utf-8"))

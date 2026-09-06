@@ -30,3 +30,12 @@ def test_watchdog_is_notification_only_and_cannot_touch_the_pi() -> None:
     assert "ssh " not in text.casefold()
     assert "systemctl" not in text.casefold()
     assert "pi_deploy_verify.py" not in text
+
+
+def test_index_failure_is_carried_into_the_issue_and_failure_message() -> None:
+    text = _workflow_text()
+    assert "data.get('dates_index_latest_date'" in text
+    assert "data.get('publication_issues'" in text
+    assert "- dates index" in text
+    assert "- publication issues:" in text
+    assert "index=${index:-missing}, issues=${issues:-unknown}" in text

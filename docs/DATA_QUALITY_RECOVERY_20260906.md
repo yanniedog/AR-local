@@ -49,3 +49,67 @@ Recovery is not accepted until the new observation verifies, these primary hashe
 remain unchanged, the dashboard returns, and dated v1, rolling v1 and the dates
 index are independently downloaded and checked. Native AR-app rendering remains
 a separate verification boundary.
+
+## Recovery acceptance recorded at 22:05 Hobart
+
+The existing service finished successfully at 21:51:25 after restoring the
+dashboard. The primary marker, SQLite, banks JSON and ingest-status hashes above
+were rechecked and are unchanged. Production remains clean at the protected SHA;
+the next natural ingest remains September 7 at 01:00.
+
+The new immutable revision is
+`runs/2026-09-06/_revisions/20260906T213439_601735/_exports`, generation
+`obs-2026-09-06-1d92edd47cbaa071`. Its completion marker verifies against export
+contract `9a0e5b4ba706574f576c2e2497a0b011047f9f6b5b2f8b4a7a8700043ce4e590`
+and ledger digest `7e219e47b24ab64b8e13d92e207eb223eb3dba0214b553f5554010fcbee4171b`.
+
+| Component | Result | Evidence |
+|---|---|---|
+| Source capture | PASS, incomplete coverage disclosed | 2,577 products, 16,012 rate rows; 24 failed requests, 14 incomplete providers of 119 attempted; all seven overloaded Bendigo-backed brands recovered |
+| Finalization | PASS | Verified revision marker; zero corrupt/unattributed evidence; sanity comparison has zero structural/high/low anomalies |
+| Dated v1 | PASS | Public `app-payload-2026-09-06` manifest and matching core/details metadata |
+| Rolling v1 | PASS | September 6 manifest; all seven public assets downloaded, SHA-256 and byte sizes verified, gzip/JSON decoded |
+| Dates index | PASS | Public index contains September 6, latest September 6, 115 sorted unique dates with matching count |
+| Dashboard return | PASS | `npm run verify:pi` passed after the service completed |
+| Native AR-app | PASS | Official signed 1.0.187 APK, version code 258, running on Android emulator; Explore reports `Rates updated · Sep 6, 2026`; Today reports September 6 and explicitly discloses 5 partial / 9 failed providers |
+| V2 | FAIL, separately retained | New sidecar built but its upload was skipped with `v1_base_mismatch`; the public v2 channel remains August 21 |
+| Pi code deployment | BLOCKED | Existing backup/physical recovery/canary/deployment gates remain applicable; this recovery used installed code only |
+| A3 / A4 / PR #607 | Unchanged | A3 remains RUNNING, A4 BLOCKED and #607 remains outside this task |
+
+The revision adds 22 source products and 612 rate rows relative to the preserved
+overnight capture. Source export counts include records outside the app's
+consumer-rate display; the Today screen shows 2,286 products from 97 lenders.
+
+Current v1 core SHA-256:
+`4628e6bcc5e83df32b0b5a3b194146da1c20faff6bd7aab6ea575877d1f44f2c`.
+Details SHA-256:
+`b5ae153b4afbaa7dad4ffa3681657bb6e3f9dca10708084ea64dfe3de83bfa48`.
+Released APK SHA-256:
+`c11d4b28afdc81452f62f7c36b4d196c67ae2f9a4a8a792ce2f7583a34f95a4e`.
+
+## Durable fixes and remaining activation boundary
+
+PR #626 preserves the first actionable non-406 provider error, promotes advertised
+supported versions within the existing attempt budget, and separates capture
+completion from coherent public manifest/index freshness. Replaying the 31 real
+retained failure traces preserves every failure while correcting 20 misleading
+terminal version errors. Both product CI checks passed; the full local suite had
+1,547 passes and 13 skips, and all four compiler-environment failures passed when
+rerun using the installed Visual Studio developer shell.
+
+During public acceptance, unmodified control-document URLs continued returning
+cached prior data after upload, despite no-cache headers. AR-app already appends
+a cache-bypass query to manifest and date-index requests. The follow-up applies
+this to monitor and v1/v2 publisher control reads, preserves supplied queries,
+and adds regressions modeling stale redirects. It also addresses late #626
+feedback: common enablement semantics, configured release targets, required
+index count, core/details metadata validation, and index-specific alert details.
+The follow-up focused suite passed 142 tests with 7 optional-dependency skips;
+its read-only live checker reports September 6 current with no publication issues.
+
+The GitHub freshness check uses merged code independently of the Pi deployment.
+Pi retry diagnostics, local watchdog behavior, and publisher cache fixes require
+the controlled deployment train; merging is not runtime acceptance. Do not pull
+moving main onto the pinned Pi or relax quality gates to activate these changes.
+V2 remains a separately failed component until its original sidecar can be retried
+under the existing consumer, preservation and publication requirements.

@@ -21,7 +21,7 @@ from ar_local_pi_runtime import (
 )
 from cdr_daily import marker_is_trustworthy, marker_path
 from cdr_finalization import verified_pointer_marker_for_date
-from pi_daily_sync import payload_publication_pending
+from pi_daily_sync import _app_payload_enabled, payload_publication_pending
 from pi_payload_freshness import check_publication
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -240,7 +240,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         send_missed_ingest_alert(run_date, writable_error)
     publication = {"publication_current": None, "publication_issues": []}
     publication_state = "disabled"
-    if os.environ.get("AR_LOCAL_APP_PAYLOAD", "").strip() == "1":
+    if _app_payload_enabled():
         publication_state = "not_checked"
         if complete and not active and not should_start and now_utc >= ready_at:
             publication = check_publication(run_date)

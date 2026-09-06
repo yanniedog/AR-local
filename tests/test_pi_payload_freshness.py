@@ -13,7 +13,11 @@ DATE = "2026-09-06"
 
 
 def documents(manifest_date=DATE, index_date=DATE):
-    manifest = {"schema_version": 1, "run_date": manifest_date}
+    manifest = {"schema_version": 1, "run_date": manifest_date, "files": {
+        kind: {"name": f"{kind}.json.gz", "bytes": 100, "sha256": "a" * 64,
+               "url": f"https://example.org/{kind}.json.gz"}
+        for kind in ("core", "details")
+    }}
     index = {"schema_version": 1, "dates": [index_date], "latest_date": index_date, "count": 1}
     return lambda url: index if "dates-index" in url else manifest
 
@@ -29,7 +33,8 @@ def test_current_manifest_and_index_are_both_required():
 
 @pytest.mark.parametrize("bad", [None, [], {}, {"dates": [DATE]}, {
     "schema_version": 1, "dates": [DATE, DATE], "latest_date": DATE,
-}, {"schema_version": 1, "dates": [DATE], "latest_date": DATE, "count": 2}])
+}, {"schema_version": 1, "dates": [DATE], "latest_date": DATE, "count": 2}, {
+    "schema_version": 1, "dates": [DATE], "latest_date": DATE}])
 def test_invalid_index_is_not_publication_success(bad):
     result = freshness.check_publication(
         DATE, fetch=lambda url: bad if "dates-index" in url else documents()(url),
@@ -134,3 +139,44 @@ def test_successful_alert_does_not_turn_a_stale_feed_green(monkeypatch):
     monkeypatch.setattr(command, "latest_daily_due_utc", lambda now: now - watchdog.timedelta(hours=2))
     monkeypatch.setattr(pi_ingest_alert, "main", lambda argv: 0)
     assert command.main(["--alert", "--json"]) == 1
+
+
+@pytest.mark.parametrize("enabled", ["1", "true", "yes", "on", " TRUE "])
+def test_watchdog_uses_publisher_enablement_semantics(monkeypatch, enabled):
+    stage_watchdog(monkeypatch)
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", enabled)
+    monkeypatch.setattr(watchdog, "check_publication", lambda _: {
+        "publication_current": False, "publication_issues": ["manifest_stale"],
+    })
+    assert watchdog.main(["--json"]) == 1
+
+
+@pytest.mark.parametrize("bad_files", [None, {}, {"core": {}}, {
+    "core": {"name": "core.json.gz", "bytes": 0, "sha256": "bad", "url": "https://example.org"},
+    "details": {},
+}])
+def test_truncated_or_invalid_manifest_cannot_close_an_incident(bad_files):
+    def fetch(url):
+        value = documents()(url)
+        if "manifest.json" in url:
+            value["files"] = bad_files
+        return value
+
+    result = freshness.check_publication(DATE, fetch=fetch)
+    assert not result["publication_current"]
+    assert "manifest_unavailable_or_invalid" in result["publication_issues"]
+
+
+def test_configured_target_cannot_be_masked_by_the_default_feed(monkeypatch):
+    monkeypatch.setenv("AR_LOCAL_REPO", "owner/other-repo")
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD_TAG", "other-feed")
+    seen = []
+
+    def fetch(url):
+        seen.append(url)
+        return documents("2026-09-05", "2026-09-05")(url) if "other-feed" in url else documents()(url)
+
+    assert not freshness.check_publication(DATE, fetch=fetch)["publication_current"]
+    assert len(seen) == 2
+    assert all("owner/other-repo/releases/download/other-feed/" in url for url in seen)
+    assert command.parse_args([]).manifest_url == seen[0]
