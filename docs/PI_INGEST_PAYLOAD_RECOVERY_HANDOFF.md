@@ -22689,3 +22689,600 @@ any prior evidence or reinterpret past edits as append-only compliance.
   "snapshot_notice": "Revalidate runtime, task, capacity and receipt identities immediately before activation. This entry records implementation in progress, not operational acceptance."
 }
 ```
+
+
+## Entry `HANDOFF-20260908-LAN-RECOVERY-VERIFIED`
+
+```json
+{
+  "entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+  "previous_entry_id": "HANDOFF-20260908-LAN-DISCOVERY-REPAIR",
+  "created_at_utc": "2026-09-07T23:09:05.962648+00:00",
+  "created_at_hobart": "2026-09-08T09:09:05.962648+10:00",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "result": "PASS",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "in_flight_legacy_plan_identity": "No earlier execution is active; historical receipts retain their own plan identity.",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "production_clean": true,
+  "production_clean_verified_at": "2026-09-08T09:05:48.4706361+10:00",
+  "candidate_code_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "candidate_meaning": "Installed immutable receiver from merged PR646; Pi production is unchanged.",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908\\source",
+  "receiver_config_sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf",
+  "implementation_worktree": "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908\\source",
+  "implementation_branch": "detached merged PR646",
+  "implementation_base_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "implementation_clean": true,
+  "current_phase": "Ordinary-user LAN repair and operator backup verified; A3 natural-trigger acceptance remains open",
+  "completed_gates": [
+    "September 8 natural 01:00 ingest completed at 01:17:07 exit zero",
+    "September 8 v1/v2/date-index publication and dashboard smoke passed",
+    "Historical September 7 natural proof and independent restore remain preserved",
+    "SD baseline capture remains preserved",
+    "PR646 applicable exact-head CI and substantive review dispositions",
+    "Ordinary-user task upgrade with authenticated four-pair predecessor history and unchanged principal/triggers/settings",
+    "Explicit operator-triggered September 8 backup PASS/UP_TO_DATE",
+    "Independent archive restore, file metadata/hash and database checks for current observation/control/macro",
+    "Original catalog prefix and all current receipt hashes verified; no active partials"
+  ],
+  "open_gates": [
+    "Natural daily backup on final receiver/runtime after September 9 06:00",
+    "Consolidated A3 acceptance",
+    "Guarded A4 physical boot and bounded return",
+    "PR607 simplification merge and deployment"
+  ],
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "independent_states": {
+    "capture": "PASS at September 8 natural ingest; upstream completeness is separate",
+    "finalization": "PASS at natural completion",
+    "publication": "PASS for September 8 v1/v2/index",
+    "dashboard": "PASS with 16013 rates at 05:16",
+    "backup": {
+      "natural_0600_result": "FAIL: original resolver failure preserved",
+      "operator_recovery": {
+        "result": "PASS",
+        "status": "UP_TO_DATE",
+        "natural_trigger": false,
+        "started_at_utc": "2026-09-07T22:56:54.5523751Z",
+        "earlier_operator_attempt": {
+          "result": "FAIL",
+          "started_at_utc": "2026-09-07T22:42:12.1019332Z",
+          "scheduled_sha256": "85bae5c09a572529c2083b125370ac29b69f00724cc3274f4e48368d15ae2e73",
+          "reason": "Transient SSH banner timeout before macro backup; verified observation/control preserved"
+        },
+        "completed_at_utc": "2026-09-07T23:03:49Z",
+        "record_path": "catalog/scheduled-runs/20260907T230349Z-ab33e5921fde4364965fca9b8b1b1d60.json",
+        "record_sha256": "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+        "latest_catalog_sequence": 140,
+        "observation_date": "2026-09-08"
+      }
+    }
+  },
+  "evidence_paths": [
+    {
+      "path": "docs/evidence/backup-lan-recovery-20260908/5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708.zip",
+      "bytes": 396987,
+      "sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+      "source_files": 181,
+      "manifest_entry": "manifest.json",
+      "original_paths_and_hashes": "manifest.json files[]"
+    },
+    {
+      "path": "C:\\code\\backups\\AR-local-user-session\\lan-recovery-20260908\\independent-restore.json",
+      "bytes": 7912,
+      "sha256": "6f645ec69ad1630710b7530b803576580fc288569fea5825e948036bd50b8167"
+    }
+  ],
+  "next_action": "Observe the next natural daily backup after September 9 06:00, authenticate its terminal receipt against unchanged production and receiver, and consolidate A3. Continue bounded A4 preparation; do not write media or reboot before its explicit identity/isolation/return gates pass. Do not replay this completed operator recovery.",
+  "next_action_commands": [
+    "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'",
+    "Get-Content C:\\code\\backups\\AR-local-pi5-user\\catalog\\latest-scheduled.json",
+    "python verify_local.py --base-url=http://100.78.28.10/ --require-banks-rates"
+  ],
+  "command_status": "Commands above are read-only next-run observations. Exact completed commands and original artifacts are retained in this packet.",
+  "earliest_start": "2026-09-09T06:00:00+10:00",
+  "latest_safe_start": "2026-09-09T13:59:59+10:00",
+  "latest_safe_stop": "2026-09-09T20:00:00+10:00",
+  "acceptance_criteria": [
+    "Applicable CI and substantive review passed",
+    "Hash-bound LAN hint remains RFC1918 and strict SSH identity unchanged",
+    "Old successful receipt and complete historical identity pairs authenticate read-only before activation",
+    "Task remains Interactive/Limited with identical triggers and settings",
+    "Current observation, control and macro backup verifies with archive/restore checks",
+    "Operator recovery remains separate from natural-backup acceptance"
+  ],
+  "stop_conditions": "Unexpected production SHA/dirt, active ingest or backup, changed task/configuration, invalid predecessor, failed host authentication, insufficient capacity or start-window expiry. Never elevate or use a retired UAC payload.",
+  "rollback_or_preservation_action": "Updater restores and verifies the prior task action on readback failure. Preserve old receiver/configuration, failed natural log, all catalogs/receipts/archives and SD baseline; no Pi runtime or media change.",
+  "known_risks": [
+    "A changed DHCP address may invalidate the fallback hint; strict SSH authentication remains mandatory.",
+    "Operator recovery does not erase the failed natural run or satisfy final-receiver natural proof.",
+    "A4 bounded physical return remains unproved; media writes and reboots remain gated."
+  ],
+  "unresolved_findings": [
+    "Final-receiver natural daily backup acceptance, A3 consolidation and A4 remain open. PR607 remains draft."
+  ],
+  "deviations": [
+    {
+      "id": "D-021-USER-LAN-FALLBACK",
+      "reason": "Complete the operator-authorized no-UAC backup workflow despite Windows resolver failure.",
+      "risk": "A configured LAN route may become stale.",
+      "compensating_controls": "Normal lookup first; bounded fallback only on lookup failure/timeout; RFC1918 validation; immutable configuration digest; unchanged strict SSH host/key/executable pins; ordinary-token rejection of elevation; authenticated predecessor and task rollback.",
+      "revised_acceptance": "Recover today via the final receiver and independently observe its next natural scheduled backup.",
+      "authorisation": "Standing user instruction to finish completely, find a no-Windows-Yes workaround, and do it now. No new or backdated authority is asserted.",
+      "recorded_at_utc": "2026-09-07T22:33:08.928832+00:00"
+    }
+  ],
+  "authorisation": "Standing direct operator no-UAC continuation; receiver-only repair. No boot, EEPROM, protected legacy task or Pi runtime mutation.",
+  "snapshot_notice": "Operational proof is completed and frozen at the recorded times. Later checks use new output paths; never overwrite this packet or reclassify the failed natural trigger.",
+  "catalog_receipts": [
+    {
+      "sequence": 137,
+      "kind": "observation",
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-08\\ad935ce205391a5c59ccc3b20c4f72ca1483625a4fa70054942f4750f1fc47ee\\receipt.json",
+      "receipt_sha256": "2a95a3c562be7db4554d977e4a67d8fdda48860b5257bc5f8108fe493a112b28",
+      "archive_sha256": "2e60a28dafdfedfec7ebec4fe93269f0763606f7a015c87a14fd3fe610a642ba",
+      "archive_bytes": 206796049,
+      "checks": {
+        "files_verified": 8901,
+        "bytes_verified": 2380121636,
+        "sqlite": [
+          {
+            "path": "data/runs/2026-09-08/_exports/local-cdr.sqlite",
+            "quick_check": "ok",
+            "integrity_check": "ok",
+            "foreign_key_check": "ok",
+            "tables": [
+              "bank_items",
+              "bank_product_changes",
+              "bank_product_facts",
+              "bank_products",
+              "bank_rates",
+              "runs",
+              "schema_meta",
+              "sqlite_sequence"
+            ]
+          }
+        ],
+        "observation": {
+          "reconciliation": {
+            "run_date": "2026-09-08",
+            "counts": {
+              "products": 2577,
+              "rates": 16013,
+              "fees": 24020,
+              "features": 15325,
+              "eligibility": 7207,
+              "constraints": 4331,
+              "product_facts": 580107,
+              "failures": 24,
+              "holder_attempts": 119,
+              "product_changes": 1782
+            },
+            "database_counts": {
+              "products": 2577,
+              "rates": 16013,
+              "product_facts": 580107,
+              "product_changes": 1782,
+              "fees": 24020,
+              "features": 15325,
+              "eligibility": 7207,
+              "constraints": 4331
+            },
+            "schema_version": "8",
+            "schema_tables": [
+              "bank_items",
+              "bank_product_changes",
+              "bank_product_facts",
+              "bank_products",
+              "bank_rates",
+              "runs",
+              "schema_meta"
+            ],
+            "unpersisted_populations": [
+              "failures",
+              "holder_attempts"
+            ],
+            "banks_json": "banks-2026-09-08.json",
+            "banks_json_bytes": 1227654515,
+            "banks_json_sha256": "645bd6995fa6e1e31bfff8f940b89202cce1b4b7109fefc9fdb9763880e4ea24",
+            "legacy_manifest_sha256": "fe83e75127e576d5af70b224d80dd3dbff64cfb386b225037ec46d6cdb0d4534",
+            "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+          },
+          "completion_markers": [
+            {
+              "path": "2026-09-08.done.json",
+              "valid": true
+            }
+          ],
+          "latest_pointer": {
+            "valid": true,
+            "generation_id": "obs-2026-09-08-bf3bbeecf1d52ea1"
+          }
+        }
+      }
+    },
+    {
+      "sequence": 139,
+      "kind": "control",
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\control\\20260907T230253Z-0ecb7e71ed208e8d\\receipt.json",
+      "receipt_sha256": "4014c252c5f14bfceb4f46b325a1abbc6fed176e2614133445b9b1c468f66dd6",
+      "archive_sha256": "da11776e50ecb0882ff7a1c2de1a76b77a696487e29033d4e3b84a06ae1a4a1a",
+      "archive_bytes": 96280271,
+      "checks": {
+        "files_verified": 854,
+        "bytes_verified": 288711415,
+        "sqlite": [
+          {
+            "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+            "quick_check": "ok",
+            "integrity_check": "ok",
+            "foreign_key_check": "ok",
+            "tables": [
+              "bank_items",
+              "bank_products",
+              "bank_rates",
+              "runs",
+              "schema_meta",
+              "sqlite_sequence"
+            ]
+          },
+          {
+            "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+            "quick_check": "ok",
+            "integrity_check": "ok",
+            "foreign_key_check": "ok",
+            "tables": [
+              "bank_items",
+              "bank_products",
+              "bank_rates",
+              "energy_items",
+              "energy_plans",
+              "runs",
+              "schema_meta",
+              "sqlite_sequence"
+            ]
+          }
+        ],
+        "git_bundles": [
+          "AR-local.bundle",
+          "australianrates.bundle"
+        ],
+        "secret_locations": 4
+      }
+    },
+    {
+      "sequence": 140,
+      "kind": "macro",
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\a66c954b1f32f878ddc0138822bd5e0d68c12d43675db180f241afbf79de64c4\\receipt.json",
+      "receipt_sha256": "c30218d06da4a66d66fdd53bc551daf7ecf63b6e09920f24f285bf22187c0fc9",
+      "archive_sha256": "a0bd375fe848bd1f54b9ac5111c2ef5a566765145fac71268175f9280a3483bd",
+      "archive_bytes": 169061,
+      "checks": {
+        "files_verified": 1,
+        "bytes_verified": 1032192,
+        "sqlite": [
+          {
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "integrity_check": "ok",
+            "foreign_key_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          }
+        ],
+        "macro": {
+          "path": "macro/local-macro.sqlite",
+          "quick_check": "ok",
+          "integrity_check": "ok",
+          "foreign_key_check": "ok",
+          "tables": [
+            "ingest_runs",
+            "series_definition_archive",
+            "series_observations"
+          ]
+        }
+      }
+    }
+  ],
+  "selected_generation": "obs-2026-09-08-bf3bbeecf1d52ea1",
+  "a4_readonly_preparation": {
+    "result": "READ_ONLY_INSPECTION_COMPLETE",
+    "a4": "BLOCKED",
+    "archive_entry": "evidence/a4-readonly-metadata.json",
+    "device": "/dev/mmcblk0p2",
+    "serial": "0xfa922545",
+    "root_uuid": "ed6c7f1b-238b-41a1-b4b6-7bcdef3270fe",
+    "mounted": false,
+    "media_written": false,
+    "boot_performed": false,
+    "findings": [
+      "SD fstab binds its own 1a36a1cc-01/-02 partitions.",
+      "SD retains enabled historical daily, daily-watchdog and deploy-watchdog timers; clone isolation must inhibit them before boot.",
+      "SD also enables tailscaled, cron and rpi-eeprom-update; inhibit cloned credentials/unknown jobs/firmware updates before the controlled test.",
+      "Current legacy physical-boot validator/policy only accepts plan versions through 1.3; current controlled plan is 1.5. Resolve compatibility without falsifying historical identities.",
+      "Bounded return to the approved NVMe remains unproved."
+    ]
+  },
+  "catalog_snapshot": {
+    "entries": 140,
+    "sequence": 140,
+    "sha256": "9c8276a1e560589399139eac155fcadc04aaea52d4bb568ad7985f92cd42b7e4",
+    "bytes": 98303,
+    "prefix_preserved": true,
+    "archive_entry": "catalog/generations.jsonl"
+  },
+  "verification": {
+    "at_utc": "2026-09-07T23:08:03.122859+00:00",
+    "result": "PASS",
+    "trigger": "operator-recovery",
+    "natural_0600_result": "FAIL",
+    "earlier_operator_failure_sha256": "85bae5c09a572529c2083b125370ac29b69f00724cc3274f4e48368d15ae2e73",
+    "candidate_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+    "protected_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "scheduled_path": "C:\\code\\backups\\AR-local-pi5-user\\catalog\\scheduled-runs\\20260907T230349Z-ab33e5921fde4364965fca9b8b1b1d60.json",
+    "scheduled_sha256": "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+    "catalog_entries_verified": 140,
+    "historical_runtime_pairs": [
+      [
+        "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+        "d78ec787fce596a07fe1e4f8beff294ecb83858f"
+      ],
+      [
+        "6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2",
+        "835067f474e8a771f7cbf710c08d5cde835f2618"
+      ],
+      [
+        "9302890fcc752cbf90da97d597e972c157d913e3",
+        "3f8b8a7c4b51fef8eeb370f747f2dc51c73a1afa"
+      ],
+      [
+        "efc5ba0a174d3646082086211c895d1494699550",
+        "d78ec787fce596a07fe1e4f8beff294ecb83858f"
+      ]
+    ],
+    "generations": [
+      {
+        "sequence": 137,
+        "kind": "observation",
+        "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-08\\ad935ce205391a5c59ccc3b20c4f72ca1483625a4fa70054942f4750f1fc47ee\\receipt.json",
+        "receipt_sha256": "2a95a3c562be7db4554d977e4a67d8fdda48860b5257bc5f8108fe493a112b28",
+        "archive_sha256": "2e60a28dafdfedfec7ebec4fe93269f0763606f7a015c87a14fd3fe610a642ba",
+        "archive_bytes": 206796049,
+        "checks": {
+          "files_verified": 8901,
+          "bytes_verified": 2380121636,
+          "sqlite": [
+            {
+              "path": "data/runs/2026-09-08/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "integrity_check": "ok",
+              "foreign_key_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ],
+          "observation": {
+            "reconciliation": {
+              "run_date": "2026-09-08",
+              "counts": {
+                "products": 2577,
+                "rates": 16013,
+                "fees": 24020,
+                "features": 15325,
+                "eligibility": 7207,
+                "constraints": 4331,
+                "product_facts": 580107,
+                "failures": 24,
+                "holder_attempts": 119,
+                "product_changes": 1782
+              },
+              "database_counts": {
+                "products": 2577,
+                "rates": 16013,
+                "product_facts": 580107,
+                "product_changes": 1782,
+                "fees": 24020,
+                "features": 15325,
+                "eligibility": 7207,
+                "constraints": 4331
+              },
+              "schema_version": "8",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "banks_json": "banks-2026-09-08.json",
+              "banks_json_bytes": 1227654515,
+              "banks_json_sha256": "645bd6995fa6e1e31bfff8f940b89202cce1b4b7109fefc9fdb9763880e4ea24",
+              "legacy_manifest_sha256": "fe83e75127e576d5af70b224d80dd3dbff64cfb386b225037ec46d6cdb0d4534",
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            },
+            "completion_markers": [
+              {
+                "path": "2026-09-08.done.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "valid": true,
+              "generation_id": "obs-2026-09-08-bf3bbeecf1d52ea1"
+            }
+          }
+        }
+      },
+      {
+        "sequence": 139,
+        "kind": "control",
+        "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\control\\20260907T230253Z-0ecb7e71ed208e8d\\receipt.json",
+        "receipt_sha256": "4014c252c5f14bfceb4f46b325a1abbc6fed176e2614133445b9b1c468f66dd6",
+        "archive_sha256": "da11776e50ecb0882ff7a1c2de1a76b77a696487e29033d4e3b84a06ae1a4a1a",
+        "archive_bytes": 96280271,
+        "checks": {
+          "files_verified": 854,
+          "bytes_verified": 288711415,
+          "sqlite": [
+            {
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "integrity_check": "ok",
+              "foreign_key_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "integrity_check": "ok",
+              "foreign_key_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ],
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4
+        }
+      },
+      {
+        "sequence": 140,
+        "kind": "macro",
+        "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\a66c954b1f32f878ddc0138822bd5e0d68c12d43675db180f241afbf79de64c4\\receipt.json",
+        "receipt_sha256": "c30218d06da4a66d66fdd53bc551daf7ecf63b6e09920f24f285bf22187c0fc9",
+        "archive_sha256": "a0bd375fe848bd1f54b9ac5111c2ef5a566765145fac71268175f9280a3483bd",
+        "archive_bytes": 169061,
+        "checks": {
+          "files_verified": 1,
+          "bytes_verified": 1032192,
+          "sqlite": [
+            {
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "integrity_check": "ok",
+              "foreign_key_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ],
+          "macro": {
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "integrity_check": "ok",
+            "foreign_key_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          }
+        }
+      }
+    ],
+    "partials": [],
+    "uac_used": false,
+    "exact_argv": [
+      "C:\\code\\backups\\AR-local-user-session\\lan-recovery-20260908\\verify_recovery.py",
+      "--release",
+      "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908",
+      "--config-sha256",
+      "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf",
+      "--scheduled-sha256",
+      "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+      "--observation-date",
+      "2026-09-08",
+      "--output",
+      "C:\\code\\backups\\AR-local-user-session\\lan-recovery-20260908\\independent-restore.json"
+    ],
+    "verifier_sha256": "56a1dd0a97b63d11fe5bd9f7eed2edd3513d24b392d7695e613bd83eb5f3d686",
+    "proof_scope": "Independent current archive restore and byte/metadata/database verification; natural trigger proof remains separate."
+  },
+  "live_readback": {
+    "result": "PASS",
+    "at_hobart": "2026-09-08T09:05:48.4706361+10:00",
+    "task_state": "Ready",
+    "task_result": 0,
+    "task_last_run": "2026-09-08T08:56:54.0000000+10:00",
+    "task_next_run": "2026-09-09T06:00:00.0000000+10:00",
+    "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "production_clean": true,
+    "publication_current": true,
+    "run_date": "2026-09-08",
+    "daily": {
+      "Result": "success",
+      "ActiveState": "inactive"
+    },
+    "next_daily": "Wed 2026-09-09 01:00:00 AEST",
+    "dashboard_smoke": "verify_local: OK http://100.78.28.10/ (run_date=2026-09-08, banks_rates=16013)",
+    "legacy_task_unchanged": true,
+    "free_bytes": 118912000000,
+    "floor_bytes": 53687091200,
+    "uac_used": false,
+    "trigger": "operator-recovery",
+    "natural_0600_result": "FAIL"
+  },
+  "exact_commands": [
+    "Start-ScheduledTask -TaskName 'AR-local user-session backup'",
+    [
+      "C:\\code\\backups\\AR-local-user-session\\lan-recovery-20260908\\verify_recovery.py",
+      "--release",
+      "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908",
+      "--config-sha256",
+      "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf",
+      "--scheduled-sha256",
+      "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+      "--observation-date",
+      "2026-09-08",
+      "--output",
+      "C:\\code\\backups\\AR-local-user-session\\lan-recovery-20260908\\independent-restore.json"
+    ],
+    "activate_receiver.ps1 -ReceiverCommit cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e"
+  ]
+}
+```
