@@ -1,0 +1,36 @@
+{
+  "authority": "D-015-USER-SESSION-NO-UAC",
+  "candidate_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "git_path": "C:\\Program Files\\Git\\cmd\\git.exe",
+  "git_sha256": "c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9",
+  "legacy_target": "C:\\code\\backups\\AR-local-pi5",
+  "legacy_task": "AR-local laptop backup",
+  "operator_sid": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "protected_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "python_path": "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+  "python_sha256": "53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f",
+  "receiver": "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908\\source",
+  "recovery_image": "C:\\code\\AR-local-pi-image-2026-05-21\\AR-local-pi-image-2026-05-21",
+  "schema": "ARL-USER-SESSION-BACKUP-V1",
+  "target": "C:\\code\\backups\\AR-local-pi5-user",
+  "transport": {
+    "scp_path": "C:\\Windows\\System32\\OpenSSH\\scp.exe",
+    "scp_sha256": "63b7118d8e1a8a84398cf4ce1584dc6b146606092fe9c68bbaf110bbdcfb480a",
+    "ssh_host": "ar.local",
+    "ssh_identity_path": "C:\\Users\\jkoka\\.ssh\\pi5",
+    "ssh_identity_sha256": "faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e",
+    "ssh_known_hosts_path": "C:\\code\\backups\\AR-local-user-session\\3f8b8a7c4b51fef8eeb370f747f2dc51c73a1afa\\known-hosts",
+    "ssh_known_hosts_sha256": "6a37cfbc9d364afaca54f517a145874319b074f792eb53bfc348b5467fe58dd5",
+    "ssh_logical_host": "ar-local-pi5",
+    "ssh_path": "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+    "ssh_port": 22,
+    "ssh_sha256": "6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42",
+    "ssh_user": "pi"
+  },
+  "previous_runtime": {
+    "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "receiver_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+    "record_sha256": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46"
+  },
+  "lan_fallback_ipv4": "192.168.20.19"
+}

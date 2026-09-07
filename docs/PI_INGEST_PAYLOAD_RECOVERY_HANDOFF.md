@@ -23435,3 +23435,220 @@ any prior evidence or reinterpret past edits as append-only compliance.
   "snapshot_notice": "The successful recovery remains frozen at its original timestamps. This new live watchdog snapshot establishes readiness gaps, not boot acceptance."
 }
 ```
+
+
+## Entry `HANDOFF-20260908-READONLY-RECEIPT-BINDING`
+
+```json
+{
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "in_flight_legacy_plan_identity": "No earlier execution is active; historical receipts retain their own plan identity.",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "candidate_code_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "candidate_meaning": "Installed immutable receiver from merged PR646; Pi production is unchanged.",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908\\source",
+  "receiver_config_sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf",
+  "independent_states": {
+    "capture": "PASS at September 8 natural ingest; upstream completeness is separate",
+    "finalization": "PASS at natural completion",
+    "publication": "PASS for September 8 v1/v2/index",
+    "dashboard": "PASS with 16013 rates at 05:16",
+    "backup": {
+      "natural_0600_result": "FAIL: original resolver failure preserved",
+      "operator_recovery": {
+        "result": "PASS",
+        "status": "UP_TO_DATE",
+        "natural_trigger": false,
+        "started_at_utc": "2026-09-07T22:56:54.5523751Z",
+        "earlier_operator_attempt": {
+          "result": "FAIL",
+          "started_at_utc": "2026-09-07T22:42:12.1019332Z",
+          "scheduled_sha256": "85bae5c09a572529c2083b125370ac29b69f00724cc3274f4e48368d15ae2e73",
+          "reason": "Transient SSH banner timeout before macro backup; verified observation/control preserved"
+        },
+        "completed_at_utc": "2026-09-07T23:03:49Z",
+        "record_path": "catalog/scheduled-runs/20260907T230349Z-ab33e5921fde4364965fca9b8b1b1d60.json",
+        "record_sha256": "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+        "latest_catalog_sequence": 140,
+        "observation_date": "2026-09-08"
+      }
+    }
+  },
+  "selected_generation": "obs-2026-09-08-bf3bbeecf1d52ea1",
+  "catalog_snapshot": {
+    "entries": 140,
+    "sequence": 140,
+    "sha256": "9c8276a1e560589399139eac155fcadc04aaea52d4bb568ad7985f92cd42b7e4",
+    "bytes": 98303,
+    "prefix_preserved": true,
+    "archive_entry": "catalog/generations.jsonl"
+  },
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "entry_id": "HANDOFF-20260908-READONLY-RECEIPT-BINDING",
+  "previous_entry_id": "HANDOFF-20260908-A4-RETURN-READINESS",
+  "created_at_utc": "2026-09-07T23:48:57.894885+00:00",
+  "created_at_hobart": "2026-09-08T09:48:57.894885+10:00",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "result": "PASS",
+  "scope": "Read-only receipt binding implementation, tested runtime identity checks and append-only PR647 evidence clarification; no A3/A4 acceptance",
+  "current_phase": "A3 natural-backup acceptance pending; A4 preparation",
+  "production_clean": true,
+  "production_clean_verified_at": "2026-09-08T09:46:45.9651637+10:00",
+  "completed_gates": [
+    "September 8 natural 01:00 ingest completed at 01:17:07 exit zero",
+    "September 8 v1/v2/date-index publication and dashboard smoke passed",
+    "Historical September 7 natural proof and independent restore remain preserved",
+    "SD baseline capture remains preserved",
+    "PR646 applicable exact-head CI and substantive review dispositions",
+    "Ordinary-user task upgrade with authenticated four-pair predecessor history and unchanged principal/triggers/settings",
+    "Explicit operator-triggered September 8 backup PASS/UP_TO_DATE",
+    "Independent archive restore, file metadata/hash and database checks for current observation/control/macro",
+    "Original catalog prefix and all current receipt hashes verified; no active partials",
+    "PR647 merged at26d9f8cb51db4c916b160141b2c2d0a13e4a4a90; its late missing-artifact finding declined after fresh GitHub download and complete181-file verification; thread resolved and gate passed",
+    "Live boot/watchdog capability readback retained",
+    "PR648 merged at 46eb380af4979a7078de3962f695a87d48850061; preparation only",
+    "Receipt-binding reader passed against actual observation 137, control 139 and macro 140 at 09:40:43 Hobart",
+    "47 focused tests passed with 1 Windows symlink skip; full local suite 1899 passed, 14 skipped with MSVC environment available",
+    "Read-only task/configuration/receiver and clean Pi production identity check passed at 09:46:45 Hobart"
+  ],
+  "open_gates": [
+    "Natural daily backup on final receiver/runtime after September 9 06:00",
+    "Consolidated A3 acceptance",
+    "Guarded A4 physical boot and bounded return",
+    "PR607 simplification merge and deployment"
+  ],
+  "prohibited_advancement": "No media write, writable mount, EEPROM change, boot selection, reboot or PR607 deployment from this preparation.",
+  "evidence_paths": [
+    {
+      "path": "laptop_recovery_receipts.py",
+      "bytes": 12433,
+      "sha256": "6ee0da1349cb877e092372b94b2cddb3e2f16653e60960ffea8665f14e702c7a"
+    },
+    {
+      "path": "tests/test_laptop_recovery_receipts.py",
+      "bytes": 8765,
+      "sha256": "9f5d8245c38dc48708a961f154ea82be6304aa9f4cfb3fd79830c691f4fbc5fa"
+    },
+    {
+      "path": "docs/LAPTOP_RECOVERY_RECEIPT_BINDING.md",
+      "bytes": 7103,
+      "sha256": "786a33f3201363908956a239a69a5fcc7207b1d7abd33686e7aad5cc321d069e"
+    },
+    {
+      "path": "docs/evidence/recovery-receipt-binding-20260908/expectations.json",
+      "bytes": 1260,
+      "sha256": "fe9bd557b10f7717d390c01a7cb7fa27ed187e7788ae40f7b6b34fa0284cb0c7"
+    },
+    {
+      "path": "docs/evidence/recovery-receipt-binding-20260908/installed-config.json",
+      "bytes": 2046,
+      "sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf"
+    },
+    {
+      "path": "docs/evidence/recovery-receipt-binding-20260908/readback.json",
+      "bytes": 1697,
+      "sha256": "fd8855bc170298bda2ec7b386d618912ff43901afb37274253be59664de76969"
+    },
+    {
+      "path": "docs/evidence/recovery-receipt-binding-20260908/runtime-identity-readonly.ps1",
+      "bytes": 2784,
+      "sha256": "cf546f6f5a72e3944028bc5508c6ed70c271ded5e40f5631a2d78a0e97eb4874"
+    }
+  ],
+  "inherited_backup_evidence": {
+    "entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+    "archive_path": "docs/evidence/backup-lan-recovery-20260908/5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708.zip",
+    "archive_sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+    "scope": "Frozen completed operator recovery and restore; not re-executed or reclassified"
+  },
+  "live_readback": {
+    "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "production_status": "",
+    "bootloader_config": "[all]\nBOOT_UART=1\nBOOT_ORDER=0xf416\nNET_INSTALL_AT_POWER_ON=1",
+    "bootloader_version": "2026/05/11 12:20:02\nversion 66f33f7e651cf482a26fb2c931a7587bb14e71db (release)\ntimestamp 1778498402\nupdate-time 1782498369\ncapabilities 0x0000007f",
+    "watchdog_manager": "RuntimeWatchdogUSec=0\nRebootWatchdogUSec=0",
+    "watchdog_identity": "Broadcom BCM2835 Watchdog timer",
+    "watchdog_timeout": "15",
+    "watchdog_state": "inactive"
+  },
+  "next_action": "Close the receipt-binding PR through applicable CI and review. Fix the three late PR646 updater/route-record findings on a separate branch, preserving the installed receiver. Continue clone-isolation and return-control preparation; observe September 9 natural backup and authenticate trigger/runtime/receipts independently. Do not install a new receiver merely for this preparation.",
+  "earliest_start": "2026-09-08T09:48:57.894885+10:00",
+  "latest_safe_stop": "2026-09-08T22:00:00+10:00",
+  "timing_scope": "Local code/test preparation and read-only probes only; physical execution is not enabled.",
+  "next_action_commands": [
+    "python -m pytest tests/test_laptop_recovery_receipts.py tests/test_d012_recovery_handoff.py -q",
+    "& .\\docs\\evidence\\recovery-receipt-binding-20260908\\runtime-identity-readonly.ps1",
+    "python laptop_recovery_receipts.py --target <absolute-backup-directory> --expectations <reviewed-current-expectations-file> --expectations-sha256 <approved-sha256>"
+  ],
+  "command_status": "First command is exact isolated verification, second is tested read-only identity verification; the third requires separately reviewed current terminal pins and is not a natural-trigger acceptance command.",
+  "acceptance_criteria": [
+    "Required exact-head CI and substantive feedback dispositions pass for the new reader",
+    "Reader binds the exact v1.5 receipt/catalog/runtime metadata without writing inputs and cannot grant A3/A4 acceptance",
+    "Future natural acceptance requires independent actual trigger-origin evidence and full current runtime/backup verification",
+    "Clone identity, writer isolation and continuous reset/return coverage remain separate physical prerequisites"
+  ],
+  "stop_conditions": "Unexpected runtime/task/media identity, active ingest/backup, invalid archive or free-space floor, or incomplete reset/return coverage: do not advance physically. No Windows elevation.",
+  "rollback_or_preservation_action": "No runtime rollback required: only read-only inspection occurred. Preserve PR647 proof, all earlier failures/receipts, SD baseline and primary boot configuration.",
+  "known_risks": [
+    "The live runtime watchdog is inactive and the EEPROM has no explicit boot-watchdog timeout; current unattended return is not proved",
+    "A one-time boot order does not force a reset during a hang",
+    "The old boot validator uses a mounted-backup v1.3 policy and must not be relabelled to fit the Windows-backed v1.5 path"
+  ],
+  "unresolved_findings": [
+    "Natural September 9 backup and A3 acceptance pending",
+    "Clone isolation manifest, media tuple verification and physical reset/return controls not implemented by this metadata-only slice",
+    "Merged audit found pending late threads on PR632, PR635, PR644, PR646, PR647 and PR648; PR647 evidence corrections are included here but not yet merged or disposed",
+    "PR646: validate latest pointer result; terminalize pre-mutation updater failures; correlate and terminalize downstream route-selection exceptions"
+  ],
+  "deviations": [],
+  "authorisation": "Standing operator instruction to finish simplification without Windows Yes/UAC; bounded local preparation and read-only diagnosis. No new or retroactive physical/firmware authority is asserted.",
+  "snapshot_notice": "The September 8 backup and archive restore remain frozen at their original timestamps. New receipt and runtime checks are read-only observations; no backup or archive restore was replayed.",
+  "implementation_branch": "agent/a4-evidence-verifier-0908",
+  "implementation_base": "46eb380af4979a7078de3962f695a87d48850061",
+  "implementation_worktree": "C:\\code\\AR-local-a4-verifier-0908",
+  "reader_scope": {
+    "receipt_binding": "PASS",
+    "runtime_binding": "PASS",
+    "natural_trigger": "UNVERIFIED",
+    "archive_restore": "NOT_RUN",
+    "physical_recovery": "BLOCKED"
+  },
+  "live_readback_inherited_from": "HANDOFF-20260908-A4-RETURN-READINESS",
+  "runtime_readback": {
+    "checked_at_hobart": "2026-09-08T09:46:45.9651637+10:00",
+    "task_last_run": "2026-09-08T08:56:54+10:00",
+    "task_next_run": "2026-09-09T06:00:00+10:00",
+    "task_definition_unchanged": true,
+    "production_clean": true,
+    "config_sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf"
+  },
+  "correction": {
+    "reason": "PR647 exact-command array collapsed two invocations, and its packet omitted the current configuration bytes; resume commands needed explicit runtime authentication.",
+    "risk": "Readers could conflate failed and successful operator starts or rely on unverified current runtime/configuration claims.",
+    "compensating_controls": "Preserve original packet; add exact installed configuration bytes matching the original pin, chronological invocation references and tested read-only task/config/release/Pi checks.",
+    "revised_acceptance": "No historical PASS is expanded. Receipt/runtime metadata PASS cannot accept natural scheduling, archive restoration or physical recovery."
+  },
+  "operator_backup_invocations": [
+    {
+      "at_utc": "2026-09-07T22:42:12.1019332Z",
+      "command": "Start-ScheduledTask -TaskName 'AR-local user-session backup'",
+      "result": "FAIL",
+      "packet_entry": "evidence/operator-recovery-start.json"
+    },
+    {
+      "at_utc": "2026-09-07T22:56:54.5523751Z",
+      "command": "Start-ScheduledTask -TaskName 'AR-local user-session backup'",
+      "result": "PASS",
+      "packet_entry": "evidence/operator-recovery-retry-start.json"
+    }
+  ]
+}
+```
