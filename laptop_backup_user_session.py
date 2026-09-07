@@ -206,7 +206,28 @@ def execute(config: dict, mode: str, config_sha256: str) -> int:
     except (subprocess.SubprocessError, ValueError) as exc:
         record(config, "BLOCKED", "LAN discovery failed before Pi access", stage="lan_discovery")
         raise ValueError("LAN discovery failed before Pi access") from exc
-    record(config, "RUNNING", "LAN route selected; SSH authentication still required", **route)
+    execution_id = uuid.uuid4().hex
+    route_record = record(config, "RUNNING", "LAN route selected; SSH authentication still required",
+                          execution_id=execution_id, **route)
+    correlation = {"execution_id": execution_id, "route_record_path": str(route_record)}
+    try:
+        args = scheduled_arguments(config, mode, transport, endpoint)
+        # Separate lock root: the receiver owns target/catalog/.receiver.lock itself.
+        lock_root = unlinked(Path(config["target"])) / "user-session-lock"
+        lock_root.mkdir(parents=True, exist_ok=True)
+        with ReceiverLock(lock_root):
+            initialize_catalog(Path(config["target"]))
+            code = scheduled.main(args)
+    except Exception as exc:
+        record(config, "FAIL", "scheduled receiver raised after route selection",
+               error_type=type(exc).__name__, **correlation)
+        raise
+    record(config, "PASS" if code == 0 else "FAIL", "scheduled receiver returned",
+           exit_code=code, **correlation)
+    return code
+
+
+def scheduled_arguments(config: dict, mode: str, transport: dict, endpoint: str) -> list[str]:
     args = ["--target", config["target"], "--recovery-image", config["recovery_image"],
             "--candidate-code-sha", config["candidate_sha"],
             "--protected-code-sha", config["protected_sha"],
@@ -221,14 +242,7 @@ def execute(config: dict, mode: str, config_sha256: str) -> int:
         args.append("--check-only")
     if config.get("previous_runtime"):
         args.append("--user-runtime-transition")
-    # Separate lock root: the receiver owns target/catalog/.receiver.lock itself.
-    lock_root = unlinked(Path(config["target"])) / "user-session-lock"
-    lock_root.mkdir(parents=True, exist_ok=True)
-    with ReceiverLock(lock_root):
-        initialize_catalog(Path(config["target"]))
-        code = scheduled.main(args)
-    record(config, "PASS" if code == 0 else "FAIL", "scheduled receiver returned", exit_code=code)
-    return code
+    return args
 
 
 def main() -> int:

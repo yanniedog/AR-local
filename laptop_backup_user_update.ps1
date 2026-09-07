@@ -25,14 +25,16 @@ function Invoke-UserBackupTaskUpdate {
      ($oldAction.WorkingDirectory -and $oldAction.WorkingDirectory -cne $OldReceiver)){throw 'Existing task action differs from the verified receiver.'}
   $before=Export-ScheduledTask -TaskName $taskName
   New-Item -ItemType Directory -Path $EvidenceDirectory -ErrorAction Stop | Out-Null
-  Write-UserUpdateEvidence (Join-Path $EvidenceDirectory 'task-before.xml') $before
-  $verification=& $Verify
-  Write-UserUpdateEvidence (Join-Path $EvidenceDirectory 'predecessor-verification.json') ($verification -join "`n")
-  $action=New-ScheduledTaskAction -Execute $Execute -Argument $NewArguments -WorkingDirectory $NewReceiver
-  # No task changes if a natural trigger or another operator raced the preflight.
-  if((Get-ScheduledTask -TaskName $taskName).State.ToString() -cne 'Ready' -or
-     (Export-ScheduledTask -TaskName $taskName) -cne $before){throw 'Task changed during update verification.'}
+  $mutationAttempted=$false
   try {
+    Write-UserUpdateEvidence (Join-Path $EvidenceDirectory 'task-before.xml') $before
+    $verification=& $Verify
+    Write-UserUpdateEvidence (Join-Path $EvidenceDirectory 'predecessor-verification.json') ($verification -join "`n")
+    $action=New-ScheduledTaskAction -Execute $Execute -Argument $NewArguments -WorkingDirectory $NewReceiver
+    # No task changes if a natural trigger or another operator raced the preflight.
+    if((Get-ScheduledTask -TaskName $taskName).State.ToString() -cne 'Ready' -or
+       (Export-ScheduledTask -TaskName $taskName) -cne $before){throw 'Task changed during update verification.'}
+    $mutationAttempted=$true
     Set-ScheduledTask -TaskName $taskName -Action $action -ErrorAction Stop | Out-Null
     $after=Export-ScheduledTask -TaskName $taskName
     [xml]$oldXml=$before
@@ -51,19 +53,22 @@ function Invoke-UserBackupTaskUpdate {
         old_receiver=$OldReceiver;new_receiver=$NewReceiver;settings_preserved=$true;trigger='NO_BACKUP_STARTED'} | ConvertTo-Json)
   } catch {
     $originalError=$_.Exception.Message
-    $rollback='PASS'
-    try {
-      Set-ScheduledTask -TaskName $taskName -Action $existing.Actions -ErrorAction Stop | Out-Null
-      [xml]$rolled=Export-ScheduledTask -TaskName $taskName
-      [xml]$original=$before
-      foreach($section in @('Actions','Triggers','Principals','Settings')) {
-        $rolledSection=$rolled.DocumentElement.SelectSingleNode("*[local-name()='$section']")
-        $originalSection=$original.DocumentElement.SelectSingleNode("*[local-name()='$section']")
-        if(-not $rolledSection -or -not $originalSection -or $rolledSection.OuterXml -cne $originalSection.OuterXml){throw "Rollback $section mismatch."}
-      }
-    } catch { $rollback='FAIL: '+$_.Exception.Message }
+    $rollback='NOT_NEEDED'
+    if($mutationAttempted) {
+      $rollback='PASS'
+      try {
+        Set-ScheduledTask -TaskName $taskName -Action $existing.Actions -ErrorAction Stop | Out-Null
+        [xml]$rolled=Export-ScheduledTask -TaskName $taskName
+        [xml]$original=$before
+        foreach($section in @('Actions','Triggers','Principals','Settings')) {
+          $rolledSection=$rolled.DocumentElement.SelectSingleNode("*[local-name()='$section']")
+          $originalSection=$original.DocumentElement.SelectSingleNode("*[local-name()='$section']")
+          if(-not $rolledSection -or -not $originalSection -or $rolledSection.OuterXml -cne $originalSection.OuterXml){throw "Rollback $section mismatch."}
+        }
+      } catch { $rollback='FAIL: '+$_.Exception.Message }
+    }
     Write-UserUpdateEvidence (Join-Path $EvidenceDirectory 'installation-failed.json') (
-      [ordered]@{result='FAIL';error=$originalError;rollback=$rollback;completed_at_utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json)
+      [ordered]@{result='FAIL';error=$originalError;mutation_attempted=$mutationAttempted;rollback=$rollback;completed_at_utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json)
     throw "User task update failed: $originalError; rollback: $rollback"
   }
 }

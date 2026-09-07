@@ -7,6 +7,7 @@ from pathlib import Path
 
 import laptop_backup_user_session as user
 from laptop_backup_runtime_lineage import authenticated_runtime_pairs, authenticate_pointer_descendant
+from laptop_backup_scheduled_lineage import _pointer_identity
 
 
 def verify(old_path: Path, old_digest: str, new_path: Path, new_digest: str) -> dict:
@@ -27,7 +28,11 @@ def verify(old_path: Path, old_digest: str, new_path: Path, new_digest: str) -> 
         raise ValueError('receiver-only update changed runtime, identity, paths or transport')
     target = user.unlinked(Path(new['target']))
     pointer_path = user.unlinked(target / 'catalog/latest-scheduled.json')
-    pointer = json.loads(pointer_path.read_bytes(), object_pairs_hook=user.strict_pairs)
+    raw_pointer = pointer_path.read_bytes()
+    # Strict decoding rejects duplicate fields; the shared pointer validator also
+    # checks the result against the hash-authenticated referenced record.
+    json.loads(raw_pointer, object_pairs_hook=user.strict_pairs)
+    pointer = _pointer_identity(target, raw_pointer)
     previous = new.get('previous_runtime')
     expected_previous = {'production_sha': old['protected_sha'], 'receiver_sha': old['candidate_sha'],
                          'record_sha256': pointer['record_sha256']}

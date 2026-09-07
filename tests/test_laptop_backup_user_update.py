@@ -10,12 +10,16 @@ import laptop_backup_user_update as update
 from tests.test_laptop_backup_runtime_ancestry import _chain, _pin
 
 
-@pytest.mark.parametrize('fault', [None, 'digest', 'mixed_pair', 'missing', 'runtime', 'transport'])
+@pytest.mark.parametrize('fault', [None, 'digest', 'mixed_pair', 'missing', 'runtime', 'transport', 'pointer_result', 'pointer_result_missing'])
 def test_transition_probe_is_read_only_and_authenticates_full_predecessor(tmp_path, monkeypatch, fault):
     target = tmp_path / 'target'
     chain = _chain(target)
     pointer = target / 'catalog/latest-scheduled.json'
     pointer.write_text(json.dumps(dict(chain[-1], result='PASS')))
+    if fault == 'pointer_result':
+        pointer.write_text(json.dumps(dict(chain[-1], result='FAIL')))
+    elif fault == 'pointer_result_missing':
+        pointer.write_text(json.dumps(chain[-1]))
     old_root, new_root = tmp_path / 'old', tmp_path / 'new'
     old_root.mkdir()
     new_root.mkdir()
