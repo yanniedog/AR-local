@@ -22271,3 +22271,300 @@ this correction. Every previous handoff byte remains intact.
   "snapshot_notice": "State is valid only at each stated verification time; re-run preflight rather than treating this entry as live permission."
 }
 ```
+
+
+## Entry `HANDOFF-20260907-NATURAL-ARTIFACT-VERIFICATION-PROVENANCE`
+
+This append-only record supplies reproducible provenance for the PR637 artifact
+checks and discloses the historical canonical-path edits. It does not rewrite
+any prior evidence or reinterpret past edits as append-only compliance.
+
+```json
+{
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "candidate_code_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "receiver_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\source",
+  "receiver_config_sha256": "b38601a31751f052c11b8d96c23d90acdc138afdddbef4c710ae87b580745e8e",
+  "catalog_snapshot": {
+    "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T013914Z-resume-schema\\catalog-generations-prefix.jsonl",
+    "source_path": "C:\\code\\backups\\AR-local-pi5-user\\catalog\\generations.jsonl",
+    "bytes": 95617,
+    "sha256": "7a34685168b9de7b6491379cba0e285d16a62fce08def4fbc28c33d80fa790c6",
+    "catalog_sequence": 136,
+    "entries": 136,
+    "verified_at_utc": "2026-09-07T01:39:14.336627+00:00",
+    "rule": "This is a retained prefix snapshot; later legitimate atomic pointer updates and authenticated appends remain distinct evidence"
+  },
+  "catalog_receipts": {
+    "observation": {
+      "catalog_sequence": 134,
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-07\\7efaadf18dc164985856592d43414ca1b7352557ea1859fbf3c8c519c1c9688d\\receipt.json",
+      "receipt_bytes": 4463,
+      "receipt_sha256": "221e6e235ef63cbbd90afdbc7cdd3c3ad441e06a97d3f8e08e95f8393d30a76f",
+      "archive_bytes": 417563279,
+      "archive_sha256": "aa8b676471588f0b791b446409eb99d9aad751fe2d2215ef5b8a9445d01f8032",
+      "source_bytes": 4908914658,
+      "completed_at": "2026-09-07T00:58:51Z"
+    },
+    "control": {
+      "catalog_sequence": 135,
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\control\\20260907T005856Z-7672cc8513cade4b\\receipt.json",
+      "receipt_bytes": 3292,
+      "receipt_sha256": "b4e5983b7119d803dae1069609020ccec7803faeee5519ffe9dda7f79f18df8e",
+      "archive_bytes": 94478189,
+      "archive_sha256": "0f0b0e9b376f4755833edebd16658db30396be8682624a32584a851a45720c66",
+      "source_bytes": 283653260,
+      "completed_at": "2026-09-07T00:59:23Z"
+    },
+    "macro": {
+      "catalog_sequence": 136,
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\d5dc613ff11d9c5fcda8b06b591650e65811c84c38144329af5b2a0faf382c73\\receipt.json",
+      "receipt_bytes": 3091,
+      "receipt_sha256": "be2874a3a8782c53f6b8dc76787197a99fb27eeb2ccf401019ba61c0ca567390",
+      "archive_bytes": 169019,
+      "archive_sha256": "7479d90eb8c642bea8f425094ec224e16778cc5d390111c8dc58cbdece4dda62",
+      "source_bytes": 1032192,
+      "completed_at": "2026-09-07T00:59:23Z"
+    }
+  },
+  "selected_generation": "obs-2026-09-07-359b23e789d193d5",
+  "independent_states": {
+    "capture": {
+      "result": "PASS",
+      "observation_state": "partial",
+      "generation_id": "obs-2026-09-07-359b23e789d193d5",
+      "upstream_failures": 24,
+      "meaning": "Retained capture and integrity verified; complete upstream availability is not claimed"
+    },
+    "finalization": {
+      "result": "PASS",
+      "meaning": "Completion markers, selected pointer, ledger and both databases verified"
+    },
+    "publication": {
+      "result": "PASS",
+      "meaning": "Dated/rolling v1, v2 and index; 11 independent asset hashes verified"
+    },
+    "dashboard": {
+      "result": "PASS",
+      "verified_at_utc": "2026-09-07T01:00:15.709290+00:00"
+    },
+    "backup": {
+      "result": "PASS",
+      "status": "UP_TO_DATE",
+      "completed_at": "2026-09-07T00:59:32Z",
+      "record_sha256": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46",
+      "natural_trigger": false
+    }
+  },
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "in_flight_legacy_plan_identity": {
+    "status": "NOT_APPLICABLE to the completed D-020 executions",
+    "controlling_plan_version": "1.5",
+    "historical_rule": "Older retained execution records preserve their original plan identities; do not relabel them",
+    "separate_program": "A3 remains an open acceptance phase; an open phase does not itself mean an older execution process is running"
+  },
+  "next_action_commands": [
+    {
+      "host": "Windows",
+      "cwd": "C:\\code\\AR-local-resilience-terminal-0907-1045",
+      "argv": [
+        "npm",
+        "run",
+        "verify:pi"
+      ],
+      "purpose": "Revalidate the live dashboard"
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "git",
+        "-C",
+        "/srv/ar-local/AR-local",
+        "rev-parse",
+        "HEAD"
+      ],
+      "purpose": "Revalidate exact runtime before any further operation"
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "git",
+        "-C",
+        "/srv/ar-local/AR-local",
+        "status",
+        "--porcelain"
+      ],
+      "purpose": "Revalidate production cleanliness"
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "systemctl",
+        "show",
+        "ar-local-daily.service",
+        "ar-local-daily.timer",
+        "-p",
+        "ActiveState",
+        "-p",
+        "Result"
+      ],
+      "purpose": "Revalidate natural-ingest activity"
+    },
+    {
+      "host": "Windows PowerShell",
+      "command": "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'",
+      "purpose": "Read current backup schedule outcome"
+    }
+  ],
+  "rollback_or_preservation_action": "Preserve every immutable capture, receipt and handoff byte. For any future operational change, revalidate the exact predecessor and existing shared-lease rollback procedure; this entry does not execute a rollback or authorize physical recovery.",
+  "unresolved_findings": [
+    "24 upstream requests across 14 providers remain in automatic retry",
+    "Final-runtime natural 01:00 ingest and 06:00 backup are future proof, not supplied by the completed operator runs",
+    "Separate A3 consolidation and guarded A4 physical proof remain unfinished"
+  ],
+  "entry_id": "HANDOFF-20260907-NATURAL-ARTIFACT-VERIFICATION-PROVENANCE",
+  "previous_entry_id": "HANDOFF-20260907T113914+1000-D020-FULL-RESUME-SCHEMA",
+  "created_at_utc": "2026-09-07T02:22:31.206241+00:00",
+  "created_at_hobart": "2026-09-07T12:22:31.206241+10:00",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "result": "PASS",
+  "current_phase": "Read-only A3 consolidation and local historical-artifact verification",
+  "scope": "Reproduce PR637 archive checks and record provenance; no backup replay or runtime mutation",
+  "production_clean": true,
+  "production_clean_verified_at": "2026-09-07T12:19:32+10:00",
+  "live_readback": "Exact runtime 2607ed681d5d3c1da66f9c3c0109cff524e02338, empty git status, daily service inactive/success, daily timer active/success; dashboard smoke September 7 with 16013 rates; ordinary-user task result zero and next September 8 06:00; receiver configuration hash b38601a31751f052c11b8d96c23d90acdc138afdddbef4c710ae87b580745e8e matched.",
+  "completed_gates": [
+    "Historical September 7 natural backup under receiver835067f/runtime6ee30d7",
+    "Independent restoration of generations115-117",
+    "Current D-020 runtime activation and operator backup as separately recorded",
+    "Historical archive entry hashes, XML parsing/comparison and source-result inspection"
+  ],
+  "open_gates": [
+    "Consolidated A3 acceptance",
+    "Final-runtime natural 01:00 ingest and 06:00 backup",
+    "Guarded A4 physical boot proof",
+    "PR607 simplification deployment"
+  ],
+  "prohibited_advancement": "No writable recovery mount, media write, boot selection, reboot or PR607 deployment from this record.",
+  "verification": {
+    "target_source_commit": "0baaaa75f5eb168922ef6686f3213857ca23f51a",
+    "checkout_base_commit": "a33b485f88f726a6b842238f46eded4376eb5e7c",
+    "started_at_utc": "2026-09-07T02:20:31.365354+00:00",
+    "completed_at_utc": "2026-09-07T02:20:31.370370+00:00",
+    "exact_argv": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "-B",
+      "docs/evidence/natural-backup-20260907/verify_addendum.py",
+      "--archive",
+      "docs/evidence/natural-backup-20260907/7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48.zip",
+      "--output",
+      "docs/evidence/natural-backup-20260907/verification-20260907T1221.json",
+      "--operator",
+      "S-1-5-21-689213601-40760280-3596424081-1001"
+    ],
+    "cwd": "C:\\code\\AR-local-natural-backup-0907",
+    "verifier_sha256": "784f93b11e0c04293f42926588a9dd81904e492a8c0c95c3922627f2438ca654",
+    "result": "PASS",
+    "runtime_access": false,
+    "backup_access": false,
+    "deviations": []
+  },
+  "exact_commands": [
+    {
+      "host": "Windows",
+      "cwd": "C:\\code\\AR-local-natural-backup-0907",
+      "argv": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "-B",
+        "docs/evidence/natural-backup-20260907/verify_addendum.py",
+        "--archive",
+        "docs/evidence/natural-backup-20260907/7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48.zip",
+        "--output",
+        "docs/evidence/natural-backup-20260907/verification-20260907T1221.json",
+        "--operator",
+        "S-1-5-21-689213601-40760280-3596424081-1001"
+      ],
+      "purpose": "Read-only historical archive re-verification"
+    }
+  ],
+  "evidence_paths": [
+    {
+      "path": "docs/evidence/natural-backup-20260907/verification-20260907T1221.json",
+      "bytes": 1422,
+      "sha256": "1933c40b3ff222aef10856aeb97aa4f249ff5bbc40b040a379d18f08ed928f0e"
+    },
+    {
+      "path": "docs/evidence/natural-backup-20260907/verify_addendum.py",
+      "bytes": 4413,
+      "sha256": "784f93b11e0c04293f42926588a9dd81904e492a8c0c95c3922627f2438ca654"
+    },
+    {
+      "path": "docs/evidence/natural-backup-20260907/7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48.zip",
+      "bytes": 25778,
+      "sha256": "7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48"
+    },
+    {
+      "path": "docs/NATURAL_BACKUP_PROOF_20260907.md",
+      "bytes": 4229,
+      "sha256": "18d24c433f2c2a4134769cf8664f58b1ab6218082a1668da5a7fec4a0143831a"
+    }
+  ],
+  "inherited_runtime_evidence": {
+    "commit": "a33b485f88f726a6b842238f46eded4376eb5e7c",
+    "entry_id": "HANDOFF-20260907T113914+1000-D020-FULL-RESUME-SCHEMA",
+    "ledger_path": "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md",
+    "artifact_manifest_sha256": "599fb0479c10cb4ae750c42282968ed9a5a6f66bce3b16b1266954586508a7f9",
+    "note": "D-020 backup/capture/publication timestamps remain those of the inherited records; this archive audit does not refresh them."
+  },
+  "earliest_start": "2026-09-07T12:22:31.206241+10:00",
+  "latest_safe_stop": "2026-09-07T22:00:00+10:00",
+  "timing_scope": "Read-only consolidation only; retain next natural schedules.",
+  "next_action": "Observe final-runtime natural runs and verify current backup identities; consolidate outstanding A3 controls and finish guarded A4 preparation before any operational advancement. Do not rerun completed historical archive or restore checks.",
+  "acceptance_criteria": [
+    "All19 archive entries match declared bytes/hashes",
+    "Corrected XML parses and preserves original decoded text",
+    "Both task definitions match in four inspected sections",
+    "Source scheduled record is PASS/UP_TO_DATE and ordinary-token record is non-elevated exit zero",
+    "Canonical proof and prior archives remain byte-identical in this follow-up"
+  ],
+  "stop_conditions": "Concurrent runtime work, unexpected SHA or dirt, active ingest/backup, stale or mismatched backup, unidentified media, insufficient capacity or unproven bounded return: do not advance to a writable mount or reboot. Windows elevation remains prohibited.",
+  "known_risks": [
+    "Historical PR636 insertion and PR637 corrective restoration changed the canonical proof path; preserving both byte versions does not make those past edits append-only.",
+    "Runtime, task, capacity and backup freshness snapshots expire; do not extrapolate the earlier natural proof to a new runtime."
+  ],
+  "compensating_controls": [
+    "This follow-up changes no completed proof, addendum, archive, receipt or prior handoff entry.",
+    "Both earlier document variants and archives remain retrievable with their exact hashes.",
+    "The original canonical proof is now frozen; all future clarification is append-only.",
+    "The new portable verifier and exact timestamped execution output permit independent review without Pi/private-backup access."
+  ],
+  "revised_acceptance_criteria": [
+    "Archive provenance is complete and reproducible; no retroactive claim of append-only compliance or operational acceptance.",
+    "Keep A3 RUNNING, A4 BLOCKED and PR607 DRAFT."
+  ],
+  "deviations": [
+    {
+      "id": "HISTORICAL-PROOF-PATH-EDITS",
+      "scope": "Historical documentation noncompliance only; no operational deviation",
+      "reason": "PR636 inserted an archive note, then PR637 restored the original PR635 bytes following corrective review.",
+      "risk": "Canonical path changes can obscure the chronology of completed evidence.",
+      "compensating_controls": "Both variants and prior archives preserved; freeze current path and append this disclosure.",
+      "revised_acceptance": "Acknowledge historical path edits without retroactively declaring compliance; no further canonical rewrite.",
+      "authorisation": "Standing user request to finish previous work covers routine corrective repository work; no newly granted or backdated authority is asserted.",
+      "recorded_at_utc": "2026-09-07T02:22:31.206241+00:00"
+    }
+  ],
+  "authorisation": "Standing user request to finish previous work; local read-only verification and append-only audit correction only. No new Pi or Windows privilege authority.",
+  "snapshot_notice": "Readbacks are point-in-time. Revalidate current D-020 runtime and source/backup identities before any later operation."
+}
+```
