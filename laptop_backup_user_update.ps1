@@ -2,7 +2,11 @@
 function Write-UserUpdateEvidence([string]$Path, [string]$Text) {
   $stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
   try {
-    $bytes=[Text.UTF8Encoding]::new($false).GetBytes($Text)
+    # Task Scheduler exports an XML declaration naming UTF-16. Preserve it with
+    # matching bytes and BOM so saved evidence is independently parseable.
+    $encoding=[Text.UTF8Encoding]::new($false)
+    if($Path.EndsWith('.xml',[StringComparison]::OrdinalIgnoreCase)){$encoding=[Text.UnicodeEncoding]::new($false,$true)}
+    $bytes=$encoding.GetPreamble()+$encoding.GetBytes($Text)
     $stream.Write($bytes,0,$bytes.Length)
   } finally { $stream.Dispose() }
 }

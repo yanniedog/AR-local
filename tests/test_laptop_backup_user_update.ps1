@@ -10,7 +10,7 @@ function Get-ScheduledTask {
 function Export-ScheduledTask {
   $settings='same'
   if($script:action.Arguments -ceq 'new' -and $script:fault -in @('readback','rollback')){$settings='changed'}
-  '<Task><Actions><Command>'+ $script:action.Arguments +'</Command></Actions><Triggers><Daily>same</Daily></Triggers><Principals><User>same</User></Principals><Settings><Value>'+ $settings +'</Value></Settings></Task>'
+  '<?xml version="1.0" encoding="UTF-16"?><Task><Actions><Command>'+ $script:action.Arguments +'</Command></Actions><Triggers><Daily>same</Daily></Triggers><Principals><User>same</User></Principals><Settings><Value>'+ $settings +'</Value></Settings></Task>'
 }
 function New-ScheduledTaskAction {
   param($Execute,$Argument,$WorkingDirectory)
@@ -38,6 +38,11 @@ foreach($case in @('success','old-action','probe','readback','rollback')) {
     if($failed -or $script:sets -ne 1 -or $script:action.Arguments -cne 'new'){throw 'Successful update failed'}
     $receipt=Get-Content (Join-Path $evidence 'installation.json') -Raw | ConvertFrom-Json
     if($receipt.result -cne 'PASS' -or $receipt.elevated){throw 'Invalid success receipt'}
+    foreach($name in @('task-before.xml','task-after.xml')) {
+      $xml=[xml]::new()
+      $xml.Load((Join-Path $evidence $name))
+      if(-not $xml.Task.Actions){throw 'Task XML evidence cannot be read independently'}
+    }
   } else {
     if(-not $failed){throw "Expected failure: $case"}
     if($case -in @('old-action','probe') -and $script:sets -ne 0){throw 'Preflight failure mutated task'}
