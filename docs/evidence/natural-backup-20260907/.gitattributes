@@ -1,0 +1,2 @@
+verify_addendum.py text eol=lf
+verification-*.json -text

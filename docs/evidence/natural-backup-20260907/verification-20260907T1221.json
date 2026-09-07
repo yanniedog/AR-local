@@ -1,0 +1,30 @@
+{
+  "archive_bytes": 25778,
+  "archive_path": "docs\\evidence\\natural-backup-20260907\\7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48.zip",
+  "archive_sha256": "7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48",
+  "artifact_count": 19,
+  "artifact_manifest_sha256": "9f6e3708a38f8b28b43187350bfca54c1d9cce668e4adddfbd6ceb676b9a4bee",
+  "backup_access": false,
+  "completed_at_utc": "2026-09-07T02:20:31.370370+00:00",
+  "cwd": "C:\\code\\AR-local-natural-backup-0907",
+  "deviations": [],
+  "elevation_requested": false,
+  "exact_argv": [
+    "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+    "-B",
+    "docs/evidence/natural-backup-20260907/verify_addendum.py",
+    "--archive",
+    "docs/evidence/natural-backup-20260907/7445c2c8012a105ea40bf942fd7cdbb0b26564a11028abb2cfd7049367b29e48.zip",
+    "--output",
+    "docs/evidence/natural-backup-20260907/verification-20260907T1221.json",
+    "--operator",
+    "S-1-5-21-689213601-40760280-3596424081-1001"
+  ],
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "original_proof_sha256": "18d24c433f2c2a4134769cf8664f58b1ab6218082a1668da5a7fec4a0143831a",
+  "result": "PASS",
+  "runtime_access": false,
+  "scope": "Local historical archive inspection only",
+  "started_at_utc": "2026-09-07T02:20:31.365354+00:00",
+  "verifier_sha256": "784f93b11e0c04293f42926588a9dd81904e492a8c0c95c3922627f2438ca654"
+}
