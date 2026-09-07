@@ -142,3 +142,20 @@ ancestry check with no missing backup dates and unchanged protected metadata.
 The final receiver must first complete on the current runtime, then transition
 from that actual PASS to the reviewed selection delta. Record the resulting
 runtime and independent backup proof in the append-only handoff ledger.
+
+
+## Verified operational closeout
+
+The final source PR #639 merged as `d78ec787fce596a07fe1e4f8beff294ecb83858f`. Its exact protected runtime
+backport `2607ed681d5d3c1da66f9c3c0109cff524e02338` passed 394 isolated Pi tests and the 2,785-response replay,
+then activated at 10:52:51 Hobart. The v6 test failure was preserved and never
+activated; v7 includes the older publisher's saved-pointer dependency while
+retaining the deployed publication gate and builder contract. Protected capture,
+selection, ledger and macro hashes were unchanged.
+
+The receiver passed on the preceding efc5ba0 runtime at 10:46:31, then used that
+actual authenticated PASS for the final runtime transition. The final matching
+backup passed at 10:59:32, with all retained dates covered and no historical
+backfill requested. Both observation databases, control state and macro data
+restored successfully. See [the final quality report](CDR_QUALITY_AND_RELIABILITY_20260907.md)
+and handoff entry `HANDOFF-20260907T110241+1000-D020-RESILIENCE-VERIFIED` for exact receipt and artifact identities.
