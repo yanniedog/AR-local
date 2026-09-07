@@ -8,6 +8,8 @@ tests/fixtures/cdr-canary-2026-09-07/*.json -text
 
 # Receipt-binding execution evidence retains its recorded bytes on both hosts.
 docs/evidence/recovery-receipt-binding-20260908/* -text
+# The installed Windows configuration was captured with literal CRLF bytes.
+docs/evidence/recovery-receipt-binding-20260908/installed-config.json whitespace=cr-at-eol
 laptop_recovery_receipts.py text eol=lf
 tests/test_laptop_recovery_receipts.py text eol=lf
 docs/LAPTOP_RECOVERY_RECEIPT_BINDING.md text eol=lf
