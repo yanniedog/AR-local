@@ -21048,3 +21048,109 @@ physical-recovery acceptance changed.
   "deviation": "D-020: direct current operator instruction to fix September 7 reliability authorizes a narrow protected-baseline runtime repair and matching ordinary-user backup transition; moving-main, boot, legacy elevation and data fabrication remain excluded"
 }
 ```
+
+
+## Entry `HANDOFF-20260907T110241+1000-D020-RESILIENCE-VERIFIED`
+
+D-020 runtime repair and matching backup continuity passed. The private v6 packet
+failed 12 tests because its older publisher lacked the saved-pointer dependency;
+it was never deployed. The corrected v7 packet passed 394 isolated Pi tests and
+the retained original-response replay. Activation completed at 10:52:51 Hobart,
+with the exact protected files unchanged and both coordination timers restored.
+Rollback and verification share one production lease. Each timer restoration is
+attempted independently and cleanup failure produces terminal failure evidence.
+
+Receiver migration was verified in two real stages. The new receiver first passed
+on unchanged efc5ba0 at 10:46:31. That actual successful receipt anchored the final
+2607ed6 runtime transition. The final backup passed at 10:59:32, restoring 10,574
+files and 4,908,914,658 bytes, including both September 7 databases. Historical
+inventory was UP_TO_DATE with no missing retained dates or requested backfill.
+Task triggers, principal and settings are unchanged; the next natural backup is
+September 8 at 06:00. Neither operator run is relabelled as natural proof.
+
+The best selected observation still contains 2,577 products and 16,013 rate rows.
+Its 24 source failures across 14 providers remain explicit in automatic recovery.
+This PASS covers the implemented repair, verified deployment and backup, not
+complete upstream availability or the independently gated physical-recovery work.
+The concise results are in `docs/CDR_QUALITY_AND_RELIABILITY_20260907.md`.
+
+```json
+{
+  "entry_id": "HANDOFF-20260907T110241+1000-D020-RESILIENCE-VERIFIED",
+  "previous_entry_id": "HANDOFF-20260907T100354+1000-D020-RESILIENCE-RUNTIME",
+  "created_at_hobart": "2026-09-07T11:02:41.981983+10:00",
+  "created_at_utc": "2026-09-07T01:02:41.981983+00:00",
+  "operator": "Codex for jkoka",
+  "result": "PASS",
+  "scope": "D-020 September 7 resilience repair and matching backup continuity",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "production_clean_verified_at": "2026-09-07T01:00:15.709290+00:00",
+  "protected_ancestor": "6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2",
+  "rollback_runtime_sha": "efc5ba0a174d3646082086211c895d1494699550",
+  "source_pr": 639,
+  "source_merge_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+  "activation_completed_at": "2026-09-07T00:52:51.828919+00:00",
+  "canary": "394 passed in 19.20s",
+  "original_response_replay": {
+    "result": "PASS",
+    "successful_json_responses": 2785,
+    "by_phase": {
+      "product_detail": 2581,
+      "products_index": 204
+    },
+    "validation_failures": [],
+    "upstream_error_responses": [
+      {
+        "provider": "Newcastle Permanent Building Society",
+        "event": "00002308-c73279725e578804.json",
+        "kind": "non_json_http200"
+      }
+    ]
+  },
+  "receiver_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\source",
+  "receiver_config_sha256": "b38601a31751f052c11b8d96c23d90acdc138afdddbef4c710ae87b580745e8e",
+  "stage1_backup_receipt_sha256": "b4acfeb5434177f0b3ca1f88853af87f707a4c4369030f9c80f16e36ebb3116b",
+  "current_backup_record_path": "C:\\code\\backups\\AR-local-pi5-user\\catalog\\scheduled-runs\\20260907T005932Z-0a690c2eb8c54d66b70c708af9db5f35.json",
+  "current_backup_record_sha256": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46",
+  "current_backup_result": "PASS / UP_TO_DATE",
+  "missing_retained_backup_dates": [],
+  "backup_completed_at": "2026-09-07T00:59:32Z",
+  "restored_files": 10574,
+  "restored_bytes": 4908914658,
+  "selected_generation": "obs-2026-09-07-359b23e789d193d5",
+  "rejected_recovery_generation": "obs-2026-09-07-3222a5e50bccfb68",
+  "products": 2577,
+  "rate_rows": 16013,
+  "terminal_upstream_failures": 24,
+  "affected_providers": 14,
+  "publication": "PASS; 11 independent asset size/hash checks; dated/rolling v1, v2 and 116-date index",
+  "economic_sources": "PASS; 29 fresh source checks",
+  "dashboard": "PASS; exact live runtime and September 7 HTTP acceptance",
+  "timers": {
+    "ar-local-daily.timer": "active",
+    "ar-local-daily-watchdog.timer": "active",
+    "ar-local-runtime-health.timer": "active",
+    "ar-local-dashboard.service": "active",
+    "avalon-monitor-cycle.timer": "active"
+  },
+  "task_settings_preserved": true,
+  "natural_0100_ingest_under_final_runtime": "NOT_OBSERVED; next September 8 at 01:00 Hobart",
+  "natural_0600_backup_under_final_runtime": "NOT_OBSERVED; next September 8 at 06:00 Hobart",
+  "earlier_natural_0600_backup": "Prior PASS preserved separately; current proofs are operator-triggered",
+  "evidence_root": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z",
+  "artifact_manifest_sha256": "599fb0479c10cb4ae750c42282968ed9a5a6f66bce3b16b1266954586508a7f9",
+  "artifact_count": 33,
+  "next_action": "Allow existing scheduled ingest, watchdog recovery and ordinary-user backup to run; unresolved source requests remain in automated retry",
+  "acceptance": "Exact reviewed runtime activated; protected data unchanged; independent public and backup verification passed",
+  "stop_conditions": "Preserve evidence and stop runtime mutation on dirty or changed code, active coordinated work, invalid evidence or insufficient capacity",
+  "rollback_boundary": "Use the recorded exact predecessor and authenticated receiver transition; never reset selected captures or moving-main deploy",
+  "independent_recovery_acceptance": "A3, A4, physical restore and prior plan work are not reclassified by this D-020 closeout",
+  "deviation": "D-020 direct current operator authority; no Windows elevation, task schedule change, unrelated workload deployment or fabricated source products"
+}
+```
