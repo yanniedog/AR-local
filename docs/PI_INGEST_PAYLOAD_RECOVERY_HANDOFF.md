@@ -21616,3 +21616,658 @@ activation or backup execution.
   ]
 }
 ```
+
+
+## Entry `HANDOFF-20260907T113914+1000-D020-FULL-RESUME-SCHEMA`
+
+This correction supersedes `HANDOFF-20260907T112604+1000-D020-TIMEZONE-CLARIFICATION` as the resume pointer because
+the preceding summaries did not enumerate the complete required schema. Its
+reason, risks, controls and revised acceptance are explicit below, together with
+all operational identities, independent states, gate states, evidence sizes and
+catalog sequence. Existing execution times and outcomes are preserved. D-020
+authority comes from the prior direct user instruction; the time below records
+this documentation correction and does not invent an earlier approval timestamp.
+
+The D-020 ingest repair and matching restore are complete. The separate recovery
+program still requires A3 consolidation and guarded A4 proof; its open gates,
+prohibited advancement and exact preflight commands are carried forward. No new
+Pi mutation, backup transfer, physical-media action or elevation is performed by
+this correction. Every previous handoff byte remains intact.
+
+```json
+{
+  "entry_id": "HANDOFF-20260907T113914+1000-D020-FULL-RESUME-SCHEMA",
+  "previous_entry_id": "HANDOFF-20260907T112604+1000-D020-TIMEZONE-CLARIFICATION",
+  "created_at_hobart": "2026-09-07T11:39:14.336627+10:00",
+  "created_at_utc": "2026-09-07T01:39:14.336627+00:00",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "result": "PASS",
+  "scope": "Complete handoff-schema and deviation-documentation correction; operational D-020 acceptance preserved",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "production_clean_verified_at": "2026-09-07T01:00:15.709290+00:00",
+  "protected_ancestor": "6ee30d7aaadcd1ddd9bdda98157a6b87f71a51c2",
+  "rollback_runtime_sha": "efc5ba0a174d3646082086211c895d1494699550",
+  "source_pr": 639,
+  "source_merge_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+  "activation_completed_at": "2026-09-07T00:52:51.828919+00:00",
+  "canary": "394 passed in 19.20s",
+  "original_response_replay": {
+    "result": "PASS",
+    "successful_json_responses": 2785,
+    "by_phase": {
+      "product_detail": 2581,
+      "products_index": 204
+    },
+    "validation_failures": [],
+    "upstream_error_responses": [
+      {
+        "provider": "Newcastle Permanent Building Society",
+        "event": "00002308-c73279725e578804.json",
+        "kind": "non_json_http200"
+      }
+    ]
+  },
+  "receiver_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\source",
+  "receiver_config_sha256": "b38601a31751f052c11b8d96c23d90acdc138afdddbef4c710ae87b580745e8e",
+  "stage1_backup_receipt_sha256": "b4acfeb5434177f0b3ca1f88853af87f707a4c4369030f9c80f16e36ebb3116b",
+  "current_backup_record_path": "C:\\code\\backups\\AR-local-pi5-user\\catalog\\scheduled-runs\\20260907T005932Z-0a690c2eb8c54d66b70c708af9db5f35.json",
+  "current_backup_record_sha256": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46",
+  "current_backup_result": "PASS / UP_TO_DATE",
+  "missing_retained_backup_dates": [],
+  "backup_completed_at": "2026-09-07T00:59:32Z",
+  "restored_files": 10574,
+  "restored_bytes": 4908914658,
+  "selected_generation": "obs-2026-09-07-359b23e789d193d5",
+  "rejected_recovery_generation": "obs-2026-09-07-3222a5e50bccfb68",
+  "products": 2577,
+  "rate_rows": 16013,
+  "terminal_upstream_failures": 24,
+  "affected_providers": 14,
+  "publication": "PASS; 11 independent asset size/hash checks; dated/rolling v1, v2 and 116-date index",
+  "economic_sources": "PASS; 29 fresh source checks",
+  "dashboard": "PASS; exact live runtime and September 7 HTTP acceptance",
+  "timers": {
+    "ar-local-daily.timer": "active",
+    "ar-local-daily-watchdog.timer": "active",
+    "ar-local-runtime-health.timer": "active",
+    "ar-local-dashboard.service": "active",
+    "avalon-monitor-cycle.timer": "active"
+  },
+  "task_settings_preserved": true,
+  "natural_0100_ingest_under_final_runtime": "NOT_OBSERVED; next September 8 at 01:00 Hobart",
+  "natural_0600_backup_under_final_runtime": "NOT_OBSERVED; next September 8 at 06:00 Hobart",
+  "earlier_natural_0600_backup": "Prior PASS preserved separately; current proofs are operator-triggered",
+  "evidence_root": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z",
+  "artifact_manifest_sha256": "599fb0479c10cb4ae750c42282968ed9a5a6f66bce3b16b1266954586508a7f9",
+  "artifact_count": 33,
+  "next_action": "Keep the existing ingest, watchdog and ordinary-user backup schedules active. Continue the separate recovery program: consolidate A3 acceptance using the retained natural proof and matching current-runtime evidence, and prepare guarded physical A4 proof while A4 remains BLOCKED and PR607 remains DRAFT. Do not treat this D-020 PASS as A3/A4 completion.",
+  "acceptance": "Exact reviewed runtime activated; protected data unchanged; independent public and backup verification passed",
+  "stop_conditions": "Concurrent runtime work, unexpected SHA or dirt, active ingest/backup, stale or mismatched backup, unidentified media, insufficient capacity or unproven bounded return: do not advance to a writable mount or reboot. Windows elevation remains prohibited.",
+  "rollback_boundary": "Use the recorded exact predecessor and authenticated receiver transition; never reset selected captures or moving-main deploy",
+  "independent_recovery_acceptance": "A3, A4, physical restore and prior plan work are not reclassified by this D-020 closeout",
+  "deviation": "D-020 direct current operator authority; no Windows elevation, task schedule change, unrelated workload deployment or fabricated source products",
+  "plan_execution_copy": "C:\\code\\AR-local-resilience-terminal-0907-1045\\docs\\PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_windows_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "candidate_code_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "executed_by": "Codex for jkoka",
+  "exact_commands": [
+    {
+      "host": "Pi",
+      "argv": [
+        "sudo",
+        "-n",
+        "systemd-run",
+        "--unit=ar-local-resilience-canary-v7",
+        "--uid=pi",
+        "--gid=pi",
+        "--wait",
+        "--pipe",
+        "--collect",
+        "--property=WorkingDirectory=/srv/ar-local/canary/resilience-20260907-v7",
+        "--property=Nice=15",
+        "--property=IOSchedulingClass=idle",
+        "--property=CPUQuota=200%",
+        "--property=RuntimeMaxSec=8min",
+        "--property=TimeoutStopSec=20s",
+        "--property=KillMode=control-group",
+        "--property=ProtectSystem=strict",
+        "--property=ReadOnlyPaths=/srv/ar-local/AR-local /srv/ar-local/data",
+        "--property=ReadWritePaths=/srv/ar-local/canary/resilience-20260907-v7",
+        "--property=Environment=PYTHONDONTWRITEBYTECODE=1",
+        "/usr/bin/python3",
+        "-B",
+        "/srv/ar-local/canary/resilience-20260907-v7/verify_final_retry_canary.py"
+      ]
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "python3",
+        "-B",
+        "/srv/ar-local/canary/resilience-20260907-v7/activate_final_retry.py",
+        "--backup-record-sha256",
+        "b4acfeb5434177f0b3ca1f88853af87f707a4c4369030f9c80f16e36ebb3116b"
+      ]
+    },
+    {
+      "host": "Windows",
+      "cwd": "C:\\code\\AR-local-resilience-terminal-0907-1045",
+      "argv": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "-B",
+        "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7-receiver\\source\\laptop_backup_user_session.py",
+        "run",
+        "--config",
+        "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7-receiver\\user-session-backup.json",
+        "--config-sha256",
+        "e994d5e4ce7e3987e280dfc8cc45d943cbd9c7d3a4a7569514886898146979ac"
+      ]
+    },
+    {
+      "host": "Windows",
+      "cwd": "C:\\code\\AR-local-resilience-terminal-0907-1045",
+      "argv": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "-B",
+        "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\source\\laptop_backup_user_session.py",
+        "run",
+        "--config",
+        "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\user-session-backup.json",
+        "--config-sha256",
+        "b38601a31751f052c11b8d96c23d90acdc138afdddbef4c710ae87b580745e8e"
+      ]
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "python3",
+        "-B",
+        "/srv/ar-local/canary/resilience-20260907-v7/collect_runtime7_evidence.py"
+      ]
+    },
+    {
+      "host": "Windows",
+      "cwd": "C:\\code\\AR-local-resilience-terminal-0907-1045",
+      "argv": [
+        "npm",
+        "run",
+        "verify:pi"
+      ]
+    }
+  ],
+  "command_evidence": "Exact argv arrays preserve host and argument boundaries; detailed child commands and hashes are in the sealed plan, helper and backup execution receipts",
+  "evidence_paths": [
+    "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\artifact-manifest.json",
+    "C:\\code\\backups\\AR-local-pi5-user\\catalog\\scheduled-runs\\20260907T005932Z-0a690c2eb8c54d66b70c708af9db5f35.json",
+    "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T011719Z-handoff-correction\\v7-natural-watchdog-final.json"
+  ],
+  "evidence_hashes": {
+    "artifact_manifest": "599fb0479c10cb4ae750c42282968ed9a5a6f66bce3b16b1266954586508a7f9",
+    "current_backup_record": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46",
+    "natural_watchdog": "d710a8c33a32e584d2e65b40391d1e3e218aede67325245a2cc11ec89b5e399f"
+  },
+  "natural_watchdog": {
+    "result": "PASS",
+    "completed_at_hobart": "2026-09-07T11:08:13+10:00",
+    "checked_at_hobart": "2026-09-07T11:08:12.801126+10:00",
+    "status": "upstream_gaps_remain",
+    "failed_requests_probed": 4,
+    "checked_at_utc": "2026-09-07T01:08:12.801126+00:00"
+  },
+  "replay_count_clarification": {
+    "http_200_records_examined": 2786,
+    "successful_json_validated": 2785,
+    "upstream_non_json_classified_separately": 1,
+    "non_200_responses_in_this_count": false
+  },
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "pr607_verified_head": "ca3ef9f5c5e3bd3f4e990c281a80b5b92ee6003c",
+  "inherited_phase_authority": "HANDOFF-20260907-NATURAL-BACKUP-VERIFIED and its artifact addendum; these independent phase states were not completed or waived by D-020",
+  "deviations": [
+    {
+      "id": "D-020",
+      "recorded_at_hobart": "2026-09-07T11:39:14.336627+10:00",
+      "recorded_at_utc": "2026-09-07T01:39:14.336627+00:00",
+      "reason": "The operator requested reliable September 7 automated ingest and processing despite changing or unavailable upstream CDR services, including necessary API access investigation.",
+      "risk": "A runtime or receiver change can regress coverage, publication or backup continuity, compete with scheduled production work, or confuse an operational repair with physical disaster-recovery acceptance.",
+      "compensating_controls": [
+        "Narrow verified backport onto the protected ancestry; no moving-main deployment",
+        "Isolated real-response and regression validation; exact hash-bound deployment and rollback",
+        "One shared production lease across activation and rollback; independent restoration attempts for every timer",
+        "Verified same-day observations and original timestamps retained; no invented source products",
+        "Two real authenticated receiver transitions with independent restore and full retained-date coverage",
+        "No Windows elevation, schedule/principal/settings change or unrelated workload mutation"
+      ],
+      "revised_acceptance_criteria": [
+        "Exact reviewed runtime is clean and healthy on the Pi",
+        "Protected capture, selection, ledger and macro hashes are unchanged by activation",
+        "Publication remains verified and source failures remain explicit in automatic recovery",
+        "Matching operator backup is PASS/UP_TO_DATE with independent restores and no missing retained dates",
+        "Future natural runs and A3/A4 acceptance remain separately gated"
+      ],
+      "authorisation": {
+        "operator": "jkoka",
+        "basis": "Direct user instruction in this task, before the operational repair",
+        "instructions": [
+          "Fix everything. Prevent these kinds of issues from occurring in the future.",
+          "I don't want it to leave gaps! I want reliable automated ingest and processing",
+          "Also, if API keys are needed then obtain them!"
+        ],
+        "task_id": "01a076f7-0002-7e72-a1d0-3784aad39915",
+        "original_instruction_exact_timestamp": "Not asserted; this is the time of the append-only documentation correction, not a newly granted or backdated authorisation"
+      },
+      "prior_authority_entry": "HANDOFF-20260907T100354+1000-D020-RESILIENCE-RUNTIME",
+      "result": "PASS"
+    }
+  ],
+  "record_corrections": [
+    {
+      "entry_id": "HANDOFF-20260907T111719+1000-D020-RECORD-CORRECTION",
+      "field": "natural_watchdog.checked_at_hobart",
+      "previous_value": "2026-09-07T01:08:12.801126+00:00",
+      "corrected_value": "2026-09-07T11:08:12.801126+10:00",
+      "reason": "Express the existing offset-aware instant with the named Hobart offset; retain the original UTC instant explicitly"
+    }
+  ],
+  "correction_reason": "The previous documentation corrections did not spell out every required handoff-schema field and D-020 deviation detail in the last chronological resume entry.",
+  "known_risks": [
+    "An incomplete resume record can obscure unfinished A3/A4 gates or encourage an unsafe advancement.",
+    "Runtime, source availability, capacity and task-state snapshots expire; the 24 upstream failures remain unresolved.",
+    "The exact wall-clock timestamp of the original user authorisation is not asserted; its direct instruction and earlier D-020 records remain the authority."
+  ],
+  "compensating_controls": [
+    "Append only; preserve all previous entry bytes and immutable execution receipts.",
+    "Carry the full state forward with explicit phase/gate distinctions and prohibited advancement.",
+    "Verify raw runbook identity, immutable artifact hashes/sizes, current catalog sequence and clean receiver identity.",
+    "Treat live state as point-in-time evidence and repeat preflight before any further operation.",
+    "Keep existing schedules, protected data, unrelated worktrees and the no-Windows-elevation boundary unchanged."
+  ],
+  "revised_acceptance_criteria": [
+    "Every bullet in the ledger Required entry schema is represented explicitly in this entry.",
+    "The D-020 deviation records reason, risk, compensating controls, revised acceptance, authorisation and recording time.",
+    "Existing PASS results retain their original runtime, receipt identities and execution timestamps.",
+    "A3 remains RUNNING, A4 remains BLOCKED and PR607 remains DRAFT; no independent gate is waived."
+  ],
+  "authorisation": "Existing direct operator D-020 authority permits this audit correction; no new runtime or physical-recovery action is performed",
+  "in_flight_legacy_plan_identity": {
+    "status": "NOT_APPLICABLE to the completed D-020 executions",
+    "controlling_plan_version": "1.5",
+    "historical_rule": "Older retained execution records preserve their original plan identities; do not relabel them",
+    "separate_program": "A3 remains an open acceptance phase; an open phase does not itself mean an older execution process is running"
+  },
+  "repository_cleanliness": {
+    "production": {
+      "path": "/srv/ar-local/AR-local",
+      "sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+      "clean": true,
+      "verified_at_utc": "2026-09-07T01:15:05.139754+00:00"
+    },
+    "receiver": {
+      "path": "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\source",
+      "sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+      "clean": true,
+      "verified_at_utc": "2026-09-07T01:39:14.336627+00:00"
+    },
+    "documentation_worktree": {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045",
+      "base_sha": "98c110f679f6ee66de5d7fadddee1bd26380e1e2",
+      "clean_before_append": true,
+      "verified_at_utc": "2026-09-07T01:39:14.336627+00:00"
+    },
+    "original_developer_worktree": {
+      "path": "C:/code/AR-local",
+      "sha": "a0bd0f54200c91ef7aaa2fb163e752005ddb71e8",
+      "status": "M .cursor/skills/pi-deploy-agent/SKILL.md\n?? .codex/\n?? laptop_backup_trusted_launcher.obj",
+      "handling": "User-owned unrelated changes preserved; do not clean or deploy this checkout"
+    }
+  },
+  "current_phase": "D-020 operational repair complete; separate program resumes A3 acceptance consolidation with A4 blocked",
+  "completed_gates": {
+    "D020_isolated_runtime_validation": "PASS",
+    "D020_protected_activation": "PASS",
+    "D020_publication_verification": "PASS",
+    "D020_matching_operator_restore": "PASS",
+    "D020_natural_watchdog_cycle": "PASS",
+    "D020_schedule_preservation": "PASS"
+  },
+  "open_gates": {
+    "A3_acceptance_consolidation": "RUNNING",
+    "A4_physical_recovery": "BLOCKED",
+    "PR607": "DRAFT",
+    "final_runtime_natural_0100_ingest": "NOT_STARTED",
+    "final_runtime_natural_0600_backup": "NOT_STARTED"
+  },
+  "prohibited_advancement": [
+    "No writable recovery-media mount or reboot until the controlled A3/A4 prerequisites and bounded return proof pass",
+    "No Windows elevation or revival of cancelled elevated payloads",
+    "No deployment over dirty/unknown code or during coordinated ingest/backup",
+    "No moving-main deployment, fabricated source rows or re-dating retained captures",
+    "No other recovery-program gate is passed or waived by this entry"
+  ],
+  "evidence_artifacts": [
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\pi-final-evidence.json",
+      "bytes": 16995,
+      "sha256": "388f8e3a2f1b33223ce4a3b7178ef40a63aea34a8fa21511d6ac3c07bd677fde"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\runtime-v7-plan.json",
+      "bytes": 2837,
+      "sha256": "29df8d88644410deaf47cdf9196ab93757e01ed0777d7e78c5b5d4ae9e2fef88"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\runtime-cdr-resilience-20260907-v7.bundle",
+      "bytes": 9746,
+      "sha256": "706ddf4777ae711a0eaf1c1701b23c60eeb01d96230c5ab2a6fb6c488fa7c2bd"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v7-canary-command.log",
+      "bytes": 466,
+      "sha256": "92e1c3d0fd59d9b47f1bd8776ec17c6906d9303b88f8b0036c50c10ea1638c18"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v6-canary-command.log",
+      "bytes": 3291,
+      "sha256": "8489c2678b52a3627fb8476b1a8b6b56c22698a206d97ff9c408100c4b4cb828"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v6-pytest-diagnose.txt",
+      "bytes": 16260,
+      "sha256": "c48e595a2c78f1fc01298957a5657e8e96666f7130047af56bde9f7d805d4969"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v7-activation-command.log",
+      "bytes": 2226,
+      "sha256": "ab7731cef089677509b516a63b479b5539c1411c0897a884146cbf4a10043921"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v7-receiver-stage1-backup.log",
+      "bytes": 2408,
+      "sha256": "c011222ad226c2e9d98bb27703314cbf16bf75ed88e7353591b84ba7a98aa44a"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v7-final-runtime-backup.log",
+      "bytes": 2408,
+      "sha256": "cb53c303335b6246d6ce0717b67d41d701a90ae2e8399dd58bd522050ce829e8"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-stage1-scheduled.json",
+      "bytes": 2992,
+      "sha256": "b4acfeb5434177f0b3ca1f88853af87f707a4c4369030f9c80f16e36ebb3116b"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\v7-final-windows-task.json",
+      "bytes": 665,
+      "sha256": "58cef1018ad9e8571456cb7df6940d0980e0b47bf4f27bd0313b30c07dbed833"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\activate_final_retry.py",
+      "bytes": 6843,
+      "sha256": "3df9974370b93427e8e6ffa3a464d2082f6a45575e8753a72ea00e90b3176aaa"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\install_receiver_final.ps1",
+      "bytes": 6922,
+      "sha256": "81daba28587262cdbc7088f3a4c509521399cf2d3b87ea7df168b8bff40a7243"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-lineage-proof-20260907T001902Z.json",
+      "bytes": 3486,
+      "sha256": "4715b4ff99238107b70af917d835fa16d0b656c06ca1e3ecf841a6c07d386345"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\public-verification.json",
+      "bytes": 6839,
+      "sha256": "8bc297739e31153d02612246130843c8d4f100ef07badd01d56363058b2baf34"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\prior-production-and-quality-evidence.json",
+      "bytes": 30296,
+      "sha256": "7d7f44efa5acf38b157c1c381efd3e74bf31a7a0e6ed8b236b4571e62023c03f"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\selection-review-reproduction.py",
+      "bytes": 4466,
+      "sha256": "ef95775fedc1b460664a12d4c0856dacc7ec50d31a3064b11a51088cc3fc5bf2"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\latest-verified.json",
+      "bytes": 316,
+      "sha256": "3a4d70d0ee0f68212c59ea2c5fae3d1c9bcc17aaffbf40071654e02329bbc544"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\observation-receipt.json",
+      "bytes": 4463,
+      "sha256": "221e6e235ef63cbbd90afdbc7cdd3c3ad441e06a97d3f8e08e95f8393d30a76f"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\latest-control.json",
+      "bytes": 265,
+      "sha256": "151fd1c51e2f414e777f9a55c82d84cffaa2ae83b3e8883351d05da9abdf015d"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\control-receipt.json",
+      "bytes": 3292,
+      "sha256": "b4e5983b7119d803dae1069609020ccec7803faeee5519ffe9dda7f79f18df8e"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\latest-macro.json",
+      "bytes": 292,
+      "sha256": "6dbb1041dd108e8f9a5583b8c35b855ebf9863a31df70d3b0359225b8cb427e5"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\macro-receipt.json",
+      "bytes": 3091,
+      "sha256": "be2874a3a8782c53f6b8dc76787197a99fb27eeb2ccf401019ba61c0ca567390"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\latest-scheduled.json",
+      "bytes": 195,
+      "sha256": "13d7f7d0deef409cb4249dee988c60b32ecb029a3f876e5ccb9e405dc3054de9"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\scheduled-receipt.json",
+      "bytes": 2974,
+      "sha256": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-final-installation.json",
+      "bytes": 780,
+      "sha256": "048870119077cb4b44e39ad7a956428a29db55972de389cc4383c4e303b29afd"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-final-predecessor-verification.json",
+      "bytes": 551,
+      "sha256": "87aada0e1561441828e710d6756c7cc4f00870b2de8020452d0f1f533f2bdd18"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-final-task-before.xml",
+      "bytes": 2081,
+      "sha256": "287a5c4ba7644fa0a2c6e628b2fb491d71267e7a53da4c0bf9a8df6e467b787b"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-final-task-after.xml",
+      "bytes": 2063,
+      "sha256": "cd13180809876002add5d6c728834ce643f726b0343f63bebcab7bb526b2fde8"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-stage1-observation-receipt.json",
+      "bytes": 4463,
+      "sha256": "74698891b56cdf392bfce4e0d24b436f4ce9f52196d8b98eaccaa27b0d587705"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-stage1-control-receipt.json",
+      "bytes": 3292,
+      "sha256": "05354132fcf92a45ee2a22c16ba52a82259ee941b370610f31a2fe73b3f114af"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-stage1-macro-receipt.json",
+      "bytes": 3091,
+      "sha256": "662e08a0f13ba556da73e748a9e31d9ed8bbd4c9f91b0d2afc2b2a4357dd0547"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\receiver-stage1-installation.json",
+      "bytes": 780,
+      "sha256": "9e455d1e6d1068537615fc59a100342672b5be06df53694d6b4ed76f4421f071"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T010241Z\\artifact-manifest.json",
+      "bytes": 8958,
+      "sha256": "599fb0479c10cb4ae750c42282968ed9a5a6f66bce3b16b1266954586508a7f9"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T011719Z-handoff-correction\\v7-natural-watchdog-final.json",
+      "bytes": 4429,
+      "sha256": "d710a8c33a32e584d2e65b40391d1e3e218aede67325245a2cc11ec89b5e399f"
+    },
+    {
+      "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T013914Z-resume-schema\\catalog-generations-prefix.jsonl",
+      "bytes": 95617,
+      "sha256": "7a34685168b9de7b6491379cba0e285d16a62fce08def4fbc28c33d80fa790c6"
+    }
+  ],
+  "catalog_snapshot": {
+    "path": "C:\\code\\AR-local-resilience-terminal-0907-1045\\runs\\2026-09-07-resilience\\20260907T013914Z-resume-schema\\catalog-generations-prefix.jsonl",
+    "source_path": "C:\\code\\backups\\AR-local-pi5-user\\catalog\\generations.jsonl",
+    "bytes": 95617,
+    "sha256": "7a34685168b9de7b6491379cba0e285d16a62fce08def4fbc28c33d80fa790c6",
+    "catalog_sequence": 136,
+    "entries": 136,
+    "verified_at_utc": "2026-09-07T01:39:14.336627+00:00",
+    "rule": "This is a retained prefix snapshot; later legitimate atomic pointer updates and authenticated appends remain distinct evidence"
+  },
+  "catalog_receipts": {
+    "observation": {
+      "catalog_sequence": 134,
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-07\\7efaadf18dc164985856592d43414ca1b7352557ea1859fbf3c8c519c1c9688d\\receipt.json",
+      "receipt_bytes": 4463,
+      "receipt_sha256": "221e6e235ef63cbbd90afdbc7cdd3c3ad441e06a97d3f8e08e95f8393d30a76f",
+      "archive_bytes": 417563279,
+      "archive_sha256": "aa8b676471588f0b791b446409eb99d9aad751fe2d2215ef5b8a9445d01f8032",
+      "source_bytes": 4908914658,
+      "completed_at": "2026-09-07T00:58:51Z"
+    },
+    "control": {
+      "catalog_sequence": 135,
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\control\\20260907T005856Z-7672cc8513cade4b\\receipt.json",
+      "receipt_bytes": 3292,
+      "receipt_sha256": "b4e5983b7119d803dae1069609020ccec7803faeee5519ffe9dda7f79f18df8e",
+      "archive_bytes": 94478189,
+      "archive_sha256": "0f0b0e9b376f4755833edebd16658db30396be8682624a32584a851a45720c66",
+      "source_bytes": 283653260,
+      "completed_at": "2026-09-07T00:59:23Z"
+    },
+    "macro": {
+      "catalog_sequence": 136,
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\d5dc613ff11d9c5fcda8b06b591650e65811c84c38144329af5b2a0faf382c73\\receipt.json",
+      "receipt_bytes": 3091,
+      "receipt_sha256": "be2874a3a8782c53f6b8dc76787197a99fb27eeb2ccf401019ba61c0ca567390",
+      "archive_bytes": 169019,
+      "archive_sha256": "7479d90eb8c642bea8f425094ec224e16778cc5d390111c8dc58cbdece4dda62",
+      "source_bytes": 1032192,
+      "completed_at": "2026-09-07T00:59:23Z"
+    }
+  },
+  "independent_states": {
+    "capture": {
+      "result": "PASS",
+      "observation_state": "partial",
+      "generation_id": "obs-2026-09-07-359b23e789d193d5",
+      "upstream_failures": 24,
+      "meaning": "Retained capture and integrity verified; complete upstream availability is not claimed"
+    },
+    "finalization": {
+      "result": "PASS",
+      "meaning": "Completion markers, selected pointer, ledger and both databases verified"
+    },
+    "publication": {
+      "result": "PASS",
+      "meaning": "Dated/rolling v1, v2 and index; 11 independent asset hashes verified"
+    },
+    "dashboard": {
+      "result": "PASS",
+      "verified_at_utc": "2026-09-07T01:00:15.709290+00:00"
+    },
+    "backup": {
+      "result": "PASS",
+      "status": "UP_TO_DATE",
+      "completed_at": "2026-09-07T00:59:32Z",
+      "record_sha256": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46",
+      "natural_trigger": false
+    }
+  },
+  "earliest_start": "2026-09-07T11:39:14.336627+10:00",
+  "latest_safe_stop": "2026-09-07T22:00:00+10:00",
+  "timing_scope": "Only read-only A3 consolidation/preflight can begin from this snapshot; A4 advancement remains blocked. Protect the next natural 01:00 ingest.",
+  "next_action_commands": [
+    {
+      "host": "Windows",
+      "cwd": "C:\\code\\AR-local-resilience-terminal-0907-1045",
+      "argv": [
+        "npm",
+        "run",
+        "verify:pi"
+      ],
+      "purpose": "Revalidate the live dashboard"
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "git",
+        "-C",
+        "/srv/ar-local/AR-local",
+        "rev-parse",
+        "HEAD"
+      ],
+      "purpose": "Revalidate exact runtime before any further operation"
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "git",
+        "-C",
+        "/srv/ar-local/AR-local",
+        "status",
+        "--porcelain"
+      ],
+      "purpose": "Revalidate production cleanliness"
+    },
+    {
+      "host": "Pi",
+      "argv": [
+        "systemctl",
+        "show",
+        "ar-local-daily.service",
+        "ar-local-daily.timer",
+        "-p",
+        "ActiveState",
+        "-p",
+        "Result"
+      ],
+      "purpose": "Revalidate natural-ingest activity"
+    },
+    {
+      "host": "Windows PowerShell",
+      "command": "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'",
+      "purpose": "Read current backup schedule outcome"
+    }
+  ],
+  "rollback_or_preservation_action": "Preserve every immutable capture, receipt and handoff byte. For any future operational change, revalidate the exact predecessor and existing shared-lease rollback procedure; this entry does not execute a rollback or authorize physical recovery.",
+  "unresolved_findings": [
+    "24 upstream requests across 14 providers remain in automatic retry",
+    "Final-runtime natural 01:00 ingest and 06:00 backup are future proof, not supplied by the completed operator runs",
+    "Separate A3 consolidation and guarded A4 physical proof remain unfinished"
+  ],
+  "snapshot_notice": "State is valid only at each stated verification time; re-run preflight rather than treating this entry as live permission."
+}
+```
