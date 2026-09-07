@@ -22568,3 +22568,124 @@ any prior evidence or reinterpret past edits as append-only compliance.
   "snapshot_notice": "Readbacks are point-in-time. Revalidate current D-020 runtime and source/backup identities before any later operation."
 }
 ```
+
+
+## Entry `HANDOFF-20260908-LAN-DISCOVERY-REPAIR`
+
+```json
+{
+  "entry_id": "HANDOFF-20260908-LAN-DISCOVERY-REPAIR",
+  "previous_entry_id": "HANDOFF-20260907-NATURAL-ARTIFACT-VERIFICATION-PROVENANCE",
+  "created_at_utc": "2026-09-07T22:33:08.928832+00:00",
+  "created_at_hobart": "2026-09-08T08:33:08.928832+10:00",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "result": "RUNNING_IMPLEMENTATION",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "in_flight_legacy_plan_identity": "No earlier execution is active; historical receipts retain their own plan identity.",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "production_clean": true,
+  "production_clean_verified_at": "2026-09-08T05:16:17+10:00",
+  "candidate_code_sha": "d78ec787fce596a07fe1e4f8beff294ecb83858f",
+  "candidate_meaning": "Currently installed receiver, not the uncommitted replacement.",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\source",
+  "receiver_config_sha256": "b38601a31751f052c11b8d96c23d90acdc138afdddbef4c710ae87b580745e8e",
+  "implementation_worktree": "C:\\code\\AR-local-backup-route-0908",
+  "implementation_branch": "agent/backup-lan-fallback-0908",
+  "implementation_base_sha": "c68bfe4f2c148a2d101d4b439e69aa6a6f3b5aea",
+  "implementation_clean": false,
+  "current_phase": "A3 backup continuity repair after natural Windows LAN lookup failure",
+  "completed_gates": [
+    "September 8 natural 01:00 ingest completed at 01:17:07 exit zero",
+    "September 8 v1/v2/date-index publication and dashboard smoke passed",
+    "Historical September 7 natural proof and independent restore remain preserved",
+    "SD baseline capture remains preserved"
+  ],
+  "open_gates": [
+    "Install and verify reviewed ordinary-user LAN fallback receiver",
+    "Recover September 8 backup with operator-trigger attribution",
+    "Observe a successful natural backup on the final receiver/runtime",
+    "Consolidated A3 acceptance",
+    "Guarded A4 physical boot and bounded return",
+    "PR607 simplification merge and deployment"
+  ],
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "independent_states": {
+    "capture": "PASS at September 8 natural ingest; upstream completeness is separate",
+    "finalization": "PASS at natural completion",
+    "publication": "PASS for September 8 v1/v2/index",
+    "dashboard": "PASS with 16013 rates at 05:16",
+    "backup": {
+      "natural_trigger": true,
+      "started_at": "2026-09-08T06:00:01+10:00",
+      "result": "FAIL",
+      "task_exit_code": 1,
+      "stage": "LAN discovery before Pi access",
+      "latest_success_remains": "701266621fb077221b7acc0f9582710296d939ee98f911b87c7b6b2169c53f46",
+      "latest_success_catalog_sequence": 136,
+      "latest_success_observation_date": "2026-09-07"
+    }
+  },
+  "evidence_paths": [
+    {
+      "path": "C:\\code\\backups\\AR-local-user-session\\natural-proof-20260908\\pre-backup-20260908T0516.json",
+      "bytes": 1391,
+      "sha256": "3efaeb40298e507d7ea154a587ac8ee1ec9bd1e4cb0c40c18a51114c80bd9007"
+    },
+    {
+      "path": "C:\\code\\backups\\AR-local-user-session\\source-resilience-20260907-v7\\logs\\20260907T200003Z-6ffbbc8225684888b0fa98dea44cc04c.log.stderr",
+      "bytes": 316,
+      "sha256": "363b81e3221fc89020137d7fec1d200c0060e5df7e69fe135ceaaddf3c793045"
+    }
+  ],
+  "next_action": "Review and merge the bounded optional LAN fallback and read-only ancestry/task updater; create a new immutable receiver/configuration, authenticate the exact prior PASS and install while the task is idle. Then invoke the ordinary-user launcher for an explicitly operator-triggered September 8 recovery. Do not relabel the failed natural trigger.",
+  "next_action_commands": [
+    "python -m pytest tests/ -q",
+    "node C:/code/AR-local/scripts/pr-arm-and-park.mjs --pr <reviewed PR>",
+    "update_laptop_backup_user_session.ps1 -OldConfigPath <verified old config> -OldConfigSha256 <old digest> -ConfigPath <new immutable config> -ConfigSha256 <new digest> -EvidenceDirectory <new evidence directory>",
+    "run_laptop_backup_user_session.ps1 -ConfigPath <new immutable config> -ConfigSha256 <new digest>"
+  ],
+  "command_status": "Templates require the reviewed replacement commit and actual new configuration hashes; no operational command has been executed from these templates.",
+  "earliest_start": "2026-09-08T08:33:08.928832+10:00",
+  "latest_safe_start": "2026-09-08T13:59:59+10:00",
+  "latest_safe_stop": "2026-09-08T20:00:00+10:00",
+  "acceptance_criteria": [
+    "Applicable CI and substantive review passed",
+    "Hash-bound LAN hint remains RFC1918 and strict SSH identity unchanged",
+    "Old successful receipt and complete historical identity pairs authenticate read-only before activation",
+    "Task remains Interactive/Limited with identical triggers and settings",
+    "Current observation, control and macro backup verifies with archive/restore checks",
+    "Operator recovery remains separate from natural-backup acceptance"
+  ],
+  "stop_conditions": "Unexpected production SHA/dirt, active ingest or backup, changed task/configuration, invalid predecessor, failed host authentication, insufficient capacity or start-window expiry. Never elevate or use a retired UAC payload.",
+  "rollback_or_preservation_action": "Updater restores and verifies the prior task action on readback failure. Preserve old receiver/configuration, failed natural log, all catalogs/receipts/archives and SD baseline; no Pi runtime or media change.",
+  "known_risks": [
+    "A LAN hint can become stale after DHCP changes; strict host authentication still rejects a different device.",
+    "Current natural backup is failed; a successful operator recovery cannot supply natural trigger proof."
+  ],
+  "unresolved_findings": [
+    "Windows name lookup fails for ar.local although existing pinned LAN SSH is reachable.",
+    "A3 and A4 remain open; PR607 cannot advance."
+  ],
+  "deviations": [
+    {
+      "id": "D-021-USER-LAN-FALLBACK",
+      "reason": "Complete the operator-authorized no-UAC backup workflow despite Windows resolver failure.",
+      "risk": "A configured LAN route may become stale.",
+      "compensating_controls": "Normal lookup first; bounded fallback only on lookup failure/timeout; RFC1918 validation; immutable configuration digest; unchanged strict SSH host/key/executable pins; ordinary-token rejection of elevation; authenticated predecessor and task rollback.",
+      "revised_acceptance": "Recover today via the final receiver and independently observe its next natural scheduled backup.",
+      "authorisation": "Standing user instruction to finish completely, find a no-Windows-Yes workaround, and do it now. No new or backdated authority is asserted.",
+      "recorded_at_utc": "2026-09-07T22:33:08.928832+00:00"
+    }
+  ],
+  "authorisation": "Standing direct operator no-UAC continuation; receiver-only repair. No boot, EEPROM, protected legacy task or Pi runtime mutation.",
+  "snapshot_notice": "Revalidate runtime, task, capacity and receipt identities immediately before activation. This entry records implementation in progress, not operational acceptance."
+}
+```
