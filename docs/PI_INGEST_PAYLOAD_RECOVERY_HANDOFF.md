@@ -20955,3 +20955,96 @@ Next remains unchanged: settle concurrent authorized runtime work, bind current
 backup freshness to its resulting approved identity, consolidate remaining A3
 acceptance and prepare the guarded A4 proof. Natural scheduled-backup evidence
 is PASS; consolidated A3 and physical A4 remain unfinished. PR #607 remains draft.
+
+
+## Entry `HANDOFF-20260907T100354+1000-D020-RESILIENCE-RUNTIME`
+
+This continuation records the real September 7 production work from its immutable
+receipts at the time shown below. It supersedes the earlier description of the
+resilience task as merely being prepared; it does not rewrite the natural 06:00
+backup result or claim a natural ingest under the new runtime.
+
+The first v4 activation encountered a dashboard-readiness timeout and rolled
+back. The archived rollback later passed HTTP and data-preservation checks. The
+v4 retry passed at 09:13:56 Hobart; the v5 coordination delta passed at 09:44:35
+without a dashboard restart. Original capture hashes and the selected observation
+remained unchanged. Exact receipts are retained under
+`/srv/ar-local/canary/resilience-20260907-v4/activation/` and
+`/srv/ar-local/canary/resilience-20260907-v5/activation/`; the first attempt remains
+in `activation-first-attempt-20260907T090326` beside the v4 activation.
+
+Recovery retained all 2,577 products and 16,013 rates. A newly empty BankSA index
+left 20 retained products unconfirmed; the selection guard correctly refused the
+revision's worse failure count. The original snapshot remains selected. The
+public verification checked 11 downloaded assets, 116 indexed dates and 29 fresh
+economic series. This is preservation and publication proof, not full upstream
+coverage: 24 failures across 14 providers remain in the durable retry queue.
+
+The ordinary-user backup retry restored both September 7 databases, 10,574 files
+and 4,908,914,658 bytes, then independently restored control and macro packs. Its
+subsequent historical reconciliation failed during SSH cleanup; the last scheduled
+execution remains FAIL and is not relabelled. Existing historical backups remain
+intact. The repeated-runtime lineage defect and late PR 638 recovery findings
+remain active work. Read the artifact manifest for exact receipt paths, sizes
+and hashes. No Task Scheduler trigger, principal, setting, UAC boundary or
+physical-recovery acceptance changed.
+
+```json
+{
+  "entry_id": "HANDOFF-20260907T100354+1000-D020-RESILIENCE-RUNTIME",
+  "previous_entry_id": "HANDOFF-20260907-NATURAL-PROOF-ARTIFACT-ADDENDUM",
+  "created_at_hobart": "2026-09-07T10:03:54.175622+10:00",
+  "created_at_utc": "2026-09-07T00:03:54.175622+00:00",
+  "operator": "Codex for jkoka",
+  "result": "RUNNING",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_windows_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "efc5ba0a174d3646082086211c895d1494699550",
+  "production_clean_observed_at": "2026-09-07T09:58:01+10:00",
+  "source_pr": 638,
+  "source_merge_sha": "ce455279598508f599a9772a390ac6da43c231b7",
+  "rollback_runtime_sha": "b92e9cb41856bbb298ccadfd0134bb510a45d2f9",
+  "receiver_sha": "835067f474e8a771f7cbf710c08d5cde835f2618",
+  "receiver_path": "C:/code/backups/AR-local-user-session/source-resilience-20260907-v5/source",
+  "receiver_config_sha256": "3d650bc716ab1f4c9848b0af2fea05d9016b3d313c5a980a721c85deb206b34f",
+  "selected_generation": "obs-2026-09-07-359b23e789d193d5",
+  "selected_event_digest": "95fc303e8845e664565c094bd833bad7ab0f703b728d49008f7363287285eb9c",
+  "recovery_generation": "obs-2026-09-07-3222a5e50bccfb68",
+  "products": 2577,
+  "rate_rows": 16013,
+  "terminal_upstream_failures": 24,
+  "affected_providers": 14,
+  "capture_and_finalization": "PASS; original and recovery evidence retained",
+  "selection": "PASS; refused recovery regression of 25 failures versus original 24",
+  "publication": "PASS; dated v1, rolling v1, dates index and v2 independently downloaded",
+  "dashboard": "PASS; live HTTP and scheduled health checks",
+  "operator_current_backup": "PASS components; overall execution incomplete after SSH failure during historical reconciliation",
+  "historical_backup_transition": "RUNNING; second runtime transition no longer recognizes authenticated older receipts",
+  "natural_0600_backup": "PASS under preceding 6ee/835 identity, as separately recorded",
+  "current_runtime_natural_0100_ingest": "NOT_STARTED; next 2026-09-08T01:00:00+10:00",
+  "current_runtime_natural_0600_backup": "NOT_STARTED; next 2026-09-08T06:00:00+10:00",
+  "evidence_root": "C:\\code\\AR-local-resilience-final-retries-0907\\runs\\2026-09-07-resilience\\20260907T000228Z",
+  "artifact_manifest_sha256": "da2147b1716ab1e2897f1607453a8005715881b3f488d433588206194ba7bb86",
+  "artifact_manifest_bytes": 3448,
+  "artifact_count": 13,
+  "exact_verification_commands": [
+    "npm run verify:pi",
+    "python -B /srv/ar-local/canary/resilience-20260907-v5/activate_followup.py --source-merge ce455279598508f599a9772a390ac6da43c231b7",
+    "python C:/Users/jkoka/AppData/Local/Temp/ar-local-quality-0907/preserve_closeout_evidence.py"
+  ],
+  "next_action": "Resolve PR 638 saved-selection pointer and intervening-revision findings; verify authenticated historical backup lineage; isolated exact-candidate tests and reviewed narrow activation, then matching backup and append terminal evidence",
+  "earliest_start": "2026-09-07T10:03:54.175622+10:00",
+  "latest_safe_stop": "2026-09-07T22:00:00+10:00",
+  "acceptance": "Required CI and substantive feedback settled; isolated retry regressions pass; exact runtime and retained data verified; current backup receipts restored and historical lineage complete",
+  "stop_conditions": "Unexpected dirty or changed runtime, active ingest/backup, failed candidate evidence, unbound pointer or receipt, insufficient capacity: preserve evidence and defer activation",
+  "rollback_boundary": "Exact predecessor named in each verified activation receipt; preserve original capture and failed attempts",
+  "a3": "RUNNING independently",
+  "a4": "BLOCKED independently",
+  "pr607": "Separate draft",
+  "deviation": "D-020: direct current operator instruction to fix September 7 reliability authorizes a narrow protected-baseline runtime repair and matching ordinary-user backup transition; moving-main, boot, legacy elevation and data fabrication remain excluded"
+}
+```

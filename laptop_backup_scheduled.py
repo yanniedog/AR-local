@@ -300,6 +300,7 @@ def inventory_status(
     plan_commit: str,
     after_date: str = "2026-05-21",
     previous_runtime: Mapping[str, str] | None = None,
+    historical_runtime_pairs: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, object]:
     if plan_commit != receiver.PLAN_GIT_COMMIT:
         raise ValueError("inventory plan commit is not current")
@@ -319,11 +320,14 @@ def inventory_status(
                 continue
             receipt = json.loads(receipt_path.read_bytes())
             checks = receipt.get("checks")
+            pair = receipt.get("protected_code_sha"), receipt.get("candidate_code_sha")
+            inherited = all(isinstance(value, str) for value in pair) and pair in historical_runtime_pairs
             if (
                 receipt.get("result") == "PASS"
                 and receipt.get("kind") == "observation"
                 and receiver.supported_receipt_plan_identity(receipt, allow_legacy=True) is not None
-                and (receipt.get("protected_code_sha") == protected_sha or (
+                and (receipt.get("protected_code_sha") == protected_sha
+                     or inherited or (
                     previous_runtime
                     and receipt.get("protected_code_sha") == previous_runtime["production_sha"]
                     and receipt.get("candidate_code_sha") == previous_runtime["receiver_sha"]
@@ -356,14 +360,19 @@ def inventory_status(
                     identity = json.loads(receipt_path.read_bytes())
                     if not isinstance(identity, Mapping):
                         raise ValueError("invalid receipt identity")
-                    prior = bool(previous_runtime and identity.get("protected_code_sha") == previous_runtime["production_sha"])
+                    pair = (identity.get("protected_code_sha"), identity.get("candidate_code_sha"))
+                    if not all(isinstance(value, str) for value in pair):
+                        raise ValueError("invalid receipt runtime identity")
+                    prior = bool(previous_runtime and pair == (
+                        previous_runtime["production_sha"], previous_runtime["receiver_sha"]))
+                    inherited = prior or pair in historical_runtime_pairs
                     _receipt, manifest, _path = verified_receipt(
                         target,
                         str(entry["receipt_path"]),
                         entry,
                         "diagnostic",
-                        candidate_sha=previous_runtime["receiver_sha"] if prior else None,
-                        protected_sha=previous_runtime["production_sha"] if prior else protected_sha,
+                        candidate_sha=pair[1] if inherited else None,
+                        protected_sha=pair[0] if inherited else protected_sha,
                         plan_commit=plan_commit,
                     )
                     if content_revision(manifest) == remote.get("content_revision"):
@@ -572,8 +581,9 @@ def validate_source_listing(
 
 
 def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
-    from laptop_backup_runtime_transition import authority
+    from laptop_backup_runtime_transition import authority, historical_pairs
     previous_runtime = authority(args)
+    inherited = historical_pairs(target, args, previous_runtime)
     try:
         identities, retained = validate_source_listing(
             listing, protected_sha=args.protected_code_sha
@@ -605,6 +615,7 @@ def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse
         protected_sha=args.protected_code_sha,
         plan_commit=args.plan_git_commit,
         previous_runtime=previous_runtime,
+        historical_runtime_pairs=inherited,
     )
     status = "UP_TO_DATE" if all(
         item["status"] == "UP_TO_DATE"
@@ -727,14 +738,20 @@ def invoke_receiver(
     stdout = io.StringIO()
     stderr = io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
-        code = receiver.main(
-            receiver_arguments(
-                args,
-                command,
-                include_dates,
-                include_diagnostic_dates,
+        try:
+            code = receiver.main(
+                receiver_arguments(
+                    args,
+                    command,
+                    include_dates,
+                    include_diagnostic_dates,
+                )
             )
-        )
+        except Exception as exc:
+            # Cleanup in the receiver's finally can fail after valid components
+            # were committed. Return failure through the normal phase receipt.
+            print(f"receiver invocation failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            code = 1
     return code, stdout.getvalue(), stderr.getvalue()
 
 
@@ -745,13 +762,14 @@ def prepare_execution_lineage(target: Path, args: argparse.Namespace) -> None:
     """Authenticate or repair the predecessor before any backup-data mutation."""
     receiver.verify_plan_document()
     from laptop_backup_runtime_transition import lineage_fields
+    runtime_lineage = lineage_fields(args)
     with scheduled_record_mutex(target):
         lineage.repair_orphaned_suffix(target, {
             "plan_git_commit": args.plan_git_commit,
             "candidate_code_sha": args.candidate_code_sha,
             "protected_code_sha": args.protected_code_sha,
             "operator": args.operator or "scheduled-task",
-            **lineage_fields(args),
+            **runtime_lineage,
         })
 
 
@@ -765,6 +783,7 @@ def record_execution(
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     plan = receiver.verify_plan_document()
     from laptop_backup_runtime_transition import lineage_fields
+    runtime_lineage = lineage_fields(args)
     with scheduled_record_mutex(target):
         pointer_path = target / "catalog/latest-scheduled.json"
         previous = lineage.repair_orphaned_suffix(target, {
@@ -772,7 +791,7 @@ def record_execution(
             "candidate_code_sha": args.candidate_code_sha,
             "protected_code_sha": args.protected_code_sha,
             "operator": args.operator or "scheduled-task",
-            **lineage_fields(args),
+            **runtime_lineage,
         })
         previous_execution = (
             {key: previous[key] for key in ("record_path", "record_sha256")}
@@ -798,6 +817,8 @@ def record_execution(
             "result": result,
             "previous_execution": previous_execution,
         }
+        if runtime_lineage["runtime_predecessor"]:
+            record["runtime_predecessor"] = runtime_lineage["runtime_predecessor"]
         root = target / "catalog/scheduled-runs"
         root.mkdir(parents=True, exist_ok=True)
         path = root / f"{now.replace(':', '').replace('-', '')}-{uuid.uuid4().hex}.json"

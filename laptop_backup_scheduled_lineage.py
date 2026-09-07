@@ -182,10 +182,10 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
             raise ValueError("pointed scheduled predecessor is invalid")
         _validate_owned_record(pointed_value, expected, predecessor=True)
         runtime = expected.get("runtime_predecessor") or {}
-        if runtime and (pointed_value.get("protected_code_sha") != expected["protected_code_sha"]
-                        or pointed_value.get("candidate_code_sha") != expected["candidate_code_sha"]):
-            if current["record_sha256"] != runtime["record_sha256"]:
-                raise ValueError("runtime predecessor differs from the pinned receipt")
+        if runtime:
+            from laptop_backup_runtime_lineage import authenticate_pointer_descendant
+
+            authenticate_pointer_descendant(target, current, expected)
     seen = {current["record_path"]}
     while True:
         matches: list[tuple[str, str, Mapping[str, object]]] = []
@@ -198,7 +198,14 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
                 if relative in seen:
                     raise ValueError("scheduled execution lineage contains a cycle")
                 _validate_owned_record(value, expected)
-                matches.append((relative, receiver.sha256_file(regular), value))
+                digest = receiver.sha256_file(regular)
+                if expected.get("runtime_predecessor"):
+                    from laptop_backup_runtime_lineage import authenticate_pointer_descendant
+
+                    authenticate_pointer_descendant(target, {
+                        "record_path": relative, "record_sha256": digest,
+                    }, expected)
+                matches.append((relative, digest, value))
         if len(matches) > 1:
             raise ValueError("scheduled execution lineage is branched")
         if not matches:

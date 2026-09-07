@@ -109,3 +109,36 @@ shared production lock across dashboard/nginx healing and rechecks active ingest
 and backup processes. Planned pauses do not count as HTTP or Tailscale application
 failures. The narrow follow-up runtime and its receiver transition must be verified
 before this repair's operational closeout is recorded.
+
+## Final retry corrections
+
+The v5 runtime `efc5ba0a174d3646082086211c895d1494699550` activated at
+09:44:35 Hobart. Its next scheduled watchdog made four real provider probes;
+the runtime health monitor deferred application healing during backup and
+subsequently verified September 7 through nginx, the backend and Tailscale.
+
+Late review found two remaining saved-selection cases. Recovery now checks the
+verified intervening same-day ledger descendants in order, so a later regression
+cannot strand an earlier improvement. An eligible candidate's exact observation
+pointer is persisted before selection advances. A failed or delayed upload keeps
+that identity across interruptions and a later day. Existing pending publication
+settles before additional network probes or capture. Structural regression tests
+cover crashes on both sides of pointer advancement, partial selected heads,
+multiple improvements, later broken evidence, and unrelated pending uploads.
+
+The backup retry independently restored the current observation and revision,
+control state and macro store, but exposed a second-transition inventory defect:
+only the immediately previous runtime was recognized. Older verified backups
+were unnecessarily copied again. Historical coverage now follows the config's
+exact successful predecessor through hash-bound execution ancestry. Only
+successful, complete ancestors grant a historical runtime pair; broken paths,
+hashes, operator/plan identities, cycles and bounds fail closed. A failed attempt
+can remain an authenticated descendant without becoming a successful pin.
+
+Receiver cleanup exceptions now follow the ordinary phase failure-record path,
+including failures after valid component receipts were committed. The actual
+catalog's 130 receipt hashes and 108 retained dates passed the new read-only
+ancestry check with no missing backup dates and unchanged protected metadata.
+The final receiver must first complete on the current runtime, then transition
+from that actual PASS to the reviewed selection delta. Record the resulting
+runtime and independent backup proof in the append-only handoff ledger.
