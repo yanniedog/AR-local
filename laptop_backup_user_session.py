@@ -82,8 +82,13 @@ def load_config(path: Path, expected_digest: str | None = None) -> dict:
     if expected_digest is not None and digest(path) != expected_digest:
         raise ValueError("user-session configuration changed")
     value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=strict_pairs)
-    if not isinstance(value, dict) or set(value) not in (KEYS, KEYS | {"previous_runtime"}) or value["schema"] != SCHEMA:
+    optional = {"previous_runtime", "lan_fallback_ipv4"}
+    if (not isinstance(value, dict) or not KEYS.issubset(value)
+            or set(value) - KEYS - optional or value["schema"] != SCHEMA):
         raise ValueError("user-session configuration schema is invalid")
+    if "lan_fallback_ipv4" in value:
+        from laptop_backup_ssh_endpoint import lan_ipv4
+        lan_ipv4(value["lan_fallback_ipv4"])
     if "previous_runtime" in value:
         from laptop_backup_runtime_transition import validate_previous
         validate_previous(value["previous_runtime"])
@@ -185,12 +190,23 @@ def execute(config: dict, mode: str, config_sha256: str) -> int:
     from laptop_backup_atomic import ReceiverLock
     import laptop_backup_scheduled as scheduled
     transport = transport_contract()
-    discovery = subprocess.run(
-        [sys.executable, "-B", str(Path(config["receiver"]) / "laptop_backup_ssh_endpoint.py"),
-         "--name", "ar.local"], capture_output=True, text=True, check=True, timeout=15,
-    )
+    command = [sys.executable, "-B", str(Path(config["receiver"]) / "laptop_backup_lan_route.py")]
+    if "lan_fallback_ipv4" in config:
+        command.extend(("--fallback", config["lan_fallback_ipv4"]))
     from laptop_backup_ssh_endpoint import lan_ipv4
-    endpoint = lan_ipv4(discovery.stdout.strip())
+    try:
+        discovery = subprocess.run(command, capture_output=True, text=True, check=True, timeout=15)
+        route = json.loads(discovery.stdout, object_pairs_hook=strict_pairs)
+        if (not isinstance(route, dict) or set(route) != {"endpoint", "source"}
+                or route["source"] not in {"name_lookup", "configured_lan_fallback"}):
+            raise ValueError("LAN discovery response is invalid")
+        endpoint = lan_ipv4(route["endpoint"])
+        if route["source"] == "configured_lan_fallback" and endpoint != config.get("lan_fallback_ipv4"):
+            raise ValueError("LAN fallback differs from the verified configuration")
+    except (subprocess.SubprocessError, ValueError) as exc:
+        record(config, "BLOCKED", "LAN discovery failed before Pi access", stage="lan_discovery")
+        raise ValueError("LAN discovery failed before Pi access") from exc
+    record(config, "RUNNING", "LAN route selected; SSH authentication still required", **route)
     args = ["--target", config["target"], "--recovery-image", config["recovery_image"],
             "--candidate-code-sha", config["candidate_sha"],
             "--protected-code-sha", config["protected_sha"],

@@ -148,6 +148,8 @@ def test_user_session_scripts_parse_in_available_powershell_hosts(shell, tmp_pat
     root = Path(user.__file__).parent
     result = subprocess.run([executable, "-NoProfile", "-NonInteractive", "-File", str(parser),
                              str(root / "install_laptop_backup_user_session.ps1"),
+                             str(root / "update_laptop_backup_user_session.ps1"),
+                             str(root / "laptop_backup_user_update.ps1"),
                              str(root / "run_laptop_backup_user_session.ps1")],
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
