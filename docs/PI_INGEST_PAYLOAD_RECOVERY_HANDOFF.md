@@ -23286,3 +23286,152 @@ any prior evidence or reinterpret past edits as append-only compliance.
   ]
 }
 ```
+
+
+## Entry `HANDOFF-20260908-A4-RETURN-READINESS`
+
+```json
+{
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "in_flight_legacy_plan_identity": "No earlier execution is active; historical receipts retain their own plan identity.",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "candidate_code_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "candidate_meaning": "Installed immutable receiver from merged PR646; Pi production is unchanged.",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908\\source",
+  "receiver_config_sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf",
+  "independent_states": {
+    "capture": "PASS at September 8 natural ingest; upstream completeness is separate",
+    "finalization": "PASS at natural completion",
+    "publication": "PASS for September 8 v1/v2/index",
+    "dashboard": "PASS with 16013 rates at 05:16",
+    "backup": {
+      "natural_0600_result": "FAIL: original resolver failure preserved",
+      "operator_recovery": {
+        "result": "PASS",
+        "status": "UP_TO_DATE",
+        "natural_trigger": false,
+        "started_at_utc": "2026-09-07T22:56:54.5523751Z",
+        "earlier_operator_attempt": {
+          "result": "FAIL",
+          "started_at_utc": "2026-09-07T22:42:12.1019332Z",
+          "scheduled_sha256": "85bae5c09a572529c2083b125370ac29b69f00724cc3274f4e48368d15ae2e73",
+          "reason": "Transient SSH banner timeout before macro backup; verified observation/control preserved"
+        },
+        "completed_at_utc": "2026-09-07T23:03:49Z",
+        "record_path": "catalog/scheduled-runs/20260907T230349Z-ab33e5921fde4364965fca9b8b1b1d60.json",
+        "record_sha256": "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+        "latest_catalog_sequence": 140,
+        "observation_date": "2026-09-08"
+      }
+    }
+  },
+  "selected_generation": "obs-2026-09-08-bf3bbeecf1d52ea1",
+  "catalog_snapshot": {
+    "entries": 140,
+    "sequence": 140,
+    "sha256": "9c8276a1e560589399139eac155fcadc04aaea52d4bb568ad7985f92cd42b7e4",
+    "bytes": 98303,
+    "prefix_preserved": true,
+    "archive_entry": "catalog/generations.jsonl"
+  },
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "entry_id": "HANDOFF-20260908-A4-RETURN-READINESS",
+  "previous_entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+  "created_at_utc": "2026-09-07T23:26:31.345695+00:00",
+  "created_at_hobart": "2026-09-08T09:26:31.345695+10:00",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "result": "PASS",
+  "scope": "Read-only return-path capability inspection and preparation; no physical acceptance",
+  "current_phase": "A3 natural-backup acceptance pending; A4 preparation",
+  "production_clean": true,
+  "production_clean_verified_at": "2026-09-07T23:23:36.247613+00:00",
+  "completed_gates": [
+    "September 8 natural 01:00 ingest completed at 01:17:07 exit zero",
+    "September 8 v1/v2/date-index publication and dashboard smoke passed",
+    "Historical September 7 natural proof and independent restore remain preserved",
+    "SD baseline capture remains preserved",
+    "PR646 applicable exact-head CI and substantive review dispositions",
+    "Ordinary-user task upgrade with authenticated four-pair predecessor history and unchanged principal/triggers/settings",
+    "Explicit operator-triggered September 8 backup PASS/UP_TO_DATE",
+    "Independent archive restore, file metadata/hash and database checks for current observation/control/macro",
+    "Original catalog prefix and all current receipt hashes verified; no active partials",
+    "PR647 merged at26d9f8cb51db4c916b160141b2c2d0a13e4a4a90; its late missing-artifact finding declined after fresh GitHub download and complete181-file verification; thread resolved and gate passed",
+    "Live boot/watchdog capability readback retained"
+  ],
+  "open_gates": [
+    "Natural daily backup on final receiver/runtime after September 9 06:00",
+    "Consolidated A3 acceptance",
+    "Guarded A4 physical boot and bounded return",
+    "PR607 simplification merge and deployment"
+  ],
+  "prohibited_advancement": "No media write, writable mount, EEPROM change, boot selection, reboot or PR607 deployment from this preparation.",
+  "evidence_paths": [
+    {
+      "path": "docs/A4_RETURN_READINESS_20260908.md",
+      "bytes": 5922,
+      "sha256": "04f87009bec3525715cf99649f6a76153f6011ba66b4f2d474730fb4773c30c0"
+    },
+    {
+      "path": "docs/evidence/a4-readiness-20260908/watchdog-readback.json",
+      "bytes": 1794,
+      "sha256": "5ce83fd99d41222c7b60118de6dbf231d315bcf2ed04b29b5cf34ac9ff301b13"
+    }
+  ],
+  "inherited_backup_evidence": {
+    "entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+    "archive_path": "docs/evidence/backup-lan-recovery-20260908/5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708.zip",
+    "archive_sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+    "scope": "Frozen completed operator recovery and restore; not re-executed or reclassified"
+  },
+  "live_readback": {
+    "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "production_status": "",
+    "bootloader_config": "[all]\nBOOT_UART=1\nBOOT_ORDER=0xf416\nNET_INSTALL_AT_POWER_ON=1",
+    "bootloader_version": "2026/05/11 12:20:02\nversion 66f33f7e651cf482a26fb2c931a7587bb14e71db (release)\ntimestamp 1778498402\nupdate-time 1782498369\ncapabilities 0x0000007f",
+    "watchdog_manager": "RuntimeWatchdogUSec=0\nRebootWatchdogUSec=0",
+    "watchdog_identity": "Broadcom BCM2835 Watchdog timer",
+    "watchdog_timeout": "15",
+    "watchdog_state": "inactive"
+  },
+  "next_action": "Implement a read-only v1.5 recovery evidence verifier and declarative clone isolation manifest on a separate branch. Preserve legacy v1.3 policy and all installed runtime/receiver identities. Resolve early-boot, OS and network-independent return controls before any physical transaction; observe final-receiver natural September9 backup separately.",
+  "earliest_start": "2026-09-08T09:26:31.345695+10:00",
+  "latest_safe_stop": "2026-09-08T22:00:00+10:00",
+  "timing_scope": "Local code/test preparation and read-only probes only; physical execution is not enabled.",
+  "next_action_commands": [
+    "git worktree add <new-path> -b <unique-topic> origin/main",
+    "python -m pytest <new isolated verifier tests> -q",
+    "vcgencmd bootloader_config",
+    "systemctl show -p RuntimeWatchdogUSec -p RebootWatchdogUSec"
+  ],
+  "command_status": "First two commands are templates for the next concrete implementation; latter two are read-only Pi probes. No mutation command is supplied.",
+  "acceptance_criteria": [
+    "The new reader validates the exact1.5 plan/production/receiver/backup/media tuple without writing state",
+    "Wrong identities, stale evidence, enabled writers and unproved return controls fail closed in isolated tests",
+    "Legacy v1.3 evidence and runtime defaults remain unchanged",
+    "Future physical PASS requires actual SD boot and bounded verified return, never fixture or schema substitution"
+  ],
+  "stop_conditions": "Unexpected runtime/task/media identity, active ingest/backup, invalid archive or free-space floor, or incomplete reset/return coverage: do not advance physically. No Windows elevation.",
+  "rollback_or_preservation_action": "No runtime rollback required: only read-only inspection occurred. Preserve PR647 proof, all earlier failures/receipts, SD baseline and primary boot configuration.",
+  "known_risks": [
+    "The live runtime watchdog is inactive and the EEPROM has no explicit boot-watchdog timeout; current unattended return is not proved",
+    "A one-time boot order does not force a reset during a hang",
+    "The old boot validator uses a mounted-backup v1.3 policy and must not be relabelled to fit the Windows-backed v1.5 path"
+  ],
+  "unresolved_findings": [
+    "Natural backup and A3 acceptance remain pending",
+    "Clone writer/credential isolation and continuous failure coverage remain unproved",
+    "New current-plan read-only evidence adapter is not implemented"
+  ],
+  "deviations": [],
+  "authorisation": "Standing operator instruction to finish simplification without Windows Yes/UAC; bounded local preparation and read-only diagnosis. No new or retroactive physical/firmware authority is asserted.",
+  "snapshot_notice": "The successful recovery remains frozen at its original timestamps. This new live watchdog snapshot establishes readiness gaps, not boot acceptance."
+}
+```
