@@ -147,8 +147,10 @@ runtime and independent backup proof in the append-only handoff ledger.
 ## Verified operational closeout
 
 The final source PR #639 merged as `d78ec787fce596a07fe1e4f8beff294ecb83858f`. Its exact protected runtime
-backport `2607ed681d5d3c1da66f9c3c0109cff524e02338` passed 394 isolated Pi tests and the 2,785-response replay,
-then activated at 10:52:51 Hobart. The v6 test failure was preserved and never
+backport `2607ed681d5d3c1da66f9c3c0109cff524e02338` passed 394 isolated Pi tests and
+compatibility validation of 2,785 successful JSON responses. The replay separately
+classified one non-JSON HTTP-200 response. Activation completed at 10:52:51 Hobart.
+The v6 test failure was preserved and never
 activated; v7 includes the older publisher's saved-pointer dependency while
 retaining the deployed publication gate and builder contract. Protected capture,
 selection, ledger and macro hashes were unchanged.
