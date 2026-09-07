@@ -76,8 +76,11 @@ failures remain visible and are not represented as successful captures.
 
 ## Verification and operational evidence
 
-The exact final Pi bundle passed **394 tests** and replayed all **2,785** retained
-original responses in private paths with production mounted read-only. The
+The exact final Pi bundle passed **394 tests**. Its replay examined **2,786 CDR
+HTTP-200 response records**: **2,785 successful JSON responses** passed
+compatibility validation, and one non-JSON upstream response was classified
+separately and excluded from the successful count. Non-200 responses are outside
+this replay count. Tests used private paths with production mounted read-only. The
 previous private v6 bundle failed its tests because it lacked saved-pointer
 publication support; it was never activated. The corrected v7 bundle preserves
 the deployed publication policy and builder argument contract.
