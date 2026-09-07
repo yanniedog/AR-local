@@ -198,7 +198,14 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
                 if relative in seen:
                     raise ValueError("scheduled execution lineage contains a cycle")
                 _validate_owned_record(value, expected)
-                matches.append((relative, receiver.sha256_file(regular), value))
+                digest = receiver.sha256_file(regular)
+                if expected.get("runtime_predecessor"):
+                    from laptop_backup_runtime_lineage import authenticate_pointer_descendant
+
+                    authenticate_pointer_descendant(target, {
+                        "record_path": relative, "record_sha256": digest,
+                    }, expected)
+                matches.append((relative, digest, value))
         if len(matches) > 1:
             raise ValueError("scheduled execution lineage is branched")
         if not matches:

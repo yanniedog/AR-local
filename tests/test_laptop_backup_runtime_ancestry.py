@@ -199,6 +199,25 @@ def test_receiver_upgrade_rejects_unproven_failed_descendants(tmp_path, fault):
             "runtime_predecessor": pin})
 
 
+def test_orphan_runtime_ancestry_is_verified_before_pointer_adoption(tmp_path, monkeypatch):
+    prior = _record(tmp_path, "natural-pass", "1" * 40, "a" * 40)
+    pin = _pin(tmp_path, prior)
+    orphan = _record(tmp_path, "orphan", "2" * 40, "b" * 40, prior,
+                     runtime_predecessor={**pin, "record_sha256": "e" * 64})
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(prior, result="PASS")))
+    before = pointer.read_bytes()
+    orphan_path = tmp_path / orphan["record_path"]
+    orphan_before = orphan_path.read_bytes()
+    monkeypatch.setattr(transition, "authority", lambda _: pin)
+    args = SimpleNamespace(operator="pytest", plan_git_commit=receiver.PLAN_GIT_COMMIT,
+                           protected_code_sha="2" * 40, candidate_code_sha="b" * 40)
+    with pytest.raises(ValueError, match="changed the pinned predecessor"):
+        scheduled.prepare_execution_lineage(tmp_path, args)
+    assert pointer.read_bytes() == before
+    assert orphan_path.read_bytes() == orphan_before
+
+
 @pytest.mark.parametrize("phase,action,result", [
     ("preflight", "PREFLIGHT_FAILED", "BLOCKED"),
     ("backup", "BACKFILL", "FAIL"),
