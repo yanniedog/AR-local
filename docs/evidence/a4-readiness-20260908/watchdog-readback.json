@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "scope": "Read-only live boot/watchdog capability inspection; not a boot or return proof",
+  "at_utc": "2026-09-07T23:23:36.247613+00:00",
+  "exact_argv": [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "ar-local-pi5-lan",
+    "python3 -"
+  ],
+  "remote_source": "import subprocess,json\nfrom pathlib import Path\ndef run(*args):\n p=subprocess.run(args,capture_output=True,text=True,check=True,timeout=20)\n return p.stdout.strip()\nprint(json.dumps({'production_sha':run('git','-C','/srv/ar-local/AR-local','rev-parse','HEAD'),\n 'production_status':run('git','-C','/srv/ar-local/AR-local','status','--porcelain'),\n 'bootloader_config':run('vcgencmd','bootloader_config'),'bootloader_version':run('vcgencmd','bootloader_version'),\n 'watchdog_manager':run('systemctl','show','-p','RuntimeWatchdogUSec','-p','RebootWatchdogUSec'),\n 'watchdog_identity':Path('/sys/class/watchdog/watchdog0/identity').read_text().strip(),\n 'watchdog_timeout':Path('/sys/class/watchdog/watchdog0/timeout').read_text().strip(),\n 'watchdog_state':Path('/sys/class/watchdog/watchdog0/state').read_text().strip()}))\n",
+  "state": {
+    "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "production_status": "",
+    "bootloader_config": "[all]\nBOOT_UART=1\nBOOT_ORDER=0xf416\nNET_INSTALL_AT_POWER_ON=1",
+    "bootloader_version": "2026/05/11 12:20:02\nversion 66f33f7e651cf482a26fb2c931a7587bb14e71db (release)\ntimestamp 1778498402\nupdate-time 1782498369\ncapabilities 0x0000007f",
+    "watchdog_manager": "RuntimeWatchdogUSec=0\nRebootWatchdogUSec=0",
+    "watchdog_identity": "Broadcom BCM2835 Watchdog timer",
+    "watchdog_timeout": "15",
+    "watchdog_state": "inactive"
+  },
+  "runtime_mutation": false
+}
