@@ -182,10 +182,10 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
             raise ValueError("pointed scheduled predecessor is invalid")
         _validate_owned_record(pointed_value, expected, predecessor=True)
         runtime = expected.get("runtime_predecessor") or {}
-        if runtime and (pointed_value.get("protected_code_sha") != expected["protected_code_sha"]
-                        or pointed_value.get("candidate_code_sha") != expected["candidate_code_sha"]):
-            if current["record_sha256"] != runtime["record_sha256"]:
-                raise ValueError("runtime predecessor differs from the pinned receipt")
+        if runtime:
+            from laptop_backup_runtime_lineage import authenticate_pointer_descendant
+
+            authenticate_pointer_descendant(target, current, expected)
     seen = {current["record_path"]}
     while True:
         matches: list[tuple[str, str, Mapping[str, object]]] = []

@@ -37,3 +37,14 @@ def lineage_fields(args) -> dict:
         "runtime_predecessor": authority(args),
         "allowed_predecessor_candidates": tuple(getattr(args, "allowed_predecessor_candidate_sha", ())),
     }
+
+
+def historical_pairs(target: Path, args, previous_runtime: dict) -> frozenset[tuple[str, str]]:
+    """The verified config pin, rather than a runtime allowlist, grants ancestry."""
+    if not previous_runtime:
+        return frozenset()
+    from laptop_backup_runtime_lineage import authenticated_runtime_pairs
+
+    return authenticated_runtime_pairs(target, previous_runtime, {
+        "operator": args.operator or "scheduled-task", "plan_git_commit": args.plan_git_commit,
+    })

@@ -396,6 +396,14 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     reconsidered = reconsider_saved_selection(repo_root, state, run_date, observation)
     if reconsidered:
         return reconsidered
+    # Re-entry above can finish an interrupted selection. Once it has no more
+    # work, settle any selected or older-date upload before spending probes or
+    # a capture that could suppress the watchdog's publication retry.
+    from pi_daily_sync import payload_publication_pending
+
+    if payload_publication_pending(repo_root):
+        return {"status": "pending_publication_must_settle", "publication_required": True,
+                "capture_attempted": False}
     health = _coverage_health(observation)
     if observation["contract"]["observation_state"] == "complete":
         return {"status": "complete", **health}
