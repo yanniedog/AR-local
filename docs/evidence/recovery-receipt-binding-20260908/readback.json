@@ -1,0 +1,44 @@
+{
+  "command": [
+    "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+    "laptop_recovery_receipts.py",
+    "--target",
+    "C:\\code\\backups\\AR-local-pi5-user",
+    "--expectations",
+    "C:\\code\\backups\\AR-local-user-session\\lan-recovery-20260908\\receipt-binding-expectations-20260907T234043Z.json",
+    "--expectations-sha256",
+    "fe9bd557b10f7717d390c01a7cb7fa27ed187e7788ae40f7b6b34fa0284cb0c7"
+  ],
+  "source_sha256": "6ee0da1349cb877e092372b94b2cddb3e2f16653e60960ffea8665f14e702c7a",
+  "exit_code": 0,
+  "stdout": {
+    "schema": "ARL-RECOVERY-RECEIPT-BINDING-V1",
+    "checked_at": "2026-09-07T23:40:43.379827+00:00",
+    "receipt_binding": "PASS",
+    "components": [
+      {
+        "kind": "control",
+        "catalog_sequence": 139,
+        "path": "control/20260907T230253Z-0ecb7e71ed208e8d/receipt.json",
+        "sha256": "4014c252c5f14bfceb4f46b325a1abbc6fed176e2614133445b9b1c468f66dd6"
+      },
+      {
+        "kind": "macro",
+        "catalog_sequence": 140,
+        "path": "macro/a66c954b1f32f878ddc0138822bd5e0d68c12d43675db180f241afbf79de64c4/receipt.json",
+        "sha256": "c30218d06da4a66d66fdd53bc551daf7ecf63b6e09920f24f285bf22187c0fc9"
+      },
+      {
+        "kind": "observation",
+        "catalog_sequence": 137,
+        "path": "observations/2026-09-08/ad935ce205391a5c59ccc3b20c4f72ca1483625a4fa70054942f4750f1fc47ee/receipt.json",
+        "sha256": "2a95a3c562be7db4554d977e4a67d8fdda48860b5257bc5f8108fe493a112b28"
+      }
+    ],
+    "physical_recovery": "BLOCKED",
+    "natural_trigger": "UNVERIFIED",
+    "archive_restore": "NOT_RUN",
+    "scope": "Pinned receipt metadata only; no A3 or A4 acceptance"
+  },
+  "stderr": ""
+}
