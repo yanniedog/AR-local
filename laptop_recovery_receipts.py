@@ -267,9 +267,18 @@ def scheduled_read_mutex(root: Path):
 
 
 def verify_binding(root: Path, expected: dict, now: datetime) -> dict:
-    """Serialize with terminal writers, without modifying backup bytes."""
+    """Exclude the ordinary-user job and component writer with transient locks.
+
+    Existing evidence bytes are read-only. Coordination creates/removes the same
+    two lock files as the writers; it never creates lock directories or starts a
+    backup. Do not invoke during a pending natural task's start window.
+    """
+    from laptop_backup_atomic import ReceiverLock
     _real(root)
-    with scheduled_read_mutex(root):
+    outer = _real(root / "user-session-lock")
+    _real(outer / "catalog")
+    _real(root / "catalog")
+    with ReceiverLock(outer), ReceiverLock(root), scheduled_read_mutex(root):
         return _verify_locked(root, expected, now)
 
 
@@ -296,7 +305,8 @@ def _verify_locked(root: Path, expected: dict, now: datetime) -> dict:
     return {"schema": SCHEMA, "checked_at": now.isoformat(), "receipt_binding": "PASS",
             "components": components, "physical_recovery": "BLOCKED",
             "natural_trigger": "UNVERIFIED", "archive_restore": "NOT_RUN",
-            "scope": "Pinned receipt metadata only; no A3 or A4 acceptance"}
+            "scope": "Pinned receipt metadata only; no A3 or A4 acceptance",
+            "coordination": "Transient ordinary-user and component receiver lock files"}
 
 
 def main(argv: list[str] | None = None) -> int:
