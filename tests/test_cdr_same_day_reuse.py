@@ -340,6 +340,35 @@ def test_real_empty_catalogue_retains_captured_product_and_queues_reconfirmation
                for q in status["unresolved_requests"])
 
 
+def test_reconciliation_preserves_other_holders_authentication_exemption(tmp_path):
+    from app_payload_authentication import authentication_exclusions
+    from cdr_ingest_support import append_failure
+    row, rejected = _record("Bank of Melbourne"), _record("Greater Bank Limited")
+    state, _, parent = _observation(tmp_path, records=[row])
+    stage = tmp_path / "repair" / DATE
+    reuse.seed_same_day_reuse(reuse.prepare_same_day_reuse(state, DATE), stage)
+    empty = json.loads((CANARY / "Bank of Melbourne-empty-index.json").read_bytes())
+    journal = _fresh_run(stage, row, [empty])
+    path = stage / "banks" / "ingest-status.json"
+    diagnostics = json.loads(path.read_bytes())["index_diagnostics"]
+    status = _status(stage, journal, [row, rejected])
+    status["index_diagnostics"] = diagnostics
+    status["provider_states"][0]["failure_categories"] = {}
+    status["provider_states"][1].update(state="partial", failure_records=60,
+        failure_categories={"public_endpoint_auth_required": 60})
+    status["by_provider"] = {rejected["provider"]: 60}
+    for _ in range(60):
+        append_failure(stage / "banks", {"bank": rejected["provider"], "phase": "products_index",
+            "status": 400, "snippet": "This service requires API Key"})
+    atomic_write_json(path, status)
+    reuse.reconcile_same_day_reuse(stage)
+    final = _finalize_repair(state, stage, parent, "auth-reconciliation")
+    contract = json.loads((state / final["export_contract_path"]).read_bytes())
+    assert contract["coverage"]["failure_records"] == 61
+    assert authentication_exclusions(contract)["failure_records"] == 60
+    assert authentication_exclusions(contract)["providers_partial"] == 1
+
+
 def test_real_identical_duplicates_confirm_present_seed_without_extra_failure(tmp_path):
     row = _record("Defence Bank")
     state, _, _ = _observation(tmp_path, records=[row])

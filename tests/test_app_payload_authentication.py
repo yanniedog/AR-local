@@ -17,6 +17,7 @@ import pi_daily_sync
 from cdr_compatibility import classify_fetch_failure
 from cdr_finalization import finalize_observation
 from cdr_raw_attempt_journal import RawAttemptJournal
+from cdr_ingest_support import FetchResult
 from tests.test_app_payload_observation_gate import _banks_with_coverage, _contract, _load_backfill
 
 
@@ -76,6 +77,33 @@ def test_new_holders_and_authentication_dialects_need_no_configuration(status, b
 ])
 def test_non_authentication_failures_keep_their_existing_policy(status, body):
     assert classify_fetch_failure(status, body).category not in {AUTH, "access_denied"}
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+@pytest.mark.parametrize("body", [
+    "Database authentication failed",
+    "Authentication failed while connecting to an internal dependency",
+    "Invalid credentials while connecting to the database",
+])
+def test_internal_server_authentication_errors_remain_retryable_outages(status, body):
+    result = classify_fetch_failure(status, body)
+    assert result.category == "transient_upstream" and result.retryable
+
+
+@pytest.mark.parametrize("phase", ["products_index", "product_detail", "classification_detail"])
+def test_authentication_beyond_display_snippet_survives_failure_rollup(tmp_path, phase):
+    body = "<!-- " + "page padding " * 100 + " -->" + AUTH_RESPONSES[0]["body"]
+    response = FetchResult(False, 400, "https://holder.example/products", body)
+    fields = ingest._fetch_failure_fields(response)
+    support.append_failure(tmp_path, {"phase": phase, "bank": "New Holder",
+        "snippet": body[:500], **fields})
+    assert "requires API Key" not in body[:500]
+    assert fields["classification_text"] == body
+    assert support.summarize_failures(tmp_path)["by_provider_failure_category"] == {
+        "New Holder": {AUTH: 1},
+    }
+    oversized = FetchResult(False, 400, response.url, body + "x" * 70000)
+    assert len(ingest._fetch_failure_fields(oversized)["classification_text"]) == 65536
 
 
 @pytest.mark.parametrize("failed", [False, True])

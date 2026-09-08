@@ -135,6 +135,9 @@ def _fetch_failure_fields(result: FetchResult) -> Dict[str, Any]:
         "status": "recovery_budget_exhausted" if category == "recovery_budget_exhausted" else result.status,
         "failure_category": category,
         "retryable": result.retryable if result.failure_category else failure.retryable,
+        # Keep the same bounded input used by the classifier. The UI snippet
+        # alone can lose a credential rejection near the end of an HTML page.
+        **({"classification_text": result.text[:65536]} if len(result.text or "") > 500 else {}),
         **({"validation_error": result.validation_error} if result.validation_error else {}),
     }
 

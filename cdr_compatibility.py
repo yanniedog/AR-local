@@ -57,15 +57,21 @@ def is_public_authentication_failure(status: Any, text: str = "") -> bool:
     if not isinstance(status, int) or not 400 <= status <= 595 or status == 495:
         return False
     body = re.sub(r"[_-]", " ", str(text or "")[:65536].lower())
-    credential = r"(?:api\s*key|subscription\s+key|(?:access|bearer|authentication)\s+token|credentials?)"
+    # A server's own database/dependency authentication failure is an outage.
+    # Nonstandard 5xx credential rejections need explicit public API context.
+    credential = r"(?:api\s*key|subscription\s+key|(?:access|bearer|authentication)\s+token)"
+    if status < 500:
+        credential = rf"(?:{credential}|credentials?)"
     rejection = r"(?:required|missing|invalid|expired|not\s+(?:provided|found|valid))"
-    return bool(re.search(
+    explicit = re.search(
         rf"\b(?:requires?|missing|invalid|expired)\s+(?:an?\s+)?{credential}\b"
-        rf"|\b{credential}\b.{{0,40}}\b{rejection}\b"
-        r"|\b(?:authentication|authorization)\s+(?:is\s+)?(?:required|failed|missing)\b"
+        rf"|\b{credential}\b.{{0,40}}\b{rejection}\b", body,
+    )
+    return bool(explicit or (status < 500 and re.search(
+        r"\b(?:authentication|authorization)\s+(?:is\s+)?(?:required|failed|missing)\b"
         r"|\b(?:unauthenticated|invalid client|invalid token)\b",
         body,
-    ))
+    )))
 
 
 def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:

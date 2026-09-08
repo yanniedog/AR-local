@@ -8,6 +8,9 @@ The collector recognises HTTP 401/403/407 and explicit credential-rejection
 messages, including API keys, subscription keys and authentication tokens. It
 derives per-provider failure categories from the recorded status and response;
 provider names and a manually assigned failure label do not grant an exemption.
+Long errors retain the classifier's bounded response text separately from the
+short display snippet. Generic authentication failures in 5xx responses remain
+retryable server outages unless they explicitly identify API/access credentials.
 
 Finalization retains those categories inside the immutable export contract's
 provider states. The shared publication gate checks that provider identities,
@@ -17,6 +20,9 @@ excluded from the partial/failed-provider budget only when all its recorded
 failures are authentication failures. Other failures at that same provider
 continue to count. Historical contracts without classification retain their
 existing publication policy.
+Same-day reuse reconciliation refreshes categories whenever it changes failure
+counts, so unrelated recovery errors do not invalidate verified authentication
+accounting for other providers.
 
 The daily publisher and backfill publisher share this gate. Dated v1, rolling
 v1 and the dates index can advance; the existing v2 sidecar path follows a
