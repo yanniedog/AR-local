@@ -23865,3 +23865,175 @@ any prior evidence or reinterpret past edits as append-only compliance.
   }
 }
 ```
+
+
+## Entry `HANDOFF-20260908-A4-PREPARATION-EVIDENCE-CLOSEOUT`
+
+```json
+{
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+  "candidate_code_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "candidate_meaning": "Installed immutable receiver from merged PR646; Pi production is unchanged.",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-lan-fallback-20260908\\source",
+  "receiver_config_sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "production_clean": true,
+  "production_clean_verified_at": "2026-09-08T09:46:45.9651637+10:00",
+  "independent_states": {
+    "capture": "PASS at September 8 natural ingest; upstream completeness is separate",
+    "finalization": "PASS at natural completion",
+    "publication": "PASS for September 8 v1/v2/index",
+    "dashboard": "PASS with 16013 rates at 05:16",
+    "backup": {
+      "natural_0600_result": "FAIL: original resolver failure preserved",
+      "operator_recovery": {
+        "result": "PASS",
+        "status": "UP_TO_DATE",
+        "natural_trigger": false,
+        "started_at_utc": "2026-09-07T22:56:54.5523751Z",
+        "earlier_operator_attempt": {
+          "result": "FAIL",
+          "started_at_utc": "2026-09-07T22:42:12.1019332Z",
+          "scheduled_sha256": "85bae5c09a572529c2083b125370ac29b69f00724cc3274f4e48368d15ae2e73",
+          "reason": "Transient SSH banner timeout before macro backup; verified observation/control preserved"
+        },
+        "completed_at_utc": "2026-09-07T23:03:49Z",
+        "record_path": "catalog/scheduled-runs/20260907T230349Z-ab33e5921fde4364965fca9b8b1b1d60.json",
+        "record_sha256": "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca",
+        "latest_catalog_sequence": 140,
+        "observation_date": "2026-09-08"
+      }
+    }
+  },
+  "selected_generation": "obs-2026-09-08-bf3bbeecf1d52ea1",
+  "catalog_snapshot": {
+    "entries": 140,
+    "sequence": 140,
+    "sha256": "9c8276a1e560589399139eac155fcadc04aaea52d4bb568ad7985f92cd42b7e4",
+    "bytes": 98303,
+    "prefix_preserved": true,
+    "archive_entry": "catalog/generations.jsonl"
+  },
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "inherited_backup_evidence": {
+    "entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+    "archive_path": "docs/evidence/backup-lan-recovery-20260908/5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708.zip",
+    "archive_sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+    "scope": "Frozen completed operator recovery and restore; not re-executed or reclassified"
+  },
+  "runtime_readback": {
+    "checked_at_hobart": "2026-09-08T09:46:45.9651637+10:00",
+    "task_last_run": "2026-09-08T08:56:54+10:00",
+    "task_next_run": "2026-09-09T06:00:00+10:00",
+    "task_definition_unchanged": true,
+    "production_clean": true,
+    "config_sha256": "4b7a812f01c4f3f027bcb5298f2a5aa5c53a7f9e345504fd78b80da53ea34bbf"
+  },
+  "route_authority": {
+    "decision": "D-015-USER-SESSION-NO-UAC",
+    "confirmation": "D-018-ACCEPTANCE-SCOPE-CORRECTION explicitly names unchanged daily 06:00 or genuine sign-in",
+    "scope": "Current ordinary-user route; no revived S4U or Windows elevation"
+  },
+  "historical_provenance_gap": {
+    "issue": "https://github.com/yanniedog/AR-local/issues/650",
+    "state": "UNVERIFIED",
+    "scope": "Original D019 inventory verification command; do not treat the old summary alone as reproducible command proof"
+  },
+  "entry_id": "HANDOFF-20260908-A4-PREPARATION-EVIDENCE-CLOSEOUT",
+  "previous_entry_id": "HANDOFF-20260908-USER-FAILURE-EVIDENCE-FIXES",
+  "created_at_utc": "2026-09-08T00:16:15.188207+00:00",
+  "created_at_hobart": "2026-09-08T10:16:15.188207+10:00",
+  "result": "PASS",
+  "scope": "Repository-only preparation closeout; no new runtime, backup, media or boot observation",
+  "current_phase": "A3 natural-run acceptance pending; A4 preparation",
+  "implementation_commit": "ee3e7caf9fd1ec8c660ff64c8e17fa3284767cf2",
+  "implementation_branch": "agent/a4-evidence-closeout-0908",
+  "implementation_worktree": "C:\\code\\AR-local-a4-closeout-0908",
+  "completed_gates": [
+    "PR649 receipt/runtime metadata readers merged at 32c8d6de8fd8f04c4d4f841825b282088fcb11ec",
+    "PR651 failure-evidence fixes merged at b4446d1535f703b85c99b94b455b86229283db33; both applicable product CI jobs and feedback gate passed",
+    "Previously identified merged review threads on PR632/635/644/646/647 were disposed and resolved; original D019 command provenance remains explicitly deferred to issue650",
+    "Receipt reader rechecks every scheduled/component record; four concurrent-edit cases rejected and scheduler component-date rejection verified",
+    "Original CRLF watchdog bytes and exact Git LF bytes retained with independently verified manifest hashes",
+    "Incomplete clone-isolation declaration records all 10 observed timers, 24 required masks and distinct full image size/hash inputs",
+    "Combined focused tests: 126 passed, 1 Windows symlink privilege skip"
+  ],
+  "open_gates": [
+    "Current closeout PR applicable CI and review",
+    "Natural final-receiver backup after September 9 06:00",
+    "Consolidated A3 acceptance",
+    "Complete clone activation/path-write/media-output and return-control verifier",
+    "Actual A4 boot and bounded verified return",
+    "PR607 simplification merge and deployment"
+  ],
+  "prohibited_advancement": "No installed receiver update, production deployment, media write, writable mount, EEPROM change, boot selection or reboot from these preparation artifacts.",
+  "next_action": "Finish this preparation closeout PR through exact-head CI/review. Continue bounded local clone activation/path-write/media tuple and return-control implementation from the incomplete declaration; preserve all installed runtime identities. Independently observe the genuine unchanged September 9 natural backup before A3 consolidation.",
+  "earliest_start": "2026-09-08T10:16:15.188207+10:00",
+  "latest_safe_stop": "2026-09-08T22:00:00+10:00",
+  "next_action_commands": [
+    "python -m pytest tests/test_laptop_recovery_receipts.py tests/test_laptop_backup_user_update.py tests/test_laptop_backup_user_terminal.py tests/test_laptop_backup_user_session.py tests/test_laptop_backup_runtime_ancestry.py tests/test_d012_recovery_handoff.py -q",
+    "& .\\docs\\evidence\\recovery-receipt-binding-20260908\\runtime-identity-readonly.ps1",
+    "node C:/code/AR-local/scripts/pr-arm-and-park.mjs --pr <current-closeout-pr>"
+  ],
+  "acceptance_criteria": [
+    "Current exact-head applicable CI and substantive feedback dispositions pass",
+    "Media candidate verification must check exact full size/hash and reject short/quarantined/corrupt input even when UUID and serial match",
+    "Full activation/dependency/credential inventory and approved path writes remain mandatory before physical preparation",
+    "Prepared output/full-device hash, continuous reset/return coverage and actual clone/return observations remain mandatory",
+    "Metadata/fixture/declared-mask PASS never accepts physical recovery"
+  ],
+  "stop_conditions": "Unexpected runtime/task/media identity, active ingest/backup, invalid archive or free-space floor, or incomplete reset/return coverage: do not advance physically. No Windows elevation.",
+  "rollback_or_preservation_action": "Preserve installed cbf920 receiver and clean production2607, legacy task/target, failed and successful receipts, SD baseline and original historical proof bytes.",
+  "known_risks": [
+    "Watchdog return coverage still unproved",
+    "Clone declaration is incomplete and non-executable",
+    "Original D019 verification-command provenance remains unavailable"
+  ],
+  "unresolved_findings": [
+    "Current closeout PR CI/review remains pending",
+    "A3/A4 gates remain open",
+    "Historical command-provenance gap tracked in issue650"
+  ],
+  "deviations": [],
+  "authorisation": "Standing operator instruction to finish simplification without Windows Yes/UAC; bounded local preparation and read-only diagnosis. No new or retroactive physical/firmware authority is asserted.",
+  "correction": {
+    "reason": "Late PR648/649 findings exposed representation, isolation/input-identity and metadata-read consistency gaps.",
+    "risk": "The CRLF digest fails against Git LF bytes; package-maintenance writers or wrong image contents could be overlooked; receipts could change without pointer movement.",
+    "compensating_controls": "Preserve both literal watchdog representations, explicit full image size/hash roles and all observed maintenance timers, and recheck every bound receipt after interpretation.",
+    "revised_acceptance": "Git watchdog blob is 1769 bytes with SHA25675b16ec24182f8feade39ef8ee11b9d5bada90c7bc69eb38a3f925da95ce73e4; original CRLF remains separately preserved. No physical or natural acceptance follows from preparation."
+  },
+  "exact_evidence_preparation_command": "python C:\\Users\\jkoka\\AppData\\Local\\Temp\\ar-local-prepare-a4-closeout-0908.py",
+  "evidence_preparation_source": "docs/evidence/a4-preparation-closeout-20260908/prepare-evidence.py",
+  "evidence_preparation_scope": "Original executed source retained for inspection; do not replay its create-once collector against existing evidence directories.",
+  "snapshot_notice": "All live runtime and backup facts are inherited with their original timestamps. This entry records source/evidence preparation only.",
+  "evidence_artifacts": [
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/clone-isolation-draft.json",
+      "bytes": 3782,
+      "sha256": "10b7957a8debd7d826d8a5e535694b24ed2cc9048530df78c3b5d8f56acc15b4",
+      "source_commit": "ee3e7caf9fd1ec8c660ff64c8e17fa3284767cf2"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/prepare-evidence.py",
+      "bytes": 4901,
+      "sha256": "f4f4ee4a119bb21b4897758a44e7e7d5f5e10e79a973ec21f844fd03b2a6bc78",
+      "source_commit": "ee3e7caf9fd1ec8c660ff64c8e17fa3284767cf2"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/watchdog-byte-variants.zip",
+      "bytes": 2409,
+      "sha256": "e912a3e94b6211ac26effb070d9da28f034a50e0862cb4528c9dc4a706236c7e",
+      "source_commit": "ee3e7caf9fd1ec8c660ff64c8e17fa3284767cf2"
+    }
+  ]
+}
+```
