@@ -63,6 +63,8 @@ def test_each_captured_bank_authentication_response_is_nonblocking(row, tmp_path
     (400, "Invalid APIKey"), (422, "Subscription key is invalid"),
     (500, "The service requires an API key"), (401, ""), (403, "Forbidden"),
     (407, "Proxy Authentication Required"), (401, '{"error":"invalid_token"}'),
+    (500, "API key authentication failed"), (502, "Subscription key rejected"),
+    (503, "Bearer token validation failed"), (500, "API key authorization denied"),
 ])
 def test_new_holders_and_authentication_dialects_need_no_configuration(status, body):
     result = classify_fetch_failure(status, body)
@@ -98,12 +100,50 @@ def test_authentication_beyond_display_snippet_survives_failure_rollup(tmp_path,
     support.append_failure(tmp_path, {"phase": phase, "bank": "New Holder",
         "snippet": body[:500], **fields})
     assert "requires API Key" not in body[:500]
-    assert fields["classification_text"] == body
+    assert len(fields["classification_text"]) <= 500
+    assert classify_fetch_failure(response.status, fields["classification_text"]).category == AUTH
     assert support.summarize_failures(tmp_path)["by_provider_failure_category"] == {
         "New Holder": {AUTH: 1},
     }
     oversized = FetchResult(False, 400, response.url, body + "x" * 70000)
-    assert len(ingest._fetch_failure_fields(oversized)["classification_text"]) == 65536
+    assert len(ingest._fetch_failure_fields(oversized)["classification_text"]) <= 500
+
+
+def test_compact_evidence_does_not_override_late_version_rejection():
+    body = "API key required " + "padding " * 100 + "unsupported version"
+    response = FetchResult(False, 400, "https://holder.example/products", body)
+    fields = ingest._fetch_failure_fields(response)
+    assert fields["failure_category"] == "incompatible_version"
+    assert not classify_fetch_failure(400, fields["classification_text"]).category == AUTH
+
+
+def test_large_authentication_errors_keep_same_day_queues_and_transient_recovery(tmp_path):
+    from cdr_ingest_recovery import recover_transient_providers
+    from cdr_recovery_queue import MAX_FAILURE_LINE_BYTES
+    banks = tmp_path / "banks"
+    banks.mkdir()
+    work, seen = [], set()
+    body = "\U0001f600" * 65000 + " API key authentication failed"
+    for number in range(4):
+        brand = {"brand_name": f"Holder {number}", "endpoint_url": f"https://holder{number}.example/products"}
+        directory = support.allocate_bank_dir(brand["brand_name"], "", brand["endpoint_url"], seen)
+        work.append((brand, directory))
+        response = FetchResult(False, 500, brand["endpoint_url"], body)
+        support.append_failure(banks, {"bank": directory, "phase": "products_index",
+            "snippet": body[:500], **ingest._fetch_failure_fields(response)})
+    support.append_failure(banks, {"bank": work[0][1], "phase": "product_detail", "product_id": "p1",
+        "snippet": "Service unavailable", **ingest._fetch_failure_fields(FetchResult(False, 503, "", "Service unavailable"))})
+    snapshot = support.RegisterSnapshot(register_ok=True, register_provenance_complete=True,
+        banking_brands=[row for row, _ in work], banking_count_before_filter=4,
+        register_attempts=[{"ok": True, "sha256": "a" * 64}])
+    status = ingest._persist_ingest_status(banks_root=banks, run_root=tmp_path, snapshot=snapshot,
+        bank_work=work, attempt_journal=RawAttemptJournal(tmp_path / "_raw-attempt-journals-v1", "large-errors"))
+    assert status["by_failure_category"][AUTH] == 4
+    assert status["unresolved_requests_complete"] and status["unresolved_request_sample_count"] == 5
+    assert all(len(line) < MAX_FAILURE_LINE_BYTES for line in (banks / "failures.jsonl").read_bytes().splitlines())
+    retry = mock.Mock()
+    report = recover_transient_providers(banks, work, retry, log=lambda _: None, sleep=lambda _: None)
+    assert report["result"] == "completed" and retry.call_count == 1
 
 
 @pytest.mark.parametrize("failed", [False, True])
