@@ -715,7 +715,10 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 by_phase[phase] = by_phase.get(phase, 0) + 1
                 by_status[status] = by_status.get(status, 0) + 1
                 by_provider[provider] = by_provider.get(provider, 0) + 1
-                classified = classify_fetch_failure(rec.get("status"), rec.get("snippet") or "")
+                evidence = rec.get("classification_text")
+                if not isinstance(evidence, str):
+                    evidence = rec.get("snippet") or ""
+                classified = classify_fetch_failure(rec.get("status"), evidence)
                 provider_categories = by_provider_failure_category.setdefault(provider, {})
                 provider_categories[classified.category] = provider_categories.get(classified.category, 0) + 1
                 category = str(rec.get("failure_category") or classified.category)

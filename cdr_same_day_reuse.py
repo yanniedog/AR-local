@@ -492,6 +492,7 @@ def reconcile_same_day_reuse(run_root: Path) -> None:
     status.update(rollup)
     for provider, value in providers.items():
         value["failure_records"] = int((status.get("by_provider") or {}).get(provider) or 0)
+        value["failure_categories"] = status["by_provider_failure_category"].get(provider, {})
         if value["failure_records"]:
             value["state"] = "partial"
     status["provider_states"] = list(providers.values())
