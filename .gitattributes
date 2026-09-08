@@ -19,3 +19,6 @@ docs/evidence/recovery-check-hardening-20260908/runtime-readback.json whitespace
 laptop_recovery_runtime.py text eol=lf
 tests/test_laptop_recovery_runtime.py text eol=lf
 docs/evidence/runtime-reader-safety-20260908/* -text
+docs/evidence/runtime-reader-safety-20260908/** -text
+docs/evidence/runtime-reader-safety-20260908/execution-01/capture.json whitespace=cr-at-eol
+docs/evidence/runtime-reader-safety-20260908/execution-01/stdout.json whitespace=cr-at-eol

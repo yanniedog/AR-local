@@ -164,3 +164,11 @@ route selection and preserves their original exit code. These source fixes are
 not installed in the current receiver; its natural-run evidence clock remains
 unchanged. The corrected metadata reader and pinned runtime check are preparation
 only, with A3 still RUNNING and A4 BLOCKED.
+
+## September 8 later safety correction
+
+The earlier two runtime helpers are historical evidence only. Future checks use
+the independent isolated source and pre-execution hash-bound capture described in
+[RUNTIME_READER_CORRECTION_20260908.md](RUNTIME_READER_CORRECTION_20260908.md).
+The receipt reader now requires and locks the existing scheduled-record mutex;
+missing or busy mutexes fail without creating or modifying backup files.
