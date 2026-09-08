@@ -1,0 +1,23 @@
+{
+  "checked_at_utc": "2026-09-08T23:18:46.3566546+00:00",
+  "checked_at_hobart": "2026-09-09T09:18:46.3616539+10:00",
+  "task_name": "AR-local user-session backup",
+  "state": "Ready",
+  "last_run": "2026-09-09T06:00:01.0000000+10:00",
+  "last_result": 1,
+  "next_run": "2026-09-10T06:00:00.0000000+10:00",
+  "exact_commands": [
+    "Get-ScheduledTask -TaskName 'AR-local user-session backup'",
+    "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'",
+    "git -C C:/code/AR-local status --porcelain=v1 --untracked-files=all",
+    "git -C C:/code/AR-local rev-parse HEAD"
+  ],
+  "primary_head": "a0bd0f54200c91ef7aaa2fb163e752005ddb71e8",
+  "primary_status": [
+    " M .cursor/skills/pi-deploy-agent/SKILL.md",
+    "?? .codex/config.toml",
+    "?? laptop_backup_trusted_launcher.obj"
+  ],
+  "runtime_changes": false,
+  "pi_probed": false
+}
