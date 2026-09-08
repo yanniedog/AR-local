@@ -1,0 +1,5 @@
+receiver invocation failed: RuntimeError: remote helper cleanup failed: rm=255 ssh_dispatch_run_fatal: Connection to 192.168.20.19 port 22: Connection timed out
+
+; rmdir=1 rmdir: failed to remove '/tmp/ar-local-laptop-backup.5igfgB9t': Directory not empty
+
+{"early_run_exit_code": 1, "natural_trigger": false}

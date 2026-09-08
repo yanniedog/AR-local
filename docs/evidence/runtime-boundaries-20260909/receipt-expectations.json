@@ -1,0 +1,27 @@
+{
+  "schema": "ARL-RECOVERY-RECEIPT-BINDING-V1",
+  "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "receiver_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "observation_date": "2026-09-09",
+  "recorded_backup_root": "C:\\code\\backups\\AR-local-pi5-user",
+  "scheduled": {
+    "path": "catalog/scheduled-runs/20260908T201929Z-0a2464003ee0469baf79e95c71ebdfa7.json",
+    "sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980"
+  },
+  "catalog_sha256": "7d71c64e72d44b552cca7f108899141b98f9cc12743c8573187c2400261e967b",
+  "components": {
+    "observation": {
+      "path": "observations/2026-09-09/6887f16c62e475b61744e5b7887d4e0a2a9eb10dfbe6fbc555e7495b453ac15e/receipt.json",
+      "sha256": "f4a26b3a3c6cd624baf6e029932f944f89a5774c2db4c668f9ba8338a8fc8923"
+    },
+    "control": {
+      "path": "control/20260908T201719Z-f8e1aee43d0a0445/receipt.json",
+      "sha256": "b2aeea0520584d09b6d3c763bd0a6e1363a9cc598b5ddfd8ac80470b163ab84e"
+    },
+    "macro": {
+      "path": "macro/d05ef483dc9e88003a1f09f070d1fee5a322c2b8a963d1bc15f5a62d5b8f7ffc/receipt.json",
+      "sha256": "68fcd549d10adc7b3bb388e8c55d47d4a54e994c0eaa14b99cf1e0c223696fd2"
+    }
+  }
+}

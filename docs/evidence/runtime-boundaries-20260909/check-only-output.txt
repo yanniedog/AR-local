@@ -1,0 +1,32 @@
+{
+  "action": "BACKUP_REQUIRED",
+  "backfill_dates": [],
+  "backfill_required": false,
+  "backup_command": "backup-latest",
+  "control": {
+    "reason": "Pi control content changed",
+    "status": "STALE"
+  },
+  "execution_record": "C:\\code\\backups\\AR-local-pi5-user\\catalog\\scheduled-runs\\20260908T201234Z-49e49e0c2b4443889af80568766606c0.json",
+  "inventory": {
+    "missing_completed_dates": [],
+    "stale_diagnostics": [],
+    "status": "UP_TO_DATE"
+  },
+  "macro": {
+    "catalog_sequence": 144,
+    "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\d05ef483dc9e88003a1f09f070d1fee5a322c2b8a963d1bc15f5a62d5b8f7ffc\\receipt.json",
+    "status": "UP_TO_DATE"
+  },
+  "observation": {
+    "archive_sha256": "d33e0624cd2d4dd5ef494100567f679dee23b41b6d438db7f0d7810e2e0e4eaf",
+    "catalog_sequence": 141,
+    "observation_date": "2026-09-09",
+    "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-09\\6887f16c62e475b61744e5b7887d4e0a2a9eb10dfbe6fbc555e7495b453ac15e\\receipt.json",
+    "status": "UP_TO_DATE"
+  },
+  "ok": false,
+  "result": "BLOCKED",
+  "status": "STALE"
+}
+{"early_run_exit_code": 1, "natural_trigger": false}

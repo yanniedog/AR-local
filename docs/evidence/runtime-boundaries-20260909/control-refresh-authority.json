@@ -1,0 +1,9 @@
+{
+  "user_instruction": "Do it now rather than 6am.",
+  "at": "2026-09-09T06:16:48.760239+10:00",
+  "config_sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca",
+  "installed_source_sha256": "96c7770805b67ecdc7dd1930e7bf0ec2a9959598ec8d7296b3ce496519f766e8",
+  "wrapper_sha256": "0c7a3485722d08ec762551c01ff25c31681c3e7903d374836f0ebea34664b3af",
+  "scope": "Control-only refresh September 9 after original preflight verifies other components; full original post-verification; one-connection cleanup; SSH ConnectTimeout=60 seconds; ordinary token, identity, locks, quiet-window and receiver preflight retained",
+  "natural_trigger": false
+}
