@@ -230,6 +230,10 @@ def verify_binding(root: Path, expected: dict, now: datetime) -> dict:
     inventory, completed, pointer_raw = _scheduled(root, expected, now)
     components = [_component(root, expected, entries, inventory, completed, kind)
                   for kind in sorted(KINDS)]
+    # A concurrent edit need not advance either catalog or mutable pointer.
+    # Recheck every hash-bound record after interpreting all component metadata.
+    for reference in (expected["scheduled"], *expected["components"].values()):
+        _reference(root, reference)
     _require(read_bytes(root / "catalog/generations.jsonl") == catalog_raw
              and read_bytes(root / "catalog/latest-scheduled.json") == pointer_raw,
              "backup metadata changed during verification")

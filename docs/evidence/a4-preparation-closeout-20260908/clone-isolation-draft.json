@@ -1,0 +1,113 @@
+{
+  "schema": "ARL-A4-CLONE-ISOLATION-DRAFT-V1",
+  "status": "INCOMPLETE",
+  "physical_actions_enabled": false,
+  "source_inspection": {
+    "packet_sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+    "entry": "evidence/a4-readonly-metadata.json",
+    "at_utc": "2026-09-07T23:08:23.651003+00:00"
+  },
+  "media": {
+    "target_device": "/dev/mmcblk0",
+    "serial": "0xfa922545",
+    "current_root_uuid": "ed6c7f1b-238b-41a1-b4b6-7bcdef3270fe",
+    "current_root_partuuid": "1a36a1cc-02",
+    "device_bytes": 31902400512,
+    "prohibited_writable_devices": [
+      "/dev/nvme0n1",
+      "/dev/sda"
+    ],
+    "original_nvme_root_uuid": "4cbd4874-d326-4496-bee2-7fda775a3c4c"
+  },
+  "image_inputs": [
+    {
+      "role": "historical_recovery_candidate_may21",
+      "bytes": 31902400512,
+      "sha256": "d0caeeb3a83a50b79703dd650c8198b9a0afcbbb09c667b24b716fada716be4f",
+      "acceptance": "historical base only; not current or boot-proven"
+    },
+    {
+      "role": "preserved_original_sd_uncompressed",
+      "bytes": 31902400512,
+      "sha256": "ce0bcd6f1cb4364df2b97fb6324d0871a053fed6ed7738dcb0a65ef174d371d2",
+      "acceptance": "preservation baseline; not interchangeable with recovery candidate"
+    },
+    {
+      "role": "preserved_original_sd_compressed",
+      "bytes": 3682092009,
+      "sha256": "e33d3333697f604f424ff3e5ff4852c0234336ca4b22e67cc4bd4eb49a6f361d",
+      "acceptance": "compressed preservation copy only"
+    }
+  ],
+  "required_mask_units": [
+    "apt-daily-upgrade.service",
+    "apt-daily-upgrade.timer",
+    "apt-daily.service",
+    "apt-daily.timer",
+    "ar-local-daily-watchdog.service",
+    "ar-local-daily-watchdog.timer",
+    "ar-local-daily.service",
+    "ar-local-daily.timer",
+    "ar-local-deploy-watchdog.service",
+    "ar-local-deploy-watchdog.timer",
+    "cron.service",
+    "dpkg-db-backup.service",
+    "dpkg-db-backup.timer",
+    "e2scrub_all.service",
+    "e2scrub_all.timer",
+    "e2scrub_reap.service",
+    "fstrim.service",
+    "fstrim.timer",
+    "logrotate.service",
+    "logrotate.timer",
+    "man-db.service",
+    "man-db.timer",
+    "rpi-eeprom-update.service",
+    "tailscaled.service"
+  ],
+  "observed_enabled_timers": [
+    "apt-daily-upgrade.timer",
+    "apt-daily.timer",
+    "ar-local-daily.timer",
+    "dpkg-db-backup.timer",
+    "e2scrub_all.timer",
+    "fstrim.timer",
+    "logrotate.timer",
+    "man-db.timer",
+    "ar-local-daily-watchdog.timer",
+    "ar-local-deploy-watchdog.timer"
+  ],
+  "required_credential_isolation": [
+    "Tailscale state and identity",
+    "publication credentials",
+    "production deployment credentials"
+  ],
+  "permitted_intent": [
+    "LAN and authenticated SSH with separate clone host pin",
+    "isolated restored current dashboard",
+    "independently proved bounded return controls"
+  ],
+  "approved_path_writes": [],
+  "prepared_clone_output": {
+    "bytes": null,
+    "sha256": null,
+    "root_uuid": null,
+    "serial": null,
+    "readback_verified": false
+  },
+  "return_controls": {
+    "early_boot_reset": null,
+    "kernel_handover": null,
+    "os_watchdog": null,
+    "network_independent_deadline": null,
+    "actual_negotiated_timeouts": null
+  },
+  "open_requirements": [
+    "Natural current-runtime backup and consolidated A3 acceptance",
+    "Full offline activation/dependency/credential inventory including unmodelled writers",
+    "Exact path-by-path write manifest with before/after hashes and rollback sources",
+    "Preserved image size/hash validation before use, and prepared output/full-device byte hash verification after approved writes",
+    "Continuous early-boot to OS reset/return coverage and separate clone SSH pin",
+    "Actual current restored data, SD root and bounded return to unchanged NVMe production"
+  ]
+}

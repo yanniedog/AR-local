@@ -148,6 +148,30 @@ def test_missing_and_tampered_component_are_rejected(evidence):
         recovery.verify_binding(root, expected, NOW)
 
 
+def test_scheduler_component_date_must_match_the_requested_day(evidence):
+    root, expected = evidence
+    change_scheduled(root, expected, lambda record: record["detail"]["after"]["observation"].update(
+        {"observation_date": "2026-09-07"}))
+    with pytest.raises(ValueError, match="requested current day"):
+        recovery.verify_binding(root, expected, NOW)
+
+
+@pytest.mark.parametrize("kind", ["scheduled", "control", "macro", "observation"])
+def test_concurrent_record_edit_without_pointer_change_is_rejected(evidence, monkeypatch, kind):
+    root, expected = evidence
+    original = recovery._component
+    reference = expected["scheduled"] if kind == "scheduled" else expected["components"][kind]
+    def change_after_read(*args):
+        value = original(*args)
+        if args[-1] == "observation":
+            path = root / reference["path"]
+            path.write_bytes(path.read_bytes() + b" ")
+        return value
+    monkeypatch.setattr(recovery, "_component", change_after_read)
+    with pytest.raises(ValueError, match="digest mismatch"):
+        recovery.verify_binding(root, expected, NOW)
+
+
 def test_duplicate_json_keys_are_rejected_even_when_rehashed(evidence):
     root, expected = evidence
     path = root / expected["scheduled"]["path"]
