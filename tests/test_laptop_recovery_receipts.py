@@ -45,6 +45,7 @@ def evidence(tmp_path):
                 "scheduled": {"path": pointer["record_path"], "sha256": pointer["record_sha256"]},
                 "catalog_sha256": hashlib.sha256((tmp_path / names[0]).read_bytes()).hexdigest(),
                 "components": refs}
+    (tmp_path / "catalog/.scheduled-record.mutex").write_bytes(b"0")
     return tmp_path, expected
 
 
@@ -265,3 +266,52 @@ def test_components_require_commands_even_with_matching_reviewed_hashes(evidence
     expected["catalog_sha256"] = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
     with pytest.raises(ValueError, match="receipt command evidence"):
         recovery.verify_binding(root, expected, NOW)
+
+
+def test_missing_mutex_is_rejected_without_creating_it(evidence):
+    root, expected = evidence
+    (root / "catalog/.scheduled-record.mutex").unlink()
+    before = snapshot(root)
+    with pytest.raises(FileNotFoundError):
+        recovery.verify_binding(root, expected, NOW)
+    assert snapshot(root) == before
+
+
+def test_busy_writer_is_rejected_without_modifying_evidence(evidence):
+    root, expected = evidence
+    before = snapshot(root)
+    with recovery.scheduled_read_mutex(root):
+        with pytest.raises(ValueError, match="writer is busy"):
+            recovery.verify_binding(root, expected, NOW)
+    assert snapshot(root) == before
+
+
+def test_writer_cannot_enter_between_final_snapshot_and_pointer_read(evidence, monkeypatch):
+    import subprocess
+    import sys
+    root, expected = evidence
+    code = """import os, sys
+with open(sys.argv[1], 'rb') as f:
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(37)
+"""
+    command = [sys.executable, '-I', '-S', '-B', '-c', code,
+               str(root / 'catalog/.scheduled-record.mutex')]
+    original, observations = recovery.read_bytes, []
+    def probe(path):
+        if path.name == 'latest-scheduled.json':
+            observations.append(subprocess.run(command, timeout=10).returncode)
+        return original(path)
+    monkeypatch.setattr(recovery, 'read_bytes', probe)
+    before = snapshot(root)
+    assert recovery.verify_binding(root, expected, NOW)['receipt_binding'] == 'PASS'
+    assert len(observations) >= 2 and set(observations) == {37}
+    assert subprocess.run(command, timeout=10).returncode == 0
+    assert snapshot(root) == before
