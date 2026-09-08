@@ -1,4 +1,8 @@
-"""Read-only binding of current-plan laptop receipts; never a physical boot gate.
+"""Bind current-plan receipt metadata; never a physical boot gate.
+
+Live Windows mode creates temporary writer-lock files and can briefly block a
+starting backup. Avoid scheduled start windows. Use --snapshot for a separate
+frozen metadata copy on any platform; snapshot mode creates no coordination files.
 
 The caller supplies reviewed, hash-pinned expectations. This reader checks
 metadata only: archive restoration, natural-trigger provenance, media identity
@@ -266,19 +270,28 @@ def scheduled_read_mutex(root: Path):
             unlock()
 
 
-def verify_binding(root: Path, expected: dict, now: datetime) -> dict:
-    """Exclude the ordinary-user job and component writer with transient locks.
+def verify_binding(root: Path, expected: dict, now: datetime, *, snapshot: bool = False) -> dict:
+    """Inspect a frozen copy or exclude live Windows writers with handle locks.
 
     Existing evidence bytes are read-only. Coordination creates/removes the same
     two lock files as the writers; it never creates lock directories or starts a
     backup. Do not invoke during a pending natural task's start window.
     """
-    from laptop_backup_atomic import ReceiverLock
+    from laptop_recovery_lock import process_writer_lock
     _real(root)
+    if snapshot:
+        for relative in ("user-session-lock", "catalog/.receiver.lock", "catalog/.scheduled-record.mutex"):
+            marker = root / relative
+            _require(not marker.exists() and not marker.is_symlink(),
+                     "snapshot contains live backup coordination paths")
+        result = _verify_locked(root, expected, now)
+        result["coordination"] = "None; frozen metadata snapshot only"
+        return result
+    _require(os.name == "nt", "live receipt verification requires Windows; use --snapshot on a frozen copy")
     outer = _real(root / "user-session-lock")
     _real(outer / "catalog")
     _real(root / "catalog")
-    with ReceiverLock(outer), ReceiverLock(root), scheduled_read_mutex(root):
+    with process_writer_lock(outer), process_writer_lock(root), scheduled_read_mutex(root):
         return _verify_locked(root, expected, now)
 
 
@@ -314,12 +327,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--expectations", type=Path, required=True)
     parser.add_argument("--expectations-sha256", required=True)
+    parser.add_argument("--snapshot", action="store_true",
+                        help="Inspect a separate frozen metadata copy without writer locks")
     args = parser.parse_args(argv)
     try:
         _hash(args.expectations_sha256)
         raw = read_bytes(args.expectations)
         _require(_digest(raw) == args.expectations_sha256, "expectations digest mismatch")
-        result = verify_binding(args.target, _object(raw), datetime.now(timezone.utc))
+        result = verify_binding(args.target, _object(raw), datetime.now(timezone.utc),
+                                snapshot=args.snapshot)
     except (ValueError, OSError, TypeError, KeyError) as error:
         print(json.dumps({"receipt_binding": "FAIL", "physical_recovery": "BLOCKED",
                           "error": str(error)}))

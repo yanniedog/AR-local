@@ -1,4 +1,4 @@
-# Read-only laptop recovery receipt binding
+# Laptop recovery receipt binding
 
 `laptop_recovery_receipts.py` validates the metadata connection between an
 explicitly pinned successful scheduled record, its three component receipts and
@@ -13,17 +13,32 @@ anything. `receipt_binding=PASS` always accompanies
 
 ## Invocation
 
+Live verification is Windows-only and briefly blocks both whole-job and component
+backup writers. **Avoid the scheduled 06:00 and sign-in trigger windows.** It
+creates two temporary `.receiver.lock` files in existing coordination directories
+and locks the existing scheduled-record mutex. Windows removes the temporary
+files when their process handles close, including abrupt process termination.
+It never replaces an existing lock or guesses whether a writer is stale.
+
 Use a separate, reviewed expectations file and pass its SHA-256 independently:
 
 ```text
 python laptop_recovery_receipts.py --target <absolute-backup-directory> --expectations <absolute-json-file> --expectations-sha256 <approved-sha256>
 ```
 
-The command prints JSON to stdout and never writes backup state or contacts the
-Pi. It does not update the installed receiver or scheduler. No elevation is
+The command prints JSON to stdout. Existing backup evidence remains unchanged;
+live coordination creates and removes the two temporary files described above.
+It never contacts the Pi or updates the installed receiver or scheduler. No elevation is
 needed. Relative paths, links/reparse points, duplicate JSON keys, oversized
 metadata and digest mismatches are rejected. A catalog or latest-pointer change
 during the read also rejects the snapshot; it never repairs a pointer.
+
+For a separate frozen metadata copy, use the same command with `--snapshot`.
+This mode creates no coordination files and is required on Linux. The copy must
+exclude `user-session-lock`, `catalog/.receiver.lock` and
+`catalog/.scheduled-record.mutex`; their presence is rejected. Never remove those
+paths from a live backup to make it resemble a snapshot. Snapshot success binds
+the preserved records only and does not attest the current live source.
 
 The expectations object has exactly these fields:
 
@@ -63,7 +78,7 @@ specified in [the A4 readiness record](A4_RETURN_READINESS_20260908.md).
 ## Verification
 
 ```text
-python -m pytest tests/test_laptop_recovery_receipts.py tests/test_d012_recovery_handoff.py -q
+python -m pytest tests/test_laptop_recovery_lock.py tests/test_laptop_recovery_receipts.py tests/test_d012_recovery_handoff.py -q
 ```
 
 Tests read the frozen September 8 real receipt packet and mutate only temporary
@@ -73,6 +88,9 @@ plan identities are rejected, missing days and wrong component sequences fail,
 and successful reads leave every input byte and modification time unchanged.
 Windows symlink creation is skipped without requesting privileges; Linux CI
 exercises that case. Full applicable repository CI remains required.
+The Windows process-termination test kills a child holding both reader locks,
+then proves the unchanged writer can acquire both names. This is process-crash
+coverage; it does not claim physical power-loss or boot acceptance.
 
 ## September 8 execution and exact resume checks
 
@@ -87,14 +105,15 @@ new read of metadata, not another backup or independent archive restore.
 The [runtime identity script](evidence/recovery-receipt-binding-20260908/runtime-identity-readonly.ps1)
 checks the exact task XML sections against a hash-pinned baseline, the ordinary
 token and installed configuration/release, and the exact clean production SHA.
-It passed at 09:46:45 Hobart. Run this read-only check before any future A3
-consolidation, from the operator's ordinary PowerShell session:
+It passed at 09:46:45 Hobart. The following invocation is historical only;
+do not execute it for a current check:
 
 ```powershell
 & .\docs\evidence\recovery-receipt-binding-20260908\runtime-identity-readonly.ps1
 ```
 
-Then authenticate the **new** terminal scheduled record and all three component
+For a future check, follow the latest append-only handoff and its reviewed
+current runtime pins, then authenticate the **new** terminal scheduled record and all three component
 references using a separately reviewed expectations file and the CLI above.
 Do not reuse today's expectations for September 9, accept a failed latest
 pointer, or infer natural trigger origin from a successful receipt. Independently
@@ -129,7 +148,8 @@ failed natural 06:00 task.
 
 The earlier runtime script is retained only as historical evidence. **Do not
 invoke it for future checks:** its default SSH profile could update known-hosts
-state. Use the [pinned replacement](evidence/recovery-check-hardening-20260908/runtime-identity-pinned.ps1):
+state. The [pinned replacement](evidence/recovery-check-hardening-20260908/runtime-identity-pinned.ps1)
+and invocation below are also historical; later corrections supersede them:
 
 ```powershell
 & .\docs\evidence\recovery-check-hardening-20260908\runtime-identity-pinned.ps1
@@ -170,5 +190,16 @@ only, with A3 still RUNNING and A4 BLOCKED.
 The earlier two runtime helpers are historical evidence only. Future checks use
 the independent isolated source and pre-execution hash-bound capture described in
 [RUNTIME_READER_CORRECTION_20260908.md](RUNTIME_READER_CORRECTION_20260908.md).
-The receipt reader now requires and locks the existing scheduled-record mutex;
-missing or busy mutexes fail without creating or modifying backup files.
+The receipt reader requires and locks the existing scheduled-record mutex;
+missing or busy mutexes fail. Current live mode also creates the two temporary
+coordination files described at the beginning of this guide; failure releases them.
+
+## September 9 current outcome
+
+The [terminal closeout](evidence/runtime-boundaries-20260909/CLOSEOUT.md) records
+the manual backup PASS at 06:19:29 and independent receipt binding at 06:21:39.
+Use the latest entry in [the recovery handoff](PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md)
+for current production, receiver and configuration identities. Historical
+September 8 helpers and expectations must not be reused against the current pair.
+The process-scoped reader correction changes repository tooling only; the
+installed receiver and task remain unchanged. A3 remains RUNNING and A4 BLOCKED.

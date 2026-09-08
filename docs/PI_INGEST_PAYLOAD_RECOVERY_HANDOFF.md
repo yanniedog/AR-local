@@ -25779,3 +25779,33 @@ any prior evidence or reinterpret past edits as append-only compliance.
   ]
 }
 ```
+
+## September 9 receipt reader crash-safety correction
+
+The following entry supplements the preceding full handoff without rewriting historical evidence.
+
+```json
+{
+  "entry_id": "HANDOFF-20260909-RECEIPT-READER-CRASH-SAFETY",
+  "previous_entry_id": "HANDOFF-20260909-EARLY-BACKUP-VERIFIED",
+  "created_at_utc": "2026-09-08T20:43:18.801267+00:00",
+  "scope": "Review correction; prior full runtime and backup handoff remains authoritative",
+  "result": "SOURCE_FIXED_NOT_INSTALLED",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "attempt_3_terminal": {
+    "result": "FAIL",
+    "completed_at_hobart": "2026-09-09T05:49:41+10:00",
+    "record_path": "catalog/scheduled-runs/20260908T194941Z-a3840f9146934539af1d90506f4dcbef.json",
+    "record_sha256": "9bbbd6bed5adac393fdb023f9a3355959178135607dbff4a3287249b614f4068",
+    "stdout_path": "docs/evidence/runtime-boundaries-20260909/early-run-output-03.txt",
+    "stdout_sha256": "63812fc69e397e3f2b75d79f8a9978ba5d726312b7408a13555dbfccc0e2742b",
+    "correction": "The earlier RUNNING label was a point-in-time observation and is superseded by this terminal failure; do not restart it."
+  },
+  "final_backup": "PASS 2026-09-09T06:19:29+10:00; independently bound at 06:21:39; PR661 preserves all records",
+  "reader_correction": "Windows live locks use O_TEMPORARY handle lifetime; actual child TerminateProcess test proves both names disappear and unchanged writer can acquire them. Non-Windows requires explicit frozen --snapshot mode. Guide and CLI disclose live coordination and trigger-window avoidance. No physical power-loss proof claimed.",
+  "runtime_changes": "None. Installed receiver, task, configuration and production remain at the preceding full handoff pins.",
+  "next_action": "Do not rerun the completed manual backup. Use current reviewed source for future checks outside natural trigger windows; next natural trigger is September 10 at 06:00. Preserve A3 and A4 boundaries."
+}
+```
