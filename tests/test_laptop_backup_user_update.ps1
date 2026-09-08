@@ -2,9 +2,12 @@ param([string]$CorePath,[string]$TestRoot)
 $ErrorActionPreference='Stop'
 . $CorePath
 function Get-ScheduledTask {
+  $script:gets++
+  $state='Ready'
+  if($script:fault -ceq 'race' -and $script:gets -gt 1){$state='Running'}
   $argsValue=$script:action.Arguments
   if($script:fault -ceq 'old-action' -and $script:sets -eq 0){$argsValue='unexpected'}
-  [pscustomobject]@{State='Ready';Actions=@([pscustomobject]@{Execute='powershell';Arguments=$argsValue;WorkingDirectory=$script:action.WorkingDirectory});
+  [pscustomobject]@{State=$state;Actions=@([pscustomobject]@{Execute='powershell';Arguments=$argsValue;WorkingDirectory=$script:action.WorkingDirectory});
     Principal=[pscustomobject]@{LogonType='Interactive';RunLevel='Limited';UserId='operator'}}
 }
 function Export-ScheduledTask {
@@ -14,6 +17,7 @@ function Export-ScheduledTask {
 }
 function New-ScheduledTaskAction {
   param($Execute,$Argument,$WorkingDirectory)
+  if($script:fault -ceq 'action'){throw 'injected action construction failure'}
   [pscustomobject]@{Execute=$Execute;Arguments=$Argument;WorkingDirectory=$WorkingDirectory}
 }
 function Set-ScheduledTask {
@@ -22,9 +26,10 @@ function Set-ScheduledTask {
   if($script:fault -ceq 'rollback' -and $script:sets -eq 2){throw 'injected rollback failure'}
   $script:action=@($Action)[0]
 }
-foreach($case in @('success','old-action','probe','readback','rollback')) {
+foreach($case in @('success','old-action','probe','action','race','readback','rollback')) {
   $script:fault=$case
   $script:sets=0
+  $script:gets=0
   $script:action=[pscustomobject]@{Execute='powershell';Arguments='old';WorkingDirectory='old-root'}
   $evidence=Join-Path $TestRoot $case
   $failed=$false
@@ -45,7 +50,11 @@ foreach($case in @('success','old-action','probe','readback','rollback')) {
     }
   } else {
     if(-not $failed){throw "Expected failure: $case"}
-    if($case -in @('old-action','probe') -and $script:sets -ne 0){throw 'Preflight failure mutated task'}
+    if($case -in @('old-action','probe','action','race') -and $script:sets -ne 0){throw 'Preflight failure mutated task'}
+    if($case -in @('probe','action','race')) {
+      $receipt=Get-Content (Join-Path $evidence 'installation-failed.json') -Raw | ConvertFrom-Json
+      if($receipt.result -cne 'FAIL' -or $receipt.mutation_attempted -or $receipt.rollback -cne 'NOT_NEEDED'){throw 'Pre-mutation failure not terminalized correctly'}
+    }
     if($case -in @('readback','rollback')) {
       $receipt=Get-Content (Join-Path $evidence 'installation-failed.json') -Raw | ConvertFrom-Json
       if($script:sets -ne 2 -or $receipt.result -cne 'FAIL'){throw 'Missing rollback attempt'}
