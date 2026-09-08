@@ -1,0 +1,17 @@
+{
+  "result": "PASS",
+  "started_at": "2026-09-08T12:25:21.9036028+10:00",
+  "completed_at": "2026-09-08T12:25:26.8112369+10:00",
+  "error": null,
+  "source_commit": "e4e0ba2c96b4598541ed5d07203a269112688ea1",
+  "helper_sha256": "6fcf4d195e5b68caa969349af6b8f081605c794ad2dbfba2e435d23ddb0c9243",
+  "runtime_source_sha256": "36e95ee5322c2485ad978bf5ca608072a4a149c535f6a08b4e953d7d4f649f67",
+  "driver_sha256": "9289e078a01621b04f927cfefeff30b830bfd2366ef62b2b4c626f660eaa971c",
+  "driver_path": "C:\\code\\AR-local-a4-isolation-0908\\docs\\evidence\\runtime-reader-safety-20260908\\capture-once.ps1",
+  "output_directory": "C:\\code\\AR-local-a4-isolation-0908\\docs\\evidence\\runtime-reader-safety-20260908\\execution-01",
+  "exact_helper_command": "& C:\\code\\AR-local-a4-isolation-0908\\docs\\evidence\\runtime-reader-safety-20260908\\runtime-identity-isolated.ps1 -RuntimeSourceSha256 36e95ee5322c2485ad978bf5ca608072a4a149c535f6a08b4e953d7d4f649f67",
+  "capture_encoding": "PowerShell output objects joined with LF plus final LF, encoded UTF-8 without BOM",
+  "stdout_sha256": "5ff2542236971cbd627f7b582f501aa0f156d2d371a02ef270d1a20992025ca6",
+  "physical_recovery": "BLOCKED",
+  "natural_trigger": "UNVERIFIED"
+}

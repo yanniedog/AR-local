@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+from contextlib import contextmanager
 import re
 import sys
 from datetime import date, datetime, timezone
@@ -240,7 +242,38 @@ def _component(root: Path, expected: dict, entries: list, inventory: dict,
     return {"kind": kind, "catalog_sequence": entry["sequence"], **reference}
 
 
+@contextmanager
+def scheduled_read_mutex(root: Path):
+    """Lock the writer's existing byte without creating or modifying its file."""
+    path = _real(root / "catalog/.scheduled-record.mutex")
+    with path.open("rb") as stream:
+        _require(os.fstat(stream.fileno()).st_size >= 1, "scheduled mutex is empty")
+        if os.name == "nt":
+            import msvcrt
+            lock = lambda: msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            unlock = lambda: msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            lock = lambda: fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            unlock = lambda: fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        try:
+            lock()
+        except OSError as error:
+            raise ValueError("scheduled writer is busy; retry a later read") from error
+        try:
+            yield
+        finally:
+            unlock()
+
+
 def verify_binding(root: Path, expected: dict, now: datetime) -> dict:
+    """Serialize with terminal writers, without modifying backup bytes."""
+    _real(root)
+    with scheduled_read_mutex(root):
+        return _verify_locked(root, expected, now)
+
+
+def _verify_locked(root: Path, expected: dict, now: datetime) -> dict:
     """Validate pinned receipt metadata without invoking a writer or live probe."""
     _require(now.tzinfo is not None, "verification time must include a timezone")
     _real(root)
