@@ -48,6 +48,26 @@ class FetchFailure(NamedTuple):
     negotiate: bool
 
 
+def is_public_authentication_failure(status: Any, text: str = "") -> bool:
+    """Recognize upstream credential rejections without a bank-name allowlist."""
+    if isinstance(status, str) and status.isdigit():
+        status = int(status)
+    if status in {401, 403, 407}:
+        return True
+    if not isinstance(status, int) or not 400 <= status <= 595 or status == 495:
+        return False
+    body = re.sub(r"[_-]", " ", str(text or "")[:65536].lower())
+    credential = r"(?:api\s*key|subscription\s+key|(?:access|bearer|authentication)\s+token|credentials?)"
+    rejection = r"(?:required|missing|invalid|expired|not\s+(?:provided|found|valid))"
+    return bool(re.search(
+        rf"\b(?:requires?|missing|invalid|expired)\s+(?:an?\s+)?{credential}\b"
+        rf"|\b{credential}\b.{{0,40}}\b{rejection}\b"
+        r"|\b(?:authentication|authorization)\s+(?:is\s+)?(?:required|failed|missing)\b"
+        r"|\b(?:unauthenticated|invalid client|invalid token)\b",
+        body,
+    ))
+
+
 def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:
     """Separate a retryable outage from a deterministic rejection using evidence."""
     body = str(text or "")[:65536].lower()
@@ -64,10 +84,10 @@ def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:
         or ("x-v" in body and parse_supported_versions(body))
     )):
         return FetchFailure("incompatible_version", False, True)
-    if status in {400, 401, 403} and re.search(r"requires?\s+(?:an?\s+)?api[ _-]?key", body):
+    if is_public_authentication_failure(status, body):
+        if status in {401, 403, 407} and not body:
+            return FetchFailure("access_denied", False, False)
         return FetchFailure("public_endpoint_auth_required", False, False)
-    if status in {401, 403}:
-        return FetchFailure("access_denied", False, False)
     if status in {400, 404, 410} and re.search(r"product\s+is\s+(?:inactive|closed)", body):
         return FetchFailure("product_inactive", False, False)
     if status in {404, 410}:

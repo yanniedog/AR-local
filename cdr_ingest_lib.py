@@ -689,6 +689,7 @@ def _persist_ingest_status(
                 "endpoint_url": brand.get("endpoint_url") or None,
                 "state": "partial" if failures else "complete",
                 "failure_records": failures,
+                "failure_categories": status["by_provider_failure_category"].get(bdir, {}),
             }
         )
     status["providers_registered"] = snapshot.banking_count_before_filter

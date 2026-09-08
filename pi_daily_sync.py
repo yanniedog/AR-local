@@ -349,7 +349,8 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                 return PUBLISH_WITHHELD
             print(
                 "[pi_daily_sync] app_payload bounded partial v1 promotion "
-                f"run_date={observation_date}"
+                f"run_date={observation_date} "
+                f"nonblocking_authentication_failures={gate.authentication_exclusions(contract)['failure_records']}"
             )
         elif (
             completion.get("finalization_schema_version") == 2
