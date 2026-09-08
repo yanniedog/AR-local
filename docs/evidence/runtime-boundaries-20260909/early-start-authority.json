@@ -1,0 +1,9 @@
+{
+  "user_instruction": "Do it now rather than 6am.",
+  "at": "2026-09-09T05:36:06.790348+10:00",
+  "config_sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca",
+  "installed_source_sha256": "96c7770805b67ecdc7dd1930e7bf0ec2a9959598ec8d7296b3ce496519f766e8",
+  "wrapper_sha256": "d3e3edd420aa77b55cec38b8d109926a5b1ad2cebb3ff0297df2caea315c20e2",
+  "scope": "One invocation before 06:00 September 9; ordinary token, identity, locks, quiet-window and receiver preflight retained",
+  "natural_trigger": false
+}

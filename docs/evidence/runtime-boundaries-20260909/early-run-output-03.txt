@@ -1,0 +1,15 @@
+{
+  "ok": false,
+  "result": "BLOCKED",
+  "error": "backup failed; evidence=C:\\code\\backups\\AR-local-pi5-user\\catalog\\failures\\20260908T194920Z-bbf93077dd5c4d30ac5e18548b2a5ca5.json"
+}
+receiver invocation failed: RuntimeError: remote helper cleanup failed: rm=255 Connection timed out during banner exchange
+
+Connection to 192.168.20.19 port 22 timed out
+
+; rmdir=255 Connection timed out during banner exchange
+
+Connection to 192.168.20.19 port 22 timed out
+
+
+{"early_run_exit_code": 1, "natural_trigger": false}
