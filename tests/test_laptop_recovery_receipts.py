@@ -224,3 +224,44 @@ def test_cli_rejects_changed_expectations_without_writing(evidence, capsys):
     assert result["receipt_binding"] == "FAIL"
     assert result["physical_recovery"] == "BLOCKED"
     assert snapshot(root) == before
+
+
+@pytest.mark.parametrize("outcome", ["PASS", "FAIL"])
+def test_unpointed_successor_blocks_without_repairing_pointer(evidence, outcome):
+    root, expected = evidence
+    child = json.loads((root / expected["scheduled"]["path"]).read_bytes())
+    child.update(result=outcome, previous_execution={
+        "record_path": expected["scheduled"]["path"],
+        "record_sha256": expected["scheduled"]["sha256"],
+    })
+    write_json(root / "catalog/scheduled-runs/unpointed-child.json", child)
+    before = snapshot(root)
+    with pytest.raises(ValueError, match="unpointed scheduled successor"):
+        recovery.verify_binding(root, expected, NOW)
+    assert snapshot(root) == before
+
+
+@pytest.mark.parametrize("commands", [None, [], [""], ["valid", 2]])
+@pytest.mark.parametrize("kind", ["observation", "control", "macro"])
+def test_components_require_commands_even_with_matching_reviewed_hashes(evidence, kind, commands):
+    root, expected = evidence
+    reference = expected["components"][kind]
+    path = root / reference["path"]
+    value = json.loads(path.read_bytes())
+    value["exact_commands"] = commands
+    reference["sha256"] = write_json(path, value)
+    catalog_path = root / "catalog/generations.jsonl"
+    entries = [json.loads(line) for line in catalog_path.read_bytes().splitlines()]
+    previous, lines = None, []
+    for entry in entries:
+        if entry["receipt_path"] == reference["path"]:
+            entry["receipt_sha256"] = reference["sha256"]
+        entry["previous_entry_sha256"] = previous
+        entry.pop("entry_sha256")
+        entry["entry_sha256"] = hashlib.sha256(recovery.receiver.canonical_json_bytes(entry)).hexdigest()
+        previous = entry["entry_sha256"]
+        lines.append(recovery.receiver.canonical_json_bytes(entry))
+    catalog_path.write_bytes(b"".join(lines))
+    expected["catalog_sha256"] = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="receipt command evidence"):
+        recovery.verify_binding(root, expected, NOW)

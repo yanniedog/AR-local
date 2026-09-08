@@ -14,3 +14,5 @@ laptop_recovery_receipts.py text eol=lf
 tests/test_laptop_recovery_receipts.py text eol=lf
 docs/LAPTOP_RECOVERY_RECEIPT_BINDING.md text eol=lf
 docs/evidence/a4-preparation-closeout-20260908/* -text
+docs/evidence/recovery-check-hardening-20260908/* -text
+docs/evidence/recovery-check-hardening-20260908/runtime-readback.json whitespace=cr-at-eol

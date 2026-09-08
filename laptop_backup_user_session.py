@@ -218,7 +218,7 @@ def execute(config: dict, mode: str, config_sha256: str) -> int:
         with ReceiverLock(lock_root):
             initialize_catalog(Path(config["target"]))
             code = scheduled.main(args)
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         record(config, "FAIL", "scheduled receiver raised after route selection",
                error_type=type(exc).__name__, **correlation)
         raise
