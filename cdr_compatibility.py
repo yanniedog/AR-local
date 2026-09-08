@@ -48,30 +48,51 @@ class FetchFailure(NamedTuple):
     negotiate: bool
 
 
-def is_public_authentication_failure(status: Any, text: str = "") -> bool:
-    """Recognize upstream credential rejections without a bank-name allowlist."""
+def _authentication_evidence(status: Any, text: str = "") -> Optional[str]:
+    """Return a compact matching clause from the normalized response input."""
     if isinstance(status, str) and status.isdigit():
         status = int(status)
     if status in {401, 403, 407}:
-        return True
+        return str(text or "")[:500]
     if not isinstance(status, int) or not 400 <= status <= 595 or status == 495:
-        return False
-    body = re.sub(r"[_-]", " ", str(text or "")[:65536].lower())
+        return None
+    body = re.sub(r"\s+", " ", re.sub(r"[_-]", " ", str(text or "")[:65536].lower()))
     # A server's own database/dependency authentication failure is an outage.
     # Nonstandard 5xx credential rejections need explicit public API context.
     credential = r"(?:api\s*key|subscription\s+key|(?:access|bearer|authentication)\s+token)"
     if status < 500:
         credential = rf"(?:{credential}|credentials?)"
-    rejection = r"(?:required|missing|invalid|expired|not\s+(?:provided|found|valid))"
+    rejection = r"(?:required|missing|invalid|expired|failed|denied|rejected|unauthori[sz]ed|not\s+(?:provided|found|valid))"
     explicit = re.search(
         rf"\b(?:requires?|missing|invalid|expired)\s+(?:an?\s+)?{credential}\b"
         rf"|\b{credential}\b.{{0,40}}\b{rejection}\b", body,
     )
-    return bool(explicit or (status < 500 and re.search(
+    match = explicit or (status < 500 and re.search(
         r"\b(?:authentication|authorization)\s+(?:is\s+)?(?:required|failed|missing)\b"
         r"|\b(?:unauthenticated|invalid client|invalid token)\b",
         body,
-    )))
+    ))
+    return match.group(0) if match else None
+
+
+def is_public_authentication_failure(status: Any, text: str = "") -> bool:
+    """Recognize upstream credential rejections without a bank-name allowlist."""
+    return _authentication_evidence(status, text) is not None
+
+
+def compact_failure_evidence(status: Any, text: str = "") -> str:
+    """Keep authentication proof within existing recovery-journal budgets.
+
+    Full response bodies remain in the raw attempt journal. A matching clause
+    preserves late credential text without duplicating up to 64 KiB per failure.
+    Never promote a prefix's auth text over a higher-priority full-body decision.
+    """
+    body = str(text or "")[:65536]
+    category = classify_fetch_failure(status, body).category
+    if category in {"public_endpoint_auth_required", "access_denied"}:
+        return _authentication_evidence(status, body) or body[:500]
+    prefix = body[:500]
+    return "" if is_public_authentication_failure(status, prefix) else prefix
 
 
 def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:

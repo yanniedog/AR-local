@@ -8,8 +8,10 @@ The collector recognises HTTP 401/403/407 and explicit credential-rejection
 messages, including API keys, subscription keys and authentication tokens. It
 derives per-provider failure categories from the recorded status and response;
 provider names and a manually assigned failure label do not grant an exemption.
-Long errors retain the classifier's bounded response text separately from the
-short display snippet. Generic authentication failures in 5xx responses remain
+Long errors retain a compact matching credential clause separately from the
+short display snippet; full bodies remain in raw attempt evidence. This keeps
+error records inside the recovery queue and retained-journal limits.
+Generic authentication failures in 5xx responses remain
 retryable server outages unless they explicitly identify API/access credentials.
 
 Finalization retains those categories inside the immutable export contract's

@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set
 from cdr_atomic import atomic_write_json
 from cdr_compatibility import (
     HolderVersionCache, ProductIndexTracker, classify_fetch_failure, pagination_accounting_error,
+    compact_failure_evidence,
 )
 from cdr_ingest_resume import existing_product_leaves, usable_cached_detail
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
@@ -135,9 +136,9 @@ def _fetch_failure_fields(result: FetchResult) -> Dict[str, Any]:
         "status": "recovery_budget_exhausted" if category == "recovery_budget_exhausted" else result.status,
         "failure_category": category,
         "retryable": result.retryable if result.failure_category else failure.retryable,
-        # Keep the same bounded input used by the classifier. The UI snippet
-        # alone can lose a credential rejection near the end of an HTML page.
-        **({"classification_text": result.text[:65536]} if len(result.text or "") > 500 else {}),
+        # Preserve late credential text without overflowing recovery journals.
+        **({"classification_text": compact_failure_evidence(result.status, result.text)}
+           if len(result.text or "") > 500 else {}),
         **({"validation_error": result.validation_error} if result.validation_error else {}),
     }
 
