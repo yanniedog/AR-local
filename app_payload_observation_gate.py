@@ -16,8 +16,12 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 
+from app_payload_authentication import authentication_exclusions
+
 # Compatibility v1 is allowed to advance from a fully-audited partial
-# observation only inside these deliberately narrow bounds.  The append-only
+# observation inside these bounds for failures other than attributable bank
+# authentication rejections. Auth failures remain in the published coverage.
+# The append-only
 # ledger and v3 promotion contract remain complete-only.
 # Sized against observed production days rather than a round number. On
 # 2026-08-16 a healthy run recorded 17 failure records across 3,035 products with
@@ -53,6 +57,8 @@ def bounded_partial_v1_allowed(contract: Mapping[str, Any]) -> bool:
         register_complete = int(coverage.get("register_sources_complete") or 0)
     except (TypeError, ValueError):
         return False
+    auth = authentication_exclusions(contract)
+    blocking_failures = failures - auth["failure_records"]
     return (
         coverage.get("failure_provenance_complete") is True
         and coverage.get("register_provenance_complete") is True
@@ -63,10 +69,11 @@ def bounded_partial_v1_allowed(contract: Mapping[str, Any]) -> bool:
         and attempted == registered
         and register_attempted > 0
         and register_complete == register_attempted
-        and failed == 0
-        and 0 < failures <= PARTIAL_V1_MAX_FAILURE_RECORDS
-        and failures / products <= PARTIAL_V1_MAX_FAILURE_RATIO
-        and partial / registered <= PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
+        and failed - auth["providers_failed"] == 0
+        and failures > 0
+        and 0 <= blocking_failures <= PARTIAL_V1_MAX_FAILURE_RECORDS
+        and blocking_failures / products <= PARTIAL_V1_MAX_FAILURE_RATIO
+        and (partial - auth["providers_partial"]) / registered <= PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
     )
 
 
@@ -79,6 +86,8 @@ def publication_allowed(contract: Optional[Mapping[str, Any]]) -> Tuple[bool, st
         return True, "complete"
     if state == "partial":
         if bounded_partial_v1_allowed(contract):
+            if authentication_exclusions(contract)["failure_records"]:
+                return True, "bounded_partial_with_nonblocking_authentication"
             return True, "bounded_partial"
         return False, "outside_bounded_v1_policy"
     return False, f"observation_state={state}"
@@ -89,7 +98,13 @@ def contract_coverage(contract: Optional[Mapping[str, Any]]) -> Optional[dict]:
     if not isinstance(contract, Mapping):
         return None
     coverage = contract.get("coverage")
-    return dict(coverage) if isinstance(coverage, Mapping) else None
+    if not isinstance(coverage, Mapping):
+        return None
+    result = dict(coverage)
+    auth = authentication_exclusions(contract)
+    if auth["failure_records"]:
+        result["nonblocking_authentication"] = auth
+    return result
 
 
 def contract_for_run_date(state_dir: Path, run_date: str) -> Optional[dict]:

@@ -77,7 +77,11 @@
       "properties": {
         "provider_uid": { "type": "string", "minLength": 1 },
         "state": { "enum": ["complete", "empty", "partial", "failed", "not_attempted"] },
-        "failure_records": { "type": "integer", "minimum": 0 }
+        "failure_records": { "type": "integer", "minimum": 0 },
+        "failure_categories": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
       }
     },
     "coverage": {

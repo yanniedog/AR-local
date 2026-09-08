@@ -674,6 +674,7 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     by_status: Dict[str, int] = {}
     by_provider: Dict[str, int] = {}
     by_failure_category: Dict[str, int] = {}
+    by_provider_failure_category: Dict[str, Dict[str, int]] = {}
     by_retryable: Dict[str, int] = {}
     total = 0
     corrupt_records = 0
@@ -715,6 +716,8 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 by_status[status] = by_status.get(status, 0) + 1
                 by_provider[provider] = by_provider.get(provider, 0) + 1
                 classified = classify_fetch_failure(rec.get("status"), rec.get("snippet") or "")
+                provider_categories = by_provider_failure_category.setdefault(provider, {})
+                provider_categories[classified.category] = provider_categories.get(classified.category, 0) + 1
                 category = str(rec.get("failure_category") or classified.category)
                 retryable = rec.get("retryable")
                 retry_key = str(retryable if isinstance(retryable, bool) else classified.retryable).lower()
@@ -740,6 +743,7 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
         "by_status": by_status,
         "by_provider": by_provider,
         "by_failure_category": by_failure_category,
+        "by_provider_failure_category": by_provider_failure_category,
         "by_retryable": by_retryable,
     }
 
