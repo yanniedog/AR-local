@@ -1,0 +1,18 @@
+{
+  "result": "PASS",
+  "started_at": "2026-09-09T05:27:44.7773555+10:00",
+  "completed_at": "2026-09-09T05:27:51.1111550+10:00",
+  "error": null,
+  "source_commit": "cc4219308532081bdc8bea8aeedbf01121f0dca3",
+  "helper_sha256": "c44439d95fb8bf1358b44994e93a08473a85b53a3b0e8eab05192aad9c9b8726",
+  "runtime_source_sha256": "2c8b264af5f6f0dc52026f7d5e03e8c2aec8ec63f30f57f848c8f59e8841c1a7",
+  "capture_path_guard_sha256": "288145e7ae3b957506c647592760d898dca7770d142fa7b9b74478328cf57955",
+  "driver_sha256": "c132b880f6c83c832dc88e16e4da073229da702cfad46a98a6ce8a2d2c40d919",
+  "driver_path": "C:\\code\\AR-local-proof-boundaries-0909\\docs\\evidence\\runtime-boundaries-20260909\\capture-current-once.ps1",
+  "output_directory": "C:\\code\\AR-local-proof-boundaries-0909\\docs\\evidence\\runtime-boundaries-20260909\\execution-current-02",
+  "exact_helper_command": "& C:\\code\\AR-local-proof-boundaries-0909\\docs\\evidence\\runtime-boundaries-20260909\\runtime-identity-current.ps1 -RuntimeSourceSha256 2c8b264af5f6f0dc52026f7d5e03e8c2aec8ec63f30f57f848c8f59e8841c1a7",
+  "capture_encoding": "PowerShell output objects joined with LF plus final LF, encoded UTF-8 without BOM",
+  "stdout_sha256": "fcab965408a1eb7f7932d193cf4880df8d2e36269c0d84762ce75089606ee956",
+  "physical_recovery": "BLOCKED",
+  "natural_trigger": "UNVERIFIED"
+}

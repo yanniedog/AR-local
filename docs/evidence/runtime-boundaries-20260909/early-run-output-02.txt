@@ -1,0 +1,8 @@
+receiver invocation failed: RuntimeError: remote helper cleanup failed: rm=255 ssh_dispatch_run_fatal: Connection to 192.168.20.19 port 22: Connection timed out
+
+; rmdir=255 Connection timed out during banner exchange
+
+Connection to 192.168.20.19 port 22 timed out
+
+
+{"early_run_exit_code": 1, "natural_trigger": false}

@@ -59,7 +59,7 @@ def test_explicit_failures_survive_optimized_python(observed):
     code = '''import sys
 scope = {"__name__": "runtime_test", "__file__": sys.argv[1]}
 exec(compile(open(sys.argv[1], "rb").read(), sys.argv[1], "exec"), scope)
-values = iter(["wrong" if sys.argv[2] == "wrong commit" else "expected", "?? dirty"])
+values = iter(["unused", "H tracked", "wrong" if sys.argv[2] == "wrong commit" else "expected", "?? dirty"])
 try:
     scope["verify_git"]("git", "unused", "expected", lambda argv: next(values))
 except ValueError:
@@ -96,3 +96,25 @@ def test_wrong_config_digest_fails_before_using_paths(tmp_path):
     path.write_text('{"receiver":"should never be read"}')
     with pytest.raises(ValueError, match="configuration changed"):
         runtime.verify(path, "0" * 64, "1" * 40, "2" * 40)
+
+
+def test_repository_core_worktree_cannot_redirect_cleanliness(tmp_path):
+    actual = tmp_path / "actual"
+    other = tmp_path / "other"
+    actual.mkdir()
+    other.mkdir()
+    head = repository(actual)
+    (other / "tracked").write_text("original")
+    git(actual, "config", "core.worktree", str(other))
+    (actual / "tracked").write_text("changed")
+    with pytest.raises(ValueError, match="worktree differs"):
+        runtime.verify_git("git", str(actual), head)
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_index_flags_cannot_hide_tracked_changes(tmp_path, flag):
+    head = repository(tmp_path)
+    git(tmp_path, "update-index", flag, "tracked")
+    (tmp_path / "tracked").write_text("changed")
+    with pytest.raises(ValueError, match="index flags"):
+        runtime.verify_git("git", str(tmp_path), head)

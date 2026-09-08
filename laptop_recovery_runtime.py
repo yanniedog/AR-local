@@ -61,6 +61,13 @@ def run(argv):
 
 def verify_git(git, root, expected, runner=run):
     prefix = [git, *GIT_READ_OPTIONS, "-C", root]
+    top = runner([*prefix, "rev-parse", "--show-toplevel"])
+    # Git emits slash-normalized Windows paths; no filesystem access on remote paths.
+    normalize = lambda value: value.replace("\\", "/").rstrip("/")
+    require(normalize(top) == normalize(root), "Git worktree differs from requested root")
+    flags = runner([*prefix, "ls-files", "-v", "-z"])
+    require(all(item[0] not in "Sabcdefghijklmnopqrstuvwxyz" for item in flags.split("\0") if item),
+            "Git index flags hide worktree changes")
     head = runner([*prefix, "rev-parse", "HEAD"])
     status = runner([*prefix, *STATUS_OPTIONS])
     require(head == expected, "runtime commit differs from approved identity")

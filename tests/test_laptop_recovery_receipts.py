@@ -45,6 +45,7 @@ def evidence(tmp_path):
                 "scheduled": {"path": pointer["record_path"], "sha256": pointer["record_sha256"]},
                 "catalog_sha256": hashlib.sha256((tmp_path / names[0]).read_bytes()).hexdigest(),
                 "components": refs}
+    (tmp_path / "user-session-lock/catalog").mkdir(parents=True)
     (tmp_path / "catalog/.scheduled-record.mutex").write_bytes(b"0")
     return tmp_path, expected
 
@@ -314,4 +315,34 @@ with open(sys.argv[1], 'rb') as f:
     assert recovery.verify_binding(root, expected, NOW)['receipt_binding'] == 'PASS'
     assert len(observations) >= 2 and set(observations) == {37}
     assert subprocess.run(command, timeout=10).returncode == 0
+    assert snapshot(root) == before
+
+
+@pytest.mark.parametrize("relative", [".", "user-session-lock"])
+def test_component_or_whole_job_writer_blocks_reader(evidence, relative):
+    from laptop_backup_atomic import ReceiverLock
+    root, expected = evidence
+    with ReceiverLock(root / relative):
+        before = snapshot(root)
+        with pytest.raises(FileExistsError):
+            recovery.verify_binding(root, expected, NOW)
+        assert snapshot(root) == before
+
+
+def test_whole_job_and_component_locks_cover_final_metadata_reads(evidence, monkeypatch):
+    from laptop_backup_atomic import ReceiverLock
+    root, expected = evidence
+    original, observations = recovery.read_bytes, []
+    def read(path):
+        if path.name == "latest-scheduled.json":
+            for location in (root, root / "user-session-lock"):
+                with pytest.raises(FileExistsError):
+                    with ReceiverLock(location):
+                        pytest.fail("writer entered the active verification")
+            observations.append(path)
+        return original(path)
+    monkeypatch.setattr(recovery, "read_bytes", read)
+    before = snapshot(root)
+    recovery.verify_binding(root, expected, NOW)
+    assert len(observations) >= 2
     assert snapshot(root) == before

@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "C:\code\AR-local-proof-boundaries-0909\docs\evidence\runtime-boundaries-20260909\run-early-once.py", line 40, in <module>
+    code = runner.execute(config, "run", CONFIG_SHA)
+  File "C:\code\backups\AR-local-user-session\source-auth-publication-20260908-v4\source\laptop_backup_user_session.py", line 191, in execute
+    import laptop_backup_scheduled as scheduled
+  File "C:\code\backups\AR-local-user-session\source-auth-publication-20260908-v4\source\laptop_backup_scheduled.py", line 19, in <module>
+    import laptop_pull_backup as receiver
+  File "C:\code\backups\AR-local-user-session\source-auth-publication-20260908-v4\source\laptop_pull_backup.py", line 29, in <module>
+    from ar_local_restore_verification import (
+  File "C:\code\backups\AR-local-user-session\source-auth-publication-20260908-v4\source\ar_local_restore_verification.py", line 12, in <module>
+    from jsonschema import Draft202012Validator, FormatChecker
+ModuleNotFoundError: No module named 'jsonschema'
