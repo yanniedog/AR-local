@@ -106,6 +106,10 @@ def _identity(value: dict, expected: dict) -> None:
     _require(type(value.get("schema_version")) is int
              and all(value.get(key) == item for key, item in fixed.items()),
              "receipt runtime, operator or outcome mismatch")
+    commands = value.get("exact_commands")
+    _require(isinstance(commands, list) and bool(commands)
+             and all(isinstance(command, str) and command.strip() for command in commands),
+             "receipt command evidence is missing")
 
 
 def _expectations(expected: dict, now: datetime) -> None:
@@ -154,11 +158,8 @@ def _scheduled(root: Path, expected: dict, now: datetime) -> tuple[dict, datetim
     _require(len(parts) == 3 and parts[:2] == ("catalog", "scheduled-runs"),
              "scheduled receipt is outside its namespace")
     _identity(record, expected)
-    commands = record.get("exact_commands")
-    _require(record.get("plan_normalized_raw_sha256") == receiver.PLAN_NORMALIZED_RAW_SHA256
-             and isinstance(commands, list) and bool(commands)
-             and all(isinstance(command, str) and command.strip() for command in commands),
-             "scheduled plan or command evidence is missing")
+    _require(record.get("plan_normalized_raw_sha256") == receiver.PLAN_NORMALIZED_RAW_SHA256,
+             "scheduled normalized plan evidence is missing")
     _require(record.get("action") in {"BACKUP-LATEST", "BACKFILL", "NO_BACKUP_DATA_WRITE"},
              "scheduled action is not successful backup verification")
     timestamps = record.get("timestamps")
@@ -181,6 +182,25 @@ def _scheduled(root: Path, expected: dict, now: datetime) -> tuple[dict, datetim
              and coverage.get("missing_completed_dates") == []
              and coverage.get("stale_diagnostics") == [], "scheduled inventory has protection gaps")
     return inventory, completed, pointer_raw
+
+
+def _scheduled_snapshot(root: Path, expected: dict) -> dict[str, str]:
+    """Reject unpointed immutable successors; never repair a mutable pointer."""
+    directory = _real(root / "catalog/scheduled-runs")
+    paths = sorted(directory.glob("*.json"))
+    _require(len(paths) <= 4096, "scheduled record count exceeds bound")
+    predecessor = {"record_path": expected["scheduled"]["path"],
+                   "record_sha256": expected["scheduled"]["sha256"]}
+    snapshot = {}
+    for path in paths:
+        _require(path.stat().st_size <= 1024**2, "scheduled record exceeds size bound")
+        raw = read_bytes(path)
+        _require(len(raw) <= 1024**2, "scheduled record exceeds size bound")
+        record = _object(raw)
+        _require(record.get("previous_execution") != predecessor,
+                 "latest pointer has an unpointed scheduled successor")
+        snapshot[path.name] = _digest(raw)
+    return snapshot
 
 
 def _component(root: Path, expected: dict, entries: list, inventory: dict,
@@ -228,12 +248,15 @@ def verify_binding(root: Path, expected: dict, now: datetime) -> dict:
     receiver.verify_plan_document()
     catalog_raw, entries = _catalog(root, expected)
     inventory, completed, pointer_raw = _scheduled(root, expected, now)
+    scheduled_snapshot = _scheduled_snapshot(root, expected)
     components = [_component(root, expected, entries, inventory, completed, kind)
                   for kind in sorted(KINDS)]
     # A concurrent edit need not advance either catalog or mutable pointer.
     # Recheck every hash-bound record after interpreting all component metadata.
     for reference in (expected["scheduled"], *expected["components"].values()):
         _reference(root, reference)
+    _require(_scheduled_snapshot(root, expected) == scheduled_snapshot,
+             "scheduled record inventory changed during verification")
     _require(read_bytes(root / "catalog/generations.jsonl") == catalog_raw
              and read_bytes(root / "catalog/latest-scheduled.json") == pointer_raw,
              "backup metadata changed during verification")

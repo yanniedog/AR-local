@@ -9,7 +9,7 @@ import laptop_backup_scheduled as scheduled
 import laptop_backup_user_session as user
 
 
-@pytest.mark.parametrize("fault", [None, "arguments", "lock", "catalog", "receiver", "nonzero"])
+@pytest.mark.parametrize("fault", [None, "arguments", "lock", "catalog", "receiver", "parser", "nonzero"])
 def test_downstream_failures_terminalize_the_original_route(tmp_path, monkeypatch, fault):
     config = {"target": str(tmp_path), "receiver": str(tmp_path / "source"),
               "candidate_sha": "a" * 40, "protected_sha": "b" * 40,
@@ -43,15 +43,19 @@ def test_downstream_failures_terminalize_the_original_route(tmp_path, monkeypatc
             raise OSError("injected catalog failure")
 
     def run(args):
+        if fault == "parser":
+            raise SystemExit(2)
         if fault == "receiver":
             raise ValueError("injected receiver failure")
         return 7 if fault == "nonzero" else 0
 
     monkeypatch.setattr(user, "initialize_catalog", catalog)
     monkeypatch.setattr(scheduled, "main", run)
-    if fault in {"arguments", "lock", "catalog", "receiver"}:
-        with pytest.raises((KeyError, RuntimeError, OSError, ValueError)):
+    if fault in {"arguments", "lock", "catalog", "receiver", "parser"}:
+        with pytest.raises((KeyError, RuntimeError, OSError, ValueError, SystemExit)) as caught:
             user.execute(config, "run", "e" * 64)
+        if fault == "parser":
+            assert caught.value.code == 2
     else:
         assert user.execute(config, "run", "e" * 64) == (7 if fault == "nonzero" else 0)
     paths = list((tmp_path / "user-session-executions").glob("*.json"))
@@ -64,5 +68,5 @@ def test_downstream_failures_terminalize_the_original_route(tmp_path, monkeypatc
     assert terminal["route_record_path"] == str(route_path)
     assert route["endpoint"] == "192.168.1.2"
     assert route["elevated"] is False and terminal["elevated"] is False
-    if fault in {"arguments", "lock", "catalog", "receiver"}:
+    if fault in {"arguments", "lock", "catalog", "receiver", "parser"}:
         assert terminal["error_type"]

@@ -124,3 +124,43 @@ These are historical invocations, not resume commands. Their original start
 records were already retained in PR647. This append-only clarification makes the
 two executions explicit without changing either record or reclassifying the
 failed natural 06:00 task.
+
+## September 8 read-only hardening correction
+
+The earlier runtime script is retained only as historical evidence. **Do not
+invoke it for future checks:** its default SSH profile could update known-hosts
+state. Use the [pinned replacement](evidence/recovery-check-hardening-20260908/runtime-identity-pinned.ps1):
+
+```powershell
+& .\docs\evidence\recovery-check-hardening-20260908\runtime-identity-pinned.ps1
+```
+
+The replacement uses the hash-verified installed receiver transport, Python and
+SSH executables, private-key identity and isolated known-hosts file, with default
+SSH configuration excluded and host-key updates disabled. Its only remote
+commands inspect the exact production commit and worktree status. It also checks
+that the pinned known-hosts bytes and modification time remain unchanged.
+
+The retained [readback](evidence/recovery-check-hardening-20260908/runtime-readback.json)
+passed at 10:29:19 Hobart and contains the exact SSH argument vectors. Production
+remained clean at `2607ed681d5d3c1da66f9c3c0109cff524e02338`; receiver, configuration
+and task definition were unchanged. The next scheduled run remains September 9
+at 06:00. This check does not prove natural trigger origin or physical recovery.
+
+| Artifact | Bytes | SHA-256 |
+| --- | --- | --- |
+| runtime-identity-pinned.ps1 | 3967 | `b5f148e5e0b8fed5f09b0bb4bc276f8dacc0714d0a08cac6a6725beeeec27da9` |
+| runtime-readback.json | 3312 | `7b0d6469736d3c9fc934539111028d755220cad9ee1ff50a73ac791fdeb814d6` |
+
+The receipt reader now rejects an immutable scheduled successor even when a
+crash left the latest pointer on the older success. It snapshots the bounded
+scheduled-record directory before and after interpretation and never repairs the
+pointer. This checks for direct successors of the exact pinned record, not full
+historical ancestry. Every component receipt must also retain a nonempty list of
+exact command strings, even when its receipt and catalog hashes match.
+
+The user-session failure wrapper now records parser `SystemExit` failures after
+route selection and preserves their original exit code. These source fixes are
+not installed in the current receiver; its natural-run evidence clock remains
+unchanged. The corrected metadata reader and pinned runtime check are preparation
+only, with A3 still RUNNING and A4 BLOCKED.
