@@ -45,9 +45,14 @@ def evidence(tmp_path):
                 "scheduled": {"path": pointer["record_path"], "sha256": pointer["record_sha256"]},
                 "catalog_sha256": hashlib.sha256((tmp_path / names[0]).read_bytes()).hexdigest(),
                 "components": refs}
-    (tmp_path / "user-session-lock/catalog").mkdir(parents=True)
-    (tmp_path / "catalog/.scheduled-record.mutex").write_bytes(b"0")
+    if os.name == "nt":
+        (tmp_path / "user-session-lock/catalog").mkdir(parents=True)
+        (tmp_path / "catalog/.scheduled-record.mutex").write_bytes(b"0")
     return tmp_path, expected
+
+
+def verify(root, expected, now):
+    return recovery.verify_binding(root, expected, now, snapshot=os.name != "nt")
 
 
 def change_scheduled(root, expected, change):
@@ -69,7 +74,7 @@ def snapshot(root):
 def test_real_operator_recovery_binds_without_claiming_natural_or_physical_proof(evidence):
     root, expected = evidence
     before = snapshot(root)
-    result = recovery.verify_binding(root, expected, NOW)
+    result = verify(root, expected, NOW)
     assert result["receipt_binding"] == "PASS"
     assert result["natural_trigger"] == "UNVERIFIED"
     assert result["physical_recovery"] == "BLOCKED"
@@ -89,7 +94,7 @@ def test_rejects_foreign_or_stale_expectations(evidence, field, value):
     root, expected = evidence
     expected[field] = value
     with pytest.raises(ValueError):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 @pytest.mark.parametrize("field,value", [
@@ -100,7 +105,7 @@ def test_rejects_rehashed_invalid_scheduled_envelopes(evidence, field, value):
     root, expected = evidence
     change_scheduled(root, expected, lambda record: record.update({field: value}))
     with pytest.raises(ValueError):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 @pytest.mark.parametrize("hours", [-1, 37])
@@ -109,7 +114,7 @@ def test_rejects_future_or_expired_scheduled_receipt(evidence, hours):
     now = NOW + timedelta(hours=hours)
     expected["observation_date"] = now.astimezone(recovery.ZoneInfo("Australia/Hobart")).date().isoformat()
     with pytest.raises(ValueError, match="stale or in the future"):
-        recovery.verify_binding(root, expected, now)
+        verify(root, expected, now)
 
 
 def test_old_success_cannot_hide_a_new_failure(evidence):
@@ -119,7 +124,7 @@ def test_old_success_cannot_hide_a_new_failure(evidence):
         "record_sha256": "f" * 64, "result": "FAIL",
     })
     with pytest.raises(ValueError, match="latest successful execution"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 def test_top_level_success_cannot_hide_missing_protected_days(evidence):
@@ -127,7 +132,7 @@ def test_top_level_success_cannot_hide_missing_protected_days(evidence):
     change_scheduled(root, expected, lambda record: record["detail"]["after"]["inventory"].update(
         {"missing_completed_dates": ["2026-09-07"]}))
     with pytest.raises(ValueError, match="protection gaps"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 @pytest.mark.parametrize("field,value", [("status", "STALE"), ("catalog_sequence", 138),
@@ -136,7 +141,7 @@ def test_catalogued_component_must_be_the_one_verified_by_scheduler(evidence, fi
     root, expected = evidence
     change_scheduled(root, expected, lambda record: record["detail"]["after"]["control"].update({field: value}))
     with pytest.raises(ValueError, match="scheduled inventory"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 def test_missing_and_tampered_component_are_rejected(evidence):
@@ -144,10 +149,10 @@ def test_missing_and_tampered_component_are_rejected(evidence):
     path = root / expected["components"]["macro"]["path"]
     path.write_bytes(path.read_bytes() + b" ")
     with pytest.raises(ValueError, match="digest mismatch"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
     path.unlink()
     with pytest.raises(FileNotFoundError):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 def test_scheduler_component_date_must_match_the_requested_day(evidence):
@@ -155,7 +160,7 @@ def test_scheduler_component_date_must_match_the_requested_day(evidence):
     change_scheduled(root, expected, lambda record: record["detail"]["after"]["observation"].update(
         {"observation_date": "2026-09-07"}))
     with pytest.raises(ValueError, match="requested current day"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 @pytest.mark.parametrize("kind", ["scheduled", "control", "macro", "observation"])
@@ -171,7 +176,7 @@ def test_concurrent_record_edit_without_pointer_change_is_rejected(evidence, mon
         return value
     monkeypatch.setattr(recovery, "_component", change_after_read)
     with pytest.raises(ValueError, match="digest mismatch"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 def test_duplicate_json_keys_are_rejected_even_when_rehashed(evidence):
@@ -182,14 +187,14 @@ def test_duplicate_json_keys_are_rejected_even_when_rehashed(evidence):
     path.write_bytes(raw)
     expected["scheduled"]["sha256"] = hashlib.sha256(raw).hexdigest()
     with pytest.raises(ValueError, match="duplicate JSON key"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 def test_path_traversal_is_rejected(evidence):
     root, expected = evidence
     expected["components"]["control"]["path"] = "../other/receipt.json"
     with pytest.raises(ValueError):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Do not request Windows symlink privileges")
@@ -198,7 +203,7 @@ def test_symlinked_parent_is_rejected(evidence, tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(root, target_is_directory=True)
     with pytest.raises(ValueError, match="canonical"):
-        recovery.verify_binding(alias, expected, NOW)
+        verify(alias, expected, NOW)
 
 
 def test_concurrent_catalog_change_is_rejected(evidence, monkeypatch):
@@ -212,7 +217,7 @@ def test_concurrent_catalog_change_is_rejected(evidence, monkeypatch):
         return value
     monkeypatch.setattr(recovery, "_component", change_after_read)
     with pytest.raises(ValueError, match="changed during verification"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
 def test_cli_rejects_changed_expectations_without_writing(evidence, capsys):
@@ -239,7 +244,7 @@ def test_unpointed_successor_blocks_without_repairing_pointer(evidence, outcome)
     write_json(root / "catalog/scheduled-runs/unpointed-child.json", child)
     before = snapshot(root)
     with pytest.raises(ValueError, match="unpointed scheduled successor"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
     assert snapshot(root) == before
 
 
@@ -266,27 +271,30 @@ def test_components_require_commands_even_with_matching_reviewed_hashes(evidence
     catalog_path.write_bytes(b"".join(lines))
     expected["catalog_sha256"] = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
     with pytest.raises(ValueError, match="receipt command evidence"):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Live writer coordination is Windows-only")
 def test_missing_mutex_is_rejected_without_creating_it(evidence):
     root, expected = evidence
     (root / "catalog/.scheduled-record.mutex").unlink()
     before = snapshot(root)
     with pytest.raises(FileNotFoundError):
-        recovery.verify_binding(root, expected, NOW)
+        verify(root, expected, NOW)
     assert snapshot(root) == before
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Live writer coordination is Windows-only")
 def test_busy_writer_is_rejected_without_modifying_evidence(evidence):
     root, expected = evidence
     before = snapshot(root)
     with recovery.scheduled_read_mutex(root):
         with pytest.raises(ValueError, match="writer is busy"):
-            recovery.verify_binding(root, expected, NOW)
+            verify(root, expected, NOW)
     assert snapshot(root) == before
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Live writer coordination is Windows-only")
 def test_writer_cannot_enter_between_final_snapshot_and_pointer_read(evidence, monkeypatch):
     import subprocess
     import sys
@@ -312,23 +320,25 @@ with open(sys.argv[1], 'rb') as f:
         return original(path)
     monkeypatch.setattr(recovery, 'read_bytes', probe)
     before = snapshot(root)
-    assert recovery.verify_binding(root, expected, NOW)['receipt_binding'] == 'PASS'
+    assert verify(root, expected, NOW)['receipt_binding'] == 'PASS'
     assert len(observations) >= 2 and set(observations) == {37}
     assert subprocess.run(command, timeout=10).returncode == 0
     assert snapshot(root) == before
 
 
 @pytest.mark.parametrize("relative", [".", "user-session-lock"])
+@pytest.mark.skipif(os.name != "nt", reason="Live writer coordination is Windows-only")
 def test_component_or_whole_job_writer_blocks_reader(evidence, relative):
     from laptop_backup_atomic import ReceiverLock
     root, expected = evidence
     with ReceiverLock(root / relative):
         before = snapshot(root)
         with pytest.raises(FileExistsError):
-            recovery.verify_binding(root, expected, NOW)
+            verify(root, expected, NOW)
         assert snapshot(root) == before
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Live writer coordination is Windows-only")
 def test_whole_job_and_component_locks_cover_final_metadata_reads(evidence, monkeypatch):
     from laptop_backup_atomic import ReceiverLock
     root, expected = evidence
@@ -343,6 +353,38 @@ def test_whole_job_and_component_locks_cover_final_metadata_reads(evidence, monk
         return original(path)
     monkeypatch.setattr(recovery, "read_bytes", read)
     before = snapshot(root)
-    recovery.verify_binding(root, expected, NOW)
+    verify(root, expected, NOW)
     assert len(observations) >= 2
+    assert snapshot(root) == before
+
+
+def test_snapshot_mode_rejects_live_coordination_paths(evidence):
+    root, expected = evidence
+    (root / "user-session-lock").mkdir(exist_ok=True)
+    before = snapshot(root)
+    with pytest.raises(ValueError, match="snapshot contains live"):
+        recovery.verify_binding(root, expected, NOW, snapshot=True)
+    assert snapshot(root) == before
+
+
+def test_frozen_snapshot_binds_without_creating_coordination(evidence):
+    root, expected = evidence
+    if os.name == "nt":
+        (root / "catalog/.scheduled-record.mutex").unlink()
+        (root / "user-session-lock/catalog").rmdir()
+        (root / "user-session-lock").rmdir()
+    before = snapshot(root)
+    result = recovery.verify_binding(root, expected, NOW, snapshot=True)
+    assert result["receipt_binding"] == "PASS"
+    assert result["coordination"] == "None; frozen metadata snapshot only"
+    assert snapshot(root) == before
+    assert not (root / "user-session-lock").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Non-Windows live-mode refusal")
+def test_non_windows_requires_explicit_frozen_snapshot(evidence):
+    root, expected = evidence
+    before = snapshot(root)
+    with pytest.raises(ValueError, match="live receipt verification requires Windows"):
+        recovery.verify_binding(root, expected, NOW)
     assert snapshot(root) == before

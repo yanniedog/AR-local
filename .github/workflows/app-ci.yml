@@ -149,3 +149,4 @@ jobs:
           tests/test_laptop_backup_restricted_process.py
           tests/test_laptop_backup_trusted_launcher.py
           tests/test_laptop_backup_trusted_dispatcher_installer.py
+          tests/test_laptop_recovery_lock.py
