@@ -1,0 +1,105 @@
+{
+  "decision_id": "D-022-MANUAL-BACKUP-DEVIATIONS-20260909",
+  "recorded_at_utc": "2026-09-08T20:47:36.119833+00:00",
+  "decision_timing": "Retrospective correction; not represented as a pre-execution decision",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "candidate_code_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "authorization": {
+    "user_instruction": "Do it now rather than 6am.",
+    "constraint": "No Windows Yes or UAC prompt",
+    "interpretation": "User explicitly authorized immediate ordinary-user backup. Agent chose bounded transport, cleanup and selective refresh implementation. No claim of separate operator approval for these specific deviations or retrospective controlled acceptance.",
+    "contemporaneous_records": [
+      {
+        "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-authority.json",
+        "sha256": "dfb513267e8f85f6050817a3acb392c25bb2959ad92866760f18c262f6afdef2"
+      },
+      {
+        "path": "docs/evidence/runtime-boundaries-20260909/refresh-control-once.py",
+        "sha256": "0c7a3485722d08ec762551c01ff25c31681c3e7903d374836f0ebea34664b3af"
+      },
+      {
+        "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-05.json",
+        "sha256": "d9d9a8fd4c34f9725ba8688b14c6f58126f60a7694b556d2b6271b7c8891442e"
+      },
+      {
+        "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-05.py",
+        "sha256": "945dd6a40c5fc4687b481ad30e04ad567ea6cab12df4b0b9375d733402c65519"
+      }
+    ]
+  },
+  "reason": "Pre-06 start restriction, repeated slow SSH handshake/cleanup failures and a control snapshot that changed while other already-verified components remained current.",
+  "deviations": [
+    {
+      "change": "Date-bound manual pre-06 start instead of waiting for natural task",
+      "risk": "Overlap with scheduled work; cannot prove natural-trigger reliability",
+      "controls": "Ordinary token, existing whole-job exclusion, original quiet-window and receiver preflight; preserved failed natural 06:00 trigger."
+    },
+    {
+      "change": "Process-local SSH ConnectTimeout 60 seconds and helper timeout 90 seconds",
+      "risk": "Longer lock holding and wait before failed transport is reported",
+      "controls": "Fixed endpoint, executable, key, known-hosts and strict host-key checks unchanged; all calls bounded; failures preserved."
+    },
+    {
+      "change": "Exact helper-file removal and empty-directory removal combined into one SSH connection",
+      "risk": "Cleanup command targets remote paths",
+      "controls": "Original generated-path guard retained; exact files and empty directory only; separately removed known leftovers checked for owner, canonical path and exact contents."
+    },
+    {
+      "change": "Final refresh selected only stale control",
+      "risk": "Skipping components could retain stale source if freshness not independently established",
+      "controls": "Original fresh preflight required observation, macro and completed-date inventory UP_TO_DATE before selection; original complete postchecks still ran; no freshness threshold or content exclusion changed."
+    }
+  ],
+  "revised_acceptance_criteria": {
+    "operational_backup": "Retain actual completed backup and verification results with immutable hashes; no rerun needed merely to rewrite evidence.",
+    "controlled_execution": "BLOCKED: original terminal record omitted these deviations; supplemental disclosure does not make that immutable record compliant or grant retrospective approval.",
+    "future_execution": "Any future changed implementation must be reviewed and record its deviations and authorization in its own execution envelope before it can be used as controlled PASS. Do not rerun today merely to manufacture compliant chronology.",
+    "natural_and_physical": "A3 RUNNING, A4 BLOCKED; unchanged natural trigger and physical acceptance remain required."
+  },
+  "result": "BLOCKED",
+  "recorded_operational_result": "PASS at 2026-09-09T06:19:29+10:00; metadata binding PASS at 06:21:39",
+  "terminal_record": {
+    "path": "catalog/scheduled-runs/20260908T201929Z-0a2464003ee0469baf79e95c71ebdfa7.json",
+    "sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980",
+    "defect": "deviation_authorization null and deviations empty despite process-local changes; original bytes retained"
+  },
+  "evidence": [
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-authority.json",
+      "sha256": "dfb513267e8f85f6050817a3acb392c25bb2959ad92866760f18c262f6afdef2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/refresh-control-once.py",
+      "sha256": "0c7a3485722d08ec762551c01ff25c31681c3e7903d374836f0ebea34664b3af"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-05.json",
+      "sha256": "d9d9a8fd4c34f9725ba8688b14c6f58126f60a7694b556d2b6271b7c8891442e"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-05.py",
+      "sha256": "945dd6a40c5fc4687b481ad30e04ad567ea6cab12df4b0b9375d733402c65519"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-result.json",
+      "sha256": "d5a1a936ab0aa9a7a549dabb31c06437dca563a5922b235df65a26c81b0d930b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-metadata-81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8.zip",
+      "sha256": "81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8"
+    }
+  ],
+  "exact_commands": "Original immutable authority, wrapper source and command/output records in the hash-bound metadata packet and runtime-boundaries directory remain authoritative. This decision runs no backup, SSH or runtime command.",
+  "reference_corrected_at_utc": "2026-09-08T22:19:22.597302+00:00",
+  "supersedes_ambiguous_reference": {
+    "decision_id": "D-021-MANUAL-BACKUP-DEVIATIONS-20260909",
+    "path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-correction.json",
+    "sha256": "1900350ead425ef5f7d9dee333d984648a328350f628a99edea4605b532da5d9",
+    "reason": "D-021 was already assigned to USER-LAN-FALLBACK. This new entry corrects the identifier only; the original is preserved and all original decision contents and retrospective timing remain unchanged."
+  }
+}

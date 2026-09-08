@@ -25830,3 +25830,26 @@ This append-only correction supersedes any interpretation of the earlier operati
   "next_action": "Preserve completed backup; do not re-run or alter immutable receipt. Retain controlled acceptance BLOCKED for this execution. Future deviation-bearing execution must identify deviations in its original envelope. Continue unchanged natural-trigger observation and separate recovery preparation."
 }
 ```
+
+## September 9 deviation decision reference correction
+
+D-021 was already allocated to the user LAN fallback. The following append-only entry assigns the manual-backup disclosure D-022; it does not rewrite either historical D-021 artifact or change authorization or acceptance.
+
+```json
+{
+  "entry_id": "HANDOFF-20260909-D022-REFERENCE-CORRECTION",
+  "previous_entry_id": "HANDOFF-20260909-MANUAL-DEVIATION-DISCLOSURE",
+  "created_at_utc": "2026-09-08T22:19:22.597302+00:00",
+  "result": "BLOCKED",
+  "scope": "Identifier correction only; controlled acceptance remains BLOCKED",
+  "decision_id": "D-022-MANUAL-BACKUP-DEVIATIONS-20260909",
+  "decision_path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-d022.json",
+  "decision_sha256": "3982b8c1ac01a162bb038021ddacdc04835dfdce2e8da1f79328bc639fffada2",
+  "reference_rule": "D-021 alone continues to mean D-021-USER-LAN-FALLBACK. Cite D-022-MANUAL-BACKUP-DEVIATIONS-20260909 for the September 9 manual deviation disclosure. The superseded duplicate-id artifact is historical only.",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "runtime_and_backup_pins": "Inherit HANDOFF-20260909-EARLY-BACKUP-VERIFIED unchanged; manual backup operational PASS, modified execution controlled acceptance BLOCKED",
+  "next_action": "Preserve completed backup and unchanged receiver/task pair. Next natural trigger September 10 at 06:00; continue separate local recovery preparation without physical activation."
+}
+```
