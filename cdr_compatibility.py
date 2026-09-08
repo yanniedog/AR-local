@@ -81,18 +81,45 @@ def is_public_authentication_failure(status: Any, text: str = "") -> bool:
 
 
 def compact_failure_evidence(status: Any, text: str = "") -> str:
-    """Keep authentication proof within existing recovery-journal budgets.
+    """Keep the full failure decision within recovery-journal budgets.
 
     Full response bodies remain in the raw attempt journal. A matching clause
     preserves late credential text without duplicating up to 64 KiB per failure.
     Never promote a prefix's auth text over a higher-priority full-body decision.
     """
     body = str(text or "")[:65536]
-    category = classify_fetch_failure(status, body).category
-    if category in {"public_endpoint_auth_required", "access_denied"}:
+    decision = classify_fetch_failure(status, body)
+    if decision.category in {"public_endpoint_auth_required", "access_denied"}:
         return _authentication_evidence(status, body) or body[:500]
     prefix = body[:500]
-    return "" if is_public_authentication_failure(status, prefix) else prefix
+    if classify_fetch_failure(status, prefix) == decision:
+        return prefix
+    # Preserve decisive clauses appearing after the display prefix. Return
+    # actual matching response text, not an invented explanation or category.
+    patterns = (
+        r"unsupportedversion|unsupported version",
+        r"product\s+is\s+(?:inactive|closed)",
+        r"<title>runtime error</title>",
+        r"should have required property|validation failed with invalid data",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, body, re.I):
+            evidence = re.sub(r"\s+", " ", match.group())
+            if classify_fetch_failure(status, evidence) == decision:
+                return evidence
+    if decision.category == "incompatible_version":
+        # This is normalized classification evidence, not a raw response quote.
+        # Keep all advertised values (at most 99 unique versions) even when
+        # repeated numbers or whitespace make the original clause unbounded.
+        versions = parse_supported_versions(body)
+        evidence = "x-v supported versions: " + ", ".join(map(str, versions))
+        if versions and classify_fetch_failure(status, evidence) == decision:
+            return evidence
+    # Status-only classifications need no body evidence. Never silently change
+    # retryability or negotiation flags if a new text classifier is introduced.
+    if classify_fetch_failure(status, "") == decision:
+        return ""
+    raise ValueError("failure evidence cannot be compacted without changing its decision")
 
 
 def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:
