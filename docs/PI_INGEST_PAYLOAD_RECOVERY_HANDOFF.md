@@ -26446,8 +26446,14 @@ This full entry supersedes the incomplete short resume pointers in PR662-664. It
     },
     {
       "path": "docs/evidence/a4-readiness-20260908/watchdog-readback.json",
-      "bytes": 1794,
-      "sha256": "5ce83fd99d41222c7b60118de6dbf231d315bcf2ed04b29b5cf34ac9ff301b13"
+      "bytes": 1769,
+      "sha256": "75b16ec24182f8feade39ef8ee11b9d5bada90c7bc69eb38a3f925da95ce73e4",
+      "byte_scope": "Checked-in Git blob; historical runtime byte variants preserved separately"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/watchdog-byte-variants.zip",
+      "bytes": 2409,
+      "sha256": "e912a3e94b6211ac26effb070d9da28f034a50e0862cb4528c9dc4a706236c7e"
     }
   ],
   "author": "Codex for jkoka",
