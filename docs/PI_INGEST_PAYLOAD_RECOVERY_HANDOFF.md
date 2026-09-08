@@ -25809,3 +25809,24 @@ The following entry supplements the preceding full handoff without rewriting his
   "next_action": "Do not rerun the completed manual backup. Use current reviewed source for future checks outside natural trigger windows; next natural trigger is September 10 at 06:00. Preserve A3 and A4 boundaries."
 }
 ```
+
+## September 9 manual-execution deviation disclosure
+
+This append-only correction supersedes any interpretation of the earlier operational PASS as controlled execution acceptance. No prior evidence is rewritten.
+
+```json
+{
+  "entry_id": "HANDOFF-20260909-MANUAL-DEVIATION-DISCLOSURE",
+  "previous_entry_id": "HANDOFF-20260909-RECEIPT-READER-CRASH-SAFETY",
+  "created_at_utc": "2026-09-08T20:47:36.119833+00:00",
+  "result": "BLOCKED",
+  "scope": "Controlled acceptance of the modified manual execution; preserves operational backup PASS without treating it as controlled PASS",
+  "decision_path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-correction.json",
+  "decision_sha256": "1900350ead425ef5f7d9dee333d984648a328350f628a99edea4605b532da5d9",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "runtime_and_backup_pins": "Inherit HANDOFF-20260909-EARLY-BACKUP-VERIFIED unchanged",
+  "next_action": "Preserve completed backup; do not re-run or alter immutable receipt. Retain controlled acceptance BLOCKED for this execution. Future deviation-bearing execution must identify deviations in its original envelope. Continue unchanged natural-trigger observation and separate recovery preparation."
+}
+```
