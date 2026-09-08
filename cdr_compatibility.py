@@ -91,6 +91,14 @@ def compact_failure_evidence(status: Any, text: str = "") -> str:
     decision = classify_fetch_failure(status, body)
     if decision.category in {"public_endpoint_auth_required", "access_denied"}:
         return _authentication_evidence(status, body) or body[:500]
+    if decision.category == "incompatible_version":
+        # This is normalized classification evidence, not a raw response quote.
+        # Keep all advertised values (at most 99 unique versions) even when
+        # repeated numbers or whitespace make the original clause unbounded.
+        versions = parse_supported_versions(body)
+        evidence = "x-v supported versions: " + ", ".join(map(str, versions))
+        if versions and classify_fetch_failure(status, evidence) == decision:
+            return evidence
     prefix = body[:500]
     if classify_fetch_failure(status, prefix) == decision:
         return prefix
@@ -107,14 +115,6 @@ def compact_failure_evidence(status: Any, text: str = "") -> str:
             evidence = re.sub(r"\s+", " ", match.group())
             if classify_fetch_failure(status, evidence) == decision:
                 return evidence
-    if decision.category == "incompatible_version":
-        # This is normalized classification evidence, not a raw response quote.
-        # Keep all advertised values (at most 99 unique versions) even when
-        # repeated numbers or whitespace make the original clause unbounded.
-        versions = parse_supported_versions(body)
-        evidence = "x-v supported versions: " + ", ".join(map(str, versions))
-        if versions and classify_fetch_failure(status, evidence) == decision:
-            return evidence
     # Status-only classifications need no body evidence. Never silently change
     # retryability or negotiation flags if a new text classifier is introduced.
     if classify_fetch_failure(status, "") == decision:

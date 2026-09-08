@@ -34,3 +34,19 @@ def test_large_advertisement_retains_all_negotiable_versions():
     assert len(retained) <= 500
     assert parse_supported_versions(retained) == parse_supported_versions(body)
     assert classify_fetch_failure(400, retained) == classify_fetch_failure(400, body)
+
+
+@pytest.mark.parametrize("preamble", ["", "diagnostic " * 100])
+@pytest.mark.parametrize("marker", ["UnsupportedVersion. ", ""])
+def test_version_advertisement_precedes_keyword_and_prefix(preamble, marker):
+    body = preamble + marker + "x-v supported versions: 4, 5"
+    retained = compact_failure_evidence(400, body)
+    assert parse_supported_versions(retained) == [5, 4]
+    assert classify_fetch_failure(400, retained) == classify_fetch_failure(400, body)
+
+
+def test_version_advertisement_after_an_already_classifying_prefix():
+    body = "UnsupportedVersion. " + "diagnostic " * 100 + "supported versions: 4, 5"
+    retained = compact_failure_evidence(422, body)
+    assert parse_supported_versions(retained) == [5, 4]
+    assert classify_fetch_failure(422, retained) == classify_fetch_failure(422, body)
