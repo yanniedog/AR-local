@@ -1,0 +1,9 @@
+{
+  "user_instruction": "Do it now rather than 6am.",
+  "at": "2026-09-09T06:11:07.518586+10:00",
+  "config_sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca",
+  "installed_source_sha256": "96c7770805b67ecdc7dd1930e7bf0ec2a9959598ec8d7296b3ce496519f766e8",
+  "wrapper_sha256": "01a19114da70c8ceee99d0a9aee3f7a14aa9dfd9f827cfe4d2c7a93c08211530",
+  "scope": "Check-only September 9; no backup-data copy; one-connection cleanup; SSH ConnectTimeout=60 seconds; ordinary token, identity, locks, quiet-window and receiver preflight retained",
+  "natural_trigger": false
+}

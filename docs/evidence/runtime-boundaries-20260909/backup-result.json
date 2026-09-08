@@ -1,0 +1,199 @@
+{
+  "backup_result": "PASS",
+  "completed_at": "2026-09-09T06:19:29+10:00",
+  "receipt_binding": "PASS at2026-09-09T06:21:39+10:00",
+  "natural_trigger": false,
+  "physical_recovery": "BLOCKED",
+  "catalog_entries": 145,
+  "catalog_sha256": "7d71c64e72d44b552cca7f108899141b98f9cc12743c8573187c2400261e967b",
+  "terminal": {
+    "path": "catalog/scheduled-runs/20260908T201929Z-0a2464003ee0469baf79e95c71ebdfa7.json",
+    "sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980"
+  },
+  "components": {
+    "observation": {
+      "reference": {
+        "path": "observations/2026-09-09/6887f16c62e475b61744e5b7887d4e0a2a9eb10dfbe6fbc555e7495b453ac15e/receipt.json",
+        "sha256": "f4a26b3a3c6cd624baf6e029932f944f89a5774c2db4c668f9ba8338a8fc8923"
+      },
+      "archive_sha256": "d33e0624cd2d4dd5ef494100567f679dee23b41b6d438db7f0d7810e2e0e4eaf",
+      "archive_bytes": 224662289,
+      "source_bytes": 2677583521,
+      "completed_at": "2026-09-08T19:47:02Z",
+      "checks": {
+        "bytes_verified": 2677583521,
+        "files_verified": 9110,
+        "observation": {
+          "completion_markers": [
+            {
+              "path": "2026-09-09.done.json",
+              "valid": true
+            }
+          ],
+          "latest_pointer": {
+            "generation_id": "obs-2026-09-09-c3a1ed15c4fabbbd",
+            "valid": true
+          },
+          "reconciliation": {
+            "banks_json": "banks-2026-09-09.json",
+            "banks_json_bytes": 1366961262,
+            "banks_json_sha256": "5f9ca173cb3c811692bda123d54657e5bf7272f031bcabe334f7b7a65008d748",
+            "counts": {
+              "constraints": 4403,
+              "eligibility": 7332,
+              "failures": 24,
+              "features": 15686,
+              "fees": 25256,
+              "holder_attempts": 119,
+              "product_changes": 27343,
+              "product_facts": 602163,
+              "products": 2650,
+              "rates": 16458
+            },
+            "database_counts": {
+              "constraints": 4403,
+              "eligibility": 7332,
+              "features": 15686,
+              "fees": 25256,
+              "product_changes": 27343,
+              "product_facts": 602163,
+              "products": 2650,
+              "rates": 16458
+            },
+            "legacy_manifest_sha256": "3fd9190c28a14c3af17baa01e50fa70e53c34a46e32f8fa3dda1bc50ffce6df4",
+            "run_date": "2026-09-09",
+            "schema_tables": [
+              "bank_items",
+              "bank_product_changes",
+              "bank_product_facts",
+              "bank_products",
+              "bank_rates",
+              "runs",
+              "schema_meta"
+            ],
+            "schema_version": "8",
+            "unpersisted_populations": [
+              "failures",
+              "holder_attempts"
+            ],
+            "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+          }
+        },
+        "sqlite": [
+          {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "data/runs/2026-09-09/_exports/local-cdr.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "bank_items",
+              "bank_product_changes",
+              "bank_product_facts",
+              "bank_products",
+              "bank_rates",
+              "runs",
+              "schema_meta",
+              "sqlite_sequence"
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "reference": {
+        "path": "control/20260908T201719Z-f8e1aee43d0a0445/receipt.json",
+        "sha256": "b2aeea0520584d09b6d3c763bd0a6e1363a9cc598b5ddfd8ac80470b163ab84e"
+      },
+      "archive_sha256": "684fb3c91dd3e83af25203babe42630388ac9559f9785583a3cb2606ab71cb7f",
+      "archive_bytes": 97512320,
+      "source_bytes": 294446629,
+      "completed_at": "2026-09-08T20:19:19Z",
+      "checks": {
+        "bytes_verified": 294446629,
+        "files_verified": 1203,
+        "git_bundles": [
+          "AR-local.bundle",
+          "australianrates.bundle"
+        ],
+        "secret_locations": 4,
+        "sqlite": [
+          {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "bank_items",
+              "bank_products",
+              "bank_rates",
+              "runs",
+              "schema_meta",
+              "sqlite_sequence"
+            ]
+          },
+          {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "bank_items",
+              "bank_products",
+              "bank_rates",
+              "energy_items",
+              "energy_plans",
+              "runs",
+              "schema_meta",
+              "sqlite_sequence"
+            ]
+          }
+        ]
+      }
+    },
+    "macro": {
+      "reference": {
+        "path": "macro/d05ef483dc9e88003a1f09f070d1fee5a322c2b8a963d1bc15f5a62d5b8f7ffc/receipt.json",
+        "sha256": "68fcd549d10adc7b3bb388e8c55d47d4a54e994c0eaa14b99cf1e0c223696fd2"
+      },
+      "archive_sha256": "2f68fae33121062d44f1442dd63ea09166c7ddc104176ebf84e7e97bd3b309e1",
+      "archive_bytes": 169063,
+      "source_bytes": 1032192,
+      "completed_at": "2026-09-08T20:07:50Z",
+      "checks": {
+        "bytes_verified": 1032192,
+        "files_verified": 1,
+        "macro": {
+          "foreign_key_check": "ok",
+          "integrity_check": "ok",
+          "path": "macro/local-macro.sqlite",
+          "quick_check": "ok",
+          "tables": [
+            "ingest_runs",
+            "series_definition_archive",
+            "series_observations"
+          ]
+        },
+        "sqlite": [
+          {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "metadata_archive": {
+    "path": "docs/evidence/runtime-boundaries-20260909/backup-metadata-81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8.zip",
+    "bytes": 720918,
+    "sha256": "81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8",
+    "files": 72
+  },
+  "scope": "Metadata packet and original receiver verification; archive payloads remain in the local backup target. Not natural-trigger or physical recovery acceptance."
+}

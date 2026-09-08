@@ -1,0 +1,9 @@
+{
+  "user_instruction": "Do it now rather than 6am.",
+  "at": "2026-09-09T05:51:50.538845+10:00",
+  "config_sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca",
+  "installed_source_sha256": "96c7770805b67ecdc7dd1930e7bf0ec2a9959598ec8d7296b3ce496519f766e8",
+  "wrapper_sha256": "972aa442faeba5b771ad01242c3cc929a3647232a32dc2879ff1d256db8ea7c1",
+  "scope": "One invocation before 06:00 September 9; SSH ConnectTimeout=25 seconds; ordinary token, identity, locks, quiet-window and receiver preflight retained",
+  "natural_trigger": false
+}
