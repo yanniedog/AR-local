@@ -35,3 +35,18 @@ through a follow-up PR.
 Pi operations and deployment require the separate controlled runbook and latest
 complete recovery handoff. A repository merge does not authorize runtime
 activation or satisfy natural-backup or physical-recovery acceptance.
+
+For product/Pi changes, complete the authorized deployment of the exact approved
+commit, then perform both mandatory post-merge acceptance steps:
+
+1. Inspect the live Pi dashboard at `http://100.78.28.10/`, including the changed
+   behavior and relevant browser errors.
+2. Run `npm run verify:local -- --base-url=http://100.78.28.10/` (equivalently,
+   `npm run verify:pi`) against that same Pi deployment.
+
+Record the deployed commit, URL, timestamp and actual results. Passing CI or the
+merged-PR audit does not replace either check. A failed check requires a fix and
+reverification; a blocked deployment or recovery gate leaves runtime acceptance
+pending and ownership retained. Do not substitute localhost or the public
+Australian Rates site for Pi acceptance. Repository-only documentation/workflow
+changes do not deploy product behavior or authorize Pi mutation.
