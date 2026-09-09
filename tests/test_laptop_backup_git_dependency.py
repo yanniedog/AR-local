@@ -84,6 +84,15 @@ def test_only_dependency_and_release_location_may_change():
     dependency.compare_configs(old, new)
 
 
+def test_dependency_only_migration_can_select_explicit_msys_null_device():
+    old, new = configs()
+    new['transport'] = dict(new['transport'], ssh_null_device='/dev/null')
+    dependency.compare_configs(old, new)
+    new['transport']['ssh_null_device'] = '/unsafe/config'
+    with pytest.raises(ValueError, match='null device'):
+        dependency.compare_configs(old, new)
+
+
 @pytest.mark.parametrize('field', ['candidate_sha', 'protected_sha',
                                  'target', 'previous_runtime', 'authority'])
 def test_dependency_transition_cannot_change_backup_authority(field):
