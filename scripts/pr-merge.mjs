@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { progressPullRequest, enableSquashAutoMerge } from './lib/pr-branch-sync.mjs';
 import { hasGh } from './lib/gh-pr-review-threads.mjs';
+import { prepareExplicitCloseout } from './lib/pr-closeout-guard.mjs';
 
 function parseArgs(argv) {
   const out = { pr: null, dryRun: false, enableOnly: false, noSync: false };
@@ -18,6 +19,15 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv);
   if (!hasGh() || !args.pr) { console.error('pr-merge: gh + --pr required'); process.exit(1); }
+  try {
+    if (prepareExplicitCloseout(args.pr, { dryRun: args.dryRun }).merged) {
+      console.log(`PR #${args.pr} already merged`);
+      return;
+    }
+  } catch (error) {
+    console.error(`pr-merge: ${error.message}`);
+    process.exit(1);
+  }
   if (args.enableOnly) {
     const auto = enableSquashAutoMerge(args.pr, { dryRun: args.dryRun });
     console.log(`auto-merge ${auto.action}: ${auto.detail}`);
