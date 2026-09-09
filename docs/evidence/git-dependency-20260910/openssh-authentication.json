@@ -1,0 +1,130 @@
+[
+  {
+    "name": "LICENSE.txt",
+    "bytes": 18934,
+    "sha256": "e6a25da96c2fccdc025caad56d99f87851ec3fe814a3cea83f2bc77ffc800681",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "71F53A26BB1625E466727183409A30D03D7923DF"
+  },
+  {
+    "name": "moduli",
+    "bytes": 587472,
+    "sha256": "cc12aebe3fb41a092e53cf41dd05029e5b93f336d67b5f941a6132e5440fdcc8",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "D8FB0CC66A08061B42D46D03546F0D42CBC49B7C"
+  },
+  {
+    "name": "NOTICE.txt",
+    "bytes": 36008,
+    "sha256": "2cd5f5d0064bc909dfe0f0fc8f4787882c7c379f2730d89e5faa0c2bc57c620b",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "71F53A26BB1625E466727183409A30D03D7923DF"
+  },
+  {
+    "name": "scp.exe",
+    "bytes": 432128,
+    "sha256": "64e91e51b1e4b8143578da86512d6e33b6f90aef247a95f2587951c4ace0c466",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "BAC13DF18B37E808208A39D3A54CCE975FAC8C1D"
+  },
+  {
+    "name": "sftp-server.exe",
+    "bytes": 377344,
+    "sha256": "79b5742259aa059956c1eccf27f0680e81b38411ead506a5291486f93c9100bc",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "sftp.exe",
+    "bytes": 459264,
+    "sha256": "af48cd8d2246328c13d1a1e6134d153df8be75a4ed745979dc3cac13411012bc",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "ssh-add.exe",
+    "bytes": 604672,
+    "sha256": "8c88cf012c003b386e093193feea40f8cfbefbcc0efdbafe36c96735c9e53d2a",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "BAC13DF18B37E808208A39D3A54CCE975FAC8C1D"
+  },
+  {
+    "name": "ssh-agent.exe",
+    "bytes": 555008,
+    "sha256": "53ce3461bf894bf420f9097c6fb2d24bda6ce89ed0531aca7139a7336bcfda9f",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "BAC13DF18B37E808208A39D3A54CCE975FAC8C1D"
+  },
+  {
+    "name": "ssh-keygen.exe",
+    "bytes": 863744,
+    "sha256": "47f009c35523b6997aff0f0528dae84f1545465479d722292499941cd5cb83b5",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "BAC13DF18B37E808208A39D3A54CCE975FAC8C1D"
+  },
+  {
+    "name": "ssh-keyscan.exe",
+    "bytes": 667648,
+    "sha256": "c32dedbe6a73cfa368be856b68fba72f2077999ad45f11b62b7c06b460323099",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "ssh-pkcs11-helper.exe",
+    "bytes": 513536,
+    "sha256": "fcbfe800e6bd6f5b0df2ea1b8e6dcf0d8963730053724a4cbd1f1efcbf6f0aac",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "ssh-shellhost.exe",
+    "bytes": 182784,
+    "sha256": "e949d1df2c4c6b5539e8af4aae9e6fcd1d212dd8a0571e9d0125f30fc7fb4bad",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "ssh-sk-helper.exe",
+    "bytes": 652800,
+    "sha256": "e58ab1bff520a25a9534d5053ed86036732985168cc5f09426515c34613ac923",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "ssh.exe",
+    "bytes": 1255936,
+    "sha256": "786ff14be7cd652b2b9770a57e9b1aa5e03a052ce3a3d641fb4760c0ff3fde05",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  },
+  {
+    "name": "sshd_config_default",
+    "bytes": 2297,
+    "sha256": "99f373a06dfa706f0a8a98d655c776850305b4b1ea3bf9a33fa926897bb15649",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "D8FB0CC66A08061B42D46D03546F0D42CBC49B7C"
+  },
+  {
+    "name": "sshd.exe",
+    "bytes": 1335296,
+    "sha256": "dbedfe094dd0e678c21c46fa2006d7101534c28915bfd7ea3a67563f2c181d26",
+    "signature": "Valid",
+    "signer": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "thumbprint": "DC91E564D5BC1E3A8E02D6A8508682ABEA8A2443"
+  }
+]

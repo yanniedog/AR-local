@@ -1,0 +1,37 @@
+{
+  "authority": "D-015-USER-SESSION-NO-UAC",
+  "candidate_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "git_path": "C:\\code\\backups\\AR-local-user-session\\tools\\mingit-2.55.0.5\\cmd\\git.exe",
+  "git_sha256": "78211c7ed73988da93a6d8a33d47ec6187f464d7ea2a9a00c182bbd7a1ecf30f",
+  "lan_fallback_ipv4": "192.168.20.19",
+  "legacy_target": "C:\\code\\backups\\AR-local-pi5",
+  "legacy_task": "AR-local laptop backup",
+  "operator_sid": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "previous_runtime": {
+    "production_sha": "2607ed681d5d3c1da66f9c3c0109cff524e02338",
+    "receiver_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+    "record_sha256": "4d5362fa501be158855b1f065e41c02dd1b60a49fb507b6238952f4127d652ca"
+  },
+  "protected_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "python_path": "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+  "python_sha256": "53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f",
+  "receiver": "C:\\code\\backups\\AR-local-user-session\\source-auth-publication-20260908-v4\\source",
+  "recovery_image": "C:\\code\\AR-local-pi-image-2026-05-21\\AR-local-pi-image-2026-05-21",
+  "schema": "ARL-USER-SESSION-BACKUP-V1",
+  "target": "C:\\code\\backups\\AR-local-pi5-user",
+  "transport": {
+    "scp_path": "C:\\code\\backups\\AR-local-user-session\\tools\\git-ssh-2.55.0.5\\usr\\bin\\scp.exe",
+    "scp_sha256": "2f1a452f90a61e189feeed0b42a71d595d56da1c6f934165504320dc05485113",
+    "ssh_host": "ar.local",
+    "ssh_identity_path": "C:\\Users\\jkoka\\.ssh\\pi5",
+    "ssh_identity_sha256": "faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e",
+    "ssh_known_hosts_path": "C:\\code\\backups\\AR-local-user-session\\3f8b8a7c4b51fef8eeb370f747f2dc51c73a1afa\\known-hosts",
+    "ssh_known_hosts_sha256": "6a37cfbc9d364afaca54f517a145874319b074f792eb53bfc348b5467fe58dd5",
+    "ssh_logical_host": "ar-local-pi5",
+    "ssh_null_device": "/dev/null",
+    "ssh_path": "C:\\code\\backups\\AR-local-user-session\\tools\\git-ssh-2.55.0.5\\usr\\bin\\ssh.exe",
+    "ssh_port": 22,
+    "ssh_sha256": "c84594a323ee6afc04d9faf614a05be6dc9a2faecd856268a854084fea17fd44",
+    "ssh_user": "pi"
+  }
+}

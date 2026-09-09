@@ -25,3 +25,7 @@ docs/evidence/runtime-reader-safety-20260908/execution-01/stdout.json whitespace
 docs/evidence/runtime-boundaries-20260909/** -text
 docs/evidence/runtime-boundaries-20260909/** whitespace=cr-at-eol
 docs/evidence/pretrigger-20260910/* -text
+docs/evidence/git-dependency-20260910/** -text
+docs/evidence/git-dependency-20260910/** whitespace=cr-at-eol
+laptop_backup_git_dependency.py text eol=lf
+laptop_backup_private_git.ps1 text eol=lf

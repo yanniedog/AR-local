@@ -1,0 +1,73 @@
+{
+  "checked_at_utc": "2026-09-09T22:26:32.127570+00:00",
+  "result": "PASS",
+  "checks": [
+    {
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json",
+      "bytes": 2881,
+      "sha256": "b56e0a4d76cd8fc93af6f13627c7b78996078d24ddeaf85ade0b240970359e3d",
+      "date": "2026-09-10",
+      "core_sha256": "bcc046636d1759d8b432ae15c40f148b4a417e3f32d6ef8ff3e4cbc1a4c89706",
+      "core_date": "2026-09-10",
+      "core_keys": [
+        "schema_version",
+        "run_date",
+        "sections",
+        "brands",
+        "rba",
+        "rba_holds",
+        "coverage"
+      ],
+      "generated_at": "2026-09-09T15:15:16Z",
+      "section_structure": {
+        "schema_version": "int",
+        "run_date": "str",
+        "sections": 3,
+        "brands": 97,
+        "rba": 19,
+        "rba_holds": 7,
+        "coverage": 12
+      }
+    },
+    {
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest-v2.json",
+      "bytes": 1217,
+      "sha256": "15c6ec8872fde5ef261f53b31e5cd2b5f6dfe4320735699b9df4b90975967d5b",
+      "date": "2026-09-10"
+    },
+    {
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json",
+      "bytes": 2260,
+      "sha256": "990681bae7172ec1eab41c51881f2707cb0e7f80b453c9f67e31aa13ab891e4a",
+      "date": "2026-09-10"
+    },
+    {
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-10/manifest.json",
+      "bytes": 1211,
+      "sha256": "5c1c85ac2174ad8de3fe3f9759db0bac2da58f3fab86ec9a8a75b0762bb6de4f",
+      "date": "2026-09-10",
+      "core_sha256": "bcc046636d1759d8b432ae15c40f148b4a417e3f32d6ef8ff3e4cbc1a4c89706",
+      "core_date": "2026-09-10",
+      "core_keys": [
+        "schema_version",
+        "run_date",
+        "sections",
+        "brands",
+        "rba",
+        "rba_holds",
+        "coverage"
+      ],
+      "generated_at": "2026-09-09T15:15:08Z",
+      "section_structure": {
+        "schema_version": "int",
+        "run_date": "str",
+        "sections": 3,
+        "brands": 97,
+        "rba": 19,
+        "rba_holds": 7,
+        "coverage": 12
+      }
+    }
+  ],
+  "device": "UNVERIFIED: displayed screen/date/error requested"
+}

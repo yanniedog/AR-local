@@ -181,8 +181,16 @@ def ssh_options(args: object, *, scp: bool = False, platform: str | None = None)
         raise ValueError("trusted SSH endpoint differs from the protected contract")
     if platform == "nt":
         _validate_pinned_known_host(Path(known_hosts), logical_host, int(port))
+    null_device = (contract or {}).get("ssh_null_device", "NUL")
+    if null_device not in {"NUL", "/dev/null"}:
+        raise ValueError("unsupported SSH null device")
+    if null_device == "/dev/null":
+        # Git for Windows uses POSIX null-device/config-path syntax. The exact
+        # Windows files have already passed the executable/key/host-key pins.
+        identity = str(identity).replace("\\", "/")
+        known_hosts = str(known_hosts).replace("\\", "/")
     options = [
-        str(executable), "-F", "NUL",
+        str(executable), "-F", null_device,
         "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
         "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
         "-o", "PreferredAuthentications=publickey", "-o", "PubkeyAuthentication=yes",
@@ -190,7 +198,7 @@ def ssh_options(args: object, *, scp: bool = False, platform: str | None = None)
         "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
         "-o", "ChallengeResponseAuthentication=no", "-o", "StrictHostKeyChecking=yes",
         "-o", f"HostKeyAlias={logical_host}", "-o", "HostKeyAlgorithms=ssh-ed25519",
-        "-o", f"UserKnownHostsFile={known_hosts}", "-o", "GlobalKnownHostsFile=NUL",
+        "-o", f"UserKnownHostsFile={known_hosts}", "-o", f"GlobalKnownHostsFile={null_device}",
         "-o", "UpdateHostKeys=no", "-o", "VerifyHostKeyDNS=no",
         "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
         "-o", "RequestTTY=no", "-i", str(identity), "-P" if scp else "-p", port,

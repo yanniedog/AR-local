@@ -1,0 +1,2210 @@
+{
+  "upstream_url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.tar.bz2",
+  "upstream_sha256": "58fdf5679db11901697d2257cd076c8cdc49d64fe641b3e64ad158f1c5bf9b8d",
+  "archive": "C:\\code\\backups\\AR-local-user-session\\tools\\git-ssh-2.55.0.5-verified.zip",
+  "archive_sha256": "d508c38435872da388545fc9d221fb4581c938a3030a081efb1d9576d9b928f8",
+  "root": "C:\\code\\backups\\AR-local-user-session\\tools\\git-ssh-2.55.0.5",
+  "files": [
+    {
+      "path": "etc/DIR_COLORS",
+      "bytes": 4351,
+      "sha256": "ddb85672d6261a1acbd6652d742bc9e2e50797c1585be58b94d49627693828ef"
+    },
+    {
+      "path": "etc/docx2txt.config",
+      "bytes": 1744,
+      "sha256": "47cb8c83799b40b01dd4eeb3f3293c438ca4a869fe98d5556fab85f8545993b9"
+    },
+    {
+      "path": "etc/inputrc",
+      "bytes": 2576,
+      "sha256": "8ed76d1cb069ac8568f21c431f5e23caebea502d932ab4cdff71396f4f0d5b72"
+    },
+    {
+      "path": "etc/minttyrc",
+      "bytes": 40,
+      "sha256": "ce43a9b0c8eb01a695d0543ceb56c9281708a02aaf92021b72d0f0b69a7feeb9"
+    },
+    {
+      "path": "etc/nanorc",
+      "bytes": 12174,
+      "sha256": "4f6cd27b3195847ae8b8a909108db96569aae39e438b7fb18368476263108423"
+    },
+    {
+      "path": "etc/pkcs11/pkcs11.conf.example",
+      "bytes": 390,
+      "sha256": "5f8fb09ce1ecb5aac84612a6d8255111ade9cbf9ad972cad61858f4678a146df"
+    },
+    {
+      "path": "etc/pki/ca-trust/extracted/java/cacerts",
+      "bytes": 134953,
+      "sha256": "b7db9a9349bb6f95ea74b2667664f34a48ca70cf7669014c0133d72a922b32c1"
+    },
+    {
+      "path": "etc/pki/ca-trust/extracted/openssl/ca-bundle.trust.crt",
+      "bytes": 278680,
+      "sha256": "1fc75597d550ca6fa254949f9f81390d4ccca422fa0a3437c03eadb38ac54c3c"
+    },
+    {
+      "path": "etc/pki/ca-trust/extracted/pem/email-ca-bundle.pem",
+      "bytes": 141508,
+      "sha256": "5989f5887bf495f6e6de37a85c1b5a6af5fb526e14d66145efd9d064ddfa587f"
+    },
+    {
+      "path": "etc/pki/ca-trust/extracted/pem/objsign-ca-bundle.pem",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+      "bytes": 185311,
+      "sha256": "f345ac0d7dbd1a584dd80ff96eb2919e8dac68e962db2e7111401b434e888493"
+    },
+    {
+      "path": "etc/profile.d/aliases.sh",
+      "bytes": 234,
+      "sha256": "a7540390bf956f33f6497a87c8986e124a8ecdacad26d0f75695c83dc2410d96"
+    },
+    {
+      "path": "etc/profile.d/bash_profile.sh",
+      "bytes": 515,
+      "sha256": "02d38e480a1ec4227e94a5aa073945901680aa3387e3386f8b77f10426ebbc75"
+    },
+    {
+      "path": "etc/profile.d/env.sh",
+      "bytes": 1124,
+      "sha256": "851bec0cf0b15e82684581e3ed9aaafb7a6b63269eb6f8908d5a9a64d3b8d1cd"
+    },
+    {
+      "path": "etc/profile.d/git-prompt.sh",
+      "bytes": 1859,
+      "sha256": "e14a655b778db71b89f6b6b65af39c61994b53654325e84a10753957452f17bb"
+    },
+    {
+      "path": "etc/profile.d/perlbin.csh",
+      "bytes": 699,
+      "sha256": "478a52dc440d5ca324f4c95238b39cc8c90d5d7d8d5601fa085ffef79fea04f4"
+    },
+    {
+      "path": "etc/profile.d/perlbin.sh",
+      "bytes": 667,
+      "sha256": "91bf8a45a3f04f51fe0eca146a71e278d41dbde19ba60dabc1e41c4639477c07"
+    },
+    {
+      "path": "etc/ssh/moduli",
+      "bytes": 673940,
+      "sha256": "1d89ab9d686ceada1f7869cb7cbf2d3ef041f5054bc148ffa182b6f718e15c81"
+    },
+    {
+      "path": "etc/ssh/ssh_config",
+      "bytes": 1710,
+      "sha256": "79ab6dad83c34d9b5c40aaf894d1e0f5cb191f5962d945772d22e2b3668e06d2"
+    },
+    {
+      "path": "etc/ssh/sshd_config",
+      "bytes": 3347,
+      "sha256": "251ea9d27e7526eeba8cf39126ac77d3499c90957a1c34eaca469d0bf5f4dceb"
+    },
+    {
+      "path": "etc/tigrc",
+      "bytes": 20525,
+      "sha256": "aa897801785995fec07f43cedb3dee06cf2124e5bd1475d6e22ba7badfcded5b"
+    },
+    {
+      "path": "etc/vimrc",
+      "bytes": 2904,
+      "sha256": "e36a3b93b8a33b0a74619f2449ed6d56ed54e4e2938b97070bce4926f1f44054"
+    },
+    {
+      "path": "usr/bin/[.exe",
+      "bytes": 72418,
+      "sha256": "0093104c9e58d42099b8d796f65efa18eab6e941d54de62a5ca224b0d2621413"
+    },
+    {
+      "path": "usr/bin/addgnupghome",
+      "bytes": 3075,
+      "sha256": "f038f9525fa205e19477e31f57772981e87f85f7e2d84348ddadf49d3c67ba4b"
+    },
+    {
+      "path": "usr/bin/applygnupgdefaults",
+      "bytes": 2217,
+      "sha256": "fd3dd5e998504628720e5047af75f2af198f016bc75ee5f8f6eabd735972cfe2"
+    },
+    {
+      "path": "usr/bin/arch.exe",
+      "bytes": 35876,
+      "sha256": "c63dc7b8d578a9a418c3f57ce4172af9a527901a335a73b542f839d1b1ce4488"
+    },
+    {
+      "path": "usr/bin/astextplain",
+      "bytes": 961,
+      "sha256": "4e9d036e63632491ccd825d0a5d3791ad6614a7a9263934b83a572524dbc1634"
+    },
+    {
+      "path": "usr/bin/awk.exe",
+      "bytes": 1202279,
+      "sha256": "f123d2c120b2ad2158aa8c69d8eeedf14c0d681e68ee76ff103e06ac49986200"
+    },
+    {
+      "path": "usr/bin/b2sum.exe",
+      "bytes": 55390,
+      "sha256": "604deb03fc039e3588a782010774a9d7b4f785f015323a4f4739ac26070569a4"
+    },
+    {
+      "path": "usr/bin/backup",
+      "bytes": 7339,
+      "sha256": "1561022f013c4771d6365deceec4c98c0d396798af100cc6615c98ce34886cea"
+    },
+    {
+      "path": "usr/bin/base32.exe",
+      "bytes": 41819,
+      "sha256": "a54e521efb9c1564607e46ba09cd1c9e33572aacedb7d249f780fdd2bca27641"
+    },
+    {
+      "path": "usr/bin/base64.exe",
+      "bytes": 41819,
+      "sha256": "ef4877b2e3f929fa3e9671ff421fe64a8e50c89b3e11c2263d9b802604586e7c"
+    },
+    {
+      "path": "usr/bin/basename.exe",
+      "bytes": 34883,
+      "sha256": "6fe2e201a956304503f808d0909a26d9b49e1a7e99f6ee6d93721ac4a76a7c6e"
+    },
+    {
+      "path": "usr/bin/basenc.exe",
+      "bytes": 49499,
+      "sha256": "39a435a6a46a997417630bbc5374e89f3d34673eb10e65cee6122a6bb547d47e"
+    },
+    {
+      "path": "usr/bin/bash.exe",
+      "bytes": 2449886,
+      "sha256": "5490d0da5e7cf9d92068cc48fcc590f2bcf8564add8ff91c3b5fe541eb2d72e3"
+    },
+    {
+      "path": "usr/bin/bashbug",
+      "bytes": 6854,
+      "sha256": "5e89d2d40813f72645eb0f573d06966888047d7c17288ec4f4200adc87fc627b"
+    },
+    {
+      "path": "usr/bin/bunzip2.exe",
+      "bytes": 92176,
+      "sha256": "ac027e648f7d4bb8172d13a1bc27ac71784d193109aa48e76eff703aeb0f520d"
+    },
+    {
+      "path": "usr/bin/bzcat.exe",
+      "bytes": 92176,
+      "sha256": "ac027e648f7d4bb8172d13a1bc27ac71784d193109aa48e76eff703aeb0f520d"
+    },
+    {
+      "path": "usr/bin/bzcmp",
+      "bytes": 2140,
+      "sha256": "1c1f96193cdf14b85ea65f140a7557a07ece8783a53ec5ba6b5c30644a9d3012"
+    },
+    {
+      "path": "usr/bin/bzdiff",
+      "bytes": 2140,
+      "sha256": "1c1f96193cdf14b85ea65f140a7557a07ece8783a53ec5ba6b5c30644a9d3012"
+    },
+    {
+      "path": "usr/bin/bzegrep",
+      "bytes": 2054,
+      "sha256": "a8e368a31766c7862b8d0feeffe274c3bb43b969e3ccb4f9e77d13bfa447a5c9"
+    },
+    {
+      "path": "usr/bin/bzfgrep",
+      "bytes": 2054,
+      "sha256": "a8e368a31766c7862b8d0feeffe274c3bb43b969e3ccb4f9e77d13bfa447a5c9"
+    },
+    {
+      "path": "usr/bin/bzgrep",
+      "bytes": 2054,
+      "sha256": "a8e368a31766c7862b8d0feeffe274c3bb43b969e3ccb4f9e77d13bfa447a5c9"
+    },
+    {
+      "path": "usr/bin/bzip2.exe",
+      "bytes": 92176,
+      "sha256": "ac027e648f7d4bb8172d13a1bc27ac71784d193109aa48e76eff703aeb0f520d"
+    },
+    {
+      "path": "usr/bin/bzip2recover.exe",
+      "bytes": 14653,
+      "sha256": "65dbae306befe1505e3ed9079e42e6ec8c08d72fd7a8a95d2baa25d09baa75ec"
+    },
+    {
+      "path": "usr/bin/bzless",
+      "bytes": 1297,
+      "sha256": "0e7ca63849eebc9ea476ea1fefab05e60b0ac8066f73c7d58e8ff607c941f212"
+    },
+    {
+      "path": "usr/bin/c_rehash",
+      "bytes": 6986,
+      "sha256": "d9506b8a46f11c535d3164e26dc0cb44246a1e2dee085893b013e12598a876e6"
+    },
+    {
+      "path": "usr/bin/captoinfo.exe",
+      "bytes": 81920,
+      "sha256": "539b180bc2812fbf2bf0dde23f1f09143fb311616362cf77c552e38d9d467ac9"
+    },
+    {
+      "path": "usr/bin/cat.exe",
+      "bytes": 38719,
+      "sha256": "f1b37048ee5c70fdc31dde509e562261c9b2d102d94c903393f55b45e883ef90"
+    },
+    {
+      "path": "usr/bin/chattr.exe",
+      "bytes": 30466,
+      "sha256": "3deacb09a14c293df3155f7f8316c93b9abfff918a274a3a1a510e48c0181632"
+    },
+    {
+      "path": "usr/bin/chcon.exe",
+      "bytes": 60112,
+      "sha256": "97ac075c9b7fbba4c18eefe29b5ba2870a047b676e263425c8f4cd83a9607bb0"
+    },
+    {
+      "path": "usr/bin/chgrp.exe",
+      "bytes": 66575,
+      "sha256": "a73833f67a4493939325b27d8d1b31f53b5b18310ee18139edcd6d22ac57ef31"
+    },
+    {
+      "path": "usr/bin/chmod.exe",
+      "bytes": 58933,
+      "sha256": "fd765e24d91b94dcedf9b4c070047a964f866c0f079ad47d7462559302736f1c"
+    },
+    {
+      "path": "usr/bin/chown.exe",
+      "bytes": 69199,
+      "sha256": "601acf672040aa81cc8fa07f43d06f44b33c7f6e3396276c94410bf9ba72de41"
+    },
+    {
+      "path": "usr/bin/chroot.exe",
+      "bytes": 43648,
+      "sha256": "67d990ca052d293fbdb3aabdc417ec3a6e5e04155b9e5497f101aa5e094938d8"
+    },
+    {
+      "path": "usr/bin/cksum.exe",
+      "bytes": 37068,
+      "sha256": "dc8779dd90181c9a74d3fb26b671da4d5d5b93c9be59287b9244ab66653b8073"
+    },
+    {
+      "path": "usr/bin/clear.exe",
+      "bytes": 10752,
+      "sha256": "8af8a6991f6731c07b4ac4d3249dafe6ac8e2bbc18e54a81f17d343e8ae7902f"
+    },
+    {
+      "path": "usr/bin/cmp.exe",
+      "bytes": 55905,
+      "sha256": "9436e2a0a92e8f31e02077785f075fb62d05074d4ce257c53434b93497b0eb2d"
+    },
+    {
+      "path": "usr/bin/comm.exe",
+      "bytes": 40237,
+      "sha256": "7b1a630adb1d85b4f3dd8247a45a914ead7bc34e8b72b8c4a1f12baa82aa80f4"
+    },
+    {
+      "path": "usr/bin/core_perl/corelist",
+      "bytes": 15375,
+      "sha256": "667bc0d6d8de3048ec84678355647805a9e1ecfc53169a780edbc49b5a0da7b5"
+    },
+    {
+      "path": "usr/bin/core_perl/cpan",
+      "bytes": 8360,
+      "sha256": "d4fba91c6370b8ef2c77850205d6e7eab6d8aeebd57993793fad9eff7720ea5e"
+    },
+    {
+      "path": "usr/bin/core_perl/enc2xs",
+      "bytes": 41886,
+      "sha256": "8a115e85422e5622cca5cc8c801018988028b89e06bf80fd1d2ed99ee04f4abd"
+    },
+    {
+      "path": "usr/bin/core_perl/encguess",
+      "bytes": 3065,
+      "sha256": "7a058a1f81de2675bc3cf097ed40cd59dea0dfad7e0f753ec8ecda899ad15b0e"
+    },
+    {
+      "path": "usr/bin/core_perl/h2ph",
+      "bytes": 28826,
+      "sha256": "6155aab4351f31b7fd32b2bce5b53622e18461cb626c409d1de19896d8d22a0e"
+    },
+    {
+      "path": "usr/bin/core_perl/h2xs",
+      "bytes": 60934,
+      "sha256": "7292e1d2b1bcef2a1b05ce8bae00b2651e5f115b5aff07272b1fafbdad9e723f"
+    },
+    {
+      "path": "usr/bin/core_perl/instmodsh",
+      "bytes": 4290,
+      "sha256": "9a5b48f3e4b995051c6b02013017bfa166759ffd5e3f71cc2d146a845d871b3a"
+    },
+    {
+      "path": "usr/bin/core_perl/json_pp",
+      "bytes": 4992,
+      "sha256": "b336e50dc789c31cbd7b0f467d05e0d91188d06c7c27aa4009b904af8c6a4091"
+    },
+    {
+      "path": "usr/bin/core_perl/libnetcfg",
+      "bytes": 15778,
+      "sha256": "78bab79d103416b08a51e070bf599101a897f3753ff729bd3bafd4068f5b2564"
+    },
+    {
+      "path": "usr/bin/core_perl/perlbug",
+      "bytes": 45626,
+      "sha256": "80c9f67c2e4a8dc8f25e20c1b3af43155f4f57f1d053fd91886d807e70969a20"
+    },
+    {
+      "path": "usr/bin/core_perl/perlivp",
+      "bytes": 10816,
+      "sha256": "46ea84c043c55420faa8b302e4819db28ef9dc6e2f5d6dd01a5af7ae92edcc3f"
+    },
+    {
+      "path": "usr/bin/core_perl/perlthanks",
+      "bytes": 45626,
+      "sha256": "80c9f67c2e4a8dc8f25e20c1b3af43155f4f57f1d053fd91886d807e70969a20"
+    },
+    {
+      "path": "usr/bin/core_perl/piconv",
+      "bytes": 8360,
+      "sha256": "0ddc062a05a184cc3f89338a44437364a29811b420f3660c13915bddfdc3a689"
+    },
+    {
+      "path": "usr/bin/core_perl/pl2pm",
+      "bytes": 4536,
+      "sha256": "a974fb9e86c76778a249d47d521e6fa1847c331ba3eea6e240a37b1c44dd6a1d"
+    },
+    {
+      "path": "usr/bin/core_perl/pod2html",
+      "bytes": 4041,
+      "sha256": "713aa9fdcf27a9b70991c14ee5bc47a8a56ec2cfd804df9b79f90f6024de4750"
+    },
+    {
+      "path": "usr/bin/core_perl/pod2man",
+      "bytes": 19809,
+      "sha256": "aace999e0e7eddda61d0e01b579dac17b8bfe6181e9301a3cfe0d46b934f8a18"
+    },
+    {
+      "path": "usr/bin/core_perl/pod2text",
+      "bytes": 13106,
+      "sha256": "b7bdfa8776e1648bbc9e8adac5ed930f589e65637b5851b4f5f837c5e9743a96"
+    },
+    {
+      "path": "usr/bin/core_perl/pod2usage",
+      "bytes": 4060,
+      "sha256": "e778aba453116516065cda7905bdba0551830e7d9d963fd870c7f754069cc89b"
+    },
+    {
+      "path": "usr/bin/core_perl/podchecker",
+      "bytes": 3730,
+      "sha256": "3fb5209d8caaf69cadcd04c685390d9b43d1ae33ac8a363f2a10d8a193279588"
+    },
+    {
+      "path": "usr/bin/core_perl/prove",
+      "bytes": 13677,
+      "sha256": "3987e219146e9eb03d63c13200ee31dec04b03d984b84e95bdf2dec91f07b1c2"
+    },
+    {
+      "path": "usr/bin/core_perl/ptar",
+      "bytes": 3869,
+      "sha256": "84762059e08aa22c95a03a6603161412af97b19c99e3adbfd4c1edcd78459e98"
+    },
+    {
+      "path": "usr/bin/core_perl/ptardiff",
+      "bytes": 2645,
+      "sha256": "1d7d45bd4f48409a479886e6cfb6e3e8093fea89b10ce906d399484d92a86cc0"
+    },
+    {
+      "path": "usr/bin/core_perl/ptargrep",
+      "bytes": 4395,
+      "sha256": "0bca747354107929ecefbab2a8128923763bfa622124e20a1194c7f8a914a20f"
+    },
+    {
+      "path": "usr/bin/core_perl/shasum",
+      "bytes": 9982,
+      "sha256": "e3bad5e7cd244f5a24fbee97be7e9a90ee20993ff5b5213ffeac0e0976cffb7c"
+    },
+    {
+      "path": "usr/bin/core_perl/splain",
+      "bytes": 19459,
+      "sha256": "1ea3a969bf8f98fc97c8ae9d26e15a74e2752d07f005ec2034da63f28c45c976"
+    },
+    {
+      "path": "usr/bin/core_perl/streamzip",
+      "bytes": 8060,
+      "sha256": "5a233599bdd8735b94764cf4ebd8dbc16fcdebf96fb2d659c30e74a2a73c72e8"
+    },
+    {
+      "path": "usr/bin/core_perl/xsubpp",
+      "bytes": 5167,
+      "sha256": "c8c0f265dd2f3f247f179a5464bddfe6391b9e06996e961fa15c51c2e26e39a3"
+    },
+    {
+      "path": "usr/bin/core_perl/zipdetails",
+      "bytes": 246289,
+      "sha256": "897f93fc50babe5554897fff5da09549942cdc2ec590d83a664f66e8fe5e3404"
+    },
+    {
+      "path": "usr/bin/cp.exe",
+      "bytes": 114653,
+      "sha256": "5f91e0b445edb4e4c17e9a660ac29239f6cac5a821a173a86d4332b9eaa8cea3"
+    },
+    {
+      "path": "usr/bin/csplit.exe",
+      "bytes": 112205,
+      "sha256": "730846a83bc6c4f4eb4675b373d9204e8e5961876e17ac6b0bd9f9755559fbd6"
+    },
+    {
+      "path": "usr/bin/cut.exe",
+      "bytes": 45102,
+      "sha256": "63fcfb76c80d57538312a9637429d5a4b99ac83e8b00d95684609b4c045471e9"
+    },
+    {
+      "path": "usr/bin/cygcheck.exe",
+      "bytes": 748377,
+      "sha256": "7ce8ff77516ed33dd473dd384b54916bd38a4268a7442feb837167f35c541ac1"
+    },
+    {
+      "path": "usr/bin/cygpath.exe",
+      "bytes": 53959,
+      "sha256": "811122a0ca70c5e046b7c6e48f26daaaa5288341add85e4212fff2bb5b8f9bae"
+    },
+    {
+      "path": "usr/bin/cygwin-console-helper.exe",
+      "bytes": 275025,
+      "sha256": "8f1ce3f21b1e554ce7d814f381e6ab22985bb58f5047f02b817a65aac6872f4f"
+    },
+    {
+      "path": "usr/bin/d2u.exe",
+      "bytes": 54337,
+      "sha256": "fbc7af1061f5776e941477cf04e0a31ca33695e106ecaaf091a80ebca69ec6e4"
+    },
+    {
+      "path": "usr/bin/date.exe",
+      "bytes": 120177,
+      "sha256": "743228ae082e1128a2aff02414e114dc45a51f7461775bc5750d89307f3ccdac"
+    },
+    {
+      "path": "usr/bin/dd.exe",
+      "bytes": 90732,
+      "sha256": "fc825633d2b831517253092a1e4a10b5b68452ba3a2af0b5f2a5a0d2c180a752"
+    },
+    {
+      "path": "usr/bin/df.exe",
+      "bytes": 104899,
+      "sha256": "66d5c328f71c47f8311bd579f84114932d708788e831f320a50c5831777de047"
+    },
+    {
+      "path": "usr/bin/diff.exe",
+      "bytes": 279886,
+      "sha256": "d64621f766d8910a92cb3d99bd7f23c0b1c736eece0e19dccbccead93aa81854"
+    },
+    {
+      "path": "usr/bin/diff3.exe",
+      "bytes": 60138,
+      "sha256": "913e23ff6b2f9dc204b92a181ac993e3ce7c8c5bcd68db3f7662224a1896a975"
+    },
+    {
+      "path": "usr/bin/dir.exe",
+      "bytes": 149479,
+      "sha256": "0ed6ccc9669fcb28e6c29086623ef7ddb5bddf8e73d427f7e890cee6436cfb51"
+    },
+    {
+      "path": "usr/bin/dircolors.exe",
+      "bytes": 57476,
+      "sha256": "368a44254cfeddb273c75cd181f0f6bf99ec1eeb3f223120b111112ce0fe9efc"
+    },
+    {
+      "path": "usr/bin/dirmngr-client.exe",
+      "bytes": 96175,
+      "sha256": "58422501ff8dc0b618ec06f534ff03256c75adfc30112ca91b713a893e7eb594"
+    },
+    {
+      "path": "usr/bin/dirmngr.exe",
+      "bytes": 393591,
+      "sha256": "e3e0cfd5641d75ee847f5f5f8564a41158aa38cfb37159b60fc951819c31c11d"
+    },
+    {
+      "path": "usr/bin/dirname.exe",
+      "bytes": 34830,
+      "sha256": "53896fda354605a1a1d1f5e6802daba5ba6c05961f3074b892194e068aa82772"
+    },
+    {
+      "path": "usr/bin/docx2txt",
+      "bytes": 3363,
+      "sha256": "ea40ef16595f928b67b0acfae90c7f81d0da48b52fb797c437bdba43ccfc2c2d"
+    },
+    {
+      "path": "usr/bin/docx2txt.pl",
+      "bytes": 21572,
+      "sha256": "b8bed3cab34dd3c3cccc8af3c61b9826e478d2b8b1b60f63b66f624f9e993bc0"
+    },
+    {
+      "path": "usr/bin/dos2unix.exe",
+      "bytes": 54337,
+      "sha256": "fbc7af1061f5776e941477cf04e0a31ca33695e106ecaaf091a80ebca69ec6e4"
+    },
+    {
+      "path": "usr/bin/du.exe",
+      "bytes": 168410,
+      "sha256": "dc22867da6d50648fd627c549edc906d97fdecf2f7956b2f3e05fe619976b07e"
+    },
+    {
+      "path": "usr/bin/dumpsexp.exe",
+      "bytes": 16511,
+      "sha256": "ffd7b283e5323b4f223bc856405cd7b3fe57e010816ff38e2847a325c8350016"
+    },
+    {
+      "path": "usr/bin/echo.exe",
+      "bytes": 35755,
+      "sha256": "629697ea64fad72bceda3b2a6fe3c60c79e1a55e0a79de54f04ddf840907cf41"
+    },
+    {
+      "path": "usr/bin/egrep",
+      "bytes": 28,
+      "sha256": "f7c621ae0ceb26a76802743830bc469288996f64342901ae5292950ff713e981"
+    },
+    {
+      "path": "usr/bin/env.exe",
+      "bytes": 44180,
+      "sha256": "b5d80f13e6b4b422a8c22d32be9cc1f5fd9b482fc60008ed80e513a2fa938cdc"
+    },
+    {
+      "path": "usr/bin/ex.exe",
+      "bytes": 3938872,
+      "sha256": "93ea9d2335d47dcee347286f05e76caa3954c6a4c7f3dac0b15c9fefc6ee1874"
+    },
+    {
+      "path": "usr/bin/expand.exe",
+      "bytes": 38673,
+      "sha256": "d4dd802d17f6f0801d8df622235c41ca30dadbb8eeb0ea35837d2312e2ce9d2b"
+    },
+    {
+      "path": "usr/bin/expr.exe",
+      "bytes": 111126,
+      "sha256": "e1608f26781374b67f180370dc50c833bfc61946aadfb433e48536590bb79219"
+    },
+    {
+      "path": "usr/bin/factor.exe",
+      "bytes": 77490,
+      "sha256": "8a9deaea51cb45aa7afc6bd8914f5937f9dbf64ab98aabef1b1a02677d5ea4fe"
+    },
+    {
+      "path": "usr/bin/false.exe",
+      "bytes": 33123,
+      "sha256": "71314347cf1355d1fd818d62fe11cf6b58373e70170a273335d38a8bacb987d6"
+    },
+    {
+      "path": "usr/bin/fgrep",
+      "bytes": 28,
+      "sha256": "5c8b1486de899cdd010d3cacde94579999cb82d0be9ec8c131b1b56886cfd36b"
+    },
+    {
+      "path": "usr/bin/file.exe",
+      "bytes": 24742,
+      "sha256": "9c70cd7f49560a672ebbe707a8f21fe5312a2d3f6277fd718c23f2a477879fd9"
+    },
+    {
+      "path": "usr/bin/find.exe",
+      "bytes": 380709,
+      "sha256": "1729ceebf52cf72bf1fc955af8167f2ba8ecbffa928fa386818affc5a60224fd"
+    },
+    {
+      "path": "usr/bin/findssl.sh",
+      "bytes": 4797,
+      "sha256": "b10123b92ddac4ff3e5d003eed44e92c39693dd8c7d197c99b006aacf80fdaf3"
+    },
+    {
+      "path": "usr/bin/fmt.exe",
+      "bytes": 43330,
+      "sha256": "578c22331e778a2827d67a5563afca8c4b9de3af9031b78ecf31cbffce120e5b"
+    },
+    {
+      "path": "usr/bin/fold.exe",
+      "bytes": 38204,
+      "sha256": "391d6f86fb796d5be5e87ab4d47d2376405795119de9968cfc2788cf3cb9a2f0"
+    },
+    {
+      "path": "usr/bin/funzip.exe",
+      "bytes": 28476,
+      "sha256": "45e648bd3be4fee5c7c05b7a758b85fc6d284a027ec504a80f687483a7335fb6"
+    },
+    {
+      "path": "usr/bin/gawk-5.4.1.exe",
+      "bytes": 1202279,
+      "sha256": "f123d2c120b2ad2158aa8c69d8eeedf14c0d681e68ee76ff103e06ac49986200"
+    },
+    {
+      "path": "usr/bin/gawk.exe",
+      "bytes": 1202279,
+      "sha256": "f123d2c120b2ad2158aa8c69d8eeedf14c0d681e68ee76ff103e06ac49986200"
+    },
+    {
+      "path": "usr/bin/gawkbug",
+      "bytes": 6610,
+      "sha256": "475610aefc76b89592ae8440434368bd448f7c7391146d91b13758f65120117b"
+    },
+    {
+      "path": "usr/bin/gdbm_dump.exe",
+      "bytes": 27213,
+      "sha256": "74079ae2990d948345ea5d8c1084b9577fdba3eb8c86a996a93709d1bf6ef38c"
+    },
+    {
+      "path": "usr/bin/gdbm_load.exe",
+      "bytes": 29600,
+      "sha256": "128a6653510a13d53cc38ea9f129c3f4d4b41595c90ab4141791010e7c21128b"
+    },
+    {
+      "path": "usr/bin/gdbmtool.exe",
+      "bytes": 134024,
+      "sha256": "34e96ea18cb37d6ce97f9b2157edcb4bf9e9dc568f143f33b52f85c7312c5916"
+    },
+    {
+      "path": "usr/bin/gencat.exe",
+      "bytes": 31758,
+      "sha256": "9475adfff1c47ac2204a7814bc187eaf6f650d06ba5109e8765ad7df2315f54e"
+    },
+    {
+      "path": "usr/bin/getconf.exe",
+      "bytes": 40828,
+      "sha256": "4f77a343eb0577afb23610e0107b2cd5c29d7de1e368693baad6d07276c9b088"
+    },
+    {
+      "path": "usr/bin/getfacl.exe",
+      "bytes": 28764,
+      "sha256": "b9091c8a81112efca4599bac8a5bfe7363f51943219773d795b20caea97fc3e5"
+    },
+    {
+      "path": "usr/bin/gkill.exe",
+      "bytes": 36574,
+      "sha256": "17630ebb06517f269bcea82c3584c3ec10f2f09aa44c7046e89d732c9fb4405f"
+    },
+    {
+      "path": "usr/bin/gmondump.exe",
+      "bytes": 28078,
+      "sha256": "b2f1cb3e00ce19163b67d674fb2de35345cc2de59bbb4e7a57ea994008d448ad"
+    },
+    {
+      "path": "usr/bin/gpg-agent.exe",
+      "bytes": 407954,
+      "sha256": "8f8a83e31c64eeb174a825d5fe39b4758a8ba61c2a36d6191d85ae0be964cc62"
+    },
+    {
+      "path": "usr/bin/gpg-card.exe",
+      "bytes": 235883,
+      "sha256": "531438d2da3596699be2fbd219d8897e1f9c7a37b1cd16a4a5613628904feb32"
+    },
+    {
+      "path": "usr/bin/gpg-connect-agent.exe",
+      "bytes": 125566,
+      "sha256": "1d70c77ef7e339937125e4df0472b2ec548d2679e952ede6f29f7106462dbe1b"
+    },
+    {
+      "path": "usr/bin/gpg-error.exe",
+      "bytes": 36779,
+      "sha256": "9d846f91023296072ee623aacb80d6907eb10cd4ab96ee029a879ae6e8806d3f"
+    },
+    {
+      "path": "usr/bin/gpg-mail-tube.exe",
+      "bytes": 105152,
+      "sha256": "c1a90193fb359d410225cf4259fe4b16ed48af640f71d5c21632fe39d3415b9e"
+    },
+    {
+      "path": "usr/bin/gpg-wks-client.exe",
+      "bytes": 195792,
+      "sha256": "089ee1bf0300c3258fb32c92c5924e43ef6ea823a3366a40bc68ccfb6b19e30c"
+    },
+    {
+      "path": "usr/bin/gpg-wks-server.exe",
+      "bytes": 170482,
+      "sha256": "6e7057a6d7f893907b730e5dff3d9e8bf8b0befd4eddaeb9eadfc46361ca5569"
+    },
+    {
+      "path": "usr/bin/gpg.exe",
+      "bytes": 1129818,
+      "sha256": "14953ed8b4549020e185c0f7ab600bb9d0384457ea74da9d574e8d31139aff4f"
+    },
+    {
+      "path": "usr/bin/gpgconf.exe",
+      "bytes": 145721,
+      "sha256": "5432e0f3363e7f2ba5c6322ab0888c901381f8c8e46cfa12fa7a50d8768d08ad"
+    },
+    {
+      "path": "usr/bin/gpgparsemail.exe",
+      "bytes": 28007,
+      "sha256": "d4c09c03913d30c3d4054f65abdefea3f6c5d894531dbd7e37b2799a711e83e9"
+    },
+    {
+      "path": "usr/bin/gpgscm.exe",
+      "bytes": 221446,
+      "sha256": "3102b0729cf79c71c0f4e254e65f79b1cff7708143c417f233f797d0cbf94008"
+    },
+    {
+      "path": "usr/bin/gpgsm.exe",
+      "bytes": 569692,
+      "sha256": "effaca6d9d93dbceb130b5835da2d7b01ca380e72fa32615690190511ebb5f23"
+    },
+    {
+      "path": "usr/bin/gpgsplit.exe",
+      "bytes": 65545,
+      "sha256": "899916b1a828d952eb8bbf626b1b0e6c95e92b1e2c59e2637d520ad919d87ad8"
+    },
+    {
+      "path": "usr/bin/gpgtar.exe",
+      "bytes": 114670,
+      "sha256": "dcce392938d40773d613d7443a407c1da205e218e328b7f3cf45d5749cf1f221"
+    },
+    {
+      "path": "usr/bin/gpgv.exe",
+      "bytes": 513794,
+      "sha256": "e5b9f232083ac4c7427ad4923e21d26bae0c8b8554db3344ef388088f92919fe"
+    },
+    {
+      "path": "usr/bin/grep.exe",
+      "bytes": 213710,
+      "sha256": "497202418334f8a48d9f34cd2e1b2c03c4f957e02304b613e10931c0457e8d4a"
+    },
+    {
+      "path": "usr/bin/groups.exe",
+      "bytes": 36590,
+      "sha256": "18bb936d12baa55cb9cc240fb4afb088af2784fbde8a6dd5d3537448a5263046"
+    },
+    {
+      "path": "usr/bin/gunzip",
+      "bytes": 2266,
+      "sha256": "4f13375fc268dcc8f94112fdcf9e2a334487e8f14a0ba1d830ba3173da3aa3df"
+    },
+    {
+      "path": "usr/bin/gzexe",
+      "bytes": 6379,
+      "sha256": "cc8412a9e391cb1ec844a5cacbe8a037d117dae9ed73537382842fd120adc618"
+    },
+    {
+      "path": "usr/bin/gzip.exe",
+      "bytes": 126581,
+      "sha256": "66b484c89583bd78f94ffcae69d57d0be05c9d682fbe265e55e5e95e9c0b89d5"
+    },
+    {
+      "path": "usr/bin/head.exe",
+      "bytes": 45413,
+      "sha256": "c82ae2ef72235a34db7007580628cd5183cb350878a10fcc98b6ef26b92a3537"
+    },
+    {
+      "path": "usr/bin/hmac256.exe",
+      "bytes": 17059,
+      "sha256": "81cbc7541f1035d56e58b3ade609f74c886cb4b636cce506f4f59724a650a96c"
+    },
+    {
+      "path": "usr/bin/hostid.exe",
+      "bytes": 33315,
+      "sha256": "9c93d1b5c9dffcae583e524d3023a8fa6382048d217de697b96f5c805e4da474"
+    },
+    {
+      "path": "usr/bin/hostname.exe",
+      "bytes": 33894,
+      "sha256": "99d3b0b660717c412334adbf2ac5c52ae491eb504df12197c35ec91918ae00b2"
+    },
+    {
+      "path": "usr/bin/iconv.exe",
+      "bytes": 33549,
+      "sha256": "d34c197226bed76320d7d0579e19560dee5c2c36a69378f5ed41874d26c4e748"
+    },
+    {
+      "path": "usr/bin/id.exe",
+      "bytes": 43959,
+      "sha256": "7e5a847d3d4745879db5cb8997045355334ed888f22965b59423ee05150ed371"
+    },
+    {
+      "path": "usr/bin/infocmp.exe",
+      "bytes": 58880,
+      "sha256": "ddd200f3128f17c9ec4634ab60368d9a5c5e2d52999e3260884d34752b051c41"
+    },
+    {
+      "path": "usr/bin/infotocap.exe",
+      "bytes": 81920,
+      "sha256": "539b180bc2812fbf2bf0dde23f1f09143fb311616362cf77c552e38d9d467ac9"
+    },
+    {
+      "path": "usr/bin/install.exe",
+      "bytes": 148448,
+      "sha256": "23b01a97c735f224f76804b306e19b5ba15649d0a9db620a172e480ba80533ab"
+    },
+    {
+      "path": "usr/bin/join.exe",
+      "bytes": 51222,
+      "sha256": "6e30a08d2bc2cb1fea56e41cee45c44f1c16272ed670d7c6138cbff5a00608c1"
+    },
+    {
+      "path": "usr/bin/kbxutil.exe",
+      "bytes": 164508,
+      "sha256": "a096508d1b10593ab3146155adea70990a97da61f9415b72a1593b08fd5f6e03"
+    },
+    {
+      "path": "usr/bin/kill.exe",
+      "bytes": 39432,
+      "sha256": "bd85b107a4efd19c8849eda0c7d539b049df9cf5479a6487ff209e076f5b7a93"
+    },
+    {
+      "path": "usr/bin/ldd.exe",
+      "bytes": 37790,
+      "sha256": "3974ad3569ac45866da19fa6262f48557f1516074e7c313e746dc536ca0ee12e"
+    },
+    {
+      "path": "usr/bin/ldh.exe",
+      "bytes": 135238,
+      "sha256": "f0730e0430e3fe251eb4b0f0273f56deeebfd3808d3b55ba6a84bbc457163c7b"
+    },
+    {
+      "path": "usr/bin/less.exe",
+      "bytes": 239056,
+      "sha256": "72cd97cb8b8dd88c9070172febdadcae9a756831e10b53e3127d997d7b93f87a"
+    },
+    {
+      "path": "usr/bin/lesskey.exe",
+      "bytes": 21727,
+      "sha256": "234d752b5318a392ed0f7bc004b6b21016f99593a026740db386a112bf5e5f55"
+    },
+    {
+      "path": "usr/bin/link.exe",
+      "bytes": 33822,
+      "sha256": "070b43c6e5dfb7a92fafa30206fa4dd6361c3bad52e7d533a2827c3918c73d93"
+    },
+    {
+      "path": "usr/bin/ln.exe",
+      "bytes": 77077,
+      "sha256": "28f25f435e02867e685e115e78554f585cd81db4ef9b66f4364fd342857bdaf6"
+    },
+    {
+      "path": "usr/bin/locale.exe",
+      "bytes": 45162,
+      "sha256": "39614cffa0eaa6a2babedfbb8f8c2e77e9f4a049ae11d367ea4281549431b70a"
+    },
+    {
+      "path": "usr/bin/locate.exe",
+      "bytes": 249247,
+      "sha256": "2300aa4e87800bdcdfdd0157a0b43233a93943852e516cb5d7acbb5949ac23c0"
+    },
+    {
+      "path": "usr/bin/logname.exe",
+      "bytes": 33855,
+      "sha256": "b9938523b459bfa37f0547a3d321570eb63d9fc6becd7a94badfc4021f06f4b5"
+    },
+    {
+      "path": "usr/bin/ls.exe",
+      "bytes": 149479,
+      "sha256": "b45981580702029cfeeffc8ca69e2a4d1e9c68914009e94c31ffec9cbc544aa5"
+    },
+    {
+      "path": "usr/bin/lsattr.exe",
+      "bytes": 29805,
+      "sha256": "13b7a30ab3bffd9d6de89a80aac3c5e2cd81798e8152a728c595f02c9c32908d"
+    },
+    {
+      "path": "usr/bin/mac2unix.exe",
+      "bytes": 54337,
+      "sha256": "fbc7af1061f5776e941477cf04e0a31ca33695e106ecaaf091a80ebca69ec6e4"
+    },
+    {
+      "path": "usr/bin/md5sum.exe",
+      "bytes": 47036,
+      "sha256": "9327e6f33e2d58cfe675a33453e17297c44dc0839584f33670bdf375f339a5ee"
+    },
+    {
+      "path": "usr/bin/minidumper.exe",
+      "bytes": 28235,
+      "sha256": "d0b79bd05022f7c34c6534e4b5070dfc69e279772ce0d59e26712da974647146"
+    },
+    {
+      "path": "usr/bin/mintheme",
+      "bytes": 12785,
+      "sha256": "0e80a0f9b80c8c4e488e79332eec301c40d3c1e2e8a716eb76d7d46433c6b86f"
+    },
+    {
+      "path": "usr/bin/mintty.exe",
+      "bytes": 1266680,
+      "sha256": "c42538dcb59ddc4b46001d50480fb2c5962e957c3022aadc70a8ca0266221ff7"
+    },
+    {
+      "path": "usr/bin/mkdir.exe",
+      "bytes": 71435,
+      "sha256": "fc9b9e49fd6496cdddfc5681208d74bd649ac934818eafdfd50a9571bdcb4861"
+    },
+    {
+      "path": "usr/bin/mkfifo.exe",
+      "bytes": 36564,
+      "sha256": "efd816dd4d0764b2df695b9ad8cc4cd2da68c7564cabef993dc9bc39ae0a97f0"
+    },
+    {
+      "path": "usr/bin/mkgroup.exe",
+      "bytes": 43041,
+      "sha256": "1621b8348f65591a2acb7dd13d1441d3006cdd4ba7bbf39af135b807338367e6"
+    },
+    {
+      "path": "usr/bin/mknod.exe",
+      "bytes": 39738,
+      "sha256": "ac12a4c60b0c1ba56de562249729e5e1ef747c322eec7a5b7ca8c1e4ed3e2fd7"
+    },
+    {
+      "path": "usr/bin/mkpasswd.exe",
+      "bytes": 42890,
+      "sha256": "706d2b131d6d161bbca041474291f41c324c5c107193bd53c5bddfc0c89adda2"
+    },
+    {
+      "path": "usr/bin/mktemp.exe",
+      "bytes": 44192,
+      "sha256": "bd6474b0404e52b195296438342f38e510fe1a4c1c0d91ceb83cf8411959fecb"
+    },
+    {
+      "path": "usr/bin/mount.exe",
+      "bytes": 35855,
+      "sha256": "b88aa1bb9cdbf66a5ab8f72cc8448014678c4d1dfcd95f8d185a3421d4cf266f"
+    },
+    {
+      "path": "usr/bin/mpicalc.exe",
+      "bytes": 18110,
+      "sha256": "25eed570d9183fc6859e249a9214965a93370277242613ea229e0f84b0649054"
+    },
+    {
+      "path": "usr/bin/msys-2.0.dll",
+      "bytes": 3371103,
+      "sha256": "e55be2d89f2756f540a8f2acf18cd14bf275d1187a32d5189946ee5c896bcf03"
+    },
+    {
+      "path": "usr/bin/msys-apr-1-0.dll",
+      "bytes": 186658,
+      "sha256": "23c35d635a217780560ab6bb8d8bdb79387650ada4ae68ea39940a1b1160e7e7"
+    },
+    {
+      "path": "usr/bin/msys-aprutil-1-0.dll",
+      "bytes": 135772,
+      "sha256": "0c485f9e5c91ac9ccb12e73d66d83d1c0f7aaa3dfa05ff5d104a6d477279aa0a"
+    },
+    {
+      "path": "usr/bin/msys-asn1-8.dll",
+      "bytes": 547885,
+      "sha256": "24e7a09a283ee7562c1889b5319269d838cddcab837cf3df7356b0a60bff2efb"
+    },
+    {
+      "path": "usr/bin/msys-assuan-9.dll",
+      "bytes": 69674,
+      "sha256": "3eaf1c57c85b1ca2303e7d9544c0a96507f483aae7ae5a1125dfde09bdb12b26"
+    },
+    {
+      "path": "usr/bin/msys-bz2-1.dll",
+      "bytes": 67277,
+      "sha256": "1082896c71da5e62dfd8e421fba35fa3123e6e1e2782381c08258917117b51cd"
+    },
+    {
+      "path": "usr/bin/msys-cbor-0.11.dll",
+      "bytes": 50025,
+      "sha256": "6b27ae38e5a01d9b60f0e40753b158043dcf1258c29bc700b97b6eeb081b41a6"
+    },
+    {
+      "path": "usr/bin/msys-com_err-1.dll",
+      "bytes": 10102,
+      "sha256": "541eec990f72219d49033b49a9c394610f0c98feb05ff3e94d965e1be5830e8f"
+    },
+    {
+      "path": "usr/bin/msys-crypt-2.dll",
+      "bytes": 219319,
+      "sha256": "9a06bdbd7a934847bc0c50c3a19a7cf2b036a86ef9960fbe22984dd2ac18d608"
+    },
+    {
+      "path": "usr/bin/msys-crypto-3.dll",
+      "bytes": 4009664,
+      "sha256": "01e77bdd11caaef53315b98295a0a3cfd439b103d5832ba48146a58b389f0995"
+    },
+    {
+      "path": "usr/bin/msys-edit-0.dll",
+      "bytes": 175481,
+      "sha256": "6ad9be6549cab3102a5a31905b15103173992e69fe517650395561e9ba9b9abb"
+    },
+    {
+      "path": "usr/bin/msys-expat-1.dll",
+      "bytes": 165139,
+      "sha256": "54d32394a7398ea82549bd7734b80a456fcc6ce48d856b326171ceca3187544e"
+    },
+    {
+      "path": "usr/bin/msys-ffi-8.dll",
+      "bytes": 38287,
+      "sha256": "345db0bd59c8bcf595c5c301ec75e52d6863f66c7abe899aaaeeb4d16f639597"
+    },
+    {
+      "path": "usr/bin/msys-fido2-1.dll",
+      "bytes": 213075,
+      "sha256": "fe428e64b696420ca7b508674d5a92dc9f89fea81197b0653f966b57a2162a1e"
+    },
+    {
+      "path": "usr/bin/msys-gcc_s-seh-1.dll",
+      "bytes": 141537,
+      "sha256": "59b816ee2880c2140ac8d7726f59e4e7435e309f272a80fd590d3130215f77f5"
+    },
+    {
+      "path": "usr/bin/msys-gcrypt-20.dll",
+      "bytes": 1060867,
+      "sha256": "660e7e5441e6ddb9debb5db0f04b3e56c0cf7a6a22be14958a40b366e5f32e1c"
+    },
+    {
+      "path": "usr/bin/msys-gdbm-6.dll",
+      "bytes": 60583,
+      "sha256": "64835aec02b4b5b648dc3e8a15d951816dce11ca0c8d439b1d3626af248f0d86"
+    },
+    {
+      "path": "usr/bin/msys-gdbm_compat-4.dll",
+      "bytes": 13257,
+      "sha256": "48820d01556ffb64713903e646161f42b15588adc635b6834dbd4aaf5939fe21"
+    },
+    {
+      "path": "usr/bin/msys-gmp-10.dll",
+      "bytes": 605220,
+      "sha256": "e3d88ffc1bd3bb3bdda1d84f3f823e6f0f07c89dfd17e2d003c588f56dd80784"
+    },
+    {
+      "path": "usr/bin/msys-gnutls-30.dll",
+      "bytes": 2029128,
+      "sha256": "5f3019ca853a642a5d26b81661040f295cc11cfc588a43500fbcb2fbee7cc444"
+    },
+    {
+      "path": "usr/bin/msys-gpg-error-0.dll",
+      "bytes": 156385,
+      "sha256": "a53ec385fd2133d39dd6074ee8262a6904d0c5f63ec30720e0d8acb1a75fd38c"
+    },
+    {
+      "path": "usr/bin/msys-gssapi-3.dll",
+      "bytes": 225361,
+      "sha256": "483a33bb29bc4decbcecb5298d1da6d134814abfea985501571bfc492fc66ac9"
+    },
+    {
+      "path": "usr/bin/msys-hcrypto-4.dll",
+      "bytes": 200624,
+      "sha256": "542bb844e0af85188e55645a53cd6c9ff33d8757214a23e7fa6cb73047f48678"
+    },
+    {
+      "path": "usr/bin/msys-heimbase-1.dll",
+      "bytes": 51426,
+      "sha256": "0cb52850d34714d1b3d13b4ae8b9ecab54be73e2a7b00f2c45a13827bf0a5c6a"
+    },
+    {
+      "path": "usr/bin/msys-heimntlm-0.dll",
+      "bytes": 32789,
+      "sha256": "5abb16fff85e9054ba552d225f6d370c5d806bb6498e6b96e7c4797c55791312"
+    },
+    {
+      "path": "usr/bin/msys-hogweed-7.dll",
+      "bytes": 265491,
+      "sha256": "2251a9315fe79e2394514c370be7fe1cced7f09c4092e715f7e9325cde1f83af"
+    },
+    {
+      "path": "usr/bin/msys-hx509-5.dll",
+      "bytes": 274850,
+      "sha256": "b3b7210e5e2f00125357fa2e377406ae220a3527a8051a28f0fcc761f83e2da0"
+    },
+    {
+      "path": "usr/bin/msys-iconv-2.dll",
+      "bytes": 1103690,
+      "sha256": "50012969ed96a5232220185d2fc1ac1e3abe5790f6b3027f4fc3c4cad3fd38f0"
+    },
+    {
+      "path": "usr/bin/msys-idn2-0.dll",
+      "bytes": 197084,
+      "sha256": "0ddf7bd2b0a7dffe80e64460f1df168a6947115a0ef636506dded262dea95b32"
+    },
+    {
+      "path": "usr/bin/msys-intl-8.dll",
+      "bytes": 111181,
+      "sha256": "50f7de0c712d867ddca2c9eb8562ca6ee2d69e120e798ec6126ad29dd1ed5402"
+    },
+    {
+      "path": "usr/bin/msys-krb5-26.dll",
+      "bytes": 483341,
+      "sha256": "1aa90c10f2f31101faeb356bf4112892b5bb983aa62d30b51b2a508cce32c1ff"
+    },
+    {
+      "path": "usr/bin/msys-ksba-8.dll",
+      "bytes": 263233,
+      "sha256": "09b0661d5e0b3ac9b424e19591b5946d73a46e40dd1264acefe4c2e97ee9ddb2"
+    },
+    {
+      "path": "usr/bin/msys-lz4-1.dll",
+      "bytes": 149330,
+      "sha256": "a67c703cf7b2585b294469050a5fd5edef50cce2a9f487f448f5cd7c8a447ce2"
+    },
+    {
+      "path": "usr/bin/msys-lzma-5.dll",
+      "bytes": 181333,
+      "sha256": "e4eeb83b8fee005114204a933d47b2518f04152d05a231161e138af70a89b5a4"
+    },
+    {
+      "path": "usr/bin/msys-magic-1.dll",
+      "bytes": 174118,
+      "sha256": "1b0ecf8674a9d74ebcf8e208231eaab7a25f906ae46ba055bad0a9241a386a10"
+    },
+    {
+      "path": "usr/bin/msys-mpfr-6.dll",
+      "bytes": 652490,
+      "sha256": "7be008ed823d8ce65a205669c44fd8ad56eee5838111101d29c6684f8eccc4f4"
+    },
+    {
+      "path": "usr/bin/msys-ncursesw6.dll",
+      "bytes": 353237,
+      "sha256": "aef26ffbcd20ee5781c3a5e81265390494090e13561a13336d000d9d5f9a84cb"
+    },
+    {
+      "path": "usr/bin/msys-nettle-9.dll",
+      "bytes": 308110,
+      "sha256": "b030ad8190dbbde621b86dabae1c4ea642c0b7d31f962c432c1ab56763e3fbe9"
+    },
+    {
+      "path": "usr/bin/msys-npth-0.dll",
+      "bytes": 17194,
+      "sha256": "740e76727c26411d263788f175e4d12420a88079544bb690fd3a2f4d97f4845b"
+    },
+    {
+      "path": "usr/bin/msys-p11-kit-0.dll",
+      "bytes": 1578053,
+      "sha256": "81ce7611ead0408352c1b517b361e85920457485e82bdc4b649e70ebdb52de4d"
+    },
+    {
+      "path": "usr/bin/msys-pcre-1.dll",
+      "bytes": 289270,
+      "sha256": "a94b1a5ba095ac7ff81e138a1231e42e3a07391e85eeb86c3bb5c9245244597a"
+    },
+    {
+      "path": "usr/bin/msys-pcre2-8-0.dll",
+      "bytes": 715403,
+      "sha256": "e2cb90c29bd44deb32ea8cb2a711a0cc84f7cdb866d18f387c9a0c7d8e4929c6"
+    },
+    {
+      "path": "usr/bin/msys-perl5_42.dll",
+      "bytes": 3805287,
+      "sha256": "6d29779c3bc94b0e5b70f514c955b91d7a2c6deec56eefe68ed0f8ebf4bc6fe0"
+    },
+    {
+      "path": "usr/bin/msys-psl-5.dll",
+      "bytes": 74870,
+      "sha256": "448ee119002f63933e9ebf11dfc92f358e6f331763b6e60a1a0d2fa65a829f1b"
+    },
+    {
+      "path": "usr/bin/msys-readline8.dll",
+      "bytes": 287391,
+      "sha256": "15289513b1330e3431bec652e2bd57163f1196a4a25b179807af45e1330a8539"
+    },
+    {
+      "path": "usr/bin/msys-roken-18.dll",
+      "bytes": 66567,
+      "sha256": "43cd75f19c90c4383f43ef19a2721db5521c27b6daa5909c66e54d39354e7314"
+    },
+    {
+      "path": "usr/bin/msys-sasl2-3.dll",
+      "bytes": 99432,
+      "sha256": "31bdafb52af200ae867763a292e6763e9c99519697184329b316d89e6b655513"
+    },
+    {
+      "path": "usr/bin/msys-serf-1-0.dll",
+      "bytes": 97178,
+      "sha256": "fd74d0b24b0a1effc23f91970585732d7a6db3e42fde5ce4049c46681218130e"
+    },
+    {
+      "path": "usr/bin/msys-smartcols-1.dll",
+      "bytes": 223333,
+      "sha256": "9247b54f38798eee161f0d2022528c18951632ee81e924d88707ebf12667d04e"
+    },
+    {
+      "path": "usr/bin/msys-sqlite3-0.dll",
+      "bytes": 1573338,
+      "sha256": "fad59b1dda3ccf29fbb57b3656b6fcd95feda095735e17445b41d95c2c0aaddb"
+    },
+    {
+      "path": "usr/bin/msys-ssl-3.dll",
+      "bytes": 983124,
+      "sha256": "7ba4dcb3f52404d9e4f38239dc77f273db853a95ddddaa3fa040e8db653022ff"
+    },
+    {
+      "path": "usr/bin/msys-svn_client-1-0.dll",
+      "bytes": 601267,
+      "sha256": "a165ff8e8a6180156b088cc1f7e97728cc0c78dac1cb39d0a675c561a42e16a2"
+    },
+    {
+      "path": "usr/bin/msys-svn_delta-1-0.dll",
+      "bytes": 108205,
+      "sha256": "51e7274c2498bf4b2e61a7373fe2bd7a93c847ea7a472c6173d8a8302f69b8ad"
+    },
+    {
+      "path": "usr/bin/msys-svn_diff-1-0.dll",
+      "bytes": 91471,
+      "sha256": "a0a440d8eab373cee0ae0b5a5a402b6a5f3e05fd8491291ab079ff7a756bcee4"
+    },
+    {
+      "path": "usr/bin/msys-svn_fs-1-0.dll",
+      "bytes": 44225,
+      "sha256": "9571614036658ba841479632ef2bd52370ba9446a4707101dcc58ad3591e1c5c"
+    },
+    {
+      "path": "usr/bin/msys-svn_fs_fs-1-0.dll",
+      "bytes": 306968,
+      "sha256": "27154aab53c14e298b966638dc762fe243be91798593362f77276cad13852e2d"
+    },
+    {
+      "path": "usr/bin/msys-svn_fs_util-1-0.dll",
+      "bytes": 11895,
+      "sha256": "cc8acbcb840ca8821236b63a0a7284b3eaa17ad6a508c4a2bbdb3f0443050c04"
+    },
+    {
+      "path": "usr/bin/msys-svn_fs_x-1-0.dll",
+      "bytes": 298067,
+      "sha256": "789c837e59ba62cc4336d39d779db13bde214bc29119485b65c36f3b71ff2eb7"
+    },
+    {
+      "path": "usr/bin/msys-svn_ra-1-0.dll",
+      "bytes": 50807,
+      "sha256": "2fe77928e3f20266afb88b14d398ae15821b92c464dc129421fdd9f5fd8f18fe"
+    },
+    {
+      "path": "usr/bin/msys-svn_ra_local-1-0.dll",
+      "bytes": 38230,
+      "sha256": "824bb039787c9ecb505b0c8c31f3248b6df5caae355467bc17d47882f51cfd86"
+    },
+    {
+      "path": "usr/bin/msys-svn_ra_serf-1-0.dll",
+      "bytes": 191081,
+      "sha256": "a10db3da90bc1abe34776abfff801fcfde2e57a552f0697f8f2b7621c3a764da"
+    },
+    {
+      "path": "usr/bin/msys-svn_ra_svn-1-0.dll",
+      "bytes": 128981,
+      "sha256": "7b7603add4385573fe50a54e1be2ada5ea5c625469281f09948f2573000edfd9"
+    },
+    {
+      "path": "usr/bin/msys-svn_repos-1-0.dll",
+      "bytes": 245191,
+      "sha256": "c73cf4dcdc2d1cd3755963bf3b8815e8b40ced66cc73b45548efe45cca92a39f"
+    },
+    {
+      "path": "usr/bin/msys-svn_subr-1-0.dll",
+      "bytes": 777371,
+      "sha256": "7e2e9e4597a89b27d83c4b94e11f8085527badcca07274137f5fc6bbbc8c618c"
+    },
+    {
+      "path": "usr/bin/msys-svn_swig_perl-1-0.dll",
+      "bytes": 42140,
+      "sha256": "afada6a9ef3c72b15205dd8d305478bbe5231aa6cddf80476ccc3db7c090eda0"
+    },
+    {
+      "path": "usr/bin/msys-svn_wc-1-0.dll",
+      "bytes": 726474,
+      "sha256": "a2a773840c50fbdf3bb8ed4a3d294c6ba1334f4e79bf522bf696d7898a2740e8"
+    },
+    {
+      "path": "usr/bin/msys-tasn1-6.dll",
+      "bytes": 73656,
+      "sha256": "57fb7c61d7eeb0c9b74a8b8673551a6fee5ec370f7fd05f0af82b537f355ee4b"
+    },
+    {
+      "path": "usr/bin/msys-ticw6.dll",
+      "bytes": 64883,
+      "sha256": "1ee7b84d87810aecc4372eb668915c5c2520bbe058043980c4e7b50fa14f2663"
+    },
+    {
+      "path": "usr/bin/msys-unistring-5.dll",
+      "bytes": 2124170,
+      "sha256": "26c33b382c450da63158ea84d4b6cb1984eebbe4cd2d75351d53521167eb6209"
+    },
+    {
+      "path": "usr/bin/msys-uuid-1.dll",
+      "bytes": 28624,
+      "sha256": "c77dcf56e4bdc490ae56a0460273e05c91e16676e3b2c653a0eee5cb20be5c15"
+    },
+    {
+      "path": "usr/bin/msys-wind-0.dll",
+      "bytes": 164937,
+      "sha256": "4e516c0d25ee1f01e48afb81081e0d7f7078358628e135b33ef822485eb357ca"
+    },
+    {
+      "path": "usr/bin/msys-z.dll",
+      "bytes": 91648,
+      "sha256": "f548bb1632160282c3853415182d695c655d0eb7c12aa42a0538161898694b6f"
+    },
+    {
+      "path": "usr/bin/msys-zstd-1.dll",
+      "bytes": 1136580,
+      "sha256": "0ebf082dc73962688a14bd26465e05972a51a3ac5ef11fdf8cc71b93b89cea8d"
+    },
+    {
+      "path": "usr/bin/mv.exe",
+      "bytes": 122430,
+      "sha256": "0e990f9314e17eaf2eed168561313e0b6e1d21daf8fb6400387026c6da7277a1"
+    },
+    {
+      "path": "usr/bin/nano.exe",
+      "bytes": 486251,
+      "sha256": "5074efb02b17a5f1bf8f4efa3e1ed9e53eb9ab4dd917a1c69b93ef41a7c98c43"
+    },
+    {
+      "path": "usr/bin/nettle-hash.exe",
+      "bytes": 18493,
+      "sha256": "904c2b260381da7c37aa317e35632d39a81e1879e58fb8db45743986efaeb0f9"
+    },
+    {
+      "path": "usr/bin/nettle-lfib-stream.exe",
+      "bytes": 10236,
+      "sha256": "7eabcec4691225130cd89e4530c136a311654bed6a2ddcf88c0b575d6b51858e"
+    },
+    {
+      "path": "usr/bin/nettle-pbkdf2.exe",
+      "bytes": 18069,
+      "sha256": "64849cb3826d8d5e15550e59bea6fe8c77ef8bbd5f3320ff58faa95788231b15"
+    },
+    {
+      "path": "usr/bin/newgrp.exe",
+      "bytes": 31721,
+      "sha256": "7d97a00500350da002842320c54978324878a3297dabb8bf1d2c2a2699c7112b"
+    },
+    {
+      "path": "usr/bin/nice.exe",
+      "bytes": 36525,
+      "sha256": "9801b3b6def5c0f5c1fc19081c6629f0e2a54e4c5a32574bf2220bc9d7dc602c"
+    },
+    {
+      "path": "usr/bin/nl.exe",
+      "bytes": 104060,
+      "sha256": "925d98a835ad3d5484ad8a628e259e763573381e695d76a278a6c048c715baa5"
+    },
+    {
+      "path": "usr/bin/nohup.exe",
+      "bytes": 36594,
+      "sha256": "215a3fa276e08704da190f3f3e9184746b35273835031939f9830978609bde7e"
+    },
+    {
+      "path": "usr/bin/notepad",
+      "bytes": 635,
+      "sha256": "3cd83627f1d20e1108533419fcf33c657cbcf777c3dc39fa7f13748b7d63858a"
+    },
+    {
+      "path": "usr/bin/nproc.exe",
+      "bytes": 36659,
+      "sha256": "0b1029ad4b71140a7ec31cc0a1f6495264cdb380cef4fbc91701e431c703d525"
+    },
+    {
+      "path": "usr/bin/numfmt.exe",
+      "bytes": 61464,
+      "sha256": "a56e3fdeb73da651be49ce132342b645ba8f5d0b4fb7e348744367272930277b"
+    },
+    {
+      "path": "usr/bin/od.exe",
+      "bytes": 86740,
+      "sha256": "5533b3edb4b47590a3279653475f12cb6dec11a3b8a289e93c613a06c30b99d2"
+    },
+    {
+      "path": "usr/bin/openssl.exe",
+      "bytes": 1005028,
+      "sha256": "78340fb01dea2df5caab73dcf28833b31329226a4c9e02f717f1d399592265b9"
+    },
+    {
+      "path": "usr/bin/p11-kit.exe",
+      "bytes": 206208,
+      "sha256": "9ac88d6e200c260c04f48e6c780b95753988e41d029e9211fb5a1beaae3b142d"
+    },
+    {
+      "path": "usr/bin/passwd.exe",
+      "bytes": 42961,
+      "sha256": "33843b5f3ca4405d15dd56079a3c1bed84179755e11dd7050d3bfa29c433e87a"
+    },
+    {
+      "path": "usr/bin/paste.exe",
+      "bytes": 37588,
+      "sha256": "dbe30811afd9a26db96291c86da04a655011cb600ef075f961230b5a111a336c"
+    },
+    {
+      "path": "usr/bin/patch.exe",
+      "bytes": 178952,
+      "sha256": "d77a8f8499909a711d343fea72235b8de473c4928243b976589073efafa941d7"
+    },
+    {
+      "path": "usr/bin/pathchk.exe",
+      "bytes": 35362,
+      "sha256": "36afccc7251e0b1a5b2a7c54fe022d13a122c2479028b0f01e653084e79281e9"
+    },
+    {
+      "path": "usr/bin/perl.exe",
+      "bytes": 14278,
+      "sha256": "fd72fbe602265bdaf91eb6994ec1248e5119dffe3e32c8ea43da49d44d289400"
+    },
+    {
+      "path": "usr/bin/perl5.42.3.exe",
+      "bytes": 14278,
+      "sha256": "fd72fbe602265bdaf91eb6994ec1248e5119dffe3e32c8ea43da49d44d289400"
+    },
+    {
+      "path": "usr/bin/pinentry-w32.exe",
+      "bytes": 77952,
+      "sha256": "1d6fceb369446c339419f2eb9c44e6b86622a6fb5a56e2329856303ecb864338"
+    },
+    {
+      "path": "usr/bin/pinentry.exe",
+      "bytes": 77952,
+      "sha256": "1d6fceb369446c339419f2eb9c44e6b86622a6fb5a56e2329856303ecb864338"
+    },
+    {
+      "path": "usr/bin/pinky.exe",
+      "bytes": 41090,
+      "sha256": "7bf3d57f6874c4c50aee67f7c2e6c4a22545a098b5cbe9e8a276ec41a8a0e666"
+    },
+    {
+      "path": "usr/bin/pkcs1-conv.exe",
+      "bytes": 23492,
+      "sha256": "99aa2de5a002379258349c0d7366db12b2b54213f87099572250c2db8cd59983"
+    },
+    {
+      "path": "usr/bin/pldd.exe",
+      "bytes": 26410,
+      "sha256": "ef9cc09b14c219778308c6e52c1958587abedd5a0fa8a2fc3fa192030d11f91b"
+    },
+    {
+      "path": "usr/bin/pluginviewer.exe",
+      "bytes": 17725,
+      "sha256": "49ace33d3fee1a901c9014f320b5ff75702536d8d785c4467c8a85ad1a20eed0"
+    },
+    {
+      "path": "usr/bin/pr.exe",
+      "bytes": 73622,
+      "sha256": "6e88ea48531904f8d85a122426989f616bdd465d96f5b2fd8c269b4d86c47a21"
+    },
+    {
+      "path": "usr/bin/printenv.exe",
+      "bytes": 33795,
+      "sha256": "0c2c6c2141e1a54b526bcc3e426719651ccdc16790a7734bd7f6ab6a8d635c1f"
+    },
+    {
+      "path": "usr/bin/printf.exe",
+      "bytes": 72003,
+      "sha256": "dbc52ee41a9d2fc4cdad6d690e430c6b630ce5fb5837d66d6b47cf59ea63b198"
+    },
+    {
+      "path": "usr/bin/profiler.exe",
+      "bytes": 64615,
+      "sha256": "64f9ebe9ac7fd20b8718aa03d1d932e7df446d1338e848fa091503bf51c7002c"
+    },
+    {
+      "path": "usr/bin/ps.exe",
+      "bytes": 34095,
+      "sha256": "8250dbac2f1f755ce5ec5e193f519a2961e494591d67520a8ebd79139a782c4e"
+    },
+    {
+      "path": "usr/bin/psl-make-dafsa",
+      "bytes": 22819,
+      "sha256": "13fc5fa1a01fe413b077f72cecf26f38c8a8e8db843fc4d10f21de4daa2c8d86"
+    },
+    {
+      "path": "usr/bin/psl.exe",
+      "bytes": 18045,
+      "sha256": "ac41b22465d938f28a996340f6cd0aa7a1133157fca1687f1e20036c9f184bb5"
+    },
+    {
+      "path": "usr/bin/ptx.exe",
+      "bytes": 130279,
+      "sha256": "adac7303d0a6e283eb76f30cb4833ff084e20b17315eb17606fbb558c6c989ff"
+    },
+    {
+      "path": "usr/bin/pwd.exe",
+      "bytes": 36148,
+      "sha256": "d1281cecce65fc76750381698faca130216ffacc6396886d63a85ad28a3071aa"
+    },
+    {
+      "path": "usr/bin/readlink.exe",
+      "bytes": 48491,
+      "sha256": "3617334c256348026305e7a978bb803c45c31e2f4d24c763e1f11361ceb1d58c"
+    },
+    {
+      "path": "usr/bin/realpath.exe",
+      "bytes": 49576,
+      "sha256": "e780c23d5d6bf60d7e80e073586be5f4d7f91faa0a0d1f07b3088b5d710f8395"
+    },
+    {
+      "path": "usr/bin/regtool.exe",
+      "bytes": 45827,
+      "sha256": "1835215c6ecedd3a94af66d768440f49892d609e7f94175d9e362ba751e6db6a"
+    },
+    {
+      "path": "usr/bin/reset.exe",
+      "bytes": 20480,
+      "sha256": "e110d4ab4c863542124bff0ed1247990a2a7a09fdf884cd8fd822e1c124bfd2b"
+    },
+    {
+      "path": "usr/bin/restore",
+      "bytes": 5997,
+      "sha256": "55c0d395efb3416ba080eeea01fc5f6be0080947044484e73e5f8526131040c2"
+    },
+    {
+      "path": "usr/bin/rm.exe",
+      "bytes": 63813,
+      "sha256": "a845f7517a49b49726e056da8a8f65a6d9ce96fbe79c3664c082521eea0f80e7"
+    },
+    {
+      "path": "usr/bin/rmdir.exe",
+      "bytes": 62247,
+      "sha256": "7d91cc7b4e7a297a74dcdb621ff19b495db14a8a96612a737fc870403fc6775c"
+    },
+    {
+      "path": "usr/bin/rnano.exe",
+      "bytes": 486251,
+      "sha256": "5074efb02b17a5f1bf8f4efa3e1ed9e53eb9ab4dd917a1c69b93ef41a7c98c43"
+    },
+    {
+      "path": "usr/bin/runcon.exe",
+      "bytes": 34817,
+      "sha256": "8f3881baac0ca03f32a974cfabee077ae87f9ed8a566249a110775c015d219a8"
+    },
+    {
+      "path": "usr/bin/rview.exe",
+      "bytes": 3938872,
+      "sha256": "93ea9d2335d47dcee347286f05e76caa3954c6a4c7f3dac0b15c9fefc6ee1874"
+    },
+    {
+      "path": "usr/bin/rvim.exe",
+      "bytes": 3938872,
+      "sha256": "93ea9d2335d47dcee347286f05e76caa3954c6a4c7f3dac0b15c9fefc6ee1874"
+    },
+    {
+      "path": "usr/bin/scp.exe",
+      "bytes": 209512,
+      "sha256": "2f1a452f90a61e189feeed0b42a71d595d56da1c6f934165504320dc05485113"
+    },
+    {
+      "path": "usr/bin/sdiff.exe",
+      "bytes": 62159,
+      "sha256": "1ebf31bdfe552d728c940866ffb0753a745e9699b69c79013d8766242d6714a6"
+    },
+    {
+      "path": "usr/bin/sed.exe",
+      "bytes": 178140,
+      "sha256": "8d54e322dfc3faa60f0464691aba8634197406e53367aa8942409181c0808be8"
+    },
+    {
+      "path": "usr/bin/seq.exe",
+      "bytes": 68488,
+      "sha256": "6e5c79fce1d50d888b38f5a0a02a314265e733f151e8b9d2c953b363a60d27d0"
+    },
+    {
+      "path": "usr/bin/setfacl.exe",
+      "bytes": 37904,
+      "sha256": "fc2ab7915c643bbbcf316e5c9fcce36163a4171b6404d1ccc11c2f071e840dab"
+    },
+    {
+      "path": "usr/bin/setmetamode.exe",
+      "bytes": 23109,
+      "sha256": "83ed2568b0dba215afe85fdeaf052b439869a14a1aa62e3fedbf29635e4cb3d8"
+    },
+    {
+      "path": "usr/bin/sexp-conv.exe",
+      "bytes": 30039,
+      "sha256": "336f25ce0c2765791d39a74f7bad0533fa8d1dfde9a832394a97d5cf77ae0eb8"
+    },
+    {
+      "path": "usr/bin/sftp.exe",
+      "bytes": 222754,
+      "sha256": "3dc9ed3694618ae1a15c7d61d5582a65d05a6c0465a886b56f5e8c45bbab7045"
+    },
+    {
+      "path": "usr/bin/sh.exe",
+      "bytes": 2449886,
+      "sha256": "5490d0da5e7cf9d92068cc48fcc590f2bcf8564add8ff91c3b5fe541eb2d72e3"
+    },
+    {
+      "path": "usr/bin/sha1sum.exe",
+      "bytes": 50108,
+      "sha256": "2fdbabc61355f77bedbc426c3d23e4d6a0d7a0e8a9f69ca0bd70e1aa4347b13d"
+    },
+    {
+      "path": "usr/bin/sha224sum.exe",
+      "bytes": 56252,
+      "sha256": "42026c118285367e9612235fafd2ab971ecb32c4c3b130782ba95d1002c6d21e"
+    },
+    {
+      "path": "usr/bin/sha256sum.exe",
+      "bytes": 56252,
+      "sha256": "ad199fb8a1104b5ac86eb49d775e2aeaea8396c4c8818beda074ddb0d359acc4"
+    },
+    {
+      "path": "usr/bin/sha384sum.exe",
+      "bytes": 61372,
+      "sha256": "1a14f45fcf0f3212071fc14fe2e0c340f403a52bc00f302f8b1d81d62011fe93"
+    },
+    {
+      "path": "usr/bin/sha512sum.exe",
+      "bytes": 61372,
+      "sha256": "19b1bd5ce7f1124f0bc5c73e0dee25130119fe24d4d7577ab6c3e41edab67aa7"
+    },
+    {
+      "path": "usr/bin/shred.exe",
+      "bytes": 58509,
+      "sha256": "0b5368364b3ec25a0aebffdc5a87ec4aa3e49e9fee6ff982434329aa4c388e8f"
+    },
+    {
+      "path": "usr/bin/shuf.exe",
+      "bytes": 54163,
+      "sha256": "d36625fd75bccb007442995ce0d2b51257fa6b08b472c0f2709e736f3505b967"
+    },
+    {
+      "path": "usr/bin/sleep.exe",
+      "bytes": 36003,
+      "sha256": "3dfa2435317339e861121c1bd22e57b7b67c204705f00a88b5ac10a0cba87514"
+    },
+    {
+      "path": "usr/bin/sort.exe",
+      "bytes": 109591,
+      "sha256": "7c5df851d821e23988641f35442a06652ce834ed724456511798ce60314cab9a"
+    },
+    {
+      "path": "usr/bin/split.exe",
+      "bytes": 54181,
+      "sha256": "2c37e1474ccc2c73c6e2a82f04ac2f1943753ee9ae1dac17d605ccc82b0222af"
+    },
+    {
+      "path": "usr/bin/ssh-add.exe",
+      "bytes": 427765,
+      "sha256": "5da94050af77068cbafdc5d204af47f57a050c38c32cdbc3d4644de9b8e211ee"
+    },
+    {
+      "path": "usr/bin/ssh-agent.exe",
+      "bytes": 405767,
+      "sha256": "b2cf721b47eea0bd55ba58ed14f30049fee2b58f89c1b238415bd6960c088443"
+    },
+    {
+      "path": "usr/bin/ssh-copy-id",
+      "bytes": 14421,
+      "sha256": "a331afd275d386fd1a699e42fa1514699cf86c744ef62df3e5240d89e1443650"
+    },
+    {
+      "path": "usr/bin/ssh-keygen.exe",
+      "bytes": 543574,
+      "sha256": "604d127d97502b11ed2d1f6f8191bfe86f443d821322e4ab285c961d0e06f5e1"
+    },
+    {
+      "path": "usr/bin/ssh-keyscan.exe",
+      "bytes": 526978,
+      "sha256": "cd3561c764f577efc235942cc66314889d288f619f464d6f21cf185deaa45bb4"
+    },
+    {
+      "path": "usr/bin/ssh-pageant.exe",
+      "bytes": 22634,
+      "sha256": "83d06cd7922bdda6b49df5c1e1b2325d5fff930c8d4a2ff2baf654061f2b14d5"
+    },
+    {
+      "path": "usr/bin/ssh.exe",
+      "bytes": 960985,
+      "sha256": "c84594a323ee6afc04d9faf614a05be6dc9a2faecd856268a854084fea17fd44"
+    },
+    {
+      "path": "usr/bin/ssp.exe",
+      "bytes": 41562,
+      "sha256": "6c1eb47f403405c5bc47a18966668558943e91051a8e27fdef703f55996f7263"
+    },
+    {
+      "path": "usr/bin/stat.exe",
+      "bytes": 97209,
+      "sha256": "84468965a541829728d1fa02d32e987ab1a844ec4a23644058ef477ff8b3264a"
+    },
+    {
+      "path": "usr/bin/stdbuf.exe",
+      "bytes": 69024,
+      "sha256": "8926989b60ca00f78ff9e841f580d59647aa6bdb58ba86ea8169a6bdd559483f"
+    },
+    {
+      "path": "usr/bin/strace.exe",
+      "bytes": 358534,
+      "sha256": "7a9e5ef3c1c57444e4907fb14d3d3cf77fafc7b93e5d81b4e44fcbf3d30648e4"
+    },
+    {
+      "path": "usr/bin/stty.exe",
+      "bytes": 90756,
+      "sha256": "9fb3079c682d78511383767763973c307659b2afe68f806e8c3dd50a01fab533"
+    },
+    {
+      "path": "usr/bin/sum.exe",
+      "bytes": 42969,
+      "sha256": "994a8c3a1d3a5a8008b2e283adfeed3fae01e5c5e6db34cd8c9978f065e96d89"
+    },
+    {
+      "path": "usr/bin/sync.exe",
+      "bytes": 34426,
+      "sha256": "24312a69a33d40956c52317d415f4170395f7facb6379fe20b045ec386cd985f"
+    },
+    {
+      "path": "usr/bin/tabs.exe",
+      "bytes": 15872,
+      "sha256": "69a684c3bb586b123f96e0e03f4ba4ff765f9ea280c68afd43de0de0b995ff4e"
+    },
+    {
+      "path": "usr/bin/tac.exe",
+      "bytes": 107732,
+      "sha256": "894fb8d6685818676116552ccd01b5ff7dfd72e961dfc9196e73bdbfc9d1addc"
+    },
+    {
+      "path": "usr/bin/tail.exe",
+      "bytes": 56617,
+      "sha256": "8608c4138642de6dca0806b266b3009c137dc373171978cf47418056a5e05c55"
+    },
+    {
+      "path": "usr/bin/tar.exe",
+      "bytes": 511486,
+      "sha256": "df0582941d1f451a76337863ba1dc8d8986ad0faf44f0e5f5c34afeb43c36453"
+    },
+    {
+      "path": "usr/bin/tee.exe",
+      "bytes": 38794,
+      "sha256": "5b956ac9d6bb6d457665709bbcf71326ecd66bb5111b280c124a68405ce5da46"
+    },
+    {
+      "path": "usr/bin/test.exe",
+      "bytes": 70331,
+      "sha256": "bc151f331dbbe8d8558014bc55b983d20effd4ebbea04d2a29b6badf879ce423"
+    },
+    {
+      "path": "usr/bin/tic.exe",
+      "bytes": 81920,
+      "sha256": "539b180bc2812fbf2bf0dde23f1f09143fb311616362cf77c552e38d9d467ac9"
+    },
+    {
+      "path": "usr/bin/tig.exe",
+      "bytes": 687058,
+      "sha256": "b3e513f9bdddf4d41882a9e0289344b94945f4d2fa1c0a443430503036c2b8eb"
+    },
+    {
+      "path": "usr/bin/timeout.exe",
+      "bytes": 41752,
+      "sha256": "01da440d63161065d9522e6d5df96804beb1c1ea1b52e6b925be9510653f41d1"
+    },
+    {
+      "path": "usr/bin/toe.exe",
+      "bytes": 15872,
+      "sha256": "971b25a1ca2f4f6fcc213b573a43bfa317b1de1e97c1a5fe5c50d5e942b60228"
+    },
+    {
+      "path": "usr/bin/touch.exe",
+      "bytes": 107463,
+      "sha256": "1d895e0f77cbc8b77c3a38da009e8ad8d23a371afd398da5408bdeffcddf5fc0"
+    },
+    {
+      "path": "usr/bin/tput.exe",
+      "bytes": 21504,
+      "sha256": "ce152c5c1f430bad1112e0e451303a3fdab3c15c1405ff6c02fc0d9348eba5d1"
+    },
+    {
+      "path": "usr/bin/tr.exe",
+      "bytes": 49460,
+      "sha256": "7cf90be63820ba9ec66a10c0c4af84f0a2e3ec90a722ea6904219ec0b93bf1c1"
+    },
+    {
+      "path": "usr/bin/true.exe",
+      "bytes": 33123,
+      "sha256": "e3ce235425032cc3e1262f46b414b1b88f971724104916690f24e25c4663d474"
+    },
+    {
+      "path": "usr/bin/truncate.exe",
+      "bytes": 39679,
+      "sha256": "d91dfea756b366da4c3000a2d9da2408e0eaf25d7573edfc7efd61c60c87da2a"
+    },
+    {
+      "path": "usr/bin/trust.exe",
+      "bytes": 227833,
+      "sha256": "63e1cbf7e5ba9986e9295eb3e3234ce043a54f8faeaacc6f1b72e70afeff4811"
+    },
+    {
+      "path": "usr/bin/tset.exe",
+      "bytes": 20480,
+      "sha256": "e110d4ab4c863542124bff0ed1247990a2a7a09fdf884cd8fd822e1c124bfd2b"
+    },
+    {
+      "path": "usr/bin/tsort.exe",
+      "bytes": 48935,
+      "sha256": "d9513d0d97ec9b5eba4356502642ebaaa6d95444a530f1fc82ea3ff150823f65"
+    },
+    {
+      "path": "usr/bin/tty.exe",
+      "bytes": 33312,
+      "sha256": "b76e6139c92d5004b2b07b75687afc25da2838e843012cfca05927e974328e21"
+    },
+    {
+      "path": "usr/bin/tzset.exe",
+      "bytes": 63971,
+      "sha256": "23577f31bdce1c8e85586be08b77e9bb65dca0d5be2e514d8695a839d2d8001e"
+    },
+    {
+      "path": "usr/bin/u2d.exe",
+      "bytes": 54849,
+      "sha256": "eaa9fbc1bba6a4844e6210862262d14594fb48eed9dc1ec428fd1704a88d923d"
+    },
+    {
+      "path": "usr/bin/umount.exe",
+      "bytes": 24819,
+      "sha256": "26b2670bd8e920f368dd621985fc4b05e1a4f4a455d4d0fb2d208cb9309f4d8b"
+    },
+    {
+      "path": "usr/bin/uname.exe",
+      "bytes": 35876,
+      "sha256": "1cba275ff8e0c81f48898f017758c558ee5951cb0448c36628580beffdf4ef89"
+    },
+    {
+      "path": "usr/bin/uncompress",
+      "bytes": 2266,
+      "sha256": "4f13375fc268dcc8f94112fdcf9e2a334487e8f14a0ba1d830ba3173da3aa3df"
+    },
+    {
+      "path": "usr/bin/unexpand.exe",
+      "bytes": 39225,
+      "sha256": "1952df1ca35316c5fc0721b798325cfc065acad9bb790276a8d0be4a4e5a8dd5"
+    },
+    {
+      "path": "usr/bin/uniq.exe",
+      "bytes": 45019,
+      "sha256": "07e78095a79870b52ac988989faa5ff8446e1a8cdc861165d7eb93904fff5211"
+    },
+    {
+      "path": "usr/bin/unix2dos.exe",
+      "bytes": 54849,
+      "sha256": "eaa9fbc1bba6a4844e6210862262d14594fb48eed9dc1ec428fd1704a88d923d"
+    },
+    {
+      "path": "usr/bin/unix2mac.exe",
+      "bytes": 54849,
+      "sha256": "eaa9fbc1bba6a4844e6210862262d14594fb48eed9dc1ec428fd1704a88d923d"
+    },
+    {
+      "path": "usr/bin/unlink.exe",
+      "bytes": 33824,
+      "sha256": "b520d67aa204ee5e88548554dc51c1b1dbcdf4c2bfa9f94d682879084167a7a3"
+    },
+    {
+      "path": "usr/bin/unzip.exe",
+      "bytes": 163884,
+      "sha256": "57aa56a798aacc0638f83e60ecc2ef8598f3c99970303928dbbf0809c424c808"
+    },
+    {
+      "path": "usr/bin/unzipsfx.exe",
+      "bytes": 77942,
+      "sha256": "07570a95fccfaa5ed2a3bffe9b9d4788fe0eae07a845d9f84c09c9bd74d12e23"
+    },
+    {
+      "path": "usr/bin/update-ca-trust",
+      "bytes": 1373,
+      "sha256": "f411cb774da977d3bf6647f53030cb0d584fea09591cec8b6fcc3065f7652c98"
+    },
+    {
+      "path": "usr/bin/updatedb",
+      "bytes": 9096,
+      "sha256": "b80f0713b21a28d8a9a1c68afa4302c54c04126c2c904f30d8c5fd11592f9591"
+    },
+    {
+      "path": "usr/bin/users.exe",
+      "bytes": 35078,
+      "sha256": "2d0d68763854d37568c9dacd3fbdd0a1b02bb50c83192e39542224bb777e083d"
+    },
+    {
+      "path": "usr/bin/vdir.exe",
+      "bytes": 149479,
+      "sha256": "eb95ca4eb646c1684e849b0a77776087fa880197905e5e59192dc439d95f4673"
+    },
+    {
+      "path": "usr/bin/vendor_perl/binhex.pl",
+      "bytes": 3850,
+      "sha256": "ab28991b25e2606ec10d5aeddccc9bd5a6266eb10e3da8eecd130c0d524b5d7e"
+    },
+    {
+      "path": "usr/bin/vendor_perl/debinhex.pl",
+      "bytes": 5792,
+      "sha256": "08a3b551dc20711f4198edf762e63a3e87c914ca01a8df510ac5f19516f26f96"
+    },
+    {
+      "path": "usr/bin/vendor_perl/lwp-download",
+      "bytes": 10302,
+      "sha256": "041344db271155bea0a693073b0a00f36660ffb5e5b8c05277957ce956c1c0ef"
+    },
+    {
+      "path": "usr/bin/vendor_perl/lwp-dump",
+      "bytes": 2711,
+      "sha256": "004efec73f4759f18eef83db112a3215abe95fdb1b17f48a1e3e118de70ff4e0"
+    },
+    {
+      "path": "usr/bin/vendor_perl/lwp-mirror",
+      "bytes": 2413,
+      "sha256": "88507cede987da1cd61ab0d7782e18ac8468910b00137086f45380195f12924e"
+    },
+    {
+      "path": "usr/bin/vendor_perl/lwp-request",
+      "bytes": 16386,
+      "sha256": "ed004f3532a2cacc1919f007da8b9c24f9e0d3f0331d34d25c00e6974ca1a942"
+    },
+    {
+      "path": "usr/bin/vi",
+      "bytes": 25,
+      "sha256": "640d04d2a2da709419188a986d5e5550ad30df23c7ea9be1a389c37a6b917994"
+    },
+    {
+      "path": "usr/bin/view.exe",
+      "bytes": 3938872,
+      "sha256": "93ea9d2335d47dcee347286f05e76caa3954c6a4c7f3dac0b15c9fefc6ee1874"
+    },
+    {
+      "path": "usr/bin/vim.exe",
+      "bytes": 3938872,
+      "sha256": "93ea9d2335d47dcee347286f05e76caa3954c6a4c7f3dac0b15c9fefc6ee1874"
+    },
+    {
+      "path": "usr/bin/vimdiff.exe",
+      "bytes": 3938872,
+      "sha256": "93ea9d2335d47dcee347286f05e76caa3954c6a4c7f3dac0b15c9fefc6ee1874"
+    },
+    {
+      "path": "usr/bin/vimtutor",
+      "bytes": 4870,
+      "sha256": "49e44dec64221b5087e9ad3caa7f67bb96ba623c830f2d6d813a22a3319a4485"
+    },
+    {
+      "path": "usr/bin/watchgnupg.exe",
+      "bytes": 19296,
+      "sha256": "b951710f89a78513e7b3a65f10786d49801881ceaf159d060d62a77bae6ae7ff"
+    },
+    {
+      "path": "usr/bin/wc.exe",
+      "bytes": 47366,
+      "sha256": "3ab05efc4703295f0d36fd48da17f2021219494fb932a062a535ae17ea9f45b3"
+    },
+    {
+      "path": "usr/bin/which.exe",
+      "bytes": 30999,
+      "sha256": "9065bc8362cecaa1e36648775717ba0c0f3acc22a1eb7363d7a88117a6f95c99"
+    },
+    {
+      "path": "usr/bin/who.exe",
+      "bytes": 70291,
+      "sha256": "b5660ee09997d4e1bbfa48fc2f61761b6a670b4b035246ee21dc5259140a12e6"
+    },
+    {
+      "path": "usr/bin/whoami.exe",
+      "bytes": 33887,
+      "sha256": "1a93f1d417aa80d12bae7c0cc37779ee864c148befd8518ab4fadb0b960d23e6"
+    },
+    {
+      "path": "usr/bin/winpty-agent.exe",
+      "bytes": 361472,
+      "sha256": "84f6ce4535f7f3e09b2aef7d833b9a99ba675b304576d188a1db349246e41378"
+    },
+    {
+      "path": "usr/bin/winpty-debugserver.exe",
+      "bytes": 242688,
+      "sha256": "dc52844ab79097e30cc30f02760c9f4ced35c309a0580df6f15372da039b3419"
+    },
+    {
+      "path": "usr/bin/winpty.dll",
+      "bytes": 279552,
+      "sha256": "5d892d04b5051d998907147c514f6ae058e5d0bbbf98e2ed78cd1d30dd5d0360"
+    },
+    {
+      "path": "usr/bin/winpty.exe",
+      "bytes": 185344,
+      "sha256": "1a8e92e0b03f7f83aa344b0dcfd141354b5bdaf6c824edbe872a95ab996d87b6"
+    },
+    {
+      "path": "usr/bin/wordpad",
+      "bytes": 635,
+      "sha256": "d51229e5ec3653782a2c09aa5ad9af8f159aba94bc28498d7f358c33399b313d"
+    },
+    {
+      "path": "usr/bin/xargs.exe",
+      "bytes": 81491,
+      "sha256": "14097e707f43f2c1e4b60a72a02e1e7a950faddc48b7cbe81b6a2ee037811fa0"
+    },
+    {
+      "path": "usr/bin/xxd.exe",
+      "bytes": 23660,
+      "sha256": "9717623f6c27f6c566ff501f9699ed4cbea442072cb60b10ccece44412814349"
+    },
+    {
+      "path": "usr/bin/yat2m.exe",
+      "bytes": 38625,
+      "sha256": "7a7c41c56256d77c03427223ba76f68bf4c86bf081da7af20268e8206af6707b"
+    },
+    {
+      "path": "usr/bin/yes.exe",
+      "bytes": 33823,
+      "sha256": "d7fafc94aeb84be6a6d7dfb6037677638fa49848b1f750cbb735070428209cbd"
+    },
+    {
+      "path": "usr/bin/zcat",
+      "bytes": 1904,
+      "sha256": "92d54e643e95fe03732613bc48cf744d95bb7029779aa6be4ce1a32a58feb1ef"
+    },
+    {
+      "path": "usr/bin/zcmp",
+      "bytes": 1609,
+      "sha256": "4b2b07ca9fa39a3320eb0272ad563063eb23429738cc208a152fe66dd95a5ee9"
+    },
+    {
+      "path": "usr/bin/zdiff",
+      "bytes": 6386,
+      "sha256": "89172285195f17bde1d1c8ebb5aca9c633f80722a7434632bf88fbce8171721d"
+    },
+    {
+      "path": "usr/bin/zegrep",
+      "bytes": 29,
+      "sha256": "67ee7fadec7ea53b4c1f8cfc3c81427b29c0b1381e80b55642617620c84d0bcc"
+    },
+    {
+      "path": "usr/bin/zfgrep",
+      "bytes": 29,
+      "sha256": "87ab5f4c7cb344e409d614d1a69cc156b3b1053d6ae0b59d8e2c2131f3e63e5a"
+    },
+    {
+      "path": "usr/bin/zforce",
+      "bytes": 2007,
+      "sha256": "b6deb64186017e612c46becbd205d1927fa4579b423db057b29375eb1f4781ff"
+    },
+    {
+      "path": "usr/bin/zgrep",
+      "bytes": 8145,
+      "sha256": "9ed2a55544f147a1d351ca0a6a968cfd85d6c217db922a7a57920665585f9a82"
+    },
+    {
+      "path": "usr/bin/zipgrep",
+      "bytes": 2953,
+      "sha256": "d077ccd18e5719776df7f06b667bda8f7547aa5c3b9cf174c0005608e9309bb8"
+    },
+    {
+      "path": "usr/bin/zipinfo.exe",
+      "bytes": 163884,
+      "sha256": "1559876bf7e0e828070b66dbdd318383389ce60f37117827e417c567d845fc82"
+    },
+    {
+      "path": "usr/bin/zless",
+      "bytes": 2365,
+      "sha256": "1b059cb72e4584bdc3ddfe500d8ddbec48b98f502c4fb8e9d43278fdb15b8d0b"
+    },
+    {
+      "path": "usr/bin/znew",
+      "bytes": 4561,
+      "sha256": "73cdadc8caba21ce1b04d507b1499ad95974c5d1d4f95453d470f9e17746c151"
+    },
+    {
+      "path": "etc/fstab",
+      "bytes": 272,
+      "sha256": "50718b489a9ef0d4590ef6725f903166c50b6291fb1d9a8c86ff8d221b921aea"
+    },
+    {
+      "path": "etc/nsswitch.conf",
+      "bytes": 211,
+      "sha256": "0823a988d6c923855be5565bed6f1900e1899ee60513a58ad550389bed276f14"
+    },
+    {
+      "path": "etc/gitattributes",
+      "bytes": 515,
+      "sha256": "a952eb8d7f2edeb08eac68b36ebd5d888bce3541aa458a9e38af337a4f1fe110"
+    },
+    {
+      "path": "usr/bin/rebase.exe",
+      "bytes": 917446,
+      "sha256": "eccc5d1189f6ae079b461bee498e784c7f1516a7aaae08acc8306c669675dee6"
+    },
+    {
+      "path": "usr/bin/rebaseall",
+      "bytes": 7151,
+      "sha256": "4fb45b485ca2215abf5fcda5bc46d0a59ba6edb25ec327680e8fd142469311a1"
+    },
+    {
+      "path": "etc/profile",
+      "bytes": 5449,
+      "sha256": "0052386cec2a94dedc0cb11f59da6e64ca8e26289edf935a7d9b9d5d2a87c902"
+    },
+    {
+      "path": "etc/profile.d/lang.sh",
+      "bytes": 828,
+      "sha256": "6c0ca979c7b146b3750103b1296a399764f4e1b222ee091d3aa072b6da16c1a5"
+    },
+    {
+      "path": "etc/bash.bashrc",
+      "bytes": 2497,
+      "sha256": "2d6e33b3e892e2b4abf9079eaac95da0fe3875e325a0c34dc566d15957df3037"
+    },
+    {
+      "path": "etc/msystem",
+      "bytes": 796,
+      "sha256": "74bd56de00e49c3917deca2ede723eecd1312a86357b100ae8aabd219f6e7d5e"
+    },
+    {
+      "path": "usr/bin/dash.exe",
+      "bytes": 117939,
+      "sha256": "61dc29be7b19d8f5facffbf0c1b6df7d40f064743f9902d2e51d51f4409f762d"
+    },
+    {
+      "path": "usr/bin/getopt.exe",
+      "bytes": 29407,
+      "sha256": "9ab321a755847a5cb427246ef063b2b6cd74673ff866a0836f6d56b90f8fe41f"
+    },
+    {
+      "path": "etc/msystem.d/CLANG64",
+      "bytes": 300,
+      "sha256": "f2b01902f08feb07fed47f5ffea3462764034abc19e9ddf3aa6f20f93afeaab6"
+    },
+    {
+      "path": "etc/msystem.d/CLANGARM64",
+      "bytes": 305,
+      "sha256": "82859ae69d40de560d03c0a59e38e8b3405293003c1d24237f6bbd5efe3c87ef"
+    },
+    {
+      "path": "etc/msystem.d/MINGW32",
+      "bytes": 290,
+      "sha256": "809ff47346e21e0e1d285e64f3e0975e7345e311e98bb4e100c8da15e1426d9b"
+    },
+    {
+      "path": "etc/msystem.d/MINGW64",
+      "bytes": 294,
+      "sha256": "879495ad6b15f59ec2057551e06fb2917715c66de80f5bf915d6176d78e50eee"
+    },
+    {
+      "path": "etc/msystem.d/MSYS",
+      "bytes": 152,
+      "sha256": "b166ab9772874471695f5beb16f5c39b6207c937353d0aa9079cbe756432df1d"
+    },
+    {
+      "path": "etc/msystem.d/UCRT64",
+      "bytes": 298,
+      "sha256": "240fa8efb6fe4b7dae826f5f6d481e41a09913462fe61b5a4ff036d6daa7a835"
+    },
+    {
+      "path": "etc/gitconfig",
+      "bytes": 360,
+      "sha256": "e9b6644937a91f097345b2774597225e6159fe2e25e5cf1e8c314b65733537a1"
+    },
+    {
+      "path": "usr/bin/start",
+      "bytes": 246,
+      "sha256": "147e554a247156686269a9c30119a48e05ab0bc263d134bdeb162fe0ab32f2df"
+    },
+    {
+      "path": "usr/bin/column.exe",
+      "bytes": 49958,
+      "sha256": "30712da3849a25b0ead46212b7f2e6279519d62cfc796cbd7e465d2eff1f0dfd"
+    },
+    {
+      "path": "etc/hosts",
+      "bytes": 1031,
+      "sha256": "b9931dbd060f6a4c04edf2f1973d2543051b128bf1cf3e1168a1c62b9e06db61"
+    },
+    {
+      "path": "etc/networks",
+      "bytes": 310,
+      "sha256": "31368173416528067a065364ed090d643b05b5205ff6cff9a8a8c9058f3642e1"
+    },
+    {
+      "path": "etc/package-versions.txt",
+      "bytes": 3990,
+      "sha256": "d0d6272a9ec2df5713c65df33dd3689a25835b0deab57d7ca6585522bf2c41e4"
+    },
+    {
+      "path": "etc/protocols",
+      "bytes": 6393,
+      "sha256": "b86accf42ae92d4e00b67c50010b7f278bc76c50755bdc9638e2096cbd596890"
+    },
+    {
+      "path": "etc/services",
+      "bytes": 86953,
+      "sha256": "7b4a4dfd2aef63ffede841ef1e86ac932fa43a57c595daec087d9868a5b555f2"
+    }
+  ],
+  "selection": "Regular usr/bin and etc files only; no installer or link extraction"
+}

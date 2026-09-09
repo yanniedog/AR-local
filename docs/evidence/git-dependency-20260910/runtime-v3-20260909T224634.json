@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-10T08:46:34.7985593+10:00",
+  "exit": 1,
+  "source_sha256": "2c8b264af5f6f0dc52026f7d5e03e8c2aec8ec63f30f57f848c8f59e8841c1a7",
+  "result": {
+    "runtime_binding": "FAIL",
+    "error": "Command '['C:\\\\code\\\\backups\\\\AR-local-user-session\\\\tools\\\\git-ssh-2.55.0.5\\\\usr\\\\bin\\\\ssh.exe', '-F', 'NUL', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'PreferredAuthentications=publickey', '-o', 'PubkeyAuthentication=yes', '-o', 'GSSAPIAuthentication=no', '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no', '-o', 'ChallengeResponseAuthentication=no', '-o', 'StrictHostKeyChecking=yes', '-o', 'HostKeyAlias=ar-local-pi5', '-o', 'HostKeyAlgorithms=ssh-ed25519', '-o', 'UserKnownHostsFile=C:\\\\code\\\\backups\\\\AR-local-user-session\\\\3f8b8a7c4b51fef8eeb370f747f2dc51c73a1afa\\\\known-hosts', '-o', 'GlobalKnownHostsFile=NUL', '-o', 'UpdateHostKeys=no', '-o', 'VerifyHostKeyDNS=no', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'RequestTTY=no', '-i', 'C:\\\\Users\\\\jkoka\\\\.ssh\\\\pi5', '-p', '22', '-l', 'pi', '192.168.20.19', '/usr/bin/git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-C', '/srv/ar-local/AR-local', 'rev-parse', '--show-toplevel']' returned non-zero exit status 255."
+  }
+}
