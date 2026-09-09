@@ -553,6 +553,13 @@ def verify_extracted(
         secrets = metadata.get("secret_locations") if isinstance(metadata, dict) else None
         if not isinstance(secrets, list) or any(not isinstance(item, dict) or item.get("bytes_copied") is not False for item in secrets):
             raise ValueError("control archive secret-exclusion metadata is invalid")
+        control = manifest.get("control", {})
+        if "recovery_status" in control:
+            from pi_laptop_backup_source import recovery_status_content
+            restored_status = json.loads((root / "data/state/cdr-recovery-status.json").read_text(encoding="utf-8"))
+            normalized_status = recovery_status_content(restored_status)
+            if control["recovery_status"] != normalized_status or metadata.get("recovery_status") != normalized_status:
+                raise ValueError("restored recovery status does not match control identity")
         result["git_bundles"] = [path.name for path in bundles]
         result["secret_locations"] = len(secrets)
     elif manifest["kind"] == "macro":

@@ -1,0 +1,15 @@
+{
+  "date_hobart": "2026-09-10",
+  "observed_at_hobart": "09:13",
+  "url": "http://100.78.28.10/",
+  "run_date_displayed": "2026-09-10",
+  "mortgage_rows_displayed": 7260,
+  "browser_warning_and_error_entries": [],
+  "smoke_command": "npm run verify:local -- --base-url=http://100.78.28.10/",
+  "smoke_exit_code": 0,
+  "smoke_stdout": "verify_local: OK http://100.78.28.10/",
+  "production_sha_from_0856_authenticated_probe": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "deployment_or_restart_performed": false,
+  "scope": "Decoded observations from live browser and command results; not a raw screenshot or device acceptance",
+  "phone_app_state": "UNVERIFIED; user displayed date/error not supplied"
+}

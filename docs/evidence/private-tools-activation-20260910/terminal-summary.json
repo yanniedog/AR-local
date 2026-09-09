@@ -1,0 +1,266 @@
+{
+  "task": {
+    "state": "Ready",
+    "last_run": "2026-09-10T09:14:25.0000000+10:00",
+    "last_result": 1,
+    "next_run": "2026-09-11T06:00:00.0000000+10:00",
+    "action": "-NoProfile -NonInteractive -WindowStyle Hidden -File \"C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\source\\laptop_backup_private_git.ps1\" -DeploymentPath \"C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\private-tools-deployment.json\" -DeploymentSha256 9751b0441d9eec953b19de5f148018afdd76b99effcb8c60bb8449a79e63e314",
+    "execute": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "working_directory": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\source",
+    "run_level": "Limited",
+    "name": "AR-local user-session backup",
+    "action_changed": true,
+    "principal_triggers_settings_preserved": true,
+    "status_checked_at_utc": "2026-09-09T23:31:19.987272+00:00"
+  },
+  "guard": {
+    "started_at_utc": "2026-09-09T23:14:27.6135688Z",
+    "mode": "run",
+    "deployment_sha256": "9751b0441d9eec953b19de5f148018afdd76b99effcb8c60bb8449a79e63e314",
+    "authority": "D-023-PRIVATE-BACKUP-TOOLS-20260910",
+    "elevated": false,
+    "result": "FAIL",
+    "dependency_verification": {
+      "result": "PASS",
+      "read_only": true,
+      "new_config_sha256": "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff",
+      "package_sha256": "56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e",
+      "package_files_verified": 365,
+      "ssh_package_sha256": "d508c38435872da388545fc9d221fb4581c938a3030a081efb1d9576d9b928f8",
+      "ssh_files_verified": 440,
+      "candidate_sha": "d930716ae1d32c19dd73b95ea5d719f6209eb179",
+      "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6"
+    },
+    "exit_code": 1,
+    "completed_at_utc": "2026-09-09T23:29:07.7284921Z"
+  },
+  "selected_generation": "obs-2026-09-10-d43214e888ca836b",
+  "backup": {
+    "result": "FAIL",
+    "scheduled_result": "FAIL",
+    "completed_at": "2026-09-09T23:29:06Z",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260909T232906Z-55c7c5fee2914568a94a26f3e4c5aa1f.json",
+      "sha256": "90122d6fe16189b2dea9d31041cb87b39e6d0e7ab94ac03e5ea2d06923aa149d"
+    },
+    "catalog_entries": 148,
+    "catalog_sha256": "3241f465171b0005d6af52dba68e326f0833e8ee440ac63f64a12df0ff6fcc73",
+    "components": {
+      "observation": {
+        "path": "observations/2026-09-10/56464588e70e0dfcbf4c15880e76a07b4a80b4498b81efca17d1d78c530e4141/receipt.json",
+        "sha256": "15084bb02da000e2b3aefb32cc62bf4b28b4cddf27317ac97c07a97e6784b150",
+        "archive_sha256": "30c861525bd23057d2cd60f81848576cd6d4f6bb66a003090307b21501e4bfd0",
+        "archive_bytes": 425092888,
+        "source_bytes": 4904132166,
+        "completed_at": "2026-09-09T23:27:52Z",
+        "catalog_sequence": 146,
+        "checks": {
+          "bytes_verified": 4904132166,
+          "files_verified": 10280,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-10.revision.20260910T040733_450408.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-10-d43214e888ca836b",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-10.json",
+              "banks_json_bytes": 1283206486,
+              "banks_json_sha256": "078053c4e28e4078c704cddc8eb4690e8843c167afab6b7ea5ebdef1ef0f7643",
+              "counts": {
+                "constraints": 4430,
+                "eligibility": 7360,
+                "failures": 23,
+                "features": 15859,
+                "fees": 25446,
+                "holder_attempts": 119,
+                "product_changes": 7653,
+                "product_facts": 607398,
+                "products": 2674,
+                "rates": 16636
+              },
+              "database_counts": {
+                "constraints": 4430,
+                "eligibility": 7360,
+                "features": 15859,
+                "fees": 25446,
+                "product_changes": 7653,
+                "product_facts": 607398,
+                "products": 2674,
+                "rates": 16636
+              },
+              "legacy_manifest_sha256": "d0046ac8d9822154a03e3a8826fa66874c47c89c3305895b89826193b1cc29d6",
+              "run_date": "2026-09-10",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-10/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-10/_revisions/20260910T040733_450408/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "control": {
+        "path": "control/20260909T232759Z-5d52f0e69ec41a2b/receipt.json",
+        "sha256": "17ed9869d665edc43bad9e4ad2d82f99b3e164e65350751296b10057c2ed37b3",
+        "archive_sha256": "0f080b4a67524901e110fe5c6d75a3c0275b7197a1fc038181f16cfb86571818",
+        "archive_bytes": 99679074,
+        "source_bytes": 300993392,
+        "completed_at": "2026-09-09T23:28:50Z",
+        "catalog_sequence": 147,
+        "checks": {
+          "bytes_verified": 300993392,
+          "files_verified": 1686,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "STALE"
+      },
+      "macro": {
+        "path": "macro/c6aa1c9411cdfdc075c1c1f8a1b6a51f7830f673b02d1407b687649c9db3c8ad/receipt.json",
+        "sha256": "bf6fc132687cf022e34d8daf3d3707c1a4d76b7cbd6c426c517ada53f3d2b31a",
+        "archive_sha256": "3ddc883727767aeb1c7b65ba3615fdf16c6e5d7e3ee6116ebdcde84475d26b43",
+        "archive_bytes": 169231,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-09T23:28:51Z",
+        "catalog_sequence": 148,
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      }
+    },
+    "receipt_binding": "NOT_PASSED",
+    "natural_trigger": false,
+    "physical_recovery": "BLOCKED",
+    "decision": "D-023-PRIVATE-BACKUP-TOOLS-20260910; pre-action intent and manual-start intent preserved"
+  },
+  "packet": {
+    "path": "terminal-metadata-12b9593b5b92b24999d904d6fe08b71bb4fa5a1830b45302a10d4146e89a6bc1.zip",
+    "bytes": 1143072,
+    "sha256": "12b9593b5b92b24999d904d6fe08b71bb4fa5a1830b45302a10d4146e89a6bc1"
+  },
+  "commands": {
+    "freeze": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "docs/evidence/private-tools-activation-20260910/freeze-summary.py",
+      "--snapshot",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\terminal-snapshot"
+    ],
+    "receipt_binding": null
+  },
+  "scope": "Actual manual operational outcome and frozen evidence; A3 natural and A4 physical acceptance remain open"
+}

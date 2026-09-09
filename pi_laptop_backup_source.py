@@ -657,6 +657,9 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
             "uname": command("uname", "-a").stdout.strip(),
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip(),
         }
+        recovery_status = root / "data/state/cdr-recovery-status.json"
+        if recovery_status.is_file():
+            metadata["recovery_status"] = recovery_status_content(json_object(recovery_status))
         (root / "system/control-metadata.json").write_bytes(canonical_json_bytes(metadata))
         return root, {"kind": "control", "control": metadata}
     except BaseException:
@@ -794,6 +797,16 @@ def prepared_sources(args: argparse.Namespace, kind: str) -> tuple[list[tuple[Pa
     return sources, identity, temporary
 
 
+def recovery_status_content(value: object) -> dict[str, object]:
+    """Retain every recovery fact while excluding only its observation time."""
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        raise ValueError("recovery status schema is invalid")
+    checked = value.get("checked_at")
+    if not isinstance(checked, str) or datetime.fromisoformat(checked.replace("Z", "+00:00")).tzinfo is None:
+        raise ValueError("recovery status checked_at is invalid")
+    return {key: item for key, item in value.items() if key != "checked_at"}
+
+
 def content_revision(manifest: Mapping[str, object]) -> str:
     files = manifest.get("files")
     if not isinstance(files, list):
@@ -813,6 +826,15 @@ def content_revision(manifest: Mapping[str, object]) -> str:
         "git/australianrates.bundle",
         "system/control-metadata.json",
     })
+    control = manifest.get("control")
+    if manifest.get("kind") == "control" and isinstance(control, Mapping) and "recovery_status" in control:
+        if (not isinstance(control["recovery_status"], Mapping)
+                or control["recovery_status"].get("schema_version") != 1
+                or "checked_at" in control["recovery_status"]
+                or sum(item.get("path") == "data/state/cdr-recovery-status.json"
+                       for item in files if isinstance(item, Mapping)) != 1):
+            raise ValueError("control recovery status identity is invalid")
+        volatile_control_paths.add("data/state/cdr-recovery-status.json")
     identity = [
         {"path": item["path"], "size": item["size"], "sha256": item["sha256"]}
         for item in files

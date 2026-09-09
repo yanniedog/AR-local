@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 import laptop_pull_backup as receiver
 import laptop_backup_scheduled_lineage as lineage
+from pi_laptop_backup_source import content_revision
 
 
 HOBART_TZ = ZoneInfo("Australia/Hobart")
@@ -64,50 +65,6 @@ def manifest_file_hash(manifest: Mapping[str, object], relative: str) -> str | N
         return None
     matches = [item for item in files if isinstance(item, Mapping) and item.get("path") == relative]
     return str(matches[0].get("sha256")) if len(matches) == 1 else None
-
-
-def content_revision(manifest: Mapping[str, object]) -> str:
-    files = manifest.get("files")
-    if not isinstance(files, list):
-        raise ValueError("component manifest lacks files")
-    volatile_control_paths = {
-        f"system/systemd/{unit}.show.txt"
-        for unit in (
-            "ar-local-daily.service",
-            "ar-local-daily.timer",
-            "ar-local-dashboard.service",
-            "ar-local-status.service",
-        )
-    }
-    volatile_control_paths.update({
-        "data/state/runtime_health.json",
-        "git/AR-local.bundle",
-        "git/australianrates.bundle",
-        "system/control-metadata.json",
-    })
-    identity = [
-        {"path": item["path"], "size": item["size"], "sha256": item["sha256"]}
-        for item in files
-        if isinstance(item, Mapping)
-        and not (manifest.get("kind") == "control" and item.get("path") in volatile_control_paths)
-    ]
-    valid_files = [item for item in files if isinstance(item, Mapping)]
-    if len(valid_files) != len(files):
-        raise ValueError("component manifest contains an invalid file")
-    material: object = identity
-    if manifest.get("kind") == "control":
-        control = manifest.get("control")
-        if not isinstance(control, Mapping) or not isinstance(control.get("repositories"), list):
-            raise ValueError("control manifest lacks semantic metadata")
-        repositories = []
-        for repository in control["repositories"]:
-            if not isinstance(repository, Mapping):
-                raise ValueError("control repository metadata is invalid")
-            repositories.append({key: value for key, value in repository.items() if key != "bundle_sha256"})
-        normalized_control = dict(control)
-        normalized_control["repositories"] = repositories
-        material = {"files": identity, "control": normalized_control}
-    return hashlib.sha256(receiver.canonical_json_bytes(material)).hexdigest()
 
 
 def has_component_restore_evidence(checks: object, kind: str) -> bool:
