@@ -115,11 +115,14 @@ def compare_configs(old, new):
     require({k: v for k, v in old.items() if k not in changed} ==
             {k: v for k, v in new.items() if k not in changed},
             'dependency-only update changed identity, code, paths or transport')
-    tool_fields = {'ssh_path', 'ssh_sha256', 'scp_path', 'scp_sha256'}
-    require(set(old['transport']) == set(new['transport']) and
+    tool_fields = {'ssh_path', 'ssh_sha256', 'scp_path', 'scp_sha256', 'ssh_null_device'}
+    require((set(old['transport']) - {'ssh_null_device'}) ==
+            (set(new['transport']) - {'ssh_null_device'}) and
             {k: v for k, v in old['transport'].items() if k not in tool_fields} ==
             {k: v for k, v in new['transport'].items() if k not in tool_fields},
             'dependency-only update changed SSH identity or host-key contract')
+    require(new['transport'].get('ssh_null_device', 'NUL') in {'NUL', '/dev/null'},
+            'unsupported SSH null device')
     require(old['receiver'] != new['receiver'], 'separate immutable release required')
     require(old['git_path'] != new['git_path'], 'separate private Git required')
     require(old['authority'] == 'D-015-USER-SESSION-NO-UAC', 'authority changed')

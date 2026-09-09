@@ -29,3 +29,5 @@ docs/evidence/git-dependency-20260910/** -text
 docs/evidence/git-dependency-20260910/** whitespace=cr-at-eol
 laptop_backup_git_dependency.py text eol=lf
 laptop_backup_private_git.ps1 text eol=lf
+docs/evidence/private-tools-activation-20260910/** -text
+docs/evidence/private-tools-activation-20260910/** whitespace=cr-at-eol

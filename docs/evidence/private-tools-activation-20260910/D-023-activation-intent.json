@@ -1,0 +1,99 @@
+{
+  "acceptance": [
+    "Exact merged PR668 Linux/Windows CI and substantive feedback disposition",
+    "Full private-package and predecessor lineage validation before action mutation",
+    "Existing ordinary-user transaction preserves task principal/triggers/settings and verifies action readback",
+    "Probe succeeds, then original backup/restore/preflight/catalog checks; strict SSH exits remain enforced",
+    "No A3 natural-trigger or A4 physical acceptance inferred from manual backup"
+  ],
+  "author": "Codex for jkoka",
+  "authorization": "User explicitly requested completion, no Windows Yes/UAC prompts, and: Do it now rather than 6am.",
+  "candidate_sha": "d930716ae1d32c19dd73b95ea5d719f6209eb179",
+  "config": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\user-session-backup.json",
+    "sha256": "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff"
+  },
+  "created_at_hobart": "2026-09-10T09:04:32.695636+10:00",
+  "created_at_utc": "2026-09-09T23:04:32.695636+00:00",
+  "deployment": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\private-tools-deployment.json",
+    "sha256": "9751b0441d9eec953b19de5f148018afdd76b99effcb8c60bb8449a79e63e314"
+  },
+  "deviations": [
+    {
+      "change": "Private tools and explicit Git SSH /dev/null syntax",
+      "controls": "Published upstream hashes, full package membership and DLL hashes, exact source/launcher/config hashes, unchanged key/host-key identity and strict authentication",
+      "risk": "Client compatibility and dependency integrity"
+    },
+    {
+      "change": "Immediate manual backup after failed natural 06:00 execution",
+      "controls": "Ready task, existing locks and all original freshness/capacity/ingest gates; record manual origin and preserve natural failure",
+      "risk": "Overlap and invalid natural-trigger inference"
+    }
+  ],
+  "elevated": false,
+  "exact_commands": {
+    "manual_start": [
+      "Start-ScheduledTask",
+      "-TaskName",
+      "AR-local user-session backup"
+    ],
+    "probe": [
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-File",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\source\\laptop_backup_private_git.ps1",
+      "-DeploymentPath",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\private-tools-deployment.json",
+      "-DeploymentSha256",
+      "9751b0441d9eec953b19de5f148018afdd76b99effcb8c60bb8449a79e63e314",
+      "-Mode",
+      "probe"
+    ],
+    "verify": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "-B",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\source\\laptop_backup_user_update.py",
+      "--old-config",
+      "C:\\code\\backups\\AR-local-user-session\\source-auth-publication-20260908-v4\\user-session-backup.json",
+      "--old-sha256",
+      "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca",
+      "--config",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\user-session-backup.json",
+      "--config-sha256",
+      "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff",
+      "--tool-contract",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\tool-contract.json",
+      "--tool-contract-sha256",
+      "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+    ]
+  },
+  "id": "D-023-PRIVATE-BACKUP-TOOLS-20260910",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "plan_version": "1.5",
+  "predecessor_record_sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980",
+  "previous_config": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\source-auth-publication-20260908-v4\\user-session-backup.json",
+    "sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca"
+  },
+  "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "reason": "September10 06:00 backup failed on system Git drift; system SSH also drifted and native clients failed strict exit validation. Use authenticated private Git/SSH and the reviewed compatible receiver, then perform the user-requested backup now.",
+  "result": "NOT_STARTED",
+  "rollback": "Existing action-only transaction restores exported old action on failure. The old action is known blocked by tool drift; rollback does not claim healthy backups. Preserve all logs/configs/catalogs and failed alternatives.",
+  "stop_conditions": [
+    "Any code/config/task/package/trust identity drift, busy lock/task or active ingest",
+    "No manual start at or after14:00 Hobart; original six-hour run bound and22:00 cutoff remain",
+    "Any Windows elevation/authentication prompt: stop without escalation"
+  ],
+  "tool_contract": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\tool-contract.json",
+    "sha256": "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+  }
+}

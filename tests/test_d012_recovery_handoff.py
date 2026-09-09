@@ -25,6 +25,15 @@ def _frozen_source(relative: str) -> bytes:
     # D-015 retires the UAC route. Preserve its exact source evidence while the
     # two explicitly authorized user-session implementation files evolve.
     path = relative.replace("\\", "/")
+    if path == "pi_laptop_backup_source.py":
+        # The live helper now normalizes the recovery monitor's checked_at.
+        # Historical D012 source identity still binds the original exact bytes.
+        archive = ROOT / "tests/fixtures/d024-retired-pi-backup-source-d930716.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == (
+            "883925a62ea22a9647322fae5d049f5805585843e515a54c0e4ade90a3f17242"
+        )
+        return payload
     retired = {
         "laptop_backup_scheduled.py": ("scheduled", "0fc1b475822ec8ff43b0bd0ce95839f229aa9ca2d85b43dbf02994a27b19126e"),
         "laptop_backup_scheduled_lineage.py": ("lineage", "b5caca584836f853edf241932f96dbb1bdb2df12b1caca2f74d8f47130f43666"),
