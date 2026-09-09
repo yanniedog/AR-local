@@ -26606,3 +26606,790 @@ This full entry supersedes the incomplete short resume pointers in PR662-664. It
   }
 }
 ```
+
+## September 9 tracked closeout and findings correction
+
+This complete entry supersedes the prior resume command and makes unresolved findings explicit. It preserves the earlier ledger and does not change runtime authority or recovery acceptance.
+
+```json
+{
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "candidate_code_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\source-auth-publication-20260908-v4\\source",
+  "receiver_config_sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "inherited_backup_evidence": {
+    "entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+    "archive_path": "docs/evidence/backup-lan-recovery-20260908/5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708.zip",
+    "archive_sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+    "scope": "Frozen completed operator recovery and restore; not re-executed or reclassified"
+  },
+  "historical_provenance_gap": {
+    "issue": "https://github.com/yanniedog/AR-local/issues/650",
+    "state": "UNVERIFIED",
+    "scope": "Original D019 inventory verification command; do not treat the old summary alone as reproducible command proof"
+  },
+  "entry_id": "HANDOFF-20260909-TRACKED-CLOSEOUT",
+  "previous_entry_id": "HANDOFF-20260909-COMPLETE-RESUME",
+  "created_at_utc": "2026-09-09T02:19:44.091481+00:00",
+  "created_at_hobart": "2026-09-09T12:19:44.091481+10:00",
+  "result": "RUNNING",
+  "scope": "A3 continuation and tracked repository closeout correction; no runtime or physical acceptance",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "backup_result": {
+    "backup_result": "PASS",
+    "completed_at": "2026-09-09T06:19:29+10:00",
+    "receipt_binding": "PASS at2026-09-09T06:21:39+10:00",
+    "natural_trigger": false,
+    "physical_recovery": "BLOCKED",
+    "catalog_entries": 145,
+    "catalog_sha256": "7d71c64e72d44b552cca7f108899141b98f9cc12743c8573187c2400261e967b",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260908T201929Z-0a2464003ee0469baf79e95c71ebdfa7.json",
+      "sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980",
+      "bytes": 3084
+    },
+    "components": {
+      "observation": {
+        "reference": {
+          "path": "observations/2026-09-09/6887f16c62e475b61744e5b7887d4e0a2a9eb10dfbe6fbc555e7495b453ac15e/receipt.json",
+          "sha256": "f4a26b3a3c6cd624baf6e029932f944f89a5774c2db4c668f9ba8338a8fc8923",
+          "bytes": 4167
+        },
+        "archive_sha256": "d33e0624cd2d4dd5ef494100567f679dee23b41b6d438db7f0d7810e2e0e4eaf",
+        "archive_bytes": 224662289,
+        "source_bytes": 2677583521,
+        "completed_at": "2026-09-08T19:47:02Z",
+        "checks": {
+          "bytes_verified": 2677583521,
+          "files_verified": 9110,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-09.done.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-09-c3a1ed15c4fabbbd",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-09.json",
+              "banks_json_bytes": 1366961262,
+              "banks_json_sha256": "5f9ca173cb3c811692bda123d54657e5bf7272f031bcabe334f7b7a65008d748",
+              "counts": {
+                "constraints": 4403,
+                "eligibility": 7332,
+                "failures": 24,
+                "features": 15686,
+                "fees": 25256,
+                "holder_attempts": 119,
+                "product_changes": 27343,
+                "product_facts": 602163,
+                "products": 2650,
+                "rates": 16458
+              },
+              "database_counts": {
+                "constraints": 4403,
+                "eligibility": 7332,
+                "features": 15686,
+                "fees": 25256,
+                "product_changes": 27343,
+                "product_facts": 602163,
+                "products": 2650,
+                "rates": 16458
+              },
+              "legacy_manifest_sha256": "3fd9190c28a14c3af17baa01e50fa70e53c34a46e32f8fa3dda1bc50ffce6df4",
+              "run_date": "2026-09-09",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-09/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "catalog_sequence": 141
+      },
+      "control": {
+        "reference": {
+          "path": "control/20260908T201719Z-f8e1aee43d0a0445/receipt.json",
+          "sha256": "b2aeea0520584d09b6d3c763bd0a6e1363a9cc598b5ddfd8ac80470b163ab84e",
+          "bytes": 3293
+        },
+        "archive_sha256": "684fb3c91dd3e83af25203babe42630388ac9559f9785583a3cb2606ab71cb7f",
+        "archive_bytes": 97512320,
+        "source_bytes": 294446629,
+        "completed_at": "2026-09-08T20:19:19Z",
+        "checks": {
+          "bytes_verified": 294446629,
+          "files_verified": 1203,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "catalog_sequence": 145
+      },
+      "macro": {
+        "reference": {
+          "path": "macro/d05ef483dc9e88003a1f09f070d1fee5a322c2b8a963d1bc15f5a62d5b8f7ffc/receipt.json",
+          "sha256": "68fcd549d10adc7b3bb388e8c55d47d4a54e994c0eaa14b99cf1e0c223696fd2",
+          "bytes": 3091
+        },
+        "archive_sha256": "2f68fae33121062d44f1442dd63ea09166c7ddc104176ebf84e7e97bd3b309e1",
+        "archive_bytes": 169063,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-08T20:07:50Z",
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "catalog_sequence": 144
+      }
+    },
+    "metadata_archive": {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-metadata-81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8.zip",
+      "bytes": 720918,
+      "sha256": "81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8",
+      "files": 72
+    },
+    "scope": "Metadata packet and original receiver verification; archive payloads remain in the local backup target. Not natural-trigger or physical recovery acceptance.",
+    "controlled_execution_acceptance": "BLOCKED: original modified manual terminal omitted deviations; D-022 discloses but does not repair or retrospectively approve that envelope",
+    "catalog_bytes": 101639
+  },
+  "selected_generation": "obs-2026-09-09-c3a1ed15c4fabbbd",
+  "independent_states": {
+    "capture": "PASS: September9 observation archive verified9110files2677583521bytes, SQLite integrity/foreign keys/reconciliation checks",
+    "publication": "PASS: September9 rollingv1/v2,index,datedv1 and core hashes verified; see publication-check.json",
+    "dashboard": "Daily service terminal verification01:19:07; HTTP200 run_dateSeptember9 observed05:27",
+    "backup": "OPERATIONAL PASS 06:19:29 with independent metadata binding 06:21:39; CONTROLLED acceptance of modified manual execution BLOCKED under D-022",
+    "natural_trigger": "06:00 task ran but was blocked by existing manual whole-job lock; not successful natural-run proof",
+    "device_app": "UNVERIFIED: no connected phone or supplied displayed date/error",
+    "finalization": "PASS at the preserved September9 publication snapshot: selected obs-2026-09-09-c3a1ed15c4fabbbd, dated and rolling artifacts generated 01:15, service completed 01:19:07; not refreshed this entry",
+    "publication_checked_at_utc": "2026-09-08T20:02:12.108915+00:00"
+  },
+  "task": {
+    "name": "AR-local user-session backup",
+    "definition_unchanged": true,
+    "last_run": "2026-09-09T06:00:01.0000000+10:00",
+    "last_task_result": 1,
+    "state": "Ready",
+    "next_run": "2026-09-10T06:00:00.0000000+10:00",
+    "configuration_installed_by_this_turn": false,
+    "status_checked_at_hobart": "2026-09-09T09:18:46.3616539+10:00",
+    "definition_snapshot_at_hobart": "2026-09-09T05:27:51+10:00",
+    "definition_rechecked_this_entry": false
+  },
+  "completed_gates": [
+    "PR658 merged483dcc243f76fc93a2e9222b49fb496c9192bd2d;151 local tests and applicable CI",
+    "PR659 merged16d949536c52839e07b7dd466da8257f787be207;139 focused tests1skip,22 handoff tests and applicable CI",
+    "PR660 mergedf58b7107ea007d9e5fcabde8a100b9f7ffff0686;156 focused/integration tests and applicable CI",
+    "All originatingPR654,657,658 substantive findings individually replied/resolved",
+    "Manual backup final source identities current; checksummed72-file metadata packet verified",
+    "PR661 evidence merged c31e62c30eeb8e361c7d45219de15a461c89303b; manual archive and metadata evidence preserved",
+    "PR662 Windows reader crash-safety merged 4f7d2b1ed; actual process-termination test passed; repository tooling only",
+    "PR663 deviation disclosure merged 3fad5237e1e43c69fb2be5bcf25c0cfb2aeb7602",
+    "PR664 D-022 reference correction merged 1702616303a11708fc7d26fdc063b5c88bf87816; source artifacts and decision fields preserved",
+    "PR665 complete-resume entry merged 6c818697dc42a31117ebf9cbc991776132ddd410; original evidence preserved; late command/schema findings addressed in this correction"
+  ],
+  "open_gates": [
+    "Current tracked-closeout correction PR: applicable Linux/Windows workflow CI, substantive feedback disposition and guarded merge; then merged audit",
+    "A3 unchanged successful natural current-production/receiver/configuration backup, origin evidence, separate current ingest/publication/dashboard and restore verification",
+    "A4 full offline activation, dependency, credential and write-path inventory, clone output identity and continuous boot/return safety controls",
+    "Actual A4 SD boot and bounded return to unchanged NVMe after A3 acceptance",
+    "PR607 simplification rebase, applicable CI, feedback, guarded merge, exact approved deployment and live removal/status verification after recovery acceptance"
+  ],
+  "next_action": "Complete this tracked-closeout PR from its reviewed topic checkout. Resolve the two PR665 findings, run the tracked guarded merge CLI, and park if only GitHub checks remain. Preserve the unchanged backup pair for the September10 natural run; no backup or physical action is authorized by this correction.",
+  "authorisation": {
+    "standing_user_request": "Finish previous work completely; never require Windows Yes/UAC; do it now rather than6am",
+    "current_slice": "Fix actual PR665 findings, tracked explicit closeout functionality and verification; no Pi, backup task, receiver, media or privilege change",
+    "manual_execution_limits": {
+      "user_instruction": "Do it now rather than 6am.",
+      "constraint": "No Windows Yes or UAC prompt",
+      "interpretation": "User explicitly authorized immediate ordinary-user backup. Agent chose bounded transport, cleanup and selective refresh implementation. No claim of separate operator approval for these specific deviations or retrospective controlled acceptance.",
+      "contemporaneous_records": [
+        {
+          "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-authority.json",
+          "sha256": "dfb513267e8f85f6050817a3acb392c25bb2959ad92866760f18c262f6afdef2"
+        },
+        {
+          "path": "docs/evidence/runtime-boundaries-20260909/refresh-control-once.py",
+          "sha256": "0c7a3485722d08ec762551c01ff25c31681c3e7903d374836f0ebea34664b3af"
+        },
+        {
+          "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-05.json",
+          "sha256": "d9d9a8fd4c34f9725ba8688b14c6f58126f60a7694b556d2b6271b7c8891442e"
+        },
+        {
+          "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-05.py",
+          "sha256": "945dd6a40c5fc4687b481ad30e04ad567ea6cab12df4b0b9375d733402c65519"
+        }
+      ]
+    },
+    "physical_authorization": "NONE in this entry; A3/A4 gates and complete controlled transaction are required"
+  },
+  "deviations": [
+    {
+      "change": "Date-bound manual pre-06 start instead of waiting for natural task",
+      "risk": "Overlap with scheduled work; cannot prove natural-trigger reliability",
+      "controls": "Ordinary token, existing whole-job exclusion, original quiet-window and receiver preflight; preserved failed natural 06:00 trigger."
+    },
+    {
+      "change": "Process-local SSH ConnectTimeout 60 seconds and helper timeout 90 seconds",
+      "risk": "Longer lock holding and wait before failed transport is reported",
+      "controls": "Fixed endpoint, executable, key, known-hosts and strict host-key checks unchanged; all calls bounded; failures preserved."
+    },
+    {
+      "change": "Exact helper-file removal and empty-directory removal combined into one SSH connection",
+      "risk": "Cleanup command targets remote paths",
+      "controls": "Original generated-path guard retained; exact files and empty directory only; separately removed known leftovers checked for owner, canonical path and exact contents."
+    },
+    {
+      "change": "Final refresh selected only stale control",
+      "risk": "Skipping components could retain stale source if freshness not independently established",
+      "controls": "Original fresh preflight required observation, macro and completed-date inventory UP_TO_DATE before selection; original complete postchecks still ran; no freshness threshold or content exclusion changed."
+    }
+  ],
+  "snapshot_notice": "No new Pi or local task probe in this correction. The local task/repository evidence remains the 09:18 snapshot; runtime identity 05:27, publication 06:02, manual backup 06:19 and receipt binding 06:21 are dated observations. Revalidate live prerequisites before any covered operation. Preserve all historical outcomes and D-022 controlled acceptance limits.",
+  "evidence_artifacts": [
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-metadata-81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8.zip",
+      "bytes": 720918,
+      "sha256": "81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-result.json",
+      "bytes": 6972,
+      "sha256": "d5a1a936ab0aa9a7a549dabb31c06437dca563a5922b235df65a26c81b0d930b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/capture-current-once.ps1",
+      "bytes": 3357,
+      "sha256": "c132b880f6c83c832dc88e16e4da073229da702cfad46a98a6ce8a2d2c40d919"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/capture-once.ps1",
+      "bytes": 3358,
+      "sha256": "f140df64f9e8c495058a7a4db33679a492723076f17b9b6b4a8126c494e64c6a"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/capture-paths.ps1",
+      "bytes": 403,
+      "sha256": "288145e7ae3b957506c647592760d898dca7770d142fa7b9b74478328cf57955"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/check-backup-once.py",
+      "bytes": 4794,
+      "sha256": "01a19114da70c8ceee99d0a9aee3f7a14aa9dfd9f827cfe4d2c7a93c08211530"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/check-only-authority.json",
+      "bytes": 598,
+      "sha256": "5fd38df6fddc8bd2cb29e9f8e6b969dfaf450faa3242394d0c7a51529ee39556"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/check-only-output.txt",
+      "bytes": 1206,
+      "sha256": "d2091c69719c40fa3583b2395ac87e4e2ed0e8428e8e86d0e45e115b00abd294"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/CLOSEOUT.md",
+      "bytes": 4117,
+      "sha256": "fd37c34b1937b80677b337121c8b37bc98026c0544aba29060989b67d15ce346"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-authority.json",
+      "bytes": 671,
+      "sha256": "dfb513267e8f85f6050817a3acb392c25bb2959ad92866760f18c262f6afdef2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-output.txt",
+      "bytes": 1941,
+      "sha256": "d59706976638c58dd88d20189f6832aab40d10412b5c71d4c2f56bf09caa0163"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-02.txt",
+      "bytes": 328,
+      "sha256": "bbec1341d933f5b44ac6988294b10cfde2227179945351269b5e00beab898c33"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-03.txt",
+      "bytes": 535,
+      "sha256": "63812fc69e397e3f2b75d79f8a9978ba5d726312b7408a13555dbfccc0e2742b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-04.txt",
+      "bytes": 261,
+      "sha256": "e77250d4542b5bc4b55b74adf26094dcabb082486698f9cbc08ae02093b59bf5"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-05.txt",
+      "bytes": 315,
+      "sha256": "95bb59a411bcc17f029f144d3725cd9858d204b137cc147b7597e0e7e3f56560"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output.txt",
+      "bytes": 1041,
+      "sha256": "29de302ead5ec75f879a3ee124b175273f278d6761ad6db7fa94b939f0f5e63c"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-02.json",
+      "bytes": 539,
+      "sha256": "b79553d93585b079bbbab24a0534fb336413a31838beb38639b48bc2f8aba841"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-03.json",
+      "bytes": 539,
+      "sha256": "4d24e96045893fdf686ee2c3a81b0310766e2b04020192d4793b389410adefab"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-04.json",
+      "bytes": 570,
+      "sha256": "2893015ade17bfcbbee4487233e4dae81fc093f45f4075c3ef61bf65f0b6e643"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-05.json",
+      "bytes": 570,
+      "sha256": "d9d9a8fd4c34f9725ba8688b14c6f58126f60a7694b556d2b6271b7c8891442e"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority.json",
+      "bytes": 539,
+      "sha256": "5814156fb02db8b3bebd5215df286777bfabbd6f62addd4c5385570ba6dd8df2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-01/capture.json",
+      "bytes": 1361,
+      "sha256": "fa9e38d0f4bbf906dde29291ca1477f2cefcccce737acbd64ef04b1900f30b20"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-01/stdout.json",
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-01/capture.json",
+      "bytes": 1383,
+      "sha256": "1133624f6b416228d3e2c67db833b575ebf89e3bd07e48b87089644d74c1ff5c"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-01/stdout.json",
+      "bytes": 1155,
+      "sha256": "63d0998761786cf508897f2d0a7164e69cd3386c9ce14fd3267016c6c89ebd91"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-02/capture.json",
+      "bytes": 1357,
+      "sha256": "1a9e683c66ec28e45d3101edbac31b7cf5ede908f725becd5951b3d47e546a96"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-02/stdout.json",
+      "bytes": 8211,
+      "sha256": "fcab965408a1eb7f7932d193cf4880df8d2e36269c0d84762ce75089606ee956"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/known-helper-cleanup.json",
+      "bytes": 2226,
+      "sha256": "8a3b0006ad9e1db9f796db8422f02ece1fa38404d2265fe4dcbb8740884917a6"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/publication-check.json",
+      "bytes": 2663,
+      "sha256": "6b1b81f3291a586331068d6ed3831e0b48d27d518aa934077ee8e29ebc136db7"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/README.md",
+      "bytes": 4285,
+      "sha256": "258e272c75fb0ea54894c1f21fa18177d180c3e954863eed412368dfe109c4c5"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receipt-binding-02.json",
+      "bytes": 1180,
+      "sha256": "8b26de4a1fe5252f9cc2b5e5c98c7c9307425639921e873a7964f8cc1524d22c"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receipt-binding.json",
+      "bytes": 109,
+      "sha256": "d570c08a9c5e21f80c26d6f5cf49beb7e2de0b5e5299927bcccacf2a2942314d"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receipt-expectations.json",
+      "bytes": 1285,
+      "sha256": "a487bf5e48c24e4e8a0efed2aee3d60818701cb68bf3624833e8fd872a4e0777"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/installation.json",
+      "bytes": 825,
+      "sha256": "eb0e48ca9374af98ae97cb1ab2af1b8b921a05a9c9a548ff457cdb8b795b21ae"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/predecessor-verification.json",
+      "bytes": 731,
+      "sha256": "43d7d8a2317726cc185a51e19500c572f769b1297da58719772157f90cf81215"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/task-after.xml",
+      "bytes": 2200,
+      "sha256": "899762f09d2c9db6ccc25718abbd4f8cd85a6340fd236fcf4845a3b7fd6d7ed0"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/task-before.xml",
+      "bytes": 2200,
+      "sha256": "3e584ec94e033af8d7fd04d146d92d8fcf69cc4051a45de98be31516a26efe4a"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/user-session-backup.json",
+      "bytes": 2053,
+      "sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/refresh-control-once.py",
+      "bytes": 6121,
+      "sha256": "0c7a3485722d08ec762551c01ff25c31681c3e7903d374836f0ebea34664b3af"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-02.py",
+      "bytes": 2222,
+      "sha256": "61bcf2b771ba5a5a4b75e8a461f2dae5eff31886596a022cf7d54e50b8757892"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-03.py",
+      "bytes": 2222,
+      "sha256": "34d52e8c938759a11712e6860e039448b0464d54d385a8ddfafd199e01aa1317"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-04.py",
+      "bytes": 3066,
+      "sha256": "972aa442faeba5b771ad01242c3cc929a3647232a32dc2879ff1d256db8ea7c1"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-05.py",
+      "bytes": 3665,
+      "sha256": "945dd6a40c5fc4687b481ad30e04ad567ea6cab12df4b0b9375d733402c65519"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once.py",
+      "bytes": 2219,
+      "sha256": "d3e3edd420aa77b55cec38b8d109926a5b1ad2cebb3ff0297df2caea315c20e2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/runtime-identity-current.ps1",
+      "bytes": 3446,
+      "sha256": "c44439d95fb8bf1358b44994e93a08473a85b53a3b0e8eab05192aad9c9b8726"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/runtime-identity-isolated.ps1",
+      "bytes": 3428,
+      "sha256": "511e1143ca3cacd8d7adcb2458e92f32ad40082972c6c517680d980bcf126915"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-correction.json",
+      "bytes": 6104,
+      "sha256": "1900350ead425ef5f7d9dee333d984648a328350f628a99edea4605b532da5d9"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-d022.json",
+      "bytes": 6663,
+      "sha256": "3982b8c1ac01a162bb038021ddacdc04835dfdce2e8da1f79328bc639fffada2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/resume-local-state.json",
+      "bytes": 854,
+      "sha256": "69e92ca4d11b5d117a84396fdb8ce2b624a099ee78a30ab8d136c0f435d74222"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/clone-isolation-draft.json",
+      "bytes": 3782,
+      "sha256": "10b7957a8debd7d826d8a5e535694b24ed2cc9048530df78c3b5d8f56acc15b4"
+    },
+    {
+      "path": "docs/evidence/a4-readiness-20260908/watchdog-readback.json",
+      "bytes": 1769,
+      "sha256": "75b16ec24182f8feade39ef8ee11b9d5bada90c7bc69eb38a3f925da95ce73e4",
+      "byte_scope": "Checked-in Git blob; historical runtime byte variants preserved separately"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/watchdog-byte-variants.zip",
+      "bytes": 2409,
+      "sha256": "e912a3e94b6211ac26effb070d9da28f034a50e0862cb4528c9dc4a706236c7e"
+    }
+  ],
+  "author": "Codex for jkoka",
+  "current_phase": "A3 natural current-pair backup proof; A4 local preparation only",
+  "reason": "PR665 prescribed an untracked helper outside the reviewed checkout and lacked an explicit unresolved_findings field. Append a complete correction using the tracked default-base guarded pr:merge CLI and explicit findings; preserve all earlier bytes.",
+  "in_flight_legacy_plan": {
+    "state": "NONE: no older execution is active",
+    "preservation": "Legacy backup policy and historical v1.3 receipts are unchanged and must not be relabeled. The administrator-owned legacy task and target are outside this work."
+  },
+  "repository_state": {
+    "primary": {
+      "path": "C:\\code\\AR-local",
+      "sha": "a0bd0f54200c91ef7aaa2fb163e752005ddb71e8",
+      "clean": false,
+      "unrelated_changes": [
+        " M .cursor/skills/pi-deploy-agent/SKILL.md",
+        "?? .codex/config.toml",
+        "?? laptop_backup_trusted_launcher.obj"
+      ],
+      "checked_at_hobart": "2026-09-09T09:18:46.3616539+10:00",
+      "action": "Preserve; do not clean, checkout, reset or use as execution source"
+    },
+    "correction": {
+      "path": "C:\\code\\AR-local-tracked-closeout-0909",
+      "branch": "agent/recovery-tracked-closeout-0909",
+      "base_sha": "6c818697dc42a31117ebf9cbc991776132ddd410",
+      "clean_at_start": true,
+      "scope_of_changes": "Complete handoff append; tracked pr:merge draft/default-base guard and tests; pr:automation:verify script, scoped CI and WORKFLOW.md"
+    },
+    "production": {
+      "path": "/srv/ar-local/AR-local",
+      "sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+      "clean_at_snapshot": true,
+      "checked_at_hobart": "2026-09-09T05:27:51+10:00",
+      "current_cleanliness": "NOT_RECHECKED: verify before any Pi action"
+    },
+    "installed_receiver": {
+      "path": "C:\\code\\backups\\AR-local-user-session\\source-auth-publication-20260908-v4\\source",
+      "sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+      "clean_at_snapshot": true,
+      "checked_at_hobart": "2026-09-09T05:27:51+10:00",
+      "current_cleanliness": "NOT_RECHECKED: verify before any receiver action"
+    }
+  },
+  "prohibited_advancement": [
+    "No A3 acceptance from the modified manual operational PASS or metadata binding",
+    "No media writes, writable mounts, EEPROM changes, reboot or boot before A3 and complete physical controls",
+    "Do not merge, deploy or mark PR607 ready before applicable recovery gates",
+    "No Windows UAC, administrator task mutation, host-key weakening, canceled elevated payload reuse or backup rerun to manufacture chronology"
+  ],
+  "timing": {
+    "earliest_documentation_start_hobart": "2026-09-09T12:19:44.091481+10:00",
+    "natural_trigger_hobart": "2026-09-10T06:00:00.0000000+10:00",
+    "earliest_natural_terminal_inspection_hobart": "2026-09-10T06:01:00+10:00, only if the task is terminal; if still Running, leave ownership parked",
+    "latest_safe_stop_hobart": "2026-09-10T14:00:00+10:00 for that daytime inspection slice; stop earlier for any protected workload conflict",
+    "physical_window": "NONE AUTHORIZED; do not derive boot permission from these observation times",
+    "protected_workloads": "Preserve 01:00 Hobart ingest and Avalon ten-minute workload; do not overlap live receipt locks with the 06:00 or sign-in trigger"
+  },
+  "commands": {
+    "current_slice_workdir": "C:\\code\\AR-local-tracked-closeout-0909",
+    "current_slice": [
+      "npm run pr:automation:verify",
+      "$prNumber = gh pr view agent/recovery-tracked-closeout-0909 --json number --jq .number; if ($LASTEXITCODE -ne 0 -or $prNumber -notmatch \"^[0-9]+$\") { throw \"Cannot resolve exact correction PR\" }; npm run pr:merge -- --pr $prNumber",
+      "npm run pr:bot-feedback-audit"
+    ],
+    "natural_state_read_only": [
+      "Get-ScheduledTask -TaskName 'AR-local user-session backup'",
+      "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'"
+    ],
+    "future_receipt_check": "Prepare fresh hash-pinned current-day expectations and isolated current verifier only after verifying runtime and task identity. Use PR662 or later reviewed Windows handle-lock reader outside trigger windows. No executable future receipt command is authorized until those fresh inputs exist.",
+    "historical_scripts": "All September9 one-time manual wrappers and capture output directories are evidence only; never replay or overwrite them.",
+    "tracked_contract": {
+      "package_script": "pr:merge",
+      "entrypoint": "scripts/pr-merge.mjs",
+      "guard": "scripts/lib/pr-closeout-guard.mjs",
+      "verification": "scripts/verify-pr-merge.mjs",
+      "workflow": "WORKFLOW.md",
+      "execution_rule": "Run only from the clean reviewed topic checkout. The CLI validates the actual default base before explicit draft promotion; dry-run does not promote. GitHub branch protection remains in force."
+    }
+  },
+  "acceptance_criteria": {
+    "current_slice": "Required entry fields explicit, existing evidence byte-for-byte preserved, every listed evidence hash/size verified, applicable CI and feedback gate satisfied",
+    "a3": "Genuine unchanged natural current-pair trigger success plus complete controlled execution envelope and separately verified fresh source, catalog, component receipts, independent restore, daily ingest/finalization/publication/dashboard; no inferred trigger origin",
+    "a4": "After A3: exact clone and original media identities, all writer/credential isolation and approved path changes, bootloader-to-OS reset coverage, negotiated hardware timeouts and network-independent return deadline; actual SD-root/restored-data proof and bounded return to unchanged NVMe",
+    "manual_execution": "Remains BLOCKED for controlled acceptance; retain observed operational backup and all earlier failures"
+  },
+  "stop_conditions": [
+    "Any unexpected plan, code, configuration, task, date, media, source hash or repository-state change: stop the dependent operation and record it without overwriting evidence",
+    "Busy backup/receiver lock, running natural task or trigger-window overlap: do not acquire live reader locks or launch competing work",
+    "Missing/expired current-day expectations, failed latest receipt, incomplete lineage or missing component/source/restore proof: no A3 advancement",
+    "Absent physical reset/return coverage or non-isolated writers/credentials: no media/EEPROM/boot action",
+    "Any request for Windows Yes/UAC or additional authentication: stop that action; never weaken controls",
+    "Stop at stated daytime deadline or before any protected workload conflict"
+  ],
+  "rollback_or_preservation": {
+    "current_slice": "No runtime rollback required: this correction changes repository evidence only. Abandon an unmerged correction without deleting immutable historical evidence if validation fails.",
+    "runtime": "Preserve current receiver/task/configuration and protected production; no speculative downgrade or moving-main deployment.",
+    "backups": "Retain legacy target C:\\code\\backups\\AR-local-pi5 and user target C:\\code\\backups\\AR-local-pi5-user; do not rewrite completed receipts, archives or catalogs.",
+    "media": "No media mutation is enabled. Preserve compressed original SD and historical candidate separately; a later approved physical transaction must define exact restoration and return steps before starting."
+  },
+  "known_risks": [
+    "Intermittent LAN SSH banner/cleanup failures remain; one-off longer deadlines and selective resume were not installed",
+    "A later source change can make control stale; the 06:19 snapshot is not perpetual freshness",
+    "Manual trigger exclusion caused September9 natural task failure; manual success cannot replace that proof",
+    "Receipt metadata validation does not re-extract archives or prove physical boot",
+    "Runtime/production and media snapshots are dated; revalidate before acting",
+    "This reviewed CLI corrects the explicit closeout path only; unrelated queue helpers and legacy automation are not authorized to promote drafts by this entry."
+  ],
+  "compensating_controls": [
+    "Complete explicit resume entry with independently hash-checked existing evidence and dated observations",
+    "Keep ordinary-user transport/key/known-host/executable/config pins and all source/lineage/restore checks",
+    "Current Windows reader uses process-scoped delete-on-close lock files; --snapshot only for a separate frozen metadata copy",
+    "Preserve raw failures, distinct component/catalog identities, D-022 acceptance limits and controlled runbook unchanged",
+    "Keep all physical actions disabled until independent gates pass"
+  ],
+  "revised_acceptance_criteria": {
+    "current_slice": "Required entry fields explicit, existing evidence byte-for-byte preserved, every listed evidence hash/size verified, applicable CI and feedback gate satisfied",
+    "a3": "Genuine unchanged natural current-pair trigger success plus complete controlled execution envelope and separately verified fresh source, catalog, component receipts, independent restore, daily ingest/finalization/publication/dashboard; no inferred trigger origin",
+    "a4": "After A3: exact clone and original media identities, all writer/credential isolation and approved path changes, bootloader-to-OS reset coverage, negotiated hardware timeouts and network-independent return deadline; actual SD-root/restored-data proof and bounded return to unchanged NVMe",
+    "manual_execution": "Remains BLOCKED for controlled acceptance; retain observed operational backup and all earlier failures"
+  },
+  "deviation_decision": {
+    "id": "D-022-MANUAL-BACKUP-DEVIATIONS-20260909",
+    "result": "BLOCKED for modified manual controlled acceptance",
+    "retrospective_recorded_at_utc": "2026-09-08T20:47:36.119833+00:00",
+    "reference_corrected_at_utc": "2026-09-08T22:19:22.597302+00:00",
+    "path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-d022.json",
+    "sha256": "3982b8c1ac01a162bb038021ddacdc04835dfdce2e8da1f79328bc639fffada2"
+  },
+  "physical_preparation": {
+    "status": "BLOCKED",
+    "sd": {
+      "device": "/dev/mmcblk0",
+      "serial": "0xfa922545",
+      "bytes": 31902400512,
+      "root_uuid": "ed6c7f1b-238b-41a1-b4b6-7bcdef3270fe",
+      "partuuid": "1a36a1cc-02"
+    },
+    "original_nvme_uuid": "4cbd4874-d326-4496-bee2-7fda775a3c4c",
+    "prohibited_writable_devices": [
+      "/dev/nvme0n1",
+      "/dev/sda"
+    ],
+    "original_sd_compressed": {
+      "path": "C:\\code\\backups\\AR-local-user-session\\A4-20260906\\sd-original-20260906.img.zst",
+      "bytes": 3682092009,
+      "sha256": "e33d3333697f604f424ff3e5ff4852c0234336ca4b22e67cc4bd4eb49a6f361d",
+      "uncompressed_sha256": "ce0bcd6f1cb4364df2b97fb6324d0871a053fed6ed7738dcb0a65ef174d371d2"
+    },
+    "snapshot_notice": "September6/8 preservation evidence, not rehashed or probed this entry",
+    "boot_order": "0xf416",
+    "watchdog": "inactive at historical readback; no actual network-independent return proof",
+    "open_controls": [
+      "Full activation/dependency/credential inventory",
+      "Exact approved path writes and rollback sources",
+      "Prepared clone full-device readback hash and distinct identity",
+      "Continuous early-boot/kernel/OS reset and bounded return coverage"
+    ]
+  },
+  "unresolved_findings": [
+    {
+      "id": "PR665-3963254607",
+      "status": "Implemented in this correction; PR review/merge pending",
+      "issue": "Earlier handoff referenced untracked code in dirty checkout",
+      "resolution": "Tracked npm run pr:merge with default-base guard, explicit draft promotion, regression checks and scoped CI"
+    },
+    {
+      "id": "PR665-3963254614",
+      "status": "Implemented in this correction; PR review/merge pending",
+      "issue": "No explicit unresolved_findings field",
+      "resolution": "This complete entry includes the field, with all known pending findings and existing acceptance gates unchanged"
+    },
+    {
+      "id": "https://github.com/yanniedog/AR-local/issues/650",
+      "status": "UNVERIFIED",
+      "issue": "Original D019 inventory-verification command provenance remains unresolved; do not infer it from a summary"
+    },
+    {
+      "id": "installed-transport-reliability",
+      "status": "OPEN",
+      "issue": "Observed SSH handshake/cleanup failures and control changes during long transfers; no durable mitigation installed; preserve current pair for natural evidence"
+    }
+  ]
+}
+```

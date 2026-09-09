@@ -1,0 +1,31 @@
+name: pr-closeout-ci
+on:
+  pull_request:
+    paths:
+      - 'scripts/pr-merge.mjs'
+      - 'scripts/lib/pr-*.mjs'
+      - 'scripts/lib/gh-pr-review-threads.mjs'
+      - 'scripts/verify-pr-*.mjs'
+      - 'package.json'
+      - '.github/workflows/pr-closeout-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/pr-merge.mjs'
+      - 'scripts/lib/pr-*.mjs'
+      - 'scripts/lib/gh-pr-review-threads.mjs'
+      - 'scripts/verify-pr-*.mjs'
+      - 'package.json'
+      - '.github/workflows/pr-closeout-ci.yml'
+jobs:
+  closeout-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm run pr:automation:verify

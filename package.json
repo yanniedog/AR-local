@@ -18,6 +18,7 @@
     "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
     "pr:bot-matrix-commit:verify": "node scripts/verify-pr-bot-matrix-commit.mjs",
     "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
+    "pr:automation:verify": "npm run pr:merge:verify && npm run pr:gate-logic:verify && npm run pr:bot-matrix-commit:verify",
     "close-loop:check": "node scripts/close-loop-check.mjs",
     "ship:closeout:strict": "python ship_closeout_strict.py",
     "verify:local": "python verify_local.py",
