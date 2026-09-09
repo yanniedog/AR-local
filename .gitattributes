@@ -24,3 +24,4 @@ docs/evidence/runtime-reader-safety-20260908/execution-01/capture.json whitespac
 docs/evidence/runtime-reader-safety-20260908/execution-01/stdout.json whitespace=cr-at-eol
 docs/evidence/runtime-boundaries-20260909/** -text
 docs/evidence/runtime-boundaries-20260909/** whitespace=cr-at-eol
+docs/evidence/pretrigger-20260910/* -text

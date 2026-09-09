@@ -1,0 +1,25 @@
+{
+  "checked_at_hobart": "2026-09-10T05:17:52.8198767+10:00",
+  "source": "Decoded read-only tool outputs; not a literal backup-file copy",
+  "exact_commands": [
+    "Get-ScheduledTask -TaskName 'AR-local user-session backup'",
+    "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'"
+  ],
+  "task_name": "AR-local user-session backup",
+  "state": "Ready",
+  "last_run": "2026-09-09T22:57:02.0000000+10:00",
+  "last_result": 2,
+  "next_run": "2026-09-10T06:00:00.0000000+10:00",
+  "observed_execution_record": {
+    "path": "C:/code/backups/AR-local-pi5-user/user-session-executions/20260909T125710Z-7f374ed4b5ad49538b663c08d4f6fe95.json",
+    "at": "2026-09-09T12:57:10.423997+00:00",
+    "result": "BLOCKED",
+    "detail": "outside 06:00-14:00 Hobart start window; no Pi access",
+    "candidate_sha": "cbf920eceedcfd5cc19bd75d86351ddbc7b39e2e",
+    "literal_file_hash": "NOT_CAPTURED; no controlled acceptance from this summary"
+  },
+  "task_or_backup_mutation": false,
+  "live_receipt_locks_acquired": false,
+  "pi_access": false,
+  "capture_limit": "Combined capture command was rejected before execution by automatic approval review with only blocked by policy. This repository-only record uses previously returned observations."
+}
