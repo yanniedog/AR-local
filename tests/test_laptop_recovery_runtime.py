@@ -12,6 +12,24 @@ import laptop_recovery_runtime as runtime
 SOURCE = Path(runtime.__file__).resolve()
 
 
+def test_msys_reader_changes_only_path_syntax_and_preserves_strict_auth(monkeypatch):
+    pins = {'ssh_user': 'pi', 'ssh_port': 22, 'ssh_logical_host': 'ar-local-pi5',
+            'ssh_null_device': '/dev/null'}
+    for name in ('ssh', 'ssh_identity', 'ssh_known_hosts'):
+        pins[name + '_path'] = 'C:\\private\\' + name
+        pins[name + '_sha256'] = 'a' * 64
+    monkeypatch.setattr(runtime, 'digest', lambda path: 'a' * 64)
+    config = {'transport': pins, 'lan_fallback_ipv4': '192.168.20.19'}
+    args = runtime.ssh_prefix(config)
+    assert args[:3] == [pins['ssh_path'], '-F', '/dev/null']
+    assert 'UserKnownHostsFile=C:/private/ssh_known_hosts' in args
+    assert 'GlobalKnownHostsFile=/dev/null' in args
+    assert 'StrictHostKeyChecking=yes' in args and 'IdentityAgent=none' in args
+    pins['ssh_null_device'] = '/unexpected/config'
+    with pytest.raises(ValueError, match='null device'):
+        runtime.ssh_prefix(config)
+
+
 def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
 

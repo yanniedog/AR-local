@@ -117,7 +117,9 @@ def transport_contract() -> dict:
     fields = {"ssh_path", "ssh_sha256", "scp_path", "scp_sha256", "ssh_host",
               "ssh_user", "ssh_port", "ssh_logical_host", "ssh_identity_path",
               "ssh_identity_sha256", "ssh_known_hosts_path", "ssh_known_hosts_sha256"}
-    if not isinstance(value, dict) or set(value) != fields:
+    if (not isinstance(value, dict) or not fields.issubset(value)
+            or set(value) - fields - {'ssh_null_device'}
+            or value.get('ssh_null_device', 'NUL') not in {'NUL', '/dev/null'}):
         raise ValueError("user-session transport fields are not exact")
     return value
 

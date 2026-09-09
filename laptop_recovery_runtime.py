@@ -83,19 +83,26 @@ def ssh_prefix(config):
     for field in ("ssh", "ssh_identity", "ssh_known_hosts"):
         require(digest(pins[field + "_path"]) == pins[field + "_sha256"],
                 "SSH executable or key-file digest mismatch")
+    null_device = pins.get("ssh_null_device", "NUL")
+    require(null_device in {"NUL", "/dev/null"}, "unsupported SSH null device")
+    known_hosts = pins["ssh_known_hosts_path"]
+    identity = pins["ssh_identity_path"]
+    if null_device == "/dev/null":
+        known_hosts = known_hosts.replace("\\", "/")
+        identity = identity.replace("\\", "/")
     options = ["BatchMode=yes", "ConnectTimeout=10", "IdentitiesOnly=yes",
                "IdentityAgent=none", "PreferredAuthentications=publickey",
                "PubkeyAuthentication=yes", "GSSAPIAuthentication=no",
                "PasswordAuthentication=no", "KbdInteractiveAuthentication=no",
                "ChallengeResponseAuthentication=no", "StrictHostKeyChecking=yes",
                "HostKeyAlias=ar-local-pi5", "HostKeyAlgorithms=ssh-ed25519",
-               "UserKnownHostsFile=" + pins["ssh_known_hosts_path"],
-               "GlobalKnownHostsFile=NUL", "UpdateHostKeys=no", "VerifyHostKeyDNS=no",
+               "UserKnownHostsFile=" + known_hosts,
+               "GlobalKnownHostsFile=" + null_device, "UpdateHostKeys=no", "VerifyHostKeyDNS=no",
                "ForwardAgent=no", "ClearAllForwardings=yes", "RequestTTY=no"]
-    argv = [pins["ssh_path"], "-F", "NUL"]
+    argv = [pins["ssh_path"], "-F", null_device]
     for option in options:
         argv.extend(("-o", option))
-    return [*argv, "-i", pins["ssh_identity_path"], "-p", "22", "-l", "pi",
+    return [*argv, "-i", identity, "-p", "22", "-l", "pi",
             config["lan_fallback_ipv4"]]
 
 

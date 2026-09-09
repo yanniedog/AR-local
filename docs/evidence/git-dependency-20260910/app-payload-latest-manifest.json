@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-09-10",
+  "generated_at": "2026-09-09T15:15:16Z",
+  "app_min_version": "1.0.0",
+  "repo": "yanniedog/AR-local",
+  "tag": "app-payload-latest",
+  "counts": {
+    "products": 2605,
+    "rates": 16369,
+    "fees": 25032,
+    "features": 15428,
+    "eligibility": 7271,
+    "constraints": 4346,
+    "product_facts": 597670,
+    "failures": 25,
+    "holder_attempts": 119,
+    "product_changes": 2055
+  },
+  "schedule": {
+    "label": "01:00 Australia/Hobart daily",
+    "next_due_utc": "2026-09-10T15:00:00Z"
+  },
+  "files": {
+    "core": {
+      "name": "core-2026-09-10-bcc046636d17.json.gz",
+      "bytes": 345684,
+      "sha256": "bcc046636d1759d8b432ae15c40f148b4a417e3f32d6ef8ff3e4cbc1a4c89706",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/core-2026-09-10-bcc046636d17.json.gz"
+    },
+    "details": {
+      "name": "details-2026-09-10-599c6aa501da.json.gz",
+      "bytes": 703398,
+      "sha256": "599c6aa501da3f7274257ae831df66191b7941212133607ecc4c36b3b67abaa1",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/details-2026-09-10-599c6aa501da.json.gz"
+    },
+    "search_index": {
+      "name": "search-index-2026-09-10-77d59c366037.json.gz",
+      "bytes": 555553,
+      "sha256": "77d59c3660371cbe3da70cdde9de18614b39debb910f608568ac1c42fb600510",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/search-index-2026-09-10-77d59c366037.json.gz"
+    },
+    "history_banks": {
+      "name": "history-banks-2026-09-10-bbb47bfdea67.json.gz",
+      "bytes": 5806,
+      "sha256": "bbb47bfdea67b665209283f914909bccc704dd94b04130688f63152e722fba56",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/history-banks-2026-09-10-bbb47bfdea67.json.gz"
+    },
+    "bank_history": {
+      "name": "bank-history-2026-09-10-d0721887bf1d.json.gz",
+      "bytes": 18667,
+      "sha256": "d0721887bf1d21036c12a8208767fd61c14943ab416e25e83119b55fb8d9b5cf",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/bank-history-2026-09-10-d0721887bf1d.json.gz"
+    },
+    "bank_spread_history": {
+      "name": "bank-spread-history-2026-09-10-e282bbb568cd.json.gz",
+      "bytes": 15824,
+      "sha256": "e282bbb568cde095ec2ea30d3becaf2b081c6d4dd500f24ff41cbd0012a95193",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/bank-spread-history-2026-09-10-e282bbb568cd.json.gz"
+    },
+    "rba_calendar": {
+      "name": "rba-calendar-2026-09-10-25da284b2588.json.gz",
+      "bytes": 343,
+      "sha256": "25da284b25889ca71a084cae7a3c354b77f282e58348f59c365b42eb0c2a79db",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/rba-calendar-2026-09-10-25da284b2588.json.gz"
+    }
+  }
+}

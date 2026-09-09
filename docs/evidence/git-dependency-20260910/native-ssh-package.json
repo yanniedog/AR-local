@@ -1,0 +1,170 @@
+{
+  "package_sha256": "23f50f3458c4c5d0b12217c6a5ddfde0137210a30fa870e98b29827f7b43aba5",
+  "files": [
+    {
+      "path": "OpenSSH-Win64/FixHostFilePermissions.ps1",
+      "bytes": 16981,
+      "sha256": "c53ff5506854118fa87d8e5e0b3d4779f971036850c2a45c23d7c42227db2a3a"
+    },
+    {
+      "path": "OpenSSH-Win64/FixUserFilePermissions.ps1",
+      "bytes": 15957,
+      "sha256": "916523692e21ed9ac8fffa78f902cc65383aec43f8022b068fa0df83dcb771c5"
+    },
+    {
+      "path": "OpenSSH-Win64/LICENSE.txt",
+      "bytes": 21552,
+      "sha256": "568c41f330a50a7d2d2eba9d3f7807caaaf4e091705ab6652ec26a3f9d1acfdb"
+    },
+    {
+      "path": "OpenSSH-Win64/NOTICE.txt",
+      "bytes": 36008,
+      "sha256": "2cd5f5d0064bc909dfe0f0fc8f4787882c7c379f2730d89e5faa0c2bc57c620b"
+    },
+    {
+      "path": "OpenSSH-Win64/OpenSSHUtils.psd1",
+      "bytes": 15751,
+      "sha256": "6f479075fc4b15014219ae90133d3e3fc18702179172c0099c4637101a380168"
+    },
+    {
+      "path": "OpenSSH-Win64/OpenSSHUtils.psm1",
+      "bytes": 48818,
+      "sha256": "731d9b35a340307671426b1147ec9ad1a39b098f7a77ef2384339a53337f7221"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/ESRPClientLogs1022194139642.json",
+      "bytes": 49234,
+      "sha256": "e85326cd80813cd97e02bbfb394a714a84ee23d23eb93e0de961c1c8e54aab4c"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/bsi.cose",
+      "bytes": 5788,
+      "sha256": "454be09dce859888c04a2c1d4fdc4e96dae29c6108a2bed5ad29a5186cc34b0d"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/bsi.json",
+      "bytes": 978,
+      "sha256": "13e6bdcf23298bd5fdf6b9cec16bb31a6845459422667cf193dbf89fb2fbde42"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/manifest.cat",
+      "bytes": 12056,
+      "sha256": "4c252b16f9b7d074fc6d1e166cbf6736fc7dca194c62a886f2613e00ff0addf9"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/manifest.spdx.cose",
+      "bytes": 5788,
+      "sha256": "70b95bf4ac77ee0934b0e94c88d9941ee1f84df143e3147b57f97cffa7db6b8b"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/manifest.spdx.json",
+      "bytes": 49300,
+      "sha256": "fc7bb67301a62b7df3d2b4a0bd70632a426a99d706350f07929d50c0c95ca050"
+    },
+    {
+      "path": "OpenSSH-Win64/_manifest/spdx_2.2/manifest.spdx.json.sha256",
+      "bytes": 64,
+      "sha256": "cb22e9746e629861c890317a9971a4096840e9ccc596fbf7f5d03f8b94cc9887"
+    },
+    {
+      "path": "OpenSSH-Win64/install-sshd.ps1",
+      "bytes": 22799,
+      "sha256": "3b038630a44cc79b66fcf3097e56b25537411378ed7016a28492dda887dd2087"
+    },
+    {
+      "path": "OpenSSH-Win64/libcrypto.dll",
+      "bytes": 1769032,
+      "sha256": "4652e861c0335ee80a51306ceab75aa35c8865b235f97ce7dd5a0fd9dab44b5d"
+    },
+    {
+      "path": "OpenSSH-Win64/moduli",
+      "bytes": 592880,
+      "sha256": "089b524dbf38c6520e96bf4dee11da93f0328e6e89fd10ebc8c9a317b81d50b7"
+    },
+    {
+      "path": "OpenSSH-Win64/openssh-events.man",
+      "bytes": 3485,
+      "sha256": "c36019e53e3045cba2639bf35ed1e2498e3563b272533e53301165c31ab60199"
+    },
+    {
+      "path": "OpenSSH-Win64/scp.exe",
+      "bytes": 441928,
+      "sha256": "ca014ddb0a3c058719e7061eb604de7dfe1f7732954792ac8176e6c1fc99b4a3"
+    },
+    {
+      "path": "OpenSSH-Win64/sftp-server.exe",
+      "bytes": 388680,
+      "sha256": "63462c6904943f5f32ca363065f2eb7e883ee308f40c7c1637a307a253522151"
+    },
+    {
+      "path": "OpenSSH-Win64/sftp.exe",
+      "bytes": 470584,
+      "sha256": "97271ea46fa2eeb5e9e22cd5e919931727a2a11f79993c1ef151b4f618d9fd22"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-add.exe",
+      "bytes": 617032,
+      "sha256": "b6fec08648deaf7a77b50bc34ea8ac17c3cf240d06d0f1bffc60bf56d6f914b1"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-agent.exe",
+      "bytes": 564256,
+      "sha256": "138df27c7a8c35fbadde6fee35592336b04e058f4690b03f459ad79edd68ab63"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-keygen.exe",
+      "bytes": 879648,
+      "sha256": "b51fdd26be0f7c83398d18e5354a0acb0406a9de25516791758fe63bbe3ae870"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-keyscan.exe",
+      "bytes": 751160,
+      "sha256": "32eb6a2b80443207a2481085582c0ed01bbddcfef4b1f3f2cc680aa16d0f3135"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-pkcs11-helper.exe",
+      "bytes": 526880,
+      "sha256": "0f1ee63b38af0a96670ffc3f1c5421c4fba678d96ab0485854b550467b987ff5"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-shellhost.exe",
+      "bytes": 193080,
+      "sha256": "f090cb45e3b9dd830201993fc274e75a9be2058c1d4e900e85eff334dfd5a84c"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh-sk-helper.exe",
+      "bytes": 665672,
+      "sha256": "4550082d459bccc5baf13cfe43c36c1e484bb012c4e0efb3990ae33a79e71c96"
+    },
+    {
+      "path": "OpenSSH-Win64/ssh.exe",
+      "bytes": 1352760,
+      "sha256": "6890c128c86cc2c38aad9fcb32a82b851ff3d38c714a1f656b8e445d7cd5e1c6"
+    },
+    {
+      "path": "OpenSSH-Win64/sshd-auth.exe",
+      "bytes": 1015840,
+      "sha256": "71b11418681e1ae8a3eb84494658f4ca66a7dac7ccc7674f3c74a36a3a5b7d14"
+    },
+    {
+      "path": "OpenSSH-Win64/sshd-session.exe",
+      "bytes": 1320504,
+      "sha256": "5b28ad2046596454bd1e0b1ab19e8d66945def1d18ec9bec6f0ef538600a03cf"
+    },
+    {
+      "path": "OpenSSH-Win64/sshd.exe",
+      "bytes": 784416,
+      "sha256": "d66150486d472b8748cae2d6f5078a210dae91621447974bde028f077a4ef90c"
+    },
+    {
+      "path": "OpenSSH-Win64/sshd_config_default",
+      "bytes": 2230,
+      "sha256": "796f518d1f4bb03d775da710c259b518eb770d123133dbd6429ca7e14d3c224b"
+    },
+    {
+      "path": "OpenSSH-Win64/uninstall-sshd.ps1",
+      "bytes": 15872,
+      "sha256": "78256afcbe27a4d5af31f0456bd7367607eed1671373b3c8d7ea510719303f5a"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-09-10",
+  "generated_at": "2026-09-09T15:15:08Z",
+  "app_min_version": "1.0.0",
+  "repo": "yanniedog/AR-local",
+  "tag": "app-payload-2026-09-10",
+  "counts": {
+    "products": 2605,
+    "rates": 16369,
+    "fees": 25032,
+    "features": 15428,
+    "eligibility": 7271,
+    "constraints": 4346,
+    "product_facts": 597670,
+    "failures": 25,
+    "holder_attempts": 119,
+    "product_changes": 2055
+  },
+  "schedule": {
+    "label": "01:00 Australia/Hobart daily",
+    "next_due_utc": "2026-09-10T15:00:00Z"
+  },
+  "files": {
+    "core": {
+      "name": "core-2026-09-10-bcc046636d17.json.gz",
+      "bytes": 345684,
+      "sha256": "bcc046636d1759d8b432ae15c40f148b4a417e3f32d6ef8ff3e4cbc1a4c89706",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-10/core-2026-09-10-bcc046636d17.json.gz"
+    },
+    "details": {
+      "name": "details-2026-09-10-599c6aa501da.json.gz",
+      "bytes": 703398,
+      "sha256": "599c6aa501da3f7274257ae831df66191b7941212133607ecc4c36b3b67abaa1",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-10/details-2026-09-10-599c6aa501da.json.gz"
+    }
+  }
+}

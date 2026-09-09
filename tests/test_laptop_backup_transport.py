@@ -198,6 +198,27 @@ def test_native_transport_requires_protected_hash_bound_contract(
         transport.ssh_options(args, platform="nt")
 
 
+@pytest.mark.parametrize('null_device', ['NUL', '/dev/null', '/untrusted/config'])
+def test_explicit_msys_syntax_keeps_executable_and_host_key_pins(monkeypatch, tmp_path, null_device):
+    args = _native_transport_args(tmp_path)
+    contract = dict(_native_contract(args), ssh_null_device=null_device)
+    _bind_test_host_key(monkeypatch)
+    monkeypatch.setattr(transport, '_trusted_contract', lambda platform: contract)
+    if null_device == '/untrusted/config':
+        with pytest.raises(ValueError, match='null device'):
+            transport.ssh_options(args, platform='nt')
+        return
+    command = transport.ssh_options(args, platform='nt')
+    assert command[:3] == [args.ssh_path, '-F', null_device]
+    assert 'GlobalKnownHostsFile=' + null_device in command
+    assert 'StrictHostKeyChecking=yes' in command
+    assert 'HostKeyAlias=ar-local-pi5' in command
+    assert 'PasswordAuthentication=no' in command
+    Path(args.ssh_known_hosts).write_bytes(b'changed')
+    with pytest.raises(ValueError, match='key file hash mismatch'):
+        transport.ssh_options(args, platform='nt')
+
+
 def test_native_transport_rejects_logical_or_discovery_contract_tampering(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

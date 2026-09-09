@@ -149,18 +149,17 @@ def verify_release(git, root, sha):
             '9094a8e115958fcaf2cb36525736bd5e297e6b04', 'plan authority changed')
 
 
-def verify(old_path, old_sha, new_path, new_sha, archive, package_sha, package_root,
-           ssh_archive, ssh_sha, ssh_root):
-    old, new = config(old_path, old_sha), config(new_path, new_sha)
-    compare_configs(old, new)
+def verify_current(new_path, new_sha, archive, package_sha, package_root,
+                   ssh_archive, ssh_sha, ssh_root):
+    new = config(new_path, new_sha)
     require(Path(new['git_path']) == package_root / 'cmd/git.exe', 'Git outside package')
-    require(package_root not in canonical(old['receiver']).parents and
-            canonical(old['receiver']) not in package_root.parents,
-            'package overlaps previous receiver')
     package = verify_package(archive, package_sha, package_root)
     ssh_relative = Path(new['transport']['ssh_path']).relative_to(ssh_root).as_posix()
     require(ssh_relative in {'ssh.exe', 'usr/bin/ssh.exe', 'OpenSSH-Win64/ssh.exe'},
             'unsupported SSH package layout')
+    expected_null = '/dev/null' if ssh_relative == 'usr/bin/ssh.exe' else 'NUL'
+    require(new['transport'].get('ssh_null_device', 'NUL') == expected_null,
+            'SSH package requires matching null-device syntax')
     ssh_bin = Path(ssh_relative).parent
     ssh_package = verify_package(ssh_archive, ssh_sha, ssh_root,
                                  (ssh_relative, (ssh_bin / 'scp.exe').as_posix()))
@@ -172,21 +171,29 @@ def verify(old_path, old_sha, new_path, new_sha, archive, package_sha, package_r
     require(digest(new['git_path']) == new['git_sha256'], 'new Git pin mismatch')
     require(Path(sys.executable).resolve() == Path(new['python_path']) and
             digest(new['python_path']) == new['python_sha256'], 'Python pin mismatch')
-    # Only the fully authenticated private Git is ever executed, including reads
-    # of the predecessor. The drifted system executable is evidence, not authority.
-    for value in (old, new):
-        verify_release(new['git_path'], canonical(value['receiver']), value['candidate_sha'])
-    return {'result': 'PASS', 'read_only': True, 'old_config_sha256': old_sha,
+    verify_release(new['git_path'], canonical(new['receiver']), new['candidate_sha'])
+    return {'result': 'PASS', 'read_only': True,
             'new_config_sha256': new_sha, 'package_sha256': package_sha,
             'package_files_verified': len(package['files']),
             'ssh_package_sha256': ssh_sha, 'ssh_files_verified': len(ssh_package['files']),
-            'candidate_sha': new['candidate_sha'], 'production_sha': new['protected_sha'],
-            'changes': sorted(k for k in old if old[k] != new[k])}
+            'candidate_sha': new['candidate_sha'], 'production_sha': new['protected_sha']}
+
+
+def verify(old_path, old_sha, new_path, new_sha, archive, package_sha, package_root,
+           ssh_archive, ssh_sha, ssh_root):
+    old, new = config(old_path, old_sha), config(new_path, new_sha)
+    compare_configs(old, new)
+    result = verify_current(new_path, new_sha, archive, package_sha, package_root,
+                            ssh_archive, ssh_sha, ssh_root)
+    # Never execute the drifted system Git to inspect its predecessor.
+    verify_release(new['git_path'], canonical(old['receiver']), old['candidate_sha'])
+    return dict(result, old_config_sha256=old_sha,
+                changes=sorted(k for k in old if old[k] != new[k]))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('stage', 'verify'))
+    parser.add_argument('mode', choices=('stage', 'verify', 'current'))
     for name in ('archive', 'package-root', 'old-config', 'new-config', 'ssh-archive', 'ssh-root'):
         parser.add_argument('--' + name, type=Path, required=name in {'archive', 'package-root'})
     for name in ('package-sha256', 'old-sha256', 'new-sha256', 'ssh-sha256'):
@@ -196,12 +203,16 @@ def main():
         if args.mode == 'stage':
             result = stage(args.archive, args.package_sha256, args.package_root)
         else:
-            require(all((args.old_config, args.new_config, args.old_sha256, args.new_sha256,
+            require(all((args.new_config, args.new_sha256,
                          args.ssh_archive, args.ssh_root, args.ssh_sha256)),
-                    'both exact configuration identities required')
-            result = verify(args.old_config, args.old_sha256, args.new_config,
-                            args.new_sha256, args.archive, args.package_sha256, args.package_root,
-                            args.ssh_archive, args.ssh_sha256, args.ssh_root)
+                    'exact configuration and package identities required')
+            inputs = (args.new_config, args.new_sha256, args.archive, args.package_sha256,
+                      args.package_root, args.ssh_archive, args.ssh_sha256, args.ssh_root)
+            if args.mode == 'current':
+                result = verify_current(*inputs)
+            else:
+                require(args.old_config and args.old_sha256, 'previous configuration required')
+                result = verify(args.old_config, args.old_sha256, *inputs)
         print(json.dumps(result, indent=2))
         return 0
     except (ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:

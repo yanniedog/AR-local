@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-10T08:26:54.6431052+10:00",
+  "state": "Ready",
+  "last_run": "2026-09-10T06:00:01.0000000+10:00",
+  "last_result": 1,
+  "next_run": "2026-09-11T06:00:00.0000000+10:00",
+  "git_sha256": "78211c7ed73988da93a6d8a33d47ec6187f464d7ea2a9a00c182bbd7a1ecf30f",
+  "git_signature": "Valid",
+  "config_sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca"
+}

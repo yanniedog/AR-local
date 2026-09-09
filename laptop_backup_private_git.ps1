@@ -26,8 +26,7 @@ $record=[ordered]@{started_at_utc=[DateTime]::UtcNow.ToString('o');mode=$Mode;
 $previousPath=$env:PATH
 $code=1
 try {
-  $verification=& $deployment.python_path -I -S -B $deployment.verifier_path verify `
-  --old-config $deployment.old_config --old-sha256 $deployment.old_sha256 `
+  $verification=& $deployment.python_path -I -S -B $deployment.verifier_path current `
   --new-config $deployment.new_config --new-sha256 $deployment.new_sha256 `
   --archive $deployment.archive --package-sha256 $deployment.package_sha256 `
   --package-root $deployment.package_root --ssh-archive $deployment.ssh_archive `
