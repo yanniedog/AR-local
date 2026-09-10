@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "run_date": "2026-09-11",
+  "generated_at": "2026-09-10T15:15:55Z",
+  "base": {
+    "manifest_schema": 1,
+    "core_sha": "5f76873341f48d9296b6bad652f677fdbd530900cecb5f2d5946fe7a55e439f4",
+    "details_sha": "fbd9e1869aacbfbf46e3ccbceecb3b01083d38fd9f1684796b5c73bd14dafc7f"
+  },
+  "capabilities": [
+    "economic_outlook",
+    "product_history"
+  ],
+  "files": {
+    "product_history": {
+      "name": "v2-product-history-2026-09-11-db129e790f2e.json.gz",
+      "sha256": "db129e790f2eff2f69e874de3c850c2f3d570bd33ad28f43a844fa2a37706d1c",
+      "bytes": 132715,
+      "uncompressed_bytes": 2611122,
+      "encoding": "gzip",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/v2-product-history-2026-09-11-db129e790f2e.json.gz"
+    },
+    "economic_outlook": {
+      "name": "v2-economic-outlook-2026-09-11-0d6d719969f7.json.gz",
+      "sha256": "0d6d719969f7be05630faa19cda9bde4de2e13a5b4ae2a55ae15982ef26dc303",
+      "bytes": 2236,
+      "uncompressed_bytes": 23410,
+      "encoding": "gzip",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/v2-economic-outlook-2026-09-11-0d6d719969f7.json.gz"
+    }
+  }
+}

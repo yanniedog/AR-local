@@ -34172,3 +34172,2625 @@ This complete entry preserves the unchanged natural-trigger boundary and restore
   }
 }
 ```
+
+
+## Entry `HANDOFF-20260911-BACKUP-OBSERVED`
+
+```json
+{
+  "plan_document_id": "ARL-OPS-001",
+  "plan_version": "1.5",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "plan_normalized_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "production_path": "/srv/ar-local/AR-local",
+  "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "candidate_code_sha": "b6c5a4d8984ad2d2509514418c753cd555b0144f",
+  "receiver_path": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source",
+  "receiver_config_sha256": "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "inherited_backup_evidence": {
+    "entry_id": "HANDOFF-20260908-LAN-RECOVERY-VERIFIED",
+    "archive_path": "docs/evidence/backup-lan-recovery-20260908/5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708.zip",
+    "archive_sha256": "5778f5a2995eeb2166dcfd62b6fc976d44657a15d2fcd942518f3ec971620708",
+    "scope": "Frozen completed operator recovery and restore; not re-executed or reclassified"
+  },
+  "historical_provenance_gap": {
+    "issue": "https://github.com/yanniedog/AR-local/issues/650",
+    "state": "UNVERIFIED",
+    "scope": "Original D019 inventory verification command; do not treat the old summary alone as reproducible command proof"
+  },
+  "entry_id": "HANDOFF-20260911-BACKUP-OBSERVED",
+  "previous_entry_id": "HANDOFF-20260910-RECOVERY-CLOCK-VERIFIED",
+  "created_at_utc": "2026-09-10T22:22:21.601608+00:00",
+  "created_at_hobart": "2026-09-11T08:22:21.601608+10:00",
+  "result": "RUNNING",
+  "scope": "September11 observed 06:00 backup PASS and frozen receipt verification; trigger attribution remains UNVERIFIED",
+  "a3": "RUNNING",
+  "a4": "BLOCKED",
+  "pr607": "DRAFT",
+  "backup_result": {
+    "result": "PASS",
+    "scheduled_result": "PASS",
+    "completed_at": "2026-09-10T20:10:16Z",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260910T201016Z-012d40d2e7a145ed94c73be939e6b5b4.json",
+      "sha256": "23cc42cee2a23fc66f5c5441289a42e712b86d5aa48dffcccca9a11326c0ce67"
+    },
+    "catalog_entries": 155,
+    "catalog_sha256": "ac906acda3ed8bac412eeb6050d97d562ef9827c211e5cd7ad6f74c20388f9ce",
+    "components": {
+      "observation": {
+        "path": "observations/2026-09-11/8ab5af95baaf6333bf83c1c8618e0ad97cef71da3c6e0003fa7a982900d94330/receipt.json",
+        "sha256": "887dfaf4deb96cac031586ab2a3c136989cdf26289416227df274bff6b32b902",
+        "archive_sha256": "efcb1a07766562d68c450ac2a0e691a393af3f046f09f0a79d26622a0ebd40d8",
+        "archive_bytes": 220264087,
+        "source_bytes": 2556261215,
+        "completed_at": "2026-09-10T20:08:38Z",
+        "catalog_sequence": 153,
+        "checks": {
+          "bytes_verified": 2556261215,
+          "files_verified": 9232,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-11.done.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-11-0407dbfe758f5f8d",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-11.json",
+              "banks_json_bytes": 1315510268,
+              "banks_json_sha256": "3aee56ba5de23ca8524f9a361d5a01b78b14099e4ffb8b2e82de60f6396fc43b",
+              "counts": {
+                "constraints": 4430,
+                "eligibility": 7363,
+                "failures": 22,
+                "features": 15901,
+                "fees": 25463,
+                "holder_attempts": 119,
+                "product_changes": 12374,
+                "product_facts": 607459,
+                "products": 2675,
+                "rates": 16637
+              },
+              "database_counts": {
+                "constraints": 4430,
+                "eligibility": 7363,
+                "features": 15901,
+                "fees": 25463,
+                "product_changes": 12374,
+                "product_facts": 607459,
+                "products": 2675,
+                "rates": 16637
+              },
+              "legacy_manifest_sha256": "936deedc681e265a352ee58cd2bfe6da996cfbaff425fb51a7e2c711d8f4ba9f",
+              "run_date": "2026-09-11",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-11/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "control": {
+        "path": "control/20260910T200844Z-3c0ebae709abf780/receipt.json",
+        "sha256": "643a74200cba092b783525c5042996b66433fa37b56d81014f37bf304cc7d738",
+        "archive_sha256": "c116ab8edef729310b3b1fb41f29c4e55c750b3d633cb5f6112a9b80f5c4ee58",
+        "archive_bytes": 103848607,
+        "source_bytes": 308644752,
+        "completed_at": "2026-09-10T20:10:01Z",
+        "catalog_sequence": 154,
+        "checks": {
+          "bytes_verified": 308644752,
+          "files_verified": 1997,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "macro": {
+        "path": "macro/731bdb16201ac64804ef572a80cb9d4e6bb4dd642e620722658777335342e8a9/receipt.json",
+        "sha256": "6a2f02fdfac1fb79a07c2586ff384cbd10bf48ac4064ae03abd3316413c84a34",
+        "archive_sha256": "65f4176ffc9a77af30d6fda7b95bf85e7e301bca76008925b33e6ebffe8eeb04",
+        "archive_bytes": 169222,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-10T20:10:02Z",
+        "catalog_sequence": 155,
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      }
+    },
+    "receipt_binding": {
+      "schema": "ARL-RECOVERY-RECEIPT-BINDING-V1",
+      "checked_at": "2026-09-10T22:19:48.835118+00:00",
+      "receipt_binding": "PASS",
+      "components": [
+        {
+          "kind": "control",
+          "catalog_sequence": 154,
+          "path": "control/20260910T200844Z-3c0ebae709abf780/receipt.json",
+          "sha256": "643a74200cba092b783525c5042996b66433fa37b56d81014f37bf304cc7d738"
+        },
+        {
+          "kind": "macro",
+          "catalog_sequence": 155,
+          "path": "macro/731bdb16201ac64804ef572a80cb9d4e6bb4dd642e620722658777335342e8a9/receipt.json",
+          "sha256": "6a2f02fdfac1fb79a07c2586ff384cbd10bf48ac4064ae03abd3316413c84a34"
+        },
+        {
+          "kind": "observation",
+          "catalog_sequence": 153,
+          "path": "observations/2026-09-11/8ab5af95baaf6333bf83c1c8618e0ad97cef71da3c6e0003fa7a982900d94330/receipt.json",
+          "sha256": "887dfaf4deb96cac031586ab2a3c136989cdf26289416227df274bff6b32b902"
+        }
+      ],
+      "physical_recovery": "BLOCKED",
+      "natural_trigger": "UNVERIFIED",
+      "archive_restore": "NOT_RUN",
+      "scope": "Pinned receipt metadata only; no A3 or A4 acceptance",
+      "coordination": "None; frozen metadata snapshot only"
+    },
+    "natural_trigger": "UNVERIFIED",
+    "observed_start": "06:00:01 Hobart; trigger attribution unavailable",
+    "physical_recovery": "BLOCKED",
+    "decision": "Unchanged D026 deployment; September11 read-only terminal observation, not a new activation or manual start"
+  },
+  "selected_generation": "obs-2026-09-11-0407dbfe758f5f8d",
+  "independent_states": {
+    "capture": "See actual component archive/check identities in terminal-summary.json; no inference from public publication alone.",
+    "publication": {
+      "checked_at_utc": "2026-09-10T22:18:56.219443+00:00",
+      "result": "PASS",
+      "run_date": "2026-09-11",
+      "exact_command": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "C:\\code\\AR-local-backup-observation-0911\\docs\\evidence\\backup-observation-20260911\\verify-publication.py"
+      ],
+      "manifest_sha256": {
+        "manifest.json": "29c1d8365bcb05a89cbc05d87db14e15d683d7751f372342265798e261c22218",
+        "manifest-v2.json": "126991260335508fda29d0f3ec752c2511a48a03ec2db3e3dc2cfcaf702437d6",
+        "dates-index.json": "de5e526565d174640c9c8132bd97bc888bbade7cd3b7eb11d0406d0581dfeb9d"
+      },
+      "checks": [
+        {
+          "version": "v1",
+          "asset": "core",
+          "sha256": "5f76873341f48d9296b6bad652f677fdbd530900cecb5f2d5946fe7a55e439f4",
+          "bytes": 351090,
+          "decoded_bytes": 11191251,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "details",
+          "sha256": "fbd9e1869aacbfbf46e3ccbceecb3b01083d38fd9f1684796b5c73bd14dafc7f",
+          "bytes": 715016,
+          "decoded_bytes": 11570375,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "search_index",
+          "sha256": "9cf00af22b67374ab7abc0b139562a30a82e2a87ffbaea34f45e2c059ff84de3",
+          "bytes": 564857,
+          "decoded_bytes": 6329259,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "history_banks",
+          "sha256": "1bdb64f352535eaebd38c73f7b2563162508a527244071eaceadc187c46c181b",
+          "bytes": 5858,
+          "decoded_bytes": 38970,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "bank_history",
+          "sha256": "39026a9acbcc217f8cf769490129f2baef8bc3654f5425400a249597fc7e828d",
+          "bytes": 18791,
+          "decoded_bytes": 622144,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "bank_spread_history",
+          "sha256": "c95defe1442c6c40164f5857cc1b2c2c4a56541c845a75e6d1546631ebeacc85",
+          "bytes": 15988,
+          "decoded_bytes": 844924,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "rba_calendar",
+          "sha256": "25da284b25889ca71a084cae7a3c354b77f282e58348f59c365b42eb0c2a79db",
+          "bytes": 343,
+          "decoded_bytes": 1457,
+          "result": "PASS"
+        },
+        {
+          "version": "v2",
+          "asset": "product_history",
+          "sha256": "db129e790f2eff2f69e874de3c850c2f3d570bd33ad28f43a844fa2a37706d1c",
+          "bytes": 132715,
+          "decoded_bytes": 2611122,
+          "result": "PASS"
+        },
+        {
+          "version": "v2",
+          "asset": "economic_outlook",
+          "sha256": "0d6d719969f7be05630faa19cda9bde4de2e13a5b4ae2a55ae15982ef26dc303",
+          "bytes": 2236,
+          "decoded_bytes": 23410,
+          "result": "PASS"
+        }
+      ],
+      "scope": "All rolling v1/v2 descriptors verified for size/hash/gzip/JSON; core/details/product history and economic outlook dates checked; current dates index. Device state and dated release not verified by this script."
+    },
+    "dashboard": "PASS:09:13 live Pi browser shows September10 and7260 mortgage rows, no warn/error logs; verify:local passed. No deployment/restart.",
+    "backup": {
+      "result": "PASS",
+      "scheduled_result": "PASS",
+      "completed_at": "2026-09-10T20:10:16Z",
+      "terminal": {
+        "path": "catalog/scheduled-runs/20260910T201016Z-012d40d2e7a145ed94c73be939e6b5b4.json",
+        "sha256": "23cc42cee2a23fc66f5c5441289a42e712b86d5aa48dffcccca9a11326c0ce67"
+      },
+      "catalog_entries": 155,
+      "catalog_sha256": "ac906acda3ed8bac412eeb6050d97d562ef9827c211e5cd7ad6f74c20388f9ce",
+      "components": {
+        "observation": {
+          "path": "observations/2026-09-11/8ab5af95baaf6333bf83c1c8618e0ad97cef71da3c6e0003fa7a982900d94330/receipt.json",
+          "sha256": "887dfaf4deb96cac031586ab2a3c136989cdf26289416227df274bff6b32b902",
+          "archive_sha256": "efcb1a07766562d68c450ac2a0e691a393af3f046f09f0a79d26622a0ebd40d8",
+          "archive_bytes": 220264087,
+          "source_bytes": 2556261215,
+          "completed_at": "2026-09-10T20:08:38Z",
+          "catalog_sequence": 153,
+          "checks": {
+            "bytes_verified": 2556261215,
+            "files_verified": 9232,
+            "observation": {
+              "completion_markers": [
+                {
+                  "path": "2026-09-11.done.json",
+                  "valid": true
+                }
+              ],
+              "latest_pointer": {
+                "generation_id": "obs-2026-09-11-0407dbfe758f5f8d",
+                "valid": true
+              },
+              "reconciliation": {
+                "banks_json": "banks-2026-09-11.json",
+                "banks_json_bytes": 1315510268,
+                "banks_json_sha256": "3aee56ba5de23ca8524f9a361d5a01b78b14099e4ffb8b2e82de60f6396fc43b",
+                "counts": {
+                  "constraints": 4430,
+                  "eligibility": 7363,
+                  "failures": 22,
+                  "features": 15901,
+                  "fees": 25463,
+                  "holder_attempts": 119,
+                  "product_changes": 12374,
+                  "product_facts": 607459,
+                  "products": 2675,
+                  "rates": 16637
+                },
+                "database_counts": {
+                  "constraints": 4430,
+                  "eligibility": 7363,
+                  "features": 15901,
+                  "fees": 25463,
+                  "product_changes": 12374,
+                  "product_facts": 607459,
+                  "products": 2675,
+                  "rates": 16637
+                },
+                "legacy_manifest_sha256": "936deedc681e265a352ee58cd2bfe6da996cfbaff425fb51a7e2c711d8f4ba9f",
+                "run_date": "2026-09-11",
+                "schema_tables": [
+                  "bank_items",
+                  "bank_product_changes",
+                  "bank_product_facts",
+                  "bank_products",
+                  "bank_rates",
+                  "runs",
+                  "schema_meta"
+                ],
+                "schema_version": "8",
+                "unpersisted_populations": [
+                  "failures",
+                  "holder_attempts"
+                ],
+                "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+              }
+            },
+            "sqlite": [
+              {
+                "foreign_key_check": "ok",
+                "integrity_check": "ok",
+                "path": "data/runs/2026-09-11/_exports/local-cdr.sqlite",
+                "quick_check": "ok",
+                "tables": [
+                  "bank_items",
+                  "bank_product_changes",
+                  "bank_product_facts",
+                  "bank_products",
+                  "bank_rates",
+                  "runs",
+                  "schema_meta",
+                  "sqlite_sequence"
+                ]
+              }
+            ]
+          },
+          "restore_result": "PASS",
+          "freshness": "UP_TO_DATE"
+        },
+        "control": {
+          "path": "control/20260910T200844Z-3c0ebae709abf780/receipt.json",
+          "sha256": "643a74200cba092b783525c5042996b66433fa37b56d81014f37bf304cc7d738",
+          "archive_sha256": "c116ab8edef729310b3b1fb41f29c4e55c750b3d633cb5f6112a9b80f5c4ee58",
+          "archive_bytes": 103848607,
+          "source_bytes": 308644752,
+          "completed_at": "2026-09-10T20:10:01Z",
+          "catalog_sequence": 154,
+          "checks": {
+            "bytes_verified": 308644752,
+            "files_verified": 1997,
+            "git_bundles": [
+              "AR-local.bundle",
+              "australianrates.bundle"
+            ],
+            "secret_locations": 4,
+            "sqlite": [
+              {
+                "foreign_key_check": "ok",
+                "integrity_check": "ok",
+                "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+                "quick_check": "ok",
+                "tables": [
+                  "bank_items",
+                  "bank_products",
+                  "bank_rates",
+                  "runs",
+                  "schema_meta",
+                  "sqlite_sequence"
+                ]
+              },
+              {
+                "foreign_key_check": "ok",
+                "integrity_check": "ok",
+                "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+                "quick_check": "ok",
+                "tables": [
+                  "bank_items",
+                  "bank_products",
+                  "bank_rates",
+                  "energy_items",
+                  "energy_plans",
+                  "runs",
+                  "schema_meta",
+                  "sqlite_sequence"
+                ]
+              }
+            ]
+          },
+          "restore_result": "PASS",
+          "freshness": "UP_TO_DATE"
+        },
+        "macro": {
+          "path": "macro/731bdb16201ac64804ef572a80cb9d4e6bb4dd642e620722658777335342e8a9/receipt.json",
+          "sha256": "6a2f02fdfac1fb79a07c2586ff384cbd10bf48ac4064ae03abd3316413c84a34",
+          "archive_sha256": "65f4176ffc9a77af30d6fda7b95bf85e7e301bca76008925b33e6ebffe8eeb04",
+          "archive_bytes": 169222,
+          "source_bytes": 1032192,
+          "completed_at": "2026-09-10T20:10:02Z",
+          "catalog_sequence": 155,
+          "checks": {
+            "bytes_verified": 1032192,
+            "files_verified": 1,
+            "macro": {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            },
+            "sqlite": [
+              {
+                "foreign_key_check": "ok",
+                "integrity_check": "ok",
+                "path": "macro/local-macro.sqlite",
+                "quick_check": "ok",
+                "tables": [
+                  "ingest_runs",
+                  "series_definition_archive",
+                  "series_observations"
+                ]
+              }
+            ]
+          },
+          "restore_result": "PASS",
+          "freshness": "UP_TO_DATE"
+        }
+      },
+      "receipt_binding": {
+        "schema": "ARL-RECOVERY-RECEIPT-BINDING-V1",
+        "checked_at": "2026-09-10T22:19:48.835118+00:00",
+        "receipt_binding": "PASS",
+        "components": [
+          {
+            "kind": "control",
+            "catalog_sequence": 154,
+            "path": "control/20260910T200844Z-3c0ebae709abf780/receipt.json",
+            "sha256": "643a74200cba092b783525c5042996b66433fa37b56d81014f37bf304cc7d738"
+          },
+          {
+            "kind": "macro",
+            "catalog_sequence": 155,
+            "path": "macro/731bdb16201ac64804ef572a80cb9d4e6bb4dd642e620722658777335342e8a9/receipt.json",
+            "sha256": "6a2f02fdfac1fb79a07c2586ff384cbd10bf48ac4064ae03abd3316413c84a34"
+          },
+          {
+            "kind": "observation",
+            "catalog_sequence": 153,
+            "path": "observations/2026-09-11/8ab5af95baaf6333bf83c1c8618e0ad97cef71da3c6e0003fa7a982900d94330/receipt.json",
+            "sha256": "887dfaf4deb96cac031586ab2a3c136989cdf26289416227df274bff6b32b902"
+          }
+        ],
+        "physical_recovery": "BLOCKED",
+        "natural_trigger": "UNVERIFIED",
+        "archive_restore": "NOT_RUN",
+        "scope": "Pinned receipt metadata only; no A3 or A4 acceptance",
+        "coordination": "None; frozen metadata snapshot only"
+      },
+      "natural_trigger": "UNVERIFIED",
+      "observed_start": "06:00:01 Hobart; trigger attribution unavailable",
+      "physical_recovery": "BLOCKED",
+      "decision": "Unchanged D026 deployment; September11 read-only terminal observation, not a new activation or manual start"
+    },
+    "natural_trigger": "FAIL: configured Git digest mismatch. Operational TaskScheduler event log disabled; no additional event-origin proof invented.",
+    "device_app": "UNVERIFIED: displayed screen/date/error requested; ADB query failed with protocol error.",
+    "finalization": "Natural obs-2026-09-10-1fe80918fd39676f and revision obs-2026-09-10-d43214e888ca836b marker/ledger metadata observed. The selected backup pointer must be independently bound at execution.",
+    "publication_checked_at_utc": "2026-09-09T22:26:32.127570+00:00",
+    "current_day": "September11 rolling payloads/index and live dashboard verified. Full natural ingest journal and dated-release acceptance remain separate; device symptom is unverified.",
+    "publication_v2": {
+      "checked_at_utc": "2026-09-10T22:18:56.219443+00:00",
+      "result": "PASS",
+      "run_date": "2026-09-11",
+      "exact_command": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "C:\\code\\AR-local-backup-observation-0911\\docs\\evidence\\backup-observation-20260911\\verify-publication.py"
+      ],
+      "manifest_sha256": {
+        "manifest.json": "29c1d8365bcb05a89cbc05d87db14e15d683d7751f372342265798e261c22218",
+        "manifest-v2.json": "126991260335508fda29d0f3ec752c2511a48a03ec2db3e3dc2cfcaf702437d6",
+        "dates-index.json": "de5e526565d174640c9c8132bd97bc888bbade7cd3b7eb11d0406d0581dfeb9d"
+      },
+      "checks": [
+        {
+          "version": "v1",
+          "asset": "core",
+          "sha256": "5f76873341f48d9296b6bad652f677fdbd530900cecb5f2d5946fe7a55e439f4",
+          "bytes": 351090,
+          "decoded_bytes": 11191251,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "details",
+          "sha256": "fbd9e1869aacbfbf46e3ccbceecb3b01083d38fd9f1684796b5c73bd14dafc7f",
+          "bytes": 715016,
+          "decoded_bytes": 11570375,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "search_index",
+          "sha256": "9cf00af22b67374ab7abc0b139562a30a82e2a87ffbaea34f45e2c059ff84de3",
+          "bytes": 564857,
+          "decoded_bytes": 6329259,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "history_banks",
+          "sha256": "1bdb64f352535eaebd38c73f7b2563162508a527244071eaceadc187c46c181b",
+          "bytes": 5858,
+          "decoded_bytes": 38970,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "bank_history",
+          "sha256": "39026a9acbcc217f8cf769490129f2baef8bc3654f5425400a249597fc7e828d",
+          "bytes": 18791,
+          "decoded_bytes": 622144,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "bank_spread_history",
+          "sha256": "c95defe1442c6c40164f5857cc1b2c2c4a56541c845a75e6d1546631ebeacc85",
+          "bytes": 15988,
+          "decoded_bytes": 844924,
+          "result": "PASS"
+        },
+        {
+          "version": "v1",
+          "asset": "rba_calendar",
+          "sha256": "25da284b25889ca71a084cae7a3c354b77f282e58348f59c365b42eb0c2a79db",
+          "bytes": 343,
+          "decoded_bytes": 1457,
+          "result": "PASS"
+        },
+        {
+          "version": "v2",
+          "asset": "product_history",
+          "sha256": "db129e790f2eff2f69e874de3c850c2f3d570bd33ad28f43a844fa2a37706d1c",
+          "bytes": 132715,
+          "decoded_bytes": 2611122,
+          "result": "PASS"
+        },
+        {
+          "version": "v2",
+          "asset": "economic_outlook",
+          "sha256": "0d6d719969f7be05630faa19cda9bde4de2e13a5b4ae2a55ae15982ef26dc303",
+          "bytes": 2236,
+          "decoded_bytes": 23410,
+          "result": "PASS"
+        }
+      ],
+      "scope": "All rolling v1/v2 descriptors verified for size/hash/gzip/JSON; core/details/product history and economic outlook dates checked; current dates index. Device state and dated release not verified by this script."
+    }
+  },
+  "task": {
+    "state": "Ready",
+    "last_run": "2026-09-11T06:00:01.0000000+10:00",
+    "last_result": 0,
+    "next_run": "2026-09-12T06:00:00.0000000+10:00",
+    "action": "-NoProfile -NonInteractive -WindowStyle Hidden -File \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_private_git.ps1\" -DeploymentPath \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json\" -DeploymentSha256 8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+    "execute": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "working_directory": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source",
+    "run_level": "Limited",
+    "name": "AR-local user-session backup",
+    "action_changed": false,
+    "principal_triggers_settings_preserved": true,
+    "status_checked_at_utc": "2026-09-10T22:19:11.343954+00:00"
+  },
+  "completed_gates": [
+    "PR658 merged483dcc243f76fc93a2e9222b49fb496c9192bd2d;151 local tests and applicable CI",
+    "PR659 merged16d949536c52839e07b7dd466da8257f787be207;139 focused tests1skip,22 handoff tests and applicable CI",
+    "PR660 mergedf58b7107ea007d9e5fcabde8a100b9f7ffff0686;156 focused/integration tests and applicable CI",
+    "All originatingPR654,657,658 substantive findings individually replied/resolved",
+    "Manual backup final source identities current; checksummed72-file metadata packet verified",
+    "PR661 evidence merged c31e62c30eeb8e361c7d45219de15a461c89303b; manual archive and metadata evidence preserved",
+    "PR662 Windows reader crash-safety merged 4f7d2b1ed; actual process-termination test passed; repository tooling only",
+    "PR663 deviation disclosure merged 3fad5237e1e43c69fb2be5bcf25c0cfb2aeb7602",
+    "PR664 D-022 reference correction merged 1702616303a11708fc7d26fdc063b5c88bf87816; source artifacts and decision fields preserved",
+    "PR665 complete-resume entry merged 6c818697dc42a31117ebf9cbc991776132ddd410; original evidence preserved; late command/schema findings addressed in this correction",
+    "PR666 merged e9ef2325415e70034fb0a2b12c19bda0a81e700a with Linux/Windows CI; late workflow acceptance omission addressed here.",
+    "PR667 merged 686eb709fd37fafe7a7c16c4403fa1e9a69af4b9; prior workflow finding resolved",
+    "140 focused tests passed including ordinary-token Windows child Git/exit behavior and transition lineage guards",
+    "Proposed private tools authenticated; strict production/receiver read-only check PASS with exit0 and empty SSH stderr",
+    "PR668 merged d930716ae1d32c19dd73b95ea5d719f6209eb179; Linux/Windows CI and substantive feedback dispositions complete",
+    "D023 intent before activation; authenticated predecessor chain and805 package files; action-only task transaction PASS with XML/readback",
+    "Ordinary-user hidden probe PASS09:13:32; user-requested manual task actually started09:14:25",
+    "Live Pi browser and verify:local PASS;46 focused dependency/handoff tests PASS",
+    "PR669 runtime correction merged28f64e17; its Linux test-size failure fixed by PR670 with both full Linux and Windows CI PASS",
+    "PR670 merged b6c5a4d8984ad2d2509514418c753cd555b0144f;60 focused size/regression checks PASS",
+    "D025 original control API and unchanged scheduled check PASS09:55:33; successful predecessor3b76be3477997900aaeeefb253e1a76323c0f3d18214cbfa891d4062223581b7",
+    "D026 exact ordinary-user task transaction PASS09:57:19 and probe PASS09:58:05; manual run started09:58:56",
+    "Every v2 descriptor downloaded and size/hash/compression/date verified09:48:32",
+    "D026 native scheduled execution PASS10:09:51; guard PASS and Task Scheduler Ready/exit0",
+    "Actual observation/control/macro archives restored and verified, catalog sequences150/151/152; all current at terminal",
+    "Frozen240-file metadata packet independently bound to current production/receiver/operator/date/catalog/component identities PASS10:18:04",
+    "PR668 all nine substantive threads and PR669 all three late substantive threads individually disposed and resolved",
+    "PR671 merged b4a6e36a0f30c94bc1dbef64f51b863abbc3f302; merged audit20 clean and all substantive threads resolved",
+    "September11 06:00:01 task execution completed06:10:16 nativePASS; guardPASS06:10:17; installed source/config unchanged",
+    "Current catalog155 and component153/154/155 restore checksPASS; frozen metadata bindingPASS08:19:48",
+    "All7 rollingv1 and2v2 payloads plus current dates-index verified08:18:56; browser and verify:local passed08:20"
+  ],
+  "open_gates": [
+    "Independent trigger attribution unavailable because TaskScheduler Operational history disabled; no inference from06:00 alignment",
+    "A3 unchanged successful natural current-production/receiver/configuration backup, origin evidence, separate current ingest/publication/dashboard and restore verification",
+    "A4 full offline activation, dependency, credential and write-path inventory, clone output identity and continuous boot/return safety controls",
+    "Actual A4 SD boot and bounded return to unchanged NVMe after A3 acceptance",
+    "PR607 simplification rebase, applicable CI, feedback, guarded merge, exact approved deployment and live removal/status verification after recovery acceptance"
+  ],
+  "next_action": "Close this evidence-only branch through the guarded PR CLI. Investigate a legitimate ordinary-user source of independent trigger attribution; do not infer it from a matching start time, enable privileged logging, replay a backup, or modify the accepted receiver just for closeout. Complete remaining A3 and A4 controls before physical work.",
+  "authorisation": "Ongoing user authorization to finish recovery without Windows Yes/UAC; this slice performs read-only inspection and evidence closeout only.",
+  "deviations": [
+    {
+      "change": "Normalized recovery-status observation timestamp in control revision",
+      "controls": "Preserve every status field except checked_at in semantic identity, retain and verify raw file bytes, verify normalized facts against restored file; unchanged strict private tools and all other freshness gates",
+      "risk": "Ignoring a substantive recovery-state change"
+    },
+    {
+      "change": "Immediate manual verification after exact corrected receiver activation",
+      "controls": "Ready task, existing locks and all original freshness/capacity/ingest gates; record manual origin and preserve natural failure",
+      "risk": "Overlap and invalid natural-trigger inference"
+    }
+  ],
+  "snapshot_notice": "September11 task Ready/0, native scheduled PASS, guard PASS, three restore results PASS; Windows task history disabled. No new activation or manual start occurred in this inspection.",
+  "evidence_artifacts": [
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-metadata-81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8.zip",
+      "bytes": 720918,
+      "sha256": "81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-result.json",
+      "bytes": 6972,
+      "sha256": "d5a1a936ab0aa9a7a549dabb31c06437dca563a5922b235df65a26c81b0d930b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/capture-current-once.ps1",
+      "bytes": 3357,
+      "sha256": "c132b880f6c83c832dc88e16e4da073229da702cfad46a98a6ce8a2d2c40d919"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/capture-once.ps1",
+      "bytes": 3358,
+      "sha256": "f140df64f9e8c495058a7a4db33679a492723076f17b9b6b4a8126c494e64c6a"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/capture-paths.ps1",
+      "bytes": 403,
+      "sha256": "288145e7ae3b957506c647592760d898dca7770d142fa7b9b74478328cf57955"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/check-backup-once.py",
+      "bytes": 4794,
+      "sha256": "01a19114da70c8ceee99d0a9aee3f7a14aa9dfd9f827cfe4d2c7a93c08211530"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/check-only-authority.json",
+      "bytes": 598,
+      "sha256": "5fd38df6fddc8bd2cb29e9f8e6b969dfaf450faa3242394d0c7a51529ee39556"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/check-only-output.txt",
+      "bytes": 1206,
+      "sha256": "d2091c69719c40fa3583b2395ac87e4e2ed0e8428e8e86d0e45e115b00abd294"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/CLOSEOUT.md",
+      "bytes": 4117,
+      "sha256": "fd37c34b1937b80677b337121c8b37bc98026c0544aba29060989b67d15ce346"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-authority.json",
+      "bytes": 671,
+      "sha256": "dfb513267e8f85f6050817a3acb392c25bb2959ad92866760f18c262f6afdef2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/control-refresh-output.txt",
+      "bytes": 1941,
+      "sha256": "d59706976638c58dd88d20189f6832aab40d10412b5c71d4c2f56bf09caa0163"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-02.txt",
+      "bytes": 328,
+      "sha256": "bbec1341d933f5b44ac6988294b10cfde2227179945351269b5e00beab898c33"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-03.txt",
+      "bytes": 535,
+      "sha256": "63812fc69e397e3f2b75d79f8a9978ba5d726312b7408a13555dbfccc0e2742b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-04.txt",
+      "bytes": 261,
+      "sha256": "e77250d4542b5bc4b55b74adf26094dcabb082486698f9cbc08ae02093b59bf5"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output-05.txt",
+      "bytes": 315,
+      "sha256": "95bb59a411bcc17f029f144d3725cd9858d204b137cc147b7597e0e7e3f56560"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-run-output.txt",
+      "bytes": 1041,
+      "sha256": "29de302ead5ec75f879a3ee124b175273f278d6761ad6db7fa94b939f0f5e63c"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-02.json",
+      "bytes": 539,
+      "sha256": "b79553d93585b079bbbab24a0534fb336413a31838beb38639b48bc2f8aba841"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-03.json",
+      "bytes": 539,
+      "sha256": "4d24e96045893fdf686ee2c3a81b0310766e2b04020192d4793b389410adefab"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-04.json",
+      "bytes": 570,
+      "sha256": "2893015ade17bfcbbee4487233e4dae81fc093f45f4075c3ef61bf65f0b6e643"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority-05.json",
+      "bytes": 570,
+      "sha256": "d9d9a8fd4c34f9725ba8688b14c6f58126f60a7694b556d2b6271b7c8891442e"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/early-start-authority.json",
+      "bytes": 539,
+      "sha256": "5814156fb02db8b3bebd5215df286777bfabbd6f62addd4c5385570ba6dd8df2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-01/capture.json",
+      "bytes": 1361,
+      "sha256": "fa9e38d0f4bbf906dde29291ca1477f2cefcccce737acbd64ef04b1900f30b20"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-01/stdout.json",
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-01/capture.json",
+      "bytes": 1383,
+      "sha256": "1133624f6b416228d3e2c67db833b575ebf89e3bd07e48b87089644d74c1ff5c"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-01/stdout.json",
+      "bytes": 1155,
+      "sha256": "63d0998761786cf508897f2d0a7164e69cd3386c9ce14fd3267016c6c89ebd91"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-02/capture.json",
+      "bytes": 1357,
+      "sha256": "1a9e683c66ec28e45d3101edbac31b7cf5ede908f725becd5951b3d47e546a96"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/execution-current-02/stdout.json",
+      "bytes": 8211,
+      "sha256": "fcab965408a1eb7f7932d193cf4880df8d2e36269c0d84762ce75089606ee956"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/known-helper-cleanup.json",
+      "bytes": 2226,
+      "sha256": "8a3b0006ad9e1db9f796db8422f02ece1fa38404d2265fe4dcbb8740884917a6"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/publication-check.json",
+      "bytes": 2663,
+      "sha256": "6b1b81f3291a586331068d6ed3831e0b48d27d518aa934077ee8e29ebc136db7"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/README.md",
+      "bytes": 4285,
+      "sha256": "258e272c75fb0ea54894c1f21fa18177d180c3e954863eed412368dfe109c4c5"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receipt-binding-02.json",
+      "bytes": 1180,
+      "sha256": "8b26de4a1fe5252f9cc2b5e5c98c7c9307425639921e873a7964f8cc1524d22c"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receipt-binding.json",
+      "bytes": 109,
+      "sha256": "d570c08a9c5e21f80c26d6f5cf49beb7e2de0b5e5299927bcccacf2a2942314d"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receipt-expectations.json",
+      "bytes": 1285,
+      "sha256": "a487bf5e48c24e4e8a0efed2aee3d60818701cb68bf3624833e8fd872a4e0777"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/installation.json",
+      "bytes": 825,
+      "sha256": "eb0e48ca9374af98ae97cb1ab2af1b8b921a05a9c9a548ff457cdb8b795b21ae"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/predecessor-verification.json",
+      "bytes": 731,
+      "sha256": "43d7d8a2317726cc185a51e19500c572f769b1297da58719772157f90cf81215"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/task-after.xml",
+      "bytes": 2200,
+      "sha256": "899762f09d2c9db6ccc25718abbd4f8cd85a6340fd236fcf4845a3b7fd6d7ed0"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/task-before.xml",
+      "bytes": 2200,
+      "sha256": "3e584ec94e033af8d7fd04d146d92d8fcf69cc4051a45de98be31516a26efe4a"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/receiver-transition/user-session-backup.json",
+      "bytes": 2053,
+      "sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/refresh-control-once.py",
+      "bytes": 6121,
+      "sha256": "0c7a3485722d08ec762551c01ff25c31681c3e7903d374836f0ebea34664b3af"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-02.py",
+      "bytes": 2222,
+      "sha256": "61bcf2b771ba5a5a4b75e8a461f2dae5eff31886596a022cf7d54e50b8757892"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-03.py",
+      "bytes": 2222,
+      "sha256": "34d52e8c938759a11712e6860e039448b0464d54d385a8ddfafd199e01aa1317"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-04.py",
+      "bytes": 3066,
+      "sha256": "972aa442faeba5b771ad01242c3cc929a3647232a32dc2879ff1d256db8ea7c1"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once-05.py",
+      "bytes": 3665,
+      "sha256": "945dd6a40c5fc4687b481ad30e04ad567ea6cab12df4b0b9375d733402c65519"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/run-early-once.py",
+      "bytes": 2219,
+      "sha256": "d3e3edd420aa77b55cec38b8d109926a5b1ad2cebb3ff0297df2caea315c20e2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/runtime-identity-current.ps1",
+      "bytes": 3446,
+      "sha256": "c44439d95fb8bf1358b44994e93a08473a85b53a3b0e8eab05192aad9c9b8726"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/runtime-identity-isolated.ps1",
+      "bytes": 3428,
+      "sha256": "511e1143ca3cacd8d7adcb2458e92f32ad40082972c6c517680d980bcf126915"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-correction.json",
+      "bytes": 6104,
+      "sha256": "1900350ead425ef5f7d9dee333d984648a328350f628a99edea4605b532da5d9"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/manual-deviation-d022.json",
+      "bytes": 6663,
+      "sha256": "3982b8c1ac01a162bb038021ddacdc04835dfdce2e8da1f79328bc639fffada2"
+    },
+    {
+      "path": "docs/evidence/runtime-boundaries-20260909/resume-local-state.json",
+      "bytes": 854,
+      "sha256": "69e92ca4d11b5d117a84396fdb8ce2b624a099ee78a30ab8d136c0f435d74222"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/clone-isolation-draft.json",
+      "bytes": 3782,
+      "sha256": "10b7957a8debd7d826d8a5e535694b24ed2cc9048530df78c3b5d8f56acc15b4"
+    },
+    {
+      "path": "docs/evidence/a4-readiness-20260908/watchdog-readback.json",
+      "bytes": 1769,
+      "sha256": "75b16ec24182f8feade39ef8ee11b9d5bada90c7bc69eb38a3f925da95ce73e4",
+      "byte_scope": "Checked-in Git blob; historical runtime byte variants preserved separately"
+    },
+    {
+      "path": "docs/evidence/a4-preparation-closeout-20260908/watchdog-byte-variants.zip",
+      "bytes": 2409,
+      "sha256": "e912a3e94b6211ac26effb070d9da28f034a50e0862cb4528c9dc4a706236c7e"
+    },
+    {
+      "path": "docs/evidence/pretrigger-20260910/local-task-state.json",
+      "bytes": 1249,
+      "sha256": "4d7a3bfdac92d71bf558bf9ec8b66b4fe9ff5e7d89443817c5073480432fdc70",
+      "scope": "Decoded observation record, not a raw backup receipt"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/app-payload-2026-09-10-manifest.json",
+      "bytes": 1211,
+      "sha256": "5c1c85ac2174ad8de3fe3f9759db0bac2da58f3fab86ec9a8a75b0762bb6de4f"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/app-payload-latest-dates-index.json",
+      "bytes": 2260,
+      "sha256": "990681bae7172ec1eab41c51881f2707cb0e7f80b453c9f67e31aa13ab891e4a"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/app-payload-latest-manifest-v2.json",
+      "bytes": 1217,
+      "sha256": "15c6ec8872fde5ef261f53b31e5cd2b5f6dfe4320735699b9df4b90975967d5b"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/app-payload-latest-manifest.json",
+      "bytes": 2881,
+      "sha256": "b56e0a4d76cd8fc93af6f13627c7b78996078d24ddeaf85ade0b240970359e3d"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/append-preparation.py",
+      "bytes": 8135,
+      "sha256": "a30a011a56e395489d3218e60a090853ffb4a96dc2734a0e33ee993406b2c02c"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/capture-publication.py",
+      "bytes": 2124,
+      "sha256": "cb05abb64c447c6cf215fb5fbb666693c85035b9c485884821f75feaa915df6d"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/failure-state.json",
+      "bytes": 397,
+      "sha256": "7eb887baccc4f6056255a305c08a195084991a4538ce43daab7d1790b8ad4fca"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/git-ssh-package.json",
+      "bytes": 71398,
+      "sha256": "e715d537efd4573600b09ea85c135707e06de866e9e425bcb37432ff5f95f48c"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/native-ssh-package.json",
+      "bytes": 5870,
+      "sha256": "eb13d41a14ba6fb33a44847542c7e8329ba89a8f40b2d52d67631d731813092a"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/natural-0600.stderr",
+      "bytes": 71,
+      "sha256": "a69b0af4f1f1d22fe224a23e7664be1f8b552471824798997a7d3f91d1cf533e"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/openssh-authentication.json",
+      "bytes": 5272,
+      "sha256": "a94496b23223ec0cef5a5846a1b795a79fccc936624cb54749ceba11b7d60229"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/package-manifest.json",
+      "bytes": 62817,
+      "sha256": "535d255b171994bfcf4ad4d289cf61a6ec11bb607ba5a8932734008c8d1a0673"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/pi-preflight-20260909T224133.json",
+      "bytes": 28549,
+      "sha256": "98ee8566efcc6bd92f5c6ee72b533c79b7b0a706954b8dfc5646fd1c7c6a39c0"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/pi-preflight.py",
+      "bytes": 3414,
+      "sha256": "a105cec4a4cf03fd4a3da690cf6478479fd423ce1ef716cacdcca68c1f67a606"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/pi-private-preflight-20260909T225634.json",
+      "bytes": 28469,
+      "sha256": "702ae58cbb1abd046c94d9156cce3adad8c991334a20e71d5e8eb16ceac6ca4b"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/pi-private-preflight.py",
+      "bytes": 3456,
+      "sha256": "765d67d866c254c9468fbda33ebf841643b241187899a56121fc6f9337f4cf07"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/private-runtime-proof.json",
+      "bytes": 9121,
+      "sha256": "6ff5f5b0fc03d5c8a9269d34cd33e1d31d7a8232f4c39f212673aa0a2d34d2ac"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/publication-check.json",
+      "bytes": 2335,
+      "sha256": "d4175b8abc21e7482ee5de3033d40406799863dd477c6dcf23bb5280d2d44101"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/read-only-tool-proposal.json",
+      "bytes": 2187,
+      "sha256": "2df04d731f6fba90c1a30243e7bae96c1715cd50cbfdc85a13cd37195860c8b5"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/README.md",
+      "bytes": 3461,
+      "sha256": "db3784bcdd611a5fbfb0d01abd2970328a6e7f725b315813637d0b5e8f498ab9"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/runtime-20260909T223924.json",
+      "bytes": 1429,
+      "sha256": "9af6d8367b3ae9d986564b1b6410913a62ab9765270de83f84c59c9d107d1496"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/runtime-v3-20260909T224634.json",
+      "bytes": 1388,
+      "sha256": "406d0e617011f6068ae1dc7af5946385b345d6c27d00e0e3115d5c33f3646dfa"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/runtime-v4.json",
+      "bytes": 1344,
+      "sha256": "f16d7327c3c7617bf3642f866069b914b0ef335ab7e1abe5381b35362f7217e0"
+    },
+    {
+      "path": "docs/evidence/git-dependency-20260910/stage-git-ssh.py",
+      "bytes": 2045,
+      "sha256": "f4767ae31497119953ab409c3a37bb3d6ed25a0be9479a843e0266e53cb6aed9"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/append-handoff.py",
+      "bytes": 7962,
+      "sha256": "84a903a2f09befecfd53af0052c9373ac4c4ab0e3b3e1863e89c47e0376a4df8"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/capture-terminal.py",
+      "bytes": 5073,
+      "sha256": "b106fac2ff20ed37d6e1e24dd42d32b4ba94dc1d068fc7a7a3612ab993a6a4da"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/compare-control.py",
+      "bytes": 2614,
+      "sha256": "eabbaba8dd35b1e88edd95562770b77d0f275b7bd780955323af379aed6d6b04"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/control-difference.json",
+      "bytes": 1974,
+      "sha256": "7b1c28cd0366b0d2905515bdb52eb31afd85f7ef817f17e630a4bde29e38eda0"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/control-status-comparison.json",
+      "bytes": 3652,
+      "sha256": "ff2279aabb238fc79ad917b645306cbe2b5f8add944348b46406214e61f03b59"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/D-023-activation-intent.json",
+      "bytes": 5338,
+      "sha256": "02c3b5838e8fbfcfa63596aab7013b027469043d33fda4806710dc455dc88236"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/freeze-summary.py",
+      "bytes": 4712,
+      "sha256": "ca6e0629cc49d70d0f1a2e45e664e9185daafbad986375d1c0535172ddb002e9"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/install.ps1",
+      "bytes": 2745,
+      "sha256": "1f331e482493fac9fbb4ea04b9677fdb8e35a05506ca69f3217cd77f5f1a285a"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/live-dashboard.json",
+      "bytes": 706,
+      "sha256": "c8a83038cb08fe19efa3bce38fed9092a01197a355a3f145483c66d205b2adfe"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/predecessor-check.json",
+      "bytes": 1556,
+      "sha256": "78f676d204c2090cd06ee104e0cc033ea01e1d82eff0f6ec9e143349354e275e"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/prepare.py",
+      "bytes": 7694,
+      "sha256": "6134a0f1486f645b210a3ae5d9aa7d1e4fabd1e87eb6e9c34fa8fe0e851b429e"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/private-tools-deployment.json",
+      "bytes": 2163,
+      "sha256": "9751b0441d9eec953b19de5f148018afdd76b99effcb8c60bb8449a79e63e314"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/README.md",
+      "bytes": 3568,
+      "sha256": "90b6702054170e7bd2025b67274b20faf703630c4c0f7c64b7f5849523ef9d71"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/terminal-metadata-12b9593b5b92b24999d904d6fe08b71bb4fa5a1830b45302a10d4146e89a6bc1.zip",
+      "bytes": 1143072,
+      "sha256": "12b9593b5b92b24999d904d6fe08b71bb4fa5a1830b45302a10d4146e89a6bc1"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/terminal-summary.json",
+      "bytes": 10478,
+      "sha256": "5a2510cd8fb3299d55a5791ba7d40a806e750f066c89a54c4d868173aaf84694"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/tool-contract.json",
+      "bytes": 535,
+      "sha256": "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/user-session-backup.json",
+      "bytes": 2177,
+      "sha256": "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff"
+    },
+    {
+      "path": "docs/evidence/private-tools-activation-20260910/verify-snapshot.py",
+      "bytes": 2690,
+      "sha256": "05a5a7c8d4225193ccb04a5c48a6973753384b7481446990af7258a9f211c8f5"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/activation-probe.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/activation-probe.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/guard-executions/20260909T235757Z-9d285ed1760f4e25bb1f069cf5f31956.json",
+      "bytes": 1253,
+      "sha256": "96cf22c7fa6ad6360faedb1636de28c1690fe0bbec0b899ed356250dfe85d99c"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/manual-start-intent.json",
+      "bytes": 1202,
+      "sha256": "072090bb109d8fabc81fa41c5a96697879af250b689bc74db3eed8900f33519b"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/task-update/installation.json",
+      "bytes": 407,
+      "sha256": "faaf462b975b66a7e033f543c90a552f0d530256a97a320209c3d49a82caeceb"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/task-update/predecessor-verification.json",
+      "bytes": 1511,
+      "sha256": "01dde38e6f6e6aefc57c2af77c3d0b455f553e8cb889766b32b27214466bea43"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/task-update/task-after.xml",
+      "bytes": 4364,
+      "sha256": "896060e57fa5ea4d095cc45e4d572716bb1cf3d19e22e1604cdbcc8719d8ae71"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/activation/task-update/task-before.xml",
+      "bytes": 4358,
+      "sha256": "4981e0d39bdbe5b8ebee8e27a93d505bf3d22e74646dd91bdf983ee71e17e3b0"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/append-running.py",
+      "bytes": 6551,
+      "sha256": "64e5b69e8affcb847117be222d36e4f2daff6d0f29da7e06dc279a3c99282ee3"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D-026-activation-intent.json",
+      "bytes": 5791,
+      "sha256": "7610ca222a8fb55a456470f7ed1ea362bdf809ea183f710aaaf57aea0b5cc461"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/20260909T235532Z-8b13ff481c5d45d29f63c699651eb5a9.json",
+      "bytes": 2252,
+      "sha256": "3b76be3477997900aaeeefb253e1a76323c0f3d18214cbfa891d4062223581b7"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/control-receipt.json",
+      "bytes": 3342,
+      "sha256": "0a8a7b2d8d72465ee000b25b7606cca782f25ef1205873952fb9067715664428"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/intent.json",
+      "bytes": 5399,
+      "sha256": "935d993eec5949cc0d6d2cfdeeb7df7b4a6ea9c80c6883685ed06cb74ca9f34c"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/refresh.py",
+      "bytes": 5482,
+      "sha256": "04477d10f91a3e53b729ac8b0eb3ff77738b98f144774ac83a77dcf30e873067"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/stdout.txt",
+      "bytes": 2594,
+      "sha256": "f96c26b2e688b86529cd553210fa824a58b3c5cc7b455060a556ad0e38d0dbc8"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/D025/terminal.json",
+      "bytes": 1544,
+      "sha256": "27b91015bd8597bb31c33920932135f2512644501feed69cc258643ca7dca691"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/install.ps1",
+      "bytes": 3050,
+      "sha256": "34f93a4c2a0a9592fe75cf432add84d1151030bf6b0b769f7f58e23ebd226f54"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/prepare.py",
+      "bytes": 8306,
+      "sha256": "88e6a32e0c8c1707af4a016932cd64b7ff333e4703110bdeca9e6e4235f008ae"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/private-tools-deployment.json",
+      "bytes": 2151,
+      "sha256": "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/publication/v2-economic_outlook.json.gz",
+      "bytes": 2247,
+      "sha256": "4df051be162cba21ec789b086f272427f49b4bf27cc46cb09b6724fe7de71a4b"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/publication/v2-product_history.json.gz",
+      "bytes": 132137,
+      "sha256": "e556a466467db1684f1c4aed7e8eb91c0446dae08481da91d1f3406c43c3e9be"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/publication/v2-publication-check.json",
+      "bytes": 1567,
+      "sha256": "7bf8f297662d66ef86dc30272caa861effd0bd5c12967778956d2629a906e789"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/publication/verified-manifest-v2.json",
+      "bytes": 1217,
+      "sha256": "15c6ec8872fde5ef261f53b31e5cd2b5f6dfe4320735699b9df4b90975967d5b"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/publication/verify-v2-publication.py",
+      "bytes": 3018,
+      "sha256": "f5a68b3a52a6feb27a76596864c281809c1506a35b8d3b268d4b3e8e270a782b"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/README.md",
+      "bytes": 2631,
+      "sha256": "3e74602efb58f2e4d6648505b775e2e1756fffa0fd796537e5b37267d5785a23"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/D-024-activation-intent.json",
+      "bytes": 5601,
+      "sha256": "24c3ef0fe21627de8327b0b886fe4d50e12378e0d56fb94490b415b32997b71e"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/D-024-authorized-activation.json",
+      "bytes": 6130,
+      "sha256": "b4651c8c38d5a73df421834ad4a560f389dabf8eb08cfb9359fc1aaf1a9f323a"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/install.ps1",
+      "bytes": 3054,
+      "sha256": "ca1a90674f02c9720e45f10f223e6f02d09f473ae0a369818cb873fd73d50cda"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/prepare.py",
+      "bytes": 8116,
+      "sha256": "1d3418def5cffd9e2af560b6379541eec14ab7930a865736be574ebc8e958e91"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/private-tools-deployment.json",
+      "bytes": 2151,
+      "sha256": "3f32379326f3654dced8b9e084a1b36c80297f35f773883cc5e363a9c9c092db"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/task-update/installation-failed.json",
+      "bytes": 202,
+      "sha256": "a26b8c63e606ee7cddd0ed2c43c840f44e25a9466f68da19d8d1c3c9b4a2f304"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/task-update/task-before.xml",
+      "bytes": 4358,
+      "sha256": "4981e0d39bdbe5b8ebee8e27a93d505bf3d22e74646dd91bdf983ee71e17e3b0"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/tool-contract.json",
+      "bytes": 535,
+      "sha256": "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/rejected-v6/user-session-backup.json",
+      "bytes": 2178,
+      "sha256": "08f3b6f41a5f46e5faeea2af21f8cb19294699bb322032a1abe23c3e78f0911b"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/running-task.json",
+      "bytes": 782,
+      "sha256": "71c5621adbd2349e562e93cac8a32698beba7e487814f9d5c2f0af8c55885400"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/tool-contract.json",
+      "bytes": 535,
+      "sha256": "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/user-session-backup.json",
+      "bytes": 2178,
+      "sha256": "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/append-terminal.py",
+      "bytes": 5630,
+      "sha256": "e8a3356477190daf91b1982bcb30e7ab42f1d797ce4224cd8dfb861fe3f24fc4"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/binding/expectations.json",
+      "bytes": 1260,
+      "sha256": "2782f56e825c48a5a8823734b59740c64a75ac542f4b0af391a025811c17dfe9"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/binding/receipt-binding.json",
+      "bytes": 837,
+      "sha256": "7c8c6959de399f599cc917c2cc416282b2ca561c28f1cf83efc3a82fc74a67c9"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/binding-current/expectations.json",
+      "bytes": 1260,
+      "sha256": "2782f56e825c48a5a8823734b59740c64a75ac542f4b0af391a025811c17dfe9"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/binding-current/receipt-binding.json",
+      "bytes": 2009,
+      "sha256": "bb027fa9f7dd61eb63a7881c7e8452336f175220ff61cda9fa4d43feabed505a"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/capture-terminal.py",
+      "bytes": 5262,
+      "sha256": "fe7adfb72530bc7ceda6f748e17cf4d2ef4c09d912de8bc372c228fc8ab037cd"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/freeze-summary.py",
+      "bytes": 4714,
+      "sha256": "c2132235210f0843adb626b3d780381a9df290e7c80b34b59ad5adb5de908e3f"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/terminal-metadata-bee58eda701b54dda6eaf3dca076ceb3b7003b8aa22b2277f108bd0712671d1d.zip",
+      "bytes": 1157595,
+      "sha256": "bee58eda701b54dda6eaf3dca076ceb3b7003b8aa22b2277f108bd0712671d1d"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/terminal-summary.json",
+      "bytes": 12349,
+      "sha256": "065da0b499161f9de550d7a44ad9add7682c31a7122a7bcf1d22c0e4d1a8267f"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/TERMINAL.md",
+      "bytes": 2100,
+      "sha256": "e7073d4cc7db6d4a6bdd2f861137eb36a815dd142915732fe5dece4856d50c71"
+    },
+    {
+      "path": "docs/evidence/recovery-clock-20260910/verify-snapshot.py",
+      "bytes": 2726,
+      "sha256": "8017bffa303d96951a27528c38bcfce105acef14070fd6a5aaf01c35b944d205"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/append-handoff.py",
+      "bytes": 6192,
+      "sha256": "56919cd8d1aa3f580fcf7f4ea050bf29beb74e3a73ffb9113d5a7416de7cacdf"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/binding-current/expectations.json",
+      "bytes": 1260,
+      "sha256": "30de68d2d51e8316584c004c942c6d831c422cd6a162ec50be4eba39dfd6fc5d"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/binding-current/receipt-binding.json",
+      "bytes": 1999,
+      "sha256": "7f18a6239a817751dd74468c16c525c58b550f53661d587ddf842a4908264cc7"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/capture-terminal.py",
+      "bytes": 5639,
+      "sha256": "86aaf8f922b45c5d83976c4ee21c9504b7509f3df1d8054c98a9abd52c5fbf55"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/D-026-activation-intent.json",
+      "bytes": 5791,
+      "sha256": "7610ca222a8fb55a456470f7ed1ea362bdf809ea183f710aaaf57aea0b5cc461"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/freeze-summary.py",
+      "bytes": 5066,
+      "sha256": "9d29534348c29583028ad395f03962888f21f0d70ac81f78ade9d08ca03452bd"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/observe-task.ps1",
+      "bytes": 1204,
+      "sha256": "5cee91eccb801086c7de5d7883aa6b07a8d5f8bc491649489291fddcf3258b5a"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/observed-task.xml",
+      "bytes": 2183,
+      "sha256": "8926e4e7163b1c5df0e4df263801519dfe2c93e8f98186834412daca1e1ae32d"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/private-tools-deployment.json",
+      "bytes": 2151,
+      "sha256": "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/dates-index.json",
+      "bytes": 2278,
+      "sha256": "de5e526565d174640c9c8132bd97bc888bbade7cd3b7eb11d0406d0581dfeb9d"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/manifest-v2.json",
+      "bytes": 1217,
+      "sha256": "126991260335508fda29d0f3ec752c2511a48a03ec2db3e3dc2cfcaf702437d6"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/manifest.json",
+      "bytes": 2882,
+      "sha256": "29c1d8365bcb05a89cbc05d87db14e15d683d7751f372342265798e261c22218"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/report.json",
+      "bytes": 3001,
+      "sha256": "211358849118712b6b5e9d5c5050212ea9dcb22ecf84a99641a699c5f7256ec2"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-bank_history.json.gz",
+      "bytes": 18791,
+      "sha256": "39026a9acbcc217f8cf769490129f2baef8bc3654f5425400a249597fc7e828d"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-bank_spread_history.json.gz",
+      "bytes": 15988,
+      "sha256": "c95defe1442c6c40164f5857cc1b2c2c4a56541c845a75e6d1546631ebeacc85"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-core.json.gz",
+      "bytes": 351090,
+      "sha256": "5f76873341f48d9296b6bad652f677fdbd530900cecb5f2d5946fe7a55e439f4"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-details.json.gz",
+      "bytes": 715016,
+      "sha256": "fbd9e1869aacbfbf46e3ccbceecb3b01083d38fd9f1684796b5c73bd14dafc7f"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-history_banks.json.gz",
+      "bytes": 5858,
+      "sha256": "1bdb64f352535eaebd38c73f7b2563162508a527244071eaceadc187c46c181b"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-rba_calendar.json.gz",
+      "bytes": 343,
+      "sha256": "25da284b25889ca71a084cae7a3c354b77f282e58348f59c365b42eb0c2a79db"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v1-search_index.json.gz",
+      "bytes": 564857,
+      "sha256": "9cf00af22b67374ab7abc0b139562a30a82e2a87ffbaea34f45e2c059ff84de3"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v2-economic_outlook.json.gz",
+      "bytes": 2236,
+      "sha256": "0d6d719969f7be05630faa19cda9bde4de2e13a5b4ae2a55ae15982ef26dc303"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/publication/v2-product_history.json.gz",
+      "bytes": 132715,
+      "sha256": "db129e790f2eff2f69e874de3c850c2f3d570bd33ad28f43a844fa2a37706d1c"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/README.md",
+      "bytes": 2553,
+      "sha256": "6f7d4dd67478596bb46fa737d3ad63a0e5d3303bd90436a9f9c942b2547fc541"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/task-observation.json",
+      "bytes": 542,
+      "sha256": "8fb4691e5c045485454a0c5952294321b55c189bbc3df4753426ab065c3e0d45"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/terminal-metadata-ee43d16161de8eaa9994ef11e6dad9cb1bf3c3e45aae032805285b4540d2f3f4.zip",
+      "bytes": 1859596,
+      "sha256": "ee43d16161de8eaa9994ef11e6dad9cb1bf3c3e45aae032805285b4540d2f3f4"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/terminal-summary.json",
+      "bytes": 11875,
+      "sha256": "932393f758ad62d03c8e0b4e399f12e7cf4946a8671246c2215b5d3827086e01"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/user-session-backup.json",
+      "bytes": 2178,
+      "sha256": "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/verify-publication.py",
+      "bytes": 3213,
+      "sha256": "09e2fb0f7d27be7e98762198a3d354e07826627d1e058de669d57c77796e2f5d"
+    },
+    {
+      "path": "docs/evidence/backup-observation-20260911/verify-snapshot.py",
+      "bytes": 2775,
+      "sha256": "924648b20d66453bb6e9dfc9343591220c2669cb2b0ffb0cb408659280bb718e"
+    }
+  ],
+  "author": "Codex for jkoka",
+  "current_phase": "Unchanged receiver completed observed 06:00 run; A3 trigger attribution and remaining full acceptance evidence open",
+  "reason": "Record a real successful backup without inventing missing trigger provenance or physical recovery acceptance.",
+  "in_flight_legacy_plan": {
+    "state": "NONE: no older execution is active",
+    "preservation": "Legacy backup policy and historical v1.3 receipts are unchanged and must not be relabeled. The administrator-owned legacy task and target are outside this work."
+  },
+  "repository_state": {
+    "primary": {
+      "path": "C:\\code\\AR-local",
+      "sha": "a0bd0f54200c91ef7aaa2fb163e752005ddb71e8",
+      "clean": false,
+      "unrelated_changes": [
+        " M .cursor/skills/pi-deploy-agent/SKILL.md",
+        "?? .codex/config.toml",
+        "?? laptop_backup_trusted_launcher.obj"
+      ],
+      "checked_at_hobart": "2026-09-09T09:18:46.3616539+10:00",
+      "action": "Preserve; do not clean, checkout, reset or use as execution source"
+    },
+    "correction": {
+      "path": "C:\\code\\AR-local-backup-observation-0911",
+      "branch": "agent/backup-observation-0911",
+      "base_sha": "b4a6e36a0f30c94bc1dbef64f51b863abbc3f302",
+      "clean_at_start": true,
+      "scope_of_changes": "Read-only observed backup/publication evidence only"
+    },
+    "production": {
+      "path": "/srv/ar-local/AR-local",
+      "sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+      "clean_at_snapshot": true,
+      "checked_at_hobart": "2026-09-10T08:56:34+10:00",
+      "current_cleanliness": "Read-only source verification and actual backup preflight; no production mutation"
+    },
+    "installed_receiver": {
+      "path": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source",
+      "sha": "b6c5a4d8984ad2d2509514418c753cd555b0144f",
+      "clean_at_snapshot": true,
+      "checked_at_hobart": "2026-09-11T06:10:17+10:00",
+      "current_cleanliness": "Exact source/config and805 private package files authenticated by successful guard; not replaced by this evidence branch"
+    }
+  },
+  "prohibited_advancement": [
+    "No A3 acceptance from the modified manual operational PASS or metadata binding",
+    "No media writes, writable mounts, EEPROM changes, reboot or boot before A3 and complete physical controls",
+    "Do not merge, deploy or mark PR607 ready before applicable recovery gates",
+    "No Windows UAC, administrator task mutation, host-key weakening, canceled elevated payload reuse or backup rerun to manufacture chronology"
+  ],
+  "timing": {
+    "earliest_documentation_start_hobart": "2026-09-10T08:59:05.143524+10:00",
+    "natural_trigger_hobart": "2026-09-12T06:00:00+10:00",
+    "earliest_natural_terminal_inspection_hobart": "Current September11 terminal inspected; future inspection after terminal only. Matching time does not close origin gap.",
+    "latest_safe_stop_hobart": "Manual backup must start before14:00; original six-hour task bound and22:00 cutoff remain; stop earlier on protected-workload conflict",
+    "physical_window": "NONE AUTHORIZED; do not derive boot permission from these observation times",
+    "protected_workloads": "Preserve 01:00 Hobart ingest and Avalon ten-minute workload; do not overlap live receipt locks with the 06:00 or sign-in trigger",
+    "earliest_manual_start_hobart": "Immediately after reviewed exact-candidate activation and fresh idle/ingest/predecessor checks, before 14:00 September10",
+    "manual_start_hobart": "2026-09-10T09:58:56.0000000+10:00",
+    "manual_completed_at": "2026-09-10T00:09:51Z",
+    "observed_task_start_hobart": "2026-09-11T06:00:01.0000000+10:00",
+    "observed_task_completed_at": "2026-09-10T20:10:16Z"
+  },
+  "commands": {
+    "current_slice_workdir": "C:\\code\\AR-local-backup-observation-0911",
+    "current_slice": [
+      "gh pr view --json number",
+      "npm run pr:merge -- --pr <number-returned-for-this-branch>",
+      "npm run pr:bot-feedback-audit"
+    ],
+    "natural_state_read_only": [
+      "Get-ScheduledTask -TaskName 'AR-local user-session backup'",
+      "Get-ScheduledTaskInfo -TaskName 'AR-local user-session backup'"
+    ],
+    "future_receipt_check": "Prepare fresh hash-pinned current-day expectations and isolated current verifier only after verifying runtime and task identity. Use PR662 or later reviewed Windows handle-lock reader outside trigger windows. No executable future receipt command is authorized until those fresh inputs exist.",
+    "historical_scripts": "All September9 one-time manual wrappers and capture output directories are evidence only; never replay or overwrite them.",
+    "tracked_contract": {
+      "package_script": "pr:merge",
+      "entrypoint": "scripts/pr-merge.mjs",
+      "guard": "scripts/lib/pr-closeout-guard.mjs",
+      "verification": "scripts/verify-pr-merge.mjs",
+      "workflow": "WORKFLOW.md",
+      "execution_rule": "Run only from the clean reviewed topic checkout. The CLI validates the actual default base before explicit draft promotion; dry-run does not promote. GitHub branch protection remains in force."
+    },
+    "post_deployment_acceptance": {
+      "gate": "Only after authorized exact-commit product/Pi deployment under controlled recovery gates",
+      "browser": "Inspect http://100.78.28.10/ changed behavior and relevant browser errors",
+      "smoke": "npm run verify:local -- --base-url=http://100.78.28.10/",
+      "equivalent": "npm run verify:pi",
+      "required_evidence": "Approved deployed commit, URL, timestamp and actual browser plus smoke results; failed checks require fix/reverification and blocked gates retain runtime ownership"
+    },
+    "activation": {
+      "manual_start": [
+        "Start-ScheduledTask",
+        "-TaskName",
+        "AR-local user-session backup"
+      ],
+      "probe": [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-File",
+        "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_private_git.ps1",
+        "-DeploymentPath",
+        "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json",
+        "-DeploymentSha256",
+        "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+        "-Mode",
+        "probe"
+      ],
+      "verify": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "-B",
+        "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_user_update.py",
+        "--old-config",
+        "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\user-session-backup.json",
+        "--old-sha256",
+        "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff",
+        "--config",
+        "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\user-session-backup.json",
+        "--config-sha256",
+        "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5",
+        "--tool-contract",
+        "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\tool-contract.json",
+        "--tool-contract-sha256",
+        "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+      ]
+    },
+    "manual_backup": "NOT_RUN in this inspection; do not replay a successful backup",
+    "current_evidence": {
+      "summary": "docs/evidence/backup-observation-20260911/terminal-summary.json",
+      "packet": {
+        "path": "terminal-metadata-ee43d16161de8eaa9994ef11e6dad9cb1bf3c3e45aae032805285b4540d2f3f4.zip",
+        "bytes": 1859596,
+        "sha256": "ee43d16161de8eaa9994ef11e6dad9cb1bf3c3e45aae032805285b4540d2f3f4"
+      },
+      "commands": {
+        "freeze": [
+          "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+          "docs/evidence/backup-observation-20260911/freeze-summary.py",
+          "--snapshot",
+          "C:\\code\\backups\\AR-local-user-session\\natural-observation-20260911\\snapshot"
+        ],
+        "receipt_binding": [
+          "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+          "-B",
+          "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_recovery_receipts.py",
+          "--target",
+          "C:\\code\\backups\\AR-local-user-session\\natural-observation-20260911\\snapshot\\backup",
+          "--expectations",
+          "C:\\code\\AR-local-backup-observation-0911\\docs\\evidence\\backup-observation-20260911\\binding-current\\expectations.json",
+          "--expectations-sha256",
+          "30de68d2d51e8316584c004c942c6d831c422cd6a162ec50be4eba39dfd6fc5d",
+          "--snapshot"
+        ]
+      },
+      "publication": [
+        "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+        "C:\\code\\AR-local-backup-observation-0911\\docs\\evidence\\backup-observation-20260911\\verify-publication.py"
+      ]
+    }
+  },
+  "acceptance_criteria": {
+    "current_slice": "Preserve actual current native/guard/restore result and separately verify frozen receipts and public payloads; keep trigger attribution explicit; reviewed evidence PR only",
+    "a3": "Genuine unchanged natural current-pair trigger success plus complete controlled execution envelope and separately verified fresh source, catalog, component receipts, independent restore, daily ingest/finalization/publication/dashboard; no inferred trigger origin",
+    "a4": "After A3: exact clone and original media identities, all writer/credential isolation and approved path changes, bootloader-to-OS reset coverage, negotiated hardware timeouts and network-independent return deadline; actual SD-root/restored-data proof and bounded return to unchanged NVMe",
+    "manual_execution": "D026 operational backup and original restore checks PASS; independent receipt binding PASS. Manual origin does not satisfy A3 natural-trigger or A4 physical acceptance. Historical September9 controlled BLOCKED remains unchanged."
+  },
+  "stop_conditions": [
+    "Any unexpected plan, code, configuration, task, date, media, source hash or repository-state change: stop the dependent operation and record it without overwriting evidence",
+    "Busy backup/receiver lock, running natural task or trigger-window overlap: do not acquire live reader locks or launch competing work",
+    "Missing/expired current-day expectations, failed latest receipt, incomplete lineage or missing component/source/restore proof: no A3 advancement",
+    "Absent physical reset/return coverage or non-isolated writers/credentials: no media/EEPROM/boot action",
+    "Any request for Windows Yes/UAC or additional authentication: stop that action; never weaken controls",
+    "Stop at stated daytime deadline or before any protected workload conflict"
+  ],
+  "rollback_or_preservation": {
+    "current_slice": "v6 attempt rejected before mutation; v7 installation passed. Preserve both attempts and the v5 and D025 outcomes. Never downgrade merely to erase a failed result.",
+    "runtime": "Preserve current receiver/task/configuration and protected production; no speculative downgrade or moving-main deployment.",
+    "backups": "Retain legacy target C:\\code\\backups\\AR-local-pi5 and user target C:\\code\\backups\\AR-local-pi5-user; do not rewrite completed receipts, archives or catalogs.",
+    "media": "No media mutation is enabled. Preserve compressed original SD and historical candidate separately; a later approved physical transaction must define exact restoration and return steps before starting."
+  },
+  "known_risks": [
+    "Manual trigger exclusion caused September9 natural task failure; manual success cannot replace that proof",
+    "Receipt metadata validation does not re-extract archives or prove physical boot",
+    "Runtime/production and media snapshots are dated; revalidate before acting",
+    "This reviewed CLI corrects the explicit closeout path only; unrelated queue helpers and legacy automation are not authorized to promote drafts by this entry.",
+    "System Git and SSH updates invalidate installed hashes; private packages need deliberate future updates.",
+    "Native Windows OpenSSH copies, including the staged preview client, failed strict process-exit validation and are not selected.",
+    "The selected Git SSH needs explicit /dev/null syntax; no old receiver is compatible until the reviewed update is activated.",
+    "Private tools remove system Git/SSH update drift; this manual run cannot establish unattended natural-trigger or physical recovery acceptance.",
+    "Actual recovery facts or source content may change after the dated terminal; fresh status is required before later dependent operations."
+  ],
+  "compensating_controls": [
+    "Complete explicit resume entry with independently hash-checked existing evidence and dated observations",
+    "Keep ordinary-user transport/key/known-host/executable/config pins and all source/lineage/restore checks",
+    "Current Windows reader uses process-scoped delete-on-close lock files; --snapshot only for a separate frozen metadata copy",
+    "Preserve raw failures, distinct component/catalog identities, D-022 acceptance limits and controlled runbook unchanged",
+    "Keep all physical actions disabled until independent gates pass",
+    "Every private package file, including DLLs, is verified; process-only PATH selects authenticated Git.",
+    "Tool-enabled receiver transition still authenticates the existing full receipt lineage and pins production/operator/targets/SSH identity and host-key fields.",
+    "All failed packages/configurations preserved; no blanket acceptance of SSH crash exits."
+  ],
+  "revised_acceptance_criteria": {
+    "current_slice": "Preserve actual current native/guard/restore result and separately verify frozen receipts and public payloads; keep trigger attribution explicit; reviewed evidence PR only",
+    "a3": "Genuine unchanged natural current-pair trigger success plus complete controlled execution envelope and separately verified fresh source, catalog, component receipts, independent restore, daily ingest/finalization/publication/dashboard; no inferred trigger origin",
+    "a4": "After A3: exact clone and original media identities, all writer/credential isolation and approved path changes, bootloader-to-OS reset coverage, negotiated hardware timeouts and network-independent return deadline; actual SD-root/restored-data proof and bounded return to unchanged NVMe",
+    "manual_execution": "D026 operational backup and original restore checks PASS; independent receipt binding PASS. Manual origin does not satisfy A3 natural-trigger or A4 physical acceptance. Historical September9 controlled BLOCKED remains unchanged."
+  },
+  "deviation_decision": {
+    "id": "D-026-RECOVERY-CLOCK-20260910",
+    "path": "docs/evidence/recovery-clock-20260910/D-026-activation-intent.json",
+    "sha256": "7610ca222a8fb55a456470f7ed1ea362bdf809ea183f710aaaf57aea0b5cc461",
+    "created_before_activation": true
+  },
+  "physical_preparation": {
+    "status": "BLOCKED",
+    "sd": {
+      "device": "/dev/mmcblk0",
+      "serial": "0xfa922545",
+      "bytes": 31902400512,
+      "root_uuid": "ed6c7f1b-238b-41a1-b4b6-7bcdef3270fe",
+      "partuuid": "1a36a1cc-02"
+    },
+    "original_nvme_uuid": "4cbd4874-d326-4496-bee2-7fda775a3c4c",
+    "prohibited_writable_devices": [
+      "/dev/nvme0n1",
+      "/dev/sda"
+    ],
+    "original_sd_compressed": {
+      "path": "C:\\code\\backups\\AR-local-user-session\\A4-20260906\\sd-original-20260906.img.zst",
+      "bytes": 3682092009,
+      "sha256": "e33d3333697f604f424ff3e5ff4852c0234336ca4b22e67cc4bd4eb49a6f361d",
+      "uncompressed_sha256": "ce0bcd6f1cb4364df2b97fb6324d0871a053fed6ed7738dcb0a65ef174d371d2"
+    },
+    "snapshot_notice": "September6/8 preservation evidence, not rehashed or probed this entry",
+    "boot_order": "0xf416",
+    "watchdog": "inactive at historical readback; no actual network-independent return proof",
+    "open_controls": [
+      "Full activation/dependency/credential inventory",
+      "Exact approved path writes and rollback sources",
+      "Prepared clone full-device readback hash and distinct identity",
+      "Continuous early-boot/kernel/OS reset and bounded return coverage"
+    ]
+  },
+  "unresolved_findings": [
+    {
+      "id": "https://github.com/yanniedog/AR-local/issues/650",
+      "status": "UNVERIFIED",
+      "issue": "Original D019 inventory-verification command provenance remains unresolved; do not infer it from a summary"
+    },
+    {
+      "id": "installed-transport-reliability",
+      "status": "OPEN",
+      "issue": "Private tools installed and actual manual outcome captured; unattended natural-trigger reliability remains to be observed."
+    },
+    {
+      "id": "September11-trigger-attribution",
+      "status": "UNVERIFIED",
+      "issue": "06:00:01 start observed; disabled TaskScheduler Operational log supplies no independent trigger-origin event. Do not close A3 or advance A4 from timing alone."
+    }
+  ],
+  "historical_backup_result": {
+    "backup_result": "PASS",
+    "completed_at": "2026-09-09T06:19:29+10:00",
+    "receipt_binding": "PASS at2026-09-09T06:21:39+10:00",
+    "natural_trigger": false,
+    "physical_recovery": "BLOCKED",
+    "catalog_entries": 145,
+    "catalog_sha256": "7d71c64e72d44b552cca7f108899141b98f9cc12743c8573187c2400261e967b",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260908T201929Z-0a2464003ee0469baf79e95c71ebdfa7.json",
+      "sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980",
+      "bytes": 3084
+    },
+    "components": {
+      "observation": {
+        "reference": {
+          "path": "observations/2026-09-09/6887f16c62e475b61744e5b7887d4e0a2a9eb10dfbe6fbc555e7495b453ac15e/receipt.json",
+          "sha256": "f4a26b3a3c6cd624baf6e029932f944f89a5774c2db4c668f9ba8338a8fc8923",
+          "bytes": 4167
+        },
+        "archive_sha256": "d33e0624cd2d4dd5ef494100567f679dee23b41b6d438db7f0d7810e2e0e4eaf",
+        "archive_bytes": 224662289,
+        "source_bytes": 2677583521,
+        "completed_at": "2026-09-08T19:47:02Z",
+        "checks": {
+          "bytes_verified": 2677583521,
+          "files_verified": 9110,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-09.done.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-09-c3a1ed15c4fabbbd",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-09.json",
+              "banks_json_bytes": 1366961262,
+              "banks_json_sha256": "5f9ca173cb3c811692bda123d54657e5bf7272f031bcabe334f7b7a65008d748",
+              "counts": {
+                "constraints": 4403,
+                "eligibility": 7332,
+                "failures": 24,
+                "features": 15686,
+                "fees": 25256,
+                "holder_attempts": 119,
+                "product_changes": 27343,
+                "product_facts": 602163,
+                "products": 2650,
+                "rates": 16458
+              },
+              "database_counts": {
+                "constraints": 4403,
+                "eligibility": 7332,
+                "features": 15686,
+                "fees": 25256,
+                "product_changes": 27343,
+                "product_facts": 602163,
+                "products": 2650,
+                "rates": 16458
+              },
+              "legacy_manifest_sha256": "3fd9190c28a14c3af17baa01e50fa70e53c34a46e32f8fa3dda1bc50ffce6df4",
+              "run_date": "2026-09-09",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-09/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "catalog_sequence": 141
+      },
+      "control": {
+        "reference": {
+          "path": "control/20260908T201719Z-f8e1aee43d0a0445/receipt.json",
+          "sha256": "b2aeea0520584d09b6d3c763bd0a6e1363a9cc598b5ddfd8ac80470b163ab84e",
+          "bytes": 3293
+        },
+        "archive_sha256": "684fb3c91dd3e83af25203babe42630388ac9559f9785583a3cb2606ab71cb7f",
+        "archive_bytes": 97512320,
+        "source_bytes": 294446629,
+        "completed_at": "2026-09-08T20:19:19Z",
+        "checks": {
+          "bytes_verified": 294446629,
+          "files_verified": 1203,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "catalog_sequence": 145
+      },
+      "macro": {
+        "reference": {
+          "path": "macro/d05ef483dc9e88003a1f09f070d1fee5a322c2b8a963d1bc15f5a62d5b8f7ffc/receipt.json",
+          "sha256": "68fcd549d10adc7b3bb388e8c55d47d4a54e994c0eaa14b99cf1e0c223696fd2",
+          "bytes": 3091
+        },
+        "archive_sha256": "2f68fae33121062d44f1442dd63ea09166c7ddc104176ebf84e7e97bd3b309e1",
+        "archive_bytes": 169063,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-08T20:07:50Z",
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "catalog_sequence": 144
+      }
+    },
+    "metadata_archive": {
+      "path": "docs/evidence/runtime-boundaries-20260909/backup-metadata-81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8.zip",
+      "bytes": 720918,
+      "sha256": "81f01149f1cb2e03f6a64e99ee5ec97ca3a502b227f7cfd504bc8ec8ad31e8d8",
+      "files": 72
+    },
+    "scope": "Metadata packet and original receiver verification; archive payloads remain in the local backup target. Not natural-trigger or physical recovery acceptance.",
+    "controlled_execution_acceptance": "BLOCKED: original modified manual terminal omitted deviations; D-022 discloses but does not repair or retrospectively approve that envelope",
+    "catalog_bytes": 101639
+  },
+  "previous_runtime_execution": {
+    "result": "FAIL",
+    "scheduled_result": "FAIL",
+    "completed_at": "2026-09-09T23:29:06Z",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260909T232906Z-55c7c5fee2914568a94a26f3e4c5aa1f.json",
+      "sha256": "90122d6fe16189b2dea9d31041cb87b39e6d0e7ab94ac03e5ea2d06923aa149d"
+    },
+    "catalog_entries": 148,
+    "catalog_sha256": "3241f465171b0005d6af52dba68e326f0833e8ee440ac63f64a12df0ff6fcc73",
+    "components": {
+      "observation": {
+        "path": "observations/2026-09-10/56464588e70e0dfcbf4c15880e76a07b4a80b4498b81efca17d1d78c530e4141/receipt.json",
+        "sha256": "15084bb02da000e2b3aefb32cc62bf4b28b4cddf27317ac97c07a97e6784b150",
+        "archive_sha256": "30c861525bd23057d2cd60f81848576cd6d4f6bb66a003090307b21501e4bfd0",
+        "archive_bytes": 425092888,
+        "source_bytes": 4904132166,
+        "completed_at": "2026-09-09T23:27:52Z",
+        "catalog_sequence": 146,
+        "checks": {
+          "bytes_verified": 4904132166,
+          "files_verified": 10280,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-10.revision.20260910T040733_450408.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-10-d43214e888ca836b",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-10.json",
+              "banks_json_bytes": 1283206486,
+              "banks_json_sha256": "078053c4e28e4078c704cddc8eb4690e8843c167afab6b7ea5ebdef1ef0f7643",
+              "counts": {
+                "constraints": 4430,
+                "eligibility": 7360,
+                "failures": 23,
+                "features": 15859,
+                "fees": 25446,
+                "holder_attempts": 119,
+                "product_changes": 7653,
+                "product_facts": 607398,
+                "products": 2674,
+                "rates": 16636
+              },
+              "database_counts": {
+                "constraints": 4430,
+                "eligibility": 7360,
+                "features": 15859,
+                "fees": 25446,
+                "product_changes": 7653,
+                "product_facts": 607398,
+                "products": 2674,
+                "rates": 16636
+              },
+              "legacy_manifest_sha256": "d0046ac8d9822154a03e3a8826fa66874c47c89c3305895b89826193b1cc29d6",
+              "run_date": "2026-09-10",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-10/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-10/_revisions/20260910T040733_450408/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "control": {
+        "path": "control/20260909T232759Z-5d52f0e69ec41a2b/receipt.json",
+        "sha256": "17ed9869d665edc43bad9e4ad2d82f99b3e164e65350751296b10057c2ed37b3",
+        "archive_sha256": "0f080b4a67524901e110fe5c6d75a3c0275b7197a1fc038181f16cfb86571818",
+        "archive_bytes": 99679074,
+        "source_bytes": 300993392,
+        "completed_at": "2026-09-09T23:28:50Z",
+        "catalog_sequence": 147,
+        "checks": {
+          "bytes_verified": 300993392,
+          "files_verified": 1686,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "STALE"
+      },
+      "macro": {
+        "path": "macro/c6aa1c9411cdfdc075c1c1f8a1b6a51f7830f673b02d1407b687649c9db3c8ad/receipt.json",
+        "sha256": "bf6fc132687cf022e34d8daf3d3707c1a4d76b7cbd6c426c517ada53f3d2b31a",
+        "archive_sha256": "3ddc883727767aeb1c7b65ba3615fdf16c6e5d7e3ee6116ebdcde84475d26b43",
+        "archive_bytes": 169231,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-09T23:28:51Z",
+        "catalog_sequence": 148,
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      }
+    },
+    "receipt_binding": "NOT_PASSED",
+    "natural_trigger": false,
+    "physical_recovery": "BLOCKED",
+    "decision": "D-023-PRIVATE-BACKUP-TOOLS-20260910; pre-action intent and manual-start intent preserved"
+  },
+  "previous_manual_recovery": {
+    "result": "PASS",
+    "decision": "D-025-CONTROL-API-REFRESH-20260910",
+    "intent_sha256": "935d993eec5949cc0d6d2cfdeeb7df7b4a6ea9c80c6883685ed06cb74ca9f34c",
+    "before": {
+      "status": "STALE",
+      "backup_command": "backup-latest",
+      "backfill_required": false,
+      "backfill_dates": [],
+      "observation": {
+        "status": "UP_TO_DATE",
+        "observation_date": "2026-09-10",
+        "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-10\\56464588e70e0dfcbf4c15880e76a07b4a80b4498b81efca17d1d78c530e4141\\receipt.json",
+        "archive_sha256": "30c861525bd23057d2cd60f81848576cd6d4f6bb66a003090307b21501e4bfd0",
+        "catalog_sequence": 146
+      },
+      "control": {
+        "status": "STALE",
+        "reason": "Pi control content changed"
+      },
+      "macro": {
+        "status": "UP_TO_DATE",
+        "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\c6aa1c9411cdfdc075c1c1f8a1b6a51f7830f673b02d1407b687649c9db3c8ad\\receipt.json",
+        "catalog_sequence": 148
+      },
+      "inventory": {
+        "status": "UP_TO_DATE",
+        "missing_completed_dates": [],
+        "stale_diagnostics": []
+      }
+    },
+    "control": {
+      "result": "PASS",
+      "receipt": "C:\\code\\backups\\AR-local-pi5-user\\control\\20260909T235446Z-47f07e54d4d587ff\\receipt.json",
+      "archive_bytes": 100843936,
+      "source_bytes": 302140368
+    },
+    "verification_exit_code": 0,
+    "completed_at_utc": "2026-09-09T23:55:33.264397+00:00",
+    "natural_trigger": false,
+    "physical_recovery": "BLOCKED"
+  },
+  "last_verified_generation": "obs-2026-09-11-0407dbfe758f5f8d",
+  "guard": {
+    "started_at_utc": "2026-09-10T20:00:10.1620924Z",
+    "mode": "run",
+    "deployment_sha256": "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+    "authority": "D-026-RECOVERY-CLOCK-20260910",
+    "elevated": false,
+    "result": "PASS",
+    "dependency_verification": {
+      "result": "PASS",
+      "read_only": true,
+      "new_config_sha256": "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5",
+      "package_sha256": "56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e",
+      "package_files_verified": 365,
+      "ssh_package_sha256": "d508c38435872da388545fc9d221fb4581c938a3030a081efb1d9576d9b928f8",
+      "ssh_files_verified": 440,
+      "candidate_sha": "b6c5a4d8984ad2d2509514418c753cd555b0144f",
+      "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6"
+    },
+    "exit_code": 0,
+    "completed_at_utc": "2026-09-10T20:10:17.8478933Z"
+  },
+  "previous_day_backup": {
+    "result": "PASS",
+    "scheduled_result": "PASS",
+    "completed_at": "2026-09-10T00:09:51Z",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260910T000951Z-f063e04723ed4abe8319c076fc56aaaf.json",
+      "sha256": "0e858edb48677fa864bc35843ec90ce9990bbd81088c66a6de2ebbd64033209e"
+    },
+    "catalog_entries": 152,
+    "catalog_sha256": "e3892c7dbd51abf239cdfee7f27085bb83c4b5bf38cb89c9913745837d05da3a",
+    "components": {
+      "observation": {
+        "path": "observations/2026-09-10/054bced37a6b784b80111ab8a63d0fff74f29fdd95717aa4ff1ce19c16cf4801/receipt.json",
+        "sha256": "e8c758f3a14e625814a51b94d81a2a28755f351103ce31f0a28505358be62989",
+        "archive_sha256": "30c861525bd23057d2cd60f81848576cd6d4f6bb66a003090307b21501e4bfd0",
+        "archive_bytes": 425092888,
+        "source_bytes": 4904132166,
+        "completed_at": "2026-09-10T00:08:37Z",
+        "catalog_sequence": 150,
+        "checks": {
+          "bytes_verified": 4904132166,
+          "files_verified": 10280,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-10.revision.20260910T040733_450408.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-10-d43214e888ca836b",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-10.json",
+              "banks_json_bytes": 1283206486,
+              "banks_json_sha256": "078053c4e28e4078c704cddc8eb4690e8843c167afab6b7ea5ebdef1ef0f7643",
+              "counts": {
+                "constraints": 4430,
+                "eligibility": 7360,
+                "failures": 23,
+                "features": 15859,
+                "fees": 25446,
+                "holder_attempts": 119,
+                "product_changes": 7653,
+                "product_facts": 607398,
+                "products": 2674,
+                "rates": 16636
+              },
+              "database_counts": {
+                "constraints": 4430,
+                "eligibility": 7360,
+                "features": 15859,
+                "fees": 25446,
+                "product_changes": 7653,
+                "product_facts": 607398,
+                "products": 2674,
+                "rates": 16636
+              },
+              "legacy_manifest_sha256": "d0046ac8d9822154a03e3a8826fa66874c47c89c3305895b89826193b1cc29d6",
+              "run_date": "2026-09-10",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-10/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-10/_revisions/20260910T040733_450408/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "control": {
+        "path": "control/20260910T000844Z-182a28d5db54d00b/receipt.json",
+        "sha256": "98141e9a2e0f64531197f2c8ced2c1c5561c1af8c0f1f41c81f16a1e1859df10",
+        "archive_sha256": "60e927430ae67d85554a13021aed51fd40903a7d111f918aaec49362ce43b364",
+        "archive_bytes": 101071588,
+        "source_bytes": 302392257,
+        "completed_at": "2026-09-10T00:09:35Z",
+        "catalog_sequence": 151,
+        "checks": {
+          "bytes_verified": 302392257,
+          "files_verified": 1690,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "macro": {
+        "path": "macro/cd50887d4b89bf247f0c4225601fa04ebac5bfcf556a7120ca362d9c042654b9/receipt.json",
+        "sha256": "48090e45c84b696db7d43314bd8d7a66f45c70b6e566123e074035e4fa8046bd",
+        "archive_sha256": "a18014efcee770834663032d41186687ff26a5c27b233bc7b22fa681880aa18e",
+        "archive_bytes": 169231,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-10T00:09:37Z",
+        "catalog_sequence": 152,
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      }
+    },
+    "receipt_binding": {
+      "schema": "ARL-RECOVERY-RECEIPT-BINDING-V1",
+      "checked_at": "2026-09-10T00:18:04.269752+00:00",
+      "receipt_binding": "PASS",
+      "components": [
+        {
+          "kind": "control",
+          "catalog_sequence": 151,
+          "path": "control/20260910T000844Z-182a28d5db54d00b/receipt.json",
+          "sha256": "98141e9a2e0f64531197f2c8ced2c1c5561c1af8c0f1f41c81f16a1e1859df10"
+        },
+        {
+          "kind": "macro",
+          "catalog_sequence": 152,
+          "path": "macro/cd50887d4b89bf247f0c4225601fa04ebac5bfcf556a7120ca362d9c042654b9/receipt.json",
+          "sha256": "48090e45c84b696db7d43314bd8d7a66f45c70b6e566123e074035e4fa8046bd"
+        },
+        {
+          "kind": "observation",
+          "catalog_sequence": 150,
+          "path": "observations/2026-09-10/054bced37a6b784b80111ab8a63d0fff74f29fdd95717aa4ff1ce19c16cf4801/receipt.json",
+          "sha256": "e8c758f3a14e625814a51b94d81a2a28755f351103ce31f0a28505358be62989"
+        }
+      ],
+      "physical_recovery": "BLOCKED",
+      "natural_trigger": "UNVERIFIED",
+      "archive_restore": "NOT_RUN",
+      "scope": "Pinned receipt metadata only; no A3 or A4 acceptance",
+      "coordination": "None; frozen metadata snapshot only"
+    },
+    "natural_trigger": false,
+    "physical_recovery": "BLOCKED",
+    "decision": "D-026-RECOVERY-CLOCK-20260910; pre-action intent and manual-start intent preserved"
+  },
+  "task_origin_observation": {
+    "checked_at": "2026-09-11T08:18:46.3052408+10:00",
+    "state": "Ready",
+    "last_run": "2026-09-11T06:00:01.0000000+10:00",
+    "last_result": 0,
+    "next_run": "2026-09-12T06:00:00.0000000+10:00",
+    "run_level": "Limited",
+    "history_enabled": false,
+    "trigger_origin": "UNVERIFIED",
+    "reason": "Observed run aligns with daily trigger; disabled task history cannot establish trigger attribution.",
+    "task_mutated": false,
+    "exact_command": "pwsh -NoProfile -File docs/evidence/backup-observation-20260911/observe-task.ps1"
+  }
+}
+```

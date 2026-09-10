@@ -1,0 +1,291 @@
+{
+  "task": {
+    "state": "Ready",
+    "last_run": "2026-09-11T06:00:01.0000000+10:00",
+    "last_result": 0,
+    "next_run": "2026-09-12T06:00:00.0000000+10:00",
+    "action": "-NoProfile -NonInteractive -WindowStyle Hidden -File \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_private_git.ps1\" -DeploymentPath \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json\" -DeploymentSha256 8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+    "execute": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "working_directory": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source",
+    "run_level": "Limited",
+    "name": "AR-local user-session backup",
+    "action_changed": false,
+    "principal_triggers_settings_preserved": true,
+    "status_checked_at_utc": "2026-09-10T22:19:11.343954+00:00"
+  },
+  "guard": {
+    "started_at_utc": "2026-09-10T20:00:10.1620924Z",
+    "mode": "run",
+    "deployment_sha256": "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+    "authority": "D-026-RECOVERY-CLOCK-20260910",
+    "elevated": false,
+    "result": "PASS",
+    "dependency_verification": {
+      "result": "PASS",
+      "read_only": true,
+      "new_config_sha256": "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5",
+      "package_sha256": "56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e",
+      "package_files_verified": 365,
+      "ssh_package_sha256": "d508c38435872da388545fc9d221fb4581c938a3030a081efb1d9576d9b928f8",
+      "ssh_files_verified": 440,
+      "candidate_sha": "b6c5a4d8984ad2d2509514418c753cd555b0144f",
+      "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6"
+    },
+    "exit_code": 0,
+    "completed_at_utc": "2026-09-10T20:10:17.8478933Z"
+  },
+  "selected_generation": "obs-2026-09-11-0407dbfe758f5f8d",
+  "backup": {
+    "result": "PASS",
+    "scheduled_result": "PASS",
+    "completed_at": "2026-09-10T20:10:16Z",
+    "terminal": {
+      "path": "catalog/scheduled-runs/20260910T201016Z-012d40d2e7a145ed94c73be939e6b5b4.json",
+      "sha256": "23cc42cee2a23fc66f5c5441289a42e712b86d5aa48dffcccca9a11326c0ce67"
+    },
+    "catalog_entries": 155,
+    "catalog_sha256": "ac906acda3ed8bac412eeb6050d97d562ef9827c211e5cd7ad6f74c20388f9ce",
+    "components": {
+      "observation": {
+        "path": "observations/2026-09-11/8ab5af95baaf6333bf83c1c8618e0ad97cef71da3c6e0003fa7a982900d94330/receipt.json",
+        "sha256": "887dfaf4deb96cac031586ab2a3c136989cdf26289416227df274bff6b32b902",
+        "archive_sha256": "efcb1a07766562d68c450ac2a0e691a393af3f046f09f0a79d26622a0ebd40d8",
+        "archive_bytes": 220264087,
+        "source_bytes": 2556261215,
+        "completed_at": "2026-09-10T20:08:38Z",
+        "catalog_sequence": 153,
+        "checks": {
+          "bytes_verified": 2556261215,
+          "files_verified": 9232,
+          "observation": {
+            "completion_markers": [
+              {
+                "path": "2026-09-11.done.json",
+                "valid": true
+              }
+            ],
+            "latest_pointer": {
+              "generation_id": "obs-2026-09-11-0407dbfe758f5f8d",
+              "valid": true
+            },
+            "reconciliation": {
+              "banks_json": "banks-2026-09-11.json",
+              "banks_json_bytes": 1315510268,
+              "banks_json_sha256": "3aee56ba5de23ca8524f9a361d5a01b78b14099e4ffb8b2e82de60f6396fc43b",
+              "counts": {
+                "constraints": 4430,
+                "eligibility": 7363,
+                "failures": 22,
+                "features": 15901,
+                "fees": 25463,
+                "holder_attempts": 119,
+                "product_changes": 12374,
+                "product_facts": 607459,
+                "products": 2675,
+                "rates": 16637
+              },
+              "database_counts": {
+                "constraints": 4430,
+                "eligibility": 7363,
+                "features": 15901,
+                "fees": 25463,
+                "product_changes": 12374,
+                "product_facts": 607459,
+                "products": 2675,
+                "rates": 16637
+              },
+              "legacy_manifest_sha256": "936deedc681e265a352ee58cd2bfe6da996cfbaff425fb51a7e2c711d8f4ba9f",
+              "run_date": "2026-09-11",
+              "schema_tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta"
+              ],
+              "schema_version": "8",
+              "unpersisted_populations": [
+                "failures",
+                "holder_attempts"
+              ],
+              "validation_mode": "legacy_bounded_database_manifest_and_byte_hash"
+            }
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs/2026-09-11/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_product_changes",
+                "bank_product_facts",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "control": {
+        "path": "control/20260910T200844Z-3c0ebae709abf780/receipt.json",
+        "sha256": "643a74200cba092b783525c5042996b66433fa37b56d81014f37bf304cc7d738",
+        "archive_sha256": "c116ab8edef729310b3b1fb41f29c4e55c750b3d633cb5f6112a9b80f5c4ee58",
+        "archive_bytes": 103848607,
+        "source_bytes": 308644752,
+        "completed_at": "2026-09-10T20:10:01Z",
+        "catalog_sequence": 154,
+        "checks": {
+          "bytes_verified": 308644752,
+          "files_verified": 1997,
+          "git_bundles": [
+            "AR-local.bundle",
+            "australianrates.bundle"
+          ],
+          "secret_locations": 4,
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/predeploy/20260814T0914AEST-post-auto-deploy-3dc9b4677/local-cdr-2026-08-14.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            },
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "data/runs-archive/_broken-2026-05-19-empty/_exports/local-cdr.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "bank_items",
+                "bank_products",
+                "bank_rates",
+                "energy_items",
+                "energy_plans",
+                "runs",
+                "schema_meta",
+                "sqlite_sequence"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      },
+      "macro": {
+        "path": "macro/731bdb16201ac64804ef572a80cb9d4e6bb4dd642e620722658777335342e8a9/receipt.json",
+        "sha256": "6a2f02fdfac1fb79a07c2586ff384cbd10bf48ac4064ae03abd3316413c84a34",
+        "archive_sha256": "65f4176ffc9a77af30d6fda7b95bf85e7e301bca76008925b33e6ebffe8eeb04",
+        "archive_bytes": 169222,
+        "source_bytes": 1032192,
+        "completed_at": "2026-09-10T20:10:02Z",
+        "catalog_sequence": 155,
+        "checks": {
+          "bytes_verified": 1032192,
+          "files_verified": 1,
+          "macro": {
+            "foreign_key_check": "ok",
+            "integrity_check": "ok",
+            "path": "macro/local-macro.sqlite",
+            "quick_check": "ok",
+            "tables": [
+              "ingest_runs",
+              "series_definition_archive",
+              "series_observations"
+            ]
+          },
+          "sqlite": [
+            {
+              "foreign_key_check": "ok",
+              "integrity_check": "ok",
+              "path": "macro/local-macro.sqlite",
+              "quick_check": "ok",
+              "tables": [
+                "ingest_runs",
+                "series_definition_archive",
+                "series_observations"
+              ]
+            }
+          ]
+        },
+        "restore_result": "PASS",
+        "freshness": "UP_TO_DATE"
+      }
+    },
+    "receipt_binding": {
+      "schema": "ARL-RECOVERY-RECEIPT-BINDING-V1",
+      "checked_at": "2026-09-10T22:19:48.835118+00:00",
+      "receipt_binding": "PASS",
+      "components": [
+        {
+          "kind": "control",
+          "catalog_sequence": 154,
+          "path": "control/20260910T200844Z-3c0ebae709abf780/receipt.json",
+          "sha256": "643a74200cba092b783525c5042996b66433fa37b56d81014f37bf304cc7d738"
+        },
+        {
+          "kind": "macro",
+          "catalog_sequence": 155,
+          "path": "macro/731bdb16201ac64804ef572a80cb9d4e6bb4dd642e620722658777335342e8a9/receipt.json",
+          "sha256": "6a2f02fdfac1fb79a07c2586ff384cbd10bf48ac4064ae03abd3316413c84a34"
+        },
+        {
+          "kind": "observation",
+          "catalog_sequence": 153,
+          "path": "observations/2026-09-11/8ab5af95baaf6333bf83c1c8618e0ad97cef71da3c6e0003fa7a982900d94330/receipt.json",
+          "sha256": "887dfaf4deb96cac031586ab2a3c136989cdf26289416227df274bff6b32b902"
+        }
+      ],
+      "physical_recovery": "BLOCKED",
+      "natural_trigger": "UNVERIFIED",
+      "archive_restore": "NOT_RUN",
+      "scope": "Pinned receipt metadata only; no A3 or A4 acceptance",
+      "coordination": "None; frozen metadata snapshot only"
+    },
+    "natural_trigger": "UNVERIFIED",
+    "observed_start": "06:00:01 Hobart; trigger attribution unavailable",
+    "physical_recovery": "BLOCKED",
+    "decision": "Unchanged D026 deployment; September11 read-only terminal observation, not a new activation or manual start"
+  },
+  "packet": {
+    "path": "terminal-metadata-ee43d16161de8eaa9994ef11e6dad9cb1bf3c3e45aae032805285b4540d2f3f4.zip",
+    "bytes": 1859596,
+    "sha256": "ee43d16161de8eaa9994ef11e6dad9cb1bf3c3e45aae032805285b4540d2f3f4"
+  },
+  "commands": {
+    "freeze": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "docs/evidence/backup-observation-20260911/freeze-summary.py",
+      "--snapshot",
+      "C:\\code\\backups\\AR-local-user-session\\natural-observation-20260911\\snapshot"
+    ],
+    "receipt_binding": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "-B",
+      "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_recovery_receipts.py",
+      "--target",
+      "C:\\code\\backups\\AR-local-user-session\\natural-observation-20260911\\snapshot\\backup",
+      "--expectations",
+      "C:\\code\\AR-local-backup-observation-0911\\docs\\evidence\\backup-observation-20260911\\binding-current\\expectations.json",
+      "--expectations-sha256",
+      "30de68d2d51e8316584c004c942c6d831c422cd6a162ec50be4eba39dfd6fc5d",
+      "--snapshot"
+    ]
+  },
+  "scope": "Observed 06:00 operational backup and separate frozen receipt verification; natural trigger attribution UNVERIFIED and A4 BLOCKED"
+}

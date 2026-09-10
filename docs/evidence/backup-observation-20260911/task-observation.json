@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-09-11T08:18:46.3052408+10:00",
+  "state": "Ready",
+  "last_run": "2026-09-11T06:00:01.0000000+10:00",
+  "last_result": 0,
+  "next_run": "2026-09-12T06:00:00.0000000+10:00",
+  "run_level": "Limited",
+  "history_enabled": false,
+  "trigger_origin": "UNVERIFIED",
+  "reason": "Observed run aligns with daily trigger; disabled task history cannot establish trigger attribution.",
+  "task_mutated": false,
+  "exact_command": "pwsh -NoProfile -File docs/evidence/backup-observation-20260911/observe-task.ps1"
+}
