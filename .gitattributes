@@ -31,3 +31,5 @@ laptop_backup_git_dependency.py text eol=lf
 laptop_backup_private_git.ps1 text eol=lf
 docs/evidence/private-tools-activation-20260910/** -text
 docs/evidence/private-tools-activation-20260910/** whitespace=cr-at-eol
+docs/evidence/recovery-clock-20260910/** -text
+docs/evidence/recovery-clock-20260910/** whitespace=cr-at-eol

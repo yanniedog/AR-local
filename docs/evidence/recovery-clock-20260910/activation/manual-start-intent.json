@@ -1,0 +1,19 @@
+{
+  "id": "D-026-MANUAL-START-20260910",
+  "decision": "D-026-RECOVERY-CLOCK-20260910",
+  "origin": "user-authorized manual start after exact corrected receiver activation",
+  "created_at_utc": "2026-09-09T23:58:51.9564888Z",
+  "created_at_hobart": "2026-09-10T09:58:51.9564888+10:00",
+  "task": "AR-local user-session backup",
+  "state_before": "Ready",
+  "run_level": "Limited",
+  "action": "-NoProfile -NonInteractive -WindowStyle Hidden -File \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_private_git.ps1\" -DeploymentPath \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json\" -DeploymentSha256 8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+  "deployment_sha256": "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+  "probe": "PASS",
+  "natural_trigger_evidence": false,
+  "result": "INTENT",
+  "deviations": [
+    "D026 preserves raw recovery status and all recovery facts, excluding checked_at only from freshness identity",
+    "Manual verification of exact b6c5a4d8984ad2d2509514418c753cd555b0144f receiver; not natural trigger proof"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "result": "PASS",
+  "decision": "D-025-CONTROL-API-REFRESH-20260910",
+  "intent_sha256": "935d993eec5949cc0d6d2cfdeeb7df7b4a6ea9c80c6883685ed06cb74ca9f34c",
+  "before": {
+    "status": "STALE",
+    "backup_command": "backup-latest",
+    "backfill_required": false,
+    "backfill_dates": [],
+    "observation": {
+      "status": "UP_TO_DATE",
+      "observation_date": "2026-09-10",
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\observations\\2026-09-10\\56464588e70e0dfcbf4c15880e76a07b4a80b4498b81efca17d1d78c530e4141\\receipt.json",
+      "archive_sha256": "30c861525bd23057d2cd60f81848576cd6d4f6bb66a003090307b21501e4bfd0",
+      "catalog_sequence": 146
+    },
+    "control": {
+      "status": "STALE",
+      "reason": "Pi control content changed"
+    },
+    "macro": {
+      "status": "UP_TO_DATE",
+      "receipt_path": "C:\\code\\backups\\AR-local-pi5-user\\macro\\c6aa1c9411cdfdc075c1c1f8a1b6a51f7830f673b02d1407b687649c9db3c8ad\\receipt.json",
+      "catalog_sequence": 148
+    },
+    "inventory": {
+      "status": "UP_TO_DATE",
+      "missing_completed_dates": [],
+      "stale_diagnostics": []
+    }
+  },
+  "control": {
+    "result": "PASS",
+    "receipt": "C:\\code\\backups\\AR-local-pi5-user\\control\\20260909T235446Z-47f07e54d4d587ff\\receipt.json",
+    "archive_bytes": 100843936,
+    "source_bytes": 302140368
+  },
+  "verification_exit_code": 0,
+  "completed_at_utc": "2026-09-09T23:55:33.264397+00:00",
+  "natural_trigger": false,
+  "physical_recovery": "BLOCKED"
+}

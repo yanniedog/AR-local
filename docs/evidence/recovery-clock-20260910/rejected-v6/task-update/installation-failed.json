@@ -1,0 +1,7 @@
+{
+  "result": "FAIL",
+  "error": "Exact predecessor/package verification failed.",
+  "mutation_attempted": false,
+  "rollback": "NOT_NEEDED",
+  "completed_at_utc": "2026-09-09T23:51:00.1224641Z"
+}

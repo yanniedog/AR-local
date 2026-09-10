@@ -1,0 +1,10 @@
+{
+  "result": "PASS",
+  "elevated": false,
+  "task": "AR-local user-session backup",
+  "completed_at_utc": "2026-09-09T23:57:19.3585633Z",
+  "old_receiver": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\source",
+  "new_receiver": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source",
+  "settings_preserved": true,
+  "trigger": "NO_BACKUP_STARTED"
+}

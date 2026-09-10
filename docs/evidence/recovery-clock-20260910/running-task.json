@@ -1,0 +1,11 @@
+{
+  "checked_at_hobart": "2026-09-10T10:01:21.4186359+10:00",
+  "task": "AR-local user-session backup",
+  "state": "Running",
+  "last_run": "2026-09-10T09:58:56.0000000+10:00",
+  "last_task_result": 267009,
+  "next_run": "2026-09-11T06:00:00.0000000+10:00",
+  "run_level": "Limited",
+  "action": "-NoProfile -NonInteractive -WindowStyle Hidden -File \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_private_git.ps1\" -DeploymentPath \"C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json\" -DeploymentSha256 8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+  "working_directory": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source"
+}
