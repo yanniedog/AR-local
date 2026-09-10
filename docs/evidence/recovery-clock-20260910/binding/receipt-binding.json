@@ -1,0 +1,18 @@
+{
+  "exact_command": [
+    "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+    "-B",
+    "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_recovery_receipts.py",
+    "--target",
+    "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\terminal-snapshot\\backup",
+    "--expectations",
+    "docs\\evidence\\recovery-clock-20260910\\binding\\expectations.json",
+    "--expectations-sha256",
+    "2782f56e825c48a5a8823734b59740c64a75ac542f4b0af391a025811c17dfe9",
+    "--snapshot"
+  ],
+  "exit_code": 1,
+  "stdout": "{\"receipt_binding\": \"FAIL\", \"physical_recovery\": \"BLOCKED\", \"error\": \"path must be absolute and canonical\"}\n",
+  "stderr": "",
+  "verifier_sha256": "1762356bb60891e62217d618add4973ea499b3a88798fba19b68de155f336dc6"
+}

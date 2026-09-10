@@ -1,0 +1,18 @@
+{
+  "exact_command": [
+    "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+    "-B",
+    "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_recovery_receipts.py",
+    "--target",
+    "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\terminal-snapshot\\backup",
+    "--expectations",
+    "C:\\code\\AR-local-recovery-clock-activation-0910\\docs\\evidence\\recovery-clock-20260910\\binding-current\\expectations.json",
+    "--expectations-sha256",
+    "2782f56e825c48a5a8823734b59740c64a75ac542f4b0af391a025811c17dfe9",
+    "--snapshot"
+  ],
+  "exit_code": 0,
+  "stdout": "{\n  \"schema\": \"ARL-RECOVERY-RECEIPT-BINDING-V1\",\n  \"checked_at\": \"2026-09-10T00:18:04.269752+00:00\",\n  \"receipt_binding\": \"PASS\",\n  \"components\": [\n    {\n      \"kind\": \"control\",\n      \"catalog_sequence\": 151,\n      \"path\": \"control/20260910T000844Z-182a28d5db54d00b/receipt.json\",\n      \"sha256\": \"98141e9a2e0f64531197f2c8ced2c1c5561c1af8c0f1f41c81f16a1e1859df10\"\n    },\n    {\n      \"kind\": \"macro\",\n      \"catalog_sequence\": 152,\n      \"path\": \"macro/cd50887d4b89bf247f0c4225601fa04ebac5bfcf556a7120ca362d9c042654b9/receipt.json\",\n      \"sha256\": \"48090e45c84b696db7d43314bd8d7a66f45c70b6e566123e074035e4fa8046bd\"\n    },\n    {\n      \"kind\": \"observation\",\n      \"catalog_sequence\": 150,\n      \"path\": \"observations/2026-09-10/054bced37a6b784b80111ab8a63d0fff74f29fdd95717aa4ff1ce19c16cf4801/receipt.json\",\n      \"sha256\": \"e8c758f3a14e625814a51b94d81a2a28755f351103ce31f0a28505358be62989\"\n    }\n  ],\n  \"physical_recovery\": \"BLOCKED\",\n  \"natural_trigger\": \"UNVERIFIED\",\n  \"archive_restore\": \"NOT_RUN\",\n  \"scope\": \"Pinned receipt metadata only; no A3 or A4 acceptance\",\n  \"coordination\": \"None; frozen metadata snapshot only\"\n}\n",
+  "stderr": "",
+  "verifier_sha256": "1762356bb60891e62217d618add4973ea499b3a88798fba19b68de155f336dc6"
+}
