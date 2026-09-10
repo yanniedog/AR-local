@@ -1,0 +1,105 @@
+{
+  "acceptance": [
+    "Fresh original preflight accepts exact source/runtime and shows only control stale",
+    "Control archive passes original restore checks",
+    "Unchanged scheduled.main check passes with all components current"
+  ],
+  "author": "Codex for jkoka",
+  "authorization": "User explicitly requested completion, no Windows Yes/UAC prompts, and: Do it now rather than 6am.",
+  "candidate_sha": "d930716ae1d32c19dd73b95ea5d719f6209eb179",
+  "config": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\user-session-backup.json",
+    "sha256": "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff"
+  },
+  "created_at_hobart": "2026-09-10T09:54:20.967894+10:00",
+  "created_at_utc": "2026-09-09T23:54:20.967894+00:00",
+  "deployment": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\private-tools-deployment.json",
+    "sha256": "9751b0441d9eec953b19de5f148018afdd76b99effcb8c60bb8449a79e63e314"
+  },
+  "deviations": [
+    {
+      "change": "Operator invokes the existing control backup API only",
+      "controls": "No function replacement, timestamp normalization, timeout change or relaxed check. Fresh original preflight must show only control stale; same locks and strict transport; original scheduled check must report all components current.",
+      "risk": "Stale observation or macro accidentally retained"
+    }
+  ],
+  "elevated": false,
+  "exact_commands": {
+    "operator": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "C:\\code\\backups\\AR-local-user-session\\D025-control-refresh\\refresh.py"
+    ],
+    "scheduled_check_arguments": [
+      "--target",
+      "C:\\code\\backups\\AR-local-pi5-user",
+      "--recovery-image",
+      "C:\\code\\AR-local-pi-image-2026-05-21\\AR-local-pi-image-2026-05-21",
+      "--candidate-code-sha",
+      "d930716ae1d32c19dd73b95ea5d719f6209eb179",
+      "--protected-code-sha",
+      "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+      "--plan-git-commit",
+      "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+      "--operator",
+      "S-1-5-21-689213601-40760280-3596424081-1001",
+      "--host",
+      "192.168.20.19",
+      "--ssh-user",
+      "pi",
+      "--ssh-port",
+      "22",
+      "--ssh-path",
+      "C:\\code\\backups\\AR-local-user-session\\tools\\git-ssh-2.55.0.5\\usr\\bin\\ssh.exe",
+      "--ssh-sha256",
+      "c84594a323ee6afc04d9faf614a05be6dc9a2faecd856268a854084fea17fd44",
+      "--scp-path",
+      "C:\\code\\backups\\AR-local-user-session\\tools\\git-ssh-2.55.0.5\\usr\\bin\\scp.exe",
+      "--scp-sha256",
+      "2f1a452f90a61e189feeed0b42a71d595d56da1c6f934165504320dc05485113",
+      "--ssh-identity",
+      "C:\\Users\\jkoka\\.ssh\\pi5",
+      "--ssh-known-hosts",
+      "C:\\code\\backups\\AR-local-user-session\\3f8b8a7c4b51fef8eeb370f747f2dc51c73a1afa\\known-hosts",
+      "--check-only",
+      "--user-runtime-transition"
+    ]
+  },
+  "id": "D-025-CONTROL-API-REFRESH-20260910",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "plan_version": "1.5",
+  "predecessor_record_sha256": "f99598f2314ff13abcc7ba7be61be5a4d35daab654e3ccbeaf1b17c5f368d980",
+  "previous_config": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\source-auth-publication-20260908-v4\\user-session-backup.json",
+    "sha256": "5bdb944363ec5276ea8662f99ba4d37e3852f2049bb8fd590a8cc2f664b798ca"
+  },
+  "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "reason": "All v5 component restores passed but aggregate control freshness failed after a monitor clock tick. Refresh only control using the unchanged receiver API, then run the unchanged scheduled check to establish a real successful predecessor.",
+  "result": "INTENT",
+  "rollback": "Preserve all prior archives/receipts and any new failed result; no task or source change. No blind retry.",
+  "stop_conditions": [
+    "Any code/config/task/package/trust identity drift, busy lock/task or active ingest",
+    "No manual start at or after14:00 Hobart; original six-hour run bound and22:00 cutoff remain",
+    "Any Windows elevation/authentication prompt: stop without escalation"
+  ],
+  "tool_contract": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\tool-contract.json",
+    "sha256": "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+  },
+  "wrapper_sha256": "04477d10f91a3e53b729ac8b0eb3ff77738b98f144774ac83a77dcf30e873067",
+  "deployment_proof": {
+    "result": "PASS",
+    "read_only": true,
+    "new_config_sha256": "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff",
+    "package_sha256": "56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e",
+    "package_files_verified": 365,
+    "ssh_package_sha256": "d508c38435872da388545fc9d221fb4581c938a3030a081efb1d9576d9b928f8",
+    "ssh_files_verified": 440,
+    "candidate_sha": "d930716ae1d32c19dd73b95ea5d719f6209eb179",
+    "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6"
+  }
+}

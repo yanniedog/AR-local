@@ -1,0 +1,99 @@
+{
+  "acceptance": [
+    "Exact merged PR670 Linux/Windows CI and substantive feedback disposition",
+    "Full private-package and predecessor lineage validation before action mutation",
+    "Existing ordinary-user transaction preserves task principal/triggers/settings and verifies action readback",
+    "Probe succeeds, then original backup/restore/preflight/catalog checks; strict SSH exits remain enforced",
+    "No A3 natural-trigger or A4 physical acceptance inferred from manual backup"
+  ],
+  "author": "Codex for jkoka",
+  "authorization": "User explicitly requested completion, no Windows Yes/UAC prompts, and: Do it now rather than 6am.",
+  "candidate_sha": "b6c5a4d8984ad2d2509514418c753cd555b0144f",
+  "config": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\user-session-backup.json",
+    "sha256": "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5"
+  },
+  "created_at_hobart": "2026-09-10T09:56:38.899015+10:00",
+  "created_at_utc": "2026-09-09T23:56:38.899015+00:00",
+  "deployment": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json",
+    "sha256": "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330"
+  },
+  "deviations": [
+    {
+      "change": "Normalized recovery-status observation timestamp in control revision",
+      "controls": "Preserve every status field except checked_at in semantic identity, retain and verify raw file bytes, verify normalized facts against restored file; unchanged strict private tools and all other freshness gates",
+      "risk": "Ignoring a substantive recovery-state change"
+    },
+    {
+      "change": "Immediate manual verification after exact corrected receiver activation",
+      "controls": "Ready task, existing locks and all original freshness/capacity/ingest gates; record manual origin and preserve natural failure",
+      "risk": "Overlap and invalid natural-trigger inference"
+    }
+  ],
+  "elevated": false,
+  "exact_commands": {
+    "manual_start": [
+      "Start-ScheduledTask",
+      "-TaskName",
+      "AR-local user-session backup"
+    ],
+    "probe": [
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-File",
+      "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_private_git.ps1",
+      "-DeploymentPath",
+      "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\private-tools-deployment.json",
+      "-DeploymentSha256",
+      "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+      "-Mode",
+      "probe"
+    ],
+    "verify": [
+      "C:\\Users\\jkoka\\.pyenv\\pyenv-win\\versions\\3.10.9\\python.exe",
+      "-B",
+      "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\source\\laptop_backup_user_update.py",
+      "--old-config",
+      "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\user-session-backup.json",
+      "--old-sha256",
+      "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff",
+      "--config",
+      "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\user-session-backup.json",
+      "--config-sha256",
+      "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5",
+      "--tool-contract",
+      "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\tool-contract.json",
+      "--tool-contract-sha256",
+      "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+    ]
+  },
+  "id": "D-026-RECOVERY-CLOCK-20260910",
+  "operator": "S-1-5-21-689213601-40760280-3596424081-1001",
+  "plan_controlled_sha256": "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada",
+  "plan_document_commit": "9094a8e115958fcaf2cb36525736bd5e297e6b04",
+  "plan_document_id": "ARL-OPS-001",
+  "plan_raw_sha256": "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684",
+  "plan_version": "1.5",
+  "predecessor_record_sha256": "3b76be3477997900aaeeefb253e1a76323c0f3d18214cbfa891d4062223581b7",
+  "previous_config": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\private-tools-20260910-v5\\user-session-backup.json",
+    "sha256": "b5226e34e367393f9087b92c63dc6f6bd92054d7df2b24c88c45a793e529a9ff"
+  },
+  "production_sha": "3de4d35d1f3af8b647477bfeb327c9466f5c49f6",
+  "reason": "The v5 manual run restored all three archives but its aggregate result failed because cdr-recovery-status.json changed only checked_at. Install the reviewed receiver that retains every recovery fact and raw archive bytes while excluding only that observation timestamp from control freshness, then verify the new exact pair now. D024 stopped before task mutation because its predecessor was failed. D025 used the original control API and unchanged scheduled check to obtain a real successful predecessor. Preserve all failed proposals, the original terminal and verified archives.",
+  "result": "NOT_STARTED",
+  "rollback": "Existing action-only transaction restores exported old action on failure. The old v5 action is known to report a false stale result when the monitor timestamp changes; rollback does not claim healthy unattended backups. Preserve all logs/configs/catalogs and failed alternatives.",
+  "stop_conditions": [
+    "Any code/config/task/package/trust identity drift, busy lock/task or active ingest",
+    "No manual start at or after14:00 Hobart; original six-hour run bound and22:00 cutoff remain",
+    "Any Windows elevation/authentication prompt: stop without escalation"
+  ],
+  "tool_contract": {
+    "path": "C:\\code\\backups\\AR-local-user-session\\recovery-clock-20260910-v7\\tool-contract.json",
+    "sha256": "5363649eff4678fb9b2313a972e36c034a108f2d45701f8c339d7c899b509068"
+  }
+}

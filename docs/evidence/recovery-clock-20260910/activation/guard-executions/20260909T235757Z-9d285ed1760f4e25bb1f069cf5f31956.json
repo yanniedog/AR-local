@@ -1,0 +1,21 @@
+{
+    "started_at_utc":  "2026-09-09T23:57:57.7392190Z",
+    "mode":  "probe",
+    "deployment_sha256":  "8ea5b37d14f5e8c35e690bfadae0dc2f7823703fceb1fde33477460856051330",
+    "authority":  "D-026-RECOVERY-CLOCK-20260910",
+    "elevated":  false,
+    "result":  "PASS",
+    "dependency_verification":  {
+                                    "result":  "PASS",
+                                    "read_only":  true,
+                                    "new_config_sha256":  "4a6a4f096236cc3ab4b313e1f90bfd9159f9c9a9b2a615113a85561da5e381d5",
+                                    "package_sha256":  "56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e",
+                                    "package_files_verified":  365,
+                                    "ssh_package_sha256":  "d508c38435872da388545fc9d221fb4581c938a3030a081efb1d9576d9b928f8",
+                                    "ssh_files_verified":  440,
+                                    "candidate_sha":  "b6c5a4d8984ad2d2509514418c753cd555b0144f",
+                                    "production_sha":  "3de4d35d1f3af8b647477bfeb327c9466f5c49f6"
+                                },
+    "exit_code":  0,
+    "completed_at_utc":  "2026-09-09T23:58:05.7659398Z"
+}

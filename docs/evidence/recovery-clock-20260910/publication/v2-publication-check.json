@@ -1,0 +1,37 @@
+{
+  "checked_at_utc": "2026-09-09T23:48:32.074554+00:00",
+  "result": "PASS",
+  "checks": [
+    {
+      "asset": "product_history",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/v2-product-history-2026-09-10-e556a466467d.json.gz",
+      "bytes": 132137,
+      "sha256": "e556a466467db1684f1c4aed7e8eb91c0446dae08481da91d1f3406c43c3e9be",
+      "uncompressed_bytes": 2591274,
+      "date_binding": {
+        "run_date": "2026-09-10"
+      },
+      "result": "PASS"
+    },
+    {
+      "asset": "economic_outlook",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/v2-economic-outlook-2026-09-10-4df051be162c.json.gz",
+      "bytes": 2247,
+      "sha256": "4df051be162cba21ec789b086f272427f49b4bf27cc46cb09b6724fe7de71a4b",
+      "uncompressed_bytes": 23404,
+      "date_binding": {
+        "generated_at": "2026-09-09T15:15:33Z",
+        "generated_date_hobart": "2026-09-10"
+      },
+      "result": "PASS"
+    }
+  ],
+  "v2_manifest_sha256": "15c6ec8872fde5ef261f53b31e5cd2b5f6dfe4320735699b9df4b90975967d5b",
+  "v1_manifest_sha256": "b56e0a4d76cd8fc93af6f13627c7b78996078d24ddeaf85ade0b240970359e3d",
+  "base": {
+    "manifest_schema": 1,
+    "core_sha": "bcc046636d1759d8b432ae15c40f148b4a417e3f32d6ef8ff3e4cbc1a4c89706",
+    "details_sha": "599c6aa501da3f7274257ae831df66191b7941212133607ecc4c36b3b67abaa1"
+  },
+  "scope": "Every v2 descriptor downloaded, size/hash/gzip/JSON/date checked; v1 base hashes match. Device state remains unverified."
+}
