@@ -130,6 +130,17 @@ without reserving or capturing. A successful child process alone is not payload
 or coverage acceptance: rerun the producer/public/app audits and check the
 independent backup receipt.
 
+Same-day selection distinguishes missing products from explicit source category
+exclusions. An exclusion requires the exact product in a fresh, complete,
+contract-bound index from the same registered provider and an existing
+out-of-scope CDR category. Selection receipts retain each product's category,
+index body/event hashes, prior rate-row count and complete count reconciliation.
+Absent or in-scope products, unverified evidence, and unexplained rate loss still
+refuse selection. After an approved selection-policy repair, the existing
+watchdog reconsiders retained finalized generations before any network probe or
+capture. It preserves the original refusal receipt and reserves publication of
+the newly accepted pointer; publication/readback acceptance remains separate.
+
 Exit codes for the producer audit are 0 PASS, 1 WARN, 2 FAIL and 3 BLOCKED. The
 repair command returns 0 READY/CAPTURED, 2 FAIL/NOT_SELECTED and 3 BLOCKED.
 Historical known gaps require an explicit disposition; do not erase the evidence

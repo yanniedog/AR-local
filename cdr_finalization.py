@@ -553,8 +553,9 @@ def _advance_pointer(
                 if precedence != 1:
                     return True
                 if path.name == "latest-observation.json":
+                    reconciliation: dict = {}
                     try:
-                        reason = same_day_selection_reason(state_dir, current, incoming)
+                        reason = same_day_selection_reason(state_dir, current, incoming, reconciliation)
                     except (KeyError, OSError, ValueError) as error:
                         reason = f"selection_evidence_unavailable:{type(error).__name__}"
                     record = {
@@ -566,6 +567,7 @@ def _advance_pointer(
                         "previous_event_digest": current["ledger_event_digest"],
                         "selected": not bool(reason),
                         "reason": reason or "same_day_coverage_preserved",
+                        **({"scope_reconciliation": reconciliation} if reconciliation else {}),
                     }
                     receipt = state_dir / "observation-selections-v1" / incoming_date / (
                         f"{hashlib.sha256(canonical_json_bytes(record)).hexdigest()}.json"

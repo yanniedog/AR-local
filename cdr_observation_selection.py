@@ -237,7 +237,8 @@ def _withdrawals(observation: Mapping[str, Any], source: Mapping[str, Any]) -> s
     return result
 
 
-def same_day_selection_reason(state: Path, current: Mapping, incoming: Mapping) -> str:
+def same_day_selection_reason(state: Path, current: Mapping, incoming: Mapping,
+                              reconciliation: dict | None = None) -> str:
     """Return an explicit refusal reason, or empty string when selection is safe."""
     old = load_pointer_observation(state, current)
     new = load_pointer_observation(state, incoming)
@@ -250,9 +251,30 @@ def same_day_selection_reason(state: Path, current: Mapping, incoming: Mapping) 
         return "recovery_source_is_not_selected_generation"
     before, after = captured_identities(old), captured_identities(new)
     withdrawals = _withdrawals(new, old)
+    excluded_rates = 0
     if before is not None and after is not None:
-        if before - after - withdrawals:
+        from cdr_observation_scope import add_excluded_rate_counts, verified_scope_exclusions
+
+        missing = before - after - withdrawals
+        exclusions = verified_scope_exclusions(new, old, missing)
+        excluded_rates = add_excluded_rate_counts(old, exclusions)
+        unexplained = missing - {(row["provider"], row["product_id"]) for row in exclusions}
+        if exclusions and reconciliation is not None:
+            reconciliation.update(
+                schema_version=1, policy="verified_explicit_cdr_scope_exclusions",
+                previous_products=len(before), candidate_products=len(after),
+                previous_rate_rows=int(old_coverage.get("eligible_rate_rows") or 0),
+                candidate_rate_rows=int(new_coverage.get("eligible_rate_rows") or 0),
+                scope_exclusions=exclusions, scope_excluded_rate_rows=excluded_rates,
+                unexplained_missing_products=[list(key) for key in sorted(unexplained)],
+                rate_delta_after_scope_exclusions=(int(new_coverage.get("eligible_rate_rows") or 0)
+                    - int(old_coverage.get("eligible_rate_rows") or 0) + excluded_rates),
+            )
+        if unexplained:
             return "previously_captured_products_missing_without_fresh_withdrawal"
+        if (exclusions and not withdrawals and int(new_coverage.get("eligible_rate_rows") or 0)
+                < int(old_coverage.get("eligible_rate_rows") or 0) - excluded_rates):
+            return "in_scope_rate_coverage_regressed"
         improved = bool(after - before)
     else:
         if int(new_coverage.get("products_discovered") or 0) < int(old_coverage.get("products_discovered") or 0):
@@ -262,6 +284,6 @@ def same_day_selection_reason(state: Path, current: Mapping, incoming: Mapping) 
         if int(new_coverage.get("failure_records") or 0) > int(old_coverage.get("failure_records") or 0):
             return "unresolved_failures_increased_without_coverage_gain"
         if (reused and int(new_coverage.get("eligible_rate_rows") or 0)
-                < int(old_coverage.get("eligible_rate_rows") or 0)):
+                < int(old_coverage.get("eligible_rate_rows") or 0) - excluded_rates):
             return "retained_rate_coverage_regressed"
     return ""
