@@ -222,6 +222,31 @@ def test_nonzero_exit_semantics_survive_final_receipt_failure(monkeypatch, spool
     assert not (spool / "latest-verified.json").exists()
 
 
+@pytest.mark.parametrize(("returncode", "category", "error_type"), [
+    (0, "NONE", OSError), (1, "NETWORK", RuntimeError), (11, "REPOSITORY_LOCK", backup.Blocked),
+])
+def test_transient_receipt_retry_keeps_known_child_exit(monkeypatch, spool, returncode, category, error_type):
+    client = real_child(monkeypatch, spool,
+        f"import sys;sys.stderr.write('connection reset by peer');sys.exit({returncode})")
+    original = diagnostics._private_file
+    attempts = 0
+    def fail_once(path, raw):
+        nonlocal attempts
+        if path.name == "result.json":
+            attempts += 1
+            if attempts == 1:
+                raise OSError("fixture transient receipt failure")
+        return original(path, raw)
+    monkeypatch.setattr(diagnostics, "_private_file", fail_once)
+    with pytest.raises(error_type):
+        client.run("backup")
+    _, value = report(spool)
+    assert attempts == 2
+    assert value["exit_code"] == returncode
+    assert value["category"] == category and value["result"] == "EXITED"
+    assert value["reader_complete"] and not (spool / "latest-verified.json").exists()
+
+
 def test_noncontiguous_stderr_cannot_invent_a_failure_signature(spool):
     code = ("import sys;sys.stderr.buffer.write(b'x'*" + str(diagnostics.HEAD_BYTES - 8)
             + "+b'invalid_'+b'discarded'*(32*1024)+b'grant'+b'x'*"
