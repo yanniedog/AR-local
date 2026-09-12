@@ -36794,3 +36794,41 @@ This complete entry preserves the unchanged natural-trigger boundary and restore
   }
 }
 ```
+
+
+## 2026-09-12 — D-027 CDR quality pipeline and unattended Drive backup authority
+
+Operator authority: the 2026-09-11 request and approved implementation plan in
+Codex task `01a08d7b-f84a-7282-b4ac-d96174d05780`, followed by “Implement the
+proposed plan.” This is an append-only decision; previous evidence is unchanged.
+
+The operator explicitly superseded the perfect laptop database-backup requirement
+and authorized an unattended Pi-owned Google Drive backup: initial compressed,
+encrypted full coverage with daily compressed Restic increments, all history
+retained. The operator approved a daily 04:00 Australia/Hobart Codex audit and
+full gated repair workflow across AR-local and AR-app, including reviewed code,
+merge, exact-tested deployment, a new current-day ingest and immutable payload
+revision, with AR-app selecting only the current head for each date.
+
+Reason: remove the laptop/UAC dependency and close persistent CDR coverage and
+publication gaps. Risk: unattended code/deployment changes and Drive access need
+explicit bounded controls. Compensating controls: source immutability, original
+failure evidence, operation locks, current-day-only recapture, existing recovery
+budgets/cutoff, deterministic CI, substantive review disposition, exact-commit
+canary/rollback, public hash verification, independent outcome receipts, and
+SQLite-consistent backup with restore proof. No source history is rewritten and
+no physical-boot evidence is inferred from database restore.
+
+For this pipeline, `docs/CDR_QUALITY_PIPELINE.md` and the latest chronological
+handoff are the operational entrypoint. Older runbook/handoff content remains
+reference evidence and retains nonconflicting safety controls; it does not
+reinstate superseded laptop activation or UAC gates. Installation of the backup
+tools and private OAuth enrollment may proceed as commissioning; production
+activation follows code verification and deployment evidence. The existing
+laptop schedule remains until the initial Drive backup and restore pass.
+
+Execution state: IMPLEMENTATION IN PROGRESS. The Codex task has been scheduled
+for 04:00 Hobart beginning 2026-09-13, replacing the paused laptop/UAC heartbeat.
+No producer deployment, revision activation, Google Drive authorization, Drive
+snapshot or restore success is claimed by this decision. Natural timer execution
+and physical recovery remain separate proof categories.

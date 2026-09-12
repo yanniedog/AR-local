@@ -134,6 +134,20 @@ BANK_HISTORY_COLUMNS = (
 )
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
+
+def bank_section_rate_filter(run_date: str, section: str) -> tuple[str, list[str]]:
+    from cdr_product_classification import excluded_category_tokens
+
+    excluded = excluded_category_tokens(section)
+    # Category lives in bank_products. Bind the date/section so SQLite builds
+    # the exclusion set once instead of scanning products for every rate row.
+    category_sql = (" AND product_key NOT IN (SELECT product_key FROM bank_products WHERE "
+                    "run_date = ? AND dataset = ? AND "
+                    "UPPER(COALESCE(category, '')) IN (" + ",".join("?" for _ in excluded) + "))")
+    if section == "Mortgage":
+        return " AND rate_family = ? AND COALESCE(rate_type, '') != ?" + category_sql, ["lending", "DISCOUNT", run_date, section, *excluded]
+    return " AND rate_family = ?" + category_sql, ["deposit", run_date, section, *excluded]
+
 # Banking dashboard SPA entry URLs (client app.js sectionToPath / sectionFromPathname).
 # Must serve dashboard/index.html — not site_root/savings/ (a directory → 404).
 DASHBOARD_BANKING_SECTION_PATHS = frozenset(
@@ -705,7 +719,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         # Apply the same rate_family / non-DISCOUNT filter the client used to do
         # post-fetch (and that /api/banks/ribbon already applies). Saves the wire
         # cost of every Mortgage DISCOUNT row that the dashboard discards anyway.
-        filter_sql, filter_params = bank_section_rate_filter(section)
+        filter_sql, filter_params = bank_section_rate_filter(run_date, section)
         with connect_readonly(db_path) as con:
             available = bank_rate_columns(con)
             select_list = bank_rate_select_list(available, BANK_SECTION_COLUMNS)
@@ -724,11 +738,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 out.append(compact_bank_row(item))
             return out
 
-    def bank_section_rate_filter(section: str) -> tuple[str, list[str]]:
-        if section == "Mortgage":
-            return " AND rate_family = ? AND COALESCE(rate_type, '') != ?", ["lending", "DISCOUNT"]
-        return " AND rate_family = ?", ["deposit"]
-
     # Ribbon aggregation uses the shared cdr_ribbon_normalize.aggregate_ribbon
     # kernel (imported at module top) - one source of truth with the payload
     # builder, so the web dashboard and the mobile app can never diverge on the
@@ -739,7 +748,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         with connect_readonly(db_path) as con:
             con.row_factory = sqlite3.Row
             cols = bank_rate_columns(con)
-            filter_sql, filter_params = bank_section_rate_filter(section)
+            filter_sql, filter_params = bank_section_rate_filter(run_date, section)
             where = (
                 "run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
                 + filter_sql
@@ -851,7 +860,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 params.append(section)
                 # Same DISCOUNT / rate_family filter the section endpoint applies,
                 # so the history payload doesn't ship rows the dashboard discards.
-                filter_sql, filter_params = bank_section_rate_filter(section)
+                filter_sql, filter_params = bank_section_rate_filter(run_date, section)
                 sql += filter_sql
                 params.extend(filter_params)
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query

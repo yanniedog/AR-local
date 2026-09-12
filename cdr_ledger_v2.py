@@ -381,7 +381,7 @@ def verify_reachable_generation(
     return event
 
 
-def verify_ledger(state_dir: Path) -> dict[str, Any]:
+def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str, Any]:
     state_dir = state_dir.expanduser().resolve()
     root = ledger_root(state_dir)
     findings: list[dict[str, Any]] = []
@@ -462,7 +462,8 @@ def verify_ledger(state_dir: Path) -> dict[str, Any]:
             if ancestry_event is None:
                 break
         try:
-            _verify_artifacts(state_dir, event)
+            if verify_artifacts:
+                _verify_artifacts(state_dir, event)
         except (OSError, ValueError, KeyError) as error:
             findings.append(
                 {
@@ -475,6 +476,7 @@ def verify_ledger(state_dir: Path) -> dict[str, Any]:
     return {
         "ok": not findings,
         "checked_events": len(events),
+        "artifacts_rehashed": verify_artifacts,
         "chain_events": len(reached),
         "findings": findings,
         "warnings": warnings,

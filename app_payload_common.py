@@ -83,6 +83,10 @@ def compact(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def section_filter(dataset: str, row: Dict[str, Any]) -> bool:
     """Mirror cdr_dashboard_server.bank_section_rate_filter."""
+    from cdr_product_classification import category_excludes_section
+
+    if category_excludes_section(row.get("category"), dataset):
+        return False
     rate = row.get("rate")
     if _is_blank(rate):
         return False

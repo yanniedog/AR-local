@@ -40,6 +40,27 @@ DATASET_TO_FOLDER = {
     "term_deposits": "TD",
 }
 
+# Explicit product categories outrank a marketing name or generic rate fields.
+# A business loan secured by a term deposit is not a term deposit product.
+OUT_OF_SCOPE_CATEGORIES = frozenset({
+    "BUSINESS_LOANS", "BUSINESS_LOAN", "PERS_LOANS", "PERSONAL_LOANS", "PERSONAL_LOAN",
+    "OVERDRAFTS", "OVERDRAFT", "CRED_AND_CHRG_CARDS", "CREDIT_CARDS", "MARGIN_LOANS",
+    "LEASES", "TRADE_FINANCE", "REGULATED_TRUST_ACCOUNTS", "TRAVEL_CARDS",
+})
+
+
+def category_excludes_section(category: Any, section: str) -> bool:
+    normalized = normalize_cdr_product_category(category)
+    if normalized in OUT_OF_SCOPE_CATEGORIES:
+        return True
+    dataset = dataset_from_cdr_category(normalized)
+    return dataset is not None and DATASET_TO_FOLDER[dataset] != section
+
+
+def excluded_category_tokens(section: str) -> list[str]:
+    return sorted(OUT_OF_SCOPE_CATEGORIES | {token for dataset, tokens in DATASET_CATEGORY_ALIASES.items()
+                                            if DATASET_TO_FOLDER[dataset] != section for token in tokens})
+
 
 def is_record(value: Any) -> bool:
     return isinstance(value, dict)
@@ -159,7 +180,10 @@ def infer_cdr_dataset(
     *,
     allow_name_fallback: bool = True,
 ) -> Optional[str]:
-    cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
+    category = extract_cdr_product_category(product)
+    if category in OUT_OF_SCOPE_CATEGORIES:
+        return None
+    cat_ds = dataset_from_cdr_category(category)
     if cat_ds:
         return cat_ds
     structured = infer_dataset_from_structured_signals(product)

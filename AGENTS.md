@@ -1,5 +1,14 @@
 # AR-local ? Agent configuration
 
+> **Daily CDR quality pipeline (operator decision 2026-09-11):** Read
+> **`docs/CDR_QUALITY_PIPELINE.md`** and the latest chronological recovery
+> handoff before this workflow. Its approved unattended Drive backup and repair
+> policy supersedes laptop-backup/UAC prerequisites for this workflow. Read older
+> runbook/handoff entries when their evidence or a remaining safety gate applies;
+> preserve them unchanged. Do not reinterpret old laptop activation requirements
+> as current authorization requirements. Keep source immutability, exact-tested
+> deployment, resource limits and the natural-ingest quiet window.
+
 > **Mandatory Pi operations runbook:** Before any Pi ingest, payload, database,
 > backup, canary, deployment, or rollback work, read
 > **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**, then read

@@ -1,0 +1,11 @@
+[Unit]
+Description=Drain new AR-local backup requests and retry interrupted uploads
+
+[Timer]
+OnCalendar=*-*-* *:00,30:00 Australia/Hobart
+Persistent=true
+AccuracySec=1min
+Unit=ar-local-drive-backup.service
+
+[Install]
+WantedBy=timers.target

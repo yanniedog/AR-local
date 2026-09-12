@@ -165,12 +165,30 @@ def _same_payload_revision(left: dict, right: dict) -> bool:
         return False
     left_files = left.get("files") or {}
     right_files = right.get("files") or {}
+    if left.get("payload_revision") or right.get("payload_revision"):
+        if (left.get("payload_revision") != right.get("payload_revision")
+                or left.get("source_observation") != right.get("source_observation")
+                or set(left_files) != set(right_files)):
+            return False
+        kinds = tuple(left_files)
+    else:
+        kinds = ("core", "details")
     return all(
         str((left_files.get(kind) or {}).get("sha256") or "")
         and str((left_files.get(kind) or {}).get("sha256") or "")
         == str((right_files.get(kind) or {}).get("sha256") or "")
-        for kind in ("core", "details")
+        for kind in kinds
     )
+
+
+def queue_drive_backup(reason: str) -> None:
+    """Record terminal evidence for the independent Pi backup queue."""
+    try:
+        from pi_drive_backup import request_backup
+
+        request_backup(reason)
+    except Exception as exc:  # backup status never changes the ingest outcome
+        print(f"[pi_daily_sync] Drive backup queue failed: {exc}", file=sys.stderr)
 
 
 def payload_publication_pending_path(repo_root: Path) -> Path:
@@ -370,6 +388,9 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             exports,
             state_dir=payload_state / "v1",
             contract_coverage=gate.contract_coverage(contract),
+            source_observation={key: contract[key] for key in (
+                "generation_id", "observation_date", "observation_state", "contract_digest", "source_path"
+            ) if key in contract},
         )
         pruned_v1 = sum(
             prune_payload_staging(payload_state / "v1" / folder, "manifest.json")
@@ -446,7 +467,9 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                     "[pi_daily_sync] app_payload v2 failed "
                     f"(non-fatal; v1 preserved) error={v2_exc!r} exit=0"
                 )
-        if published_dated or published_latest:
+        from app_payload_revisions import revision_mode_enabled
+
+        if (published_dated or published_latest) and not revision_mode_enabled():
             try:
                 runs_root = data_runs_root(repo_root)
                 app_payload.refresh_dates_index(
@@ -490,6 +513,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Fill coverage gaps using verified source responses from today's selected observation.",
     )
+    parser.add_argument("--quality-recapture", action="store_true", help="Full current-day recapture after a verified quality repair; requires --force.")
     parser.add_argument("--date", default="", help="Run date YYYY-MM-DD; defaults to cdr_daily.py local date.")
     parser.add_argument("--banks-only", action="store_true", help="Run the daily banking ingest only.")
     parser.add_argument(
@@ -500,6 +524,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.resume_same_day and not args.force:
         parser.error("--resume-same-day requires --force")
+    if args.quality_recapture and (not args.force or args.resume_same_day):
+        parser.error("--quality-recapture requires --force and cannot reuse --resume-same-day")
     if args.publish_existing_payload and (args.force or args.date or args.banks_only):
         parser.error("--publish-existing-payload cannot be combined with ingest options")
     return args
@@ -514,10 +540,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         lock_context = DailyIngestLock(lock_path)
         with lock_context:
-            if getattr(args, "resume_same_day", False):
+            if getattr(args, "resume_same_day", False) or getattr(args, "quality_recapture", False):
                 from pi_cdr_recovery import assert_recovery_start_safe
 
                 assert_recovery_start_safe(REPO_ROOT)
+            if getattr(args, "quality_recapture", False):
+                from pi_cdr_quality_repair import verify_candidate
+
+                verify_candidate(REPO_ROOT, os.environ.get("AR_LOCAL_QUALITY_EXPECTED_COMMIT", ""))
+                if payload_publication_pending(REPO_ROOT):
+                    raise RuntimeError("pending publication must settle before quality recapture")
+                today = datetime.now(ZoneInfo("Australia/Hobart")).date().isoformat()
+                if args.date and args.date != today:
+                    raise RuntimeError("quality recapture can only capture the actual current day")
             if args.publish_existing_payload:
                 if not payload_publication_pending(REPO_ROOT):
                     print("[pi_daily_sync] app_payload retry skipped reason=no_pending_marker")
@@ -535,6 +570,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     outcome = maybe_publish_app_payload(REPO_ROOT, pending_pointer)
                     if outcome == PUBLISH_PUBLISHED:
                         clear_payload_publication_pending(REPO_ROOT)
+                        queue_drive_backup("repair-publication")
                         print("[pi_daily_sync] app_payload retry completed")
                     else:
                         # Withheld keeps the marker too: nothing reached the release,
@@ -584,6 +620,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                         print(f"[pi_daily_sync] terminal failure recorded path={record_path}", file=sys.stderr)
                     except Exception as record_exc:
                         print(f"[pi_daily_sync] terminal failure record failed: {record_exc}", file=sys.stderr)
+                    queue_drive_backup("terminal-ingest-failure")
                     raise
             finally:
                 if dashboard_paused:
@@ -612,6 +649,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     "reason=publication_disabled",
                     file=sys.stderr,
                 )
+            queue_drive_backup("terminal-ingest")
     except RuntimeError as exc:
         if str(exc).startswith("production lock"):
             print(f"pi_daily_sync: {exc}")
