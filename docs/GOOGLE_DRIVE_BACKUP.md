@@ -193,6 +193,9 @@ cannot create a failure signature that never appeared in the original stream.
 Segment hashes describe the bytes actually retained on disk after the reader
 stops. If a reader is still alive, incomplete evidence does not claim final
 segment hashes; the whole-worker resource supervisor still owns cleanup.
+If final receipt persistence is retried after a transient write failure, the
+retry preserves the first finalization's known exit code and interruption state.
+It does not recast a completed child as interrupted merely because cleanup ran.
 
 Each Restic command also retains private diagnostics beneath its resource
 operation's `diagnostics/<command-id>/`. `started.json` binds the command, worker,
