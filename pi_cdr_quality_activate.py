@@ -26,13 +26,23 @@ TZ = ZoneInfo("Australia/Hobart")
 
 
 def run(argv, *, cwd=None, timeout=120, output: Path | None = None) -> str:
-    result = subprocess.run(list(map(str, argv)), cwd=cwd, text=True, encoding="utf-8", errors="replace",
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, shell=False)
     if output:
-        write_bytes(output, result.stdout.encode("utf-8"))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        # Both output-path callers consume the file, not a returned string.
+        # Write directly so the operator sees progress before a long job exits.
+        with output.open("xb") as stream:
+            try:
+                result = subprocess.run(list(map(str, argv)), cwd=cwd, stdout=stream,
+                                        stderr=subprocess.STDOUT, timeout=timeout, shell=False)
+            finally:
+                stream.flush()
+                os.fsync(stream.fileno())
+    else:
+        result = subprocess.run(list(map(str, argv)), cwd=cwd, text=True, encoding="utf-8", errors="replace",
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, shell=False)
     if result.returncode:
         raise RuntimeError(f"{Path(str(argv[0])).name} command failed with exit {result.returncode}; see private operation evidence")
-    return result.stdout.strip()
+    return "" if output else result.stdout.strip()
 
 
 def git(repo: Path, *args, **kwargs) -> str:
@@ -130,6 +140,21 @@ def current_state(data: Path) -> tuple[str, str, Path]:
     return run_date, pointer["generation_id"], relative(data, pointer["export_path"])
 
 
+def verified_cache_options(args) -> dict:
+    path = getattr(args, "verified_cache", None)
+    digest = getattr(args, "verified_cache_sha256", None)
+    if bool(path) != bool(digest):
+        raise ValueError("verified cache requires both manifest and pinned SHA256")
+    if not path:
+        return {}
+    if (not path.is_absolute() or path.resolve() != path or path.name != "manifest.json"
+            or any(p.is_symlink() for p in (path, *path.parents))
+            or any(path.parent == root or path.parent in root.parents or root in path.parent.parents
+                   for root in (args.source, args.production, args.data_root, args.operation))):
+        raise ValueError("verified cache must be canonical and separate from all canary roots")
+    return {"verified_cache": path, "verified_cache_sha256": digest}
+
+
 def canary_worker(args) -> dict:
     from app_payload_build import build_payload
     from app_payload_revisions_state import validate_manifest as validate_payload
@@ -140,6 +165,9 @@ def canary_worker(args) -> dict:
     layout(source, args.production, data, operation)
     if os.name != "posix" or any(os.access(p, os.W_OK) for p in (source, args.production, data)):
         raise ValueError("canary worker requires read-only production, data and candidate mounts")
+    cache_options = verified_cache_options(args)
+    if cache_options and os.access(args.verified_cache.parent, os.W_OK):
+        raise ValueError("verified cache must be mounted read-only in the protected worker")
     target = clean_commit(source)
     before, files = protected_files(data), source_files(source)
     run_date, generation, exports = current_state(data)
@@ -148,7 +176,7 @@ def canary_worker(args) -> dict:
          "--basetemp", operation / "pytest-temp", f"--junitxml={tests}"], cwd=source,
         timeout=3600, output=operation / "pytest.txt")
     test_result = junit_result(tests)
-    report = audit(data, run_date, scrub=True, public=False, audit_root=operation / "source-audit")
+    report = audit(data, run_date, scrub=True, public=False, audit_root=operation / "source-audit", **cache_options)
     if report["capture"]["status"] != "PASS":
         raise ValueError("canary has no verified current source")
     dispositions = read(args.dispositions) if args.dispositions else {}
@@ -187,6 +215,11 @@ def canary(args) -> dict:
     guard(args.data_root, args.production)
     if clean_commit(args.source) != args.expected_commit or main_commit(args.source) != args.expected_commit:
         raise ValueError("canary must use exact clean authoritative main")
+    cache_options = verified_cache_options(args)
+    if cache_options:
+        from cdr_quality_cache import VerifiedAuditCache
+        cache = VerifiedAuditCache(args.verified_cache, args.verified_cache_sha256, source_root=args.source)
+        cache.close()
     args.operation.mkdir(parents=True, exist_ok=False)
     (args.operation / "tmp").mkdir()
     (args.operation / "home").mkdir()
@@ -215,6 +248,8 @@ def canary(args) -> dict:
                   "TimeoutStopSec=30s", f"RuntimeMaxSec={runtime}s"]
     if "memory" in Path("/sys/fs/cgroup/cgroup.controllers").read_text().split():
         properties += ["MemoryHigh=2500M", "MemoryMax=3G", "MemorySwapMax=0"]
+    if cache_options:
+        properties.append(f"ReadOnlyPaths={args.verified_cache.parent}")
     command += [f"--property={p}" for p in properties]
     command += [args.python, "-B", args.source / "pi_cdr_quality_resources.py",
                 "--output", args.operation / "resources.json", "--runtime-seconds", str(runtime - 15), "--",
@@ -223,6 +258,8 @@ def canary(args) -> dict:
                 "--operation", args.operation, "--python", args.python]
     if args.dispositions:
         command += ["--dispositions", args.dispositions]
+    if cache_options:
+        command += ["--verified-cache", args.verified_cache, "--verified-cache-sha256", args.verified_cache_sha256]
     run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
     from pi_cdr_quality_resources import require_receipt
     require_receipt(read(args.operation / "resources.json"))
@@ -401,6 +438,8 @@ def main(argv=None) -> int:
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--expected-commit")
     parser.add_argument("--dispositions", type=Path)
+    parser.add_argument("--verified-cache", type=Path)
+    parser.add_argument("--verified-cache-sha256")
     parser.add_argument("--ci-binding", type=Path)
     parser.add_argument("--app-acceptance", type=Path)
     parser.add_argument("--manifest", type=Path)
