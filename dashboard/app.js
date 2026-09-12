@@ -94,7 +94,9 @@
   }
 
   async function getJson(url, options) {
-    const response = await fetch(url, { cache: 'force-cache', ...(options || {}) });
+    // All callers read mutable APIs: a dated URL can select a newer same-day
+    // observation. Section/ribbon/history state already avoids duplicate reads.
+    const response = await fetch(url, { ...(options || {}), cache: 'no-store' });
     if (!response.ok) throw new Error(url + ' returned ' + response.status);
     return response.json();
   }
