@@ -240,9 +240,9 @@ def runtime(sealed, monkeypatch):
     monkeypatch.setattr(activate, "clean_commit", lambda root: state["head"] if root == production else TARGET)
     monkeypatch.setattr(activate, "protected_files", lambda _: manifest["protected_files"])
     monkeypatch.setattr(activate, "current_state", lambda _: ("2026-09-12", "recorded-generation", production))
-    monkeypatch.setattr(activate, "smoke", lambda _: None)
+    monkeypatch.setattr(activate, "smoke", lambda _, **_kwargs: None)
     monkeypatch.setattr(activate, "active", lambda unit: state["timers"].get(unit, "inactive"))
-    def verify(*_):
+    def verify(*_, **_kwargs):
         if state["verify_failure"]:
             raise RuntimeError("runtime hash mismatch")
     monkeypatch.setattr(activate, "verify_runtime", verify)
@@ -294,6 +294,71 @@ def test_success_keeps_exact_candidate_and_no_backup_claim(runtime):
     result = activate.activate(args)
     assert result["result"] == "PASS" and state["checkout"] == [TARGET]
     assert result["backup"]["status"] == "UNVERIFIED"
+
+
+def test_rollback_failure_does_not_erase_original_activation_reason(runtime, monkeypatch):
+    args, state = runtime
+    state["verify_failure"] = True
+    def smoke(_source, *, operation, phase):
+        assert operation.name.startswith("activation-")
+        if phase == "rollback":
+            raise RuntimeError("rollback endpoint failure")
+    monkeypatch.setattr(activate, "smoke", smoke)
+    with pytest.raises(RuntimeError, match="activation failed:.*rollback endpoint failure"):
+        activate.activate(args)
+    result = evidence.read(next(args.manifest.parent.glob("activation-*/result.json")))
+    assert "runtime hash mismatch" in result["activation_failure"]
+    assert "rollback endpoint failure" in result["error"]
+    assert result["result"] == "FAIL"
+
+
+@pytest.mark.parametrize("remaining", [-1, 29 * 60])
+def test_expired_or_insufficient_admission_does_not_mutate_runtime(runtime, remaining):
+    args, state = runtime
+    manifest = evidence.read(args.manifest)
+    manifest["expires_at"] = (datetime.now(timezone.utc) + timedelta(seconds=remaining)).isoformat()
+    args.manifest_sha256 = save(args.manifest, manifest)["sha256"]
+    with pytest.raises(ValueError, match="expired|30 minutes"):
+        activate.activate(args)
+    assert state["checkout"] == [] and all(value == "active" for value in state["timers"].values())
+    assert not list(args.manifest.parent.glob("activation-*"))
+
+
+def test_admission_rechecked_before_checkout_and_timers_restored(runtime, monkeypatch):
+    args, state = runtime
+    calls = []
+    def admission(_manifest):
+        calls.append(True)
+        if len(calls) == 2:
+            raise ValueError("activation requires at least 30 minutes")
+    monkeypatch.setattr(activate, "activation_admission", admission)
+    with pytest.raises(RuntimeError, match="30 minutes"):
+        activate.activate(args)
+    assert len(calls) == 2 and state["checkout"] == []
+    assert all(value == "active" for value in state["timers"].values())
+
+
+def test_rollback_uses_sealed_verifier_without_requiring_fresh_admission(runtime, monkeypatch):
+    args, state = runtime
+    source = Path(evidence.read(args.manifest)["source_root"])
+    calls, phases = [], []
+    def admission(_manifest):
+        calls.append(True)
+        if len(calls) > 2:
+            raise ValueError("expired after switch")
+    def verify(*_args, **kwargs):
+        assert kwargs["verifier_source"] == source
+        raise RuntimeError("post-switch endpoint failed")
+    def smoke(verifier_source, *, operation, phase):
+        assert verifier_source == source
+        phases.append(phase)
+    monkeypatch.setattr(activate, "activation_admission", admission)
+    monkeypatch.setattr(activate, "verify_runtime", verify)
+    monkeypatch.setattr(activate, "smoke", smoke)
+    with pytest.raises(RuntimeError, match="post-switch endpoint failed"):
+        activate.activate(args)
+    assert calls == [True, True] and phases == ["pre-switch", "rollback"]
+    assert state["checkout"] == [TARGET, PREVIOUS]
 
 
 def test_main_moving_before_lock_rejects_without_checkout(runtime, monkeypatch):

@@ -23,6 +23,8 @@ from pi_cdr_quality_activate_evidence import (
 
 TIMERS = ("ar-local-daily-watchdog.timer", "ar-local-runtime-health.timer")
 TZ = ZoneInfo("Australia/Hobart")
+SMOKE_VERIFIER_SECONDS = 300
+ACTIVATION_ADMISSION_SECONDS = 30 * 60
 
 
 def run(argv, *, cwd=None, timeout=120, output: Path | None = None) -> str:
@@ -31,17 +33,22 @@ def run(argv, *, cwd=None, timeout=120, output: Path | None = None) -> str:
         # Both output-path callers consume the file, not a returned string.
         # Write directly so the operator sees progress before a long job exits.
         with output.open("xb") as stream:
+            stream.write(f"[{datetime.now(timezone.utc).isoformat()}] command started\n".encode())
+            stream.flush()
             try:
                 result = subprocess.run(list(map(str, argv)), cwd=cwd, stdout=stream,
                                         stderr=subprocess.STDOUT, timeout=timeout, shell=False)
             finally:
+                stream.write(f"[{datetime.now(timezone.utc).isoformat()}] command finished\n".encode())
                 stream.flush()
                 os.fsync(stream.fileno())
     else:
         result = subprocess.run(list(map(str, argv)), cwd=cwd, text=True, encoding="utf-8", errors="replace",
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, shell=False)
     if result.returncode:
-        raise RuntimeError(f"{Path(str(argv[0])).name} command failed with exit {result.returncode}; see private operation evidence")
+        from pi_cdr_quality_smoke import output_tail
+        detail = f"; output {output}:\n{output_tail(output)}" if output else "; see private operation evidence"
+        raise RuntimeError(f"{Path(str(argv[0])).name} command failed with exit {result.returncode}{detail}")
     return "" if output else result.stdout.strip()
 
 
@@ -317,21 +324,37 @@ def active(unit: str) -> str:
     return run(["systemctl", "show", unit, "-p", "ActiveState", "--value"])
 
 
-def smoke(source: Path) -> None:
+def smoke(source: Path, *, operation: Path, phase: str) -> None:
     from pi_deploy_verify import wait_for_http_smoke
-    if wait_for_http_smoke("http://100.78.28.10/", require_rates=True, budget_seconds=120) != 0:
-        raise RuntimeError("dashboard did not become ready within 120 seconds")
-    run([sys.executable, source / "verify_local.py", "--base-url=http://100.78.28.10/", "--require-banks-rates"], timeout=120)
+    from pi_cdr_quality_smoke import capture_readiness, smoke_phase
+    smoke_phase(operation, phase + "-readiness", lambda output: capture_readiness(output,
+        lambda: wait_for_http_smoke("http://100.78.28.10/", require_rates=True, budget_seconds=120)),
+        metadata={"helper": "pi_deploy_verify.wait_for_http_smoke", "budget_seconds": 120})
+    verifier = source / "verify_local.py"
+    smoke_phase(operation, phase + "-verify-local", lambda output: run(
+        [sys.executable, "-u", verifier, "--base-url=http://100.78.28.10/", "--require-banks-rates",
+         "--history-timeout-seconds=90", "--progress"], timeout=SMOKE_VERIFIER_SECONDS, output=output),
+        metadata={"verifier": record(verifier), "timeout_seconds": SMOKE_VERIFIER_SECONDS,
+                  "history_timeout_seconds": 90})
 
 
-def verify_runtime(production: Path, target: str, files: dict, data: Path, protected: dict) -> None:
+def verify_runtime(production: Path, target: str, files: dict, data: Path, protected: dict, *, operation: Path,
+                   verifier_source: Path) -> None:
     if clean_commit(production) != target or source_files(production) != files:
         raise ValueError("deployed code does not match sealed candidate")
     if protected_files(data) != protected:
         raise ValueError("protected observation changed during activation")
     if active("ar-local-daily.timer") != "active" or active("ar-local-dashboard.service") != "active":
         raise RuntimeError("required production units are not active")
-    smoke(production)
+    smoke(verifier_source, operation=operation, phase="post-switch")
+
+
+def activation_admission(manifest: dict, *, current: datetime | None = None) -> None:
+    # 21 minutes for all three smoke paths plus 9 minutes for other work.
+    # This admission margin is not a hard deadline for inline source hashing.
+    remaining = (datetime.fromisoformat(manifest["expires_at"]) - (current or datetime.now(timezone.utc))).total_seconds()
+    if remaining < ACTIVATION_ADMISSION_SECONDS:
+        raise ValueError("activation requires at least 30 minutes before sealed expiry for verification and rollback")
 
 
 def activate(args) -> dict:
@@ -348,6 +371,7 @@ def activate(args) -> dict:
     for unit in ("ar-local-dashboard.service", "ar-local-daily.service"):
         if run(["systemctl", "show", unit, "-p", "WorkingDirectory", "--value"]) != str(production):
             raise ValueError("service uses a different production checkout")
+    activation_admission(manifest)
     if args.dry_run:
         if protected_files(data) != manifest["protected_files"]:
             raise ValueError("protected observation changed since sealing")
@@ -375,7 +399,7 @@ def activate(args) -> dict:
             if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
                     or protected_files(data) != manifest["protected_files"]):
                 raise ValueError("production or protected data changed before activation lock")
-            smoke(production)
+            smoke(source, operation=transaction, phase="pre-switch")
             candidate_bundle = checked(manifest["evidence"]["candidate_bundle"])
             rollback_bundle = checked(manifest["evidence"]["rollback_bundle"])
             for bundle, expected in ((candidate_bundle, manifest["target_commit"]), (rollback_bundle, manifest["previous_commit"])):
@@ -384,11 +408,13 @@ def activate(args) -> dict:
                 git(production, "bundle", "verify", bundle)
             try:
                 git(production, "fetch", "--no-tags", candidate_bundle, "HEAD", timeout=300)
+                activation_admission(manifest)
                 # Mark before checkout so a partially failed checkout also rolls back.
                 switched = True
                 git(production, "checkout", "--detach", manifest["target_commit"])
                 run(["sudo", "-n", "systemctl", "restart", "ar-local-dashboard.service"])
-                verify_runtime(production, manifest["target_commit"], manifest["source_files"], data, manifest["protected_files"])
+                verify_runtime(production, manifest["target_commit"], manifest["source_files"], data, manifest["protected_files"],
+                               operation=transaction, verifier_source=source)
                 # Restore coordination while still holding the lease. A failure
                 # here takes the same rollback path as a failed runtime probe.
                 for unit, state in timers.items():
@@ -396,13 +422,14 @@ def activate(args) -> dict:
                         run(["sudo", "-n", "systemctl", "start", unit])
                     if active(unit) != state:
                         raise RuntimeError("coordination timer restoration failed")
-            except BaseException:
+            except BaseException as error:
+                receipt["activation_failure"] = type(error).__name__ + ": " + str(error)
                 if switched:
                     git(production, "checkout", "--detach", manifest["previous_commit"])
                     run(["sudo", "-n", "systemctl", "restart", "ar-local-dashboard.service"])
                     if clean_commit(production) != manifest["previous_commit"]:
                         raise RuntimeError("CRITICAL: rollback commit could not be verified")
-                    smoke(production)
+                    smoke(source, operation=transaction, phase="rollback")
                     receipt["rollback"] = "PASS"
                 raise
         receipt.update(result="PASS", target_commit=manifest["target_commit"], protected_data="UNCHANGED", dashboard="PASS")
@@ -422,9 +449,12 @@ def activate(args) -> dict:
         if restoration:
             receipt.update(result="FAIL", timer_restoration_errors=restoration)
         receipt["completed_at"] = datetime.now(timezone.utc).isoformat()
+        from pi_cdr_quality_smoke import smoke_records
+        receipt["smoke_checks"] = smoke_records(transaction)
         write(transaction / "result.json", receipt)
     if failure or receipt["result"] != "PASS":
-        raise RuntimeError(f"activation failed; inspect {transaction / 'result.json'}")
+        reason = receipt.get("error") or "; ".join(receipt.get("timer_restoration_errors", []))
+        raise RuntimeError(f"activation failed: {reason}; inspect {transaction / 'result.json'}")
     return receipt
 
 
