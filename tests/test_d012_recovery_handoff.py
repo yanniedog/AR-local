@@ -25,6 +25,16 @@ def _frozen_source(relative: str) -> bytes:
     # D-015 retires the UAC route. Preserve its exact source evidence while the
     # two explicitly authorized user-session implementation files evolve.
     path = relative.replace("\\", "/")
+    if path == "laptop_backup_dispatcher.py":
+        # Windows liveness probes now use process handles. The retired D-012
+        # record must still verify the original dispatcher, including in CI's
+        # shallow checkout, rather than rewriting its historical source hash.
+        archive = ROOT / "tests/fixtures/d012-retired-dispatcher-bae42f94.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == (
+            "36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc"
+        )
+        return payload
     if path == "pi_laptop_backup_source.py":
         # The live helper now normalizes the recovery monitor's checked_at.
         # Historical D012 source identity still binds the original exact bytes.
