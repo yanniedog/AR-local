@@ -548,7 +548,24 @@ def test_snapshot_reserves_capacity_for_every_remaining_retention_slot(monkeypat
     assert not list(policy.backup_dir.glob(".partial-*"))
 
 
-def test_snapshot_reserve_includes_complete_staged_code_payload(monkeypatch, tmp_path: Path) -> None:
+@pytest.fixture
+def isolated_snapshot_host(monkeypatch, tmp_path: Path) -> Path:
+    """Capacity tests use private host metadata, never the Pi's /etc files."""
+    host = tmp_path / "test-host"
+    host.mkdir()
+    config = host / "backup.env"
+    config.write_text("# private capacity-test configuration\n", encoding="utf-8")
+    monkeypatch.setattr(backup, "SYSTEM_CONFIGURATION_PATHS", ())
+
+    def local_path(*parts):
+        path = Path(*parts)
+        return host / "systemd" if path == Path("/etc/systemd/system") else path
+
+    monkeypatch.setattr(backup, "Path", local_path)
+    return config
+
+
+def test_snapshot_reserve_includes_complete_staged_code_payload(monkeypatch, tmp_path: Path, isolated_snapshot_host) -> None:
     policy = replace(make_policy(tmp_path), retention_count=2, min_free_bytes=1)
     repo = tmp_path / "repo"
     site = tmp_path / "site"
@@ -576,7 +593,7 @@ def test_snapshot_reserve_includes_complete_staged_code_payload(monkeypatch, tmp
     incomplete_only = type("Usage", (), {"free": 1024**3 + 64 * 1024})()
     monkeypatch.setattr(backup.shutil, "disk_usage", lambda _path: incomplete_only)
     with pytest.raises(RuntimeError, match="complete-snapshot retention reserve"):
-        backup.create_snapshot(policy, repo, site, data, macro, "pytest")
+        backup.create_snapshot(policy, repo, site, data, macro, "pytest", config_path=isolated_snapshot_host)
     assert not list(policy.backup_dir.glob(".partial-*"))
 
 
@@ -1099,7 +1116,7 @@ def test_snapshot_creation_stops_at_retention_ceiling(monkeypatch, tmp_path: Pat
         backup.create_snapshot(policy, *roots, tmp_path / "macro.sqlite", "pytest")
 
 
-def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, tmp_path: Path) -> None:
+def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, tmp_path: Path, isolated_snapshot_host) -> None:
     policy = replace(make_policy(tmp_path), retention_count=2)
     snapshots = policy.backup_dir / "snapshots"
     (snapshots / "one").mkdir(parents=True)
@@ -1149,7 +1166,7 @@ def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, t
         connection.execute("CREATE TABLE series_observations(id INTEGER)")
         connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
     with pytest.raises(RuntimeError, match="retention ceiling reached before publication"):
-        backup.create_snapshot(policy, repo, site, data, macro, "pytest")
+        backup.create_snapshot(policy, repo, site, data, macro, "pytest", config_path=isolated_snapshot_host)
     assert lock_entries == 2
 
 
