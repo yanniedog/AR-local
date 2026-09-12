@@ -101,6 +101,20 @@ def test_tier_conditions_alone_are_sufficient_without_source_mutation(evidence):
     assert item == before
 
 
+def test_supported_direct_tier_information_retains_real_restriction_and_disclosure(evidence):
+    from cdr_savings_conditions import savings_rate_conditions, winner_rate_disclosures
+    item = copy.deepcopy(evidence["products"][0]["details_json"]["depositRates"][4])
+    # Parser encoding control using unchanged real restriction prose/rate.
+    info = item.pop("additionalInfo")
+    item["tiers"][0].pop("applicabilityConditions")
+    item["tiers"][0]["additionalInfo"] = info
+    before = copy.deepcopy(item)
+    assert winner_rate_ribbons(item) == {"account_class": "non_standard", "term_months": "4", "ribbon_deposit_kind": "introductory"}
+    assert {"label": "Tier 1 information", "info": info} in savings_rate_conditions(item)
+    assert any(row.get("info") == info for row in winner_rate_disclosures({"depositRates": [item]}))
+    assert item == before
+
+
 @pytest.mark.parametrize("info", [
     "Enter our competition for a chance to win.",
     "Not available only to winners of the competition.",
