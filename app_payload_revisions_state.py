@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ar_local_backup_policy import atomic_create_json
+from app_payload_common import DEFAULT_REPO
 
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_ASSET_BYTES = 64 * 1024 * 1024
@@ -138,7 +139,9 @@ def reserve_revision(
     return destination, reservation
 
 
-def validate_index(value: dict[str, Any]) -> None:
+def validate_index(value: dict[str, Any], *, repo: str = DEFAULT_REPO) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        raise RevisionError("invalid revision index repository")
     if value.get("schema_version") != 1:
         raise RevisionError("revision protocol requires a v1 dates index")
     dates = value.get("dates")
@@ -155,7 +158,10 @@ def validate_index(value: dict[str, Any]) -> None:
     for run_date, head in heads.items():
         if run_date not in dates or not isinstance(head, dict):
             raise RevisionError("revision head is not indexed")
-        revision_tag(run_date, head.get("revision"))
+        tag = revision_tag(run_date, head.get("revision"))
+        expected_url = f"https://github.com/{repo}/releases/download/{tag}/manifest.json"
+        if head.get("manifest_url") != expected_url:
+            raise RevisionError("revision head manifest URL is not its repository's immutable revision")
         for name in ("manifest_sha256", "bundle_sha256"):
             if not HASH_RE.fullmatch(str(head.get(name, ""))):
                 raise RevisionError("invalid revision head digest")
@@ -163,15 +169,17 @@ def validate_index(value: dict[str, Any]) -> None:
             raise RevisionError("invalid generation identity")
 
 
-def revised_index(index: dict[str, Any], run_date: str, head: dict[str, Any]) -> dict[str, Any]:
-    validate_index(index)
+def revised_index(
+    index: dict[str, Any], run_date: str, head: dict[str, Any], *, repo: str = DEFAULT_REPO,
+) -> dict[str, Any]:
+    validate_index(index, repo=repo)
     result = dict(index)
     result["dates"] = sorted(set(index["dates"]) | {run_date})
     result["count"] = len(result["dates"])
     result["latest_date"] = result["dates"][-1]
     result["revision_protocol"] = 1
     result["revision_heads"] = {**index.get("revision_heads", {}), run_date: head}
-    validate_index(result)
+    validate_index(result, repo=repo)
     return result
 
 
