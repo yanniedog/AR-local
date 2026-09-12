@@ -994,8 +994,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if run_date:
                 for section in ("Mortgage", "Savings", "TD"):
                     bank_section_payload(run_date, section)
-                    bank_history_payload(run_date, section)
-                    bank_history_payload("", section)
+                # Full-history responses are built on demand. Warming both the
+                # dated and undated variants duplicated months of rows in RAM
+                # before the dashboard could accept its first request.
         except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
 
