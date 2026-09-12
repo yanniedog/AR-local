@@ -324,17 +324,35 @@ def active(unit: str) -> str:
     return run(["systemctl", "show", unit, "-p", "ActiveState", "--value"])
 
 
-def smoke(source: Path, *, operation: Path, phase: str) -> None:
+def smoke(source: Path, *, operation: Path, phase: str, commit: str, files: dict) -> None:
     from pi_deploy_verify import wait_for_http_smoke
     from pi_cdr_quality_smoke import capture_readiness, smoke_phase
-    smoke_phase(operation, phase + "-readiness", lambda output: capture_readiness(output,
-        lambda: wait_for_http_smoke("http://100.78.28.10/", require_rates=True, budget_seconds=120)),
-        metadata={"helper": "pi_deploy_verify.wait_for_http_smoke", "budget_seconds": 120})
+    from cdr_quality_accounting import canonical_digest
+
+    def bound_check(output, check):
+        def verify_source():
+            if clean_commit(source) != commit or source_files(source) != files:
+                raise ValueError("smoke source differs from sealed commit or complete source inventory")
+        verify_source()
+        check(output)
+        # A successful command cannot hide source changes during its execution.
+        verify_source()
+
     verifier = source / "verify_local.py"
-    smoke_phase(operation, phase + "-verify-local", lambda output: run(
-        [sys.executable, "-u", verifier, "--base-url=http://100.78.28.10/", "--require-banks-rates",
-         "--history-timeout-seconds=90", "--progress"], timeout=SMOKE_VERIFIER_SECONDS, output=output),
-        metadata={"verifier": record(verifier), "timeout_seconds": SMOKE_VERIFIER_SECONDS,
+
+    def readiness(output):
+        capture_readiness(output, lambda: wait_for_http_smoke(
+            "http://100.78.28.10/", require_rates=True, budget_seconds=120))
+
+    def verify_local(output):
+        run([sys.executable, "-u", verifier, "--base-url=http://100.78.28.10/", "--require-banks-rates",
+             "--history-timeout-seconds=90", "--progress"], timeout=SMOKE_VERIFIER_SECONDS, output=output)
+
+    binding = {"sealed_commit": commit, "source_files_sha256": canonical_digest(files)}
+    smoke_phase(operation, phase + "-readiness", lambda output: bound_check(output, readiness),
+        metadata={**binding, "helper": "pi_deploy_verify.wait_for_http_smoke", "budget_seconds": 120})
+    smoke_phase(operation, phase + "-verify-local", lambda output: bound_check(output, verify_local),
+        metadata={**binding, "verifier": {"path": str(verifier), "sha256": files["verify_local.py"]}, "timeout_seconds": SMOKE_VERIFIER_SECONDS,
                   "history_timeout_seconds": 90})
 
 
@@ -346,7 +364,7 @@ def verify_runtime(production: Path, target: str, files: dict, data: Path, prote
         raise ValueError("protected observation changed during activation")
     if active("ar-local-daily.timer") != "active" or active("ar-local-dashboard.service") != "active":
         raise RuntimeError("required production units are not active")
-    smoke(verifier_source, operation=operation, phase="post-switch")
+    smoke(verifier_source, operation=operation, phase="post-switch", commit=target, files=files)
 
 
 def activation_admission(manifest: dict, *, current: datetime | None = None) -> None:
@@ -399,7 +417,7 @@ def activate(args) -> dict:
             if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
                     or protected_files(data) != manifest["protected_files"]):
                 raise ValueError("production or protected data changed before activation lock")
-            smoke(source, operation=transaction, phase="pre-switch")
+            smoke(source, operation=transaction, phase="pre-switch", commit=manifest["target_commit"], files=manifest["source_files"])
             candidate_bundle = checked(manifest["evidence"]["candidate_bundle"])
             rollback_bundle = checked(manifest["evidence"]["rollback_bundle"])
             for bundle, expected in ((candidate_bundle, manifest["target_commit"]), (rollback_bundle, manifest["previous_commit"])):
@@ -429,7 +447,7 @@ def activate(args) -> dict:
                     run(["sudo", "-n", "systemctl", "restart", "ar-local-dashboard.service"])
                     if clean_commit(production) != manifest["previous_commit"]:
                         raise RuntimeError("CRITICAL: rollback commit could not be verified")
-                    smoke(source, operation=transaction, phase="rollback")
+                    smoke(source, operation=transaction, phase="rollback", commit=manifest["target_commit"], files=manifest["source_files"])
                     receipt["rollback"] = "PASS"
                 raise
         receipt.update(result="PASS", target_commit=manifest["target_commit"], protected_data="UNCHANGED", dashboard="PASS")
