@@ -1,6 +1,8 @@
 """HTTP transport fixtures; these do not constitute dashboard/CDR acceptance."""
 import io
 import json
+from pathlib import Path
+import shlex
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +39,38 @@ def test_only_three_history_requests_receive_explicit_cold_deadline(endpoint_cal
     output = capsys.readouterr().out
     assert "GET http://test.invalid/api/banks/history/section" in output
     assert "timeout=90s" in output and "elapsed=" in output and "GET JSON" in output
+
+
+@pytest.mark.parametrize("unit", ["ar-local-daily.service", "ar-local-ingest-now.service"])
+def test_actual_restart_commands_check_compact_history_without_raw_cache(endpoint_calls, capsys, unit):
+    text = (Path(__file__).resolve().parents[1] / "deploy" / "pi" / unit).read_text()
+    line = next(line for line in text.splitlines() if line.startswith("ExecStartPost=/bin/sh"))
+    shell_script = shlex.split(line.split("=", 1)[1])[2]
+    command = shlex.split(shell_script.rsplit("; ", 1)[1])
+    args = ["2026-09-12" if value == "$(date +%%F)" else value for value in command[2:]]
+    assert verify_local.main(args) == 0
+    history = [(url, timeout) for url, timeout in endpoint_calls if "api/banks/history/" in url]
+    assert len(history) == 3
+    assert all("/section/compact?" in url and timeout == 90 for url, timeout in history)
+    assert all(timeout == 30 for url, timeout in endpoint_calls if "api/banks/history/" not in url)
+    assert "history=compact" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("status", [-1, 404, 503])
+def test_compact_history_failure_still_rejects_restart(endpoint_calls, monkeypatch, capsys, status):
+    original = verify_local.http_get
+    monkeypatch.setattr(verify_local, "http_get", lambda url, timeout=30:
+        status if "api/banks/history/section/compact?" in url else original(url, timeout))
+    assert verify_local.main(["--base-url=http://test.invalid/", "--history-mode=compact",
+                              "--history-timeout-seconds=90"]) == 1
+    assert "section/compact" in capsys.readouterr().err
+
+
+def test_compact_smoke_still_requires_expected_capture_date(endpoint_calls, capsys):
+    assert verify_local.main(["--base-url=http://test.invalid/", "--history-mode=compact",
+                              "--expect-run-date=2026-09-13", "--require-banks-rates"]) == 1
+    assert "expected '2026-09-13'" in capsys.readouterr().err
+    assert not any("api/banks/history/" in url for url, _ in endpoint_calls)
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "91", "nan", "inf"])

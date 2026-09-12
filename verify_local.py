@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--history-timeout-seconds", type=history_timeout, default=30.0,
                         help="Header deadline for the three history/section requests only (default: 30; maximum: 90).")
+    parser.add_argument("--history-mode", choices=("raw", "compact"), default="raw",
+                        help="History response to verify. Routine restart checks use compact; full acceptance defaults to raw.")
     parser.add_argument("--progress", action="store_true", help="Print each request and result immediately.")
     args = parser.parse_args(argv)
     base = args.base_url.strip().rstrip("/") + "/"
@@ -70,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.progress:
             print(f"[{datetime.now(timezone.utc).isoformat()}] verify_local: {message}", flush=True)
     def request(path: str) -> int:
-        timeout = args.history_timeout_seconds if path.startswith("api/banks/history/section?") else 30.0
+        timeout = args.history_timeout_seconds if path.startswith("api/banks/history/section") else 30.0
         started = time.monotonic()
         progress(f"GET {base + path} timeout={timeout:g}s")
         code = http_get(base + path, timeout=timeout)
@@ -128,11 +130,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     if run_date:
+        history_endpoint = "api/banks/history/section"
+        if args.history_mode == "compact":
+            history_endpoint += "/compact"
         for section in ("Mortgage", "Savings", "TD"):
             for path in (
                 f"api/banks/ribbon?date={run_date}&section={section}",
                 f"api/banks/section?date={run_date}&section={section}",
-                f"api/banks/history/section?date={run_date}&section={section}",
+                f"{history_endpoint}?date={run_date}&section={section}",
             ):
                 url = base + path
                 code = request(path)
@@ -165,9 +170,9 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        print(f"verify_local: OK {base} (run_date={run_date}, banks_rates={rates})")
+        print(f"verify_local: OK {base} (run_date={run_date}, banks_rates={rates}, history={args.history_mode})")
         return 0
-    print(f"verify_local: OK {base}")
+    print(f"verify_local: OK {base} (history={args.history_mode})")
     return 0
 
 
