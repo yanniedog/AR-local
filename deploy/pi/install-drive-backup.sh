@@ -37,6 +37,10 @@ for unit in ar-local-drive-backup.service ar-local-drive-backup.timer ar-local-d
       -e "s|{{AR_LOCAL_GROUP}}|$backup_group|g" -e "s|{{AR_LOCAL_DATA_ROOT}}|$data_root|g" \
       -e "s|{{AR_LOCAL_DRIVE_BACKUP_SPOOL}}|$spool|g" "$repo/deploy/pi/$unit" > "/etc/systemd/system/$unit"
 done
+for unit in ar-local-daily.service ar-local-ingest-now.service ar-local-daily-watchdog.service ar-local-boot-recovery.service; do
+  install -d -m 0755 "/etc/systemd/system/$unit.d"
+  printf '[Service]\nEnvironmentFile=-/etc/ar-local/drive-backup.env\n' > "/etc/systemd/system/$unit.d/drive-backup.conf"
+done
 systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/ar-local-drive-backup.service /etc/systemd/system/ar-local-drive-backup.timer /etc/systemd/system/ar-local-drive-backup-queue.timer
 echo 'Installed; no timers enabled by this installer. Complete OAuth, init, first backup and full restore, then enable both timers.'

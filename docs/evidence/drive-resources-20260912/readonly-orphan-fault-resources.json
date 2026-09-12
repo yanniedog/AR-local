@@ -1,0 +1,59 @@
+{
+  "address_space_limit": null,
+  "baseline": {
+    "admission_sample": {
+      "available_bytes": 6982385664,
+      "page_size_bytes": 16384,
+      "psi_avg10": null,
+      "swap_in_pages": 53042,
+      "swap_out_pages": 206814
+    },
+    "available_bytes": 6982582272,
+    "page_size_bytes": 16384,
+    "psi_avg10": null,
+    "swap_in_pages": 53042,
+    "swap_out_pages": 206814
+  },
+  "cgroup": "/sys/fs/cgroup/system.slice/ar-local-drive-resource-test-orphan1933.service",
+  "cold_swap_in_bytes": 0,
+  "early_stop_overshoot_bytes": 0,
+  "elapsed_seconds": 0.1022064809803851,
+  "go_memory_limit": "192MiB soft per process",
+  "group_clean": true,
+  "kernel_memory_limit_bytes": null,
+  "last_host_sample": {
+    "available_bytes": 6981664768,
+    "page_size_bytes": 16384,
+    "psi_avg10": null,
+    "swap_in_pages": 53042,
+    "swap_out_pages": 206814
+  },
+  "limits": {
+    "cold_swap_in_bytes": 16777216,
+    "margin_bytes": 134217728,
+    "max_sample_gap_seconds": 2.0,
+    "reserve_bytes": 2550136832,
+    "runtime_seconds": 120,
+    "sample_seconds": 0.1,
+    "workload_bytes": 805306368
+  },
+  "maximum_sample_gap_seconds": 0.10112387797562405,
+  "minimum_available_bytes": 6981664768,
+  "mode": "sampled_cgroup_rss",
+  "page_size_bytes": 16384,
+  "peak_processes": 2,
+  "peak_rss_bytes": 32522240,
+  "peak_workload_swap_bytes": 0,
+  "process_peaks": {
+    "python3": {
+      "rss_bytes": 23560192,
+      "virtual_bytes": 34947072
+    }
+  },
+  "psi_available": false,
+  "reason": "RuntimeError: workload_failed_or_left_descendants",
+  "result": "FAIL",
+  "samples": 2,
+  "schema": "ar-local-drive-resources-v1",
+  "workload_exit_code": 0
+}

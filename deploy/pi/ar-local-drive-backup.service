@@ -29,6 +29,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
 ReadWritePaths={{AR_LOCAL_DRIVE_BACKUP_SPOOL}}
 # The shared operation-lock implementation creates/removes this state lock.
 # No backup content is written into the authoritative source tree.

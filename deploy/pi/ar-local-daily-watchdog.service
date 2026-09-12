@@ -18,6 +18,7 @@ Environment=HOME={{AR_LOCAL_HOME}}
 Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config
 # Optional mobile-app payload publishing (inherited by the pi_daily_sync subprocess).
 EnvironmentFile=-/etc/ar-local/app-payload.env
+EnvironmentFile=-/etc/ar-local/drive-backup.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_watchdog.py
 # Restore after a killed capture only when no other ingest or backup owns serving.
 ExecStopPost=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_cdr_recovery.py --restore-dashboard

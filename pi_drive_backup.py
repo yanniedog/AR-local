@@ -134,7 +134,8 @@ def readiness(config: Config, *, remote: bool = False) -> dict:
             reasons.append("rclone remote configuration is unavailable")
     if not reasons and remote:
         try:
-            Restic(config).run("cat", "config")
+            from pi_drive_backup_controller import run_protected
+            return run_protected(config, "readiness")
         except (Blocked, RuntimeError, OSError) as error:
             reasons.append(str(error))
     return {"schema": SCHEMA, "result": "BLOCKED" if reasons else "PASS", "reasons": reasons,
@@ -151,7 +152,7 @@ class Restic:
         env = os.environ.copy()
         env.update(RESTIC_REPOSITORY=cfg.repository, RESTIC_PASSWORD_FILE=str(cfg.password),
                    RCLONE_CONFIG=str(cfg.rclone_config), RESTIC_CACHE_DIR=str(cfg.spool / "cache"),
-                   GOMAXPROCS="2", RCLONE_BWLIMIT="8M", RCLONE_TRANSFERS="2")
+                   GOMAXPROCS="2", GOMEMLIMIT="192MiB", GOGC="50", RCLONE_BWLIMIT="8M", RCLONE_TRANSFERS="2")
         # Do not inherit alternative authentication or command hooks.
         for key in ("RESTIC_PASSWORD", "RESTIC_PASSWORD_COMMAND", "RESTIC_REPOSITORY_FILE"):
             env.pop(key, None)
@@ -182,6 +183,8 @@ class Restic:
                         process.kill()
                     process.wait(timeout=15)
                 raise
+            if process.returncode == 11:
+                raise Blocked("repository lock prevents backup; inspect retained resource receipts and live Restic owners before scoped stale-lock recovery; no automatic unlock performed")
             if process.returncode != 0:
                 # Raw stderr can contain backend URLs, credentials or provider
                 # responses. Only the phase and exit code leave this function.
@@ -216,6 +219,8 @@ def _load(path: Path) -> dict:
     manifest = path.parent / value["manifest_path"]
     if manifest.resolve() != manifest or digest(manifest) != value["manifest_sha256"]:
         raise ValueError("accepted source manifest hash differs")
+    from pi_drive_backup_controller import validate_binding
+    validate_binding(path.parent, value)
     return value
 
 
@@ -293,12 +298,8 @@ def _restore_due(last: dict, current: datetime) -> bool:
 
 
 def run_backup(config: Config, *, force: bool = False) -> dict:
-    ready = readiness(config)
-    if ready["result"] != "PASS":
-        raise Blocked("; ".join(ready["reasons"]))
-    config.spool.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with production_lock(config.spool / "backup.lock", "drive-backup"):
-        return _run_locked(config, force=force)
+    from pi_drive_backup_controller import run_protected
+    return run_protected(config, force=force)
 
 
 def _run_locked(config: Config, *, force: bool) -> dict:
@@ -365,10 +366,8 @@ def _run_locked(config: Config, *, force: bool) -> dict:
             receipt.update(restore={"result": "NOT_DUE"}, restore_verified_at=last["restore_verified_at"],
                            restore_rotation=last.get("restore_rotation", 0))
         receipt.update(result="PASS", finished_at=now().isoformat(), backup_date=current.date().isoformat())
-        atomic_json(config.spool / "receipts" / f"{run_id}.PASS.json", receipt, immutable=True)
-        atomic_json(config.spool / "latest-verified.json", receipt)
-        for path in requests:
-            path.unlink(missing_ok=True)
+        # This is only a candidate. The parent accepts it after the entire
+        # worker exits, all descendants disappear, and resource checks pass.
         return receipt
     except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
         receipt.update(result="BLOCKED" if isinstance(error, Blocked) else "FAIL",
@@ -381,6 +380,19 @@ def _run_locked(config: Config, *, force: bool) -> dict:
         if stage.parent != config.spool or stage.is_symlink():
             raise ValueError("unsafe freeze cleanup target")
         shutil.rmtree(stage)
+
+
+def restore_accepted(config: Config, *, full: bool) -> dict:
+    last = _load(config.spool / "latest-verified.json")
+    if not last:
+        raise Blocked("no accepted backup receipt")
+    with tempfile.TemporaryDirectory(prefix="restore-index-", dir=config.spool) as work:
+        manifest = load_manifest(config.spool / last["manifest_path"], Path(work) / "manifest.sqlite")
+        try:
+            return restore_snapshot(config, Restic(config), last["snapshot_id"], manifest,
+                full=full, manifest_path=config.spool / last["manifest_path"])
+        finally:
+            close_manifest(manifest)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -396,6 +408,7 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--remote", action="store_true", help="also verify repository access")
     cli.add_argument("--full", action="store_true", help="restore and verify all retained source bytes")
     cli.add_argument("--reason", default="terminal-observation")
+    cli.add_argument("--worker-request", type=Path, help=argparse.SUPPRESS)
     return cli
 
 
@@ -403,36 +416,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     config = Config(args.data_root, args.spool, args.repository, args.password_file, args.rclone_config, args.control_file)
     try:
-        if args.command == "readiness":
+        if args.worker_request:
+            from pi_drive_backup_controller import worker
+            result = worker(args.worker_request)
+            return {"PASS": 0, "BLOCKED": 2}.get(result["result"], 1)
+        elif args.command == "readiness":
             result = readiness(config, remote=args.remote)
         elif args.command == "request":
             marker = request_backup(args.reason, spool=args.spool)
             result = {"result": "PASS", "queued": marker.name}
-        elif args.command == "init":
-            result = readiness(config)
-            if result["result"] == "PASS":
-                config.spool.mkdir(parents=True, exist_ok=True, mode=0o700)
-                with production_lock(config.spool / "backup.lock", "drive-backup-init"):
-                    Restic(config).run("init", "--repository-version", "2")
-                result = {"result": "PASS", "action": "INITIALIZED", "backup": "NOT_RUN"}
-        elif args.command == "restore":
-            ready = readiness(config)
-            if ready["result"] != "PASS":
-                raise Blocked("; ".join(ready["reasons"]))
-            with production_lock(config.spool / "backup.lock", "drive-restore"):
-                last = _load(config.spool / "latest-verified.json")
-                if not last:
-                    raise Blocked("no accepted backup receipt")
-                if digest(config.spool / last["manifest_path"]) != last["manifest_sha256"]:
-                    raise ValueError("accepted source manifest hash differs")
-                with tempfile.TemporaryDirectory(prefix="restore-index-", dir=config.spool) as work:
-                    manifest = load_manifest(config.spool / last["manifest_path"], Path(work) / "manifest.sqlite")
-                    try:
-                        result = restore_snapshot(config, Restic(config), last["snapshot_id"], manifest,
-                                                  full=args.full, manifest_path=config.spool / last["manifest_path"])
-                    finally:
-                        close_manifest(manifest)
-                atomic_json(config.spool / "receipts" / ("restore-" + uuid.uuid4().hex + ".json"), result, immutable=True)
+        elif args.command in {"init", "restore"}:
+            from pi_drive_backup_controller import run_protected
+            result = run_protected(config, args.command, full=args.full)
         else:
             result = run_backup(config, force=args.force)
     except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
