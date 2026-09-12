@@ -441,7 +441,9 @@ def _git_repo(path: Path) -> None:
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=path, check=True)
 
 
-def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeypatch, tmp_path: Path) -> None:
+def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(
+    monkeypatch, tmp_path: Path, isolated_snapshot_host: Path,
+) -> None:
     policy = make_policy(tmp_path)
     repo = tmp_path / "repo"
     site = tmp_path / "site"
@@ -463,8 +465,7 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
         connection.execute("INSERT INTO series_observations VALUES (1)")
     monkeypatch.setattr(backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}})
     monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
-    config = tmp_path / "backup.env"
-    config.write_text("AR_BACKUP_EXPECTED_SOURCE=/dev/test-backup\n", encoding="utf-8")
+    config = isolated_snapshot_host
     receipt = backup.create_snapshot(
         policy, repo, site, data, macro, "pytest", config_path=config
     )
@@ -498,6 +499,20 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
     policy_copy = snapshot / policy_entry["snapshot_path"]
     assert policy_copy.read_bytes() == config.read_bytes()
     assert policy_entry["sha256"] == policy_module.sha256_file(policy_copy)
+    expected_controls = {*backup.SYSTEM_CONFIGURATION_PATHS, config}
+    assert {item["path"] for item in manifest["system_configuration"]} == {
+        str(path) for path in expected_controls
+    }
+    for item in manifest["system_configuration"]:
+        copied = snapshot / item["snapshot_path"]
+        assert copied.read_bytes() == Path(item["path"]).read_bytes()
+        assert item["sha256"] == policy_module.sha256_file(copied)
+    secret = backup.SECRET_PATHS[0]
+    system_secret = next(item for item in manifest["secret_locations"] if item["path"] == str(secret))
+    assert system_secret["metadata_status"] == "AVAILABLE"
+    assert "sha256" not in system_secret
+    assert not (snapshot / "system" / secret.relative_to(secret.anchor)).exists()
+    assert manifest["systemd_enablement"] == []
     latest_before = (policy.backup_dir / "latest-backup.json").read_bytes()
     mount_checks = 0
 
@@ -550,15 +565,30 @@ def test_snapshot_reserves_capacity_for_every_remaining_retention_slot(monkeypat
 
 @pytest.fixture
 def isolated_snapshot_host(monkeypatch, tmp_path: Path) -> Path:
-    """Capacity tests use private host metadata, never the Pi's /etc files."""
+    """Snapshot tests own their controls and secrets, never the host's /etc."""
     host = tmp_path / "test-host"
     host.mkdir()
     config = host / "backup.env"
-    config.write_text("# private capacity-test configuration\n", encoding="utf-8")
-    monkeypatch.setattr(backup, "SYSTEM_CONFIGURATION_PATHS", ())
+    config.write_text("AR_BACKUP_EXPECTED_SOURCE=/dev/test-backup\n", encoding="utf-8")
+    controls = {
+        host / "fstab": "# isolated backup mount configuration\n",
+        host / "nginx/ar-local-status": "server { listen 8080; }\n",
+        host / "ar-local-boot-recovery.service.d/drive-backup.conf":
+            "[Service]\nEnvironmentFile=-/etc/ar-local/drive-backup.env\n",
+    }
+    for path, content in controls.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    secret = host / "app-payload.env"
+    secret.write_text("PRIVATE_TEST_SENTINEL=do-not-copy\n", encoding="utf-8")
+    monkeypatch.setattr(backup, "SYSTEM_CONFIGURATION_PATHS", tuple(controls))
+    monkeypatch.setattr(backup, "SECRET_PATHS", (secret,))
 
     def local_path(*parts):
         path = Path(*parts)
+        # Do not enumerate real services/drop-ins, which may be root-readable
+        # only on a configured Pi. Representative control files above still go
+        # through the real snapshot copy, metadata and digest checks.
         return host / "systemd" if path == Path("/etc/systemd/system") else path
 
     monkeypatch.setattr(backup, "Path", local_path)
