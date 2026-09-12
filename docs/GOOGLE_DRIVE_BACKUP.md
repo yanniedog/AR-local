@@ -184,6 +184,16 @@ written, the initial command record and available private bytes remain and
 completion is unverified. Without an existing error, incomplete capture still
 fails closed. Neither case can advance the accepted backup pointer.
 
+A stderr-reader I/O failure is checked during the running command and triggers
+the existing bounded child cleanup, rather than waiting for the command deadline.
+When the child has already exited nonzero, an additional diagnostic failure
+preserves its exit status, including repository-lock BLOCKED semantics. Retained
+head and tail windows are separated during classification so discarded bytes
+cannot create a failure signature that never appeared in the original stream.
+Segment hashes describe the bytes actually retained on disk after the reader
+stops. If a reader is still alive, incomplete evidence does not claim final
+segment hashes; the whole-worker resource supervisor still owns cleanup.
+
 Each Restic command also retains private diagnostics beneath its resource
 operation's `diagnostics/<command-id>/`. `started.json` binds the command, worker,
 parent and original request hash before launch; `process.json` identifies the
