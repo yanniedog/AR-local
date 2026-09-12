@@ -363,8 +363,10 @@ def publish_payload(
         raise FileNotFoundError(f"no manifest.json in {payload_dir} (run build first)")
     manifest = _load_json(manifest_path)
     from app_payload_revisions import revision_mode_enabled
+    from app_payload_v2_archive import is_archive_tag
 
-    if re.fullmatch(r"app-payload-\d{4}-\d{2}-\d{2}-(?:r\d{6}|legacy-[0-9a-f]+)", tag):
+    if (is_archive_tag(tag)
+            or re.fullmatch(r"app-payload-\d{4}-\d{2}-\d{2}-(?:r\d{6}|legacy-[0-9a-f]+)", tag)):
         raise RuntimeError("immutable revision archives must use the revision coordinator")
     if revision_mode_enabled() and not manifest.get("payload_revision"):
         raise RuntimeError("revision mode refuses an unversioned alias publish")
@@ -472,6 +474,11 @@ def publish_payload(
             f"uploaded_assets={len(to_upload)}"
         )
         return False
+
+    # A v2 selector can still bind the former v1 core/details. Preserve its exact
+    # complete bundle before v1 replacement or pruning, including direct callers.
+    from app_payload_v2_archive import preserve_current_v2
+    preserve_current_v2(payload_dir / "v2-preservation", repo=repo, tag=tag, gh=gh)
 
     # Keep the displaced manifest so a failed --clobber replacement can be rolled back.
     backup_gen = str((live or {}).get("generated_at") or "") if status == "present" else None

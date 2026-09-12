@@ -733,6 +733,19 @@ def test_successful_publish_refreshes_dates_index(
     assert "dates-index refresh failed" not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("v2_result", [False, RuntimeError("archive readback failed")])
+def test_eligible_v2_failure_keeps_whole_publication_failed(tmp_path, monkeypatch, v2_result):
+    date = "2026-08-16"
+    _stage_complete_payload_run(tmp_path, monkeypatch, date)
+    manifest = _payload_manifest(date)
+    monkeypatch.setattr(pi_daily_sync, "refresh_economic_data", lambda *_: None)
+    with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, True, True)), \
+         mock.patch("app_payload.build_and_publish_v2", **(
+             {"side_effect": v2_result} if isinstance(v2_result, Exception) else {"return_value": ({}, False)})), \
+         mock.patch("app_payload.refresh_dates_index"):
+        assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) == pi_daily_sync.PUBLISH_FAILED
+
+
 def test_withheld_run_preserves_earlier_pending_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
