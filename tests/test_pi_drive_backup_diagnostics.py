@@ -147,6 +147,50 @@ def test_operation_cannot_redirect_diagnostics_outside_spool(spool):
     assert not (spool.parent / "diagnostics").exists()
 
 
+@pytest.mark.parametrize("fault", ["reader", "result"])
+def test_diagnostic_failure_preserves_primary_blocked_interruption(monkeypatch, spool, fault):
+    ready = spool / "ready"
+    code = ("import pathlib,sys,time;sys.stderr.write('private-before-stop');sys.stderr.flush();"
+            f"pathlib.Path({str(ready)!r}).touch();time.sleep(30)")
+    client = real_child(monkeypatch, spool, code)
+    original = diagnostics._private_file
+    def fail_capture(path, raw):
+        if path.name == ("stderr.tail.pending" if fault == "reader" else "result.json"):
+            raise OSError("fixture diagnostic filesystem failure")
+        return original(path, raw)
+    monkeypatch.setattr(diagnostics, "_private_file", fail_capture)
+    def guard():
+        if ready.exists():
+            raise backup.Blocked("original quiet-window interruption")
+    monkeypatch.setattr(backup, "guard_window", guard)
+    with pytest.raises(backup.Blocked, match="original quiet-window interruption"):
+        client.run("backup")
+    command = next((spool / "diagnostics").iterdir())
+    assert (command / "started.json").is_file()
+    if fault == "reader":
+        value = json.loads((command / "result.json").read_text())
+        assert value["result"] == "INCOMPLETE" and value["reader_error"]
+        assert value["category"] == "DIAGNOSTIC_CAPTURE_INCOMPLETE"
+    else:
+        assert not (command / "result.json").exists()
+    assert not (spool / "latest-verified.json").exists()
+
+
+def test_diagnostic_failure_without_primary_error_still_fails_closed(monkeypatch, spool):
+    client = real_child(monkeypatch, spool, "import sys;sys.stderr.write('transport fixture')")
+    original = diagnostics._private_file
+    def fail_capture(path, raw):
+        if path.name == "stderr.tail.pending":
+            raise OSError("fixture diagnostic filesystem failure")
+        return original(path, raw)
+    monkeypatch.setattr(diagnostics, "_private_file", fail_capture)
+    with pytest.raises(RuntimeError, match="Restic diagnostic capture incomplete"):
+        client.run("stats")
+    _, value = report(spool)
+    assert value["result"] == "INCOMPLETE" and value["exit_code"] == 0
+    assert not (spool / "latest-verified.json").exists()
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX abrupt-wrapper and mode proof")
 def test_killed_wrapper_preserves_raw_prefix_tail_without_inventing_completion(spool):
     ready = spool / "wrapper-ready"
