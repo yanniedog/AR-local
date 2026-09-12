@@ -145,8 +145,47 @@ def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
+def selected_exports_root(runs_root: Path, run_date: str | None = None) -> Optional[Path]:
+    """Read the finalized selection; absence alone permits legacy discovery.
+
+    Reuse the publisher's marker/event/contract checks and hash-bound metadata.
+    Invalid selection evidence must surface instead of serving stale primary data.
+    """
+    runs_root = runs_root.expanduser().resolve()
+    state = runs_root.parent / "state"
+    pointer_path = state / "observation-pointers-v2" / "latest-observation.json"
+    if not pointer_path.exists() and not pointer_path.is_symlink():
+        return None
+    from cdr_observation_selection import load_pointer_observation, read_bound_json, safe_child
+
+    pointer_path = safe_child(state, "observation-pointers-v2/latest-observation.json")
+    with pointer_path.open("rb") as stream:
+        body = stream.read(64 * 1024 + 1)
+    if len(body) > 64 * 1024:
+        raise ValueError("observation pointer exceeds its size budget")
+    pointer = json.loads(body)
+    if not isinstance(pointer, dict) or pointer.get("schema_version") != 2:
+        raise ValueError("invalid observation pointer")
+    observation = load_pointer_observation(state, pointer)
+    exports = observation["export_root"]
+    day = observation["contract"]["observation_date"]
+    parts = exports.relative_to(runs_root).parts
+    if not (parts == (day, "_exports") or (
+        len(parts) == 4 and parts[0] == day
+        and parts[1] == "_revisions" and parts[3] == "_exports"
+    )):
+        raise ValueError("selected exports are outside the dated run layout")
+    manifest = read_bound_json(exports, observation["contract"], "dashboard-cache/latest.json")
+    if manifest.get("run_date") != day or not export_manifest_is_valid(manifest):
+        raise ValueError("selected dashboard manifest is not usable for its observation date")
+    return exports if run_date is None or run_date == day else None
+
+
 def latest_exports_root(runs_root: Path) -> Optional[Path]:
     runs_root = runs_root.expanduser().resolve()
+    selected = selected_exports_root(runs_root)
+    if selected is not None:
+        return selected
     if not runs_root.is_dir():
         return None
     candidates: list[tuple[str, Path]] = []

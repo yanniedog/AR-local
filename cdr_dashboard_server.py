@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import ContextManager, Dict, Tuple
 from urllib.parse import parse_qs, urlparse
 
-from ar_local_pi_runtime import latest_exports_root
+from ar_local_pi_runtime import latest_exports_root, selected_exports_root
 from ar_local_ingest_schedule import DAILY_INGEST_SCHEDULE_LABEL, latest_daily_due_utc, next_daily_due_utc
 from cdr_dashboard_bank_sql import (
     bank_rate_columns,
@@ -647,6 +647,9 @@ class ExportResolver:
         if self.fixed_root is not None:
             return self.fixed_root
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", run_date):
+            selected = selected_exports_root(self.runs_root, run_date)
+            if selected is not None:
+                return selected
             candidate = self.runs_root / run_date / "_exports"
             if (candidate / "dashboard-cache" / run_date).is_dir():
                 return candidate.resolve()
@@ -701,13 +704,16 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         runs_root = export_resolver.runs_root
         if not runs_root.is_dir():
             return []
+        selected = selected_exports_root(runs_root)
+        selected_date = selected.relative_to(runs_root).parts[0] if selected is not None else None
         dbs: list[Path] = []
         for child in sorted(runs_root.iterdir(), key=lambda p: p.name):
             if not child.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name):
                 continue
             if max_run_date and child.name > max_run_date:
                 continue
-            candidate = child / "_exports" / "local-cdr.sqlite"
+            exports = selected if child.name == selected_date else child / "_exports"
+            candidate = exports / "local-cdr.sqlite"
             if candidate.is_file():
                 dbs.append(candidate.resolve())
         return dbs[-DEFAULT_HISTORY_RUN_LIMIT:]
