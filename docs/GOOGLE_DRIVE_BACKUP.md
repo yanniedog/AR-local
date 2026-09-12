@@ -170,6 +170,33 @@ The daily timer runs at 03:30 Australia/Hobart. A second timer checks every half
 
 The private spool holds immutable RUNNING/PASS/FAIL/BLOCKED receipts and source manifests. `latest-verified.json` identifies the accepted cloud snapshot, source content digest, manifest digest, repository stored bytes, newly uploaded bytes and most recent restore proof. A repository initialization, successful OAuth response, upload alone, or green unit test is not a restore proof. Keep existing backup arrangements until the first cloud restore PASS is observed.
 
+The raw-diagnostic permission guarantee applies to the supported Linux/Pi
+service. Windows mode bits do not establish private ACLs. All supported
+credential-bearing backup commands require the Linux systemd/cgroup supervisor
+before launching Restic; direct use of the internal capture/Restic classes on
+Windows is unsupported. Windows subprocess fixtures contain synthetic transport
+text and do not prove Windows credential custody.
+
+When interruption or cleanup already raised an error, a secondary diagnostic
+failure preserves that original reason and BLOCKED/FAIL status. Any completed
+incomplete-capture receipt remains retained; if the receipt itself cannot be
+written, the initial command record and available private bytes remain and
+completion is unverified. Without an existing error, incomplete capture still
+fails closed. Neither case can advance the accepted backup pointer.
+
+A stderr-reader I/O failure is checked during the running command and triggers
+the existing bounded child cleanup, rather than waiting for the command deadline.
+When the child has already exited nonzero, an additional diagnostic failure
+preserves its exit status, including repository-lock BLOCKED semantics. Retained
+head and tail windows are separated during classification so discarded bytes
+cannot create a failure signature that never appeared in the original stream.
+Segment hashes describe the bytes actually retained on disk after the reader
+stops. If a reader is still alive, incomplete evidence does not claim final
+segment hashes; the whole-worker resource supervisor still owns cleanup.
+If final receipt persistence is retried after a transient write failure, the
+retry preserves the first finalization's known exit code and interruption state.
+It does not recast a completed child as interrupted merely because cleanup ran.
+
 Each Restic command also retains private diagnostics beneath its resource
 operation's `diagnostics/<command-id>/`. `started.json` binds the command, worker,
 parent and original request hash before launch; `process.json` identifies the

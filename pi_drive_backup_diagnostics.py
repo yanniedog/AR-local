@@ -59,6 +59,14 @@ def _json(path: Path, value: dict) -> None:
     _private_file(path, (json.dumps(value, sort_keys=True) + "\n").encode("utf-8"))
 
 
+def _retained(path: Path, limit: int) -> bytes:
+    with path.open("rb") as stream:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError("retained diagnostic segment exceeds its bound")
+    return raw
+
+
 def _directory(path: Path) -> None:
     path.mkdir(mode=0o700, exist_ok=True)
     info = path.stat()
@@ -104,6 +112,7 @@ class StderrCapture:
         self.command, self.thread, self.process_pid = command, None, None
         self.total, self.head, self.tail = 0, bytearray(), bytearray()
         self.reader_error, self.finished = False, False
+        self.finish_arguments = None
         self.started = {"schema": "ar-local-drive-command-diagnostic-v1", "command": command,
             "worker_pid": os.getpid(), "supervisor_pid": os.getppid(),
             "operation_id": operation.name if operation else None, "request_sha256": request_hash,
@@ -119,7 +128,11 @@ class StderrCapture:
 
     def __exit__(self, kind, _error, _traceback):
         if not self.finished:
-            self.finish(None, interrupted=kind is not None)
+            try:
+                self.finish(None, interrupted=kind is not None)
+            except Exception:
+                if kind is None:
+                    raise
 
     def attach(self, pipe, process_pid: int) -> None:
         if self.thread is not None:
@@ -150,10 +163,22 @@ class StderrCapture:
     def finish(self, exit_code: int | None, *, interrupted=False) -> dict:
         if self.finished:
             return self.summary
+        if self.finish_arguments is None:
+            self.finish_arguments = (exit_code, interrupted)
+        # Context cleanup may retry after an I/O failure. Its unknown status
+        # must not replace the completed child's original exit/interruption.
+        exit_code, interrupted = self.finish_arguments
         if self.thread is not None:
             self.thread.join(timeout=5)
-        complete = self.thread is not None and not self.thread.is_alive() and not self.reader_error
-        category = classify(bytes(self.head + self.tail), exit_code, interrupted=interrupted)
+        stopped = self.thread is not None and not self.thread.is_alive()
+        complete = stopped and not self.reader_error
+        # A failed replacement can leave older bytes on disk than in memory.
+        # A still-live reader can keep changing them, so no final hash is claimed.
+        head = _retained(self.path / "stderr.head", HEAD_BYTES) if stopped else None
+        tail = _retained(self.path / "stderr.tail", TAIL_BYTES) if stopped else None
+        # Retained windows can be separated by discarded bytes. Never invent a
+        # signature by joining the head suffix directly to the tail prefix.
+        category = classify((head or b"") + b"\n" + (tail or b""), exit_code, interrupted=interrupted)
         if not complete:
             category = "DIAGNOSTIC_CAPTURE_INCOMPLETE"
         self.summary = {"path": self.reference, "command": self.command, "exit_code": exit_code,
@@ -163,8 +188,8 @@ class StderrCapture:
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "stderr_bytes_observed": self.total, "stderr_truncated": self.total > HEAD_BYTES + TAIL_BYTES,
             "reader_complete": complete, "reader_error": self.reader_error,
-            "stderr_head_sha256": hashlib.sha256(self.head).hexdigest(),
-            "stderr_tail_sha256": hashlib.sha256(self.tail).hexdigest()}
+            "stderr_head_sha256": hashlib.sha256(head).hexdigest() if head is not None else None,
+            "stderr_tail_sha256": hashlib.sha256(tail).hexdigest() if tail is not None else None}
         _json(self.path / "result.json", result)
         self.finished = True
         if not complete and self.process_pid is not None:

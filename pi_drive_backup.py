@@ -166,27 +166,48 @@ class Restic:
                 deadline = time.monotonic() + 20 * 3600
                 while process.poll() is None:
                     guard_window()
+                    if capture.reader_error:
+                        raise RuntimeError("Restic diagnostic reader failed; diagnostic=" + capture.reference)
                     if time.monotonic() > deadline:
                         raise Blocked("backup command deadline exceeded")
                     if shutil.disk_usage(cfg.spool).free < cfg.min_free_bytes:
                         raise Blocked("backup spool free-space floor reached")
                     time.sleep(0.5)
             except BaseException:
-                if os.name == "posix":
-                    os.killpg(process.pid, signal.SIGTERM)
-                else:
-                    process.terminate()
+                try:
+                    if os.name == "posix":
+                        os.killpg(process.pid, signal.SIGTERM)
+                    else:
+                        process.terminate()
+                except ProcessLookupError:
+                    pass  # The child may have exited after the last poll.
                 try:
                     process.wait(timeout=15)
                 except subprocess.TimeoutExpired:
-                    if os.name == "posix":
-                        os.killpg(process.pid, signal.SIGKILL)
-                    else:
-                        process.kill()
+                    try:
+                        if os.name == "posix":
+                            os.killpg(process.pid, signal.SIGKILL)
+                        else:
+                            process.kill()
+                    except ProcessLookupError:
+                        pass
                     process.wait(timeout=15)
                 raise
             finally:
-                diagnostic = capture.finish(process.returncode, interrupted=sys.exc_info()[0] is not None)
+                primary_error = sys.exc_info()[1]
+                try:
+                    diagnostic = capture.finish(process.returncode, interrupted=primary_error is not None)
+                except Exception:
+                    # A secondary evidence failure must not replace the original
+                    # quiet-window, disk-floor or cleanup failure. Neither path
+                    # can reach backup acceptance; the incomplete evidence stays.
+                    if primary_error is None:
+                        if process.returncode in (None, 0):
+                            raise
+                        # A completed nonzero child is already a primary failure,
+                        # even before its exit-code exception is constructed.
+                        diagnostic = {"path": capture.reference,
+                                      "category": "DIAGNOSTIC_CAPTURE_INCOMPLETE"}
             if process.returncode == 11:
                 raise Blocked("repository lock prevents backup; inspect retained resource receipts and live Restic owners before scoped stale-lock recovery; no automatic unlock performed; diagnostic=" + diagnostic["path"])
             if process.returncode != 0:
