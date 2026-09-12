@@ -57,6 +57,34 @@ def test_financial_digest_detects_same_count_rate_replacement(public):
     assert rate_rows_digest(rows) == rate_rows_digest(list(reversed(rows)))
 
 
+def retained_negative_rates():
+    evidence = json.loads((FIXTURES / "cdr_negative_rates_real_2026.json").read_text())
+    return [{**row, "rate_family": "deposit"} for source in evidence["observations"]
+            for row in source["records"]]
+
+
+def test_real_negative_fx_rates_remain_valid_and_unchanged():
+    rows = retained_negative_rates()
+    before = copy.deepcopy(rows)
+    result = audit_rows([], rows)
+    assert {row["rate"] for row in rows} == {"-0.00375", "-0.00075"}
+    assert result["invalid_rate_rows"] == []
+    assert result["accounting"]["published_rates"] == len(rows)
+    assert rows == before
+
+
+@pytest.mark.parametrize("value", ["-1.234567", "-0.056", "23.456"])
+def test_cdr_ratestring_standard_examples_are_valid(value):
+    row = {**retained_negative_rates()[0], "rate": value}
+    assert audit_rows([], [row])["invalid_rate_rows"] == []
+
+
+@pytest.mark.parametrize("value", ["not-a-rate", "NaN", "Infinity", "-Infinity"])
+def test_malformed_and_nonfinite_rates_still_fail(value):
+    row = {**retained_negative_rates()[0], "rate": value}
+    assert audit_rows([], [row])["invalid_rate_rows"] == [0]
+
+
 def real_product():
     record = json.loads((FIXTURES / "canonical_domain_real_observations.json").read_text())["observations"]["bank_of_melbourne_before_rename"]
     raw = record["record"]

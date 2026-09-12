@@ -1,0 +1,6 @@
+{
+  "7eb233471ecaf61ea435b544ff121454be943d75aed8c3f18ce827730e4f338d": "Retained archive _broken-2026-05-19-empty has no finalized observation date. Preserve its bytes as historical diagnostic evidence; do not select it as a current source or invent a date.",
+  "de694599982a5c0f97d9bc19ea828d33fcd11e8f698cc0e475ff0534abd58970": "The 2026-05-13 retained schema has no taxonomy_path column. Preserve the original observation and disclose taxonomy unavailable for these 10394 rows. The current source must retain complete taxonomy.",
+  "d87512049c0b401ad8e639bdcd1846d744a408692137f523f0737224a0d8c117": "The 2026-05-31 export contains two retained AMP Land Loan records with the same product key. Preserve and disclose the duplicate in this historical observation; the current source must have no duplicate product keys.",
+  "22f7a42b80f840142190fd26832c282e6618cc122715ade4bfbc2eefdbcdcda7": "The 2026-08-16 ram-1786806121645314910 failed attempt has no finalized daily SQLite database. Retain its attempts and logs as an incomplete attempt; it must never count as a successful or selected observation."
+}

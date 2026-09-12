@@ -324,3 +324,135 @@ def test_access_token_without_refresh_token_is_blocked(layout, monkeypatch):
     result = backup.readiness(layout)
     assert result["result"] == "BLOCKED"
     assert "SECRET" not in json.dumps(result)
+
+
+def test_empty_retained_wal_preserves_exact_direct_database_bytes(layout):
+    db = layout.data / "runs/2026-09-10/_exports/local-cdr.sqlite"
+    wal = Path(str(db) + "-wal")
+    wal.write_bytes(b"")
+    manifest = source.freeze(layout.data, layout.spool / "stage", controls=[], guard=lambda: None)
+    try:
+        row = next(row for row in manifest["files"] if row["sqlite"])
+        assert row["direct"] is True
+        assert row["sha256"] == source.digest(db)
+        original = next(row for row in manifest["files"] if row.get("sqlite_original"))
+        assert original["backup_path"] == wal.as_posix()
+        assert original["size"] == 0 and original["direct"] is True
+        wal.write_bytes(b"journal changed after freeze")
+        with pytest.raises(RuntimeError, match="journal changed|immutable source changed"):
+            source.verify_direct_sources(manifest)
+    finally:
+        backup.close_manifest(manifest)
+
+
+def test_old_merged_snapshot_digest_is_not_reused_for_new_direct_input(layout):
+    from pi_drive_backup_manifest import close_manifest
+
+    db = layout.data / "runs/2026-09-10/_exports/local-cdr.sqlite"
+    prior = {"files": [{"logical_path": "data/runs/2026-09-10/_exports/local-cdr.sqlite",
+                         "direct": False, "source_identity": source.fingerprint(db), "sha256": "0" * 64}]}
+    manifest = source.freeze(layout.data, layout.spool / "stage", controls=[], guard=lambda: None, prior=prior)
+    try:
+        row = next(row for row in manifest["files"] if row["sqlite"])
+        assert row["sha256"] == source.digest(db)
+    finally:
+        close_manifest(manifest)
+
+
+def test_full_restore_has_no_per_file_filter_and_weekly_filters_use_namespaces(layout, transport):
+    backup.run_backup(layout, force=True)
+    full = next(call for call in transport.calls if call[0] == "restore")
+    assert "--include-file" not in full
+    rows = [{"logical_path": f"data/runs/2026-09-10/_exports/file-{n}.json",
+             "backup_path": f"/srv/ar-local/data/runs/2026-09-10/_exports/file-{n}.json"}
+            for n in range(1000)]
+    assert backup.restore_includes(rows) == ["/srv/ar-local/data/runs/2026-09-10"]
+
+
+def test_streamed_manifest_preserves_wire_bytes_and_bounds_memory_at_scale(tmp_path):
+    import tracemalloc
+    from pi_drive_backup_manifest import ManifestIndex, close_manifest, content_digest, load_manifest
+
+    tracemalloc.start()
+    index = ManifestIndex(tmp_path / "manifest-index.sqlite")
+    document = {"schema": source.SCHEMA, "files": index.rows(), "excluded": index.rows("excluded")}
+    loaded = {}
+    try:
+        for number in range(20000):
+            logical = f"data/runs/2026-09-10/retained-provider/product-{number:06d}/product-detail.json"
+            physical = "/srv/ar-local/" + logical
+            index.append({"logical_path": logical, "backup_path": physical, "source_path": physical,
+                          "source_identity": [number, 1720000000000000000, 1720000000000000001, number, 1],
+                          "size": number, "sha256": "0" * 64, "direct": True, "sqlite": False,
+                          "mode": "0o644", "uid": 1000, "gid": 1000})
+        index.exclude("state/temporary.lock")
+        index.db.commit()
+        document["content_sha256"] = content_digest(document["files"])
+        target = tmp_path / "manifest.json"
+        backup.atomic_json(target, document, immutable=True)
+        loaded = load_manifest(target, tmp_path / "read-index.sqlite")
+        assert len(loaded["files"]) == 20000
+        assert loaded["files"].get(document["files"][123]["logical_path"]) == document["files"][123]
+        assert loaded["content_sha256"] == content_digest(loaded["files"])
+        assert list(loaded["excluded"]) == ["state/temporary.lock"]
+        assert target.stat().st_size > 10 * 1024 * 1024
+        _, peak = tracemalloc.get_traced_memory()
+        # Old lists plus json.dumps/decode scale with every row. The index cache
+        # is separately capped at 2 MiB and Python handles one decoded row.
+        assert peak < 12 * 1024 * 1024
+    finally:
+        close_manifest(document)
+        close_manifest(loaded)
+        tracemalloc.stop()
+
+
+def test_disk_manifest_rejects_case_collisions_and_truncated_wire_json(tmp_path):
+    from pi_drive_backup_manifest import ManifestIndex, load_manifest
+
+    index = ManifestIndex(tmp_path / "manifest-index.sqlite")
+    try:
+        index.append({"logical_path": "data/state/Marker.json"})
+        with pytest.raises(ValueError, match="case-insensitive"):
+            index.append({"logical_path": "data/state/marker.json"})
+    finally:
+        index.close()
+    wire = tmp_path / "bad.json"
+    wire.write_text('{"files":[{"logical_path":"data/state/marker.json"}', encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_manifest(wire, tmp_path / "broken-index.sqlite")
+
+
+def test_streamed_json_and_content_digest_match_existing_wire_format(tmp_path):
+    from pi_drive_backup_manifest import ManifestIndex, close_manifest, content_digest
+
+    index = ManifestIndex(tmp_path / "manifest-index.sqlite")
+    rows = [{"logical_path": "data/state/first.json", "sha256": "0" * 64, "size": 1},
+            {"logical_path": "data/state/second.json", "sha256": "1" * 64, "size": 2}]
+    document = {"schema": source.SCHEMA, "files": index.rows(), "excluded": index.rows("excluded")}
+    try:
+        for row in reversed(rows):
+            index.append(row)
+        index.exclude("state/temporary.lock")
+        index.db.commit()
+        document["content_sha256"] = content_digest(document["files"])
+        expected = {**document, "files": rows, "excluded": ["state/temporary.lock"]}
+        assert document["content_sha256"] == source.hashlib.sha256(source.canonical_json_bytes(rows)).hexdigest()
+        target = tmp_path / "manifest.json"
+        backup.atomic_json(target, document)
+        assert target.read_bytes() == source.canonical_json_bytes(expected)
+    finally:
+        close_manifest(document)
+
+
+def test_disk_index_failure_is_recorded_without_acknowledging_backup(layout, transport, monkeypatch):
+    queued = backup.request_backup("terminal", spool=layout.spool)
+
+    def unavailable_index(*args, **kwargs):
+        raise sqlite3.OperationalError("injected unavailable index")
+
+    monkeypatch.setattr(backup, "freeze", unavailable_index)
+    with pytest.raises(sqlite3.Error, match="unavailable index"):
+        backup.run_backup(layout, force=True)
+    assert queued.exists()
+    assert len(list((layout.spool / "receipts").glob("*.FAIL.json"))) == 1
+    assert not (layout.spool / "latest-verified.json").exists()

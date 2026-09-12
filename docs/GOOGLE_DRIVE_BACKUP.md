@@ -12,6 +12,21 @@ The worker acquires the shared ingest lock only for a bounded source freeze. Imm
 
 The ingest lock is released before network upload, repository checking or restore. Restic is limited to two Go workers, 8 MiB/s network bandwidth and two transfers; the service adds CPU, memory and I/O limits. Source freezing has a 20-minute limit and stops before the 00:30–03:30 Hobart ingest quiet window. Uploads crossing that window are terminated safely and retried later. A 2 GiB free-space floor protects the private spool; a restore also requires room for its selected data. Interrupted or rejected uploads never advance `latest-verified.json` or acknowledge queued requests.
 
+Inventories and collision checks use a private SQLite index with a 2 MiB page
+cache. Manifest JSON remains portable and unchanged in shape, but it is written
+and read one file record at a time. Hashing, Restic file lists, and restore
+verification also stream; memory does not grow with the retained file count.
+Empty WALs are preserved as exact sidecars while their immutable main databases
+remain direct inputs. They do not force a fresh copy of the full historical
+database each day. Nonempty WAL/journal databases still use a private merged
+snapshot and preserve original components.
+
+The first full restore reads the whole selected snapshot without creating a
+separate include pattern for every file. Weekly sampling uses selected namespace
+prefixes. Every selected file/database is verified; receipt examples are capped
+at 1,000 with explicit counts/truncation flags and a digest of all SQLite check
+records. Complete source identities remain in the snapshot's source manifest.
+
 ## One-time enrollment
 
 Install Restic with repository-v2/compression support and rclone on the Pi using the operating system package manager or a verified vendor release. The commissioning target has Restic 0.18.0 and rclone 1.60.1. Use the approved runtime checkout and service user when rendering the units:

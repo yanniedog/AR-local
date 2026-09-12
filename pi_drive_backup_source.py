@@ -10,13 +10,14 @@ import sqlite3
 import stat
 import tempfile
 import time
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 from typing import Callable
 
 from ar_local_backup_scope import build_data_scope
 from ar_local_operation_lock import production_lock
-from pi_laptop_backup_source import canonical_json_bytes, validate_archive_path
+from pi_laptop_backup_source import canonical_json_bytes
+from pi_drive_backup_manifest import DiskRows, ManifestIndex, content_digest
 
 SCHEMA = "ar-local-drive-backup-v1"
 DB_SUFFIXES = {".sqlite", ".sqlite3", ".db"}
@@ -143,7 +144,28 @@ def _direct_run_file(relative: Path, source: Path) -> bool:
     # Finalized run namespaces are immutable by producer contract. Restic gets
     # their original bytes; state, logs and predeploy are frozen private copies.
     return (relative.parts[0] in {"runs", "runs-archive"}
-            and not any(Path(str(source) + suffix).exists() for suffix in ("-wal", "-journal")))
+            and not any(path.exists() and path.stat().st_size
+                        for path in (Path(str(source) + suffix) for suffix in ("-wal", "-journal"))))
+
+
+def _journal_identity(source: Path) -> dict:
+    return {suffix: fingerprint(path) for suffix in ("-wal", "-journal")
+            if (path := Path(str(source) + suffix)).exists()}
+
+
+def _regular_tree(root: Path, guard: Callable[[], None]):
+    """Walk a directory at a time; never materialize the retained file tree."""
+    with os.scandir(root) as entries:
+        for entry in entries:
+            guard()
+            path = Path(entry.path)
+            if entry.is_symlink():
+                raise ValueError(f"symlink in backup scope: {path}")
+            if entry.is_dir(follow_symlinks=False):
+                yield from _regular_tree(path, guard)
+            else:
+                regular(path)
+                yield path
 
 
 def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[], None],
@@ -158,34 +180,35 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
         guard()
         if time.monotonic() - started > max_freeze_seconds:
             raise RuntimeError("source freeze deadline exceeded")
-    previous = {row["logical_path"]: row for row in (prior or {}).get("files", [])}
-    seen: dict[str, str] = {}
-    result = {"schema": SCHEMA, "files": [], "excluded": []}
-    with production_lock(data / "state/daily-ingest.lock", "drive-backup-freeze"):
+    stage.mkdir(parents=True, exist_ok=True)
+    index = ManifestIndex(stage / "manifest-index.sqlite")
+    previous = (prior or {}).get("files", [])
+    previous_index = None
+    if not isinstance(previous, DiskRows):
+        previous_index = ManifestIndex(stage / "previous-index.sqlite")
+        for row in previous:
+            previous_index.append(row)
+        previous = previous_index.rows()
+    result = {"schema": SCHEMA, "files": index.rows(), "excluded": index.rows("excluded")}
+    with index, previous_index or nullcontext(), production_lock(data / "state/daily-ingest.lock", "drive-backup-freeze"):
         check()
         scope = build_data_scope(data)
         result["scope"] = scope.manifest()
-        sources = []
-        for root in scope.included:
-            for path in sorted(root.rglob("*")):
-                check()
-                if path.is_symlink():
-                    raise ValueError(f"symlink in backup scope: {path}")
-                if path.is_dir():
-                    continue
-                regular(path)
-                relative = path.relative_to(data)
-                if excluded(relative):
-                    result["excluded"].append(relative.as_posix())
-                    continue
-                sources.append((path, "data/" + relative.as_posix(), relative))
-        for index, path in enumerate(controls):
-            sources.append((path, f"control/{index:03d}-{path.name}", Path("control") / path.name))
-        for source, logical, relative in sources:
+        def sources():
+            for root in scope.included:
+                for path in _regular_tree(root, check):
+                    relative = path.relative_to(data)
+                    if excluded(relative):
+                        index.exclude(relative.as_posix())
+                        continue
+                    yield path, "data/" + relative.as_posix(), relative
+            for number, path in enumerate(controls):
+                yield path, f"control/{number:03d}-{path.name}", Path("control") / path.name
+        for source, logical, relative in sources():
             check()
-            validate_archive_path(logical, seen)
             database = _is_database(source)
             direct = _direct_run_file(relative, source)
+            journal_identity = _journal_identity(source) if direct and database else None
             target = source if direct else stage / logical
             source_identity = fingerprint(source)
             if not direct:
@@ -194,8 +217,7 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
                     originals = sqlite_snapshot(source, target, check, original_root)
                     for component, original in originals:
                         original_logical = "sqlite-original/" + logical + component.name[len(source.name):]
-                        validate_archive_path(original_logical, seen)
-                        result["files"].append({"logical_path": original_logical,
+                        index.append({"logical_path": original_logical,
                             "backup_path": original.as_posix(), "source_path": component.as_posix(),
                             "source_identity": fingerprint(component), "size": original.stat().st_size,
                             "sha256": digest(original, check), "direct": False, "sqlite": False,
@@ -204,26 +226,45 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
                 else:
                     _copy(source, target, check)
             cached = previous.get(logical, {})
-            reusable = (direct and os.name == "posix" and cached.get("source_identity") == source_identity)
+            reusable = (direct and cached.get("direct") is True and os.name == "posix"
+                        and cached.get("source_identity") == source_identity)
             sha = cached["sha256"] if reusable else digest(target, check)
             if direct and source_identity != fingerprint(source):
                 raise RuntimeError(f"immutable source changed during inventory: {source}")
-            result["files"].append({"logical_path": logical, "backup_path": target.as_posix(),
+            row = {"logical_path": logical, "backup_path": target.as_posix(),
                                     "source_path": source.as_posix(), "source_identity": source_identity,
                                     "size": target.stat().st_size, "sha256": sha,
                                     "direct": direct, "sqlite": database,
                                     "mode": oct(stat.S_IMODE(source.stat().st_mode)),
-                                    "uid": source.stat().st_uid, "gid": source.stat().st_gid})
-    result["files"].sort(key=lambda row: row["logical_path"])
-    identity = [{key: row[key] for key in ("logical_path", "sha256", "size")} for row in result["files"]]
-    result["content_sha256"] = hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+                                    "uid": source.stat().st_uid, "gid": source.stat().st_gid}
+            if journal_identity is not None:
+                if journal_identity != _journal_identity(source):
+                    raise RuntimeError("SQLite journal changed during direct inventory")
+                row["journal_identity"] = journal_identity
+                for suffix, identity in journal_identity.items():
+                    component = Path(str(source) + suffix)
+                    index.append({"logical_path": "sqlite-original/" + logical + suffix,
+                        "backup_path": component.as_posix(), "source_path": component.as_posix(),
+                        "source_identity": identity, "size": component.stat().st_size,
+                        "sha256": digest(component, check), "direct": True, "sqlite": False,
+                        "sqlite_original": True, "mode": oct(stat.S_IMODE(component.stat().st_mode)),
+                        "uid": component.stat().st_uid, "gid": component.stat().st_gid})
+            index.append(row)
+    index.db.commit()
+    if previous_index:
+        previous_index.close()
+    result["content_sha256"] = content_digest(result["files"])
     return result
 
 
-def verify_direct_sources(manifest: dict) -> None:
+def verify_direct_sources(manifest: dict, guard: Callable[[], None] = lambda: None) -> None:
     for row in manifest["files"]:
+        guard()
         if row["direct"] and fingerprint(Path(row["source_path"])) != row["source_identity"]:
             raise RuntimeError("immutable source changed during upload; snapshot is not accepted")
+        if row["direct"] and row.get("journal_identity") is not None:
+            if _journal_identity(Path(row["source_path"])) != row["journal_identity"]:
+                raise RuntimeError("immutable SQLite journal changed during upload")
 
 
 def restore_relative(path: str) -> Path:
@@ -238,15 +279,30 @@ def restore_relative(path: str) -> Path:
     return parts
 
 
-def verify_restore(root: Path, rows: list[dict]) -> dict:
-    checks = []
+def verify_restore(root: Path, rows, guard: Callable[[], None] = lambda: None) -> dict:
+    checks, identities = [], []
+    files_verified = databases_verified = identity_count = 0
+    checks_digest = hashlib.sha256()
     for row in rows:
+        guard()
         path = root / restore_relative(row["backup_path"])
         regular(path)
-        if path.resolve() != path or path.stat().st_size != row["size"] or digest(path) != row["sha256"]:
+        if path.resolve() != path or path.stat().st_size != row["size"] or digest(path, guard) != row["sha256"]:
             raise ValueError(f"restored bytes differ: {row['logical_path']}")
         if row["sqlite"]:
-            checks.append({"path": row["logical_path"], **sqlite_checks(path)})
-    return {"result": "PASS", "files_verified": len(rows), "sqlite": checks,
-            "published_identity_files": [row["logical_path"] for row in rows
-                if any(word in row["logical_path"] for word in ("manifest", "pointer", "publication", "ledger"))]}
+            check = {"path": row["logical_path"], **sqlite_checks(path)}
+            guard()
+            databases_verified += 1
+            checks_digest.update(canonical_json_bytes(check))
+            if len(checks) < 1000:
+                checks.append(check)
+        if any(word in row["logical_path"] for word in ("manifest", "pointer", "publication", "ledger")):
+            identity_count += 1
+            if len(identities) < 1000:
+                identities.append(row["logical_path"])
+        files_verified += 1
+    return {"result": "PASS", "files_verified": files_verified, "sqlite": checks,
+            "databases_verified": databases_verified, "sqlite_checks_sha256": checks_digest.hexdigest(),
+            "sqlite_examples_truncated": databases_verified > len(checks),
+            "published_identity_files": identities, "published_identity_file_count": identity_count,
+            "published_identity_examples_truncated": identity_count > len(identities)}

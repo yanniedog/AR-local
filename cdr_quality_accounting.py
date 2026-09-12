@@ -122,7 +122,9 @@ def audit_rows(products: list[dict], rates: list[dict]) -> dict:
             continue
         try:
             number_rate = float(row.get("rate"))
-            if not math.isfinite(number_rate) or not 0 <= number_rate <= 1:
+            # CDR RateString permits negative rates and percentages above 100%.
+            # Preserve the reported value; only malformed/non-finite rates fail.
+            if not math.isfinite(number_rate):
                 invalid.append(number)
         except (ValueError, TypeError):
             invalid.append(number)

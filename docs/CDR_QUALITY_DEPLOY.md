@@ -1,0 +1,207 @@
+# D-027 exact-commit activation
+
+This is the reusable form of the retained sealed Pi activation procedure, under
+the authority in [CDR_QUALITY_PIPELINE.md](CDR_QUALITY_PIPELINE.md). It preserves
+the old laptop/physical-recovery evidence and does not invoke the superseded
+physical-boot gate. It does not change the legacy deploy commands or their claims.
+
+`pi_cdr_quality_activate.py` has three operator stages: `canary`, `seal`, and
+`activate`. Exit zero means that particular stage passed; exit two means blocked
+or failed. A canary PASS is private replay acceptance, never evidence of a live
+capture, public publication, app installation, Drive restore, or natural timer run.
+
+## Prerequisites
+
+Use the Pi's ordinary service account with existing noninteractive permission for
+`systemd-run` and the named `systemctl` operations. No Windows elevation or new
+sudo policy is installed by the helper. Production must be a clean checkout at
+an exact predecessor commit, with dashboard/daily service WorkingDirectory set
+to it. The dashboard and mandatory daily timer must be active. The selected
+verified observation must belong to today in Australia/Hobart.
+
+Prepare a separate, clean candidate checkout at the reviewed merged `main`
+commit. Its origin must be `yanniedog/AR-local`. The helper resolves GitHub's
+current main with `git ls-remote`; it never checks out a moving ref. Both candidate
+and predecessor commits must already exist in the candidate object store so its
+allowed-file diff is resolvable. If the predecessor is an earlier sealed runtime
+commit outside main ancestry, import that retained predecessor bundle into the
+isolated candidate object store before running the stages. Do not rewrite the
+production checkout to make the diff resolve.
+
+Candidate, production, data and operation directories must be canonical,
+nonoverlapping absolute directories without symlinks. Put candidate and operation
+directories alongside each other, not inside each other. The operation directory
+must not exist before `canary`. Evidence is create-once and must remain at its
+original path through activation. No automatic evidence or rollback pruning occurs.
+
+The chosen Python executable must have the repository's runtime and test
+dependencies installed already. Use a separate environment outside the candidate
+checkout if needed. Canary runs the full producer `tests` suite with complete
+JUnit results, then audits every retained source/log and builds/reconciles a
+private payload from real current exports. It checks rate counts, rate content
+digests and product detail equality. No simulated business data is acceptance.
+
+The canary systemd scope has read-only candidate/production/data mounts, a private
+writable temporary directory for SQLite WAL recovery, no network, no production
+environment file, no Drive credentials, and private derived output. Limits are
+3 GiB RAM, no swap, two CPU cores and 90 minutes maximum, shortened to finish
+before 22:00 Hobart. Start checks require the 03:30–22:00 window, idle ingest,
+no old backup stream, at least 8 GiB free disk, at least 2 GiB available memory
+and memory PSI avg10 below 10%. A resource or dependency failure stays BLOCKED.
+
+## Private canary and historical dispositions
+
+Use a fresh operation name and the actual reviewed 40-character commit:
+
+```sh
+python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py canary \
+  --source /srv/ar-local/quality-candidate \
+  --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
+  --operation /srv/ar-local/quality-operation-UNIQUE \
+  --expected-commit EXACT_MERGED_COMMIT \
+  --python /path/to/prepared/python \
+  --dispositions /srv/ar-local/quality-evidence/historical-dispositions.json
+```
+
+The dispositions file is an object mapping `canonical_digest(issue)` (from
+`cdr_quality_accounting`) to a specific reasoned disposition for that exact
+historical issue. Its keys must match the new source audit's issue set exactly.
+An empty object is valid only when there are no issues. Never manufacture blanket
+approval: investigate each retained finding, retain the original evidence and
+state why it does or does not prevent this current-day activation.
+
+The aggregate source-only report can remain FAIL from reviewed historical
+findings, or BLOCKED because no public/consumer audit was requested. Current
+SQLite/export reconciliation, ledger integrity and contract binding must pass.
+Eligible legacy classes are taxonomy/duplicate-key findings in earlier unbound
+daily exports, a dated `_broken-...-empty` archive, or an earlier failed-attempt
+export missing its finalized database. Current-day sources disguised as another
+generation, invalid contracts, hash failures, changing/unreadable logs and missing
+previously audited inputs cannot be waived as historical findings. The helper
+does not change the original report status. A changed source, ledger or pointer
+requires a new canary; a new disposition requires another fresh operation.
+
+Retain `canary.json`, `pytest.xml`, `pytest.txt`, `source-audit/`, `payload/` and
+the systemd transcript. `canary-worker` is an internal stage and rejects writable
+source/production/data mounts; invoke the parent `canary` stage.
+
+## Exact GitHub and app proof
+
+The evidence producer is the authorized daily repair/PR owner. Export raw GitHub
+API responses after required checks and review closure, preserve their actual
+JSON, and transfer them into the Pi evidence directory. Each reference below is
+`{"path":"/absolute/retained/file.json","sha256":"actual SHA-256"}`.
+The helper parses raw results as well as checking hashes; an arbitrary document
+or a summary PASS label is insufficient. Missing, truncated or stale-head proof
+blocks sealing. Evidence hashes are provenance within this authorized operation,
+not a digital signature from GitHub.
+
+Producer binding JSON has these fields:
+
+```json
+{
+  "result": "PASS",
+  "repository": "yanniedog/AR-local",
+  "merge_commit": "EXACT_MERGED_COMMIT",
+  "head_commit": "EXACT_REVIEWED_PR_HEAD",
+  "base": "main", "merged": true,
+  "review_dispositions_complete": true,
+  "required_checks": {
+    "bot-feedback-gate": "SUCCESS",
+    "payload builder (pytest)": "SUCCESS",
+    "process liveness (Windows)": "SUCCESS"
+  },
+  "evidence": {
+    "pull_request": {}, "protection": {}, "rules": {},
+    "check_runs": {}, "statuses": {}, "review_threads": {}
+  }
+}
+```
+
+Replace the empty objects with actual file references. Include every additional
+effective required context in `required_checks`. Raw endpoints are
+`repos/yanniedog/AR-local/pulls/PR`, `branches/main/protection`,
+`branches/main/rules`, `commits/PR_HEAD/check-runs?per_page=100`, and
+`commits/PR_HEAD/status?per_page=100`, all below the same repository prefix.
+Wrap the raw rules array once as `{"rules": [...]}`. Collect all pages when
+necessary: total counts must equal retained item counts. Retain GraphQL
+`data.repository.pullRequest` with `number`, `headRefOid`, and `reviewThreads`
+containing `totalCount`, `pageInfo.hasNextPage=false`, and all `nodes.isResolved`.
+Every thread must be resolved. Use the repository's existing PR wrappers to
+perform review dispositions and merge; this helper does not merge PRs.
+
+App binding JSON has `result: "PASS"`, `producer_commit`, `app_commit` (the
+merged app commit), `revision_protocol: 1`, and file references `pull_request`,
+`mobile_ci`, `revision_reader`, `headless_audit`. The last three references also
+contain `result: "PASS"` to indicate evidence collection completed. Raw proof is:
+
+- Merged app PR REST response tying its exact tested head to `app_commit`.
+- Complete app check-runs response at that PR head with `mobile-ci` success.
+- Actual Jest `--json --outputFile` results covering `payloadRevision.test.ts`,
+  `store.payloadRevision.test.ts`, and `payloadAccounting.test.ts`, with every
+  assertion executed successfully. Retain the test command/source identity with
+  the owner evidence; raw Jest output itself does not attest a Git commit.
+- The shipping app's directory audit of the exact `payload/` from this canary,
+  performed at `app_commit` with `app_worktree_clean: true`: schema 1, acquisition `private_candidate`,
+  `publication_verified: false`, null public manifest/index URLs/hashes, matching
+  candidate manifest SHA-256, date and every asset's SHA-256/size. PASS or WARN
+  with only lowercase `pass`/`warn` checks is acceptable; warnings stay in the retained report.
+  FAIL/BLOCKED, an old public payload or a different app commit cannot pass.
+
+Run the app's `audit-public-payload.cjs --directory <candidate-payload-directory>
+--output <report.json>` from the exact tested app checkout. A private candidate
+audit never proves public availability. APK publication/installation and the
+subsequent public audit remain independent commissioning requirements.
+
+## Seal and activate
+
+```sh
+python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py seal \
+  --source /srv/ar-local/quality-candidate \
+  --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
+  --operation /srv/ar-local/quality-operation-UNIQUE \
+  --expected-commit EXACT_MERGED_COMMIT \
+  --ci-binding /srv/ar-local/quality-evidence/producer-binding.json \
+  --app-acceptance /srv/ar-local/quality-evidence/app-binding.json
+```
+
+Sealing holds the shared production lock, rehashes the current contract artifacts
+(including SQLite sidecars), ledger events, pointer, marker and contract, then
+retains complete candidate and predecessor Git bundles. The manifest includes
+the complete candidate file hashes and an exact changed/deleted file allowlist.
+It expires after six hours or at 22:00 Hobart, whichever comes first. Capture the
+returned manifest hash; never substitute a recomputed hash after editing evidence.
+
+```sh
+python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py activate \
+  --manifest /srv/ar-local/quality-operation-UNIQUE/activation.json \
+  --manifest-sha256 RETURNED_MANIFEST_SHA256 --dry-run
+
+python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py activate \
+  --manifest /srv/ar-local/quality-operation-UNIQUE/activation.json \
+  --manifest-sha256 RETURNED_MANIFEST_SHA256
+```
+
+Dry-run validates readiness without checkout, restart or an activation receipt.
+Activation pauses only the daily-watchdog and runtime-health coordination timers;
+the mandatory natural daily timer remains active. Under the production lock it
+revalidates evidence/current main, checks the old dashboard, verifies both bundles,
+fetches the local sealed bundle and checks out its exact commit detached. It
+restarts the dashboard, checks all deployed code and protected data hashes, runs
+Pi HTTP smoke plus `verify_local.py`, and restores coordination. It does not
+install or change systemd unit definitions. Any new timer/unit installation is a
+separate reviewed commissioning action by the owner.
+
+A post-switch failure attempts rollback to the retained exact predecessor,
+restarts/verifies its dashboard and restores timer states. The create-once
+`activation-UUID/intent.json` and `result.json` record the outcome. SIGTERM enters
+the cleanup path; power loss or SIGKILL cannot execute Python cleanup. Following
+such interruption, read the retained intent, actual checkout, timer states and
+source hashes before continuing. The old Git bundle is available offline; never
+blindly rerun against a changed production predecessor.
+
+After activation, the owner performs live Pi browser verification, invokes the
+gated current-day repair when needed, verifies the new immutable release and
+selected public/app revision, and checks the independent Drive snapshot/restore
+receipt. Activation always labels Drive status UNVERIFIED; it cannot invent or
+replace that proof. Retain both commissioning and later natural scheduled results.

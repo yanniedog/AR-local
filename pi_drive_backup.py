@@ -14,6 +14,7 @@ import os
 import re
 import signal
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,7 @@ from ar_local_backup_policy import fsync_directory
 from ar_local_operation_lock import production_lock
 from pi_drive_backup_source import (SCHEMA, canonical_json_bytes, digest, freeze,
     restore_relative, validate_layout, verify_direct_sources, verify_restore)
+from pi_drive_backup_manifest import SelectedRows, close_manifest, json_chunks, load_manifest
 
 TZ = ZoneInfo("Australia/Hobart")
 TAG = "ar-local-drive-v1"
@@ -52,7 +54,9 @@ def atomic_json(path: Path, value: dict, *, immutable: bool = False) -> None:
     temporary = path.with_name(path.name + ".partial-" + uuid.uuid4().hex)
     try:
         with temporary.open("xb") as stream:
-            stream.write(canonical_json_bytes(value))
+            for chunk in json_chunks(value):
+                stream.write(chunk)
+            stream.write(b"\n")
             stream.flush()
             os.fsync(stream.fileno())
         if immutable and path.exists():
@@ -201,7 +205,7 @@ def _summary(output: str) -> dict:
     return summaries[0]
 
 
-def restore_selection(manifest: dict, *, full: bool, rotation: int) -> list[dict]:
+def restore_selection(manifest: dict, *, full: bool, rotation: int):
     if full:
         return manifest["files"]
     dates = sorted({row["logical_path"].split("/")[2] for row in manifest["files"]
@@ -209,30 +213,51 @@ def restore_selection(manifest: dict, *, full: bool, rotation: int) -> list[dict
     chosen = set(dates[-1:])
     if len(dates) > 1:
         chosen.add(dates[rotation % (len(dates) - 1)])
-    return [row for row in manifest["files"] if row["logical_path"].startswith(("control/", "data/state/", "sqlite-original/data/state/"))
+    return SelectedRows(manifest["files"], lambda row: row["logical_path"].startswith(("control/", "data/state/", "sqlite-original/data/state/"))
             or row["sqlite"] and not row["logical_path"].startswith("data/runs/")
-            or any(row["logical_path"].startswith((f"data/runs/{date}/", f"sqlite-original/data/runs/{date}/")) for date in chosen)]
+            or any(row["logical_path"].startswith((f"data/runs/{date}/", f"sqlite-original/data/runs/{date}/")) for date in chosen))
+
+
+def restore_includes(rows) -> list[str]:
+    """Use selected namespace prefixes, not hundreds of thousands of patterns."""
+    paths = set()
+    for row in rows:
+        logical = Path(row["logical_path"])
+        depth = None
+        for prefix, count in (("control/", 1), ("data/state/", 2),
+                              ("sqlite-original/data/state/", 3), ("data/runs/", 3),
+                              ("sqlite-original/data/runs/", 4)):
+            if row["logical_path"].startswith(prefix):
+                depth = count
+                break
+        path = restore_relative(row["backup_path"])
+        if depth is not None:
+            for _ in range(len(logical.parts) - depth):
+                path = path.parent
+        paths.add("/" + path.as_posix())
+    return sorted(paths)
 
 
 def restore_snapshot(config: Config, client: Restic, snapshot: str, manifest: dict,
                      *, full: bool = False, rotation: int = 0, manifest_path: Path | None = None) -> dict:
     rows = restore_selection(manifest, full=full, rotation=rotation)
     if manifest_path:
-        rows = [*rows, {"logical_path": "backup/source-manifest.json", "backup_path": manifest_path.as_posix(),
-                       "sha256": digest(manifest_path), "size": manifest_path.stat().st_size, "sqlite": False}]
-    if not rows or not any(row["sqlite"] for row in rows):
+        rows = SelectedRows(rows, extra=[{"logical_path": "backup/source-manifest.json", "backup_path": manifest_path.as_posix(),
+                       "sha256": digest(manifest_path), "size": manifest_path.stat().st_size, "sqlite": False}])
+    if not any(row["sqlite"] for row in rows):
         raise RuntimeError("restore selection has no database")
     required = sum(row["size"] for row in rows) + config.min_free_bytes
     if shutil.disk_usage(config.spool).free < required:
         raise Blocked("insufficient disk for selected restore plus reserve")
     target = Path(tempfile.mkdtemp(prefix="restore-", dir=config.spool))
     try:
-        # Exact includes avoid unintentionally restoring the entire 70+ GiB
-        # historical source when only a weekly rotating sample was requested.
-        include = target / "include.txt"
-        include.write_text("\n".join("/" + restore_relative(row["backup_path"]).as_posix() for row in rows) + "\n", encoding="utf-8")
-        client.run("restore", snapshot, "--target", str(target), "--include-file", str(include), "--verify")
-        return {"snapshot_id": snapshot, "full": full, **verify_restore(target, rows)}
+        options = []
+        if not full:
+            include = target / "include.txt"
+            include.write_text("\n".join(restore_includes(rows)) + "\n", encoding="utf-8")
+            options = ["--include-file", str(include)]
+        client.run("restore", snapshot, "--target", str(target), *options, "--verify")
+        return {"snapshot_id": snapshot, "full": full, **verify_restore(target, rows, guard=guard_window)}
     finally:
         # Only the unique private restore directory created by this call.
         if target.parent != config.spool or target.is_symlink():
@@ -266,8 +291,9 @@ def _run_locked(config: Config, *, force: bool) -> dict:
     receipt = {"schema": SCHEMA, "run_id": run_id, "started_at": current.isoformat(),
                "result": "RUNNING", "request_ids": [path.stem for path in requests]}
     atomic_json(config.spool / "receipts" / f"{run_id}.RUNNING.json", receipt, immutable=True)
+    manifest, previous_manifest = {}, {}
     try:
-        previous_manifest = _load(config.spool / last["manifest_path"]) if last else {}
+        previous_manifest = load_manifest(config.spool / last["manifest_path"], stage / "prior-manifest.sqlite") if last else {}
         if last and digest(config.spool / last["manifest_path"]) != last["manifest_sha256"]:
             raise ValueError("previous source manifest hash differs from accepted receipt")
         def source_guard() -> None:
@@ -291,8 +317,10 @@ def _run_locked(config: Config, *, force: bool) -> dict:
                            manifest_path=last["manifest_path"], manifest_sha256=last["manifest_sha256"])
         else:
             file_list = stage / "files.raw"
-            paths = [row["backup_path"] for row in manifest["files"]] + [manifest_path.as_posix()]
-            file_list.write_bytes(b"\x00".join(path.encode("utf-8") for path in paths) + b"\x00")
+            with file_list.open("xb") as stream:
+                for row in manifest["files"]:
+                    stream.write(row["backup_path"].encode("utf-8") + b"\x00")
+                stream.write(manifest_path.as_posix().encode("utf-8") + b"\x00")
             output = client.run("backup", "--json", "--tag", TAG, "--group-by", "host,tags",
                                 "--files-from-raw", str(file_list))
             summary = _summary(output)
@@ -301,7 +329,7 @@ def _run_locked(config: Config, *, force: bool) -> dict:
                            uploaded_bytes=summary.get("data_added_packed", summary.get("data_added")))
             remote_manifest = manifest
             client.run("check")
-        verify_direct_sources(manifest)
+        verify_direct_sources(manifest, guard=guard_window)
         stats = json.loads(client.run("stats", "--mode", "raw-data", "--json"))
         receipt.update(repository_check="PASS", repository_stored_bytes=stats.get("total_size"))
         due = _restore_due(last, current)
@@ -320,12 +348,14 @@ def _run_locked(config: Config, *, force: bool) -> dict:
         for path in requests:
             path.unlink(missing_ok=True)
         return receipt
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
         receipt.update(result="BLOCKED" if isinstance(error, Blocked) else "FAIL",
                        finished_at=now().isoformat(), error=str(error))
         atomic_json(config.spool / "receipts" / f"{run_id}.{receipt['result']}.json", receipt, immutable=True)
         raise
     finally:
+        close_manifest(manifest)
+        close_manifest(previous_manifest)
         if stage.parent != config.spool or stage.is_symlink():
             raise ValueError("unsafe freeze cleanup target")
         shutil.rmtree(stage)
@@ -371,15 +401,19 @@ def main(argv: list[str] | None = None) -> int:
                 last = _load(config.spool / "latest-verified.json")
                 if not last:
                     raise Blocked("no accepted backup receipt")
-                manifest = _load(config.spool / last["manifest_path"])
                 if digest(config.spool / last["manifest_path"]) != last["manifest_sha256"]:
                     raise ValueError("accepted source manifest hash differs")
-                result = restore_snapshot(config, Restic(config), last["snapshot_id"], manifest,
-                                          full=args.full, manifest_path=config.spool / last["manifest_path"])
+                with tempfile.TemporaryDirectory(prefix="restore-index-", dir=config.spool) as work:
+                    manifest = load_manifest(config.spool / last["manifest_path"], Path(work) / "manifest.sqlite")
+                    try:
+                        result = restore_snapshot(config, Restic(config), last["snapshot_id"], manifest,
+                                                  full=args.full, manifest_path=config.spool / last["manifest_path"])
+                    finally:
+                        close_manifest(manifest)
                 atomic_json(config.spool / "receipts" / ("restore-" + uuid.uuid4().hex + ".json"), result, immutable=True)
         else:
             result = run_backup(config, force=args.force)
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
         result = {"schema": SCHEMA, "result": "BLOCKED" if isinstance(error, Blocked) else "FAIL", "error": str(error)}
     print(json.dumps(result, sort_keys=True))
     return {"PASS": 0, "BLOCKED": 2}.get(result["result"], 1)
