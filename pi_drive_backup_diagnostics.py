@@ -112,6 +112,7 @@ class StderrCapture:
         self.command, self.thread, self.process_pid = command, None, None
         self.total, self.head, self.tail = 0, bytearray(), bytearray()
         self.reader_error, self.finished = False, False
+        self.finish_arguments = None
         self.started = {"schema": "ar-local-drive-command-diagnostic-v1", "command": command,
             "worker_pid": os.getpid(), "supervisor_pid": os.getppid(),
             "operation_id": operation.name if operation else None, "request_sha256": request_hash,
@@ -162,6 +163,11 @@ class StderrCapture:
     def finish(self, exit_code: int | None, *, interrupted=False) -> dict:
         if self.finished:
             return self.summary
+        if self.finish_arguments is None:
+            self.finish_arguments = (exit_code, interrupted)
+        # Context cleanup may retry after an I/O failure. Its unknown status
+        # must not replace the completed child's original exit/interruption.
+        exit_code, interrupted = self.finish_arguments
         if self.thread is not None:
             self.thread.join(timeout=5)
         stopped = self.thread is not None and not self.thread.is_alive()
