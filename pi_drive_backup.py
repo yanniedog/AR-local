@@ -186,7 +186,15 @@ class Restic:
                     process.wait(timeout=15)
                 raise
             finally:
-                diagnostic = capture.finish(process.returncode, interrupted=sys.exc_info()[0] is not None)
+                primary_error = sys.exc_info()[1]
+                try:
+                    diagnostic = capture.finish(process.returncode, interrupted=primary_error is not None)
+                except Exception:
+                    # A secondary evidence failure must not replace the original
+                    # quiet-window, disk-floor or cleanup failure. Neither path
+                    # can reach backup acceptance; the incomplete evidence stays.
+                    if primary_error is None:
+                        raise
             if process.returncode == 11:
                 raise Blocked("repository lock prevents backup; inspect retained resource receipts and live Restic owners before scoped stale-lock recovery; no automatic unlock performed; diagnostic=" + diagnostic["path"])
             if process.returncode != 0:

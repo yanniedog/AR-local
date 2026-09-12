@@ -170,6 +170,20 @@ The daily timer runs at 03:30 Australia/Hobart. A second timer checks every half
 
 The private spool holds immutable RUNNING/PASS/FAIL/BLOCKED receipts and source manifests. `latest-verified.json` identifies the accepted cloud snapshot, source content digest, manifest digest, repository stored bytes, newly uploaded bytes and most recent restore proof. A repository initialization, successful OAuth response, upload alone, or green unit test is not a restore proof. Keep existing backup arrangements until the first cloud restore PASS is observed.
 
+The raw-diagnostic permission guarantee applies to the supported Linux/Pi
+service. Windows mode bits do not establish private ACLs. All supported
+credential-bearing backup commands require the Linux systemd/cgroup supervisor
+before launching Restic; direct use of the internal capture/Restic classes on
+Windows is unsupported. Windows subprocess fixtures contain synthetic transport
+text and do not prove Windows credential custody.
+
+When interruption or cleanup already raised an error, a secondary diagnostic
+failure preserves that original reason and BLOCKED/FAIL status. Any completed
+incomplete-capture receipt remains retained; if the receipt itself cannot be
+written, the initial command record and available private bytes remain and
+completion is unverified. Without an existing error, incomplete capture still
+fails closed. Neither case can advance the accepted backup pointer.
+
 Each Restic command also retains private diagnostics beneath its resource
 operation's `diagnostics/<command-id>/`. `started.json` binds the command, worker,
 parent and original request hash before launch; `process.json` identifies the

@@ -119,7 +119,11 @@ class StderrCapture:
 
     def __exit__(self, kind, _error, _traceback):
         if not self.finished:
-            self.finish(None, interrupted=kind is not None)
+            try:
+                self.finish(None, interrupted=kind is not None)
+            except Exception:
+                if kind is None:
+                    raise
 
     def attach(self, pipe, process_pid: int) -> None:
         if self.thread is not None:
