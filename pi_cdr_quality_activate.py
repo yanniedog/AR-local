@@ -189,6 +189,7 @@ def canary(args) -> dict:
         raise ValueError("canary must use exact clean authoritative main")
     args.operation.mkdir(parents=True, exist_ok=False)
     (args.operation / "tmp").mkdir()
+    (args.operation / "home").mkdir()
     command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect",
                f"--unit=ar-local-quality-canary-{uuid.uuid4().hex[:12]}"]
     current = datetime.now(TZ)
@@ -203,6 +204,9 @@ def canary(args) -> dict:
                   f"ReadWritePaths={args.operation}", "InaccessiblePaths=-/etc/ar-local",
                   "InaccessiblePaths=-/var/lib/ar-local-drive-backup/credentials",
                   "Environment=PYTHONDONTWRITEBYTECODE=1",
+                  f"Environment=HOME={args.operation / 'home'}",
+                  f"Environment=XDG_CONFIG_HOME={args.operation / 'home' / '.config'}",
+                  "Environment=GIT_CONFIG_GLOBAL=/dev/null", "Environment=GIT_CONFIG_NOSYSTEM=1",
                   f"Environment=TMPDIR={args.operation / 'tmp'}",
                   f"Environment=AR_LOCAL_DATA_ROOT={args.operation / 'private-data'}",
                   f"Environment=AR_LOCAL_PORTABLE_ROOT={args.operation / 'private-portable'}",
