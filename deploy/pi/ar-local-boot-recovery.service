@@ -18,6 +18,7 @@ Environment=HOME={{AR_LOCAL_HOME}}
 Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config
 EnvironmentFile=-/etc/ar-local/notify.env
 EnvironmentFile=-/etc/ar-local/app-payload.env
+EnvironmentFile=-/etc/ar-local/drive-backup.env
 ExecStart={{AR_LOCAL_REPO}}/deploy/pi/ar-local-boot-recovery.sh
 
 [Install]

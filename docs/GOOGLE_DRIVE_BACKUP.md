@@ -10,14 +10,59 @@ The source includes `runs`, `runs-archive`, `state`, `logs` and `predeploy`, inc
 
 The worker acquires the shared ingest lock only for a bounded source freeze. Immutable run files retain their original paths and are checked for changes after upload. Mutable state and logs are copied to a private spool outside the authoritative data root. SQLite databases with retained WAL/journal files are copied privately before SQLite backup merges committed changes. Original main/WAL/journal bytes are also retained under `sqlite-original/` for historical artifact reconstruction. Shared-memory files are disposable and excluded. Nothing opens the production SQLite databases for writes.
 
-The ingest lock is released before network upload, repository checking or restore. Restic is limited to two Go workers, 8 MiB/s network bandwidth and two transfers; the service adds CPU, memory and I/O limits. Source freezing has a 20-minute limit and stops before the 00:30–03:30 Hobart ingest quiet window. Uploads crossing that window are terminated safely and retried later. A 2 GiB free-space floor protects the private spool; a restore also requires room for its selected data. Interrupted or rejected uploads never advance `latest-verified.json` or acknowledge queued requests.
+The ingest lock is released before network upload, repository checking or restore. Restic is limited to two Go workers, 8 MiB/s network bandwidth and two transfers; the service adds CPU and I/O scheduling limits. Source freezing has a 20-minute limit and stops before the 00:30–03:30 Hobart ingest quiet window. Uploads crossing that window are terminated safely and retried later. A 2 GiB free-space floor protects the private spool; a restore also requires room for its selected data. Interrupted or rejected uploads never advance `latest-verified.json` or acknowledge queued requests.
 
-Live commissioning on 2026-09-12 found that this Pi kernel has no memory cgroup
-controller, so the unit's MemoryHigh/MemoryMax settings are not enforced there.
-Keep backup timers disabled until a Drive-specific monitored memory budget has
-been reviewed and verified on this host, in addition to OAuth and full restore.
-The canary supervisor's per-process address-space limit must not be copied
-blindly to Restic/rclone: their Go runtimes require separate validation.
+The Pi kernel checked on 2026-09-12 has no memory cgroup controller or memory
+PSI file, so MemoryHigh/MemoryMax/MemorySwapMax are not enforced there. The Drive
+controller instead samples the aggregate RSS and swap of **every process in its
+isolated, undelegated systemd cgroup**, including detached Restic/rclone children,
+at 100 ms intervals. It refuses a sample gap over two seconds, any workload swap,
+any new host swap-out, host headroom below 2.5 GiB, or aggregate RSS reaching
+640 MiB. That is a 128 MiB early-stop margin below the 768 MiB workload budget;
+admission reserves another 768 MiB above the 2.5 GiB host floor. A total of at most
+16 MiB cold host swap-in is tolerated over the whole operation, using the host's
+actual page size (16 KiB here). Missing/reset/malformed counters fail closed.
+PSI is used when present and explicitly reported unavailable otherwise.
+
+This is **sampled containment**, not a hard aggregate allocation limit. Memory
+can grow between samples; receipts retain the measured peak, largest sampling
+gap and overshoot. RSS double-counts shared pages conservatively. The unit keeps
+CPUQuota=100%, IOWeight=10 and TasksMax=64; I/O weight is scheduling priority, not
+a hard bandwidth cap. Undelegated read-only control groups, restricted namespaces,
+empty capabilities and KillMode=control-group prevent untracked detached work.
+Stable pidfds terminate children on failure and cleanup must finish before PASS.
+The 20-hour whole-operation deadline and quiet-window guard cover source freeze,
+uploads, repository checks, restore and worker cleanup.
+
+Restic and rclone receive GOMAXPROCS=2, GOGC=50 and **GOMEMLIMIT=192MiB per
+process**. GOMEMLIMIT is a soft Go runtime target, not the acceptance boundary;
+the independent supervisor includes native allocations and all other processes.
+There is deliberately no RLIMIT_AS/LimitAS: Go reserves virtual address space
+that is much larger than resident memory. See the [Go memory limit guidance](https://go.dev/doc/gc-guide#Memory_limit).
+
+The worker emits only a candidate. Its parent retains the backup operation lock
+until the whole worker has exited and descendants are gone, then validates and
+hash-binds the candidate, request and resource receipt before updating
+`latest-verified.json` or acknowledging exactly the captured queue UUIDs.
+The next run, including same-day NO_WORK, revalidates these hashes and bounds.
+Old receipts without resource proof remain historical evidence and cannot be
+silently accepted. Failed resource attempts remain under `resource-runs/`.
+No natural schedule, cloud transfer or restore is proven by a local resource test.
+
+If termination leaves a repository lock, Restic exit 11 is retained as actionable
+**BLOCKED** with queue requests and the previous verified pointer preserved.
+This interface does not automatically unlock: a matching stale lock cannot be
+proven solely from a killed local process if another host may own the repository.
+Inspect the retained resource receipt, repository lock owner/hostname/time and
+live processes before an operator performs scoped recovery. Never use broad
+unlock, `--remove-all`, `--no-lock` or disregard a live lock. The exit-code mapping
+is documented by [Restic](https://restic.readthedocs.io/en/v0.18.0/075_scripting.html).
+
+Excluded directories are pruned before traversal and recorded as excluded
+namespaces. Content identity includes mode, uid and gid as well as path, bytes
+and size, so metadata-only changes produce a fresh manifest/snapshot. Original
+metadata is retained in the manifest even when a private SQLite copy has the
+service user's ownership; restoring original ownership remains an operator step.
 
 Inventories and collision checks use a private SQLite index with a 2 MiB page
 cache. Manifest JSON remains portable and unchanged in shape, but it is written
@@ -42,7 +87,14 @@ Install Restic with repository-v2/compression support and rclone on the Pi using
 sudo bash deploy/pi/install-drive-backup.sh /srv/ar-local/AR-local pi /srv/ar-local/data /var/lib/ar-local-drive-backup
 ```
 
-The installer writes only the three named systemd units and a non-secret environment file. It leaves both timers disabled. Credentials live in `/var/lib/ar-local-drive-backup/credentials`, owned by `pi`, mode 0700; individual credential files use 0600.
+The installer writes the three named backup units, a non-secret environment file,
+and a `drive-backup.conf` environment drop-in for each of the daily, forced,
+watchdog and boot-recovery ingest services. These producers inherit only backup
+configuration paths and can queue terminal events without opening credentials.
+The installer does not start or enable timers. On the uncommissioned Pi checked
+on 2026-09-12 both timer names were **NOT_FOUND**, not verified installed/disabled.
+Credentials live in `/var/lib/ar-local-drive-backup/credentials`, owned by `pi`,
+mode 0700; individual credential files use 0600.
 
 Create the Restic encryption password as the service user. The helper never prints the password and refuses to replace an existing file:
 
@@ -71,16 +123,29 @@ The remote requests only `drive.file`. Let this rclone identity create the dedic
 
 ## Commission and enable
 
-As the service user, load the installed non-secret configuration, verify prerequisites, initialize the dedicated encrypted repository, and run the first backup:
+Local readiness does not start a backup. Every command that accesses the
+repository (`init`, remote readiness, `run`, `restore`) must run in the installed
+backup service or an equally isolated commissioning service; a direct SSH
+invocation fails closed. For one-time commissioning, use this bounded shell
+function with the approved runtime and installed configuration:
 
 ```sh
-set -a
-. /etc/ar-local/drive-backup.env
-set +a
-python3 pi_drive_backup.py readiness
-python3 pi_drive_backup.py init
-python3 pi_drive_backup.py readiness --remote
-python3 pi_drive_backup.py run --force --control-file /srv/ar-local/AR-local/docs/GOOGLE_DRIVE_BACKUP.md
+drive_commission() {
+  sudo systemd-run --unit="ar-local-drive-commission-$(date +%s)" --wait --collect --pipe \
+    -p User=pi -p Group=pi -p WorkingDirectory=/srv/ar-local/AR-local \
+    -p EnvironmentFile=/etc/ar-local/drive-backup.env -p UMask=0077 \
+    -p CPUQuota=100% -p IOWeight=10 -p TasksMax=64 -p Nice=15 -p IOSchedulingClass=idle \
+    -p MemoryHigh=512M -p MemoryMax=768M -p MemorySwapMax=0 -p OOMPolicy=stop \
+    -p NoNewPrivileges=yes -p PrivateTmp=yes -p ProtectSystem=strict -p ProtectHome=yes \
+    -p ProtectControlGroups=yes -p RestrictNamespaces=yes -p CapabilityBoundingSet= \
+    -p KillMode=control-group -p TimeoutStartSec=20h -p TimeoutStopSec=30s \
+    -p 'ReadWritePaths=/var/lib/ar-local-drive-backup /srv/ar-local/data/state' \
+    /usr/bin/python3 /srv/ar-local/AR-local/pi_drive_backup.py "$@"
+}
+drive_commission readiness
+drive_commission init
+drive_commission readiness --remote
+sudo systemctl start ar-local-drive-backup.service
 ```
 
 `--control-file` requires an absolute canonical path; adjust the example if the approved runtime differs. The installed service already supplies absolute paths for its documented control files. `init` is only for the first repository creation; a rerun against an existing repository is expected to fail rather than reset it.
@@ -88,7 +153,7 @@ python3 pi_drive_backup.py run --force --control-file /srv/ar-local/AR-local/doc
 The first accepted backup must include a full cloud download to an isolated directory, SHA-256 verification of every restored file, and SQLite `integrity_check` plus `foreign_key_check`. The normal service performs this automatically before writing its first PASS receipt. Later runs check the repository each day; every seven days they also restore current data, all state, and a rotating historical date. An explicit full restore remains available:
 
 ```sh
-python3 pi_drive_backup.py restore --full
+drive_commission restore --full
 ```
 
 After the first full restore PASS, start the installed service once (its control-file set also becomes part of the snapshot), inspect its final receipt, then enable both timers:

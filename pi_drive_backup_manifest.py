@@ -154,7 +154,7 @@ def content_digest(rows) -> str:
     for offset, row in enumerate(rows):
         if offset:
             value.update(b",")
-        value.update(encoded({key: row[key] for key in ("logical_path", "sha256", "size")}))
+        value.update(encoded({key: row[key] for key in ("logical_path", "sha256", "size", "mode", "uid", "gid")}))
     value.update(b"]\n")
     return value.hexdigest()
 

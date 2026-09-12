@@ -153,16 +153,21 @@ def _journal_identity(source: Path) -> dict:
             if (path := Path(str(source) + suffix)).exists()}
 
 
-def _regular_tree(root: Path, guard: Callable[[], None]):
+def _regular_tree(root: Path, guard: Callable[[], None], *, data: Path, omit):
     """Walk a directory at a time; never materialize the retained file tree."""
     with os.scandir(root) as entries:
         for entry in entries:
             guard()
             path = Path(entry.path)
+            if excluded(path.relative_to(data)):
+                # Excluded namespaces must never be traversed, even to list
+                # secret filenames or inspect an inaccessible descendant.
+                omit(path.relative_to(data).as_posix())
+                continue
             if entry.is_symlink():
                 raise ValueError(f"symlink in backup scope: {path}")
             if entry.is_dir(follow_symlinks=False):
-                yield from _regular_tree(path, guard)
+                yield from _regular_tree(path, guard, data=data, omit=omit)
             else:
                 regular(path)
                 yield path
@@ -196,7 +201,7 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
         result["scope"] = scope.manifest()
         def sources():
             for root in scope.included:
-                for path in _regular_tree(root, check):
+                for path in _regular_tree(root, check, data=data, omit=index.exclude):
                     relative = path.relative_to(data)
                     if excluded(relative):
                         index.exclude(relative.as_posix())

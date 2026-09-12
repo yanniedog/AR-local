@@ -14,6 +14,8 @@ import pytest
 import pi_drive_backup as backup
 import pi_drive_backup_source as source
 import pi_drive_backup_enroll as enroll
+import pi_drive_backup_controller as controller
+import pi_drive_backup_resources as resources
 from ar_local_operation_lock import production_lock
 
 
@@ -215,6 +217,24 @@ def transport(layout, monkeypatch):
     monkeypatch.setattr(backup, "Restic", lambda _config: client)
     monkeypatch.setattr(backup.shutil, "which", lambda _value: "/test/executable")
     monkeypatch.setattr(backup, "now", lambda: datetime(2026, 9, 11, 4, 0, tzinfo=backup.TZ))
+    def local_worker(config, command, *, force, full, operation):
+        # Transport/process boundary fixture only. Linux resource faults and
+        # actual Restic/rclone are verified separately; this is not cloud proof.
+        from dataclasses import asdict
+        host = {"available_bytes": 6 * 1024**3, "swap_in_pages": 0, "swap_out_pages": 0,
+                "page_size_bytes": 16384, "psi_avg10": None}
+        resource_receipt = {"schema": resources.SCHEMA, "result": "PASS", "mode": "sampled_cgroup_rss",
+            "limits": asdict(resources.Limits()), "samples": 2, "peak_rss_bytes": 1000,
+            "minimum_available_bytes": host["available_bytes"], "maximum_sample_gap_seconds": .1,
+            "group_clean": True, "workload_exit_code": 0, "page_size_bytes": 16384,
+            "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0, "elapsed_seconds": 1,
+            "baseline": host, "last_host_sample": host}
+        result = backup._run_locked(config, force=force)
+        backup.atomic_json(operation / "candidate.json", result)
+        backup.atomic_json(operation / "request.json", {"fixture": "transport boundary"})
+        backup.atomic_json(operation / "resources.json", resource_receipt)
+        return result
+    monkeypatch.setattr(controller, "execute_worker", local_worker)
     return client
 
 
@@ -232,6 +252,125 @@ def test_initial_restore_then_unchanged_and_control_only_update(layout, transpor
     third = backup.run_backup(layout, force=True)
     assert third["action"] == "BACKUP"
     assert third["content_sha256"] != first["content_sha256"]
+
+
+def test_permissions_only_change_creates_a_fresh_manifest_and_snapshot(layout, transport):
+    first = backup.run_backup(layout, force=True)
+    path = layout.data / "runs/2026-09-10/_exports/local-cdr.sqlite"
+    before = path.stat().st_mode
+    try:
+        path.chmod(0o444)
+        second = backup.run_backup(layout, force=True)
+        assert second["action"] == "BACKUP"
+        assert second["content_sha256"] != first["content_sha256"]
+        assert second["manifest_sha256"] != first["manifest_sha256"]
+    finally:
+        path.chmod(before)
+
+
+@pytest.mark.parametrize("key,replacement", [("mode", "0o600"), ("uid", 1001), ("gid", 1001)])
+def test_metadata_is_part_of_snapshot_identity(key, replacement):
+    from pi_drive_backup_manifest import content_digest
+    row = {"logical_path": "data/state/status.json", "sha256": "a" * 64,
+           "size": 10, "mode": "0o640", "uid": 1000, "gid": 1000}
+    assert content_digest([row]) != content_digest([{**row, key: replacement}])
+
+
+def test_excluded_namespace_is_pruned_before_scandir(layout, monkeypatch):
+    private = layout.data / "state/credentials"
+    private.mkdir()
+    (private / "should-never-be-listed").write_text("private")
+    original = source.os.scandir
+    def scandir(path):
+        if Path(path) == private:
+            pytest.fail("excluded directory was traversed")
+        return original(path)
+    monkeypatch.setattr(source.os, "scandir", scandir)
+    manifest = source.freeze(layout.data, layout.spool / "stage", controls=[], guard=lambda: None)
+    try:
+        assert "state/credentials" in manifest["excluded"]
+        assert not any("credentials" in row["logical_path"] for row in manifest["files"])
+    finally:
+        backup.close_manifest(manifest)
+
+
+def test_all_ingest_entry_units_receive_nonsecret_queue_configuration():
+    root = Path(__file__).resolve().parents[1] / "deploy/pi"
+    installer = (root / "install-drive-backup.sh").read_text()
+    for unit in ("ar-local-daily.service", "ar-local-ingest-now.service", "ar-local-daily-watchdog.service", "ar-local-boot-recovery.service"):
+        assert "EnvironmentFile=-/etc/ar-local/drive-backup.env" in (root / unit).read_text()
+        assert unit in installer
+    assert "EnvironmentFile=-/etc/ar-local/drive-backup.env" in installer
+
+
+def test_late_resource_failure_never_accepts_candidate_or_acks_requests(layout, transport, monkeypatch):
+    first = backup.run_backup(layout, force=True)
+    queued = backup.request_backup("repair", spool=layout.spool)
+    execute = controller.execute_worker
+    def late_failure(*args, **kwargs):
+        result = execute(*args, **kwargs)
+        path = kwargs["operation"] / "resources.json"
+        proof = json.loads(path.read_text())
+        proof.update(result="FAIL", reason="aggregate_rss_early_stop")
+        backup.atomic_json(path, proof)
+        return result
+    monkeypatch.setattr(controller, "execute_worker", late_failure)
+    with pytest.raises(ValueError, match="resource receipt"):
+        backup.run_backup(layout, force=True)
+    assert queued.exists()
+    assert backup._load(layout.spool / "latest-verified.json") == first
+    assert len(list((layout.spool / "receipts").glob("*.PASS.json"))) == 1
+
+
+def test_tampered_resource_evidence_rejects_same_day_no_work(layout, transport):
+    first = backup.run_backup(layout, force=True)
+    resource = layout.spool / first["resource_evidence"]["path"] / "resources.json"
+    resource.write_text('{}')
+    with pytest.raises(ValueError, match="resource evidence hash"):
+        backup.run_backup(layout)
+
+
+def test_repository_lock_exit_is_actionable_blocked_without_unlock(layout, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(backup, "guard_window", lambda: None)
+    commands = []
+    def spawn(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(poll=lambda: 11, returncode=11)
+    monkeypatch.setattr(backup.subprocess, "Popen", spawn)
+    with pytest.raises(backup.Blocked, match="repository lock.*no automatic unlock"):
+        backup.Restic(layout).run("check")
+    assert len(commands) == 1 and commands[0][-1] == "check"
+
+
+def test_controller_preserves_explicit_worker_lock_block(layout, monkeypatch):
+    operation = layout.spool / "resource-runs" / ("f" * 32)
+    operation.mkdir(parents=True)
+    def failed(command, output, **kwargs):
+        backup.atomic_json(operation / "candidate.json", {"result": "BLOCKED", "error": "repository lock requires inspection"})
+        return {"result": "FAIL", "group_clean": True, "workload_exit_code": 2,
+                "reason": "RuntimeError: workload_failed_or_left_descendants"}
+    monkeypatch.setattr(controller, "supervise", failed)
+    with pytest.raises(backup.Blocked, match="repository lock requires inspection"):
+        controller.execute_worker(layout, "run", force=True, full=False, operation=operation)
+    assert not (layout.spool / "latest-verified.json").exists()
+
+
+def test_controller_preserves_admission_block_without_starting_work(layout, monkeypatch):
+    operation = layout.spool / "resource-runs" / ("e" * 32)
+    operation.mkdir(parents=True)
+    monkeypatch.setattr(controller, "supervise", lambda *_a, **_kw: {"result": "BLOCKED", "reason": "host_reserve_headroom"})
+    with pytest.raises(backup.Blocked, match="host_reserve_headroom"):
+        controller.execute_worker(layout, "run", force=True, full=False, operation=operation)
+    assert not (operation / "candidate.json").exists()
+
+
+@pytest.mark.parametrize("command,call", [("init", ("init", "--repository-version", "2")),
+                                        ("readiness", ("cat", "config"))])
+def test_protected_nonbackup_worker_actions_do_not_accept_a_backup(layout, transport, command, call):
+    result = controller.worker_action(layout, {"command": command})
+    assert result["result"] == "PASS" and transport.calls == [call]
+    assert not (layout.spool / "latest-verified.json").exists()
 
 
 @pytest.mark.parametrize("phase", ["backup", "check", "restore"])
@@ -428,6 +567,7 @@ def test_streamed_json_and_content_digest_match_existing_wire_format(tmp_path):
     index = ManifestIndex(tmp_path / "manifest-index.sqlite")
     rows = [{"logical_path": "data/state/first.json", "sha256": "0" * 64, "size": 1},
             {"logical_path": "data/state/second.json", "sha256": "1" * 64, "size": 2}]
+    rows = [{**row, "mode": "0o640", "uid": 1000, "gid": 1000} for row in rows]
     document = {"schema": source.SCHEMA, "files": index.rows(), "excluded": index.rows("excluded")}
     try:
         for row in reversed(rows):

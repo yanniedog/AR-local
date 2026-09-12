@@ -1,0 +1,12 @@
+{
+  "result": "PASS",
+  "scope": "tiny local Restic plus rclone backend; no cloud or production data",
+  "snapshots": 2,
+  "file_sha256": {
+    "eight-mib.bin": "f2f8a54ac4f9ecb39b4bd2694d8ebfdfe8e2fd1c5b12b08d44db835d02b986fb",
+    "resource-probe.sqlite": "7648d46b8dfe7f1c0e78a23280d555df9952328c7145754ea7bc7d8605aeb850"
+  },
+  "first_added_packed": 8392250,
+  "second_added_packed": 2940,
+  "sqlite_integrity": "ok"
+}
