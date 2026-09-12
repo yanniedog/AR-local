@@ -299,8 +299,9 @@ def test_success_keeps_exact_candidate_and_no_backup_claim(runtime):
 def test_rollback_failure_does_not_erase_original_activation_reason(runtime, monkeypatch):
     args, state = runtime
     state["verify_failure"] = True
-    def smoke(_source, *, operation, phase):
+    def smoke(_source, *, operation, phase, commit, files):
         assert operation.name.startswith("activation-")
+        assert commit == TARGET and files == evidence.read(args.manifest)["source_files"]
         if phase == "rollback":
             raise RuntimeError("rollback endpoint failure")
     monkeypatch.setattr(activate, "smoke", smoke)
@@ -349,8 +350,9 @@ def test_rollback_uses_sealed_verifier_without_requiring_fresh_admission(runtime
     def verify(*_args, **kwargs):
         assert kwargs["verifier_source"] == source
         raise RuntimeError("post-switch endpoint failed")
-    def smoke(verifier_source, *, operation, phase):
+    def smoke(verifier_source, *, operation, phase, commit, files):
         assert verifier_source == source
+        assert commit == TARGET and files == evidence.read(args.manifest)["source_files"]
         phases.append(phase)
     monkeypatch.setattr(activate, "activation_admission", admission)
     monkeypatch.setattr(activate, "verify_runtime", verify)

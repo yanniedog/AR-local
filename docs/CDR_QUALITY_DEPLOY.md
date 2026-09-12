@@ -278,8 +278,12 @@ subprocess deadline. Only the three `/api/banks/history/section` requests use a
 90-second socket/header wait to allow a cold history build; other requests and the
 verifier's default remain 30 seconds. All endpoint and content checks still apply.
 Timestamped progress is written live to `activation-UUID/smoke/`, with create-once
-phase receipts binding the logs and candidate verifier hash. Failures identify
-the phase, output path and failed check; a rollback failure also retains the
+phase receipts binding the logs and candidate verifier hash.
+Before and after each successful readiness/verifier execution, activation checks
+the candidate's clean exact commit and complete file inventory against the seal.
+A changed verifier or imported source module fails that phase and cannot yield
+acceptance, including in rollback. Each phase records the sealed inventory digest.
+Failures identify the phase, output path and failed check; a rollback failure also retains the
 original activation error. These bounds require subsequent cold Pi runtime proof.
 
 A post-switch failure attempts rollback to the retained exact predecessor,
