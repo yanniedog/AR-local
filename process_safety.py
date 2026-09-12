@@ -12,19 +12,21 @@ def process_alive(pid: int) -> bool:
     if os.name == "nt":
         import ctypes
 
+        if pid > 0xFFFFFFFF:
+            return False
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
         kernel.OpenProcess.restype = ctypes.c_void_p
-        kernel.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+        kernel.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        kernel.WaitForSingleObject.restype = ctypes.c_uint32
         kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
-        handle = kernel.OpenProcess(0x1000, False, pid)
+        handle = kernel.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE only
         if not handle:
-            return ctypes.get_last_error() == 5
+            return ctypes.get_last_error() != 87  # Only invalid PID proves absence.
         try:
-            exit_code = ctypes.c_uint32()
-            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and (
-                exit_code.value == 259
-            )
+            # A signalled process handle means it exited, including exit code 259.
+            # Access/wait failures conservatively retain the live-owner guard.
+            return kernel.WaitForSingleObject(handle, 0) != 0
         finally:
             kernel.CloseHandle(handle)
     try:

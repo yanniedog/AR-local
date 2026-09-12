@@ -30,6 +30,7 @@ from cdr_recovery_legacy import legacy_recovery_requests, terminal_index_failure
 from cdr_reuse_identity import captured_provider_directories
 from pi_cdr_recovery_probe import current_target_url, probe_register, probe_request
 from pi_cdr_selection_recovery import reconsider_saved_selection
+from process_safety import process_alive
 
 HOBART = ZoneInfo("Australia/Hobart")
 MAX_PROBES_PER_TICK = 4
@@ -119,6 +120,8 @@ def _lock_owner_may_be_active(path: Path) -> bool:
         pid = int(values.get("pid", "0"))
         if pid <= 0:
             return True
+        if os.name == "nt":
+            return process_alive(pid)
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
