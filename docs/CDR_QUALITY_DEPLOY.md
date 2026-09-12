@@ -43,11 +43,64 @@ digests and product detail equality. No simulated business data is acceptance.
 
 The canary systemd scope has read-only candidate/production/data mounts, a private
 writable temporary directory for SQLite WAL recovery, no network, no production
-environment file, no Drive credentials, and private derived output. Limits are
-3 GiB RAM, no swap, two CPU cores and 90 minutes maximum, shortened to finish
-before 22:00 Hobart. Start checks require the 03:30–22:00 window, idle ingest,
-no old backup stream, at least 8 GiB free disk, at least 2 GiB available memory
-and memory PSI avg10 below 10%. A resource or dependency failure stays BLOCKED.
+environment file, no Drive credentials, and private derived output. CPU is capped
+at two cores, process count at 256, I/O weight remains 10 and runtime is at most
+90 minutes, shortened to finish before 22:00 Hobart. Start checks require the
+03:30–22:00 window, idle ingest and at least 8 GiB free disk. A resource or
+dependency failure stays BLOCKED.
+
+The Pi kernel may lack both the memory cgroup controller and memory PSI. The
+helper does not claim an ineffective `MemoryMax` protects the workload. It always
+runs `pi_cdr_quality_resources.py` inside the same undelegated systemd cgroup as
+the worker. On kernels supporting memory cgroups, it additionally retains the
+3 GiB `MemoryMax` and zero `MemorySwapMax` protections. On this Pi it records the
+kernel memory limit and PSI as unavailable, without enabling kernel features or
+rebooting. The supervisor:
+
+- Requires 5.5 GiB MemAvailable at workload admission: the 3 GiB workload budget,
+  2 GiB host reserve and 512 MiB reaction margin. Activation/preflight alone
+  requires the reserve and margin. Any new host swap-in or swap-out activity
+  blocks admission or terminates the canary; existing inactive swap is disclosed
+  rather than claimed absent.
+- Reads every member's accurate `/proc/PID/smaps_rollup` RSS approximately every
+  100 ms, including detached/orphaned children. Shared pages are counted once per
+  process, conservatively overestimating workload RSS. It stops at 2.5 GiB summed
+  RSS or below 2.5 GiB host availability, with a 512 MiB reaction margin relative
+  to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, workload swap,
+  new host swap activity, PSI avg10 at least 10% when available, or a sample gap
+  beyond two seconds all fail closed.
+- Applies a hard inherited 3 GiB **per-process virtual address-space** limit,
+  which children cannot raise. Namespace creation, privilege gain and cgroup
+  delegation are disabled; CPU, I/O and process-count controls remain in force.
+- Signals stable pidfd handles, verifies all workload processes are gone, and
+  rejects an otherwise successful parent that leaves descendants. Systemd
+  `KillMode=control-group` also bounds cleanup if the supervisor itself fails.
+
+This fallback is **sampled RSS containment, not a hard aggregate memory cap**.
+Simultaneous allocations can overshoot between samples; the receipt retains the
+observed overshoot and largest sampling gap. RSS does not charge filesystem page
+cache or all kernel allocations; host MemAvailable/swap checks add a separate
+guard. The conservative admission and early-stop margins reduce these risks but
+cannot reproduce an unavailable kernel controller's instantaneous guarantee.
+Unexpected load or a workload that cannot fit must remain blocked; do not reduce
+the host reserve or bypass the supervisor to finish a canary.
+
+`resources.json` must record complete successful supervision before the parent
+writes `canary.json`. Worker output alone (`canary-worker.json`) cannot satisfy
+sealing. Seal and activation verify the retained resource receipt hash and its
+terminal result. A failed resource fixture is expected rejection evidence, never
+a passing application canary. The bounded process-only fixture is
+`tests/fixtures/canary_resource_fixture.py`; it uses no business data.
+
+On 2026-09-12 the private Pi resource tests retained under
+`/srv/ar-local/canary/quality-resource-test-20260912-1835/output` verified normal
+exit, hard address-space denial, read-only source mounts, detached aggregate
+memory rejection, orphan cleanup and timeout cleanup in the canary sandbox.
+Read `final-verification.json` for exact measured peaks, overshoot, hashes and
+post-exit PID checks. This small controlled proof does not replace the subsequent
+full current-data canary. Drive resource enforcement remains separate: Go-based
+Restic/rclone virtual-address requirements need their own measured budget before
+reusing an address-space limit; no backup commissioning is inferred here.
 
 ## Private canary and historical dispositions
 
@@ -121,7 +174,7 @@ Producer binding JSON has these fields:
 Replace the empty objects with actual file references. Include every additional
 effective required context in `required_checks`. Raw endpoints are
 `repos/yanniedog/AR-local/pulls/PR`, `branches/main/protection`,
-`branches/main/rules`, `commits/PR_HEAD/check-runs?per_page=100`, and
+`rules/branches/main`, `commits/PR_HEAD/check-runs?per_page=100`, and
 `commits/PR_HEAD/status?per_page=100`, all below the same repository prefix.
 Wrap the raw rules array once as `{"rules": [...]}`. Collect all pages when
 necessary: total counts must equal retained item counts. Retain GraphQL

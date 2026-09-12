@@ -1,0 +1,320 @@
+{
+  "scope": "PRIVATE_DIAGNOSTIC_ONLY",
+  "producer_commit": "afca9efba6376022d1cdce2539f8c4d622f6173c",
+  "app_commit": "aa14e91eaab9a8b407869de236693bf203152769",
+  "audited_at": "2026-09-12T08:26:50.131Z",
+  "source_generation": "obs-2026-09-12-0851edcd79a16267",
+  "source_sha256": "732abfdd5a446bb08b94e0f19f86193f2de1752ad345c5295805eb8e08efe9f5",
+  "candidate_manifest_sha256": "8e63b275efd5bb704b3421687850edb10397ac49500a50af3276da6c6b3821c2",
+  "app_audit_sha256": "4cd120dc9d97569f6043e58ae8cc8538c6e0b1750dcec913e7affe8559434e18",
+  "reconciliation_sha256": "e9dc3c6c3848a62b1eeb47da8ac3e69c1d0aeaa0f8c92ba8278355715143ff70",
+  "changed_products": 13,
+  "changed_rates": 25,
+  "unchanged_source_rows": {
+    "products": {
+      "count": 2717,
+      "before_sha256": "67f8b41c237a93c8b50fcf2a6c0f9fff4541fa9318f4f9a9b29916877424c5dd",
+      "after_sha256": "67f8b41c237a93c8b50fcf2a6c0f9fff4541fa9318f4f9a9b29916877424c5dd",
+      "canonical_bytes_identical": true
+    },
+    "rates": {
+      "count": 16708,
+      "before_sha256": "7c11b699b876b12e1dbaba9dd1686605e66f5a978f4f9ce0de368db71f93359a",
+      "after_sha256": "7c11b699b876b12e1dbaba9dd1686605e66f5a978f4f9ce0de368db71f93359a",
+      "canonical_bytes_identical": true
+    }
+  },
+  "section_counts": {
+    "Mortgage": 8040,
+    "Savings": 2092,
+    "TD": 6414
+  },
+  "accounting": {
+    "schema_version": 1,
+    "source_products": 2730,
+    "source_rates": 16733,
+    "published_rates": 16546,
+    "excluded_rates": 187,
+    "exclusions": {
+      "discount_not_absolute_rate": 157,
+      "out_of_section_category": 30
+    },
+    "published_products": 2569,
+    "products_without_published_rates": 161,
+    "providers_with_products": 104,
+    "providers_with_published_rates": 100,
+    "sections": {
+      "Mortgage": {
+        "source_rates": 8225,
+        "published_rates": 8040,
+        "excluded_rates": 185,
+        "exclusions": {
+          "discount_not_absolute_rate": 157,
+          "out_of_section_category": 28
+        },
+        "published_products": 1283,
+        "published_providers": 90
+      },
+      "Savings": {
+        "source_rates": 2092,
+        "published_rates": 2092,
+        "excluded_rates": 0,
+        "exclusions": {},
+        "published_products": 714,
+        "published_providers": 98
+      },
+      "TD": {
+        "source_rates": 6416,
+        "published_rates": 6414,
+        "excluded_rates": 2,
+        "exclusions": {
+          "out_of_section_category": 2
+        },
+        "published_products": 572,
+        "published_providers": 84
+      },
+      "Other": {
+        "source_rates": 0,
+        "published_rates": 0,
+        "excluded_rates": 0,
+        "exclusions": {},
+        "published_products": 0,
+        "published_providers": 0
+      }
+    }
+  },
+  "app_status": "WARN",
+  "app_checks": [
+    {
+      "id": "data-source-state",
+      "code": "data-source-state",
+      "label": "Data source state",
+      "domain": "data-completeness",
+      "status": "pass",
+      "metrics": {
+        "source": "private_candidate",
+        "coreAvailable": true
+      },
+      "summary": "Candidate bytes were read locally; public publication and index selection were not checked."
+    },
+    {
+      "id": "manifest-contract",
+      "code": "manifest-contract",
+      "label": "Manifest contract",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "manifestAvailable": true,
+        "schemaSupported": true,
+        "repoMatches": true,
+        "tagMatches": true,
+        "appCompatible": true,
+        "validRunDate": true,
+        "validGeneratedAt": true,
+        "violations": 0
+      }
+    },
+    {
+      "id": "core-schema",
+      "code": "core-schema",
+      "label": "Core payload schema",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "coreAvailable": true,
+        "schemaVersion": 1,
+        "schemaSupported": true
+      }
+    },
+    {
+      "id": "asset-descriptors",
+      "code": "asset-descriptors",
+      "label": "Asset descriptors",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "requiredAssets": 2,
+        "invalidRequired": 0,
+        "optionalAssets": 5,
+        "missingOptional": 0,
+        "invalidOptional": 0
+      }
+    },
+    {
+      "id": "payload-run-identity",
+      "code": "payload-run-identity",
+      "label": "Payload run identity",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "validCoreRunDate": true,
+        "comparisons": 2,
+        "mismatches": 0,
+        "indexLag": false
+      }
+    },
+    {
+      "id": "required-sections",
+      "code": "required-sections",
+      "label": "Required rate sections",
+      "domain": "data-completeness",
+      "status": "pass",
+      "metrics": {
+        "requiredSections": 3,
+        "missingSections": 0,
+        "emptySections": 0,
+        "rateRows": 16546
+      }
+    },
+    {
+      "id": "rate-values",
+      "code": "rate-values",
+      "label": "Finite rate values",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "rows": 16546,
+        "invalidHeadlineRates": 0,
+        "invalidOptionalRates": 0
+      }
+    },
+    {
+      "id": "exact-tier-identities",
+      "code": "exact-tier-identities",
+      "label": "Exact tier identities",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "products": 2569,
+        "missingProductKeys": 0,
+        "missingRowIdentity": 0,
+        "ineligibleExactRows": 0,
+        "ambiguousMultiTierProducts": 0,
+        "duplicateExactTiers": 0
+      }
+    },
+    {
+      "id": "taxonomy-roots",
+      "code": "taxonomy-roots",
+      "label": "Taxonomy roots",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "rows": 16546,
+        "missingTaxonomy": 0,
+        "wrongRoot": 0
+      }
+    },
+    {
+      "id": "ribbon-reconciliation",
+      "code": "ribbon-reconciliation",
+      "label": "Rate summary reconciliation",
+      "domain": "data-integrity",
+      "status": "pass",
+      "metrics": {
+        "checkedSections": 3,
+        "invalidSections": 0,
+        "nonPositiveRateRows": 469,
+        "accountingPresent": true,
+        "accountingValid": true,
+        "explainedSourceRateExclusions": 187,
+        "explainedProductsWithoutRates": 161,
+        "declaredCountComparisons": 2,
+        "declaredCountAdjustments": 2,
+        "declaredCountMismatches": 0,
+        "quarantinedRows": 0,
+        "quarantineImpactsAvailable": true,
+        "quarantineRateImpact": 0,
+        "quarantineProductImpact": 0,
+        "quarantineProviderImpact": 0
+      }
+    },
+    {
+      "id": "coverage-reconciliation",
+      "code": "coverage-reconciliation",
+      "label": "Producer coverage",
+      "domain": "data-completeness",
+      "status": "warn",
+      "metrics": {
+        "coverageAvailable": true,
+        "providersAttempted": 117,
+        "providersSucceeded": 111,
+        "providersFailed": 6,
+        "providersPartial": 5,
+        "limitations": 0,
+        "invalidCounts": false
+      },
+      "summary": "The producer reported failed, partial, or limited coverage."
+    },
+    {
+      "id": "quarantine-impact",
+      "code": "quarantine-impact",
+      "label": "Quarantine impact",
+      "domain": "data-completeness",
+      "status": "pass",
+      "metrics": {
+        "evidenceAvailable": true,
+        "quarantinedRows": 0,
+        "quarantinedBankHistoryPairs": 0,
+        "quarantineReasons": 1
+      }
+    },
+    {
+      "id": "freshness-window",
+      "code": "freshness-window",
+      "label": "Publication freshness",
+      "domain": "data-completeness",
+      "status": "pass",
+      "metrics": {
+        "nextDueAvailable": true,
+        "validNextDue": true,
+        "graceMs": 86400000,
+        "overdueMs": 0
+      }
+    },
+    {
+      "id": "details-completeness",
+      "code": "details-completeness",
+      "label": "Product details completeness",
+      "domain": "data-completeness",
+      "status": "pass",
+      "metrics": {
+        "coreProducts": 2569,
+        "detailProducts": 2730,
+        "matchedProducts": 2569,
+        "missingProducts": 0,
+        "orphanProducts": 161,
+        "explainedOrphanProducts": 161,
+        "coveragePercent": 100,
+        "runMatches": true,
+        "impossibleCounts": false
+      }
+    },
+    {
+      "id": "asset-availability",
+      "code": "asset-availability",
+      "label": "Asset availability",
+      "domain": "asset-availability",
+      "status": "pass",
+      "metrics": {
+        "requiredAssets": 2,
+        "requiredUnavailable": 0,
+        "requiredEmpty": 0,
+        "optionalAssets": 5,
+        "optionalUnavailable": 0,
+        "optionalEmpty": 0,
+        "optionalNotObserved": 0,
+        "mismatchedRunDates": 0
+      }
+    }
+  ],
+  "limitations": [
+    "This derived local candidate is not a new observation or deployable activation receipt.",
+    "History assets were built from this current-day private source only; retained historical databases were not copied or audited here.",
+    "Register logo URIs were supplied from the previously verified candidate instead of fetching the register; official RBA fetching was disabled."
+  ],
+  "activation": "NOT_RUN",
+  "capture": "NOT_RUN",
+  "publication": "NOT_RUN",
+  "backup": "BLOCKED_PENDING_GOOGLE_AUTHORIZATION"
+}

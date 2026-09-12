@@ -12,6 +12,13 @@ The worker acquires the shared ingest lock only for a bounded source freeze. Imm
 
 The ingest lock is released before network upload, repository checking or restore. Restic is limited to two Go workers, 8 MiB/s network bandwidth and two transfers; the service adds CPU, memory and I/O limits. Source freezing has a 20-minute limit and stops before the 00:30–03:30 Hobart ingest quiet window. Uploads crossing that window are terminated safely and retried later. A 2 GiB free-space floor protects the private spool; a restore also requires room for its selected data. Interrupted or rejected uploads never advance `latest-verified.json` or acknowledge queued requests.
 
+Live commissioning on 2026-09-12 found that this Pi kernel has no memory cgroup
+controller, so the unit's MemoryHigh/MemoryMax settings are not enforced there.
+Keep backup timers disabled until a Drive-specific monitored memory budget has
+been reviewed and verified on this host, in addition to OAuth and full restore.
+The canary supervisor's per-process address-space limit must not be copied
+blindly to Restic/rclone: their Go runtimes require separate validation.
+
 Inventories and collision checks use a private SQLite index with a 2 MiB page
 cache. Manifest JSON remains portable and unchanged in shape, but it is written
 and read one file record at a time. Hashing, Restic file lists, and restore

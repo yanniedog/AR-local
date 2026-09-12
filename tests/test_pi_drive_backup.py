@@ -456,3 +456,28 @@ def test_disk_index_failure_is_recorded_without_acknowledging_backup(layout, tra
     assert queued.exists()
     assert len(list((layout.spool / "receipts").glob("*.FAIL.json"))) == 1
     assert not (layout.spool / "latest-verified.json").exists()
+
+
+@pytest.mark.parametrize("fault", ["missing_manifest", "null_manifest", "traversal", "failed", "changed_manifest"])
+def test_bad_accepted_receipt_cannot_become_no_work_success(layout, transport, fault):
+    backup.run_backup(layout, force=True)
+    accepted = layout.spool / "latest-verified.json"
+    value = json.loads(accepted.read_text())
+    if fault == "missing_manifest":
+        value.pop("manifest_path")
+    elif fault == "null_manifest":
+        value["manifest_path"] = None
+    elif fault == "traversal":
+        value["manifest_path"] = "../outside.json"
+    elif fault == "failed":
+        value["result"] = "FAIL"
+    else:
+        (layout.spool / value["manifest_path"]).write_text("{}")
+    accepted.write_text(json.dumps(value))
+    before, calls = accepted.read_bytes(), len(transport.calls)
+    # Same-day empty queue would previously return PASS/NO_WORK without checking
+    # that this is still a valid accepted receipt. The fault must stay visible.
+    with pytest.raises(ValueError, match="accepted"):
+        backup.run_backup(layout)
+    assert accepted.read_bytes() == before
+    assert len(transport.calls) == calls

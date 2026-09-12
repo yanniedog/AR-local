@@ -1,0 +1,99 @@
+{
+  "kernel": "6.18.39+rpt-rpi-2712",
+  "source_sha256": {
+    "pi_cdr_quality_resources.py": "a264537876bd882f7e6bda333554da7e14c8db6b3b5b87dfa7cf7c04d931bcc7",
+    "canary_resource_fixture.py": "ce79a79b38a4743367c8c5448159a3f9ca65faa812468c6cfd266a8374e2248c"
+  },
+  "cases": [
+    {
+      "mode": "pass",
+      "result": "PASS",
+      "reason": null,
+      "peak_rss_bytes": 27459584,
+      "early_stop_overshoot_bytes": 0,
+      "minimum_available_bytes": 7123927040,
+      "maximum_sample_gap_seconds": 0.1008428760105744,
+      "peak_processes": 2,
+      "group_clean": true,
+      "psi_available": false,
+      "kernel_memory_limit_bytes": null,
+      "processes_remaining": [],
+      "cgroup_remaining": false
+    },
+    {
+      "mode": "aslimit",
+      "result": "PASS",
+      "reason": null,
+      "peak_rss_bytes": 18644992,
+      "early_stop_overshoot_bytes": 0,
+      "minimum_available_bytes": 7108935680,
+      "maximum_sample_gap_seconds": 0.10075480199884623,
+      "peak_processes": 2,
+      "group_clean": true,
+      "psi_available": false,
+      "kernel_memory_limit_bytes": null,
+      "processes_remaining": [],
+      "cgroup_remaining": false
+    },
+    {
+      "mode": "aggregate",
+      "result": "FAIL",
+      "reason": "RuntimeError: aggregate_rss_early_stop",
+      "peak_rss_bytes": 70041600,
+      "early_stop_overshoot_bytes": 2932736,
+      "minimum_available_bytes": 7096942592,
+      "maximum_sample_gap_seconds": 0.10109430100419559,
+      "peak_processes": 4,
+      "group_clean": true,
+      "psi_available": false,
+      "kernel_memory_limit_bytes": null,
+      "processes_remaining": [],
+      "cgroup_remaining": false
+    },
+    {
+      "mode": "orphan",
+      "result": "FAIL",
+      "reason": "RuntimeError: workload_failed_or_left_descendants",
+      "peak_rss_bytes": 32735232,
+      "early_stop_overshoot_bytes": 0,
+      "minimum_available_bytes": 7108771840,
+      "maximum_sample_gap_seconds": 0.10089050498208962,
+      "peak_processes": 3,
+      "group_clean": true,
+      "psi_available": false,
+      "kernel_memory_limit_bytes": null,
+      "processes_remaining": [],
+      "cgroup_remaining": false
+    },
+    {
+      "mode": "timeout",
+      "result": "FAIL",
+      "reason": "RuntimeError: workload_timeout",
+      "peak_rss_bytes": 27508736,
+      "early_stop_overshoot_bytes": 0,
+      "minimum_available_bytes": 7120322560,
+      "maximum_sample_gap_seconds": 0.10077352399821393,
+      "peak_processes": 2,
+      "group_clean": true,
+      "psi_available": false,
+      "kernel_memory_limit_bytes": null,
+      "processes_remaining": [],
+      "cgroup_remaining": false
+    },
+    {
+      "mode": "readonly",
+      "result": "PASS",
+      "reason": null,
+      "peak_rss_bytes": 18923520,
+      "early_stop_overshoot_bytes": 0,
+      "minimum_available_bytes": 7125975040,
+      "maximum_sample_gap_seconds": 0.10076209797989577,
+      "peak_processes": 2,
+      "group_clean": true,
+      "psi_available": false,
+      "kernel_memory_limit_bytes": null,
+      "processes_remaining": [],
+      "cgroup_remaining": false
+    }
+  ]
+}

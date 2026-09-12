@@ -111,6 +111,7 @@ def guard(data: Path, production: Path) -> None:
         raise RuntimeError("activation requires the Pi Linux host")
     from pi_cdr_recovery import assert_recovery_start_safe
     from ar_local_pi_runtime import data_root
+    from pi_cdr_quality_resources import preflight
     if data_root(production) != data:
         raise ValueError("requested data root differs from production runtime data root")
     assert_recovery_start_safe(production)
@@ -118,12 +119,7 @@ def guard(data: Path, production: Path) -> None:
         raise ValueError("canonical production paths required")
     if run(["systemctl", "show", "ar-local-daily.timer", "-p", "ActiveState", "--value"]) != "active":
         raise RuntimeError("mandatory natural ingest timer is not active")
-    values = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
-    if int(values["MemAvailable"].split()[0]) * 1024 < 2 * 1024**3:
-        raise RuntimeError("less than 2 GiB available memory")
-    pressure = Path("/proc/pressure/memory").read_text().splitlines()[0]
-    if float(dict(item.split("=") for item in pressure.split()[1:])["avg10"]) >= 10:
-        raise RuntimeError("memory pressure exceeds canary/activation bound")
+    preflight()
 
 
 def current_state(data: Path) -> tuple[str, str, Path]:
@@ -202,6 +198,7 @@ def canary(args) -> dict:
         raise ValueError("insufficient time for canary before recovery cutoff")
     properties = [f"User={getpass.getuser()}", f"WorkingDirectory={args.source}", "ProtectSystem=strict",
                   "ProtectHome=true", "PrivateTmp=true", "PrivateNetwork=true", "NoNewPrivileges=true",
+                  "ProtectControlGroups=true", "RestrictNamespaces=true", "CapabilityBoundingSet=",
                   f"ReadOnlyPaths={args.production}", f"ReadOnlyPaths={args.data_root}",
                   f"ReadWritePaths={args.operation}", "InaccessiblePaths=-/etc/ar-local",
                   "InaccessiblePaths=-/var/lib/ar-local-drive-backup/credentials",
@@ -209,17 +206,26 @@ def canary(args) -> dict:
                   f"Environment=TMPDIR={args.operation / 'tmp'}",
                   f"Environment=AR_LOCAL_DATA_ROOT={args.operation / 'private-data'}",
                   f"Environment=AR_LOCAL_PORTABLE_ROOT={args.operation / 'private-portable'}",
-                  "MemoryHigh=2500M", "MemoryMax=3G", "MemorySwapMax=0", "CPUQuota=200%",
+                  "CPUQuota=200%", "LimitAS=3G",
                   "IOWeight=10", "TasksMax=256", "OOMPolicy=stop", "KillMode=control-group",
                   "TimeoutStopSec=30s", f"RuntimeMaxSec={runtime}s"]
+    if "memory" in Path("/sys/fs/cgroup/cgroup.controllers").read_text().split():
+        properties += ["MemoryHigh=2500M", "MemoryMax=3G", "MemorySwapMax=0"]
     command += [f"--property={p}" for p in properties]
-    command += [args.python, "-B", args.source / "pi_cdr_quality_activate.py", "canary-worker",
+    command += [args.python, "-B", args.source / "pi_cdr_quality_resources.py",
+                "--output", args.operation / "resources.json", "--runtime-seconds", str(runtime - 15), "--",
+                args.python, "-B", args.source / "pi_cdr_quality_activate.py", "canary-worker",
                 "--source", args.source, "--production", args.production, "--data-root", args.data_root,
                 "--operation", args.operation, "--python", args.python]
     if args.dispositions:
         command += ["--dispositions", args.dispositions]
     run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
-    return read(args.operation / "canary.json")
+    from pi_cdr_quality_resources import require_receipt
+    require_receipt(read(args.operation / "resources.json"))
+    result = read(args.operation / "canary-worker.json")
+    result["resources"] = record(args.operation / "resources.json")
+    write(args.operation / "canary.json", result)
+    return result
 
 
 def seal(args) -> dict:
@@ -229,6 +235,8 @@ def seal(args) -> dict:
         raise ValueError("seal requires exact clean authoritative main")
     canary_path = args.operation / "canary.json"
     canary_result = read(canary_path)
+    from pi_cdr_quality_resources import require_receipt
+    require_receipt(read(checked(canary_result["resources"])))
     ci_binding(read(args.ci_binding), target)
     app_binding(read(args.app_acceptance), target, canary_result)
     if canary_result.get("result") != "PASS" or canary_result.get("target_commit") != target:
@@ -287,6 +295,9 @@ def verify_runtime(production: Path, target: str, files: dict, data: Path, prote
 
 def activate(args) -> dict:
     manifest = validate_manifest(args.manifest, args.manifest_sha256)
+    from pi_cdr_quality_resources import require_receipt
+    canary = read(checked(manifest["evidence"]["canary"]))
+    require_receipt(read(checked(canary["resources"])))
     source, production, data, operation = (Path(manifest[key]) for key in
                                          ("source_root", "production_root", "data_root", "operation_root"))
     layout(source, production, data, operation)
@@ -319,6 +330,7 @@ def activate(args) -> dict:
             guard(data, production)
             current_state(data)
             validate_manifest(args.manifest, args.manifest_sha256)
+            require_receipt(read(checked(canary["resources"])))
             if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
                     or protected_files(data) != manifest["protected_files"]):
                 raise ValueError("production or protected data changed before activation lock")
@@ -400,7 +412,7 @@ def main(argv=None) -> int:
             raise ValueError("seal requires --ci-binding and --app-acceptance")
         if args.command == "canary-worker":
             result = canary_worker(args)
-            write(args.operation / "canary.json", result)
+            write(args.operation / "canary-worker.json", result)
         else:
             result = {"canary": canary, "seal": seal, "activate": activate}[args.command](args)
     except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as error:

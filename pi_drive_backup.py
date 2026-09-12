@@ -194,7 +194,29 @@ class Restic:
 
 
 def _load(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if not path.exists():
+        return {}
+    if path.is_symlink() or path.stat().st_size > 16 * 1024**2:
+        raise ValueError("accepted backup receipt is unsafe or oversized")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema") != SCHEMA or value.get("result") != "PASS":
+        raise ValueError("accepted backup receipt is not a complete PASS receipt")
+    if (value.get("repository_check") != "PASS"
+            or not re.fullmatch(r"[0-9a-f]{8,64}", str(value.get("snapshot_id", "")))
+            or any(not re.fullmatch(r"[0-9a-f]{64}", str(value.get(key, "")))
+                   for key in ("manifest_sha256", "content_sha256"))
+            or not re.fullmatch(r"manifests/[0-9]{8}T[0-9]{6}-[0-9a-f]{12}\.json", str(value.get("manifest_path", "")))):
+        raise ValueError("accepted backup receipt lacks valid snapshot/manifest evidence")
+    try:
+        datetime.strptime(value["backup_date"], "%Y-%m-%d")
+        if datetime.fromisoformat(value["restore_verified_at"]).tzinfo is None:
+            raise ValueError("restore timestamp must include a timezone")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("accepted backup receipt lacks dated restore evidence") from error
+    manifest = path.parent / value["manifest_path"]
+    if manifest.resolve() != manifest or digest(manifest) != value["manifest_sha256"]:
+        raise ValueError("accepted source manifest hash differs")
+    return value
 
 
 def _summary(output: str) -> dict:
