@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import urllib.error
@@ -141,9 +142,28 @@ def refresh_dates_index(
     out_dir: Optional[Path] = None,
 ) -> bool:
     """Rebuild ``dates-index.json`` from published dated releases and upload to rolling tag."""
+    from app_payload_revisions import revision_mode_enabled
+
+    if revision_mode_enabled():
+        print("[app_payload] dates-index refresh skipped: revision coordinator owns selected heads")
+        return False
     gh = _app_payload("_gh_available")()
     if not gh or not _app_payload("_gh_authed")(gh):
         print("[app_payload] dates-index refresh skipped: no gh auth")
+        return False
+
+    # Protocol adoption is durable. A service restart with an omitted feature
+    # flag must never erase selected revision heads during the legacy refresh.
+    from app_payload_revisions_github import GitHubRevisionStore
+    from app_payload_revisions_state import decode_document
+
+    try:
+        current = GitHubRevisionStore(repo, gh=gh).read(tag, DATES_INDEX_FILENAME)
+        if current is not None and decode_document(current).get("revision_protocol") is not None:
+            print("[app_payload] dates-index refresh skipped: public revision protocol is adopted")
+            return False
+    except (OSError, ValueError, RuntimeError):
+        print("[app_payload] dates-index refresh skipped: cannot verify existing index")
         return False
 
     dates = _published_history_dates(repo, min_date=min_date)
@@ -222,6 +242,8 @@ def _gh_authed(gh: str) -> bool:
 def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) -> int:
     """Delete obsolete content-addressed data assets, keeping the current manifest's
     assets plus the KEEP_RECENT_ASSETS newest. Best-effort; returns count deleted."""
+    if not is_rolling_tag(tag):
+        return 0
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     listed = _app_payload("subprocess").run(
         [gh, "release", "view", tag, "--repo", repo, "--json", "assets",
@@ -258,8 +280,25 @@ def _manifest_should_replace(
     our_gen: str,
     tag: str,
     force: bool,
+    our_revision: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     """Decide whether to replace the live manifest on ``tag`` (rolling vs dated rules)."""
+    live_revision = (live or {}).get("payload_revision")
+    if live_revision and not our_revision:
+        return False, "revision_protocol_downgrade"
+    if (isinstance(live_revision, dict) and isinstance(our_revision, dict)
+            and (live or {}).get("run_date") == our_run_date):
+        # Selected revision order is authoritative; archive generated_at is
+        # stable across retries and need not match a prior alias rebuild time.
+        live_number = live_revision.get("revision")
+        our_number = our_revision.get("revision")
+        if type(live_number) is not int or type(our_number) is not int:
+            return False, "revision_identity_invalid"
+        if live_number > our_number:
+            return False, "live_newer"
+        if live_number == our_number and live_revision != our_revision:
+            return False, "revision_identity_collision"
+        return True, "revision"
     if force:
         return True, "force"
     if status == "error":
@@ -314,6 +353,12 @@ def publish_payload(
     if not manifest_path.exists():
         raise FileNotFoundError(f"no manifest.json in {payload_dir} (run build first)")
     manifest = _load_json(manifest_path)
+    from app_payload_revisions import revision_mode_enabled
+
+    if re.fullmatch(r"app-payload-\d{4}-\d{2}-\d{2}-(?:r\d{6}|legacy-[0-9a-f]+)", tag):
+        raise RuntimeError("immutable revision archives must use the revision coordinator")
+    if revision_mode_enabled() and not manifest.get("payload_revision"):
+        raise RuntimeError("revision mode refuses an unversioned alias publish")
     names = [entry["name"] for entry in manifest["files"].values()]
     # Upload the data assets first and the manifest LAST, so the rolling manifest is
     # never left pointing at a missing/half-replaced asset if an upload fails.
@@ -400,6 +445,7 @@ def publish_payload(
         our_gen=our_gen,
         tag=tag,
         force=force,
+        **({"our_revision": manifest["payload_revision"]} if manifest.get("payload_revision") else {}),
     )
     if not should_replace:
         reason = replace_reason
@@ -413,8 +459,8 @@ def publish_payload(
         live_gen = str((live or {}).get("generated_at") or "")
         print(
             f"[app_payload] publish skipped manifest run_date={our_run_date} tag={tag} "
-            f"(live run_date={live_run_date} generated_at={live_gen} is newer; "
-            f"uploaded {len(to_upload)} new data asset(s); pass force=true to override)"
+            f"reason={reason} live_run_date={live_run_date} live_generated_at={live_gen} "
+            f"uploaded_assets={len(to_upload)}"
         )
         return False
 
@@ -458,6 +504,12 @@ def publish_payload(
             else:
                 print(f"[app_payload] not restoring backup (live recheck={recheck}); avoiding a clobber")
         raise
+    if manifest.get("payload_revision"):
+        from app_payload_revisions_github import GitHubRevisionStore
+        from app_payload_revisions_state import RevisionError
+
+        if GitHubRevisionStore(repo, gh=gh).read(tag, "manifest.json") != manifest_path.read_bytes():
+            raise RevisionError("compatibility alias failed exact public manifest verification")
     print(
         f"[app_payload] publish succeeded run_date={our_run_date} tag={tag} repo={repo} "
         f"manifest_replaced=true new_data_assets={len(to_upload)} exit=0"

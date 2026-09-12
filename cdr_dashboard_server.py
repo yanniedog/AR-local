@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import OrderedDict
+from contextlib import contextmanager
 import errno
 import gzip
 import json
@@ -19,7 +20,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Iterator, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
@@ -40,7 +41,7 @@ from cdr_ribbon_normalize import (
 )
 import rba_decisions
 from cdr_public_api_shims import (
-    connect_readonly,
+    connect_readonly as _connect_readonly,
     latest_home_loan_rows as build_latest_home_loan_rows,
     latest_term_deposit_rows as build_latest_term_deposit_rows,
     local_rba_history_rows as build_local_rba_history_rows,
@@ -133,6 +134,45 @@ BANK_HISTORY_COLUMNS = (
     "comparison_rate",
 )
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
+
+
+def register_bank_category_filter(connection: sqlite3.Connection) -> None:
+    from cdr_product_classification import has_savings_term_deposit_evidence
+
+    def source_term_deposit(details_json):
+        try:
+            detail = json.loads(details_json or "null")
+            return int(isinstance(detail, dict) and has_savings_term_deposit_evidence(detail))
+        except (ValueError, TypeError):
+            return 0
+
+    connection.create_function("cdr_source_term_deposit", 1, source_term_deposit, deterministic=True)
+
+
+@contextmanager
+def connect_readonly(path: Path) -> Iterator[sqlite3.Connection]:
+    with _connect_readonly(path) as connection:
+        register_bank_category_filter(connection)
+        yield connection
+
+
+def bank_section_rate_filter(run_date: str | None, section: str) -> tuple[str, list[str]]:
+    from cdr_product_classification import excluded_category_tokens
+
+    excluded = excluded_category_tokens(section)
+    # Category lives in bank_products. Bind the date/section so SQLite builds
+    # the exclusion set once instead of scanning products for every rate row.
+    identity = "product_key" if run_date else "(run_date, product_key)"
+    columns = "product_key" if run_date else "run_date, product_key"
+    date_clause = "run_date = ? AND " if run_date else ""
+    category_params = [run_date, section, *excluded] if run_date else [section, *excluded]
+    category_sql = (f" AND {identity} NOT IN (SELECT {columns} FROM bank_products WHERE "
+                    + date_clause + "dataset = ? AND product_key IS NOT NULL AND run_date IS NOT NULL AND "
+                    "UPPER(COALESCE(category, '')) IN (" + ",".join("?" for _ in excluded) + ")"
+                    + (" AND cdr_source_term_deposit(details_json) = 0" if section == "TD" else "") + ")")
+    if section == "Mortgage":
+        return " AND rate_family = ? AND COALESCE(rate_type, '') != ?" + category_sql, ["lending", "DISCOUNT", *category_params]
+    return " AND rate_family = ?" + category_sql, ["deposit", *category_params]
 
 # Banking dashboard SPA entry URLs (client app.js sectionToPath / sectionFromPathname).
 # Must serve dashboard/index.html — not site_root/savings/ (a directory → 404).
@@ -355,6 +395,42 @@ def canonicalize_history_row(item: dict[str, object]) -> None:
 
 def canonicalize_section_row(item: dict[str, object], section: str) -> None:
     canonicalize_rate_structure_fields(item, section)
+
+
+def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
+    with connect_readonly(db_path) as con:
+        available = bank_rate_columns(con)
+        select_list = bank_rate_select_list(available, BANK_HISTORY_COLUMNS)
+        sql = f"SELECT {select_list} FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
+        params: list[str] = []
+        if max_run_date:
+            sql += " AND run_date <= ?"
+            params.append(max_run_date)
+        if section:
+            sql += " AND dataset = ?"
+            params.append(section)
+            # Same DISCOUNT / rate_family filter the section endpoint applies,
+            # so the history payload doesn't ship rows the dashboard discards.
+            filter_sql, filter_params = bank_section_rate_filter(None, section)
+            sql += filter_sql
+            params.extend(filter_params)
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+        rows = con.execute(sql, params)
+        out = []
+        for row in rows:
+            item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
+            # dataset and rate_family are needed by canonicalize_history_row
+            # (Mortgage branch) and by callers of the unscoped endpoint to
+            # identify which section a row belongs to. When we're scoped to
+            # a single section those two fields are constant — the client
+            # already knows them from the request — so drop them after
+            # canonicalisation to save the wire cost.
+            canonicalize_history_row(item)
+            if section:
+                item.pop("dataset", None)
+                item.pop("rate_family", None)
+            out.append(compact_bank_row(item))
+        return out
 
 
 def history_index_key(row: dict[str, object]) -> str:
@@ -705,7 +781,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         # Apply the same rate_family / non-DISCOUNT filter the client used to do
         # post-fetch (and that /api/banks/ribbon already applies). Saves the wire
         # cost of every Mortgage DISCOUNT row that the dashboard discards anyway.
-        filter_sql, filter_params = bank_section_rate_filter(section)
+        filter_sql, filter_params = bank_section_rate_filter(run_date, section)
         with connect_readonly(db_path) as con:
             available = bank_rate_columns(con)
             select_list = bank_rate_select_list(available, BANK_SECTION_COLUMNS)
@@ -724,11 +800,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 out.append(compact_bank_row(item))
             return out
 
-    def bank_section_rate_filter(section: str) -> tuple[str, list[str]]:
-        if section == "Mortgage":
-            return " AND rate_family = ? AND COALESCE(rate_type, '') != ?", ["lending", "DISCOUNT"]
-        return " AND rate_family = ?", ["deposit"]
-
     # Ribbon aggregation uses the shared cdr_ribbon_normalize.aggregate_ribbon
     # kernel (imported at module top) - one source of truth with the payload
     # builder, so the web dashboard and the mobile app can never diverge on the
@@ -739,7 +810,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         with connect_readonly(db_path) as con:
             con.row_factory = sqlite3.Row
             cols = bank_rate_columns(con)
-            filter_sql, filter_params = bank_section_rate_filter(section)
+            filter_sql, filter_params = bank_section_rate_filter(run_date, section)
             where = (
                 "run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
                 + filter_sql
@@ -836,41 +907,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     def local_rba_history_rows() -> Tuple[bytes, bytes | None]:
         body = build_local_rba_history_rows()
         return body, maybe_gzip(body, "application/json")
-
-    def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
-        with connect_readonly(db_path) as con:
-            available = bank_rate_columns(con)
-            select_list = bank_rate_select_list(available, BANK_HISTORY_COLUMNS)
-            sql = f"SELECT {select_list} FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
-            params: list[str] = []
-            if max_run_date:
-                sql += " AND run_date <= ?"
-                params.append(max_run_date)
-            if section:
-                sql += " AND dataset = ?"
-                params.append(section)
-                # Same DISCOUNT / rate_family filter the section endpoint applies,
-                # so the history payload doesn't ship rows the dashboard discards.
-                filter_sql, filter_params = bank_section_rate_filter(section)
-                sql += filter_sql
-                params.extend(filter_params)
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-            rows = con.execute(sql, params)
-            out = []
-            for row in rows:
-                item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
-                # dataset and rate_family are needed by canonicalize_history_row
-                # (Mortgage branch) and by callers of the unscoped endpoint to
-                # identify which section a row belongs to. When we're scoped to
-                # a single section those two fields are constant — the client
-                # already knows them from the request — so drop them after
-                # canonicalisation to save the wire cost.
-                canonicalize_history_row(item)
-                if section:
-                    item.pop("dataset", None)
-                    item.pop("rate_family", None)
-                out.append(compact_bank_row(item))
-            return out
 
     def bank_history_payload(max_run_date: str, section: str = "") -> Tuple[bytes, bytes | None]:
         dbs = bank_history_db_paths(max_run_date)

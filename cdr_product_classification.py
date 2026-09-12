@@ -40,6 +40,32 @@ DATASET_TO_FOLDER = {
     "term_deposits": "TD",
 }
 
+# Explicit product categories outrank a marketing name or generic rate fields.
+# A business loan secured by a term deposit is not a term deposit product.
+OUT_OF_SCOPE_CATEGORIES = frozenset({
+    "BUSINESS_LOANS", "BUSINESS_LOAN", "PERS_LOANS", "PERSONAL_LOANS", "PERSONAL_LOAN",
+    "OVERDRAFTS", "OVERDRAFT", "CRED_AND_CHRG_CARDS", "CREDIT_CARDS", "MARGIN_LOANS",
+    "LEASES", "TRADE_FINANCE", "REGULATED_TRUST_ACCOUNTS", "TRAVEL_CARDS",
+})
+
+
+def category_excludes_section(
+    category: Any, section: str, *, row: Optional[Mapping[str, Any]] = None,
+) -> bool:
+    normalized = normalize_cdr_product_category(category)
+    if normalized in OUT_OF_SCOPE_CATEGORIES:
+        return True
+    dataset = dataset_from_cdr_category(normalized)
+    if dataset == "savings" and section == "TD" and row is not None:
+        if is_savings_term_deposit_row(row):
+            return False
+    return dataset is not None and DATASET_TO_FOLDER[dataset] != section
+
+
+def excluded_category_tokens(section: str) -> list[str]:
+    return sorted(OUT_OF_SCOPE_CATEGORIES | {token for dataset, tokens in DATASET_CATEGORY_ALIASES.items()
+                                            if DATASET_TO_FOLDER[dataset] != section for token in tokens})
+
 
 def is_record(value: Any) -> bool:
     return isinstance(value, dict)
@@ -130,6 +156,60 @@ def has_deposit_structured_signals(product: Mapping[str, Any]) -> bool:
     return False
 
 
+_TERM_DEPOSIT_NAME = re.compile(
+    r"^(?:term|fixed)[ -]+deposit(?:\s+([1-9][0-9]*)\s+(?:months?|years?))?$",
+    re.IGNORECASE,
+)
+_POSITIVE_TERM = re.compile(r"^P[1-9][0-9]*(?:Y|M)$")
+
+
+def _explicit_term_rate(name: str, rate_type: str, application: str, term: str) -> bool:
+    """Require an explicit product name plus a rate's contractual term evidence.
+
+    A fixed introductory savings rate or a payment frequency alone is not a
+    deposit term. Maturity can establish the term only when the product name
+    itself supplies a positive duration. Preserve the provider's rate type.
+    """
+    match = _TERM_DEPOSIT_NAME.fullmatch(name.strip())
+    if not match:
+        return False
+    return bool(
+        (rate_type.upper() == "FIXED" and _POSITIVE_TERM.fullmatch(term.upper()))
+        or (match.group(1) and application.upper() == "MATURITY")
+    )
+
+
+def has_savings_term_deposit_evidence(product: Mapping[str, Any]) -> bool:
+    """Narrow correction for term contracts reported under a Savings category.
+
+    Both name and deposit-rate evidence must agree for every supplied rate.
+    Raw category, details, numeric rates and rate types are never rewritten.
+    Product-list names alone deliberately cannot activate this correction.
+    """
+    if extract_cdr_product_category(product) not in DATASET_CATEGORY_ALIASES["savings"]:
+        return False
+    rates = as_array(product.get("depositRates"))
+    if not rates or as_array(product.get("lendingRates")):
+        return False
+    name = pick_text(product, ["name", "productName"])
+    return all(is_record(rate) and _explicit_term_rate(
+        name, pick_text(rate, ["depositRateType"]),
+        pick_text(rate, ["applicationType"]), pick_text(rate, ["additionalValue"]),
+    ) for rate in rates)
+
+
+def is_savings_term_deposit_row(row: Mapping[str, Any]) -> bool:
+    """Validate the same exception using preserved normalized rate-row fields."""
+    if normalize_cdr_product_category(row.get("category")) not in DATASET_CATEGORY_ALIASES["savings"]:
+        return False
+    if str(row.get("rate_family") or "").lower() != "deposit":
+        return False
+    return _explicit_term_rate(
+        pick_text(row, ["product_name"]), pick_text(row, ["rate_type"]),
+        pick_text(row, ["application_type"]), pick_text(row, ["term"]),
+    )
+
+
 def infer_dataset_from_structured_signals(product: Mapping[str, Any]) -> Optional[str]:
     if has_mortgage_structured_signals(product):
         return "home_loans"
@@ -159,7 +239,12 @@ def infer_cdr_dataset(
     *,
     allow_name_fallback: bool = True,
 ) -> Optional[str]:
-    cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
+    category = extract_cdr_product_category(product)
+    if category in OUT_OF_SCOPE_CATEGORIES:
+        return None
+    cat_ds = dataset_from_cdr_category(category)
+    if cat_ds == "savings" and has_savings_term_deposit_evidence(product):
+        return "term_deposits"
     if cat_ds:
         return cat_ds
     structured = infer_dataset_from_structured_signals(product)

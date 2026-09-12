@@ -1,0 +1,38 @@
+[Unit]
+Description=AR-local encrypted incremental Google Drive backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/ar-local/drive-backup.env
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_drive_backup.py run --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-daily.service --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-daily.timer --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup.service --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup.timer --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup-queue.timer --control-file {{AR_LOCAL_REPO}}/docs/GOOGLE_DRIVE_BACKUP.md
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=100%
+IOWeight=10
+MemoryHigh=512M
+MemoryMax=768M
+MemorySwapMax=0
+OOMPolicy=stop
+TasksMax=64
+KillMode=control-group
+TimeoutStartSec=20h
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{AR_LOCAL_DRIVE_BACKUP_SPOOL}}
+# The shared operation-lock implementation creates/removes this state lock.
+# No backup content is written into the authoritative source tree.
+ReadWritePaths={{AR_LOCAL_DATA_ROOT}}/state
+
+[Install]
+WantedBy=multi-user.target

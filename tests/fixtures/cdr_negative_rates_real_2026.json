@@ -1,0 +1,141 @@
+{
+  "provenance": {
+    "description": "Unmodified rate-field extracts from retained CommBank FX observations; legacy export bindings are measured, not original contracts.",
+    "audit_report_sha256": "b455d7e7faa80d6ee10f42a5b609374a92d6dc1b0cd60783e7c5f23778cc106a",
+    "standard": "https://consumerdatastandardsaustralia.github.io/standards/#common-field-types"
+  },
+  "observations": [
+    {
+      "source": "runs/2026-06-20/_exports",
+      "source_artifact_set_sha256": "0d4852373a66e4851bba187323b6736917f28b4811024d879c1daf9ac10e0f54",
+      "source_database_files": {
+        "local-cdr.sqlite": "1b8362a7ef4a68434984fea54a383aa453599211c3d0db4b4c7ce2fe1293d49d",
+        "local-cdr.sqlite-shm": "cbb20decdd739d83e9364ce985b0edeb7c8de32889287cf4488d93adea55a828",
+        "local-cdr.sqlite-wal": "d420d8293c84c3747524937012d8c3983d2bc1185a9ab364d9e2abb0ca311060"
+      },
+      "records": [
+        {
+          "provider": "CommBank",
+          "product_id": "b9e5529bf94f46e5a30b1baea8db0df5",
+          "product_key": "CommBank|b9e5529bf94f46e5a30b1baea8db0df5|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Business)",
+          "product_name": "Foreign Currency Account (Business)",
+          "rate": "-0.00375",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        },
+        {
+          "provider": "CommBank",
+          "product_id": "8bba7e425a5a4eeb8ecb7eec4daadf0c",
+          "product_key": "CommBank|8bba7e425a5a4eeb8ecb7eec4daadf0c|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Retail)",
+          "product_name": "Foreign Currency Account (Retail)",
+          "rate": "-0.00375",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        }
+      ]
+    },
+    {
+      "source": "runs/2026-06-21/_exports",
+      "source_artifact_set_sha256": "dd4a22490d5e593f41dc14e22323ba6f92d0d4f835498564ae522363e1e2cf4b",
+      "source_database_files": {
+        "local-cdr.sqlite": "2e6e5941897069a21e37e16529ba4458c8e62fef2e94dd64275f8e7ed7948037",
+        "local-cdr.sqlite-shm": "fc3ace043adb312627d33efb93193af93948dd04bbaa5a726841980e79846da8",
+        "local-cdr.sqlite-wal": "c9134eea1cf1b505d2544ba397f97633707cd98e5cee892611ddbad2f032b489"
+      },
+      "records": [
+        {
+          "provider": "CommBank",
+          "product_id": "b9e5529bf94f46e5a30b1baea8db0df5",
+          "product_key": "CommBank|b9e5529bf94f46e5a30b1baea8db0df5|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Business)",
+          "product_name": "Foreign Currency Account (Business)",
+          "rate": "-0.00375",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        },
+        {
+          "provider": "CommBank",
+          "product_id": "8bba7e425a5a4eeb8ecb7eec4daadf0c",
+          "product_key": "CommBank|8bba7e425a5a4eeb8ecb7eec4daadf0c|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Retail)",
+          "product_name": "Foreign Currency Account (Retail)",
+          "rate": "-0.00375",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        }
+      ]
+    },
+    {
+      "source": "runs/2026-06-22/_exports",
+      "source_artifact_set_sha256": "de6935fd03cacd55c92f272f19bea03cb167afd22be99108128b33daa8f8e1af",
+      "source_database_files": {
+        "local-cdr.sqlite": "9b39d93efa8996fc1a846865ab8e0afaff0b940d09ff54b505a9ba257eb7054f",
+        "local-cdr.sqlite-shm": "6cde0dd69b422eba0caadd3e8412d89da64316720ee865449611bb87b34cc914",
+        "local-cdr.sqlite-wal": "01cc2fe9c8ed4bc1ab7475c2ecb47c582eae0d9c6a6ed0644d65e67cf303bbf4"
+      },
+      "records": [
+        {
+          "provider": "CommBank",
+          "product_id": "b9e5529bf94f46e5a30b1baea8db0df5",
+          "product_key": "CommBank|b9e5529bf94f46e5a30b1baea8db0df5|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Business)",
+          "product_name": "Foreign Currency Account (Business)",
+          "rate": "-0.00375",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        },
+        {
+          "provider": "CommBank",
+          "product_id": "8bba7e425a5a4eeb8ecb7eec4daadf0c",
+          "product_key": "CommBank|8bba7e425a5a4eeb8ecb7eec4daadf0c|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Retail)",
+          "product_name": "Foreign Currency Account (Retail)",
+          "rate": "-0.00375",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        }
+      ]
+    },
+    {
+      "source": "runs/2026-08-20/_exports",
+      "source_artifact_set_sha256": "e1e60f257e40dc730855d1a5fa17c05027b9cf8356cb1f8adb34e197775ddee4",
+      "source_database_files": {
+        "local-cdr.sqlite": "a4b1ced6c24ea8161601bb628445a7404304905c17b0b61d1928541e2c232f72",
+        "local-cdr.sqlite-shm": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+        "local-cdr.sqlite-wal": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "records": [
+        {
+          "provider": "CommBank",
+          "product_id": "b9e5529bf94f46e5a30b1baea8db0df5",
+          "product_key": "CommBank|b9e5529bf94f46e5a30b1baea8db0df5|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Business)",
+          "product_name": "Foreign Currency Account (Business)",
+          "rate": "-0.00075",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        },
+        {
+          "provider": "CommBank",
+          "product_id": "8bba7e425a5a4eeb8ecb7eec4daadf0c",
+          "product_key": "CommBank|8bba7e425a5a4eeb8ecb7eec4daadf0c|TRANS_AND_SAVINGS_ACCOUNTS|Foreign Currency Account (Retail)",
+          "product_name": "Foreign Currency Account (Retail)",
+          "rate": "-0.00075",
+          "comparison_rate": "",
+          "dataset": "Savings",
+          "rate_type": "VARIABLE",
+          "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+        }
+      ]
+    }
+  ]
+}

@@ -322,6 +322,15 @@ def _compute_payload(
     coverage = _stable_payload_coverage(
         banks, latest, run_date, contract_coverage=contract_coverage
     )
+    from cdr_quality_accounting import payload_accounting
+
+    coverage["payload_accounting"] = payload_accounting(products, rates)
+    # Preserve legacy counts while explicitly separating observed products from
+    # attempt-state success; the two populations are not interchangeable.
+    coverage["counts"]["providers_with_products"] = coverage["payload_accounting"]["providers_with_products"]
+    coverage["counts"]["providers_with_published_rates"] = coverage["payload_accounting"]["providers_with_published_rates"]
+    if contract_coverage and "providers_complete" in contract_coverage:
+        coverage["counts"]["providers_complete"] = contract_coverage["providers_complete"]
 
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
@@ -465,6 +474,7 @@ def _package_payload(
         bank_history=data["bank_history"],
         bank_spread_history=data.get("bank_spread_history"),
         rba_calendar=data.get("rba_calendar"),
+        source_observation=data.get("source_observation"),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -486,6 +496,7 @@ def _package(
     bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
+    source_observation: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -526,6 +537,8 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
+    if source_observation:
+        manifest["source_observation"] = dict(source_observation)
     if enc_key:
         manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
@@ -594,6 +607,7 @@ def build_and_publish_dual(
     update_latest: bool = True,
     state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
+    source_observation: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -621,12 +635,30 @@ def build_and_publish_dual(
     # Compute the (tag-independent) payload data ONCE, then package both releases.
     # History/search are rolling-only, so only compute them when the rolling latest
     # will be built. Previously each release rebuilt from scratch every run.
+    from app_payload_revisions import publish_revision_bundle, revision_mode_enabled
+
+    revisions = revision_mode_enabled()
+    if revisions and state_dir is None:
+        raise ValueError("revision publication requires persistent state_dir")
     data = _app_payload("_compute_payload")(
         exports_dir,
-        include_history=need_latest,
+        include_history=need_latest or revisions,
         state_dir=state_dir,
         contract_coverage=contract_coverage,
     )
+    if source_observation:
+        data["source_observation"] = dict(source_observation)
+
+    if revisions:
+        # The caller holds the production lock through archive verification,
+        # selected-head promotion and both compatibility aliases.
+        full_dir = state_dir / "v1-latest"
+        _package_payload(data, full_dir, repo=repo, tag=DEFAULT_TAG)
+        revision = publish_revision_bundle(full_dir, state_dir=state_dir / "revision-history",
+                                           repo=repo, enabled=True)
+        published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date))
+        published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG) if need_latest else False
+        return revision.manifest, published_dated, published_latest
 
     dated = dated_tag(run_date)
     out_dated = out_dir or (

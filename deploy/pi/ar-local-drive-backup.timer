@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AR-local Google Drive backup at 03:30 Hobart
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Australia/Hobart
+Persistent=true
+AccuracySec=1min
+Unit=ar-local-drive-backup.service
+
+[Install]
+WantedBy=timers.target

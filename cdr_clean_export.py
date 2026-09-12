@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
 from cdr_product_facts import clean_fact_rows
 from cdr_rate_normalize import normalized_rate_value, rate_divisor
+from cdr_product_classification import has_savings_term_deposit_evidence
 NOISE_KEYS = {
     "links",
     "meta",
@@ -254,6 +255,10 @@ def bank_base_row(path: Path, banks_root: Path, rec: Mapping[str, Any]) -> Dict[
     rel = path.relative_to(banks_root)
     parts = rel.parts
     dataset = parts[0] if len(parts) > 0 else ""
+    # Derive the display section from explicit contract evidence while retaining
+    # the provider's conflicting category and original raw-detail location.
+    if dataset == "Savings" and has_savings_term_deposit_evidence(rec):
+        dataset = "TD"
     provider = parts[1] if len(parts) > 1 else text(rec.get("brandName") or rec.get("brand"))
     name = text(rec.get("name") or rec.get("productName") or (parts[2] if len(parts) > 2 else ""))
     row = {

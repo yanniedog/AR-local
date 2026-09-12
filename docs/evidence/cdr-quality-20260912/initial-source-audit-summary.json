@@ -1,0 +1,116 @@
+{
+  "status": "CURRENT_SOURCE_PASS_HISTORICAL_FINDINGS_RETAINED",
+  "audited_at": "2026-09-12T07:28:25.304015+00:00",
+  "audit_id": "c429fb7c9791450194ff2d684ef6d176",
+  "source_report_path": "/srv/ar-local/canary/quality-discovery-20260912/audit/reports/2026-09-12/c429fb7c9791450194ff2d684ef6d176.json",
+  "source_report_sha256": "b455d7e7faa80d6ee10f42a5b609374a92d6dc1b0cd60783e7c5f23778cc106a",
+  "observation_count": 128,
+  "date_count": 121,
+  "current_capture": {
+    "coverage": {
+      "excluded_rates": 187,
+      "exclusions": {
+        "discount_not_absolute_rate": 157,
+        "out_of_section_category": 30
+      },
+      "products_without_published_rates": 161,
+      "providers_with_products": 104,
+      "providers_with_published_rates": 100,
+      "published_products": 2569,
+      "published_rates": 16546,
+      "schema_version": 1,
+      "sections": {
+        "Mortgage": {
+          "excluded_rates": 185,
+          "exclusions": {
+            "discount_not_absolute_rate": 157,
+            "out_of_section_category": 28
+          },
+          "published_products": 1283,
+          "published_providers": 90,
+          "published_rates": 8040,
+          "source_rates": 8225
+        },
+        "Other": {
+          "excluded_rates": 0,
+          "exclusions": {},
+          "published_products": 0,
+          "published_providers": 0,
+          "published_rates": 0,
+          "source_rates": 0
+        },
+        "Savings": {
+          "excluded_rates": 0,
+          "exclusions": {},
+          "published_products": 727,
+          "published_providers": 98,
+          "published_rates": 2117,
+          "source_rates": 2117
+        },
+        "TD": {
+          "excluded_rates": 2,
+          "exclusions": {
+            "out_of_section_category": 2
+          },
+          "published_products": 559,
+          "published_providers": 82,
+          "published_rates": 6389,
+          "source_rates": 6391
+        }
+      },
+      "source_products": 2730,
+      "source_rates": 16733
+    },
+    "generation_id": "obs-2026-09-12-0851edcd79a16267",
+    "status": "PASS"
+  },
+  "ledger": {
+    "artifacts_rehashed": false,
+    "chain_events": 36,
+    "checked_events": 36,
+    "findings": [],
+    "head": {
+      "event_digest": "b3c9d2770759af8d3866123a691649100110ca4208c523f6d7a6041ae92ee678",
+      "event_path": "events/2026-09-12/obs-2026-09-12-0851edcd79a16267.json",
+      "generation_id": "obs-2026-09-12-0851edcd79a16267",
+      "observation_date": "2026-09-12",
+      "observation_state": "partial",
+      "schema_version": 2,
+      "updated_at": "2026-09-11T18:24:26Z"
+    },
+    "ok": true,
+    "warnings": []
+  },
+  "historical_findings": [
+    {
+      "code": "UNDATED_RETAINED_EXPORT",
+      "path": "/srv/ar-local/data/runs-archive/_broken-2026-05-19-empty/_exports"
+    },
+    {
+      "code": "MISSING_TAXONOMY_ROWS",
+      "count": 10394,
+      "source": "runs/2026-05-13/_exports"
+    },
+    {
+      "code": "DUPLICATE_PRODUCT_KEYS",
+      "count": 1,
+      "source": "runs/2026-05-31/_exports"
+    },
+    {
+      "code": "SOURCE_AUDIT_FAILED",
+      "detail": "one finalized daily SQLite database is required",
+      "source": "runs/2026-08-16/_failed_attempts/ram-1786806121645314910/exports/_exports"
+    }
+  ],
+  "negative_rate_correction": {
+    "original_report_preserved": true,
+    "original_issue_groups": 4,
+    "corrected_audit_version": 3,
+    "reason": "CDR RateString permits negative rates. Retained CommBank FX rates -0.00375 and -0.00075 are not invalid merely because they are negative.",
+    "standard": "https://consumerdatastandardsaustralia.github.io/standards/#common-field-types",
+    "corrected_full_audit": "PENDING_FINAL_CANDIDATE_CANARY"
+  },
+  "publication": "NOT_VERIFIED_BY_THIS_SOURCE_DIAGNOSTIC",
+  "consumer": "NOT_VERIFIED_BY_THIS_SOURCE_DIAGNOSTIC",
+  "backup": "NOT_RUN"
+}
