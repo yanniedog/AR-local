@@ -331,12 +331,13 @@ def test_tampered_resource_evidence_rejects_same_day_no_work(layout, transport):
 
 
 def test_repository_lock_exit_is_actionable_blocked_without_unlock(layout, monkeypatch):
-    from types import SimpleNamespace
+    import sys
     monkeypatch.setattr(backup, "guard_window", lambda: None)
     commands = []
+    original_spawn = backup.subprocess.Popen
     def spawn(command, **kwargs):
         commands.append(command)
-        return SimpleNamespace(poll=lambda: 11, returncode=11)
+        return original_spawn([sys.executable, "-c", "import sys;sys.exit(11)"], **kwargs)
     monkeypatch.setattr(backup.subprocess, "Popen", spawn)
     with pytest.raises(backup.Blocked, match="repository lock.*no automatic unlock"):
         backup.Restic(layout).run("check")

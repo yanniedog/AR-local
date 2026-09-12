@@ -170,6 +170,25 @@ The daily timer runs at 03:30 Australia/Hobart. A second timer checks every half
 
 The private spool holds immutable RUNNING/PASS/FAIL/BLOCKED receipts and source manifests. `latest-verified.json` identifies the accepted cloud snapshot, source content digest, manifest digest, repository stored bytes, newly uploaded bytes and most recent restore proof. A repository initialization, successful OAuth response, upload alone, or green unit test is not a restore proof. Keep existing backup arrangements until the first cloud restore PASS is observed.
 
+Each Restic command also retains private diagnostics beneath its resource
+operation's `diagnostics/<command-id>/`. `started.json` binds the command, worker,
+parent and original request hash before launch; `process.json` identifies the
+child. Raw stderr keeps at most32KiB of head and96KiB of tail in mode0600 files
+inside mode0700 directories. One additional96KiB pending tail is the maximum
+replacement overhead. The head and last complete tail survive a killed wrapper;
+an absent final `result.json` means completion is unverified. Raw bytes can contain
+credentials or provider identifiers: never publish them or copy them into normal
+logs, Git, payloads or support messages. They remain outside the source data tree.
+
+The immutable command result contains only hashes/counts and fixed diagnostic
+categories. `API_RATE_LIMIT` is separate from `REMOTE_STORAGE_QUOTA`; labels are
+matches in retained error text, not proof of the sole underlying cause. Normal
+failure messages expose only command, exit code, category and private evidence ID.
+Guard interruptions and lock refusal retain their existing failure semantics;
+no diagnostic outcome advances backup acceptance or authorizes an automatic
+unlock. If stderr capture fails or cannot drain, backup fails closed. Historical
+failures recorded before this retention change cannot recover discarded stderr.
+
 For disaster recovery, install Restic/rclone on a replacement host, recover the encryption password from its separate custody, and authorize access to the same dedicated Drive repository. Run `restic snapshots`, select the receipt-bound snapshot and `restic restore <id> --target <empty-private-directory>`. Restic restores absolute source paths beneath that private directory. The included source manifest maps each physical backup path to its logical `data/`, `control/` or `sqlite-original/` path and supplies SHA-256 digests. Verify every selected file before placing recovered data under a stopped production service. Use the merged SQLite copy for normal recovery; original DB components are reserved for exact historical reconstruction. Do not automatically overwrite a live data tree.
 
 References: [Restic backup and deduplication](https://restic.readthedocs.io/en/stable/040_backup.html), [rclone backend](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html), [rclone Drive scope](https://rclone.org/drive/), [SSH OAuth setup](https://rclone.org/remote_setup/), [SQLite backup API](https://www.sqlite.org/backup.html).
