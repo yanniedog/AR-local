@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 _DEFAULT_LOCAL = "http://127.0.0.1:8808/"
 
 from ar_local_pi_runtime import manifest_banks_rate_count
+from verify_local_compact import read_json, validate as validate_compact
 
 
 def http_get(url: str, timeout: float = 30.0) -> int:
@@ -62,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Fail unless /api/latest run_date equals this YYYY-MM-DD date.",
     )
     parser.add_argument("--history-timeout-seconds", type=history_timeout, default=30.0,
-                        help="Header deadline for the three history/section requests only (default: 30; maximum: 90).")
+                        help="Timeout for the three history/section requests only (default: 30; maximum: 90).")
     parser.add_argument("--history-mode", choices=("raw", "compact"), default="raw",
                         help="History response to verify. Routine restart checks use compact; full acceptance defaults to raw.")
     parser.add_argument("--progress", action="store_true", help="Print each request and result immediately.")
@@ -78,6 +79,13 @@ def main(argv: list[str] | None = None) -> int:
         code = http_get(base + path, timeout=timeout)
         progress(f"status={code} elapsed={time.monotonic() - started:.3f}s {base + path}")
         return code
+    def request_json(path: str) -> dict:
+        timeout = args.history_timeout_seconds if path.startswith("api/banks/history/section") else 30.0
+        started = time.monotonic()
+        progress(f"GET JSON {base + path} timeout={timeout:g}s")
+        result = read_json(base + path, timeout)
+        progress(f"JSON complete elapsed={time.monotonic() - started:.3f}s {base + path}")
+        return result
     paths = [
         "",
         "savings/",
@@ -122,7 +130,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
         return 1
+    if not isinstance(latest_payload, dict):
+        print("verify_local: /api/latest must be a JSON object", file=sys.stderr)
+        return 1
     run_date = latest_payload.get("run_date")
+    if args.history_mode == "compact" and not run_date:
+        print("verify_local: compact smoke requires /api/latest run_date", file=sys.stderr)
+        return 1
     if args.expect_run_date and run_date != args.expect_run_date:
         print(
             f"verify_local: /api/latest run_date={run_date!r}, expected {args.expect_run_date!r}",
@@ -134,6 +148,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.history_mode == "compact":
             history_endpoint += "/compact"
         for section in ("Mortgage", "Savings", "TD"):
+            if args.history_mode == "compact":
+                try:
+                    ribbon = request_json(f"api/banks/ribbon?date={run_date}&section={section}")
+                    current = request_json(f"api/banks/section?date={run_date}&section={section}")
+                    history = request_json(f"{history_endpoint}?date={run_date}&section={section}")
+                    validate_compact(history, current, ribbon, run_date, section)
+                except Exception as exc:
+                    print(f"verify_local: failed {base + history_endpoint} section={section}: {exc}", file=sys.stderr)
+                    return 1
+                continue
             for path in (
                 f"api/banks/ribbon?date={run_date}&section={section}",
                 f"api/banks/section?date={run_date}&section={section}",

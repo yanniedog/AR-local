@@ -6,6 +6,7 @@ import shlex
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -19,6 +20,17 @@ def endpoint_calls(monkeypatch):
         calls.append((url, timeout))
         return 404 if url.endswith("api/energy") else 200
     monkeypatch.setattr(verify_local, "http_get", get)
+    def get_json(url, timeout):
+        calls.append((url, timeout))
+        section = parse_qs(urlsplit(url).query)["section"][0]
+        common = {"run_date": "2026-09-12", "section": section}
+        if "/ribbon?" in url:
+            return {**common, "counts": {"rates": 0},
+                    "range": dict.fromkeys(("min", "max", "mean", "median"))}
+        if "/section?" in url:
+            return {**common, "rates": [], "counts": {"rates": 0}}
+        return {**common, "include_non_standard": False, "run_dates": [], "points": [], "providers": []}
+    monkeypatch.setattr(verify_local, "read_json", get_json)
     monkeypatch.setattr(verify_local.urllib.request, "urlopen", lambda *_args, **_kwargs:
         io.BytesIO(json.dumps({"run_date": "2026-09-12", "banks_counts": {"rates": 1}}).encode()))
     return calls
@@ -58,9 +70,12 @@ def test_actual_restart_commands_check_compact_history_without_raw_cache(endpoin
 
 @pytest.mark.parametrize("status", [-1, 404, 503])
 def test_compact_history_failure_still_rejects_restart(endpoint_calls, monkeypatch, capsys, status):
-    original = verify_local.http_get
-    monkeypatch.setattr(verify_local, "http_get", lambda url, timeout=30:
-        status if "api/banks/history/section/compact?" in url else original(url, timeout))
+    original = verify_local.read_json
+    def get_json(url, timeout):
+        if "api/banks/history/section/compact?" in url:
+            raise ValueError(f"HTTP {status}")
+        return original(url, timeout)
+    monkeypatch.setattr(verify_local, "read_json", get_json)
     assert verify_local.main(["--base-url=http://test.invalid/", "--history-mode=compact",
                               "--history-timeout-seconds=90"]) == 1
     assert "section/compact" in capsys.readouterr().err
