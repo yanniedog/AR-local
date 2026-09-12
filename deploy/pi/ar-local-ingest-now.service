@@ -23,4 +23,5 @@ ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only --for
 # restart on every service exit path.
 ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service
 ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service
-ExecStartPost=/bin/sh -c 'for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8808/api/latest && break; sleep 3; done; /usr/bin/python3 {{AR_LOCAL_REPO}}/verify_local.py --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%%F)"'
+# Keep raw-history construction on demand; match the daily compact smoke check.
+ExecStartPost=/bin/sh -c 'for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8808/api/latest && break; sleep 3; done; /usr/bin/python3 {{AR_LOCAL_REPO}}/verify_local.py --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%%F)" --history-mode=compact --history-timeout-seconds=90'
