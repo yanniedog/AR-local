@@ -166,6 +166,26 @@ repair command returns 0 READY/CAPTURED, 2 FAIL/NOT_SELECTED and 3 BLOCKED.
 Historical known gaps require an explicit disposition; do not erase the evidence
 or change its original status to make a current report green.
 
+V2 insight publication has its own immutable history. Before a mutable v1
+selector is replaced or its assets are pruned, the publisher preserves any
+existing v2 manifest, every declared insight asset, the exact matching v1 base
+manifest, and its core/details assets. The standalone v2 publisher performs the
+same predecessor check and archives the incoming bundle before selector
+promotion. Archives use `app-payload-v2-<date>-<full-manifest-sha256>` and are never
+pruned. Original manifest bytes are unchanged; `preservation.json` records their
+hashes and the archived asset URLs. Every archive file is independently read
+back, including on retries. Missing, malformed, mismatched or conflicting
+evidence prevents replacement.
+
+`manifest-v2.json` remains the latest selector and keeps its existing schema.
+An insight-only change gets a distinct v2 archive without requiring a different
+v1 numbered revision. Both immutable generations survive a failed selector
+upload; rollback restores only a missing selector and preserves its exact bytes.
+Eligible v2 publication that fails or does not confirm success leaves the whole
+publication outcome failed for the existing retry workflow, while the successful
+v1 bundle remains available. Publication success includes exact selector and
+asset readback; capture and deployment acceptance remain separate.
+
 On Windows, process liveness must use native process handles, never signal zero.
 Run process-control tests in the operator's hidden isolated runner and require a
 complete pytest summary and JUnit file. A truncated run, even with exit zero,

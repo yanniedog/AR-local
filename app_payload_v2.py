@@ -47,6 +47,9 @@ from cdr_macro_store import read_store
 from cdr_macro_sources import LOCAL_SERIES_IDS, SERIES_VISIBLE_FROM
 from cdr_macro_freshness import assess_freshness, observation_value, series_metadata, source_definition_current
 from pi_payload_freshness import fresh_document_url
+from app_payload_v2_archive import archive_v2, is_archive_tag, preserve_current_v2, read_manifest
+from app_payload_revisions_github import GitHubRevisionStore, write_once
+from app_payload_revisions_state import RevisionError, digest
 
 V2_SCHEMA_VERSION = 2
 V2_MANIFEST_FILENAME = "manifest-v2.json"
@@ -461,6 +464,8 @@ def _live_v2_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[st
 
 
 def _prune_v2_assets(gh: str, repo: str, tag: str, keep_names: set[str]) -> int:
+    if is_archive_tag(tag):
+        return 0
     listed = subprocess.run(  # nosec B603
         [
             gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q",
@@ -494,30 +499,38 @@ def _replace_v2_manifest(
     repo: str,
     tag: str,
     manifest_path: Path,
-    live: Optional[Mapping[str, Any]],
+    predecessor: bytes | None,
+    store,
 ) -> None:
-    backup_dir = manifest_path.parent / ".prev-manifest-v2"
-    backup_dir.mkdir(exist_ok=True)
-    backup = backup_dir / V2_MANIFEST_FILENAME
-    backup.unlink(missing_ok=True)
-    if live is not None:
-        backup.write_text(json.dumps(live), encoding="utf-8")
+    incoming = manifest_path.read_bytes()
+    if store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES) != predecessor:
+        raise RevisionError("v2 selector predecessor changed before promotion")
+    backup = None
+    if predecessor is not None:
+        backup = manifest_path.parent / "v2-preservation" / "predecessors" / digest(predecessor) / V2_MANIFEST_FILENAME
+        write_once(backup, predecessor)
     try:
         subprocess.run(  # nosec B603
             [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     except subprocess.SubprocessError:
-        if backup.is_file():
-            status, current = _live_v2_manifest_status(repo, tag)
-            displaced_gen = str((live or {}).get("generated_at") or "")
-            current_gen = str((current or {}).get("generated_at") or "")
-            if status == "missing" or (status == "present" and current_gen <= displaced_gen):
+        current = store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES)
+        if current == incoming:
+            return  # An uncertain upload succeeded, proved by exact public bytes.
+        if backup is not None and current is None:
+            # Never replace an independently appearing selector during recovery.
+            # Both bundles are already immutable; retain the failed attempt.
+            try:
                 subprocess.run(  # nosec B603
-                    [gh, "release", "upload", tag, str(backup), "--repo", repo, "--clobber"],
+                    [gh, "release", "upload", tag, str(backup), "--repo", repo],
                     check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
                 )
+            except subprocess.SubprocessError:
+                pass
         raise
+    if store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES) != incoming:
+        raise RevisionError("v2 selector failed exact public readback")
 
 
 def publish_v2_sidecar(
@@ -527,13 +540,15 @@ def publish_v2_sidecar(
     tag: str = DEFAULT_TAG,
     require_token: bool = False,
 ) -> bool:
+    if is_archive_tag(tag):
+        raise RevisionError("immutable v2 archives cannot be published as mutable selectors")
     manifest_path = payload_dir / V2_MANIFEST_FILENAME
     if not manifest_path.is_file():
         raise FileNotFoundError(f"no {V2_MANIFEST_FILENAME} in {payload_dir}")
     if manifest_path.stat().st_size > MAX_V2_MANIFEST_BYTES:
         raise ValueError("manifest-v2 exceeds the size limit")
-    manifest = _load_json(manifest_path)
-    validate_v2_manifest(manifest)
+    incoming_raw = manifest_path.read_bytes()
+    manifest = read_manifest(incoming_raw)
     _validate_local_assets(payload_dir, manifest)
     names = [str(entry["name"]) for entry in manifest["files"].values()]
     data_assets = [payload_dir / name for name in names]
@@ -546,6 +561,8 @@ def publish_v2_sidecar(
             raise RuntimeError("gh CLI / GitHub auth required for v2 sidecar publish")
         print("[app_payload_v2] publish skipped reason=no_gh_auth exit=0")
         return False
+    store = GitHubRevisionStore(repo, gh=gh)
+    predecessor = preserve_current_v2(payload_dir / "v2-preservation", repo=repo, tag=tag, store=store)
     v1_status, live_v1 = _live_manifest_status(repo, tag)
     live_files = (live_v1 or {}).get("files") or {}
     expected_base = manifest["base"]
@@ -577,10 +594,7 @@ def publish_v2_sidecar(
             [gh, "release", "upload", tag, *map(str, uploads), "--repo", repo],
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
-    status, live = _live_v2_manifest_status(repo, tag)
-    if status == "error":
-        print("[app_payload_v2] publish skipped reason=live_manifest_verify_error exit=0")
-        return False
+    live = json.loads(predecessor) if predecessor is not None else None
     live_date = str((live or {}).get("run_date") or "")
     our_date = str(manifest.get("run_date") or "")
     live_gen = str((live or {}).get("generated_at") or "")
@@ -591,7 +605,16 @@ def publish_v2_sidecar(
             f"reason=live_newer live_run_date={live_date}"
         )
         return False
-    _replace_v2_manifest(gh, repo, tag, manifest_path, live)
+    incoming_tag = archive_v2(incoming_raw, payload_dir / "v2-preservation", store=store,
+                              source_tag=tag, payload_dir=payload_dir)
+    # A content-addressed name is not evidence by itself: verify every published
+    # insight before allowing its mutable selector to point at it.
+    for entry in manifest["files"].values():
+        public = store.read(tag, entry["name"], entry["bytes"])
+        if public is None or len(public) != entry["bytes"] or digest(public) != entry["sha256"]:
+            raise RevisionError("v2 public insight failed hash/size readback")
+    preserved_manifest = payload_dir / "v2-preservation" / incoming_tag / V2_MANIFEST_FILENAME
+    _replace_v2_manifest(gh, repo, tag, preserved_manifest, predecessor, store)
     try:
         _prune_v2_assets(gh, repo, tag, set(names))
     except Exception as exc:  # noqa: BLE001
