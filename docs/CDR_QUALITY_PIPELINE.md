@@ -35,6 +35,24 @@ remain quiet; meaningful improvements, failures and required action are reported
 Capture, finalization, publication, consumer verification, and backup each have
 their own result. PASS means the corresponding evidence actually exists.
 
+During activation, each transaction retains live readiness and verifier output
+under `activation-<id>/smoke/`, separately for pre-switch, post-switch and rollback
+checks. Timestamped phase receipts bind those logs by hash; the final activation
+receipt links each phase and includes the failed-check reason. A failed rollback
+does not erase the original activation failure. All three phases use the sealed
+candidate's verifier, whose hash is recorded, including when checking old code.
+Every endpoint and success condition remains required. Activation allows 90
+seconds for headers from each of the three cold history/section requests, with
+a 300-second whole-verifier timeout and the existing 120-second readiness bound.
+Ordinary `verify_local.py` calls retain their 30-second request default.
+
+Activation requires at least 30 minutes before sealed expiry before changing
+coordination timers and again immediately before checkout: 21 minutes for all
+three smoke paths plus a 9-minute margin for other work. This admission margin
+is not a hard whole-operation deadline for existing inline source hashing.
+Rollback remains available after expiry. The 22:00 activation/capture cutoff and
+the natural-ingest quiet window remain unchanged.
+
 ## Payload revisions
 
 The additive v1 revision protocol retains every archived generation and points

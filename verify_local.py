@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 _DEFAULT_LOCAL = "http://127.0.0.1:8808/"
 
@@ -32,7 +35,14 @@ def http_get(url: str, timeout: float = 30.0) -> int:
         return -1
 
 
-def main() -> int:
+def history_timeout(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or not 0 < seconds <= 90:
+        raise argparse.ArgumentTypeError("history timeout must be greater than 0 and at most 90 seconds")
+    return seconds
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Smoke-verify local CDR dashboard HTTP endpoints.")
     env_base = os.environ.get("AR_PI_BASE_URL", "").strip()
     default_base = env_base if env_base else _DEFAULT_LOCAL
@@ -51,8 +61,21 @@ def main() -> int:
         default="",
         help="Fail unless /api/latest run_date equals this YYYY-MM-DD date.",
     )
-    args = parser.parse_args()
+    parser.add_argument("--history-timeout-seconds", type=history_timeout, default=30.0,
+                        help="Header deadline for the three history/section requests only (default: 30; maximum: 90).")
+    parser.add_argument("--progress", action="store_true", help="Print each request and result immediately.")
+    args = parser.parse_args(argv)
     base = args.base_url.strip().rstrip("/") + "/"
+    def progress(message: str) -> None:
+        if args.progress:
+            print(f"[{datetime.now(timezone.utc).isoformat()}] verify_local: {message}", flush=True)
+    def request(path: str) -> int:
+        timeout = args.history_timeout_seconds if path.startswith("api/banks/history/section?") else 30.0
+        started = time.monotonic()
+        progress(f"GET {base + path} timeout={timeout:g}s")
+        code = http_get(base + path, timeout=timeout)
+        progress(f"status={code} elapsed={time.monotonic() - started:.3f}s {base + path}")
+        return code
     paths = [
         "",
         "savings/",
@@ -80,7 +103,7 @@ def main() -> int:
     failures: list[tuple[str, int]] = []
     for path in paths:
         url = base + path
-        code = http_get(url)
+        code = request(path)
         if code != 200:
             failures.append((url, code))
     if failures:
@@ -89,8 +112,11 @@ def main() -> int:
         return 1
     latest_url = base + "api/latest"
     try:
+        started = time.monotonic()
+        progress(f"GET JSON {latest_url} timeout=30s")
         with urllib.request.urlopen(latest_url, timeout=30.0) as resp:
             latest_payload = json.loads(resp.read().decode("utf-8"))
+        progress(f"JSON complete elapsed={time.monotonic() - started:.3f}s {latest_url}")
     except Exception as exc:
         print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
         return 1
@@ -109,7 +135,7 @@ def main() -> int:
                 f"api/banks/history/section?date={run_date}&section={section}",
             ):
                 url = base + path
-                code = http_get(url)
+                code = request(path)
                 if code != 200:
                     print(f"verify_local: {code} {url}", file=sys.stderr)
                     return 1
@@ -118,12 +144,12 @@ def main() -> int:
             "api/home-loan-rates/latest?rate_structure=fixed_1yr&security_purpose=owner_occupied&repayment_type=principal_and_interest&min_rate=0.01&limit=20000",
         ):
             url = base + path
-            code = http_get(url)
+            code = request(path)
             if code != 200:
                 print(f"verify_local: {code} {url}", file=sys.stderr)
                 return 1
     removed_endpoint = "api/" + "en" + "ergy"
-    removed_code = http_get(base + removed_endpoint)
+    removed_code = request(removed_endpoint)
     if removed_code != 404:
         print(f"verify_local: expected 404 for removed CDR sector endpoint, got {removed_code}", file=sys.stderr)
         return 1

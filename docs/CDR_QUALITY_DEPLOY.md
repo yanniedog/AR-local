@@ -256,6 +256,13 @@ python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py activate \
 ```
 
 Dry-run validates readiness without checkout, restart or an activation receipt.
+Admission requires at least 30 minutes before the seal expires, checked before
+pausing timers and again immediately before checkout. This reserves 21 minutes
+for all three possible smoke phases plus nine minutes for other work; it is not
+a hard whole-operation deadline because inline hashing is not separately timed.
+The seal's 22:00 Hobart cutoff and capture window remain unchanged. Rollback
+remains available after expiry and does not require another admission check.
+
 Activation pauses only the daily-watchdog and runtime-health coordination timers;
 the mandatory natural daily timer remains active. Under the production lock it
 revalidates evidence/current main, checks the old dashboard, verifies both bundles,
@@ -264,6 +271,16 @@ restarts the dashboard, checks all deployed code and protected data hashes, runs
 Pi HTTP smoke plus `verify_local.py`, and restores coordination. It does not
 install or change systemd unit definitions. Any new timer/unit installation is a
 separate reviewed commissioning action by the owner.
+
+Each pre-switch, post-switch and rollback smoke phase retains its 120-second HTTP
+readiness budget and runs the sealed candidate's verifier with a 300-second
+subprocess deadline. Only the three `/api/banks/history/section` requests use a
+90-second socket/header wait to allow a cold history build; other requests and the
+verifier's default remain 30 seconds. All endpoint and content checks still apply.
+Timestamped progress is written live to `activation-UUID/smoke/`, with create-once
+phase receipts binding the logs and candidate verifier hash. Failures identify
+the phase, output path and failed check; a rollback failure also retains the
+original activation error. These bounds require subsequent cold Pi runtime proof.
 
 A post-switch failure attempts rollback to the retained exact predecessor,
 restarts/verifies its dashboard and restores timer states. The create-once
