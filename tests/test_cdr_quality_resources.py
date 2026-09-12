@@ -47,7 +47,10 @@ def test_limits_cannot_weaken_the_reviewed_boundary(change):
         resources.Limits(**change).validate()
 
 
-def test_aggregate_counts_every_cgroup_process_including_detached_descendants(tmp_path):
+def test_aggregate_counts_every_cgroup_process_including_detached_descendants(tmp_path, monkeypatch):
+    monkeypatch.setattr(resources.os, "pidfd_open", lambda pid, _: pid, raising=False)
+    monkeypatch.setattr(resources.os, "close", lambda _: None)
+    monkeypatch.setattr(resources, "pidfd_exited", lambda *_: False)
     group = tmp_path / "group"
     group.mkdir()
     (group / "cgroup.procs").write_text("101\n202\n202\n303\n")
