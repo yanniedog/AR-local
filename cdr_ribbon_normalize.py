@@ -845,6 +845,9 @@ def ribbon_columns_for_bank_rate_row(
         # normalized account_type (not just the name marker) so none slip through.
         if account_type == "at_call":
             out["account_class"] = "non_standard"
+        from cdr_savings_conditions import winner_rate_ribbons
+
+        out.update(winner_rate_ribbons(cleaned_item))
         out["taxonomy_path"] = _classify(dataset, flat_base, out)
         return out
 
