@@ -38,13 +38,15 @@ def source_issues(result: dict) -> list[dict]:
     return issues
 
 
-def collect_sources(data_root: Path, index: AuditIndex, run_date: str, scrub: bool) -> tuple[list, list, int]:
+def collect_sources(data_root: Path, index: AuditIndex, run_date: str, scrub: bool,
+                    verified_cache=None) -> tuple[list, list, int]:
     sources, issues = inventory(data_root)
     results, cached = [], 0
     for source in sources:
         try:
             fingerprint = stat_fingerprint(source)
-            result = index.get(source["key"], fingerprint) if not scrub and source["run_date"] != run_date else None
+            result = (verified_cache.get(data_root, source, run_date) if verified_cache else
+                      index.get(source["key"], fingerprint) if not scrub and source["run_date"] != run_date else None)
             if result is None:
                 print(f"[cdr-audit] checking {source['key']}", flush=True)
                 result = audit_source(data_root, source)
@@ -52,18 +54,25 @@ def collect_sources(data_root: Path, index: AuditIndex, run_date: str, scrub: bo
                 index.put(result)
             else:
                 cached += 1
+                if verified_cache:
+                    index.put(result)
             results.append(result)
             issues.extend(source_issues(result))
         except (OSError, ValueError, KeyError, TypeError, RuntimeError, sqlite3.Error) as exc:
             issues.append({"code": "SOURCE_AUDIT_FAILED", "source": source["key"], "detail": str(exc)})
     old = {row[0] for row in index.db.execute("SELECT source_key FROM audits")}
+    if verified_cache:
+        old.update(verified_cache.manifest["entries"])
     for missing in sorted(old - {row["key"] for row in sources}):
         issues.append({"code": "PREVIOUSLY_AUDITED_SOURCE_MISSING", "source": missing})
     return results, issues, cached
 
 
 def audit(data_root: Path, run_date: str, *, scrub: bool = False, public: bool = True,
-          app_report: Path | None = None, audit_root: Path | None = None) -> dict:
+          app_report: Path | None = None, audit_root: Path | None = None,
+          verified_cache: Path | None = None, verified_cache_sha256: str | None = None) -> dict:
+    if bool(verified_cache) != bool(verified_cache_sha256) or (verified_cache and not scrub):
+        raise ValueError("verified cache requires its pinned SHA256 and a full byte scrub")
     if date.fromisoformat(run_date).isoformat() != run_date:
         raise ValueError("audit date must be YYYY-MM-DD")
     data_root = data_root.expanduser().resolve(strict=True)
@@ -79,20 +88,32 @@ def audit(data_root: Path, run_date: str, *, scrub: bool = False, public: bool =
     # lock. Concurrent audits of the same index fail promptly; ingest continues.
     # The existing helper safely recovers a dead owner's lock after interruption.
     with production_lock(output / ".audit.lock", "cdr-quality-audit"):
+        options = ({"verified_cache": verified_cache, "verified_cache_sha256": verified_cache_sha256}
+                   if verified_cache else {})
         return _audit_locked(data_root, run_date, output=output, scrub=scrub,
-                             public=public, app_report=app_report)
+                             public=public, app_report=app_report, **options)
 
 
 def _audit_locked(data_root: Path, run_date: str, *, output: Path, scrub: bool,
-                  public: bool, app_report: Path | None) -> dict:
-    index = AuditIndex(output / "index.sqlite")
+                  public: bool, app_report: Path | None, verified_cache: Path | None = None,
+                  verified_cache_sha256: str | None = None) -> dict:
+    from cdr_quality_cache import VerifiedAuditCache
+    cache = VerifiedAuditCache(verified_cache, verified_cache_sha256) if verified_cache else None
+    index = None
     try:
-        results, issues, cached = collect_sources(data_root, index, run_date, scrub)
+        index = AuditIndex(output / "index.sqlite")
+        results, issues, cached = (collect_sources(data_root, index, run_date, scrub, cache) if cache
+                                   else collect_sources(data_root, index, run_date, scrub))
         ledger = verify_ledger(data_root / "state", verify_artifacts=False)
         issues.extend({"code": "LEDGER_INTEGRITY", **finding} for finding in ledger["findings"])
         logs = audit_logs(data_root, index, scrub=scrub)
+        if cache:
+            cache.verify_files()
     finally:
-        index.close()
+        if index is not None:
+            index.close()
+        if cache:
+            cache.close()
     issues.extend(logs["errors"])
     for log in logs["files"]:
         if log["invalid_jsonl_lines"] or log["overlong_lines"] or not log["stable"]:
@@ -133,6 +154,11 @@ def _audit_locked(data_root: Path, run_date: str, *, output: Path, scrub: bool,
               "sources": source_summaries, "history": history, "ledger": ledger, "logs": logs,
               "publication": publication, "consumer": consumer, "issues": issues, "warnings": warnings,
               "backup": {"status": "UNVERIFIED", "receipt": "read independent Drive backup status; never inferred from ingest"}}
+    if cache:
+        report["verified_cache"] = {"manifest_sha256": verified_cache_sha256,
+            "origin_commit": cache.manifest["origin"]["commit"],
+            "origin_result": cache.manifest["origin"]["resource_result"],
+            "reused_observations": cache.reused, "all_source_artifacts_rehashed": True}
     target = output / "reports" / run_date / f"{report['audit_id']}.json"
     atomic_write_json(target, report, create_once=True)
     atomic_write_json(output / "latest.json", {"schema_version": 1, "path": target.relative_to(output).as_posix(),
@@ -150,10 +176,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-public", action="store_true", help="Source-only diagnostic, never full acceptance")
     parser.add_argument("--app-audit", type=Path)
     parser.add_argument("--audit-root", type=Path, help="Optional isolated derived-output directory outside source data")
+    parser.add_argument("--verified-cache", type=Path, help="Sealed historical calculations; requires --scrub and its SHA256")
+    parser.add_argument("--verified-cache-sha256")
     args = parser.parse_args(argv)
     try:
         date.fromisoformat(args.date)
-        report = audit(args.data_root, args.date, scrub=args.scrub, public=not args.no_public, app_report=args.app_audit, audit_root=args.audit_root)
+        report = audit(args.data_root, args.date, scrub=args.scrub, public=not args.no_public,
+                       app_report=args.app_audit, audit_root=args.audit_root,
+                       verified_cache=args.verified_cache, verified_cache_sha256=args.verified_cache_sha256)
         return {"PASS": 0, "WARN": 1, "FAIL": 2, "BLOCKED": 3}[report["status"]]
     except (OSError, ValueError, KeyError, RuntimeError, TypeError, sqlite3.Error) as exc:
         print(json.dumps({"status": "BLOCKED", "reason": str(exc)}))
