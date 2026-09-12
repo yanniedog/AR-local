@@ -123,6 +123,24 @@ def immutable_write(path: Path, payload: bytes) -> None:
 def process_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        if pid > 0xFFFFFFFF:
+            return False
+        # This installed module has a fixed dependency manifest. Query Windows
+        # directly rather than adding an undeployed import or sending signal 0.
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        kernel.WaitForSingleObject.restype = ctypes.c_uint32
+        kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
+        handle = kernel.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE only
+        if not handle:
+            return ctypes.get_last_error() != 87  # Only invalid PID proves absence.
+        try:
+            return kernel.WaitForSingleObject(handle, 0) != 0
+        finally:
+            kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True

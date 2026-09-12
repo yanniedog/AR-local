@@ -11,6 +11,7 @@ from typing import Iterator
 
 from ar_local_backup_policy import fsync_directory
 from cdr_file_lock import FileLock
+from process_safety import process_alive
 
 LOCK_STALE_SECONDS = 6 * 60 * 60
 BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
@@ -33,15 +34,8 @@ def _boot_epoch() -> float | None:
 
 
 def _pid_is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    # Windows interprets signal zero as CTRL_C_EVENT, not a liveness probe.
+    return process_alive(pid)
 
 
 def _lock_values(path: Path) -> dict[str, str]:
