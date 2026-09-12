@@ -158,6 +158,11 @@ def classify_bank_rate_row(
     """
     category = str(flat_base.get("category") or "").strip().upper()
     pc = _CATEGORY_TO_PC.get(category) or _DATASET_FALLBACK.get(dataset, "UNKNOWN")
+    if dataset == "TD":
+        from cdr_product_classification import is_savings_term_deposit_row
+
+        if is_savings_term_deposit_row(flat_base):
+            pc = "TERM_DEPOSIT"
 
     rate_raw = str(flat_base.get("rate_type") or "").strip().upper()
     rate_token = _RATE_TYPE_MAP.get(rate_raw, "OTHER")

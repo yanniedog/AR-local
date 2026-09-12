@@ -51,7 +51,7 @@ def exclusion_reason(row: Mapping[str, Any]) -> str | None:
     section = row.get("dataset")
     if section not in SECTIONS:
         return "unsupported_section"
-    if category_excludes_section(row.get("category"), str(section)):
+    if category_excludes_section(row.get("category"), str(section), row=row):
         return "out_of_section_category"
     if section_filter(str(section), dict(row)):
         return None

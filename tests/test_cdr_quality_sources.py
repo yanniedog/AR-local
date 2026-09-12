@@ -73,10 +73,10 @@ def test_old_audit_version_cannot_supply_new_detail_equality_proof(tmp_path):
     result = {"key": "retained", "run_date": "2026-05-25", "fingerprint": "unchanged"}
     try:
         index.db.execute("INSERT INTO audits VALUES(?,?,?,?,?)", (
-            result["key"], result["run_date"], result["fingerprint"], 2,
+            result["key"], result["run_date"], result["fingerprint"], 3,
             zlib.compress(json.dumps(result).encode())))
         index.db.commit()
-        assert AUDIT_VERSION == 3
+        assert AUDIT_VERSION == 4
         assert index.get("retained", "unchanged") is None
         index.put(result)
         assert index.get("retained", "unchanged") == result

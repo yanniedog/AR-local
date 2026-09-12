@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import OrderedDict
+from contextlib import contextmanager
 import errno
 import gzip
 import json
@@ -19,7 +20,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Iterator, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
@@ -40,7 +41,7 @@ from cdr_ribbon_normalize import (
 )
 import rba_decisions
 from cdr_public_api_shims import (
-    connect_readonly,
+    connect_readonly as _connect_readonly,
     latest_home_loan_rows as build_latest_home_loan_rows,
     latest_term_deposit_rows as build_latest_term_deposit_rows,
     local_rba_history_rows as build_local_rba_history_rows,
@@ -135,6 +136,26 @@ BANK_HISTORY_COLUMNS = (
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
 
+def register_bank_category_filter(connection: sqlite3.Connection) -> None:
+    from cdr_product_classification import has_savings_term_deposit_evidence
+
+    def source_term_deposit(details_json):
+        try:
+            detail = json.loads(details_json or "null")
+            return int(isinstance(detail, dict) and has_savings_term_deposit_evidence(detail))
+        except (ValueError, TypeError):
+            return 0
+
+    connection.create_function("cdr_source_term_deposit", 1, source_term_deposit, deterministic=True)
+
+
+@contextmanager
+def connect_readonly(path: Path) -> Iterator[sqlite3.Connection]:
+    with _connect_readonly(path) as connection:
+        register_bank_category_filter(connection)
+        yield connection
+
+
 def bank_section_rate_filter(run_date: str | None, section: str) -> tuple[str, list[str]]:
     from cdr_product_classification import excluded_category_tokens
 
@@ -147,7 +168,8 @@ def bank_section_rate_filter(run_date: str | None, section: str) -> tuple[str, l
     category_params = [run_date, section, *excluded] if run_date else [section, *excluded]
     category_sql = (f" AND {identity} NOT IN (SELECT {columns} FROM bank_products WHERE "
                     + date_clause + "dataset = ? AND product_key IS NOT NULL AND run_date IS NOT NULL AND "
-                    "UPPER(COALESCE(category, '')) IN (" + ",".join("?" for _ in excluded) + "))")
+                    "UPPER(COALESCE(category, '')) IN (" + ",".join("?" for _ in excluded) + ")"
+                    + (" AND cdr_source_term_deposit(details_json) = 0" if section == "TD" else "") + ")")
     if section == "Mortgage":
         return " AND rate_family = ? AND COALESCE(rate_type, '') != ?" + category_sql, ["lending", "DISCOUNT", *category_params]
     return " AND rate_family = ?" + category_sql, ["deposit", *category_params]
