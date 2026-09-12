@@ -29,7 +29,7 @@ def export(root, products, rate_products):
     return status
 
 
-def proof(root, state, parent, status, claims):
+def proof(root, state, parent, status, claims, *, probes=(), probe_fault=""):
     # p1 is absent from the fresh complete index; p2 remains in scope and the
     # existing classifier explicitly excludes scope. No verifier is mocked.
     journal = RawAttemptJournal(root / "attempt-evidence" / "raw-attempt-journals-v1", "current")
@@ -46,6 +46,15 @@ def proof(root, state, parent, status, claims):
         "event_seq": event["sequence"], "journal_session_id": journal.session_id}],
         "fresh_index_sha256": hashlib.sha256(canonical_json_bytes({
             "page_body_sha256": [digest]})).hexdigest()}
+    for number, (pid, response_status, category) in enumerate(probes):
+        detail = {"productId": pid}
+        detail.update(category if isinstance(category, dict) else {"productCategory": category})
+        probe_date = "2026-09-05" if probe_fault == "old_day" else DATE
+        journal.record(f"detail-{number}", request_url=ENDPOINT + "/" + ("wrong" if probe_fault == "wrong_url" else pid),
+            status=response_status, outcome="success" if response_status == 200 else "http_error",
+            body=canonical_json_bytes({"data": detail}),
+            started_at=probe_date + "T00:00:02Z", completed_at=probe_date + "T00:00:03Z",
+            context={"provider": "Provider", "phase": "classification_detail", "product_id": pid})
     contract = load_contract(state / parent["export_contract_path"])
     status.update(raw_attempt_journal={"path": journal.root.relative_to(root).as_posix(),
                                       "session_id": journal.session_id},
@@ -107,3 +116,36 @@ def test_scope_product_cannot_also_claim_withdrawal_from_the_same_index(tmp_path
     assert selected_observation(state, DATE)["contract"]["generation_id"] == parent["generation_id"]
     receipt = json.loads(next((state / "observation-selections-v1" / DATE).glob("*.json")).read_bytes())
     assert receipt["reason"] == "selection_evidence_unavailable:ValueError"
+
+
+@pytest.mark.parametrize("probe_fault", ["", "old_day", "wrong_url"])
+@pytest.mark.parametrize("probes,accepted", [
+    ([("scope", 503, "BUSINESS_LOANS")], False),
+    ([("scope", 200, "RESIDENTIAL_MORTGAGES")], False),
+    ([("scope", 200, "UNKNOWN")], True),
+    ([("scope", 200, {})], True),
+    ([("scope", 200, {"name": "Home Loan"})], False),
+    ([("scope", 200, {"productId": "wrong-product"})], False),
+    ([("scope", 200, {"lendingRates": "unusable"})], False),
+    ([("scope", 200, "BUSINESS_LOANS")], True),
+    ([("unrelated", 503, "BUSINESS_LOANS")], True),
+    ([("scope", 200, "BUSINESS_LOANS"), ("scope", 503, "BUSINESS_LOANS")], False),
+    ([("scope", 503, "BUSINESS_LOANS"), ("scope", 200, "BUSINESS_LOANS")], True),
+])
+def test_final_classification_probe_cannot_be_mistaken_for_a_scope_exclusion(tmp_path, probes, accepted, probe_fault):
+    state = tmp_path / "state"
+    old = tmp_path / "runs" / DATE / "_exports"
+    new = old.parent / "_revisions" / "scope" / "_exports"
+    export(old, ["p1", "p2", "scope"], ["p1", "p2", "scope"])
+    parent = finish(old, state, "done")
+    status = export(new, ["p2"], ["p2"])
+    proof(new, state, parent, status, ["p1"], probes=probes, probe_fault=probe_fault)
+    accepted = accepted and (not probe_fault or probes[-1][0] == "unrelated")
+    marker = finish(new, state, "revision.scope", parent["generation_id"])
+    assert selected_observation(state, DATE)["contract"]["generation_id"] == (marker if accepted else parent)["generation_id"]
+    receipt = json.loads(next((state / "observation-selections-v1" / DATE).glob("*.json")).read_bytes())
+    assert receipt["reason"] == ("same_day_coverage_preserved" if accepted
+                                  else "previously_captured_products_missing_without_fresh_withdrawal")
+    if accepted and probes[-1][0] == "scope":
+        row = receipt["scope_reconciliation"]["scope_exclusions"][0]
+        assert len(row["detail_event_digest"]) == len(row["detail_body_sha256"]) == 64
