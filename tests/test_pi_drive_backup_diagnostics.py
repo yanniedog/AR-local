@@ -148,7 +148,8 @@ def test_operation_cannot_redirect_diagnostics_outside_spool(spool):
 
 
 @pytest.mark.parametrize("fault", ["reader", "result"])
-def test_diagnostic_failure_preserves_primary_blocked_interruption(monkeypatch, spool, fault):
+@pytest.mark.parametrize("error_type", [backup.Blocked, RuntimeError])
+def test_diagnostic_failure_preserves_primary_blocked_interruption(monkeypatch, spool, fault, error_type):
     ready = spool / "ready"
     code = ("import pathlib,sys,time;sys.stderr.write('private-before-stop');sys.stderr.flush();"
             f"pathlib.Path({str(ready)!r}).touch();time.sleep(30)")
@@ -161,9 +162,9 @@ def test_diagnostic_failure_preserves_primary_blocked_interruption(monkeypatch, 
     monkeypatch.setattr(diagnostics, "_private_file", fail_capture)
     def guard():
         if ready.exists():
-            raise backup.Blocked("original quiet-window interruption")
+            raise error_type("original guard interruption")
     monkeypatch.setattr(backup, "guard_window", guard)
-    with pytest.raises(backup.Blocked, match="original quiet-window interruption"):
+    with pytest.raises(error_type, match="original guard interruption"):
         client.run("backup")
     command = next((spool / "diagnostics").iterdir())
     assert (command / "started.json").is_file()
@@ -171,9 +172,90 @@ def test_diagnostic_failure_preserves_primary_blocked_interruption(monkeypatch, 
         value = json.loads((command / "result.json").read_text())
         assert value["result"] == "INCOMPLETE" and value["reader_error"]
         assert value["category"] == "DIAGNOSTIC_CAPTURE_INCOMPLETE"
+        assert value["stderr_tail_sha256"] == hashlib.sha256((command / "stderr.tail").read_bytes()).hexdigest()
     else:
         assert not (command / "result.json").exists()
     assert not (spool / "latest-verified.json").exists()
+
+
+def test_reader_failure_terminates_a_child_that_ignores_closed_stderr(monkeypatch, spool):
+    client = real_child(monkeypatch, spool,
+        "import os,time;os.write(2,b'private transport marker');time.sleep(30)")
+    original = diagnostics._private_file
+    def fail_capture(path, raw):
+        if path.name == "stderr.tail.pending":
+            raise OSError("fixture reader failure")
+        return original(path, raw)
+    monkeypatch.setattr(diagnostics, "_private_file", fail_capture)
+    began = time.monotonic()
+    def guard():
+        if time.monotonic() - began > 6:
+            raise backup.Blocked("test-only fallback deadline")
+    monkeypatch.setattr(backup, "guard_window", guard)
+    with pytest.raises(RuntimeError, match="diagnostic reader failed"):
+        client.run("backup")
+    assert time.monotonic() - began < 5
+    _, value = report(spool)
+    assert value["reader_error"] and value["exit_code"] != 0
+    assert value["result"] == "INCOMPLETE"
+
+
+@pytest.mark.parametrize("returncode", [0, 1, 11])
+def test_nonzero_exit_semantics_survive_final_receipt_failure(monkeypatch, spool, returncode):
+    client = real_child(monkeypatch, spool, f"import sys;sys.stderr.write('private text');sys.exit({returncode})")
+    original = diagnostics._private_file
+    def fail_capture(path, raw):
+        if path.name == "result.json":
+            raise OSError("fixture final receipt failure")
+        return original(path, raw)
+    monkeypatch.setattr(diagnostics, "_private_file", fail_capture)
+    if returncode == 11:
+        error_type, match = backup.Blocked, "repository lock prevents backup.*no automatic unlock"
+    elif returncode:
+        error_type, match = RuntimeError, "restic backup failed with exit 1;.*DIAGNOSTIC_CAPTURE_INCOMPLETE"
+    else:
+        error_type, match = OSError, "fixture final receipt failure"
+    with pytest.raises(error_type, match=match):
+        client.run("backup")
+    command = next((spool / "diagnostics").iterdir())
+    assert (command / "started.json").exists() and not (command / "result.json").exists()
+    assert not (spool / "latest-verified.json").exists()
+
+
+def test_noncontiguous_stderr_cannot_invent_a_failure_signature(spool):
+    code = ("import sys;sys.stderr.buffer.write(b'x'*" + str(diagnostics.HEAD_BYTES - 8)
+            + "+b'invalid_'+b'discarded'*(32*1024)+b'grant'+b'x'*"
+            + str(diagnostics.TAIL_BYTES - 5) + ");sys.exit(1)")
+    with diagnostics.StderrCapture(spool, "backup") as capture:
+        process = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.PIPE)
+        capture.attach(process.stderr, process.pid)
+        assert process.wait(timeout=20) == 1
+        value = capture.finish(process.returncode)
+    assert value["category"] == "UNCLASSIFIED"
+    path, receipt = report(spool)
+    assert receipt["stderr_truncated"]
+    assert (path.parent / "stderr.head").read_bytes().endswith(b"invalid_")
+    assert (path.parent / "stderr.tail").read_bytes().startswith(b"grant")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group exit race")
+def test_child_exit_race_during_cleanup_keeps_primary_guard_failure(monkeypatch, spool):
+    ready = spool / "ready"
+    client = real_child(monkeypatch, spool,
+        f"import pathlib,time;pathlib.Path({str(ready)!r}).touch();time.sleep(30)")
+    original = os.killpg
+    def exited_between_poll_and_signal(pid, sig):
+        original(pid, sig)
+        raise ProcessLookupError("fixture already-exited process group")
+    monkeypatch.setattr(os, "killpg", exited_between_poll_and_signal)
+    def guard():
+        if ready.exists():
+            raise backup.Blocked("original guard failure")
+    monkeypatch.setattr(backup, "guard_window", guard)
+    with pytest.raises(backup.Blocked, match="original guard failure"):
+        client.run("backup")
+    _, value = report(spool)
+    assert value["category"] == "INTERRUPTED" and value["exit_code"] != 0
 
 
 def test_diagnostic_failure_without_primary_error_still_fails_closed(monkeypatch, spool):
