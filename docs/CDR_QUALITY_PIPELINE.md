@@ -135,6 +135,10 @@ exclusions. An exclusion requires the exact product in a fresh, complete,
 contract-bound index from the same registered provider and an existing
 out-of-scope CDR category. Selection receipts retain each product's category,
 index body/event hashes, prior rate-row count and complete count reconciliation.
+When verified withdrawals occur alongside scope exclusions, only identities
+present before and absent afterward contribute withdrawn-row allowances. The
+receipt records both disjoint allowances and the remaining rate delta; duplicate
+claims or retained stale products cannot excuse another product's lost rows.
 Absent or in-scope products, unverified evidence, and unexplained rate loss still
 refuse selection. After an approved selection-policy repair, the existing
 watchdog reconsiders retained finalized generations before any network probe or

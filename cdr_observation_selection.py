@@ -257,7 +257,14 @@ def same_day_selection_reason(state: Path, current: Mapping, incoming: Mapping,
 
         missing = before - after - withdrawals
         exclusions = verified_scope_exclusions(new, old, missing)
-        excluded_rates = add_excluded_rate_counts(old, exclusions)
+        removed_withdrawals = [{"provider": provider, "product_id": pid}
+                               for provider, pid in sorted((before - after) & withdrawals)]
+        # Only actually removed identities earn an allowance. The exclusion
+        # list is disjoint because verified withdrawals were removed above.
+        removed_rates = add_excluded_rate_counts(
+            old, exclusions + removed_withdrawals if exclusions else [])
+        excluded_rates = sum(row["previous_rate_rows"] for row in exclusions)
+        withdrawn_rates = removed_rates - excluded_rates
         unexplained = missing - {(row["provider"], row["product_id"]) for row in exclusions}
         if exclusions and reconciliation is not None:
             reconciliation.update(
@@ -266,14 +273,17 @@ def same_day_selection_reason(state: Path, current: Mapping, incoming: Mapping,
                 previous_rate_rows=int(old_coverage.get("eligible_rate_rows") or 0),
                 candidate_rate_rows=int(new_coverage.get("eligible_rate_rows") or 0),
                 scope_exclusions=exclusions, scope_excluded_rate_rows=excluded_rates,
+                removed_withdrawals=removed_withdrawals, withdrawn_rate_rows=withdrawn_rates,
                 unexplained_missing_products=[list(key) for key in sorted(unexplained)],
                 rate_delta_after_scope_exclusions=(int(new_coverage.get("eligible_rate_rows") or 0)
                     - int(old_coverage.get("eligible_rate_rows") or 0) + excluded_rates),
+                rate_delta_after_verified_removals=(int(new_coverage.get("eligible_rate_rows") or 0)
+                    - int(old_coverage.get("eligible_rate_rows") or 0) + removed_rates),
             )
         if unexplained:
             return "previously_captured_products_missing_without_fresh_withdrawal"
-        if (exclusions and not withdrawals and int(new_coverage.get("eligible_rate_rows") or 0)
-                < int(old_coverage.get("eligible_rate_rows") or 0) - excluded_rates):
+        if (exclusions and int(new_coverage.get("eligible_rate_rows") or 0)
+                < int(old_coverage.get("eligible_rate_rows") or 0) - removed_rates):
             return "in_scope_rate_coverage_regressed"
         improved = bool(after - before)
     else:

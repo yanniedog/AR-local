@@ -134,7 +134,7 @@ def _scope_exclusions(observation: Mapping, source: Mapping,
 
 
 def add_excluded_rate_counts(source: Mapping, exclusions: list[dict]) -> int:
-    """Reconcile prior normalized rows; source DB was verified by identity audit."""
+    """Count prior scope/withdrawal rows; source DB was verified by identity audit."""
     from cdr_observation_selection import safe_child
 
     if not exclusions:
