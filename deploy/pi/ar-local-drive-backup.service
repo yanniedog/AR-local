@@ -11,7 +11,7 @@ WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 EnvironmentFile=/etc/ar-local/drive-backup.env
-ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_drive_backup.py run --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-daily.service --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-daily.timer --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup.service --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup.timer --control-file {{AR_LOCAL_REPO}}/docs/GOOGLE_DRIVE_BACKUP.md
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_drive_backup.py run --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-daily.service --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-daily.timer --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup.service --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup.timer --control-file {{AR_LOCAL_REPO}}/deploy/pi/ar-local-drive-backup-queue.timer --control-file {{AR_LOCAL_REPO}}/docs/GOOGLE_DRIVE_BACKUP.md
 Nice=15
 IOSchedulingClass=idle
 CPUQuota=100%

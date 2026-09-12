@@ -135,18 +135,22 @@ BANK_HISTORY_COLUMNS = (
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
 
-def bank_section_rate_filter(run_date: str, section: str) -> tuple[str, list[str]]:
+def bank_section_rate_filter(run_date: str | None, section: str) -> tuple[str, list[str]]:
     from cdr_product_classification import excluded_category_tokens
 
     excluded = excluded_category_tokens(section)
     # Category lives in bank_products. Bind the date/section so SQLite builds
     # the exclusion set once instead of scanning products for every rate row.
-    category_sql = (" AND product_key NOT IN (SELECT product_key FROM bank_products WHERE "
-                    "run_date = ? AND dataset = ? AND "
+    identity = "product_key" if run_date else "(run_date, product_key)"
+    columns = "product_key" if run_date else "run_date, product_key"
+    date_clause = "run_date = ? AND " if run_date else ""
+    category_params = [run_date, section, *excluded] if run_date else [section, *excluded]
+    category_sql = (f" AND {identity} NOT IN (SELECT {columns} FROM bank_products WHERE "
+                    + date_clause + "dataset = ? AND product_key IS NOT NULL AND run_date IS NOT NULL AND "
                     "UPPER(COALESCE(category, '')) IN (" + ",".join("?" for _ in excluded) + "))")
     if section == "Mortgage":
-        return " AND rate_family = ? AND COALESCE(rate_type, '') != ?" + category_sql, ["lending", "DISCOUNT", run_date, section, *excluded]
-    return " AND rate_family = ?" + category_sql, ["deposit", run_date, section, *excluded]
+        return " AND rate_family = ? AND COALESCE(rate_type, '') != ?" + category_sql, ["lending", "DISCOUNT", *category_params]
+    return " AND rate_family = ?" + category_sql, ["deposit", *category_params]
 
 # Banking dashboard SPA entry URLs (client app.js sectionToPath / sectionFromPathname).
 # Must serve dashboard/index.html — not site_root/savings/ (a directory → 404).
@@ -369,6 +373,42 @@ def canonicalize_history_row(item: dict[str, object]) -> None:
 
 def canonicalize_section_row(item: dict[str, object], section: str) -> None:
     canonicalize_rate_structure_fields(item, section)
+
+
+def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
+    with connect_readonly(db_path) as con:
+        available = bank_rate_columns(con)
+        select_list = bank_rate_select_list(available, BANK_HISTORY_COLUMNS)
+        sql = f"SELECT {select_list} FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
+        params: list[str] = []
+        if max_run_date:
+            sql += " AND run_date <= ?"
+            params.append(max_run_date)
+        if section:
+            sql += " AND dataset = ?"
+            params.append(section)
+            # Same DISCOUNT / rate_family filter the section endpoint applies,
+            # so the history payload doesn't ship rows the dashboard discards.
+            filter_sql, filter_params = bank_section_rate_filter(None, section)
+            sql += filter_sql
+            params.extend(filter_params)
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+        rows = con.execute(sql, params)
+        out = []
+        for row in rows:
+            item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
+            # dataset and rate_family are needed by canonicalize_history_row
+            # (Mortgage branch) and by callers of the unscoped endpoint to
+            # identify which section a row belongs to. When we're scoped to
+            # a single section those two fields are constant — the client
+            # already knows them from the request — so drop them after
+            # canonicalisation to save the wire cost.
+            canonicalize_history_row(item)
+            if section:
+                item.pop("dataset", None)
+                item.pop("rate_family", None)
+            out.append(compact_bank_row(item))
+        return out
 
 
 def history_index_key(row: dict[str, object]) -> str:
@@ -845,41 +885,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     def local_rba_history_rows() -> Tuple[bytes, bytes | None]:
         body = build_local_rba_history_rows()
         return body, maybe_gzip(body, "application/json")
-
-    def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
-        with connect_readonly(db_path) as con:
-            available = bank_rate_columns(con)
-            select_list = bank_rate_select_list(available, BANK_HISTORY_COLUMNS)
-            sql = f"SELECT {select_list} FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
-            params: list[str] = []
-            if max_run_date:
-                sql += " AND run_date <= ?"
-                params.append(max_run_date)
-            if section:
-                sql += " AND dataset = ?"
-                params.append(section)
-                # Same DISCOUNT / rate_family filter the section endpoint applies,
-                # so the history payload doesn't ship rows the dashboard discards.
-                filter_sql, filter_params = bank_section_rate_filter(run_date, section)
-                sql += filter_sql
-                params.extend(filter_params)
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-            rows = con.execute(sql, params)
-            out = []
-            for row in rows:
-                item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
-                # dataset and rate_family are needed by canonicalize_history_row
-                # (Mortgage branch) and by callers of the unscoped endpoint to
-                # identify which section a row belongs to. When we're scoped to
-                # a single section those two fields are constant — the client
-                # already knows them from the request — so drop them after
-                # canonicalisation to save the wire cost.
-                canonicalize_history_row(item)
-                if section:
-                    item.pop("dataset", None)
-                    item.pop("rate_family", None)
-                out.append(compact_bank_row(item))
-            return out
 
     def bank_history_payload(max_run_date: str, section: str = "") -> Tuple[bytes, bytes | None]:
         dbs = bank_history_db_paths(max_run_date)

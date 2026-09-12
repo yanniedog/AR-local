@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from app_payload_common import section_filter
-from cdr_dashboard_server import bank_section_rate_filter
+from cdr_dashboard_server import bank_section_rate_filter, read_bank_history_db
 
 
 def test_dashboard_filters_real_misclassified_products_like_the_publisher():
@@ -29,3 +29,24 @@ def test_dashboard_filters_real_misclassified_products_like_the_publisher():
         assert excluded == 27
     finally:
         db.close()
+
+
+def test_history_reader_keeps_each_dates_category_scope(tmp_path):
+    evidence = Path(__file__).parents[1] / 'docs/evidence/backup-observation-20260911/publication/v1-core.json.gz'
+    core = json.loads(gzip.decompress(evidence.read_bytes()))
+    real = next(row for row in core['sections']['Mortgage']['rates']
+                if row.get('category') == 'RESIDENTIAL_MORTGAGES' and row.get('rate_type') != 'DISCOUNT')
+    day = core['run_date']
+    db_path = tmp_path / 'history.sqlite'
+    with sqlite3.connect(db_path) as db:
+        db.execute('CREATE TABLE bank_products (run_date TEXT, dataset TEXT, product_key TEXT, category TEXT)')
+        db.execute('CREATE TABLE bank_rates (run_date TEXT, dataset TEXT, product_key TEXT, rate TEXT, rate_family TEXT, rate_type TEXT)')
+        db.execute('INSERT INTO bank_products VALUES (?,?,?,?)', (day, 'Mortgage', real['product_key'], real['category']))
+        db.execute('INSERT INTO bank_rates VALUES (?,?,?,?,?,?)', (day, 'Mortgage', real['product_key'], real['rate'], 'lending', real.get('rate_type')))
+        # Structural fault injection: a later category change must not hide an
+        # earlier valid row with the same product key. This is not capture data.
+        db.execute('INSERT INTO bank_products VALUES (?,?,?,?)', ('2026-09-12', 'Mortgage', real['product_key'], 'BUSINESS_LOANS'))
+        db.execute('INSERT INTO bank_rates VALUES (?,?,?,?,?,?)', ('2026-09-12', 'Mortgage', real['product_key'], real['rate'], 'lending', real.get('rate_type')))
+    rows = read_bank_history_db(db_path, '2026-09-12', 'Mortgage')
+    assert [(row['run_date'], row['product_key'], row['rate']) for row in rows] == [(day, real['product_key'], real['rate'])]
+    assert read_bank_history_db(db_path, day, 'Mortgage') == rows
