@@ -156,3 +156,17 @@ def test_no_winner_source_day_requires_matching_ordinary_rows(tmp_path, days, re
             'reason': 'retained_rate_mapping_unresolved', 'details_sha256': digest(raw)}]
     else:
         assert holds == []
+
+
+@pytest.mark.parametrize('source_value,row_value', [('not-a-number', 'different-invalid'), ('NaN', 'NaN'), ('Infinity', 'Infinity')])
+def test_invalid_optional_numeric_metadata_cannot_prove_a_rate_match(days, source_value, row_value):
+    banks = days['2026-09-06']
+    raw = json.loads(banks['products'][0]['details_json'])
+    raw['depositRates'][4]['comparisonRate'] = source_value
+    banks['products'][0]['details_json'] = json.dumps(raw)
+    prize = next(row for row in banks['rates'] if row['rate'] == '0.115')
+    prize['comparison_rate'] = row_value  # Metadata fault on a retained test copy.
+    rows, report = project_standard_history_rows(banks, '2026-09-06')
+    assert next(row for row in rows if row['rate'] == '0.115')['account_class'] == 'standard'
+    assert report['changes'] == []
+    assert any(issue['reason'] == 'retained_rate_mapping_unresolved' for issue in report['unknown'].values())

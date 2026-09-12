@@ -18,6 +18,7 @@ _IDENTITY = ("provider", "product_id", "category", "dataset")
 _TEXT = ("rate_family", "rate_type", "application_type", "application_frequency",
          "repayment_type", "loan_purpose", "term")
 _NUMBERS = ("rate", "comparison_rate", "balance_min", "balance_max")
+_INVALID = object()
 
 
 def identity(row):
@@ -34,15 +35,18 @@ def _number(value):
         return None
     try:
         number = Decimal(str(value))
-        return number if number.is_finite() else "invalid"
+        return number if number.is_finite() else _INVALID
     except InvalidOperation:
-        return "invalid"
+        return _INVALID
 
 
 def _matches(row, candidate):
     # Price alone cannot distinguish a restricted and an ordinary sibling.
-    return (all(str(row.get(field) or "") == str(candidate.get(field) or "") for field in _TEXT)
-            and all(_number(row.get(field)) == _number(candidate.get(field)) for field in _NUMBERS))
+    for field in _NUMBERS:
+        left, right = _number(row.get(field)), _number(candidate.get(field))
+        if left is _INVALID or right is _INVALID or left != right:
+            return False
+    return all(str(row.get(field) or "") == str(candidate.get(field) or "") for field in _TEXT)
 
 
 def _source(product):
