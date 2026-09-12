@@ -113,7 +113,9 @@ def worker(request_path):
     if ready["result"] != "PASS":
         raise backup.Blocked("; ".join(ready["reasons"]))
     try:
-        result = worker_action(config, request)
+        from pi_drive_backup_diagnostics import operation_scope
+        with operation_scope(request_path.parent):
+            result = worker_action(config, request)
     except (OSError, ValueError, RuntimeError) as error:
         result = {"result": "BLOCKED" if isinstance(error, backup.Blocked) else "FAIL", "error": str(error)}
     backup.atomic_json(request_path.parent / "candidate.json", result, immutable=True)

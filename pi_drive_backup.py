@@ -30,6 +30,7 @@ from ar_local_operation_lock import production_lock
 from pi_drive_backup_source import (SCHEMA, canonical_json_bytes, digest, freeze,
     restore_relative, validate_layout, verify_direct_sources, verify_restore)
 from pi_drive_backup_manifest import SelectedRows, close_manifest, json_chunks, load_manifest
+from pi_drive_backup_diagnostics import StderrCapture
 
 TZ = ZoneInfo("Australia/Hobart")
 TAG = "ar-local-drive-v1"
@@ -157,10 +158,11 @@ class Restic:
         for key in ("RESTIC_PASSWORD", "RESTIC_PASSWORD_COMMAND", "RESTIC_REPOSITORY_FILE"):
             env.pop(key, None)
         command = [cfg.restic, "--compression", "auto", "--pack-size", "16", *args]
-        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-            process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr,
+        with tempfile.TemporaryFile() as stdout, StderrCapture(cfg.spool, args[0]) as capture:
+            process = subprocess.Popen(command, env=env, stdout=stdout, stderr=subprocess.PIPE,
                                        shell=False, start_new_session=os.name == "posix")
             try:
+                capture.attach(process.stderr, process.pid)
                 deadline = time.monotonic() + 20 * 3600
                 while process.poll() is None:
                     guard_window()
@@ -183,12 +185,14 @@ class Restic:
                         process.kill()
                     process.wait(timeout=15)
                 raise
+            finally:
+                diagnostic = capture.finish(process.returncode, interrupted=sys.exc_info()[0] is not None)
             if process.returncode == 11:
-                raise Blocked("repository lock prevents backup; inspect retained resource receipts and live Restic owners before scoped stale-lock recovery; no automatic unlock performed")
+                raise Blocked("repository lock prevents backup; inspect retained resource receipts and live Restic owners before scoped stale-lock recovery; no automatic unlock performed; diagnostic=" + diagnostic["path"])
             if process.returncode != 0:
-                # Raw stderr can contain backend URLs, credentials or provider
-                # responses. Only the phase and exit code leave this function.
-                raise RuntimeError(f"restic {args[0]} failed with exit {process.returncode}; credentials withheld")
+                # Only a fixed category and private evidence ID leave this function.
+                raise RuntimeError(f"restic {args[0]} failed with exit {process.returncode}; "
+                                   f"category={diagnostic['category']}; diagnostic={diagnostic['path']}; credentials withheld")
             stdout.seek(0)
             output = stdout.read(16 * 1024 * 1024 + 1)
             if len(output) > 16 * 1024 * 1024:
