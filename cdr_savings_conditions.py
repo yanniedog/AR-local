@@ -26,15 +26,15 @@ _PROMO_MONTHS = re.compile(
 def savings_rate_conditions(item: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Retain rate and tier condition records with their original scope."""
     out: list[dict[str, Any]] = []
-    info = item.get("additionalInfo")
-    if isinstance(info, str) and info.strip():
-        out.append({"label": "Rate information", "info": info})
     scopes = [("Rate", item)]
     tiers = item.get("tiers")
     if isinstance(tiers, list):
         scopes.extend((f"Tier {i}", tier) for i, tier in enumerate(tiers, 1)
                       if isinstance(tier, Mapping))
     for scope, record in scopes:
+        info = record.get("additionalInfo")
+        if isinstance(info, str) and info.strip():
+            out.append({"label": f"{scope} information", "info": info})
         conditions = record.get("applicabilityConditions")
         if not isinstance(conditions, list):
             continue

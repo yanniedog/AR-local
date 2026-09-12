@@ -6,6 +6,7 @@ contracts/v3/fixtures/valid-canonical-core-v3.json -text
 tests/fixtures/canonical_domain_real_observations.json -text
 tests/fixtures/cdr-canary-2026-09-07/*.json -text
 tests/fixtures/bankwest_easy_saver_real_2026-09-13.json -text
+tests/fixtures/bankwest_history_real_2026-09-06_to_13.json -text
 
 # Receipt-binding execution evidence retains its recorded bytes on both hosts.
 docs/evidence/recovery-receipt-binding-20260908/* -text
