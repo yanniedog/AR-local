@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import re
+import select
 import signal
 import subprocess
 import sys
@@ -145,19 +146,66 @@ def members(cgroup: Path) -> set[int]:
     return {int(value) for value in (cgroup / "cgroup.procs").read_text().split()}
 
 
+def pidfd_exited(descriptor: int, wait_ms: int = 0) -> bool:
+    poller = select.poll()
+    poller.register(descriptor, select.POLLIN)
+    events = poller.poll(wait_ms)
+    if any(flags & (select.POLLERR | select.POLLNVAL) for _, flags in events):
+        raise RuntimeError("process exit handle is not readable")
+    return any(flags & (select.POLLIN | select.POLLHUP) for _, flags in events)
+
+
+class MemoryAccountingError(RuntimeError):
+    def __init__(self, pid: int, proc: Path, error: Exception):
+        details = {"pid": pid, "error": type(error).__name__, "errno": getattr(error, "errno", None),
+                   "state": "UNAVAILABLE"}
+        try:
+            # Do not record comm/cmdline: only state and the kernel identity time.
+            fields = (proc / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()
+            details.update(state=fields[0], start_ticks=int(fields[19]))
+        except (OSError, ValueError, IndexError) as diagnostic_error:
+            details["stat_error"] = type(diagnostic_error).__name__
+        self.details = details
+        super().__init__("live workload process has no readable memory accounting: " + json.dumps(details, sort_keys=True))
+
+
+def process_memory(pid: int, cgroup: Path, proc: Path) -> dict | None:
+    # cgroup.procs and smaps are not one atomic snapshot. In particular, mm
+    # teardown can precede final exit/removal. Only kernel pidfd readiness proves
+    # that identity has exited; State:Z or a second membership read alone cannot.
+    for _ in range(2):
+        descriptor = None
+        try:
+            descriptor = os.pidfd_open(pid, 0)
+            values = numeric_fields(proc / str(pid) / "smaps_rollup")
+            # Preserve every measured byte, even if the task exits immediately
+            # afterward. Exit cannot erase observed RSS or workload swap.
+            return {"Rss": values["Rss"], "Swap": values["Swap"]}
+        except (FileNotFoundError, ProcessLookupError) as error:
+            # At most 5ms for mm teardown to finish, inside the unchanged sample
+            # gap/runtime guards. A still-live handle with no accounting fails.
+            if descriptor is not None and not pidfd_exited(descriptor, 5):
+                raise MemoryAccountingError(pid, proc, error) from error
+        except (OSError, KeyError, ValueError) as error:
+            raise MemoryAccountingError(pid, proc, error) from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        if pid not in members(cgroup):
+            return None
+        # The old identity is proven gone, but this number still occurs. Reopen
+        # a new stable handle and account any recycled PID rather than omit it.
+    raise MemoryAccountingError(pid, proc, RuntimeError("PID identity changed repeatedly during accounting"))
+
+
 def aggregate(cgroup: Path, *, proc: Path = Path("/proc")) -> dict:
     rss = swap = count = 0
     for pid in members(cgroup):
-        try:
-            values = numeric_fields(proc / str(pid) / "smaps_rollup")
+        values = process_memory(pid, cgroup, proc)
+        if values is not None:
             rss += values["Rss"]
             swap += values["Swap"]
             count += 1
-        except (FileNotFoundError, ProcessLookupError):
-            # Process exit is normal. A remaining PID with unreadable accounting
-            # is never silently omitted from the workload total.
-            if pid in members(cgroup):
-                raise RuntimeError("live workload process has no readable memory accounting")
     return {"rss_bytes": rss, "swap_bytes": swap, "processes": count}
 
 
@@ -266,6 +314,8 @@ def supervise(command: list[str], output: Path, limits: Limits) -> dict:
         receipt["result"] = "PASS"
     except Exception as error:
         receipt.update(result="FAIL" if child else "BLOCKED", reason=f"{type(error).__name__}: {error}")
+        if isinstance(error, MemoryAccountingError):
+            receipt["accounting_error"] = error.details
     finally:
         for signum, handler in saved_signals.items():
             signal.signal(signum, signal.SIG_IGN)
