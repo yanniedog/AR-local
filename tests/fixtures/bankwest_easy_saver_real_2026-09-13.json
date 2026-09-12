@@ -1,0 +1,850 @@
+{
+  "scope": "Read-only exact retained source product; no full database scan",
+  "source_path": "/srv/ar-local/data/runs/2026-09-13/_exports/local-cdr.sqlite",
+  "stat_unchanged": true,
+  "products": [
+    {
+      "id": 1494,
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+      "last_updated": "2026-09-12T01:15:03.000Z",
+      "source_file": "/dev/shm/ar-local-1000/runs/2026-09-13/banks/Savings/Bankwest/Bankwest Easy Saver/d10438974ab8417bab388149da5053bb__b3ba75390b8a/product-detail.json",
+      "details_json": {
+        "additionalInformation": {
+          "eligibilityUri": "https://www.bankwest.com.au/savings-accounts/high-interest",
+          "feesAndPricingUri": "https://www.bankwest.com.au/savings-accounts/high-interest",
+          "overviewUri": "https://www.bankwest.com.au/savings-accounts/high-interest",
+          "termsUri": "https://www.bankwest.com.au/savings-accounts/high-interest"
+        },
+        "brand": "Bankwest",
+        "brandName": "Bankwest",
+        "constraints": [
+          {
+            "additionalInfo": "Withdrawals via a linked Easy Transaction Account. Maximum Daily Limit $2,000,000.",
+            "additionalValue": "2000000.00",
+            "constraintType": "MAX_LIMIT"
+          },
+          {
+            "additionalInfo": "No minimum deposit required to open the account.",
+            "additionalValue": "0.00",
+            "constraintType": "OPENING_BALANCE"
+          }
+        ],
+        "depositRates": [
+          {
+            "additionalInfo": "Variable Credit Interest.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "VARIABLE",
+            "rate": "0.021",
+            "tiers": [
+              {
+                "maximumValue": "1000000.99",
+                "minimumValue": "250001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Variable Credit Interest.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "VARIABLE",
+            "rate": "0.021",
+            "tiers": [
+              {
+                "maximumValue": "5000000.99",
+                "minimumValue": "1000001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Variable Credit Interest.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "VARIABLE",
+            "rate": "0.021",
+            "tiers": [
+              {
+                "minimumValue": "5000001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Variable Credit Interest.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "VARIABLE",
+            "rate": "0.05",
+            "tiers": [
+              {
+                "maximumValue": "250000.99",
+                "minimumValue": "0.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Available only to eligible winners of the Interesting Rates Competition. The fixed promotional rate applies for four months on balances up to $250,000.99, then reverts to the standard variable Easy Saver rate.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "FIXED",
+            "rate": "0.115",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "Available only to eligible winners of the Bankwest Easy Saver 'Interesting Rates' competition, who opened a new Bankwest Easy Saver account in the Bankwest app during the relevant promotional/prize-pool period using a valid promo code, satisfy the T&Cs, and keep the account open when required. The fixed promotional rate applies for four months from the notified rate-change date, on balances up to $250,000.99, then reverts to the standard variable Easy Saver rate.",
+                    "rateApplicabilityType": "OTHER"
+                  },
+                  {
+                    "rateApplicabilityType": "NEW_ACCOUNTS"
+                  },
+                  {
+                    "rateApplicabilityType": "ONLINE_ONLY"
+                  }
+                ],
+                "maximumValue": "250000.99",
+                "minimumValue": "0.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "additionalValue": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "BONUS",
+            "rate": "0",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+                    "rateApplicabilityType": "EXISTING_CUST"
+                  }
+                ],
+                "maximumValue": "1000000.99",
+                "minimumValue": "250001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "additionalValue": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "BONUS",
+            "rate": "0",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+                    "rateApplicabilityType": "EXISTING_CUST"
+                  }
+                ],
+                "maximumValue": "5000000.99",
+                "minimumValue": "1000001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "additionalValue": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "BONUS",
+            "rate": "0",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+                    "rateApplicabilityType": "EXISTING_CUST"
+                  }
+                ],
+                "minimumValue": "5000001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "additionalValue": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "BONUS",
+            "rate": "0.002",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+                    "rateApplicabilityType": "EXISTING_CUST"
+                  }
+                ],
+                "maximumValue": "250000.99",
+                "minimumValue": "0.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "4 month variable introductory rate",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "INTRODUCTORY",
+            "rate": "0.0075",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "The variable introductory rate is paid on a tiered basis on all balances in the account. The Easy Saver variable introductory rate only applies to new accounts. Not available if you've had the introductory rate on an Easy Saver Account in the last two years. Variable introductory rate and term are set out in the welcome letter. At the end of the introductory rate term, the account reverts to the Easy Saver standard variable rate applicable at that time. Only one account allowed per customer (not available for joint accounts).",
+                    "rateApplicabilityType": "NEW_ACCOUNTS"
+                  }
+                ],
+                "maximumValue": "250000.99",
+                "minimumValue": "0.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "4 month variable introductory rate",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "INTRODUCTORY",
+            "rate": "0.027",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "The variable introductory rate is paid on a tiered basis on all balances in the account. The Easy Saver variable introductory rate only applies to new accounts. Not available if you;ve had the introductory rate on an Easy Saver Account in the last two years. Variable introductory rate and term are set out in the welcome letter. At the end of the introductory rate term, the account reverts to the Easy Saver standard variable rate applicable at that time. Only one account allowed per customer (not available for joint accounts).",
+                    "rateApplicabilityType": "NEW_ACCOUNTS"
+                  }
+                ],
+                "maximumValue": "1000000.99",
+                "minimumValue": "250001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "4 month variable introductory rate",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "INTRODUCTORY",
+            "rate": "0.027",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "The variable introductory rate is paid on a tiered basis on all balances in the account. The Easy Saver variable introductory rate only applies to new accounts. Not available if you've had the introductory rate on an Easy Saver Account in the last two years. Variable introductory rate and term are set out in the welcome letter. At the end of the introductory rate term, the account reverts to the Easy Saver standard variable rate applicable at that time. Only one account allowed per customer (not available for joint accounts).",
+                    "rateApplicabilityType": "NEW_ACCOUNTS"
+                  }
+                ],
+                "maximumValue": "5000000.99",
+                "minimumValue": "1000001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          },
+          {
+            "additionalInfo": "4 month variable introductory rate",
+            "applicationFrequency": "P1M",
+            "applicationType": "PERIODIC",
+            "calculationFrequency": "P1D",
+            "depositRateType": "INTRODUCTORY",
+            "rate": "0.027",
+            "tiers": [
+              {
+                "applicabilityConditions": [
+                  {
+                    "additionalInfo": "The variable introductory rate is paid on a tiered basis on all balances in the account. The Easy Saver variable introductory rate only applies to new accounts. Not available if you've had the introductory rate on an Easy Saver Account in the last two years. Variable introductory rate and term are set out in the welcome letter. At the end of the introductory rate term, the account reverts to the Easy Saver standard variable rate applicable at that time. Only one account allowed per customer (not available for joint accounts).",
+                    "rateApplicabilityType": "NEW_ACCOUNTS"
+                  }
+                ],
+                "minimumValue": "5000001.00",
+                "name": "Amount",
+                "rateApplicationMethod": "PER_TIER",
+                "unitOfMeasure": "DOLLAR"
+              }
+            ]
+          }
+        ],
+        "description": "The Easy Saver Account is our flexible savings account that lets you earn credit interest on a tiered basis on all balances in the account with no minimum monthly deposit (you can also move your money in and out of your account without affecting your interest rate). Credit interest is calculated at the applicable rate on that portion of the balance which falls within each of the tiers.",
+        "effectiveTo": "9999-12-31T00:00:00.000Z",
+        "eligibility": [
+          {
+            "additionalInfo": "The account is available to personal customers only, aged 16 years or older.",
+            "additionalValue": "16",
+            "eligibilityType": "MIN_AGE"
+          },
+          {
+            "additionalInfo": "The account is available to personal customers only.",
+            "eligibilityType": "NATURAL_PERSON"
+          },
+          {
+            "additionalInfo": "You don't have an existing Easy Saver Account already.",
+            "eligibilityType": "OTHER"
+          },
+          {
+            "additionalInfo": "You need an Easy Transaction Account (you can open one at the same time).",
+            "eligibilityType": "OTHER"
+          },
+          {
+            "additionalInfo": "You're the only account holder (no joint account holders).",
+            "eligibilityType": "OTHER"
+          },
+          {
+            "additionalInfo": "Customer must have a residential address in Australia (limited exceptions may apply subject to conditions)",
+            "additionalValue": "Australian citizen or Australian permanent resident",
+            "eligibilityType": "RESIDENCY_STATUS"
+          }
+        ],
+        "features": [
+          {
+            "additionalInfo": "You can bank over the phone.",
+            "featureType": "OTHER"
+          },
+          {
+            "additionalInfo": "Bank on the go with the Bankwest App. Use Bankwest Online Banking (BOB) to access your money and manage your everyday banking subject to conditions of use. Limits may apply.",
+            "featureType": "DIGITAL_BANKING"
+          },
+          {
+            "additionalInfo": "Create a goal, set up regular deposits and track your progress in the app.",
+            "featureType": "OTHER"
+          },
+          {
+            "additionalInfo": "Transferring funds in and out can only be made by via your linked Bankwest Easy Transaction Account with the exception of deposits via international money transfers and/or via the Real-Time Gross Settlement payment system.",
+            "featureType": "OTHER"
+          },
+          {
+            "additionalInfo": "Set up Alerts through the Bankwest App to get notified about important account activity.",
+            "additionalValue": "Alerts",
+            "featureType": "NOTIFICATIONS"
+          }
+        ],
+        "fees": [
+          {
+            "additionalInfo": "No monthly maintenance fees apply to this product.",
+            "additionalValue": "P1M",
+            "currency": "AUD",
+            "feeMethodUType": "fixedAmount",
+            "feeType": "PERIODIC",
+            "fixedAmount": {
+              "amount": "0.00"
+            },
+            "name": "Maintenance Fee"
+          },
+          {
+            "additionalInfo": "For completion of any search conducted by the Bank (per search)",
+            "currency": "AUD",
+            "feeMethodUType": "fixedAmount",
+            "feeType": "EVENT",
+            "fixedAmount": {
+              "amount": "40.00"
+            },
+            "name": "Search Handling Fee"
+          }
+        ],
+        "isTailored": false,
+        "lastUpdated": "2026-09-12T01:15:03.000Z",
+        "name": "Bankwest Easy Saver",
+        "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+        "productId": "d10438974ab8417bab388149da5053bb"
+      }
+    }
+  ],
+  "rates": [
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.021",
+      "comparison_rate": "",
+      "rate_type": "VARIABLE",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "base",
+      "balance_min": "250001",
+      "balance_max": "1000000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.021",
+      "comparison_rate": "",
+      "rate_type": "VARIABLE",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "base",
+      "balance_min": "1000001",
+      "balance_max": "5000000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.021",
+      "comparison_rate": "",
+      "rate_type": "VARIABLE",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "base",
+      "balance_min": "5000001",
+      "balance_max": "",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.05",
+      "comparison_rate": "",
+      "rate_type": "VARIABLE",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "base",
+      "balance_min": "0",
+      "balance_max": "250000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.115",
+      "comparison_rate": "",
+      "rate_type": "FIXED",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "base",
+      "balance_min": "0",
+      "balance_max": "250000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0",
+      "comparison_rate": "",
+      "rate_type": "BONUS",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "bonus",
+      "balance_min": "250001",
+      "balance_max": "1000000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BONUS.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0",
+      "comparison_rate": "",
+      "rate_type": "BONUS",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "bonus",
+      "balance_min": "1000001",
+      "balance_max": "5000000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BONUS.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0",
+      "comparison_rate": "",
+      "rate_type": "BONUS",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "bonus",
+      "balance_min": "5000001",
+      "balance_max": "",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BONUS.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.002",
+      "comparison_rate": "",
+      "rate_type": "BONUS",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "Bonus rates available from time to time for selected customers, bonus rates applied may vary. Terms and conditions may apply.",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "bonus",
+      "balance_min": "0",
+      "balance_max": "250000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BONUS.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.0075",
+      "comparison_rate": "",
+      "rate_type": "INTRODUCTORY",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "introductory",
+      "balance_min": "0",
+      "balance_max": "250000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.INTRO.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.027",
+      "comparison_rate": "",
+      "rate_type": "INTRODUCTORY",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "introductory",
+      "balance_min": "250001",
+      "balance_max": "1000000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.INTRO.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.027",
+      "comparison_rate": "",
+      "rate_type": "INTRODUCTORY",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "introductory",
+      "balance_min": "1000001",
+      "balance_max": "5000000.99",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.INTRO.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    },
+    {
+      "run_date": "2026-09-13",
+      "dataset": "Savings",
+      "provider": "Bankwest",
+      "product_id": "d10438974ab8417bab388149da5053bb",
+      "product_key": "Bankwest|d10438974ab8417bab388149da5053bb|TRANS_AND_SAVINGS_ACCOUNTS|Bankwest Easy Saver",
+      "product_name": "Bankwest Easy Saver",
+      "rate_family": "deposit",
+      "rate": "0.027",
+      "comparison_rate": "",
+      "rate_type": "INTRODUCTORY",
+      "application_type": "PERIODIC",
+      "application_frequency": "P1M",
+      "repayment_type": "",
+      "loan_purpose": "",
+      "term": "",
+      "ribbon_normalized": "1",
+      "security_purpose": "",
+      "ribbon_repayment_type": "",
+      "lvr_tier": "",
+      "lvr_source": "",
+      "ribbon_rate_structure": "",
+      "ribbon_fixed_term": "",
+      "account_type": "savings",
+      "ribbon_deposit_kind": "introductory",
+      "balance_min": "5000001",
+      "balance_max": "",
+      "term_months": "",
+      "interest_payment": "",
+      "feature_set": "basic",
+      "taxonomy_path": "SAVINGS.SAVINGS_ACCT.INTRO.TIERED",
+      "account_class": "standard",
+      "details_json": "{}"
+    }
+  ]
+}

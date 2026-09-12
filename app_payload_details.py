@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from app_payload_common import compact
 from cdr_clean_export import official_product_links
+from cdr_savings_conditions import winner_rate_disclosures
 
 def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[str, Any]]:
     items = record.get(key)
@@ -155,7 +156,9 @@ def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
                 "description": product.get("description") or record.get("description"),
                 "last_updated": product.get("last_updated"),
                 "fees": _fee_items(record),
-                "features": _detail_items(record, "features", "featureType"),
+                "features": _detail_items(record, "features", "featureType") + (
+                    winner_rate_disclosures(record) if product.get("dataset") == "Savings" else []
+                ),
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "links": _detail_links(record),
