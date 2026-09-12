@@ -14,6 +14,7 @@ from app_payload_revisions import publish_revision_bundle, revision_mode_enabled
 from app_payload_revisions_github import GitHubRevisionStore
 from app_payload_revisions_state import (
     RevisionError, bundle_sha256, canonical, decode_document, digest, validate_manifest,
+    revised_index, validate_index,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -339,6 +340,59 @@ def test_unavailable_legacy_asset_blocks_alias_and_pointer_mutation(tmp_path):
     assert store.read(DEFAULT_TAG, "manifest.json") == canonical(old)
 
 
+@pytest.mark.parametrize("interrupted_alias", ["dated", "rolling"])
+def test_differing_legacy_aliases_are_fully_preserved_before_head_and_after_retry(tmp_path, interrupted_alias):
+    store = MemoryStore()
+    dated = build_payload(tmp_path / "dated", omit_last_product=True, omit_last_rate=True)
+    rolling = build_payload(tmp_path / "rolling", optional=True)
+    aliases = [(f"app-payload-{DAY}", dated, tmp_path / "dated"),
+               (DEFAULT_TAG, rolling, tmp_path / "rolling")]
+    original_index = canonical({"schema_version": 1, "dates": [DAY], "count": 1,
+                                "min_date": DAY, "latest_date": DAY})
+    store.objects[(DEFAULT_TAG, "dates-index.json")] = original_index
+    originals = {}
+    for alias, manifest, directory in aliases:
+        manifest["tag"] = alias
+        for entry in manifest["files"].values():
+            entry["url"] = store.url(alias, entry["name"])
+        raw = json.dumps(manifest, indent=4).encode() + b"\n"
+        originals[alias] = raw
+        store.objects[(alias, "manifest.json")] = raw
+        for entry in manifest["files"].values():
+            store.objects[(alias, entry["name"])] = (directory / entry["name"]).read_bytes()
+    build_payload(tmp_path / "payload", optional=True, generated_at="2026-05-19T06:00:00Z")
+    store.fail_asset = (dated["files"]["details"]["name"] if interrupted_alias == "dated"
+                        else rolling["files"]["search_index"]["name"])
+    with pytest.raises(RevisionError, match="interrupted"):
+        publish(tmp_path, store)
+    assert store.promotions == 0
+    assert store.read(DEFAULT_TAG, "dates-index.json") == original_index
+    assert all(store.read(alias, "manifest.json") == raw for alias, raw in originals.items())
+    replace = store.replace_index
+
+    def verify_preserved_then_promote(tag, path, expected):
+        for alias, manifest, directory in aliases:
+            raw = originals[alias]
+            archive_digest = digest(alias.encode() + b"\n" + raw)
+            archived_tag = f"app-payload-{DAY}-legacy-{archive_digest}"
+            assert store.read(archived_tag, "source-manifest.json") == raw
+            preservation = decode_document(store.read(archived_tag, "preservation.json"))
+            assert preservation["source_tag"] == alias
+            assert preservation["source_manifest_sha256"] == digest(raw)
+            archived = decode_document(store.read(archived_tag, "manifest.json"))
+            for key, entry in manifest["files"].items():
+                assert store.read(archived_tag, entry["name"]) == (directory / entry["name"]).read_bytes()
+                assert archived["files"][key]["url"] == store.url(archived_tag, entry["name"])
+        replace(tag, path, expected)
+
+    store.fail_asset = None
+    store.replace_index = verify_preserved_then_promote
+    result = publish(tmp_path, store)
+    assert result.head["revision"] == 1
+    assert result.manifest["payload_revision"]["parent_revision"] is None
+    assert store.promotions == 1
+
+
 def test_existing_dates_and_metadata_survive_pointer_promotion(tmp_path):
     store = MemoryStore()
     old = {"schema_version": 1, "dates": ["2026-05-18"], "count": 1,
@@ -534,3 +588,62 @@ def test_revision_alias_order_and_protocol_cannot_downgrade():
                                     our_revision={"revision": 3}) == (True, "revision")
     assert _manifest_should_replace("present", live, **options,
                                     our_revision={"revision": 2}) == (False, "revision_identity_collision")
+
+
+@pytest.mark.parametrize("tag", [DEFAULT_TAG, f"app-payload-{DAY}"])
+def test_selected_revision_replaces_newer_timestamped_legacy_alias(tag):
+    from app_payload_publish import _manifest_should_replace
+
+    options = {"our_run_date": DAY, "our_gen": "2026-05-19T04:00:00Z", "tag": tag, "force": False}
+    legacy = {"run_date": DAY, "generated_at": "2026-05-19T09:00:00Z"}
+    assert _manifest_should_replace("present", legacy, **options) == (False, "live_newer")
+    assert _manifest_should_replace("present", legacy, **options,
+                                    our_revision={"revision": 1}) == (True, "revision")
+    assert _manifest_should_replace("error", None, **options,
+                                    our_revision={"revision": 1}) == (False, "live_manifest_verify_error")
+
+
+def test_selected_revision_still_cannot_replace_a_later_day_rolling_alias():
+    from app_payload_publish import _manifest_should_replace
+
+    legacy = {"run_date": "2026-05-20", "generated_at": "2026-05-20T09:00:00Z"}
+    assert _manifest_should_replace("present", legacy, our_run_date=DAY,
+                                    our_gen="2026-05-19T04:00:00Z", tag=DEFAULT_TAG,
+                                    force=False, our_revision={"revision": 1}) == (False, "live_newer")
+
+
+@pytest.mark.parametrize("bad_url", [None,
+    f"https://github.com/{REPO}/releases/download/{DEFAULT_TAG}/manifest.json",
+    f"https://github.com/{REPO}/releases/download/app-payload-{DAY}-r000002/manifest.json",
+    f"https://github.com/{REPO}/releases/download/app-payload-2026-05-20-r000001/manifest.json",
+    f"https://github.com/other/repository/releases/download/app-payload-{DAY}-r000001/manifest.json",
+    f"https://github.com/{REPO}/releases/download/app-payload-{DAY}-r000001/manifest.json?x=1",
+])
+def test_invalid_older_head_blocks_another_dates_promotion_without_mutation(tmp_path, bad_url):
+    store = MemoryStore()
+    build_payload(tmp_path / "payload")
+    first = publish(tmp_path, store)
+    index = decode_document(store.read(DEFAULT_TAG, "dates-index.json"))
+    index["revision_heads"][DAY]["manifest_url"] = bad_url
+    raw = canonical(index)
+    store.objects[(DEFAULT_TAG, "dates-index.json")] = raw
+    before = dict(store.objects)
+    manifest = build_payload(tmp_path / "next")
+    manifest["run_date"] = "2026-05-20"
+    (tmp_path / "next" / "manifest.json").write_bytes(canonical(manifest))
+    with pytest.raises(RevisionError, match="manifest URL"):
+        publish(tmp_path, store, tmp_path / "next")
+    assert store.objects == before
+    assert store.promotions == 1
+
+
+def test_index_validation_preserves_explicit_alternate_repository(tmp_path):
+    store = MemoryStore()
+    build_payload(tmp_path / "payload")
+    first = publish(tmp_path, store)
+    index = decode_document(store.read(DEFAULT_TAG, "dates-index.json"))
+    validate_index(index, repo=REPO)
+    result = revised_index(index, DAY, first.head, repo=REPO)
+    assert result["revision_heads"][DAY] == first.head
+    with pytest.raises(RevisionError, match="manifest URL"):
+        validate_index(index, repo="other/repository")

@@ -299,6 +299,15 @@ def _manifest_should_replace(
         if live_number == our_number and live_revision != our_revision:
             return False, "revision_identity_collision"
         return True, "revision"
+    if (status == "present" and not live_revision and isinstance(our_revision, dict)
+            and (live or {}).get("run_date") == our_run_date):
+        # The coordinator has already selected this immutable revision. A
+        # compatibility alias rebuilt without the flag cannot outrank that
+        # selection merely by acquiring a later wall-clock timestamp.
+        number = our_revision.get("revision")
+        if type(number) is not int or not 1 <= number <= 999999:
+            return False, "revision_identity_invalid"
+        return True, "revision"
     if force:
         return True, "force"
     if status == "error":

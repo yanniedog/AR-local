@@ -166,18 +166,18 @@ transaction has already preserved all prior dates and revision heads.
     state_dir = state_dir.expanduser().resolve()
     backend = store or GitHubRevisionStore(repo)
     with production_lock(state_dir / ".revision-publication.lock", "payload-revisions"):
-        return _publish_locked(payload_dir, manifest, state_dir, backend, consumer)
+        return _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo)
 
 
 def _publish_locked(
-    payload_dir: Path, manifest: dict[str, Any], root: Path, store: Any, consumer: str,
+    payload_dir: Path, manifest: dict[str, Any], root: Path, store: Any, consumer: str, repo: str,
 ) -> RevisionPublication:
     run_date = manifest["run_date"]
     prior_raw = store.read(DEFAULT_TAG, "dates-index.json")
     if prior_raw is None:
-        prior_raw = _recover_interrupted_index(root, store)
+        prior_raw = _recover_interrupted_index(root, store, repo=repo)
     index = decode_document(prior_raw) if prior_raw is not None else _empty_index()
-    validate_index(index)
+    validate_index(index, repo=repo)
     head = index.get("revision_heads", {}).get(run_date)
     previous_root, previous = _load_selected(store, head, run_date, root) if head else (None, None)
     if head and head["bundle_sha256"] == bundle_sha256(manifest):
@@ -223,7 +223,7 @@ def _publish_locked(
     new_head = {key: reservation[key] for key in ("revision", "generation_id", "bundle_sha256")}
     new_head.update(manifest_url=store.url(archived["tag"], "manifest.json"),
                     manifest_sha256=digest((destination / "manifest.json").read_bytes()))
-    new_index = revised_index(index, run_date, new_head)
+    new_index = revised_index(index, run_date, new_head, repo=repo)
     index_bytes = canonical(new_index)
     promotion_root = destination / "promotions" / digest(index_bytes)
     index_path = promotion_root / "dates-index.json"
@@ -242,7 +242,7 @@ def _publish_locked(
     return RevisionPublication(destination, archived, new_head, True)
 
 
-def _recover_interrupted_index(root: Path, store: Any) -> bytes | None:
+def _recover_interrupted_index(root: Path, store: Any, *, repo: str = DEFAULT_REPO) -> bytes | None:
     """Recover a killed --clobber from its durable exact predecessor bytes.
 
     Single-writer publication is enforced by the outer operation lock. Only the
@@ -263,6 +263,6 @@ def _recover_interrupted_index(root: Path, store: Any) -> bytes | None:
     raw = predecessor.read_bytes()
     if digest(raw) != expected_hash:
         raise RevisionError("interrupted promotion predecessor hash mismatch")
-    validate_index(decode_document(raw))
+    validate_index(decode_document(raw), repo=repo)
     store.restore_missing_index(DEFAULT_TAG, predecessor)
     return raw

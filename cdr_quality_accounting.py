@@ -15,12 +15,17 @@ SECTIONS = ("Mortgage", "Savings", "TD")
 ACCOUNTING_VERSION = 1
 RATE_FIELDS = ("provider", "product_id", "product_key", "product_name", "category", "rate", "comparison_rate",
                "rate_type", "repayment_type", "loan_purpose", "term", "term_months", "lvr_tier", "taxonomy_path", "rate_index")
+# Transport routing is absent from compact app rows, but must be compared
+# before trusting an export to determine which SQLite rates reach each section.
+SQLITE_RATE_FIELDS = tuple(key for key in RATE_FIELDS if key not in {"category", "rate_index"}) + (
+    "dataset", "rate_family", "application_type",
+)
 
 
 def rate_rows_digest(rows: list[dict], *, sqlite_fields: bool = False) -> str:
     normalized = []
+    fields = SQLITE_RATE_FIELDS if sqlite_fields else RATE_FIELDS
     for row in rows:
-        fields = [key for key in RATE_FIELDS if not sqlite_fields or key not in {"category", "rate_index"}]
         values = {key: str(row.get(key) if row.get(key) is not None else "") for key in fields}
         for key in ("rate", "comparison_rate", "term_months", "rate_index"):
             try:
