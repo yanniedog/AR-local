@@ -8,38 +8,40 @@ import pytest
 import pi_cdr_quality_resources as resources
 
 
-def host(available=6 * resources.GIB, swap=0, psi=None):
-    return {"available_bytes": available, "swap_in_pages": swap, "swap_out_pages": 0, "psi_avg10": psi}
+def host(available=6 * resources.GIB, swap=0, psi=None, swap_out=0, page_size=16384):
+    return {"available_bytes": available, "swap_in_pages": swap, "swap_out_pages": swap_out,
+            "page_size_bytes": page_size, "psi_avg10": psi}
 
 
 def receipt():
     return {"schema": resources.SCHEMA, "result": "PASS", "mode": "sampled_cgroup_rss", "limits": asdict(resources.Limits()),
         "samples": 2, "peak_rss_bytes": 1000, "minimum_available_bytes": 6 * resources.GIB,
         "maximum_sample_gap_seconds": 0.1, "group_clean": True, "workload_exit_code": 0,
+        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0,
         "baseline": host(), "last_host_sample": host()}
 
 
 def test_missing_psi_is_disclosed_and_swap_counters_are_required(tmp_path):
     (tmp_path / "meminfo").write_text("MemAvailable: 6000000 kB\n")
     (tmp_path / "vmstat").write_text("pswpin 10\npswpout 20\n")
-    value = resources.host_sample(tmp_path)
-    assert value == {"available_bytes": 6000000 * 1024, "swap_in_pages": 10, "swap_out_pages": 20, "psi_avg10": None}
+    value = resources.host_sample(tmp_path, page_size_bytes=16384)
+    assert value == {"available_bytes": 6000000 * 1024, "swap_in_pages": 10, "swap_out_pages": 20, "page_size_bytes": 16384, "psi_avg10": None}
     (tmp_path / "vmstat").write_text("pswpin 10\n")
-    with pytest.raises(KeyError):
-        resources.host_sample(tmp_path)
+    with pytest.raises(ValueError):
+        resources.host_sample(tmp_path, page_size_bytes=16384)
 
 
 def test_admission_reserves_entire_budget_and_runtime_stops_above_host_floor():
     limits = resources.Limits()
     assert resources.host_violation(host(5 * resources.GIB), host(), limits, admission=True) == "host_reserve_headroom"
     assert resources.host_violation(host(2 * resources.GIB), host(), limits) == "host_reserve_headroom"
-    assert resources.host_violation(host(swap=1), host(), limits) == "host_swap_activity"
+    assert resources.host_violation(host(swap_out=1), host(), limits) == "host_swap_out_activity"
     assert resources.host_violation(host(psi=10), host(), limits) == "host_memory_pressure"
     assert resources.host_violation(host(), host(), limits) is None
 
 
 @pytest.mark.parametrize("change", [{"reserve_bytes": resources.GIB}, {"workload_bytes": 4 * resources.GIB},
-    {"address_space_bytes": 4 * resources.GIB}, {"sample_seconds": 1}, {"runtime_seconds": 6000}])
+    {"address_space_bytes": 4 * resources.GIB}, {"sample_seconds": 1}, {"runtime_seconds": 6000}, {"cold_swap_in_bytes": 17 * 1024**2}])
 def test_limits_cannot_weaken_the_reviewed_boundary(change):
     with pytest.raises(ValueError):
         resources.Limits(**change).validate()
@@ -61,7 +63,8 @@ def test_aggregate_counts_every_cgroup_process_including_detached_descendants(tm
 
 @pytest.mark.parametrize("change", [{"group_clean": False}, {"samples": 0}, {"result": "FAIL"},
     {"workload_exit_code": 1}, {"peak_rss_bytes": 3 * resources.GIB}, {"maximum_sample_gap_seconds": 3},
-    {"minimum_available_bytes": resources.GIB}, {"last_host_sample": host(swap=1)}])
+    {"minimum_available_bytes": resources.GIB}, {"last_host_sample": host(swap_out=1)},
+    {"peak_workload_swap_bytes": 16384}, {"page_size_bytes": 4096}, {"cold_swap_in_bytes": 1}])
 def test_failed_or_incomplete_supervision_receipt_cannot_pass(change):
     value = receipt()
     value.update(change)
@@ -117,3 +120,77 @@ def test_signal_uses_stable_pidfd_and_never_signals_self(monkeypatch):
     monkeypatch.setattr(resources.os, "close", lambda fd: events.append(("close", fd)))
     resources.signal_members(Path("unused"), 15)
     assert events == [("open", 101, 0), ("signal", 42, 15), ("close", 42)]
+
+
+@pytest.mark.parametrize("page_size", [4096, 16384, 65536])
+def test_cold_swap_readback_budget_uses_actual_page_size_and_total_since_admission(page_size):
+    limit = resources.Limits()
+    baseline = host(swap=1000, page_size=page_size)
+    cap_pages = limit.cold_swap_in_bytes // page_size
+    within = host(swap=1000 + cap_pages, page_size=page_size)
+    assert resources.host_violation(within, baseline, limit) is None
+    assert resources.swap_progress(within, baseline)["swap_in_bytes"] == 16 * 1024**2
+    excess = host(swap=1001 + cap_pages, page_size=page_size)
+    assert resources.host_violation(excess, baseline, limit, previous=within) == "host_cold_swap_in_budget"
+
+
+def test_valid_bounded_cold_read_receipt_passes_without_upgrading_an_old_failure():
+    value = receipt()
+    value["last_host_sample"] = host(swap=3)
+    value["cold_swap_in_bytes"] = 3 * 16384
+    resources.require_receipt(value)
+    value["result"] = "FAIL"
+    with pytest.raises(ValueError):
+        resources.require_receipt(value)
+    value["result"] = "PASS"
+    value["last_host_sample"] = host(swap=1025)
+    value["cold_swap_in_bytes"] = 1025 * 16384
+    with pytest.raises(ValueError):
+        resources.require_receipt(value)
+
+
+@pytest.mark.parametrize("field,value", [("swap_in_pages", None), ("swap_in_pages", -1), ("swap_in_pages", True),
+    ("swap_out_pages", "0"), ("page_size_bytes", 0), ("page_size_bytes", 4096)])
+def test_missing_malformed_or_changed_counter_metadata_fails(field, value):
+    sample = host()
+    sample[field] = value
+    with pytest.raises(ValueError):
+        resources.host_violation(sample, host(), resources.Limits())
+
+
+def test_counter_reset_above_baseline_is_detected_against_previous_sample():
+    with pytest.raises(ValueError, match="counter reset"):
+        resources.host_violation(host(swap=120), host(swap=100), resources.Limits(), previous=host(swap=150))
+    with pytest.raises(ValueError, match="counter reset"):
+        resources.host_violation(host(swap=99), host(swap=100), resources.Limits())
+
+
+def test_preflight_does_not_reset_the_operation_readback_budget(monkeypatch):
+    samples = iter([host(swap=1000), host(swap=2000)])
+    monkeypatch.setattr(resources.sys, "platform", "linux")
+    monkeypatch.setattr(resources.os, "pidfd_open", lambda *_: None, raising=False)
+    monkeypatch.setattr(resources.signal, "pidfd_send_signal", lambda *_: None, raising=False)
+    monkeypatch.setattr(resources, "host_sample", lambda: next(samples))
+    monkeypatch.setattr(resources.time, "sleep", lambda _: None)
+    baseline = resources.preflight()
+    assert baseline["swap_in_pages"] == 1000
+    assert baseline["admission_sample"]["swap_in_pages"] == 2000
+    assert resources.host_violation(host(swap=2025), baseline, resources.Limits(), previous=baseline["admission_sample"]) == "host_cold_swap_in_budget"
+
+
+@pytest.mark.parametrize("text", ["pswpin nope\npswpout 0", "pswpin 1\npswpin 2\npswpout 0", "pswpin -1\npswpout 0"])
+def test_malformed_kernel_counter_text_is_not_silently_accepted(tmp_path, text):
+    path = tmp_path / "vmstat"
+    path.write_text(text)
+    with pytest.raises(ValueError):
+        resources.swap_counters(path)
+
+
+def test_workload_swap_is_rejected_even_with_bounded_host_readback(monkeypatch):
+    monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": 16384, "processes": 2})
+    monkeypatch.setattr(resources, "host_sample", lambda: host(swap=3))
+    value = receipt()
+    value.update(peak_processes=0)
+    with pytest.raises(RuntimeError, match="workload_swapped"):
+        resources.monitor(SimpleNamespace(poll=lambda: None), Path("unused"), resources.Limits(), host(), value)
+    assert value["peak_workload_swap_bytes"] == 16384 and value["cold_swap_in_bytes"] == 49152

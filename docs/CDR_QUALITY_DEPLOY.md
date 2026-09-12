@@ -59,15 +59,21 @@ rebooting. The supervisor:
 
 - Requires 5.5 GiB MemAvailable at workload admission: the 3 GiB workload budget,
   2 GiB host reserve and 512 MiB reaction margin. Activation/preflight alone
-  requires the reserve and margin. Any new host swap-in or swap-out activity
-  blocks admission or terminates the canary; existing inactive swap is disclosed
-  rather than claimed absent.
+  requires the reserve and margin. Any new host swap-out blocks admission or
+  terminates the canary. With these memory guards and zero workload swap, at most
+  16 MiB of total host swap-in is permitted as bounded readback of already-swapped
+  pages. This is one budget from the first admission sample through completion,
+  not a budget renewed each sample. Existing swap is disclosed rather than claimed
+  absent. The actual `SC_PAGE_SIZE` converts page counters to bytes; this Pi uses
+  16 KiB pages. Missing/malformed counters, counter decreases, or changed page size
+  fail closed.
 - Reads every member's accurate `/proc/PID/smaps_rollup` RSS approximately every
   100 ms, including detached/orphaned children. Shared pages are counted once per
   process, conservatively overestimating workload RSS. It stops at 2.5 GiB summed
   RSS or below 2.5 GiB host availability, with a 512 MiB reaction margin relative
-  to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, workload swap,
-  new host swap activity, PSI avg10 at least 10% when available, or a sample gap
+  to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, any workload swap,
+  any host swap-out, host swap-in beyond the 16 MiB total, PSI avg10 at least 10%
+  when available, or a sample gap
   beyond two seconds all fail closed.
 - Applies a hard inherited 3 GiB **per-process virtual address-space** limit,
   which children cannot raise. Namespace creation, privilege gain and cgroup
@@ -88,7 +94,10 @@ the host reserve or bypass the supervisor to finish a canary.
 `resources.json` must record complete successful supervision before the parent
 writes `canary.json`. Worker output alone (`canary-worker.json`) cannot satisfy
 sealing. Seal and activation verify the retained resource receipt hash and its
-terminal result. A failed resource fixture is expected rejection evidence, never
+terminal result. Resource schema v2 records page size, total host readback bytes
+and peak workload swap; receipt validation independently applies the same bounds.
+Older incomplete receipts and failed canary receipts cannot be upgraded by this
+policy change. A failed resource fixture is expected rejection evidence, never
 a passing application canary. The bounded process-only fixture is
 `tests/fixtures/canary_resource_fixture.py`; it uses no business data.
 
@@ -101,6 +110,17 @@ post-exit PID checks. This small controlled proof does not replace the subsequen
 full current-data canary. Drive resource enforcement remains separate: Go-based
 Restic/rclone virtual-address requirements need their own measured budget before
 reusing an address-space limit; no backup commissioning is inferred here.
+
+The first full canary on 2026-09-12 stopped under the original zero-swap-in rule
+after three host read-in pages (49,152 bytes), with no swap-out, approximately
+304 MiB peak workload RSS and more than 6 GiB host MemAvailable. Its original FAIL
+receipt remains preserved. The subsequent private policy checks under
+`/srv/ar-local/canary/quality-cold-swap-test-20260912-1905/output` exercise bounded
+readback versus excess readback, swap-out, workload swap, counter reset and missing
+counters. Fault cases inject only counter observations inside a tiny isolated
+test; they never induce host swapping. `verification.json` labels these simulated
+control faults separately from the ordinary live process check. A fresh full
+canary is still required after this reviewed policy correction.
 
 ## Private canary and historical dispositions
 
