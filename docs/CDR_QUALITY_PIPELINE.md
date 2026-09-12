@@ -88,6 +88,18 @@ PASS. See GOOGLE_DRIVE_BACKUP.md for the implementation and restore commands.
 
 ## Acceptance
 
+The optional v2 standard-cohort product history reapplies explicit savings
+winner restrictions from each day's retained product detail. Stable exported
+rate fields and any retained array index must agree before a rate is excluded;
+price alone is insufficient. Direct tier `additionalInfo` and nested condition
+information retain their rate-local scope. Original observations and raw prices
+are unchanged. The projection records date/product and source-detail/rate hashes,
+reclassified-row counts and held product-days. A known restricted product's day
+with unavailable or ambiguous evidence remains a null gap; no zero, cross-gap
+move or present-day restriction is substituted for that day's missing evidence.
+Existing all-products history and the app's dated-core history are separate
+contracts; this standard-cohort sidecar does not change their ranking policy.
+
 Use retained real responses and generated artifacts for regression fixtures.
 Require source-to-SQLite-to-payload reconciliation, revision preservation and
 interruption tests, full producer Python tests, AR-app mobile CI and headless

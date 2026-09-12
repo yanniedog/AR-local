@@ -19,6 +19,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
 import app_payload_mobile
+from app_payload_history_projection import POLICY as HISTORY_PROJECTION_POLICY, project_standard_history_rows
 from app_payload_common import (
     BASE_DIR,
     DEFAULT_REPO,
@@ -159,11 +160,16 @@ def build_product_history(exports_dir: Path, *, run_date: str) -> Dict[str, Any]
     alias_dates: Dict[str, set[str]] = {}
     section_by_identity: Dict[str, str] = {}
     excluded = {"non_standard": 0, "unclassified": 0, "unkeyed": 0}
+    projection_changes, projection_unknown, restricted_products = [], {}, set()
     daily_aggregates: Dict[str, List[Dict[str, Any]]] = {section: [] for section in VALID_SECTIONS}
     for index, date in enumerate(dates):
         path = app_payload_mobile._banks(exports_dir, date)
-        raw = (_load_json(path).get("rates") or []) if path is not None else []
-        rates = [row for row in raw if isinstance(row, dict)]
+        banks = _load_json(path) if path is not None else {}
+        rates, projection = project_standard_history_rows(banks, date)
+        projection_changes.extend(projection["changes"])
+        restricted_products.update(projection["restricted_products"])
+        for identity, issue in projection["unknown"].items():
+            projection_unknown.setdefault(identity, []).append((index, issue))
         best, aliases, sections, day_excluded = _standard_best_for_day(rates)
         for key, count in day_excluded.items():
             excluded[key] += count
@@ -178,10 +184,19 @@ def build_product_history(exports_dir: Path, *, run_date: str) -> Dict[str, Any]
             identities.setdefault(identity, [None] * (index + 1))
         for identity, value in best.items():
             identities[identity][index] = value
+
+    # If a product has an evidenced winner tier, a different day's missing or
+    # ambiguous source cannot prove its ordinary best rate. Leave a gap rather
+    # than invent a zero, carry today's tier backwards, or emit a false move.
+    for identity in restricted_products:
+        for index, issue in projection_unknown.get(identity, []):
+            if identity in identities:
+                identities[identity][index] = None
+            projection_changes.append({**issue, "action": "hold_unresolved_product_day"})
+    for index, date in enumerate(dates):
         for section in VALID_SECTIONS:
-            point = _aggregate(
-                value for identity, value in best.items() if section_by_identity.get(identity) == section
-            )
+            point = _aggregate(series[index] for identity, series in identities.items()
+                               if section_by_identity.get(identity) == section and series[index] is not None)
             if point:
                 daily_aggregates[section].append({"date": date, **point})
 
@@ -210,6 +225,10 @@ def build_product_history(exports_dir: Path, *, run_date: str) -> Dict[str, Any]
             for section, points in daily_aggregates.items()
             if points
         },
+        "classification_projection": {"schema_version": 1, "policy": HISTORY_PROJECTION_POLICY,
+                                      "reclassified_rate_rows": sum(row["action"] == "exclude_winner_rate" for row in projection_changes),
+                                      "held_product_days": sum(row["action"] == "hold_unresolved_product_day" for row in projection_changes),
+                                      "records": sorted(projection_changes, key=lambda row: (row["date"], row["product_key"], row["action"]))},
         "coverage": {
             "date_count": len(dates),
             "product_count": len(products),
