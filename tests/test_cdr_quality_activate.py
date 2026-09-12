@@ -87,10 +87,11 @@ def sealed(tmp_path):
     candidate = save(payload / "manifest.json", manifest)
     app = app_proof(operation, manifest, candidate)
     protected = {"state/pointer.json": "e" * 64}
-    host = {"available_bytes": 6 * GIB, "swap_in_pages": 0, "swap_out_pages": 0, "psi_avg10": None}
+    host = {"available_bytes": 6 * GIB, "swap_in_pages": 0, "swap_out_pages": 0, "page_size_bytes": 16384, "psi_avg10": None}
     resources = save(operation / "resources.json", {"schema": RESOURCE_SCHEMA, "result": "PASS", "mode": "sampled_cgroup_rss",
         "limits": asdict(Limits()), "group_clean": True, "workload_exit_code": 0, "samples": 2,
         "peak_rss_bytes": 100000, "minimum_available_bytes": 6 * GIB, "maximum_sample_gap_seconds": 0.1,
+        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0,
         "baseline": host, "last_host_sample": host})
     canary = save(operation / "canary.json", {"schema": evidence.CANARY_SCHEMA, "result": "PASS", "target_commit": TARGET,
         "source_files": files, "protected_files": protected, "tests": evidence.junit_result(junit),
