@@ -873,6 +873,9 @@ def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys)
 
 
 def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
+    # This v1-only transport fixture has no existing v2 selector. The complete
+    # pre-v1 preservation path is exercised by test_app_payload_v2_archive.
+    monkeypatch.setattr("app_payload_v2_archive.preserve_current_v2", lambda *_a, **_k: None)
     names = [
         "core.json.gz",
         "details.json.gz",

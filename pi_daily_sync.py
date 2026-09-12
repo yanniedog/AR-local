@@ -439,6 +439,7 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             if (rolling_confirmed or rolling_superseded)
             else PUBLISH_FAILED
         )
+        publication_failure_reason = "rolling_manifest_not_confirmed"
         if v2_eligible and not v2_publication_allowed():
             print(
                 "[pi_daily_sync] app_payload v2 skipped "
@@ -453,6 +454,9 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                     out_dir=payload_state / "v2",
                     economic_store_path=DEFAULT_MACRO_STORE_PATH,
                 )
+                if not published_v2:
+                    outcome = PUBLISH_FAILED
+                    publication_failure_reason = "v2_not_confirmed"
                 pruned_v2 = prune_payload_staging(
                     payload_state / "v2", app_payload.V2_MANIFEST_FILENAME
                 )
@@ -463,9 +467,11 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                     f"published={published_v2} pruned_local_assets={pruned_v2} exit=0"
                 )
             except Exception as v2_exc:  # noqa: BLE001 - v1 is already complete
+                outcome = PUBLISH_FAILED
+                publication_failure_reason = "v2_publication_failed"
                 print(
                     "[pi_daily_sync] app_payload v2 failed "
-                    f"(non-fatal; v1 preserved) error={v2_exc!r} exit=0"
+                    f"(v1 preserved; publication retry pending) error={v2_exc!r} exit=0"
                 )
         from app_payload_revisions import revision_mode_enabled
 
@@ -485,7 +491,7 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                 "[pi_daily_sync] app_payload publication incomplete "
                 f"run_date={run_date} published_dated={published_dated} "
                 f"published_latest={published_latest} "
-                "reason=rolling_manifest_not_confirmed (retry pending)",
+                f"reason={publication_failure_reason} (retry pending)",
                 file=sys.stderr,
             )
         return outcome
