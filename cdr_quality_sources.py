@@ -16,7 +16,8 @@ from cdr_quality_sqlite import database_files, database_view
 # v2 adds shared product-detail equality and stronger file replacement identity.
 # Cached v1 success did not prove that SQLite details matched publication JSON.
 # v3 accepts valid negative RateString values; v4 accounts for evidenced TD reclassification.
-AUDIT_VERSION = 4
+# v5 binds source routing fields before deriving export/public coverage.
+AUDIT_VERSION = 5
 
 
 def read_object(path: Path) -> dict:

@@ -19,7 +19,7 @@ def audit_public(current: dict, *, repo: str = DEFAULT_REPO, store=None) -> dict
     if index_raw is None:
         raise ValueError("public dates-index missing")
     index = decode_document(index_raw)
-    validate_index(index)
+    validate_index(index, repo=repo)
     head = index.get("revision_heads", {}).get(current["run_date"])
     if index.get("revision_protocol") == 1 and head is None:
         raise ValueError("selected revision missing for current day")

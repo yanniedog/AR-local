@@ -73,15 +73,40 @@ def test_old_audit_version_cannot_supply_new_detail_equality_proof(tmp_path):
     result = {"key": "retained", "run_date": "2026-05-25", "fingerprint": "unchanged"}
     try:
         index.db.execute("INSERT INTO audits VALUES(?,?,?,?,?)", (
-            result["key"], result["run_date"], result["fingerprint"], 3,
+            result["key"], result["run_date"], result["fingerprint"], 4,
             zlib.compress(json.dumps(result).encode())))
         index.db.commit()
-        assert AUDIT_VERSION == 4
+        assert AUDIT_VERSION == 5
         assert index.get("retained", "unchanged") is None
         index.put(result)
         assert index.get("retained", "unchanged") == result
     finally:
         index.close()
+
+
+@pytest.mark.parametrize("field,corrupted", [("dataset", "Mortgage"), ("rate_family", "lending"),
+                                           ("application_type", "UPFRONT")])
+def test_same_count_source_routing_corruption_cannot_inherit_sqlite_coverage(tmp_path, field, corrupted):
+    evidence = json.loads((FIXTURES / "cdr_term_classification_real_2026-09-12.json").read_bytes())
+    retained = evidence["products"][0]  # Exact retained ANZ Progress Saver response.
+    day = "2026-09-12"
+    root = tmp_path / "runs" / day / "_exports"
+    root.mkdir(parents=True)
+    banks = {"products": [retained["product"]], "rates": retained["rates"],
+             **{key: [] for key in ("fees", "features", "eligibility", "constraints", "product_facts", "failures")}}
+    cdr_outputs.rebuild_run_db(root / "local-cdr.sqlite", day, banks)
+    export = root / "dashboard-cache" / day / "banks.json"
+    export.parent.mkdir(parents=True)
+    export.write_text(json.dumps({"run_date": day, **banks}), encoding="utf-8")
+    source = {"root": root, "key": root.relative_to(tmp_path).as_posix(), "run_date": day, "contract": None}
+    assert audit_source(tmp_path, source)["sqlite_to_export"]["status"] == "PASS"
+    original = (root / "local-cdr.sqlite").read_bytes()
+    assert banks["rates"][0][field] != corrupted
+    banks["rates"][0][field] = corrupted  # Transport fault, not invented business evidence.
+    export.write_text(json.dumps({"run_date": day, **banks}), encoding="utf-8")
+    with pytest.raises(ValueError, match="do not reconcile"):
+        audit_source(tmp_path, source)
+    assert (root / "local-cdr.sqlite").read_bytes() == original
 
 
 def test_corrupt_derived_cache_requests_fresh_source_audit(tmp_path):

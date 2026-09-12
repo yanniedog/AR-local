@@ -14,6 +14,7 @@ from app_payload_revisions import publish_revision_bundle, revision_mode_enabled
 from app_payload_revisions_github import GitHubRevisionStore
 from app_payload_revisions_state import (
     RevisionError, bundle_sha256, canonical, decode_document, digest, validate_manifest,
+    revised_index, validate_index,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -534,3 +535,62 @@ def test_revision_alias_order_and_protocol_cannot_downgrade():
                                     our_revision={"revision": 3}) == (True, "revision")
     assert _manifest_should_replace("present", live, **options,
                                     our_revision={"revision": 2}) == (False, "revision_identity_collision")
+
+
+@pytest.mark.parametrize("tag", [DEFAULT_TAG, f"app-payload-{DAY}"])
+def test_selected_revision_replaces_newer_timestamped_legacy_alias(tag):
+    from app_payload_publish import _manifest_should_replace
+
+    options = {"our_run_date": DAY, "our_gen": "2026-05-19T04:00:00Z", "tag": tag, "force": False}
+    legacy = {"run_date": DAY, "generated_at": "2026-05-19T09:00:00Z"}
+    assert _manifest_should_replace("present", legacy, **options) == (False, "live_newer")
+    assert _manifest_should_replace("present", legacy, **options,
+                                    our_revision={"revision": 1}) == (True, "revision")
+    assert _manifest_should_replace("error", None, **options,
+                                    our_revision={"revision": 1}) == (False, "live_manifest_verify_error")
+
+
+def test_selected_revision_still_cannot_replace_a_later_day_rolling_alias():
+    from app_payload_publish import _manifest_should_replace
+
+    legacy = {"run_date": "2026-05-20", "generated_at": "2026-05-20T09:00:00Z"}
+    assert _manifest_should_replace("present", legacy, our_run_date=DAY,
+                                    our_gen="2026-05-19T04:00:00Z", tag=DEFAULT_TAG,
+                                    force=False, our_revision={"revision": 1}) == (False, "live_newer")
+
+
+@pytest.mark.parametrize("bad_url", [None,
+    f"https://github.com/{REPO}/releases/download/{DEFAULT_TAG}/manifest.json",
+    f"https://github.com/{REPO}/releases/download/app-payload-{DAY}-r000002/manifest.json",
+    f"https://github.com/{REPO}/releases/download/app-payload-2026-05-20-r000001/manifest.json",
+    f"https://github.com/other/repository/releases/download/app-payload-{DAY}-r000001/manifest.json",
+    f"https://github.com/{REPO}/releases/download/app-payload-{DAY}-r000001/manifest.json?x=1",
+])
+def test_invalid_older_head_blocks_another_dates_promotion_without_mutation(tmp_path, bad_url):
+    store = MemoryStore()
+    build_payload(tmp_path / "payload")
+    first = publish(tmp_path, store)
+    index = decode_document(store.read(DEFAULT_TAG, "dates-index.json"))
+    index["revision_heads"][DAY]["manifest_url"] = bad_url
+    raw = canonical(index)
+    store.objects[(DEFAULT_TAG, "dates-index.json")] = raw
+    before = dict(store.objects)
+    manifest = build_payload(tmp_path / "next")
+    manifest["run_date"] = "2026-05-20"
+    (tmp_path / "next" / "manifest.json").write_bytes(canonical(manifest))
+    with pytest.raises(RevisionError, match="manifest URL"):
+        publish(tmp_path, store, tmp_path / "next")
+    assert store.objects == before
+    assert store.promotions == 1
+
+
+def test_index_validation_preserves_explicit_alternate_repository(tmp_path):
+    store = MemoryStore()
+    build_payload(tmp_path / "payload")
+    first = publish(tmp_path, store)
+    index = decode_document(store.read(DEFAULT_TAG, "dates-index.json"))
+    validate_index(index, repo=REPO)
+    result = revised_index(index, DAY, first.head, repo=REPO)
+    assert result["revision_heads"][DAY] == first.head
+    with pytest.raises(RevisionError, match="manifest URL"):
+        validate_index(index, repo="other/repository")
