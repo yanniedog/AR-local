@@ -170,3 +170,74 @@ def test_invalid_optional_numeric_metadata_cannot_prove_a_rate_match(days, sourc
     assert next(row for row in rows if row['rate'] == '0.115')['account_class'] == 'standard'
     assert report['changes'] == []
     assert any(issue['reason'] == 'retained_rate_mapping_unresolved' for issue in report['unknown'].values())
+
+
+@pytest.mark.parametrize('frequency', ['P1M', '', None])
+def test_calculation_frequency_mismatch_cannot_exclude_a_retained_row(days, frequency):
+    banks = days['2026-09-06']
+    prize = next(row for row in banks['rates'] if row['rate'] == '0.115')
+    assert json.loads(banks['products'][0]['details_json'])['depositRates'][4]['calculationFrequency'] == 'P1D'
+    prize['calculation_frequency'] = frequency  # Fault in a retained test copy.
+    rows, report = project_standard_history_rows(banks, '2026-09-06')
+    assert next(row for row in rows if row['rate'] == '0.115')['account_class'] == 'standard'
+    assert report['changes'] == []
+    assert report['unknown']
+
+
+@pytest.mark.parametrize('frequency', ['P1D', 'P1M', None])
+def test_calculation_frequency_distinguishes_same_price_sibling_evidence(days, frequency):
+    banks = days['2026-09-06']
+    raw = json.loads(banks['products'][0]['details_json'])
+    sibling = copy.deepcopy(raw['depositRates'][4])
+    sibling.pop('additionalInfo')
+    for tier in sibling['tiers']:
+        tier.pop('applicabilityConditions', None)
+    sibling['calculationFrequency'] = 'P1M'
+    raw['depositRates'].append(sibling)  # Matcher ambiguity control, not a claimed real tier.
+    banks['products'][0]['details_json'] = json.dumps(raw)
+    if frequency is not None:
+        next(row for row in banks['rates'] if row['rate'] == '0.115')['calculation_frequency'] = frequency
+    rows, report = project_standard_history_rows(banks, '2026-09-06')
+    assert next(row for row in rows if row['rate'] == '0.115')['account_class'] == (
+        'non_standard' if frequency == 'P1D' else 'standard')
+    assert bool(report['unknown']) == (frequency is None)
+    if frequency == 'P1D':
+        assert report['changes'][0]['source_rates'] == [{'index': 5, 'sha256': digest(raw['depositRates'][4])}]
+    else:
+        assert report['changes'] == []
+
+
+def test_valid_restricted_detail_without_flattened_rows_still_holds_unknown_other_day(tmp_path, days):
+    selected = {day: days[day] for day in ('2026-09-06', '2026-09-07')}
+    selected['2026-09-06']['rates'] = []
+    selected['2026-09-07']['products'] = []
+    before = copy.deepcopy(selected)
+    history = build(tmp_path, selected)
+    assert history['products'][KEY] == [None, None]
+    assert history['classification_projection']['held_product_days'] == 1
+    assert history['moves'].get(KEY, []) == []
+    assert selected == before
+
+
+def test_equivalent_detail_from_different_paths_preserves_ordinary_history(tmp_path, days):
+    day = days['2026-09-08']
+    duplicate = copy.deepcopy(day['products'][0])
+    duplicate['source_file'] = '/retained/another-copy/product-detail.json'
+    duplicate['details_json'] = json.loads(duplicate['details_json'])
+    day['products'].append(duplicate)
+    before = copy.deepcopy(days)
+    history = build(tmp_path, days)
+    assert history['products'][KEY] == [0.05] * 8
+    assert history['classification_projection']['held_product_days'] == 0
+    assert days == before
+
+
+@pytest.mark.parametrize('field', ['provider', 'product_id', 'category', 'product_name'])
+def test_duplicate_semantic_identity_conflict_still_holds_gap(tmp_path, days, field):
+    day = days['2026-09-08']
+    duplicate = copy.deepcopy(day['products'][0])
+    duplicate[field] += '-conflicting'
+    day['products'].append(duplicate)
+    history = build(tmp_path, days)
+    assert history['products'][KEY][2] is None
+    assert history['classification_projection']['held_product_days'] == 1
