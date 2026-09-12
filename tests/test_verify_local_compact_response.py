@@ -32,7 +32,7 @@ def responses(section, *, standard=True, present=True):
 @pytest.fixture
 def transport():
     state = {"change": lambda data: data, "standard": True, "present": True, "paths": [],
-             "status": 200, "delay": 0, "changes": {}, "length_extra": 0}
+             "status": 200, "delay": 0, "header_delay": 0, "changes": {}, "length_extra": 0}
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             parsed = urlsplit(self.path)
@@ -50,6 +50,8 @@ def transport():
                     payload = state["change"](copy.deepcopy(payload))
                 payload = state["changes"].get(kind, lambda item: item)(payload)
             body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+            if parsed.path.endswith("/compact"):
+                time.sleep(state["header_delay"])
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body) + (state["length_extra"]
@@ -170,3 +172,14 @@ def test_real_delayed_body_is_fatal(transport):
 def test_truncated_transport_cannot_pass_even_when_json_prefix_is_complete(transport):
     transport["length_extra"] = 1
     assert smoke(transport) == 1
+
+
+def test_header_and_body_share_one_deadline(transport):
+    # Headers spend part of the budget; body stalls beyond what remains. Reusing
+    # the original socket timeout would wait about 1 second instead of 0.65.
+    transport.update(header_delay=0.35, delay=0.7)
+    url = transport["base"] + "api/banks/history/section/compact?date=" + DAY + "&section=Mortgage"
+    started = time.monotonic()
+    with pytest.raises((TimeoutError, ValueError)):
+        compact.read_json(url, timeout=0.65)
+    assert time.monotonic() - started < 0.9
