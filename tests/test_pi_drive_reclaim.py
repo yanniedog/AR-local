@@ -26,6 +26,7 @@ class Host:
     def boot(self): return self.boot_id
     def value(self): return self.setting
     def controls(self): return "a" * 64
+    def legacy_inventory(self): return {"observed_at": self.now().isoformat(), "systemctl_show": ""}
     def running(self): return self.alive
     def empty(self): return self.empty_group
     def terminal(self): return self.terminal_state
