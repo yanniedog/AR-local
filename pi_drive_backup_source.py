@@ -19,6 +19,7 @@ from ar_local_operation_lock import production_lock
 from pi_laptop_backup_source import canonical_json_bytes
 from pi_drive_backup_manifest import DiskRows, ManifestIndex, content_digest
 from pi_drive_backup_read import chunks, discard_created_cache
+from pi_drive_backup_write import CreatedWriter
 
 SCHEMA = "ar-local-drive-backup-v1"
 DB_SUFFIXES = {".sqlite", ".sqlite3", ".db"}
@@ -125,9 +126,10 @@ def _copy(source: Path, target: Path, guard: Callable[[], None]) -> None:
     before = fingerprint(source)
     target.parent.mkdir(parents=True, exist_ok=True)
     with source.open("rb") as src, target.open("xb") as dst:
+        writer = CreatedWriter(dst)
         for block in chunks(src):
             guard()
-            dst.write(block)
+            writer.write(block, guard)
         dst.flush()
         os.fsync(dst.fileno())
         shutil.copystat(source, target)
