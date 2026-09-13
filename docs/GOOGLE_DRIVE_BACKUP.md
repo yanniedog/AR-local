@@ -30,8 +30,15 @@ all SQLite connections closed, its original exclusively-created descriptor is
 fsynced and receives `POSIX_FADV_DONTNEED`. The descriptor/path identity and unique
 regular-file ownership are checked; source or reopened descriptors are rejected.
 Only these completed private destinations have their cache released, never live
-source files. Native SQLite reads during the snapshot, pages while a copy is
-still being written, and Restic's own reads remain separate operations. Successful complete
+source files. Private byte-copy writes also use bounded `pwritev` calls with
+`RWF_DONTCACHE` where supported, so the kernel can start writeback and release
+newly instantiated pages before an entire file finishes copying. Only the
+original exclusively-created empty destination is eligible. Short writes resume
+at the exact offset; unsupported advice falls back to ordinary writes and real
+write errors stop the copy. Final fsync, hash/identity comparison and cache
+release remain required. This is still advisory, not a bound on dirty pages or
+proof that private writes caused a host swap event. Native SQLite operations
+and Restic's own reads remain separate. Successful complete
 backup/restore and actual resource receipts remain required. A small capability
 probe or low process RSS does not prove absence of host cache pressure.
 

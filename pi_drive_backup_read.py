@@ -46,18 +46,20 @@ def chunks(stream: BinaryIO) -> Iterator[bytes]:
         yield block
 
 
-def discard_created_cache(stream: BinaryIO) -> None:
-    """Release only a completed private file still held by its exclusive creator.
-
-    Call after verification, never with a source/read handle or reopened path.
-    The caller retains the same xb descriptor from creation through this call.
-    """
+def created_identity(stream: BinaryIO) -> tuple[int, int]:
+    """Validate the original exclusive writer, never a source or reopened file."""
     info = os.fstat(stream.fileno())
     if stream.mode != "xb" or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise ValueError("cache release requires an exclusively created private file")
     named = os.stat(stream.name, follow_symlinks=False)
     if (named.st_dev, named.st_ino) != (info.st_dev, info.st_ino):
         raise ValueError("private destination identity changed before cache release")
+    return info.st_dev, info.st_ino
+
+
+def discard_created_cache(stream: BinaryIO) -> None:
+    """Release a verified private file still held by its original xb descriptor."""
+    created_identity(stream)
     stream.flush()
     os.fsync(stream.fileno())
     advise = getattr(os, "posix_fadvise", None) if LINUX else None
