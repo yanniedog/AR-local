@@ -170,3 +170,45 @@ def test_queued_delivery_still_reports_unsuccessful_transport(tmp_path, monkeypa
     monkeypatch.setattr(watch, 'deliver', lambda *_: {'result': 'QUEUED', 'category': 'GITHUB_REQUEST_TIMEOUT'})
     assert watch.main([]) == 1
     assert json.loads(capsys.readouterr().out)['delivery']['result'] == 'QUEUED'
+
+
+@pytest.mark.parametrize('spool_kind', ['absent', 'invalid'])
+def test_checks_only_never_opens_alert_store(tmp_path, monkeypatch, capsys, spool_kind):
+    import pi_drive_access_probe
+    spool = tmp_path / 'absent-alert-spool'
+    monkeypatch.setenv('AR_LOCAL_ALERT_SPOOL', str(spool) if spool_kind == 'absent' else 'relative/invalid')
+    monkeypatch.setattr(watch, 'ingest_checks', lambda *a: {'status': 'COMPLETE'})
+    monkeypatch.setattr(watch, 'backup_check', lambda *a: {'status': 'NO_CURRENT_VERIFIED_RECOVERY'})
+    monkeypatch.setattr(pi_drive_access_probe, 'probe', lambda *a: {'status': 'PASS', 'category': 'OK'})
+    monkeypatch.setattr(watch, 'deliver', lambda *_: pytest.fail('read-only delivered an issue'))
+    assert watch.main(['--checks-only']) == 0
+    assert json.loads(capsys.readouterr().out)['delivery']['result'] == 'NOT_REQUESTED'
+    assert not spool.exists()
+
+
+@pytest.mark.parametrize('timestamp,expected', [
+    ('Sun 2026-09-13 06:00:00 UTC', NOW),
+    ('Sun 2026-09-13 06:00:00.123456 UTC', NOW.replace(microsecond=123456)),
+    ('', None), ('n/a', None), ('unexpected timestamp', None),
+])
+def test_failure_trigger_survives_unknown_start_timestamp(tmp_path, monkeypatch, timestamp, expected):
+    from types import SimpleNamespace
+    output = ('LoadState=loaded\nActiveState=failed\nResult=exit-code\nExecMainPID=123\n'
+              'ExecMainStatus=2\nExecMainStartTimestamp=' + timestamp + '\n')
+    monkeypatch.setattr(watch.subprocess, 'run', lambda *a, **kw: SimpleNamespace(stdout=output))
+    monkeypatch.setenv('AR_LOCAL_DRIVE_BACKUP_SPOOL', str(tmp_path / 'missing-backup-spool'))
+    assert watch.unit_state('ar-local-drive-backup.service')['started_at'] == expected
+    store = AlertStore(tmp_path / 'alerts')
+    result = watch.failure_event(store, 'ar-local-drive-backup.service', NOW)
+    assert result['status'] == 'FAILURE_EVENT_RECORDED'
+    assert store.read()['incidents']['drive-backup']['active']
+
+
+def test_failure_template_loads_same_backup_locations_as_watchdog():
+    root = Path(__file__).parents[1] / 'deploy/pi'
+    expected = ['EnvironmentFile=-/etc/ar-local/app-payload.env',
+                'EnvironmentFile=-/etc/ar-local/drive-backup.env',
+                'EnvironmentFile=-/etc/ar-local/issue-alerts.env']
+    for name in ('ar-local-issue-watchdog.service', 'ar-local-issue-failure@.service'):
+        actual = [line for line in (root / name).read_text().splitlines() if line.startswith('EnvironmentFile=')]
+        assert actual == expected
