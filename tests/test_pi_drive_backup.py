@@ -196,10 +196,14 @@ class FakeRestic:
             raise RuntimeError("injected transport failure")
         if args[0] == "backup":
             raw = Path(args[args.index("--files-from-raw") + 1]).read_bytes()
-            self.saved = {path.decode(): Path(path.decode()).read_bytes() for path in raw.split(b"\x00") if path}
+            selected = [Path(path.decode()) for path in raw.split(b"\x00") if path]
+            files = [file for path in selected for file in (path.rglob("*") if path.is_dir() else [path]) if file.is_file()]
+            self.saved = {path.as_posix(): path.read_bytes() for path in files}
             if self.after_backup:
                 self.after_backup()
-            return json.dumps({"message_type": "summary", "snapshot_id": "a" * 64, "data_added_packed": 100})
+            return json.dumps({"message_type": "summary", "snapshot_id": "a" * 64, "data_added_packed": 100,
+                               "total_files_processed": len(self.saved),
+                               "total_bytes_processed": sum(len(value) for value in self.saved.values())})
         if args[0] == "stats":
             return '{"total_size":100}'
         if args[0] == "restore":
@@ -387,6 +391,32 @@ def test_failure_does_not_advance_receipt_or_ack_queue(layout, transport, phase)
     assert not (layout.spool / "latest-verified.json").exists()
     assert len(list((layout.spool / "receipts").glob("*.FAIL.json"))) == 1
     assert not list(layout.spool.glob("freeze-*"))
+
+
+def test_directory_membership_race_preserves_previous_receipt_and_queue(layout, transport):
+    first = backup.run_backup(layout, force=True)
+    queued = backup.request_backup("repair", spool=layout.spool)
+    (layout.data / "state/publication-manifest.json").write_text('{"generation_id":"corrected"}')
+    transport.after_backup = lambda: (layout.data / "runs/2026-09-10/_exports/extra.txt").write_text("late file")
+    with pytest.raises(RuntimeError, match="directory membership changed"):
+        backup.run_backup(layout, force=True)
+    assert queued.exists() and backup._load(layout.spool / "latest-verified.json") == first
+
+
+def test_wrong_backup_summary_cannot_advance_receipt(layout, transport):
+    queued = backup.request_backup("repair", spool=layout.spool)
+    original = transport.run
+    def wrong_total(*args):
+        output = original(*args)
+        if args[0] == "backup":
+            summary = json.loads(output)
+            summary["total_files_processed"] += 1
+            return json.dumps(summary)
+        return output
+    transport.run = wrong_total
+    with pytest.raises(ValueError, match="totals differ"):
+        backup.run_backup(layout, force=True)
+    assert queued.exists() and not (layout.spool / "latest-verified.json").exists()
 
 
 def test_request_arriving_during_transfer_survives_acknowledgement(layout, transport):

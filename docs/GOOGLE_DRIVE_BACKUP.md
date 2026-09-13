@@ -45,9 +45,23 @@ probe or low process RSS does not prove absence of host cache pressure.
 Backups pass `--no-scan` to omit Restic's optional progress-size estimation.
 Restic 0.18 otherwise builds a second complete target tree concurrently with
 the archive walk; hundreds of thousands of explicit manifest paths can exceed
-the workload budget despite the Go soft limit. The archive still processes the
-exact NUL-delimited file list, and its final JSON summary supplies actual file
-and byte totals. Source hashing, repository checks, restore policy and resource
+the workload budget despite the Go soft limit. The target planner also replaces
+complete manifest-selected directory trees with their directory paths. A private
+SQLite index uses a 2 MiB cache and disk-backed sorting; it never collects all
+paths in Python memory. Only immutable run sources and private frozen copies are
+eligible. Any unselected file, directory or secret namespace prevents that parent
+from collapsing; selected descendants remain explicit. No unselected namespace
+is traversed. The data roots and freeze root themselves are never targets.
+
+Directory identities and child membership must remain stable during planning;
+all selected directory identities are checked before and after upload, including
+nested directories below a compact target. Planning is limited to 20 minutes,
+with the existing quiet-window and free-space guards. This relies on the same
+finalized-run immutability contract as direct file inputs and does not retain the
+ingest lock during network work. The exact per-file manifest and original restore
+paths remain unchanged. Restic's final JSON file and byte totals must equal the
+manifest plus its archived copy; mismatches cannot advance the accepted receipt
+or queue. Source hashing, repository checks, restore policy and resource
 acceptance remain required. See the pinned [scanner implementation](https://github.com/restic/restic/blob/v0.18.0/internal/archiver/scanner.go)
 and [backup dispatch](https://github.com/restic/restic/blob/v0.18.0/cmd/restic/cmd_backup.go).
 
