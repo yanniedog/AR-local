@@ -42,6 +42,15 @@ and Restic's own reads remain separate. Successful complete
 backup/restore and actual resource receipts remain required. A small capability
 probe or low process RSS does not prove absence of host cache pressure.
 
+Backups pass `--no-scan` to omit Restic's optional progress-size estimation.
+Restic 0.18 otherwise builds a second complete target tree concurrently with
+the archive walk; hundreds of thousands of explicit manifest paths can exceed
+the workload budget despite the Go soft limit. The archive still processes the
+exact NUL-delimited file list, and its final JSON summary supplies actual file
+and byte totals. Source hashing, repository checks, restore policy and resource
+acceptance remain required. See the pinned [scanner implementation](https://github.com/restic/restic/blob/v0.18.0/internal/archiver/scanner.go)
+and [backup dispatch](https://github.com/restic/restic/blob/v0.18.0/cmd/restic/cmd_backup.go).
+
 The Pi kernel checked on 2026-09-12 has no memory cgroup controller or memory
 PSI file, so MemoryHigh/MemoryMax/MemorySwapMax are not enforced there. The Drive
 controller instead samples the aggregate RSS and swap of **every process in its
