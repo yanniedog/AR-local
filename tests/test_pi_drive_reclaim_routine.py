@@ -1,5 +1,5 @@
 """Routine control regressions; temporary transport/files only, no Pi acceptance."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -120,11 +121,16 @@ def test_actual_systemd_queue_calendar_stays_inside_eligible_hours(base, expecte
     text = (ROOT / 'deploy/pi/ar-local-drive-backup-queue.timer').read_text()
     expressions = [line.partition('=')[2] for line in text.splitlines() if line.startswith('OnCalendar=')]
     next_times = []
+    hobart = ZoneInfo('Australia/Hobart')
+    base_epoch = int(datetime.fromisoformat(base).replace(tzinfo=hobart).timestamp())
     for expression in expressions:
-        result = subprocess.run(['systemd-analyze', 'calendar', '--base-time=' + base + ' Australia/Hobart', expression],
-            capture_output=True, text=True, check=True, timeout=10,
-            env={**os.environ, 'TZ': 'Australia/Hobart', 'LC_ALL': 'C'})
-        match = re.search(r'Next elapse: \w+ (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', result.stdout)
+        # Epoch input and UTC output avoid dependence on the runner's local zone
+        # or named-zone timestamp syntax. Evaluate the actual Hobart unit calendar.
+        result = subprocess.run(['systemd-analyze', 'calendar', '--utc', '--base-time=@' + str(base_epoch), expression],
+            capture_output=True, text=True, timeout=10,
+            env={**os.environ, 'TZ': 'UTC', 'LC_ALL': 'C'})
+        assert result.returncode == 0, result.stderr + result.stdout
+        match = re.search(r'Next elapse: \w+ (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC', result.stdout)
         assert match, result.stdout
-        next_times.append(datetime.fromisoformat(match[1]))
-    assert min(next_times) == datetime.fromisoformat(expected)
+        next_times.append(datetime.fromisoformat(match[1]).replace(tzinfo=timezone.utc))
+    assert min(next_times) == datetime.fromisoformat(expected).replace(tzinfo=hobart)
