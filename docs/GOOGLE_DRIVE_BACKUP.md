@@ -299,6 +299,19 @@ no diagnostic outcome advances backup acceptance or authorizes an automatic
 unlock. If stderr capture fails or cannot drain, backup fails closed. Historical
 failures recorded before this retention change cannot recover discarded stderr.
 
+Backup JSON stdout can exceed16MiB during a long successful upload. After the
+child and private stderr capture finish successfully, the controller reads that
+temporary output as a stream of UTF-8 JSON lines, at most1MiB per record, and
+retains only one final non-dry-run snapshot summary. Progress records are parsed
+and discarded without accumulating them in memory or copying their paths into
+receipts. Missing, duplicate, nonfinal or malformed summaries fail closed;
+processing retains the quiet-window guard and a60-second parsing deadline.
+Other commands retain their16MiB whole-output bound. This does not change the
+existing temporary stdout file or upload resource/space guards, and a Restic
+summary alone still cannot accept a backup: repository, restored-byte, SQLite
+and whole-worker resource checks must pass. See Restic's documented
+[JSON-lines and backup-summary contract](https://restic.readthedocs.io/en/stable/075_scripting.html#backup).
+
 For disaster recovery, install Restic/rclone on a replacement host, recover the encryption password from its separate custody, and authorize access to the same dedicated Drive repository. Run `restic snapshots`, select the receipt-bound snapshot and `restic restore <id> --target <empty-private-directory>`. Restic restores absolute source paths beneath that private directory. The included source manifest maps each physical backup path to its logical `data/`, `control/` or `sqlite-original/` path and supplies SHA-256 digests. Verify every selected file before placing recovered data under a stopped production service. Use the merged SQLite copy for normal recovery; original DB components are reserved for exact historical reconstruction. Do not automatically overwrite a live data tree.
 
 References: [Restic backup and deduplication](https://restic.readthedocs.io/en/stable/040_backup.html), [rclone backend](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html), [rclone Drive scope](https://rclone.org/drive/), [SSH OAuth setup](https://rclone.org/remote_setup/), [SQLite backup API](https://www.sqlite.org/backup.html).
