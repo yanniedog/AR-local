@@ -214,11 +214,8 @@ class Restic:
                 # Only a fixed category and private evidence ID leave this function.
                 raise RuntimeError(f"restic {args[0]} failed with exit {process.returncode}; "
                                    f"category={diagnostic['category']}; diagnostic={diagnostic['path']}; credentials withheld")
-            stdout.seek(0)
-            output = stdout.read(16 * 1024 * 1024 + 1)
-            if len(output) > 16 * 1024 * 1024:
-                raise RuntimeError("restic command output exceeded bounded receipt limit")
-            return output.decode("utf-8")
+            from pi_drive_backup_output import command_output
+            return command_output(stdout, args, guard=guard_window)
 
 
 def _load(path: Path) -> dict:
