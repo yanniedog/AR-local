@@ -157,7 +157,13 @@ class Restic:
         # Do not inherit alternative authentication or command hooks.
         for key in ("RESTIC_PASSWORD", "RESTIC_PASSWORD_COMMAND", "RESTIC_REPOSITORY_FILE"):
             env.pop(key, None)
-        command = [cfg.restic, "--compression", "auto", "--pack-size", "16", *args]
+        # Restic backend connections also determine its restore worker count;
+        # RCLONE_TRANSFERS does not bound those workers or their pack buffers.
+        options = ["-o", "rclone.connections=1"]
+        if args[0] == "restore":
+            # A snapshot's path list can itself exceed the bounded stdout receipt.
+            options.append("--quiet")
+        command = [cfg.restic, "--compression", "auto", "--pack-size", "16", *options, *args]
         with tempfile.TemporaryFile() as stdout, StderrCapture(cfg.spool, args[0]) as capture:
             process = subprocess.Popen(command, env=env, stdout=stdout, stderr=subprocess.PIPE,
                                        shell=False, start_new_session=os.name == "posix")

@@ -335,6 +335,19 @@ summary alone still cannot accept a backup: repository, restored-byte, SQLite
 and whole-worker resource checks must pass. See Restic's documented
 [JSON-lines and backup-summary contract](https://restic.readthedocs.io/en/stable/075_scripting.html#backup).
 
+Every Restic command explicitly uses `-o rclone.connections=1`. Restic 0.18
+derives its restore worker count from backend connections; `RCLONE_TRANSFERS=2`
+does not control those workers. This reduces concurrent pack-buffer demand
+while keeping the existing 8MiB/s bandwidth setting, compression and resource
+limits. Restore also uses `--quiet` to suppress formatting the snapshot's large
+path list into stdout. Exit status, private stderr diagnostics, `--verify`,
+manifest hashes, SQLite checks and parent acceptance are unchanged. These
+settings are not a hard memory bound or proof that a large restore will fit;
+the existing aggregate-RSS supervisor remains authoritative, and a successful
+full restore under that supervisor is still required. See the pinned
+[Restic 0.18 restore-worker implementation](https://github.com/restic/restic/blob/v0.18.0/internal/restorer/filerestorer.go)
+and [restore output path](https://github.com/restic/restic/blob/v0.18.0/cmd/restic/cmd_restore.go).
+
 ### Recover an initial upload after the old stdout limit
 
 An explicit `run --recover-from <canonical-private-descriptor.json>
