@@ -1,6 +1,7 @@
 """Real HTTP/schema fixtures, not business-data or live dashboard acceptance."""
 import copy
 import json
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,7 +33,8 @@ def responses(section, *, standard=True, present=True):
 @pytest.fixture
 def transport():
     state = {"change": lambda data: data, "standard": True, "present": True, "paths": [],
-             "status": 200, "delay": 0, "header_delay": 0, "changes": {}, "length_extra": 0}
+             "status": 200, "delay": 0, "header_delay": 0, "changes": {}, "length_extra": 0,
+             "trickle_headers": False}
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             parsed = urlsplit(self.path)
@@ -50,6 +52,15 @@ def transport():
                     payload = state["change"](copy.deepcopy(payload))
                 payload = state["changes"].get(kind, lambda item: item)(payload)
             body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+            if parsed.path.endswith('/compact') and state['trickle_headers']:
+                try:
+                    self.wfile.write(b'HTTP/1.0 200 OK\r\nX-Slow: ')
+                    for _ in range(25):
+                        self.wfile.write(b'x'); self.wfile.flush(); time.sleep(0.05)
+                    self.wfile.write(b'\r\nContent-Length: 2\r\n\r\n{}')
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             if parsed.path.endswith("/compact"):
                 time.sleep(state["header_delay"])
             self.send_response(status)
@@ -183,3 +194,68 @@ def test_header_and_body_share_one_deadline(transport):
     with pytest.raises((TimeoutError, ValueError)):
         compact.read_json(url, timeout=0.65)
     assert time.monotonic() - started < 0.9
+
+
+@pytest.mark.parametrize('fault', ['changed_mean', 'changed_count', 'provider_total', 'zero_live_ribbon'])
+def test_same_day_positive_but_stale_aggregate_is_fatal(transport, fault):
+    def change(data):
+        if fault == 'changed_mean':
+            data['points'][0]['mean'] += 0.01
+        elif fault == 'changed_count':
+            data['points'][0]['count'] += 1
+        elif fault == 'provider_total':
+            data['providers'][0]['by_date'][DAY]['count'] += 1
+        return data
+    transport['change'] = change
+    if fault == 'zero_live_ribbon':
+        transport['changes']['ribbon'] = lambda data: responses(data['section'], standard=False)['ribbon']
+    assert smoke(transport) == 1
+
+
+def test_trickled_headers_cannot_extend_the_whole_request_deadline(transport):
+    transport['trickle_headers'] = True
+    url = transport['base'] + 'api/banks/history/section/compact?date=' + DAY + '&section=Mortgage'
+    started = time.monotonic()
+    with pytest.raises((TimeoutError, ValueError)):
+        compact.read_json(url, timeout=0.3)
+    assert time.monotonic() - started < 0.9
+
+
+def test_aggregate_allows_only_summation_rounding_noise(transport):
+    def change(data):
+        data['points'][0]['mean'] += 1e-15
+        return data
+    transport['change'] = change
+    assert smoke(transport) == 0
+
+
+@pytest.mark.parametrize('interrupted', [False, True])
+def test_network_worker_is_reaped_after_timeout_or_parent_interruption(transport, monkeypatch, interrupted):
+    transport['trickle_headers'] = True
+    children = []
+    original = subprocess.Popen
+    class ObservedChild(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            children.append(self)
+        def communicate(self, *args, **kwargs):
+            if interrupted:
+                raise KeyboardInterrupt('parent interrupted')
+            return super().communicate(*args, **kwargs)
+    monkeypatch.setattr(compact.subprocess, 'Popen', ObservedChild)
+    url = transport['base'] + 'api/banks/history/section/compact?date=' + DAY + '&section=Mortgage'
+    with pytest.raises(KeyboardInterrupt if interrupted else TimeoutError):
+        compact.read_json(url, timeout=0.3)
+    assert len(children) == 1 and children[0].poll() is not None
+
+
+def test_preconnection_worker_stall_is_also_bounded_and_reaped(tmp_path, monkeypatch):
+    # Real child process fault fixture for a resolver/connect stall before headers;
+    # no external DNS/network traffic or business-data substitution is involved.
+    worker = tmp_path / 'blocked_transport.py'
+    worker.write_text('import time\ntime.sleep(30)\n', encoding='utf-8')
+    monkeypatch.setattr(compact, 'WORKER', worker)
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        compact.read_json('http://test.invalid/', timeout=0.2)
+    assert time.monotonic() - started < 1

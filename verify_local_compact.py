@@ -3,48 +3,35 @@ from __future__ import annotations
 
 import json
 import math
-import time
-import urllib.request
+from pathlib import Path
+import subprocess
+import sys
 from datetime import date
 
 # Same decoded-body budget as tests/test_audit_budgets.py; no raw history rows.
-MAX_JSON_BYTES = 20 * 1024 * 1024
+from verify_local_json_worker import MAX_JSON_BYTES
+
+WORKER = Path(__file__).with_name("verify_local_json_worker.py")
 STATS = ("min", "max", "mean", "median")
 
 
 def read_json(url: str, timeout: float) -> dict:
-    started = time.monotonic()
-    request = urllib.request.Request(url, headers={"Accept-Encoding": "identity"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        if response.status != 200:
-            raise ValueError(f"HTTP {response.status}")
-        expected_size = response.length
-        if expected_size is not None and expected_size > MAX_JSON_BYTES:
-            raise ValueError("JSON response exceeds 20 MiB body limit")
-        # urllib's HTTP(S) response is backed by this CPython socket. Retain it
-        # before read1 can close response.fp, and spend only the remaining deadline
-        # after headers; a fresh full socket timeout per chunk would extend it.
-        connection = response.fp.raw._sock
-        chunks, size = [], 0
-        # read1 performs at most one underlying read, so a trickling response
-        # cannot avoid the elapsed check until the entire body has arrived.
-        while True:
-            remaining = timeout - (time.monotonic() - started)
-            if remaining <= 0:
-                raise ValueError("JSON response exceeded request deadline")
-            connection.settimeout(remaining)
-            chunk = response.read1(min(65536, MAX_JSON_BYTES + 1 - size))
-            if time.monotonic() - started > timeout:
-                raise ValueError("JSON response exceeded request deadline")
-            size += len(chunk)
-            if size > MAX_JSON_BYTES:
-                raise ValueError("JSON response exceeds 20 MiB body limit")
-            chunks.append(chunk)
-            if not chunk or response.isclosed():
-                break
-        if expected_size is not None and size != expected_size:
-            raise ValueError("incomplete JSON response body")
-    result = json.loads(b"".join(chunks).decode("utf-8"),
+    if not math.isfinite(timeout) or not 0 < timeout <= 90:
+        raise ValueError("request timeout must be greater than zero and at most 90 seconds")
+    # Socket timeouts cannot bound DNS or trickled headers. A stdlib-only worker
+    # gives the parent cancellation authority over the complete transfer. run()
+    # kills AND waits for that direct child on timeout or interruption, using
+    # platform-native process termination (never a Windows signal-zero probe).
+    try:
+        response = subprocess.run([sys.executable, "-I", "-B", str(WORKER), url, str(timeout)],
+                                  capture_output=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as error:
+        raise TimeoutError("JSON response exceeded whole request deadline") from error
+    if response.returncode:
+        raise ValueError("JSON worker failed: " + response.stderr[:1024].decode("utf-8", errors="replace").strip())
+    if len(response.stdout) > MAX_JSON_BYTES:
+        raise ValueError("JSON response exceeds 20 MiB body limit")
+    result = json.loads(response.stdout.decode("utf-8"),
                         parse_constant=lambda value: invalid(f"non-finite JSON number: {value}"))
     if not isinstance(result, dict):
         raise ValueError("JSON response must be an object")
@@ -129,6 +116,22 @@ def validate(history: dict, current: dict, ribbon: dict, run_date: str, section:
                 current_provider_count += total
     if current_count and run_date not in dates:
         invalid("current section has rows but compact history has no requested-day point")
+    # Current ribbon and the compact anchor use the same standard-only SQL rate
+    # filter and aggregate_ribbon kernel. Gap filling never extends past the last
+    # observed date. Compare real values, including zero/null, so an older positive
+    # same-day edition cannot pass. Only floating summation-order noise is allowed.
+    if run_date in dates:
+        point = points[dates.index(run_date)]
+        if point["count"] != ribbon_count or current_provider_count != ribbon_count:
+            invalid("current-day history/provider counts differ from the live ribbon")
+        for key in STATS:
+            actual, expected = point[key], ribbon["range"][key]
+            if (actual is None or expected is None):
+                equal = actual is expected
+            else:
+                equal = math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)
+            if not equal:
+                invalid("current-day history statistics differ from the live ribbon")
     if ribbon_count:
         point = points[dates.index(run_date)]
         if not point["count"] or any(point[key] is None for key in STATS) or not current_provider_count:

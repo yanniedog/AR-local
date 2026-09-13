@@ -108,7 +108,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "contracts/pi-preservation-snapshot-v1.schema.json",
     "contracts/pi-restore-acceptance-v1.schema.json",
     "contracts/pi-rollback-acceptance-v1.schema.json",
-    "verify_local.py",
+    "verify_local",
     "cdr_dashboard_server.py",
     "package.json",
 )
