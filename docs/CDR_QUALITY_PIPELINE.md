@@ -99,6 +99,11 @@ with unavailable or ambiguous evidence remains a null gap; no zero, cross-gap
 move or present-day restriction is substituted for that day's missing evidence.
 Existing all-products history and the app's dated-core history are separate
 contracts; this standard-cohort sidecar does not change their ranking policy.
+Retained calculation frequency must agree, including an explicitly blank field;
+older rows without that column still require an unambiguous match. Identical
+semantic product/detail copies from different source paths are equivalent
+evidence. Valid restricted product detail is registered even when that day's
+flattened rates are absent, so another unverifiable day cannot evade the gap policy.
 
 Use retained real responses and generated artifacts for regression fixtures.
 Require source-to-SQLite-to-payload reconciliation, revision preservation and

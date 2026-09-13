@@ -46,6 +46,11 @@ def _matches(row, candidate):
         left, right = _number(row.get(field)), _number(candidate.get(field))
         if left is _INVALID or right is _INVALID or left != right:
             return False
+    # Older SQLite exports omit this column. When retained, even an explicit
+    # blank must agree; an absent column cannot disambiguate competing tiers.
+    if ('calculation_frequency' in row
+            and str(row.get('calculation_frequency') or '') != str(candidate.get('calculation_frequency') or '')):
+        return False
     return all(str(row.get(field) or "") == str(candidate.get(field) or "") for field in _TEXT)
 
 
@@ -71,13 +76,14 @@ def _product_sources(products):
             grouped.setdefault(str(product.get("product_key") or ""), []).append(product)
     result = {}
     for key, group in grouped.items():
-        # A conflicting duplicate key cannot donate its detail to another row.
-        if len({digest(product) for product in group}) != 1:
+        details_by_product = [_source(product) for product in group]
+        # Provenance paths and JSON formatting do not change retained source
+        # meaning. Conflicting identity, name or detail still cannot donate proof.
+        if (any(details is None for details in details_by_product)
+                or len({(identity(product), str(product.get('product_name') or ''), digest(details))
+                        for product, details in zip(group, details_by_product)}) != 1):
             continue
-        product = group[0]
-        details = _source(product)
-        if details is None:
-            continue
+        product, details = group[0], details_by_product[0]
         restricted = {index for index, item in enumerate(details["depositRates"], 1)
                       if winner_rate_evidence(item)}
         dataset = {field: [] for field in ("rates", "fees", "features", "eligibility", "constraints")}
@@ -110,7 +116,10 @@ def _unknown(unknown, product_identity, note, row, reason, details=None):
 def project_standard_history_rows(banks, run_date):
     """Return projection copies plus evidence; unknown affected days stay gaps."""
     sources = _product_sources(banks.get("products") or [])
-    rates, changes, unknown, restricted_products = [], [], {}, set()
+    # Source restriction evidence survives an incomplete flattened-rate export.
+    restricted_products = {identity(product) for product, _details, restricted, _rates in sources.values()
+                           if restricted}
+    rates, changes, unknown = [], [], {}
     for row in banks.get("rates") or []:
         if not isinstance(row, Mapping):
             continue
@@ -125,8 +134,6 @@ def project_standard_history_rows(banks, run_date):
                 _unknown(unknown, product_identity, note, row, "retained_detail_unavailable_or_ambiguous")
             continue
         product, details, restricted, candidates = source
-        if restricted:
-            restricted_products.add(product_identity)
         if row.get("account_class") != "standard":
             continue  # Existing exclusions are never upgraded to ordinary.
         matches = _matching_candidates(row, candidates)
