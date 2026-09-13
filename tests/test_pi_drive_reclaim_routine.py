@@ -72,16 +72,28 @@ def test_corrupt_failure_summary_does_not_overwrite_first_evidence(state):
     assert first.read_bytes() == before
 
 
-def test_reclaim_control_sources_are_frozen_and_restored_byte_for_byte(tmp_path, monkeypatch):
+def test_installed_reclaim_controls_are_frozen_and_restored_despite_repo_drift(tmp_path):
     import pi_drive_backup as backup
     import pi_drive_backup_source as source
     template = (ROOT / 'deploy/pi/ar-local-drive-backup.service').read_text()
     command = next(line for line in template.splitlines() if line.startswith('ExecStart='))
     tokens = shlex.split(command.partition('=')[2].replace('{{AR_LOCAL_REPO}}', ROOT.as_posix()))
     controls = [Path(tokens[i + 1]) for i, token in enumerate(tokens[:-1]) if token == '--control-file']
-    expected = {ROOT / 'pi_drive_reclaim.py', *(ROOT / 'deploy/pi' / name for name in
-        (lease.LEASE, lease.RECONCILE, lease.TIMER))}
+    expected = {Path('/usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py'),
+                *(Path('/etc/systemd/system') / name for name in (lease.LEASE, lease.RECONCILE, lease.TIMER))}
     assert expected.issubset(controls) and len(controls) == len(set(controls)) == 10
+    installed, repository = tmp_path / 'installed', tmp_path / 'repository'
+    installed.mkdir(); repository.mkdir()
+    copies = {}
+    for path in expected:
+        source_path = ROOT / ('pi_drive_reclaim.py' if path.suffix == '.py' else 'deploy/pi/' + path.name)
+        # These are actual helper/rendered unit bytes, with a later differing
+        # checkout version kept separately. Only the installed copies are inputs.
+        raw = source_path.read_bytes().replace(b'{{AR_LOCAL_USER}}', b'pi').replace(b'{{AR_LOCAL_GROUP}}', b'pi')
+        target = installed / path.name; target.write_bytes(raw)
+        (repository / path.name).write_bytes(raw + b'\n# subsequent checkout change\n')
+        copies[path] = target
+    controls = [copies.get(path, path) for path in controls]
     data, stage, restored = (tmp_path / name for name in ('data', 'stage', 'restored'))
     (data / 'state').mkdir(parents=True)
     (data / 'runs').mkdir()
@@ -94,9 +106,10 @@ def test_reclaim_control_sources_are_frozen_and_restored_byte_for_byte(tmp_path,
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(row['backup_path'], target)
         assert source.verify_restore(restored, rows)['files_verified'] == 10
-        for path in expected:
+        for path in copies.values():
             row = next(row for row in rows if row['source_path'] == path.as_posix())
             assert row['sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
+            assert row['sha256'] != hashlib.sha256((repository / path.name).read_bytes()).hexdigest()
     finally:
         backup.close_manifest(manifest)
 

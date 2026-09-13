@@ -39,7 +39,7 @@ for control_path in /usr/local/lib/ar-local-drive-reclaim /var/lib/ar-local-driv
 done
 require_idle_controls() {
   local control_unit properties key value load active pid job enabled
-  for control_unit in ar-local-drive-backup.service ar-local-drive-reclaim.service ar-local-drive-backup.timer ar-local-drive-backup-queue.timer; do
+  for control_unit in ar-local-drive-backup.service ar-local-drive-reclaim.service ar-local-drive-backup.timer ar-local-drive-backup-queue.timer ar-local-drive-reclaim-reconcile.service ar-local-drive-reclaim-reconcile.timer; do
     load= active= pid=0 job= enabled=
     properties=$(systemctl show "$control_unit" --property=LoadState,ActiveState,MainPID,Job,UnitFileState) || {
       # A first installation may have no unit yet; other read errors fail closed.
@@ -56,7 +56,7 @@ require_idle_controls() {
   done
 }
 if ! require_idle_controls; then
-  echo 'Disable and stop both backup timers, then stop/reconcile backup controls before installation.' >&2
+  echo 'Reconcile the lease, then disable and stop backup and reconciliation timers and wait for their services to stop before installation.' >&2
   exit 2
 fi
 if [ -e /var/lib/ar-local-drive-reclaim/current.json ] || [ -L /var/lib/ar-local-drive-reclaim/current.json ]; then
