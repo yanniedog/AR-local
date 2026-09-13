@@ -58,17 +58,20 @@ def write_json(name: str, value: dict, *, replace: bool = False) -> None:
     if replace:
         trusted(target, private=True)
     temporary = STATE / (".write-" + uuid.uuid4().hex)
-    with temporary.open("xb") as stream:
-        os.chmod(temporary, 0o600)
-        stream.write(data)
-        stream.flush()
-        os.fsync(stream.fileno())
-    if replace:
-        os.replace(temporary, target)
-    else:
-        os.link(temporary, target)  # create-once, including retained receipts
-        temporary.unlink()
-    fsync_directory()
+    try:
+        with temporary.open("xb") as stream:
+            os.chmod(temporary, 0o600)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if replace:
+            os.replace(temporary, target)
+        else:
+            os.link(temporary, target)  # create-once, including retained receipts
+            temporary.unlink()
+        fsync_directory()
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def load_current() -> dict | None:
@@ -360,6 +363,38 @@ def reconcile(host: Host):
     return finish(host, record["id"])
 
 
+def record_failure(host: Host, action: str, error: BaseException) -> None:
+    """Keep first evidence and bounded latest/count state for each lease/action."""
+    with locked():
+        try:
+            current = load_current()
+        except (OSError, ValueError, TypeError):
+            current = None  # Malformed ownership still fails; never invent an ID.
+        identity = current["id"] if current is not None else "unattributed"
+        prefix = identity + "." + action
+        first = STATE / (prefix + ".failure.json")
+        latest = STATE / (prefix + ".failure-latest.json")
+        value = {"result": "FAIL", "command": action, "lease_id": current["id"] if current else None,
+                 "at": host.now().isoformat(), "error_type": type(error).__name__, "reason": str(error)[:512]}
+        if not first.exists() and not first.is_symlink():
+            write_json(first.name, value)
+        trusted(first, private=True)
+        if first.stat().st_size > 8192:
+            raise ValueError("oversized first reclaim failure")
+        first_hash = hashlib.sha256(first.read_bytes()).hexdigest()
+        count = 0
+        if latest.exists() or latest.is_symlink():
+            trusted(latest, private=True)
+            if latest.stat().st_size > 8192:
+                raise ValueError("oversized latest reclaim failure")
+            previous = json.loads(latest.read_text())
+            count = previous.get("attempts")
+            if (type(count) is not int or count < 1 or previous.get("first_sha256") != first_hash
+                    or previous.get("command") != action or previous.get("lease_id") != value["lease_id"]):
+                raise ValueError("reclaim failure summary binding differs")
+        write_json(latest.name, {**value, "attempts": count + 1, "first_sha256": first_hash}, replace=count > 0)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("acquire", "finish", "reconcile"))
@@ -374,12 +409,7 @@ def main():
     except BaseException as error:
         # Retain a safe, immutable control failure without masking its exception.
         try:
-            with locked():
-                write_json(uuid.uuid4().hex + ".failure.json", {
-                    "result": "FAIL", "command": arguments.command,
-                    "at": host.now().isoformat(), "error_type": type(error).__name__,
-                    "reason": str(error)[:512],
-                })
+            record_failure(host, arguments.command, error)
         except BaseException:
             pass
         raise

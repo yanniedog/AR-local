@@ -37,13 +37,34 @@ for control_path in /usr/local/lib/ar-local-drive-reclaim /var/lib/ar-local-driv
     exit 2
   fi
 done
-for control_unit in ar-local-drive-backup.service ar-local-drive-reclaim.service; do
-  control_state=$(systemctl show "$control_unit" --property=ActiveState --value)
-  case "$control_state" in inactive|failed) ;; *) echo 'Stop/reconcile backup controls before installation.' >&2; exit 2;; esac
-done
+require_idle_controls() {
+  local control_unit properties key value load active pid job enabled
+  for control_unit in ar-local-drive-backup.service ar-local-drive-reclaim.service ar-local-drive-backup.timer ar-local-drive-backup-queue.timer; do
+    load= active= pid=0 job= enabled=
+    properties=$(systemctl show "$control_unit" --property=LoadState,ActiveState,MainPID,Job,UnitFileState) || {
+      # A first installation may have no unit yet; other read errors fail closed.
+      [[ "$properties" == *'LoadState=not-found'* ]] || return 2
+    }
+    while IFS='=' read -r key value; do
+      case "$key" in LoadState) load=$value;; ActiveState) active=$value;; MainPID) pid=$value;; Job) job=$value;; UnitFileState) enabled=$value;; esac
+    done <<< "$properties"
+    case "$load:$active" in loaded:inactive|loaded:failed|not-found:inactive) ;; *) return 2;; esac
+    [[ "$pid" == 0 && ( -z "$job" || "$job" == 0 ) ]] || return 2
+    if [[ "$control_unit" == *.timer && "$load" != not-found ]]; then
+      case "$active:$enabled" in inactive:disabled|inactive:masked) ;; *) return 2;; esac
+    fi
+  done
+}
+if ! require_idle_controls; then
+  echo 'Disable and stop both backup timers, then stop/reconcile backup controls before installation.' >&2
+  exit 2
+fi
 if [ -e /var/lib/ar-local-drive-reclaim/current.json ] || [ -L /var/lib/ar-local-drive-reclaim/current.json ]; then
   echo 'Reconcile the existing backup lease before installing controls.' >&2; exit 2
 fi
+# The operator retains prior timer states and restores them only after acceptance.
+# Disabled/inactive timers cannot enqueue work during the replacement window.
+require_idle_controls || { echo 'Backup controls changed before replacement.' >&2; exit 2; }
 install -d -m 0755 -o root -g root /usr/local/lib/ar-local-drive-reclaim
 install -d -m 0700 -o root -g root /var/lib/ar-local-drive-reclaim
 install -m 0644 -o root -g root "$repo/pi_drive_reclaim.py" /usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py
@@ -53,10 +74,13 @@ if [ ! -f /etc/ar-local/drive-backup.env ]; then
   printf 'AR_LOCAL_DATA_ROOT=%s\nAR_LOCAL_DRIVE_BACKUP_SPOOL=%s\nRESTIC_REPOSITORY="rclone:ar_local_drive:AR-local Pi Backups/restic"\nRESTIC_PASSWORD_FILE=%s/credentials/restic.password\nRCLONE_CONFIG=%s/credentials/rclone.conf\n' "$data_root" "$spool" "$spool" "$spool" > /etc/ar-local/drive-backup.env
   chmod 0644 /etc/ar-local/drive-backup.env
 fi
+rendered=$(mktemp)
+trap 'rm -f -- "$rendered"' EXIT
 for unit in ar-local-drive-backup.service ar-local-drive-backup.timer ar-local-drive-backup-queue.timer ar-local-drive-reclaim.service ar-local-drive-reclaim-reconcile.service ar-local-drive-reclaim-reconcile.timer; do
   sed -e "s|{{AR_LOCAL_REPO}}|$repo|g" -e "s|{{AR_LOCAL_USER}}|$backup_user|g" \
       -e "s|{{AR_LOCAL_GROUP}}|$backup_group|g" -e "s|{{AR_LOCAL_DATA_ROOT}}|$data_root|g" \
-      -e "s|{{AR_LOCAL_DRIVE_BACKUP_SPOOL}}|$spool|g" "$repo/deploy/pi/$unit" > "/etc/systemd/system/$unit"
+      -e "s|{{AR_LOCAL_DRIVE_BACKUP_SPOOL}}|$spool|g" "$repo/deploy/pi/$unit" > "$rendered"
+  install -m 0644 -o root -g root "$rendered" "/etc/systemd/system/$unit"
 done
 for unit in ar-local-daily.service ar-local-ingest-now.service ar-local-daily-watchdog.service ar-local-boot-recovery.service; do
   install -d -m 0755 "/etc/systemd/system/$unit.d"
