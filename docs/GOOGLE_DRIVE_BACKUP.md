@@ -75,6 +75,17 @@ independent, boot-enabled reconciliation timer is armed. An existing `0` or
 another value is refused, including a separate commissioning window; it is not
 adopted as this lease. No persistent sysctl configuration is written.
 
+Admission also checks every loaded `ar-local-quality-swappiness-restore-*`
+timer and service before creating ownership and again immediately before setting
+`0`. An active or queued legacy restoration owner blocks acquisition even when
+the host currently reads `60` or an old restoration receipt already exists.
+The helper never stops a discovered owner. Exact bounded systemctl inventory is
+retained in the lease intent/application or the existing first/latest failure
+records; malformed or oversized inventory fails closed (oversized output keeps
+its byte count and hash). Retire a proven obsolete timer explicitly before
+retrying. The readbacks do not provide atomic exclusion against a concurrent
+root operator re-arming a different host control after the last check.
+
 Ordered dependency cleanup restores `60` after every backup terminal state,
 including failures. A root-only timer checks 15 seconds after boot and 30
 seconds after each reconciliation completes. At the earlier of 20 hours or

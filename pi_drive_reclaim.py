@@ -33,6 +33,38 @@ DATA_LOCK = Path("/srv/ar-local/data/state/daily-ingest.lock")
 INGEST_UNITS = ("ar-local-daily.service", "ar-local-ingest-now.service")
 ADMISSION_UNITS = INGEST_UNITS + ("ar-local-daily-watchdog.service", "ar-local-boot-recovery.service")
 UTC = timezone.utc
+LEGACY_PATTERNS = ("ar-local-quality-swappiness-restore-*.timer", "ar-local-quality-swappiness-restore-*.service")
+
+
+class LegacyRestorationOwner(ValueError):
+    def __init__(self, reason: str, inventory: dict):
+        super().__init__(reason)
+        self.inventory = inventory
+
+
+def check_legacy_inventory(raw: str, observed_at: str) -> dict:
+    """Keep exact bounded show output; refuse live/queued or unusable ownership."""
+    encoded = raw.encode("utf-8")
+    inventory = {"observed_at": observed_at, "systemctl_show": raw}
+    if len(encoded) > 2048 or len(json.dumps(inventory).encode()) > 3072:
+        raise LegacyRestorationOwner("oversized legacy restoration inventory", {
+            "observed_at": observed_at, "bytes": len(encoded), "sha256": hashlib.sha256(encoded).hexdigest()})
+    seen = set()
+    for block in raw.split("\n\n") if raw else []:
+        rows = [line.split("=", 1) for line in block.splitlines()]
+        if (any(len(row) != 2 for row in rows) or len({row[0] for row in rows}) != len(rows)
+                or {row[0] for row in rows} != {"Id", "LoadState", "ActiveState", "SubState", "Job"}):
+            raise LegacyRestorationOwner("malformed legacy restoration inventory", inventory)
+        props = dict(rows)
+        unit = props["Id"]
+        if (not re.fullmatch(r"ar-local-quality-swappiness-restore-[A-Za-z0-9_.@-]+\.(?:timer|service)", unit)
+                or unit in seen or props["LoadState"] not in {"loaded", "not-found", "masked"}
+                or not re.fullmatch(r"[a-z-]+", props["SubState"])):
+            raise LegacyRestorationOwner("unusable legacy restoration inventory", inventory)
+        seen.add(unit)
+        if props["ActiveState"] not in {"inactive", "failed"} or props["Job"] not in {"", "0"}:
+            raise LegacyRestorationOwner("active or queued legacy restoration owner: " + unit, inventory)
+    return inventory
 
 
 def trusted(path: Path, *, private: bool = False) -> None:
@@ -140,6 +172,13 @@ class Host:
 
     def value(self):
         return int(PARAMETER.read_text().strip())
+
+    def legacy_inventory(self):
+        # Globs cover loaded units, including active timers and queued services.
+        # --all retains empty Job fields; no per-unit command or mutation occurs.
+        raw = command("systemctl", "show", "--all", "--property=Id,LoadState,ActiveState,SubState,Job",
+                      *LEGACY_PATTERNS)
+        return check_legacy_inventory(raw, self.now().isoformat())
 
     def set_value(self, value):
         PARAMETER.write_text(str(value) + "\n")
@@ -290,15 +329,19 @@ def acquire(host: Host):
             raise ValueError("priority ingest or production lock is active")
         if host.value() != 60:
             raise ValueError("reclaim lease requires unowned predecessor swappiness 60")
+        inventory = host.legacy_inventory()
         now = host.now()
         record = {"version": 1, "id": uuid.uuid4().hex, "phase": "PREPARED",
                   "started_at": now.isoformat(), "deadline": deadline(now).isoformat(),
-                  "boot_id": host.boot(), "previous": 60, "controls_sha256": host.controls()}
+                  "boot_id": host.boot(), "previous": 60, "controls_sha256": host.controls(),
+                  "legacy_inventory_admission": inventory}
         write_json("current.json", record)
         write_json(record["id"] + ".intent.json", record)
         host.arm()
         if host.priority_active(admission=True):
             raise ValueError("priority ingest appeared before reclaim application")
+        record["legacy_inventory_before_apply"] = host.legacy_inventory()
+        write_json(record["id"] + ".legacy-before-apply.json", record["legacy_inventory_before_apply"])
         if host.value() != record["previous"]:
             raise ValueError("swappiness changed before reclaim lease application")
         host.set_value(0)
@@ -376,6 +419,8 @@ def record_failure(host: Host, action: str, error: BaseException) -> None:
         latest = STATE / (prefix + ".failure-latest.json")
         value = {"result": "FAIL", "command": action, "lease_id": current["id"] if current else None,
                  "at": host.now().isoformat(), "error_type": type(error).__name__, "reason": str(error)[:512]}
+        if isinstance(error, LegacyRestorationOwner):
+            value["legacy_restoration_inventory"] = error.inventory
         if not first.exists() and not first.is_symlink():
             write_json(first.name, value)
         trusted(first, private=True)
