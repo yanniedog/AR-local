@@ -294,7 +294,10 @@ def restore_includes(rows) -> list[str]:
 
 
 def restore_snapshot(config: Config, client: Restic, snapshot: str, manifest: dict,
-                     *, full: bool = False, rotation: int = 0, manifest_path: Path | None = None) -> dict:
+                     *, full: bool = False, rotation: int = 0, manifest_path: Path | None = None,
+                     seed: dict | None = None) -> dict:
+    if seed is not None and not full:
+        raise ValueError("restore seeds require full snapshot verification")
     rows = restore_selection(manifest, full=full, rotation=rotation)
     if manifest_path:
         rows = SelectedRows(rows, extra=[{"logical_path": "backup/source-manifest.json", "backup_path": manifest_path.as_posix(),
@@ -305,17 +308,24 @@ def restore_snapshot(config: Config, client: Restic, snapshot: str, manifest: di
     if shutil.disk_usage(config.spool).free < required:
         raise Blocked("insufficient disk for selected restore plus reserve")
     target = Path(tempfile.mkdtemp(prefix="restore-", dir=config.spool))
+    target_identity = target.stat()
     try:
+        seed_receipt = None
+        if seed is not None:
+            from pi_drive_backup_seed import copy_seed
+            seed_receipt = copy_seed(config.spool, target, rows, seed, guard=guard_window)
         options = []
         if not full:
             include = target / "include.txt"
             include.write_text("\n".join(restore_includes(rows)) + "\n", encoding="utf-8")
             options = ["--include-file", str(include)]
-        client.run("restore", snapshot, "--target", str(target), *options, "--verify")
-        return {"snapshot_id": snapshot, "full": full, **verify_restore(target, rows, guard=guard_window)}
+        client.run("restore", snapshot, "--target", str(target), *options, "--overwrite", "always", "--verify")
+        return {"snapshot_id": snapshot, "full": full, **verify_restore(target, rows, guard=guard_window),
+                **({"seed": seed_receipt} if seed_receipt is not None else {})}
     finally:
         # Only the unique private restore directory created by this call.
-        if target.parent != config.spool or target.is_symlink():
+        if (target.parent != config.spool or target.is_symlink()
+                or not os.path.samestat(target_identity, target.stat())):
             raise ValueError("unsafe restore cleanup target")
         shutil.rmtree(target)
 
