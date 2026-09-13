@@ -382,7 +382,9 @@ def _run_locked(config: Config, *, force: bool) -> dict:
                 for row in manifest["files"]:
                     stream.write(row["backup_path"].encode("utf-8") + b"\x00")
                 stream.write(manifest_path.as_posix().encode("utf-8") + b"\x00")
-            output = client.run("backup", "--json", "--tag", TAG, "--group-by", "host,tags",
+            # Restic's optional size scanner builds a second full target tree.
+            # The manifest already supplies coverage; retain only the archive walk.
+            output = client.run("backup", "--json", "--no-scan", "--tag", TAG, "--group-by", "host,tags",
                                 "--files-from-raw", str(file_list))
             summary = _summary(output)
             snapshot = summary["snapshot_id"]

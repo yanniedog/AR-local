@@ -252,6 +252,9 @@ def test_initial_restore_then_unchanged_and_control_only_update(layout, transpor
     third = backup.run_backup(layout, force=True)
     assert third["action"] == "BACKUP"
     assert third["content_sha256"] != first["content_sha256"]
+    uploads = [call for call in transport.calls if call[0] == "backup"]
+    assert len(uploads) == 2 and all("--no-scan" in call for call in uploads)
+    assert all("--no-scan" not in call for call in transport.calls if call[0] != "backup")
 
 
 def test_permissions_only_change_creates_a_fresh_manifest_and_snapshot(layout, transport):
