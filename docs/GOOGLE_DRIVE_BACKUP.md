@@ -1,5 +1,9 @@
 # Pi Google Drive backup
 
+Google app information: [privacy policy](GOOGLE_DRIVE_PRIVACY.md) and
+[terms of use](GOOGLE_DRIVE_TERMS.md). AR-local Pi Backups is the repository
+owner's personal backup tool.
+
 This implements the 11 September 2026 decision in [CDR_QUALITY_PIPELINE.md](CDR_QUALITY_PIPELINE.md): the Pi owns backup delivery, with no laptop or interactive session dependency. Until OAuth enrollment, the first upload, repository checks and the first full restore pass, the outcome is **BLOCKED**, not a commissioned backup.
 
 Restic repository version 2 encrypts and compresses content. The first snapshot covers every retained CDR date and generation. Later snapshots reference existing chunks and upload only new or changed compressed chunks. Each snapshot remains a complete restore point; there is no growing full ZIP uploaded each day. All snapshots are retained indefinitely. No `forget`, `prune`, `delete`, `purge` or `sync` command is exposed by this workflow. Storage still grows with distinct retained data and metadata.
