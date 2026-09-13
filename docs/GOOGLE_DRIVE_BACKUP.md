@@ -181,10 +181,12 @@ and a `drive-backup.conf` environment drop-in for each of the daily, forced,
 watchdog and boot-recovery ingest services. These producers inherit only backup
 configuration paths and can queue terminal events without opening credentials.
 Before replacing controls, the installer refuses active, enabled or queued
-backup timers and live/queued backup or lease services, then rechecks admission
-immediately before writing. Record both timers' prior states, disable and stop
-only those two timers, and wait for backup/lease cleanup before an upgrade.
-Restore their prior states only after the changed controls pass commissioning;
+backup and reconciliation timers and live/queued backup, lease or reconciliation
+services, then rechecks admission immediately before writing. Record all three
+timers' prior states. Finish backup/lease cleanup first, then disable and stop
+those timers and wait for reconciliation to finish before an upgrade. This also
+prevents the 30-second reconciliation timer from starting during replacement.
+Restore backup timers' prior states only after the changed controls pass commissioning;
 mandatory ingest and issue-watchdog timers remain untouched. Rendered unit
 files are installed explicitly as root-owned 0644 independently of the caller's
 umask. The installer does not automatically stop an active backup.
@@ -256,7 +258,7 @@ drive_commission readiness --remote
 sudo systemctl start ar-local-drive-backup.service
 ```
 
-`--control-file` requires an absolute canonical path; adjust the example if the approved runtime differs. The installed service supplies its six existing controls plus `pi_drive_reclaim.py` and the three reclaim unit sources from the same approved runtime. These non-secret bytes are frozen into the manifest and included in full and rotating control restores; a lease control hash alone is not recovery material. Installation must keep these sources identical to the installed root helper and rendered unit content. `init` is only for the first repository creation; a rerun against an existing repository is expected to fail rather than reset it.
+`--control-file` requires an absolute canonical path; adjust the example if the approved runtime differs. The installed service supplies its six existing controls plus the actual root-installed `/usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py` and three reclaim unit files under `/etc/systemd/system/`. These non-secret bytes are frozen into the manifest and included in full and rotating control restores, even if the producer checkout later changes; a lease control hash alone is not recovery material. `init` is only for the first repository creation; a rerun against an existing repository is expected to fail rather than reset it.
 
 The first accepted backup must include a full cloud download to an isolated directory, SHA-256 verification of every restored file, and SQLite `integrity_check` plus `foreign_key_check`. The normal service performs this automatically before writing its first PASS receipt. Later runs check the repository each day; every seven days they also restore current data, all state, and a rotating historical date. An explicit full restore remains available:
 

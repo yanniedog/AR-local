@@ -33,7 +33,8 @@ def installer(tmp_path):
     trace = tmp_path / 'trace.jsonl'
     base = {'LoadState': 'loaded', 'ActiveState': 'inactive', 'MainPID': '0', 'Job': '', 'UnitFileState': 'disabled'}
     names = ['ar-local-drive-backup.service', 'ar-local-drive-reclaim.service',
-             'ar-local-drive-backup.timer', 'ar-local-drive-backup-queue.timer']
+             'ar-local-drive-backup.timer', 'ar-local-drive-backup-queue.timer',
+             'ar-local-drive-reclaim-reconcile.service', 'ar-local-drive-reclaim-reconcile.timer']
     model.write_text(json.dumps({'units': {name: base.copy() for name in names}, 'shows': 0}))
     real_install = shutil.which('install')
     assert real_install
@@ -56,8 +57,8 @@ if name=='systemctl':
     if args[0]=='show':
         value['shows']+=1;model.write_text(json.dumps(value))
         row=value['units'][args[1]].copy()
-        if value.get('race') and value['shows']>4 and args[1].endswith('queue.timer'):
-            row['ActiveState']='active'
+        if value.get('race') and value['shows']>len(value['units']) and args[1]==value['race']:
+            row.update(value.get('race_patch',{{'ActiveState':'active'}}))
         for key,item in row.items():print(key+'='+item)
         sys.exit(1 if row['LoadState']=='not-found' else 0)
     sys.exit(0)
@@ -80,6 +81,11 @@ raise AssertionError(name)
     ('ar-local-drive-backup-queue.timer', {'Job': '123 start'}),
     ('ar-local-drive-backup.service', {'MainPID': '123'}),
     ('ar-local-drive-reclaim.service', {'ActiveState': 'activating'}),
+    ('ar-local-drive-reclaim-reconcile.service', {'ActiveState': 'active', 'MainPID': '123'}),
+    ('ar-local-drive-reclaim-reconcile.service', {'Job': '124 start'}),
+    ('ar-local-drive-reclaim-reconcile.timer', {'ActiveState': 'active', 'UnitFileState': 'enabled'}),
+    ('ar-local-drive-reclaim-reconcile.timer', {'UnitFileState': 'enabled'}),
+    ('ar-local-drive-reclaim-reconcile.timer', {'Job': '125 start'}),
     ('ar-local-drive-backup.timer', {'LoadState': 'error'})])
 def test_installer_refuses_live_enabled_queued_or_unreadable_controls_before_writes(installer, unit, patch):
     value = json.loads(installer['model'].read_text())
@@ -93,8 +99,14 @@ def test_installer_refuses_live_enabled_queued_or_unreadable_controls_before_wri
                for line in installer['trace'].read_text().splitlines())
 
 
-def test_changed_timer_is_rechecked_before_first_control_write(installer):
-    value = json.loads(installer['model'].read_text()); value['race'] = True
+@pytest.mark.parametrize('unit,patch', [
+    ('ar-local-drive-backup-queue.timer', {'ActiveState': 'active'}),
+    ('ar-local-drive-reclaim-reconcile.timer', {'UnitFileState': 'enabled'}),
+    ('ar-local-drive-reclaim-reconcile.service', {'Job': '124 start'}),
+    ('ar-local-drive-reclaim-reconcile.service', {'ActiveState': 'active', 'MainPID': '123'})])
+def test_changed_control_is_rechecked_before_first_control_write(installer, unit, patch):
+    value = json.loads(installer['model'].read_text())
+    value.update(race=unit, race_patch=patch)
     installer['model'].write_text(json.dumps(value))
     result = installer['run']()
     assert result.returncode == 2 and 'changed before replacement' in result.stderr
