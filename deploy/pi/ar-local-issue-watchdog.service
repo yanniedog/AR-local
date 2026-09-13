@@ -1,0 +1,36 @@
+[Unit]
+Description=AR-local Drive access and ingest GitHub issue checks
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+Environment=AR_LOCAL_ALERT_SPOOL={{AR_LOCAL_ALERT_SPOOL}}
+EnvironmentFile=-/etc/ar-local/app-payload.env
+EnvironmentFile=-/etc/ar-local/drive-backup.env
+EnvironmentFile=-/etc/ar-local/issue-alerts.env
+ExecStart=/usr/bin/python3 -B {{AR_LOCAL_REPO}}/pi_issue_watchdog.py
+TimeoutStartSec=180
+TimeoutStopSec=10
+KillMode=control-group
+Nice=15
+CPUQuota=50%
+IOWeight=10
+MemoryHigh=128M
+MemoryMax=192M
+MemorySwapMax=0
+TasksMax=32
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+ReadWritePaths={{AR_LOCAL_ALERT_SPOOL}}

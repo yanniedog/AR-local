@@ -1,0 +1,29 @@
+[Unit]
+Description=Report AR-local service failure to GitHub (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+Environment=AR_LOCAL_ALERT_SPOOL={{AR_LOCAL_ALERT_SPOOL}}
+EnvironmentFile=-/etc/ar-local/app-payload.env
+EnvironmentFile=-/etc/ar-local/issue-alerts.env
+ExecStart=/usr/bin/python3 -B {{AR_LOCAL_REPO}}/pi_issue_watchdog.py --failed-unit %i
+TimeoutStartSec=90
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+Nice=15
+MemoryMax=128M
+MemorySwapMax=0
+TasksMax=16
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{AR_LOCAL_ALERT_SPOOL}}
