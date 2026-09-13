@@ -52,7 +52,7 @@ def descriptor(path: Path, expected_sha: str) -> dict:
             or not isinstance(value.get("hashes"), dict) or set(value["hashes"]) != HASHES
             or any(not isinstance(v, str) or not HEX.fullmatch(v) for v in value["hashes"].values())):
         raise ValueError("invalid recovery descriptor binding")
-    return {"descriptor": value, "descriptor_sha256": actual}
+    return {"descriptor": value, "descriptor_sha256": actual, "descriptor_path": str(path)}
 
 
 def evidence_paths(spool, spec):
@@ -104,6 +104,9 @@ def _source_receipts(spec, rows, config):
     began, ended = (datetime.fromisoformat(failed[key]) for key in ("started_at", "finished_at"))
     if began.tzinfo is None or ended.tzinfo is None or ended < began:
         raise ValueError("invalid original backup timestamps")
+    from pi_drive_backup import TZ
+    if not spec["source_run_id"].startswith(began.astimezone(TZ).strftime("%Y%m%dT%H%M%S") + "-"):
+        raise ValueError("original run date differs from source timestamp")
     return owner, began
 
 
@@ -147,8 +150,10 @@ def recovery_admission(config, command, recovery):
     latest = config.spool / "latest-verified.json"
     if latest.exists() or latest.is_symlink():
         raise backup.Blocked("existing accepted backup prevents initial snapshot recovery")
-    if not isinstance(recovery, dict) or set(recovery) != {"descriptor", "descriptor_sha256"}:
+    if not isinstance(recovery, dict) or set(recovery) != {"descriptor", "descriptor_sha256", "descriptor_path"}:
         raise ValueError("invalid recovery request")
+    if descriptor(Path(recovery["descriptor_path"]), recovery["descriptor_sha256"]) != recovery:
+        raise ValueError("recovery descriptor changed")
     return recovery
 
 
@@ -159,13 +164,17 @@ def recovery_acceptance(config, recovery, accepted):
         raise ValueError("recovery acceptance requires the fixed backup service")
     latest = config.spool / "latest-verified.json"
     spec = recovery["descriptor"]
+    if descriptor(Path(recovery["descriptor_path"]), recovery["descriptor_sha256"]) != recovery:
+        raise ValueError("recovery descriptor changed before acceptance")
     if latest.exists() or latest.is_symlink():
         raise backup.Blocked("accepted backup appeared during snapshot recovery")
-    if (accepted.get("acquisition") != "recovered_snapshot" or accepted.get("recovery") != recovery
+    if (accepted.get("action") != "BACKUP" or accepted.get("acquisition") != "recovered_snapshot" or accepted.get("recovery") != recovery
             or accepted.get("snapshot_id") != spec["snapshot_id"] or accepted.get("source_run_id") != spec["source_run_id"]
             or accepted.get("manifest_sha256") != spec["hashes"]["manifest"] or accepted.get("request_ids") != []
+            or accepted.get("backup_date") != datetime.strptime(spec["source_run_id"][:8], "%Y%m%d").date().isoformat()
             or accepted.get("uploaded_bytes") != 0 or accepted.get("repository_check") != "PASS"
             or not isinstance(accepted.get("restore"), dict) or accepted["restore"].get("result") != "PASS"
+            or accepted["restore"].get("snapshot_id") != spec["snapshot_id"]
             or accepted["restore"].get("full") is not True):
         raise ValueError("recovery candidate lacks complete same-snapshot restore evidence")
     backup.guard_window()
@@ -174,6 +183,8 @@ def recovery_acceptance(config, recovery, accepted):
 def verified_source(config, recovery):
     import pi_drive_backup as backup
     from pi_drive_backup_output import backup_summary
+    if descriptor(Path(recovery["descriptor_path"]), recovery["descriptor_sha256"]) != recovery:
+        raise ValueError("recovery descriptor changed")
     spec = recovery["descriptor"]
     paths = evidence_paths(config.spool, spec)
     rows = {}

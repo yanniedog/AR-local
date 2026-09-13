@@ -312,6 +312,65 @@ summary alone still cannot accept a backup: repository, restored-byte, SQLite
 and whole-worker resource checks must pass. See Restic's documented
 [JSON-lines and backup-summary contract](https://restic.readthedocs.io/en/stable/075_scripting.html#backup).
 
+### Recover an initial upload after the old stdout limit
+
+An explicit `run --recover-from <canonical-private-descriptor.json>
+--recover-sha256 <64-hex-sha256>` mode can verify the same uploaded snapshot when
+the previous worker failed solely with `restic command output exceeded bounded
+receipt limit`. Use the reviewed immutable runtime and the existing fixed
+`ar-local-drive-backup.service`, preserving its normal arguments, environment,
+resource controls and quiet-window deadline; append only these two recovery
+arguments in a retained temporary override. Remove that override after the
+operation and verify the ordinary run command before enabling routine timers.
+This initial-commissioning mode refuses any existing accepted backup pointer.
+
+The operator must first observe the old worker's actual terminal failure and
+clean cgroup, a completed exit-zero backup command diagnostic, and a completed
+private capture of its original stdout. An in-progress upload, summary alone,
+resource-limit failure or incomplete capture is ineligible. Do not manufacture
+these inputs, restart the upload or unlock the repository to create eligibility.
+The descriptor contains exactly:
+
+| Field | Required value |
+| --- | --- |
+| `schema` | `ar-local-drive-recovery-input-v1` |
+| `source_operation`, `diagnostic_id` | Original 32-character lowercase hex IDs |
+| `source_run_id` | Original `YYYYMMDDTHHMMSS-12hex` identity |
+| `capture_directory` | Direct spool child named `stdout-capture-...` |
+| `snapshot_id` | Full 64-character ID from the unique final captured summary |
+| `capture_helper_sha256` | Independently reviewed capture helper hash |
+| `hashes` | SHA-256 values for every evidence item below |
+
+The `hashes` object has exactly `request`, `resources`, `candidate`, `failure`,
+`running`, `diagnostic_started`, `diagnostic_process`, `diagnostic_result`,
+`capture_started`, `capture_terminal`, and `manifest`. Paths are derived from
+those IDs beneath the configured spool; arbitrary evidence paths are not
+accepted. The source RUNNING/FAIL receipts and manifest retain their original
+bytes. The captured stdout's length/hash is bound by its terminal receipt and
+the complete captured file is hashed and parsed again. All descriptor, source,
+request, command and capture bindings are rechecked in the protected worker;
+the descriptor is checked once more before parent acceptance.
+
+Recovery runs a new repository check and a **full restore** of that exact
+snapshot into a unique private directory. Every manifest file and the archived
+manifest must pass their byte hashes; restored SQLite databases must pass the
+existing integrity and foreign-key checks. The old freeze directory can already
+be gone. Recovery does not freeze or rehash current source, upload another
+snapshot, or infer current-day freshness from the recovery completion time.
+The existing disk reserve, memory, process, swap, whole-runtime and 00:30
+Hobart cutoff remain enforced; a new failure cannot advance acceptance.
+
+After the entire new worker exits successfully, its strict resource receipt and
+candidate are checked before a new PASS receipt and `latest-verified.json` are
+written. The receipt keeps `action=BACKUP`, adds
+`acquisition=recovered_snapshot`, binds the original failed operation through
+the descriptor, and records the original source date with a new recovery run
+identity. `uploaded_bytes=0` describes this recovery; the original upload
+summary is retained separately. No queued request is acknowledged, because the
+old RUNNING receipt did not hash its request contents. A later normal run must
+handle those requests. The original failure remains a failure in the audit
+trail, and neither recovery tests nor this procedure establish live acceptance.
+
 For disaster recovery, install Restic/rclone on a replacement host, recover the encryption password from its separate custody, and authorize access to the same dedicated Drive repository. Run `restic snapshots`, select the receipt-bound snapshot and `restic restore <id> --target <empty-private-directory>`. Restic restores absolute source paths beneath that private directory. The included source manifest maps each physical backup path to its logical `data/`, `control/` or `sqlite-original/` path and supplies SHA-256 digests. Verify every selected file before placing recovered data under a stopped production service. Use the merged SQLite copy for normal recovery; original DB components are reserved for exact historical reconstruction. Do not automatically overwrite a live data tree.
 
 References: [Restic backup and deduplication](https://restic.readthedocs.io/en/stable/040_backup.html), [rclone backend](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html), [rclone Drive scope](https://rclone.org/drive/), [SSH OAuth setup](https://rclone.org/remote_setup/), [SQLite backup API](https://www.sqlite.org/backup.html).

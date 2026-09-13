@@ -3,7 +3,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import sqlite3
 from types import SimpleNamespace
@@ -170,7 +170,7 @@ def test_recovery_on_later_day_retains_original_source_date(original,monkeypatch
 def test_fixed_unit_and_absent_pointer_admission_and_post_worker_guard(original,monkeypatch):
     monkeypatch.setattr(resources,"own_cgroup",lambda:Path("/other"))
     with pytest.raises(ValueError):recovery.recovery_admission(original.config,"run",original.bound)
-    monkeypatch.setattr(resources,"own_cgroup",lambda:Path("/sys/fs/cgroup/system.slice/ar-local-drive-backup.service"))
+    monkeypatch.setattr(resources,"own_cgroup",lambda:PurePosixPath("/sys/fs/cgroup/system.slice/ar-local-drive-backup.service"))
     assert recovery.recovery_admission(original.config,"run",original.bound)==original.bound
     client(original,monkeypatch)
     accepted=recovery.recover_snapshot(original.config,original.bound)
@@ -185,3 +185,71 @@ def test_recovery_worker_route_never_enters_normal_freeze(monkeypatch):
     monkeypatch.setattr(recovery,"recover_snapshot",lambda cfg,arg:expected)
     monkeypatch.setattr(backup,"_run_locked",lambda *a,**k:pytest.fail("normal freeze path"))
     assert controller.worker_action(None,{"command":"run","recovery":{"fixture":True}}) is expected
+
+
+@pytest.mark.parametrize('patch',[{'request_ids':['f'*32]},{'snapshot_id':'9'*64},{'backup_date':'2026-09-14'},
+    {'restore':{'result':'PASS','full':False}},{'repository_check':'FAIL'},{'uploaded_bytes':1},
+    {'action':'NO_WORK'},{'restore':{'result':'PASS','full':True,'snapshot_id':'9'*64}}])
+def test_parent_rejects_candidate_with_wrong_recovery_or_queue_claim(original,monkeypatch,patch):
+    monkeypatch.setattr(resources,'own_cgroup',lambda:PurePosixPath('/sys/fs/cgroup/system.slice/ar-local-drive-backup.service'))
+    client(original,monkeypatch)
+    candidate=recovery.recover_snapshot(original.config,original.bound)
+    with pytest.raises(ValueError):recovery.recovery_acceptance(original.config,original.bound,{**candidate,**patch})
+
+
+def test_descriptor_drift_after_admission_is_rejected_before_network(original,monkeypatch):
+    monkeypatch.setattr(resources,'own_cgroup',lambda:PurePosixPath('/sys/fs/cgroup/system.slice/ar-local-drive-backup.service'))
+    recovery.recovery_admission(original.config,'run',original.bound)
+    original.descriptor.write_text('{}')
+    monkeypatch.setattr(backup,'Restic',lambda *a:pytest.fail('must reject descriptor before network'))
+    with pytest.raises(ValueError):recovery.recover_snapshot(original.config,original.bound)
+
+
+def test_descriptor_drift_after_worker_is_rejected_before_acceptance(original,monkeypatch):
+    monkeypatch.setattr(resources,'own_cgroup',lambda:PurePosixPath('/sys/fs/cgroup/system.slice/ar-local-drive-backup.service'))
+    client(original,monkeypatch)
+    accepted=recovery.recover_snapshot(original.config,original.bound)
+    original.descriptor.write_text('{}')
+    with pytest.raises(ValueError):recovery.recovery_acceptance(original.config,original.bound,accepted)
+
+
+@pytest.mark.parametrize('argv',[['run','--recover-from','missing'],['run','--recover-sha256','a'*64],
+    ['init','--recover-from','missing','--recover-sha256','a'*64],
+    ['run','--force','--recover-from','missing','--recover-sha256','a'*64]])
+def test_cli_requires_explicit_paired_recovery_arguments(argv):
+    with pytest.raises(SystemExit) as error:backup.main(argv)
+    assert error.value.code==2
+
+
+@pytest.mark.parametrize('resource_failure',[False,True])
+def test_parent_resource_acceptance_keeps_all_queue_requests(original,monkeypatch,resource_failure):
+    client(original,monkeypatch)
+    monkeypatch.setattr(backup,'readiness',lambda _: {'result':'PASS'})
+    monkeypatch.setattr(resources,'own_cgroup',lambda:PurePosixPath('/sys/fs/cgroup/system.slice/ar-local-drive-backup.service'))
+    queued=backup.request_backup('transport test',spool=original.config.spool)
+    queue_bytes=queued.read_bytes()
+    def completed_worker(config,command,*,operation,recovery,**_):
+        assert command=='run' and recovery==original.bound
+        candidate=controller.worker_action(config,{'command':command,'recovery':recovery})
+        host={'available_bytes':6*1024**3,'swap_in_pages':0,'swap_out_pages':0,'page_size_bytes':16384,'psi_avg10':None}
+        proof={'schema':resources.SCHEMA,'result':'FAIL' if resource_failure else 'PASS','mode':'sampled_cgroup_rss',
+            'limits':asdict(resources.Limits()),'samples':2,'peak_rss_bytes':1000,'minimum_available_bytes':host['available_bytes'],
+            'maximum_sample_gap_seconds':.1,'group_clean':True,'workload_exit_code':0,'page_size_bytes':16384,
+            'cold_swap_in_bytes':0,'peak_workload_swap_bytes':0,'elapsed_seconds':1,'baseline':host,'last_host_sample':host}
+        put(operation/'candidate.json',candidate)
+        put(operation/'request.json',{'command':command,'recovery':recovery,'supervisor_pid':1000})
+        put(operation/'resources.json',proof)
+        return candidate
+    monkeypatch.setattr(controller,'execute_worker',completed_worker)
+    if resource_failure:
+        with pytest.raises(ValueError,match='resource receipt'):
+            controller.run_protected(original.config,recovery=original.bound)
+        assert not (original.config.spool/'latest-verified.json').exists()
+        assert not list((original.config.spool/'receipts').glob('*.PASS.json'))
+    else:
+        accepted=controller.run_protected(original.config,recovery=original.bound)
+        assert backup._load(original.config.spool/'latest-verified.json')==accepted
+        assert accepted['resource_evidence']['path']!='resource-runs/'+original.spec['source_operation']
+        assert len(list((original.config.spool/'receipts').glob('*.PASS.json')))==1
+    assert queued.read_bytes()==queue_bytes
+    assert original.paths['failure'].is_file()
