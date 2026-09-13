@@ -16,6 +16,25 @@ The worker acquires the shared ingest lock only for a bounded source freeze. Imm
 
 The ingest lock is released before network upload, repository checking or restore. Restic is limited to two Go workers, 8 MiB/s network bandwidth and two transfers; the service adds CPU and I/O scheduling limits. Source freezing has a 20-minute limit and stops before the 00:30–03:30 Hobart ingest quiet window. Uploads crossing that window are terminated safely and retried later. A 2 GiB free-space floor protects the private spool; a restore also requires room for its selected data. Interrupted or rejected uploads never advance `latest-verified.json` or acknowledge queued requests.
 
+Backup hashing and byte-copy reads use bounded 1 MiB `preadv` calls with Linux
+`RWF_DONTCACHE` where supported. The kernel may release pages newly brought in
+by these reads while preserving pages already cached before the read. This
+[Linux 6.14+ advisory](https://man7.org/linux/man-pages/man2/preadv2.2.html)
+does not clear global cache, evict an existing live SQLite cache, change
+swappiness, or weaken resource guards. Unsupported filesystems fall back to
+ordinary reads with a warning; other read errors still fail the operation.
+Other platforms retain their previous read path. Every byte, source fingerprint,
+copy comparison and per-block guard remains checked. Once a private byte copy
+passes its hash comparison, or a private SQLite snapshot passes its check with
+all SQLite connections closed, its original exclusively-created descriptor is
+fsynced and receives `POSIX_FADV_DONTNEED`. The descriptor/path identity and unique
+regular-file ownership are checked; source or reopened descriptors are rejected.
+Only these completed private destinations have their cache released, never live
+source files. Native SQLite reads during the snapshot, pages while a copy is
+still being written, and Restic's own reads remain separate operations. Successful complete
+backup/restore and actual resource receipts remain required. A small capability
+probe or low process RSS does not prove absence of host cache pressure.
+
 The Pi kernel checked on 2026-09-12 has no memory cgroup controller or memory
 PSI file, so MemoryHigh/MemoryMax/MemorySwapMax are not enforced there. The Drive
 controller instead samples the aggregate RSS and swap of **every process in its
