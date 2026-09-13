@@ -221,25 +221,43 @@ class AlertStore:
         with lock(self.root / "state.lock"):
             pending = [(key, dict(row)) for key, row in self.read()["incidents"].items()
                        if row["revision"] != row["delivered_revision"]]
-        delivered = []
+        delivered, outcomes = [], []
         for key, row in pending:
-            issue = client.find(row["marker"], row.get("issue_number"))
-            value = {"title": row["title"], "body": self.body(row)}
-            created = issue is None
-            if issue is None:
-                issue = client.request("POST", "issues", value)
-            number = issue.get("number")
-            if not isinstance(number, int) or number <= 0:
-                raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
-            if not created or not row["active"]:
-                client.request("PATCH", f"issues/{number}",
-                               {**value, "state": "open" if row["active"] else "closed"})
+            try:
+                number = self._publish(client, row)
+            except DeliveryError as error:
+                category = str(error)
+                if not re.fullmatch(r"GITHUB_[A-Z0-9_]{1,80}", category):
+                    category = "GITHUB_WORKER_FAILED"
+                outcomes.append({"incident": key, "result": "QUEUED", "category": category})
+                # Keep this transition pending. Other incidents use the same
+                # client/deadline; an error never grants a fresh network budget.
+                continue
             with lock(self.root / "state.lock"):
                 state = self.read(); current = state["incidents"][key]
                 current.update(issue_number=number, delivered_revision=row["revision"], delivered_at=utc())
                 self.write(state)
             delivered.append(number)
-        return {"result": "DELIVERED", "issues": delivered}
+            outcomes.append({"incident": key, "result": "DELIVERED", "issue": number})
+        failures = [row for row in outcomes if row["result"] == "QUEUED"]
+        result = {"result": "QUEUED" if failures else "DELIVERED", "issues": delivered, "outcomes": outcomes}
+        if failures:
+            result["category"] = failures[0]["category"]
+        return result
+
+    def _publish(self, client, row):
+        issue = client.find(row["marker"], row.get("issue_number"))
+        value = {"title": row["title"], "body": self.body(row)}
+        created = issue is None
+        if issue is None:
+            issue = client.request("POST", "issues", value)
+        number = issue.get("number")
+        if not isinstance(number, int) or number <= 0:
+            raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
+        if not created or not row["active"]:
+            client.request("PATCH", f"issues/{number}",
+                           {**value, "state": "open" if row["active"] else "closed"})
+        return number
 
 
 def configured_store() -> AlertStore:
