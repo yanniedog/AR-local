@@ -377,16 +377,14 @@ def _run_locked(config: Config, *, force: bool) -> dict:
             receipt.update(action="UNCHANGED", uploaded_bytes=0, snapshot_id=snapshot,
                            manifest_path=last["manifest_path"], manifest_sha256=last["manifest_sha256"])
         else:
-            file_list = stage / "files.raw"
-            with file_list.open("xb") as stream:
-                for row in manifest["files"]:
-                    stream.write(row["backup_path"].encode("utf-8") + b"\x00")
-                stream.write(manifest_path.as_posix().encode("utf-8") + b"\x00")
-            # Restic's optional size scanner builds a second full target tree.
-            # The manifest already supplies coverage; retain only the archive walk.
-            output = client.run("backup", "--json", "--no-scan", "--tag", TAG, "--group-by", "host,tags",
-                                "--files-from-raw", str(file_list))
-            summary = _summary(output)
+            from pi_drive_backup_targets import backup_targets
+            with backup_targets(manifest, stage, config.data, manifest_path, source_guard) as targets:
+                output = client.run("backup", "--json", "--no-scan", "--tag", TAG, "--group-by", "host,tags",
+                                    "--files-from-raw", str(targets.path))
+                targets.verify()
+                summary = _summary(output)
+                targets.check_summary(summary)
+                receipt["backup_target_count"] = targets.target_count
             snapshot = summary["snapshot_id"]
             receipt.update(action="BACKUP", snapshot_id=snapshot, summary=summary,
                            uploaded_bytes=summary.get("data_added_packed", summary.get("data_added")))
