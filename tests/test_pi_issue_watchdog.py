@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
+import os
 import pytest
 
 import pi_issue_watchdog as watch
@@ -93,3 +95,78 @@ def test_larger_contract_metadata_uses_bounded_exception(tmp_path):
     with pytest.raises(watch.EvidenceLimit):
         watch.read_json(tmp_path, 'contract.json')
     assert len(watch.read_json(tmp_path, 'contract.json', maximum=8 * 1024 * 1024)['inventory']) == 2 * 1024 * 1024
+
+
+def quiet_fixture(tmp_path, identifier='a' * 32):
+    started = datetime(2026, 9, 12, 15, 0, tzinfo=timezone.utc)  # 01:00 Hobart.
+    row = {'ActiveState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '2',
+           'ExecMainPID': '123', 'started_at': started}
+    directory = tmp_path / 'resource-runs' / identifier
+    directory.mkdir(parents=True)
+    request = {'command': 'run', 'supervisor_pid': 123}
+    resources = {'schema': 'ar-local-drive-resources-v1', 'result': 'BLOCKED', 'group_clean': True,
+                 'reason': 'Blocked: daily ingest quiet window: 00:30-03:30 Australia/Hobart',
+                 'samples': 0, 'workload_exit_code': None}
+    for name, value in [('request', request), ('resources', resources)]:
+        path = directory / (name + '.json'); path.write_text(json.dumps(value))
+        os.utime(path, (started.timestamp() + 1,) * 2)
+    os.utime(directory, (started.timestamp() + 1,) * 2)
+    return row, directory
+
+
+def test_quiet_admission_defers_without_creating_or_resolving_incident(tmp_path, monkeypatch):
+    row, directory = quiet_fixture(tmp_path)
+    store = AlertStore(tmp_path / 'alerts')
+    assert watch.backup_check(store, tmp_path, row)['status'] == 'QUIET_WINDOW_DEFERRED'
+    assert store.read()['incidents'] == {}
+    store.observe('drive-backup', 'Pi Google Drive backup failed', 'BACKUP_SERVICE_FAILED', healthy=False)
+    before = store.path.read_bytes()
+    assert watch.backup_check(store, tmp_path, row)['status'] == 'QUIET_WINDOW_DEFERRED'
+    monkeypatch.setattr(watch, 'unit_state', lambda _: row)
+    monkeypatch.setenv('AR_LOCAL_DRIVE_BACKUP_SPOOL', str(tmp_path))
+    assert watch.failure_event(store, 'ar-local-drive-backup.service', NOW)['status'] == 'QUIET_WINDOW_DEFERRED'
+    assert store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize('fault', ['other_reason', 'dirty_group', 'cleanup_error', 'worker_started',
+    'worker_exit', 'wrong_schema', 'wrong_pid', 'wrong_command', 'stale_request', 'outside_window',
+    'real_exit1', 'missing_resource', 'oversized_resource', 'ambiguous'])
+def test_exit2_and_wall_clock_alone_cannot_suppress_real_failure(tmp_path, fault):
+    row, directory = quiet_fixture(tmp_path)
+    resource_path = directory / 'resources.json'; request_path = directory / 'request.json'
+    resources, request = json.loads(resource_path.read_text()), json.loads(request_path.read_text())
+    if fault == 'other_reason': resources['reason'] = 'RuntimeError: host_swap_out_activity'
+    elif fault == 'dirty_group': resources['group_clean'] = False
+    elif fault == 'cleanup_error': resources['cleanup_error'] = 'RuntimeError'
+    elif fault == 'worker_started': resources['samples'] = 1
+    elif fault == 'worker_exit': resources['workload_exit_code'] = 2
+    elif fault == 'wrong_schema': resources['schema'] = 'unverified'
+    elif fault == 'wrong_pid': request['supervisor_pid'] = 124
+    elif fault == 'wrong_command': request['command'] = 'init'
+    elif fault == 'outside_window': row['started_at'] = row['started_at'] - timedelta(hours=2)
+    elif fault == 'real_exit1': row['ExecMainStatus'] = '1'
+    elif fault == 'ambiguous': quiet_fixture(tmp_path, 'b' * 32)
+    resource_path.write_text(json.dumps(resources)); request_path.write_text(json.dumps(request))
+    if fault == 'stale_request': os.utime(request_path, (row['started_at'].timestamp() - 60,) * 2)
+    elif fault == 'missing_resource': resource_path.unlink()
+    elif fault == 'oversized_resource': resource_path.write_bytes(b'x' * (1024 * 1024 + 1))
+    store = AlertStore(tmp_path / 'alerts')
+    assert watch.backup_check(store, tmp_path, row)['status'] == 'FAILED'
+    assert store.read()['incidents']['drive-backup']['active']
+
+
+def test_calendar_retry_independent_of_previous_failed_service():
+    timer = (Path(__file__).parents[1] / 'deploy/pi/ar-local-issue-watchdog.timer').read_text()
+    assert 'OnCalendar=*-*-* *:00/5:00' in timer and 'Persistent=true' in timer
+    assert 'OnUnitActiveSec' not in timer
+
+
+def test_queued_delivery_still_reports_unsuccessful_transport(tmp_path, monkeypatch, capsys):
+    import pi_drive_access_probe
+    monkeypatch.setattr(watch, 'configured_store', lambda: AlertStore(tmp_path))
+    monkeypatch.setattr(watch, 'ingest_checks', lambda *a: {'status': 'COMPLETE'})
+    monkeypatch.setattr(watch, 'backup_check', lambda *a: {'status': 'RUNNING'})
+    monkeypatch.setattr(pi_drive_access_probe, 'probe', lambda *a: {'status': 'PASS', 'category': 'OK'})
+    monkeypatch.setattr(watch, 'deliver', lambda *_: {'result': 'QUEUED', 'category': 'GITHUB_REQUEST_TIMEOUT'})
+    assert watch.main([]) == 1
+    assert json.loads(capsys.readouterr().out)['delivery']['result'] == 'QUEUED'

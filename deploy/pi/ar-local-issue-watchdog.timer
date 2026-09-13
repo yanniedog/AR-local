@@ -3,7 +3,8 @@ Description=Check Pi Drive access and ingest alerts every five minutes
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=5min
+OnCalendar=*-*-* *:00/5:00
+Persistent=true
 AccuracySec=15s
 Unit=ar-local-issue-watchdog.service
 

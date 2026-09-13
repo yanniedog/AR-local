@@ -204,7 +204,7 @@ class AlertStore:
             "First observed (UTC): " + row["first_seen"],
             "Latest failure (UTC): " + row["last_failure_at"],
             "Last transition (UTC): " + row["changed_at"],
-            "Recovered (UTC): " + row.get("recovered_at", "not observed"), "",
+            "Last recovery (UTC): " + row.get("recovered_at", "not observed"), "",
             "This issue tracks one condition; continued failures update the same issue.",
             "Provider responses, journal output and credentials are deliberately excluded.",
             "Drive access checks do not certify a completed backup or restore.",
@@ -225,13 +225,15 @@ class AlertStore:
         for key, row in pending:
             issue = client.find(row["marker"], row.get("issue_number"))
             value = {"title": row["title"], "body": self.body(row)}
+            created = issue is None
             if issue is None:
                 issue = client.request("POST", "issues", value)
             number = issue.get("number")
             if not isinstance(number, int) or number <= 0:
                 raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
-            client.request("PATCH", f"issues/{number}",
-                           {**value, "state": "open" if row["active"] else "closed"})
+            if not created or not row["active"]:
+                client.request("PATCH", f"issues/{number}",
+                               {**value, "state": "open" if row["active"] else "closed"})
             with lock(self.root / "state.lock"):
                 state = self.read(); current = state["incidents"][key]
                 current.update(issue_number=number, delivered_revision=row["revision"], delivered_at=utc())

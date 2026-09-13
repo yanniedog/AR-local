@@ -5,7 +5,8 @@ missed ingests directly to the AR-local GitHub repository. This is independent
 of Codex, the laptop, SMTP, and whether the Drive backup timers are enabled.
 Existing email alerts and GitHub's publication watchdog remain in place.
 
-`ar-local-issue-watchdog.timer` runs every five minutes and after boot. It checks:
+`ar-local-issue-watchdog.timer` runs on a five-minute calendar schedule and after
+boot, independently of whether the preceding service run succeeded. It checks:
 
 - A fresh Google OAuth refresh using the exact private rclone configuration.
 - Available Drive storage, the uniquely resolved configured repository folder,
@@ -16,6 +17,12 @@ Existing email alerts and GitHub's publication watchdog remain in place.
 - Existing backup failures, including ones that occurred before alerts were
   installed. Backup recovery requires the accepted resource/request binding;
   a process exiting zero alone cannot close a backup incident.
+
+A backup refused before worker startup in the ingest quiet window is recorded
+as `QUIET_WINDOW_DEFERRED` only when its exact service PID/start binds a unique
+current request and a clean resource receipt containing that precise refusal.
+This does not close an earlier incident. Other exit2 reasons, missing proof,
+failed cleanup and interruptions after work starts remain alertable.
 
 OnFailure drop-ins additionally trigger immediate reporting for the daily
 ingest, manual ingest, ingest watchdog, and Drive backup services. They append
@@ -34,10 +41,13 @@ checked through Drive capabilities, not by uploading a test backup.
 Each condition has a stable hidden issue marker. Continued failures reuse its
 issue; recovery closes it, and recurrence reopens it. Different ingest dates
 have distinct incidents. A failure that recovers while GitHub is unavailable
-is still reported and closed once delivery resumes.
+is still reported and closed once delivery resumes. A reopened issue labels its
+retained historical recovery time as "Last recovery"; it is not current recovery.
 
 Private incident state is committed and fsynced before network delivery. Failed
-delivery remains pending for the next timer. Direct issue enumeration reconciles
+delivery remains pending for the next calendar tick. `QUEUED` still returns a
+nonzero exit status so delivery failure remains visible. Direct issue enumeration
+reconciles
 an ambiguous issue creation without relying on delayed search indexing. If that
 enumeration cannot complete within its bounds, delivery remains pending rather
 than creating a possible duplicate. Concurrent updates retain their newer pending
@@ -76,6 +86,12 @@ override. Keep any token-bearing file root-owned mode0600. Supported settings:
 AR_LOCAL_ALERT_REPOSITORY=yanniedog/AR-local
 GH_TOKEN=<private token with Issues read/write permission>
 ```
+
+The supported deployment uses an immutable runtime below `/srv` and a private
+Drive configuration below `/var/lib`; `ProtectHome=true` remains enabled. The
+repository must name the dedicated `drive.file` remote and exact relative folder
+components, without leading/trailing/repeated slashes. Unsupported locations or
+noncanonical repository spelling fail closed rather than selecting another tree.
 
 Run `pi_issue_watchdog.py --checks-only` under the exact service environment to
 inspect current health without creating incidents/issues. Then execute the

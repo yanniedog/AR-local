@@ -6,12 +6,13 @@ from pi_github_alerts import AlertStore, DeliveryError
 
 class GitHubStub:
     def __init__(self):
-        self.rows = {}; self.posts = 0; self.fail_after_post = False
+        self.rows = {}; self.posts = 0; self.fail_after_post = False; self.methods = []
 
     def find(self, marker, number=None):
         return next((r for r in self.rows.values() if marker in r['body']), None)
 
     def request(self, method, suffix, value=None):
+        self.methods.append(method)
         if method == 'POST':
             self.posts += 1
             self.rows[self.posts] = {**value, 'number': self.posts, 'state': 'open'}
@@ -58,6 +59,8 @@ def test_recurrence_reopens_same_issue(tmp_path):
         store.observe('drive-access', 'Drive access problem', 'AUTH_REFRESH_FAILED', healthy=healthy)
         store.flush(github)
     assert github.posts == 1 and github.rows[1]['state'] == 'open'
+    assert 'Last recovery (UTC):' in github.rows[1]['body']
+    assert '\nRecovered (UTC):' not in github.rows[1]['body']
 
 
 def test_concurrent_new_transition_remains_pending(tmp_path):
@@ -65,7 +68,7 @@ def test_concurrent_new_transition_remains_pending(tmp_path):
     original = github.request
     def during_delivery(method, suffix, value=None):
         result = original(method, suffix, value)
-        if method == 'PATCH':
+        if method == 'POST':
             store.observe('drive-access', 'Drive access problem', 'OK', healthy=True)
         return result
     github.request = during_delivery
@@ -73,6 +76,24 @@ def test_concurrent_new_transition_remains_pending(tmp_path):
     store.flush(github)
     row = store.read()['incidents']['drive-access']
     assert row['revision'] > row['delivered_revision']
+
+
+def test_new_active_issue_needs_only_post_but_recovery_still_patches(tmp_path):
+    store = AlertStore(tmp_path); github = GitHubStub()
+    store.observe('drive-access', 'Drive access problem', 'AUTH_REFRESH_FAILED', healthy=False)
+    store.flush(github)
+    assert github.methods == ['POST']
+    store.observe('drive-access', 'Drive access problem', 'OK', healthy=True)
+    store.flush(github)
+    assert github.methods == ['POST', 'PATCH'] and github.rows[1]['state'] == 'closed'
+
+
+def test_recovered_undelivered_issue_must_be_closed_after_creation(tmp_path):
+    store = AlertStore(tmp_path); github = GitHubStub()
+    store.observe('drive-access', 'Drive access problem', 'AUTH_REFRESH_FAILED', healthy=False)
+    store.observe('drive-access', 'Drive access problem', 'OK', healthy=True)
+    store.flush(github)
+    assert github.methods == ['POST', 'PATCH'] and github.rows[1]['state'] == 'closed'
 
 
 def test_healthy_never_creates_incident(tmp_path):

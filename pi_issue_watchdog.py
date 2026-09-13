@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 
 from ar_local_ingest_schedule import DAILY_INGEST_TZ, latest_daily_due_utc, expected_run_date_for_due
 from pi_github_alerts import configured_store, deliver
@@ -129,6 +130,9 @@ def failure_event(store, unit, now):
     # when systemd has already recovered; never claim an observed failure in a test.
     date = expected_run_date_for_due(latest_daily_due_utc(row.get("started_at") or now))
     if unit == "ar-local-drive-backup.service":
+        spool = Path(os.environ.get("AR_LOCAL_DRIVE_BACKUP_SPOOL", "/var/lib/ar-local-drive-backup"))
+        if quiet_window_deferral(spool, row):
+            return {"status": "QUIET_WINDOW_DEFERRED"}
         key, title, category = "drive-backup", "Pi Google Drive backup failed", "BACKUP_SERVICE_FAILED"
     elif unit == "ar-local-daily-watchdog.service":
         key, title, category = "ingest-watchdog:" + date, "Pi ingest watchdog failed: " + date, "INGEST_WATCHDOG_FAILED"
@@ -138,10 +142,61 @@ def failure_event(store, unit, now):
     return {"status": "FAILURE_EVENT_RECORDED", "category": category}
 
 
+def quiet_window_deferral(spool, row):
+    """Recognize only a clean pre-worker quiet-window refusal of this invocation.
+
+    Exit2 also covers credential, disk, lock and other genuine failures. Missing
+    or ambiguous proof leaves those failures alertable; no incident is recovered.
+    """
+    try:
+        started = row.get("started_at")
+        if (row.get("ActiveState") not in {"failed", "inactive"} or row.get("Result") != "exit-code"
+                or str(row.get("ExecMainStatus")) != "2" or not isinstance(started, datetime)
+                or started.tzinfo is None or int(row.get("ExecMainPID", 0)) <= 0):
+            return False
+        local = started.astimezone(DAILY_INGEST_TZ)
+        if not 30 <= local.hour * 60 + local.minute < 210:
+            return False
+        root = spool / "resource-runs"
+        if root.resolve() != root or root.is_symlink():
+            return False
+        matches, eligible, deadline = [], 0, time.monotonic() + 3
+        with os.scandir(root) as entries:
+            for count, entry in enumerate(entries, 1):
+                if count > 2048 or time.monotonic() > deadline:
+                    return False
+                if not re.fullmatch(r"[0-9a-f]{32}", entry.name) or entry.is_symlink():
+                    continue
+                if not entry.is_dir(follow_symlinks=False) or entry.stat().st_mtime < started.timestamp():
+                    continue
+                eligible += 1
+                if eligible > 64:
+                    return False
+                request_path = Path(entry.path) / "request.json"
+                request = read_json(root, entry.name + "/request.json", maximum=65536)
+                if (request.get("command") == "run" and type(request.get("supervisor_pid")) is int
+                        and request["supervisor_pid"] == int(row["ExecMainPID"])
+                        and request_path.stat().st_mtime >= started.timestamp()):
+                    matches.append(entry.name)
+        if len(matches) != 1:
+            return False
+        resource = read_json(root, matches[0] + "/resources.json")
+        return (resource.get("schema") == "ar-local-drive-resources-v1"
+                and resource.get("result") == "BLOCKED" and resource.get("group_clean") is True
+                and resource.get("reason") == "Blocked: daily ingest quiet window: 00:30-03:30 Australia/Hobart"
+                and type(resource.get("samples")) is int and resource["samples"] == 0
+                and "workload_exit_code" in resource and resource["workload_exit_code"] is None
+                and "cleanup_error" not in resource)
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def backup_check(store, spool, row=None):
     row = row if row is not None else unit_state("ar-local-drive-backup.service")
     title = "Pi Google Drive backup failed"
     if row.get("ActiveState") == "failed" or row.get("Result") not in {"", "success", None}:
+        if quiet_window_deferral(spool, row):
+            return {"status": "QUIET_WINDOW_DEFERRED"}
         store.observe("drive-backup", title, "BACKUP_SERVICE_FAILED", healthy=False)
         return {"status": "FAILED"}
     if row.get("ActiveState") in {"active", "activating"}:
