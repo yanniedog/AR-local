@@ -29,6 +29,44 @@ class QuietHandler(BaseHTTPRequestHandler):
         pass
 
 
+def test_real_recovery_403_stays_queued_while_later_incident_is_created(tmp_path, monkeypatch):
+    store = alerts.AlertStore(tmp_path / 'spool', repository='unit/repo')
+    store.observe('delivery-test:707', 'Delivery test', 'DELIVERY_TEST', healthy=False)
+    state = store.read(); old = state['incidents']['delivery-test:707']
+    old.update(issue_number=707, delivered_revision=1)
+    store.write(state)
+    existing = {'number': 707, 'body': old['marker']}
+    store.observe('delivery-test:707', 'Delivery test', 'DELIVERY_TEST', healthy=True)
+    store.observe('drive-access', 'Drive access problem', 'AUTH_REVOKED', healthy=False)
+    calls = []
+    class Handler(QuietHandler):
+        def reply(self, status, body):
+            raw = json.dumps(body).encode()
+            self.send_response(status); self.send_header('Content-Length', str(len(raw)))
+            self.end_headers(); self.wfile.write(raw)
+        def do_GET(self):
+            calls.append(('GET', self.path))
+            self.reply(200, existing if self.path == '/issues/707' else [existing])
+        def do_PATCH(self):
+            self.rfile.read(int(self.headers['Content-Length']))
+            calls.append(('PATCH', self.path))
+            self.reply(403, {'message': 'unit-secret provider response'})
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            calls.append(('POST', self.path)); self.reply(201, {**body, 'number': 708})
+    with server(Handler) as url:
+        children = local_worker(tmp_path, monkeypatch, url)
+        result = store.flush(alerts.GitHub('unit/repo', 'unit-secret'))
+    assert result['result'] == 'QUEUED' and result['issues'] == [708]
+    assert result['outcomes'][0]['category'] == 'GITHUB_HTTP_403'
+    assert 'unit-secret' not in json.dumps(result)
+    assert [method for method, _ in calls] == ['GET', 'PATCH', 'GET', 'POST']
+    assert all(child.poll() == 0 for child, _, _ in children)
+    rows = store.read()['incidents']
+    assert rows['delivery-test:707']['delivered_revision'] == 1
+    assert rows['drive-access']['issue_number'] == 708 and rows['drive-access']['delivered_revision'] == 1
+
+
 def local_worker(tmp_path, monkeypatch, destination, *, before=""):
     """Run the actual worker entrypoint, changing only its test transport target."""
     source = str(Path(alerts.__file__).resolve())

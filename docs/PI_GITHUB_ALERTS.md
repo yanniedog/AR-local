@@ -63,6 +63,13 @@ than creating a possible duplicate. Concurrent updates retain their newer pendin
 revision. GitHub calls have separate native process deadlines and do not forward
 credentials through redirects or inherited proxies.
 
+A failed GitHub operation leaves that incident pending while later incidents
+are still attempted within the same 60-second delivery deadline. Each attempted
+incident has a safe delivered/queued outcome; any queued item keeps the overall
+run unsuccessful. A blocked test-issue recovery therefore cannot by itself
+prevent a later incident from being created. Exhausting the shared deadline does
+not grant later items a fresh budget. Local state errors still stop delivery.
+
 Public issue bodies contain fixed categories and observation timestamps. They
 exclude raw provider errors, journal text, configuration files and credentials.
 The GitHub token needs Issues read/write access on the selected repository.
