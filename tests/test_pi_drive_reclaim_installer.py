@@ -117,8 +117,11 @@ def test_all_unit_modes_are_safe_under_group_writable_umask_and_timers_stay_disa
         assert unit.stat().st_mode & 0o777 == 0o644
         assert '{{AR_LOCAL_' not in unit.read_text()
     calls = [json.loads(line) for line in installer['trace'].read_text().splitlines()]
-    rendered = [call for call in calls if call[0] == 'install' and '/systemd/system/' in call[-1]]
+    rendered = [call for call in calls if call[0] == 'install' and Path(call[-1]) in set(units)]
     assert len(rendered) == 6
     assert all(call[1:7] == ['-m', '0644', '-o', 'root', '-g', 'root'] for call in rendered)
+    directories = [call for call in calls if call[:2] == ['install', '-d'] and '/systemd/system/' in call[-1]]
+    assert len(directories) == 4
+    assert all(call[2:4] == ['-m', '0755'] and Path(call[-1]).is_dir() for call in directories)
     assert [call for call in calls if call[:2] == ['systemctl', 'enable']] == [
         ['systemctl', 'enable', '--now', 'ar-local-drive-reclaim-reconcile.timer']]
