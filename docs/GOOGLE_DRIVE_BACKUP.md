@@ -396,6 +396,55 @@ snapshot, or infer current-day freshness from the recovery completion time.
 The existing disk reserve, memory, process, swap, whole-runtime and 00:30
 Hobart cutoff remain enforced; a new failure cannot advance acceptance.
 
+### Optional read-only restore seed
+
+An interrupted private restore can provide an **untrusted performance hint** to
+the same-snapshot recovery. A new explicit descriptor uses schema
+`ar-local-drive-recovery-input-v2`, retains every v1 field/hash above, and adds
+exactly `seed: {"directory": "restore-abcdefgh", "device": 123, "inode": 456}`.
+These example metadata values are illustrative; the operator must obtain the
+actual canonical direct-spool directory and device/inode. The name must match
+`restore-` followed by eight lowercase letters, digits or underscores. This
+binding does not claim that old diagnostics recorded or proved that target's
+origin. Original failed receipts and original seed bytes remain unchanged.
+
+The seed must be mounted read-only in the fixed backup service, for example by
+an explicitly reviewed temporary `ReadOnlyPaths=` addition for that exact
+directory. The worker checks the opened root's identity and read-only mount;
+normal writable spool access is insufficient. No arbitrary seed path, symlink,
+hardlinked file or filesystem crossing is accepted. Traversal is bounded to 64
+path components. Only manifest-listed regular
+files at or below the expected size are copied, without copying modes, owners or
+links. Missing/oversized hints are skipped. Partial or corrupt content is allowed
+as a hint; source replacement, growth or truncation during copying fails closed.
+The existing bounded streaming read/write adapters, disk reserve and resource
+supervisor apply to this local copy too.
+
+Copying creates a **new** private restore target. It requires free space for the
+entire selected snapshot plus the existing reserve while retaining the old seed.
+There is no separate full seed prehash: Restic is explicitly invoked with
+`--overwrite always --verify`. Its default content-based reuse checks existing
+chunks and restores mismatches; `if-changed`, `if-newer` and `never` are not used.
+See the [Restic 0.18 overwrite contract](https://github.com/restic/restic/blob/v0.18.0/doc/050_restore.rst#restoring-files-in-place)
+and [matching-blob restore implementation](https://github.com/restic/restic/blob/v0.18.0/internal/restorer/filerestorer.go).
+This avoids downloading matching chunks again, but still rereads local bytes;
+copied bytes and disk I/O are not cloud-transfer progress or acceptance.
+
+The complete resulting target, including the archived manifest, still passes
+every manifest SHA-256 and every SQLite integrity/foreign-key check. The seed
+receipt records its explicit identity, considered/copied/missing/oversized file
+counts, copied-byte total and a digest of copied input streams, and labels those
+inputs untrusted. The new candidate and parent acceptance bind that receipt to
+the recovery descriptor and fresh successful resource evidence. A seed copy,
+Restic exit 0 alone or an older partial restore cannot accept the backup. Only the
+new target is cleaned up by this attempt; it never deletes the old seed.
+
+This is a full verified snapshot restore using local hints, not a claim that
+every byte was freshly downloaded in this attempt. It does not ingest, capture,
+publish, change the source date, or acknowledge queued requests. Restore work
+retains the 00:30–03:30 Hobart quiet window; separate code-activation procedures
+retain their own 22:00 admission cutoff. Neither boundary is waived by a seed.
+
 After the entire new worker exits successfully, its strict resource receipt and
 candidate are checked before a new PASS receipt and `latest-verified.json` are
 written. The receipt keeps `action=BACKUP`, adds

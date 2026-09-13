@@ -14,6 +14,7 @@ import tempfile
 import uuid
 
 SCHEMA = "ar-local-drive-recovery-input-v1"
+SEEDED_SCHEMA = "ar-local-drive-recovery-input-v2"
 OUTPUT_FAILURE = "restic command output exceeded bounded receipt limit"
 HEX = re.compile(r"[0-9a-f]{64}")
 ID = re.compile(r"[0-9a-f]{32}")
@@ -42,8 +43,10 @@ def descriptor(path: Path, expected_sha: str) -> dict:
     value, actual = small(path)
     if not isinstance(expected_sha, str) or not HEX.fullmatch(expected_sha) or actual != expected_sha:
         raise ValueError("recovery descriptor hash differs")
-    if (set(value) != {"schema", "source_operation", "source_run_id", "diagnostic_id", "capture_directory", "snapshot_id", "capture_helper_sha256", "hashes"}
-            or value.get("schema") != SCHEMA or not ID.fullmatch(str(value.get("source_operation", "")))
+    seeded = value.get("schema") == SEEDED_SCHEMA
+    fields = {"schema", "source_operation", "source_run_id", "diagnostic_id", "capture_directory", "snapshot_id", "capture_helper_sha256", "hashes"}
+    if (set(value) != fields | ({"seed"} if seeded else set())
+            or value.get("schema") not in (SCHEMA, SEEDED_SCHEMA) or not ID.fullmatch(str(value.get("source_operation", "")))
             or not RUN.fullmatch(str(value.get("source_run_id", "")))
             or not ID.fullmatch(str(value.get("diagnostic_id", "")))
             or not re.fullmatch(r"stdout-capture-[a-zA-Z0-9-]{1,100}", str(value.get("capture_directory", "")))
@@ -52,6 +55,9 @@ def descriptor(path: Path, expected_sha: str) -> dict:
             or not isinstance(value.get("hashes"), dict) or set(value["hashes"]) != HASHES
             or any(not isinstance(v, str) or not HEX.fullmatch(v) for v in value["hashes"].values())):
         raise ValueError("invalid recovery descriptor binding")
+    if seeded:
+        from pi_drive_backup_seed import validate_seed
+        validate_seed(value["seed"])
     return {"descriptor": value, "descriptor_sha256": actual, "descriptor_path": str(path)}
 
 
@@ -177,6 +183,9 @@ def recovery_acceptance(config, recovery, accepted):
             or accepted["restore"].get("snapshot_id") != spec["snapshot_id"]
             or accepted["restore"].get("full") is not True):
         raise ValueError("recovery candidate lacks complete same-snapshot restore evidence")
+    if "seed" in spec:
+        from pi_drive_backup_seed import validate_seed_receipt
+        validate_seed_receipt(spec["seed"], accepted["restore"].get("seed"))
     backup.guard_window()
 
 
@@ -226,7 +235,8 @@ def recover_snapshot(config, recovery):
             client = backup.Restic(config)
             client.run("check")
             restore = backup.restore_snapshot(config, client, spec["snapshot_id"], manifest,
-                                               full=True, manifest_path=paths["manifest"])
+                                               full=True, manifest_path=paths["manifest"],
+                                               **({"seed": spec["seed"]} if "seed" in spec else {}))
             if restore.get("result") != "PASS" or restore.get("full") is not True:
                 raise ValueError("full recovery restore verification did not pass")
             stats = json.loads(client.run("stats", "--mode", "raw-data", "--json"))

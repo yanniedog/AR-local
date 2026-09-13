@@ -205,6 +205,53 @@ def test_descriptor_drift_after_admission_is_rejected_before_network(original,mo
     with pytest.raises(ValueError):recovery.recover_snapshot(original.config,original.bound)
 
 
+@pytest.mark.parametrize('schema,seed_value,valid', [
+    (recovery.SEEDED_SCHEMA, {'directory':'restore-abcdefgh','device':1,'inode':2}, True),
+    (recovery.SCHEMA, {'directory':'restore-abcdefgh','device':1,'inode':2}, False),
+    (recovery.SEEDED_SCHEMA, {'directory':'../outside','device':1,'inode':2}, False),
+    (recovery.SEEDED_SCHEMA, None, False)])
+def test_seed_descriptor_is_explicit_and_keeps_original_source_binding(original,schema,seed_value,valid):
+    original.spec['schema']=schema
+    if seed_value is not None: original.spec['seed']=seed_value
+    sha=put(original.descriptor,original.spec)
+    if valid:
+        bound=recovery.descriptor(original.descriptor,sha)
+        spec,paths,rows,began,summary=recovery.verified_source(original.config,bound)
+        assert spec['seed']==seed_value and summary['snapshot_id']==original.spec['snapshot_id']
+    else:
+        with pytest.raises(ValueError):recovery.descriptor(original.descriptor,sha)
+
+
+@pytest.mark.parametrize('tamper',[False,True])
+def test_seed_plumbing_preserves_full_source_checks_and_parent_binding(original,monkeypatch,tamper):
+    import pi_drive_backup_seed as seed
+    original.spec.update(schema=recovery.SEEDED_SCHEMA, seed={'directory':'restore-abcdefgh','device':1,'inode':2})
+    original.sha=put(original.descriptor,original.spec)
+    original.bound=recovery.descriptor(original.descriptor,original.sha)
+    before={key:path.read_bytes() for key,path in original.paths.items()}
+    calls=client(original,monkeypatch)
+    seen=[]
+    def copy(spool,target,rows,identity,*,guard):
+        assert identity==original.spec['seed'] and spool==original.config.spool
+        assert len(list(rows))==2  # Includes the archived manifest.
+        seen.append(target)
+        return {'schema':seed.SCHEMA,'seed':identity,'read_only':True,'untrusted':True,
+            'files_considered':2,'files_copied':0,'bytes_copied':0,'files_missing':2,'files_oversize':0,
+            'copied_streams_sha256':hashlib.sha256().hexdigest()}
+    monkeypatch.setattr(seed,'copy_seed',copy)
+    monkeypatch.setattr(resources,'own_cgroup',lambda:PurePosixPath('/sys/fs/cgroup/system.slice/ar-local-drive-backup.service'))
+    candidate=recovery.recover_snapshot(original.config,original.bound)
+    assert candidate['restore']['files_verified']==2 and candidate['restore']['databases_verified']==1
+    assert calls==['check','restore','stats'] and candidate['request_ids']==[]
+    assert candidate['backup_date']=='2026-09-13' and not any(path.exists() for path in seen)
+    if tamper:
+        candidate['restore']['seed']['seed']={'directory':'restore-wrongone','device':1,'inode':2}
+        with pytest.raises(ValueError):recovery.recovery_acceptance(original.config,original.bound,candidate)
+    else:recovery.recovery_acceptance(original.config,original.bound,candidate)
+    assert all(path.read_bytes()==before[key] for key,path in original.paths.items())
+    assert not (original.config.spool/'latest-verified.json').exists()
+
+
 def test_descriptor_drift_after_worker_is_rejected_before_acceptance(original,monkeypatch):
     monkeypatch.setattr(resources,'own_cgroup',lambda:PurePosixPath('/sys/fs/cgroup/system.slice/ar-local-drive-backup.service'))
     client(original,monkeypatch)
