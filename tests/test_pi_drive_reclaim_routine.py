@@ -126,7 +126,7 @@ def test_actual_systemd_queue_calendar_stays_inside_eligible_hours(base, expecte
     for expression in expressions:
         # Epoch input and UTC output avoid dependence on the runner's local zone
         # or named-zone timestamp syntax. Evaluate the actual Hobart unit calendar.
-        result = subprocess.run(['systemd-analyze', 'calendar', '--utc', '--base-time=@' + str(base_epoch), expression],
+        result = subprocess.run(['systemd-analyze', 'calendar', '--base-time=@' + str(base_epoch), expression],
             capture_output=True, text=True, timeout=10,
             env={**os.environ, 'TZ': 'UTC', 'LC_ALL': 'C'})
         assert result.returncode == 0, result.stderr + result.stdout
