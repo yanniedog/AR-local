@@ -12,6 +12,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
 Environment=AR_LOCAL_ALERT_SPOOL={{AR_LOCAL_ALERT_SPOOL}}
 EnvironmentFile=-/etc/ar-local/app-payload.env
+EnvironmentFile=-/etc/ar-local/drive-backup.env
 EnvironmentFile=-/etc/ar-local/issue-alerts.env
 ExecStart=/usr/bin/python3 -B {{AR_LOCAL_REPO}}/pi_issue_watchdog.py --failed-unit %i
 TimeoutStartSec=90

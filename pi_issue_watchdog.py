@@ -35,8 +35,15 @@ def unit_state(name):
     if row.get("LoadState") != "loaded":
         raise ValueError("monitored unit unavailable")
     value = row.get("ExecMainStartTimestamp", "")
-    row["started_at"] = (datetime.strptime(value, "%a %Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
-                         if value else None)
+    row["started_at"] = None
+    for format in ("%a %Y-%m-%d %H:%M:%S UTC", "%a %Y-%m-%d %H:%M:%S.%f UTC"):
+        try:
+            row["started_at"] = datetime.strptime(value, format).replace(tzinfo=timezone.utc)
+            break
+        except ValueError:
+            continue
+    # An unavailable start identity cannot prove recovery or quiet deferral,
+    # but must not discard an actual OnFailure trigger before it is persisted.
     return row
 
 
@@ -230,7 +237,7 @@ def main(argv=None):
     if args.checks_only and (args.failed_unit or args.delivery_test):
         cli.error("--checks-only cannot be combined with an issue-writing operation")
     now = datetime.now(timezone.utc)
-    store = configured_store()
+    store = None if args.checks_only else configured_store()
     if args.delivery_test:
         if args.checks_only or args.failed_unit:
             cli.error("delivery test is a separate operation")

@@ -140,6 +140,15 @@ cd /srv/ar-local/AR-local
 python3 pi_drive_backup_enroll.py oauth --credentials-dir /var/lib/ar-local-drive-backup/credentials
 ```
 
+This legacy helper uses rclone's shared OAuth client. The dedicated-client
+GitHub access monitor requires an explicit client ID and secret and will report
+`CLIENT_MISSING` for that legacy configuration. For monitored unattended
+commissioning, use the reviewed dedicated Desktop-client enrollment procedure
+with durable Production consent and `drive.file` only. Preserve the old private
+configuration and repository: changing the OAuth app can change which files
+are visible under `drive.file`, so verify access before switching configuration.
+Do not widen the scope or initialize into an unverified existing repository.
+
 Open the helper's emitted loopback URL in the laptop browser. The user selects their Google account and grants permission. The helper runs rclone on the Pi, captures provider output, and emits only the authorization URL and final status. The refresh token stays on the Pi; no token transfer or chat paste is needed. Enrollment times out after 15 minutes and never overwrites existing credentials.
 
 The remote requests only `drive.file`. Let this rclone identity create the dedicated `AR-local Pi Backups/restic` folder; a folder created by another app may be invisible under that scope. Do not change the remote to broad `drive` scope to work around that restriction. Google consent is the only required user interaction for the recurring uploader.

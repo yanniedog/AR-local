@@ -18,6 +18,12 @@ boot, independently of whether the preceding service run succeeded. It checks:
   installed. Backup recovery requires the accepted resource/request binding;
   a process exiting zero alone cannot close a backup incident.
 
+A same-day `NO_WORK` result validates the earlier local receipt but performs no
+new repository check, source preparation or restore. It therefore cannot close
+an intervening backup failure. Recovery requires a verified backup invocation.
+An unknown systemd start timestamp likewise cannot prove recovery or quiet
+deferral; an actual failure trigger is still recorded.
+
 A backup refused before worker startup in the ingest quiet window is recorded
 as `QUIET_WINDOW_DEFERRED` only when its exact service PID/start binds a unique
 current request and a clean resource receipt containing that precise refusal.
@@ -43,6 +49,9 @@ issue; recovery closes it, and recurrence reopens it. Different ingest dates
 have distinct incidents. A failure that recovers while GitHub is unavailable
 is still reported and closed once delivery resumes. A reopened issue labels its
 retained historical recovery time as "Last recovery"; it is not current recovery.
+Dated ingest recovery is checked for the current scheduled date. Older unresolved
+incidents remain open for an evidence-backed operator disposition; a newer day's
+successful ingest does not prove that an older failed observation was repaired.
 
 Private incident state is committed and fsynced before network delivery. Failed
 delivery remains pending for the next calendar tick. `QUEUED` still returns a
@@ -94,7 +103,9 @@ components, without leading/trailing/repeated slashes. Unsupported locations or
 noncanonical repository spelling fail closed rather than selecting another tree.
 
 Run `pi_issue_watchdog.py --checks-only` under the exact service environment to
-inspect current health without creating incidents/issues. Then execute the
+inspect current health without opening or creating the alert spool, changing
+incidents, or sending issues. An absent or unwritable alert spool does not block
+this read-only check. Then execute the
 normal service once and verify real incident delivery/deduplication. When no
 incident exists, an explicitly identified `--delivery-test` can create and close
 one verification issue. It cannot be combined with `--checks-only`.
