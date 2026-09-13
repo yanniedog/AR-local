@@ -1,7 +1,6 @@
 """Restore transport fixtures, never production backup acceptance."""
 from contextlib import contextmanager
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -45,17 +44,20 @@ def test_copy_is_bounded_and_never_propagates_source_metadata(tmp_path):
 
 @pytest.mark.parametrize("body,size", [(b"short", 9), (b"growing", 3)])
 def test_copy_rejects_truncation_or_growth(tmp_path, body, size):
-    with pytest.raises(ValueError):
-        seed.copy_file(io.BytesIO(body), SimpleNamespace(st_size=size), tmp_path / "new", lambda: None)
+    source = tmp_path / "source"; source.write_bytes(body)
+    with source.open("rb") as stream, pytest.raises(ValueError, match="grew|truncated"):
+        seed.copy_file(stream, SimpleNamespace(st_size=size), tmp_path / "new", lambda: None)
 
 
 def test_copy_refuses_existing_destination_and_propagates_guard(tmp_path):
     target = tmp_path / "new"; target.write_bytes(b"preserve")
-    with pytest.raises(FileExistsError): seed.copy_file(io.BytesIO(b"x"), SimpleNamespace(st_size=1), target, lambda: None)
+    source = tmp_path / "source"; source.write_bytes(b"x")
+    with source.open("rb") as stream, pytest.raises(FileExistsError):
+        seed.copy_file(stream, source.stat(), target, lambda: None)
     assert target.read_bytes() == b"preserve"
     def guard(): raise backup.Blocked("quiet window")
-    with pytest.raises(backup.Blocked):
-        seed.copy_file(io.BytesIO(b"x"), SimpleNamespace(st_size=1), tmp_path / "other", guard)
+    with source.open("rb") as stream, pytest.raises(backup.Blocked):
+        seed.copy_file(stream, source.stat(), tmp_path / "other", guard)
 
 
 @pytest.fixture
