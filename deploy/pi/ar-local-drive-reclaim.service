@@ -1,0 +1,18 @@
+[Unit]
+Description=Bounded root reclaim lease for AR-local Drive backup
+Before=ar-local-drive-backup.service
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I -B /usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py acquire
+ExecStopPost=/usr/bin/python3 -I -B /usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py finish
+TimeoutStartSec=60s
+TimeoutStopSec=60s
+UMask=0077
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes

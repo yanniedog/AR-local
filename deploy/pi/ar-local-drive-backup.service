@@ -1,7 +1,8 @@
 [Unit]
 Description=AR-local encrypted incremental Google Drive backup
-After=network-online.target
+After=network-online.target ar-local-drive-reclaim.service
 Wants=network-online.target
+Requires=ar-local-drive-reclaim.service
 
 [Service]
 Type=oneshot

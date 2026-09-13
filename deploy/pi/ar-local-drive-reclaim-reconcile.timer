@@ -1,0 +1,11 @@
+[Unit]
+Description=Independent AR-local Drive reclaim restoration check
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=ar-local-drive-reclaim-reconcile.service
+
+[Install]
+WantedBy=timers.target

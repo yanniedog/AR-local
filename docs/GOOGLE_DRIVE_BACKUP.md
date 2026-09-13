@@ -64,6 +64,48 @@ Stable pidfds terminate children on failure and cleanup must finish before PASS.
 The 20-hour whole-operation deadline and quiet-window guard cover source freeze,
 uploads, repository checks, restore and worker cleanup.
 
+The installed backup service additionally requires a separate root reclaim
+lease. This root helper is copied to
+`/usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py`, uses only fixed unit,
+state and sysctl paths, and never imports the user-owned producer checkout or
+loads Drive credentials. The backup service remains unprivileged with its
+existing sandbox. Before changing the measured predecessor `vm.swappiness=60`
+to `0`, the helper retains a root-only ownership record and verifies that the
+independent, boot-enabled reconciliation timer is armed. An existing `0` or
+another value is refused, including a separate commissioning window; it is not
+adopted as this lease. No persistent sysctl configuration is written.
+
+Ordered dependency cleanup restores `60` after every backup terminal state,
+including failures. A root-only timer checks 15 seconds after boot and 30
+seconds after each reconciliation completes. At the earlier of 20 hours or
+00:25 Hobart, it initiates stopping both the backup and its lease dependency,
+verifies MainPID zero and an empty backup cgroup, then restores before 00:30
+under the bounded timer/cleanup budgets (not necessarily by 00:25). The margin precedes
+the mandatory 00:30 quiet window; normal systemd stop limits and every existing
+resource guard remain unchanged. The same timer handles orphaned ownership.
+After reboot, an original `60` can close the old record; an unexplained new `0`
+or changed setting requires operator reconciliation rather than overwriting a
+potentially different host policy. State, application, restoration and failure
+records remain in root-owned mode-0700 `/var/lib/ar-local-drive-reclaim`.
+
+Admission checks the fixed Pi production lock and active/queued daily, manual,
+watchdog and boot-recovery services both before preparing ownership and just
+before changing the setting. These readbacks are not atomic exclusion against
+a newly started ingest; the worker's existing production lock stays authoritative.
+During a lease, an actual daily/manual ingest or a live foreign `role=ingest`
+lock owner causes backup-only stop and restoration. The watchdog's routine
+health check and the backup's own `drive-backup-freeze` lock do not trigger this.
+The root helper never writes or recovers the producer lock, reads producer Python
+code, or stops an ingest service. Its fixed admission path is
+`/srv/ar-local/data/state/daily-ingest.lock`; the installer refuses other data roots.
+
+This bounded host setting can reduce swapping of inactive pages during backup,
+but [Linux swappiness zero does not disable swap](https://docs.kernel.org/admin-guide/sysctl/vm.html#swappiness).
+It does not waive a host-swap failure or prove successful resource acceptance.
+Direct CLI commands do not acquire this root service lease. Commissioning must
+verify the actual dependency/timer lifecycle, normal and forced-stop restoration,
+and a complete backup and restore before enabling the daily backup timers.
+
 Restic and rclone receive GOMAXPROCS=2, GOGC=50 and **GOMEMLIMIT=192MiB per
 process**. GOMEMLIMIT is a soft Go runtime target, not the acceptance boundary;
 the independent supervisor includes native allocations and all other processes.
@@ -117,12 +159,14 @@ Install Restic with repository-v2/compression support and rclone on the Pi using
 sudo bash deploy/pi/install-drive-backup.sh /srv/ar-local/AR-local pi /srv/ar-local/data /var/lib/ar-local-drive-backup
 ```
 
-The installer writes the three named backup units, a non-secret environment file,
+The installer writes the three named backup units, three root lease units,
+the root-installed helper, a non-secret environment file,
 and a `drive-backup.conf` environment drop-in for each of the daily, forced,
 watchdog and boot-recovery ingest services. These producers inherit only backup
 configuration paths and can queue terminal events without opening credentials.
-The installer does not start or enable timers. On the uncommissioned Pi checked
-on 2026-09-12 both timer names were **NOT_FOUND**, not verified installed/disabled.
+It enables only the host-state reconciliation timer, which cannot start a backup
+or contact Drive. Both backup timers remain disabled until commissioning.
+Installation refuses live backup/dependency services or unresolved lease state.
 Credentials live in `/var/lib/ar-local-drive-backup/credentials`, owned by `pi`,
 mode 0700; individual credential files use 0600.
 

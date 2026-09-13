@@ -26,13 +26,34 @@ fi
 case "$spool/" in "$data_root/"*) echo 'Spool must be outside data root.' >&2; exit 2;; esac
 case "$data_root/" in "$spool/"*) echo 'Data root must be outside spool.' >&2; exit 2;; esac
 backup_group=$(id -gn "$backup_user")
+if [ "$data_root" != /srv/ar-local/data ]; then
+  echo 'The fixed root reclaim control requires /srv/ar-local/data.' >&2; exit 2
+fi
+# The privileged helper is copied out of the user-owned producer checkout. Its
+# CLI accepts only fixed actions; it never imports producer code or credentials.
+for control_path in /usr/local/lib/ar-local-drive-reclaim /var/lib/ar-local-drive-reclaim; do
+  if [ -L "$control_path" ]; then
+    echo 'Reclaim control directories must not be symlinks.' >&2
+    exit 2
+  fi
+done
+for control_unit in ar-local-drive-backup.service ar-local-drive-reclaim.service; do
+  control_state=$(systemctl show "$control_unit" --property=ActiveState --value)
+  case "$control_state" in inactive|failed) ;; *) echo 'Stop/reconcile backup controls before installation.' >&2; exit 2;; esac
+done
+if [ -e /var/lib/ar-local-drive-reclaim/current.json ] || [ -L /var/lib/ar-local-drive-reclaim/current.json ]; then
+  echo 'Reconcile the existing backup lease before installing controls.' >&2; exit 2
+fi
+install -d -m 0755 -o root -g root /usr/local/lib/ar-local-drive-reclaim
+install -d -m 0700 -o root -g root /var/lib/ar-local-drive-reclaim
+install -m 0644 -o root -g root "$repo/pi_drive_reclaim.py" /usr/local/lib/ar-local-drive-reclaim/pi_drive_reclaim.py
 install -d -m 0700 -o "$backup_user" -g "$backup_group" "$spool" "$spool/requests" "$spool/credentials"
 install -d -m 0750 /etc/ar-local
 if [ ! -f /etc/ar-local/drive-backup.env ]; then
   printf 'AR_LOCAL_DATA_ROOT=%s\nAR_LOCAL_DRIVE_BACKUP_SPOOL=%s\nRESTIC_REPOSITORY="rclone:ar_local_drive:AR-local Pi Backups/restic"\nRESTIC_PASSWORD_FILE=%s/credentials/restic.password\nRCLONE_CONFIG=%s/credentials/rclone.conf\n' "$data_root" "$spool" "$spool" "$spool" > /etc/ar-local/drive-backup.env
   chmod 0644 /etc/ar-local/drive-backup.env
 fi
-for unit in ar-local-drive-backup.service ar-local-drive-backup.timer ar-local-drive-backup-queue.timer; do
+for unit in ar-local-drive-backup.service ar-local-drive-backup.timer ar-local-drive-backup-queue.timer ar-local-drive-reclaim.service ar-local-drive-reclaim-reconcile.service ar-local-drive-reclaim-reconcile.timer; do
   sed -e "s|{{AR_LOCAL_REPO}}|$repo|g" -e "s|{{AR_LOCAL_USER}}|$backup_user|g" \
       -e "s|{{AR_LOCAL_GROUP}}|$backup_group|g" -e "s|{{AR_LOCAL_DATA_ROOT}}|$data_root|g" \
       -e "s|{{AR_LOCAL_DRIVE_BACKUP_SPOOL}}|$spool|g" "$repo/deploy/pi/$unit" > "/etc/systemd/system/$unit"
@@ -42,5 +63,7 @@ for unit in ar-local-daily.service ar-local-ingest-now.service ar-local-daily-wa
   printf '[Service]\nEnvironmentFile=-/etc/ar-local/drive-backup.env\n' > "/etc/systemd/system/$unit.d/drive-backup.conf"
 done
 systemctl daemon-reload
-systemd-analyze verify /etc/systemd/system/ar-local-drive-backup.service /etc/systemd/system/ar-local-drive-backup.timer /etc/systemd/system/ar-local-drive-backup-queue.timer
-echo 'Installed; no timers enabled by this installer. Complete OAuth, init, first backup and full restore, then enable both timers.'
+systemd-analyze verify /etc/systemd/system/ar-local-drive-backup.service /etc/systemd/system/ar-local-drive-backup.timer /etc/systemd/system/ar-local-drive-backup-queue.timer /etc/systemd/system/ar-local-drive-reclaim.service /etc/systemd/system/ar-local-drive-reclaim-reconcile.service /etc/systemd/system/ar-local-drive-reclaim-reconcile.timer
+# This timer restores host state only. It cannot start a backup or contact Drive.
+systemctl enable --now ar-local-drive-reclaim-reconcile.timer
+echo 'Installed; only host-state reconciliation is enabled. Complete OAuth, init, first backup and full restore, then enable both backup timers.'
