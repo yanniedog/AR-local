@@ -18,6 +18,7 @@ from ar_local_backup_scope import build_data_scope
 from ar_local_operation_lock import production_lock
 from pi_laptop_backup_source import canonical_json_bytes
 from pi_drive_backup_manifest import DiskRows, ManifestIndex, content_digest
+from pi_drive_backup_read import chunks, discard_created_cache
 
 SCHEMA = "ar-local-drive-backup-v1"
 DB_SUFFIXES = {".sqlite", ".sqlite3", ".db"}
@@ -27,7 +28,7 @@ EXCLUDED_NAMES = {".git", ".ssh", "__pycache__", "node_modules", "netdata", "rcl
 def digest(path: Path, guard: Callable[[], None] = lambda: None) -> str:
     value = hashlib.sha256()
     with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
+        for block in chunks(stream):
             guard()
             value.update(block)
     return value.hexdigest()
@@ -100,7 +101,7 @@ def sqlite_snapshot(source: Path, target: Path, guard: Callable[[], None],
             original = originals.parent / component.name
             _copy(component, original, guard)
             retained.append((component, original))
-    with tempfile.TemporaryDirectory(prefix="sqlite-input-", dir=target.parent) as scratch:
+    with tempfile.TemporaryDirectory(prefix="sqlite-input-", dir=target.parent) as scratch, target.open("xb") as output:
         private = Path(scratch) / source.name
         for component in components:
             _copy(component, Path(scratch) / component.name, guard)
@@ -113,9 +114,10 @@ def sqlite_snapshot(source: Path, target: Path, guard: Callable[[], None],
         with closing(sqlite3.connect(private.as_uri() + "?mode=rw", uri=True, timeout=5)) as src:
             with closing(sqlite3.connect(target)) as dst:
                 src.backup(dst, pages=256, progress=lambda *_: guard(), sleep=0.05)
-    with closing(sqlite3.connect(target.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
-        if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-            raise ValueError("SQLite snapshot failed quick_check")
+        with closing(sqlite3.connect(target.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
+            if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise ValueError("SQLite snapshot failed quick_check")
+        discard_created_cache(output)
     return retained
 
 
@@ -123,14 +125,15 @@ def _copy(source: Path, target: Path, guard: Callable[[], None]) -> None:
     before = fingerprint(source)
     target.parent.mkdir(parents=True, exist_ok=True)
     with source.open("rb") as src, target.open("xb") as dst:
-        while block := src.read(1024 * 1024):
+        for block in chunks(src):
             guard()
             dst.write(block)
         dst.flush()
         os.fsync(dst.fileno())
-    shutil.copystat(source, target)
-    if before != fingerprint(source) or digest(source, guard) != digest(target, guard):
-        raise RuntimeError(f"source changed during freeze: {source}")
+        shutil.copystat(source, target)
+        if before != fingerprint(source) or digest(source, guard) != digest(target, guard):
+            raise RuntimeError(f"source changed during freeze: {source}")
+        discard_created_cache(dst)
 
 
 def _is_database(path: Path) -> bool:
