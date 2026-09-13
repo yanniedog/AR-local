@@ -87,6 +87,11 @@ After reboot, an original `60` can close the old record; an unexplained new `0`
 or changed setting requires operator reconciliation rather than overwriting a
 potentially different host policy. State, application, restoration and failure
 records remain in root-owned mode-0700 `/var/lib/ar-local-drive-reclaim`.
+Repeated failure attempts for the same lease and command retain one immutable
+first-failure receipt and one replaceable latest/counter record bound to its
+hash. Malformed or absent ownership uses a fixed unattributed key. Existing
+failure receipts are not pruned; a persistent fault does not create a new file
+every 30 seconds, and it still fails closed until the owner reconciles it.
 
 Admission checks the fixed Pi production lock and active/queued daily, manual,
 watchdog and boot-recovery services both before preparing ownership and just
@@ -164,6 +169,15 @@ the root-installed helper, a non-secret environment file,
 and a `drive-backup.conf` environment drop-in for each of the daily, forced,
 watchdog and boot-recovery ingest services. These producers inherit only backup
 configuration paths and can queue terminal events without opening credentials.
+Before replacing controls, the installer refuses active, enabled or queued
+backup timers and live/queued backup or lease services, then rechecks admission
+immediately before writing. Record both timers' prior states, disable and stop
+only those two timers, and wait for backup/lease cleanup before an upgrade.
+Restore their prior states only after the changed controls pass commissioning;
+mandatory ingest and issue-watchdog timers remain untouched. Rendered unit
+files are installed explicitly as root-owned 0644 independently of the caller's
+umask. The installer does not automatically stop an active backup.
+
 It enables only the host-state reconciliation timer, which cannot start a backup
 or contact Drive. Both backup timers remain disabled until commissioning.
 Installation refuses live backup/dependency services or unresolved lease state.
@@ -231,7 +245,7 @@ drive_commission readiness --remote
 sudo systemctl start ar-local-drive-backup.service
 ```
 
-`--control-file` requires an absolute canonical path; adjust the example if the approved runtime differs. The installed service already supplies absolute paths for its documented control files. `init` is only for the first repository creation; a rerun against an existing repository is expected to fail rather than reset it.
+`--control-file` requires an absolute canonical path; adjust the example if the approved runtime differs. The installed service supplies its six existing controls plus `pi_drive_reclaim.py` and the three reclaim unit sources from the same approved runtime. These non-secret bytes are frozen into the manifest and included in full and rotating control restores; a lease control hash alone is not recovery material. Installation must keep these sources identical to the installed root helper and rendered unit content. `init` is only for the first repository creation; a rerun against an existing repository is expected to fail rather than reset it.
 
 The first accepted backup must include a full cloud download to an isolated directory, SHA-256 verification of every restored file, and SQLite `integrity_check` plus `foreign_key_check`. The normal service performs this automatically before writing its first PASS receipt. Later runs check the repository each day; every seven days they also restore current data, all state, and a rotating historical date. An explicit full restore remains available:
 
@@ -247,7 +261,16 @@ sudo systemctl enable --now ar-local-drive-backup.timer ar-local-drive-backup-qu
 systemctl list-timers ar-local-drive-backup.timer ar-local-drive-backup-queue.timer
 ```
 
-The daily timer runs at 03:30 Australia/Hobart. A second timer checks every half hour for terminal-observation requests or an interrupted day's work. UUID queue entries arriving during an upload remain pending for the next run. Configure `AR_LOCAL_DRIVE_BACKUP_SPOOL` for ingest/recovery services so their terminal hook queues a backup. The queue worker can also be invoked explicitly with `request --reason <reason>`.
+The daily timer runs at 03:30 Australia/Hobart. A second timer checks at 03:30
+and every half hour from 04:00 through 23:30 for terminal-observation requests
+or an interrupted day's work. Neither timer replays missed calendar events at
+boot: the next eligible half-hour handles queued work after a missed daily
+run. This avoids dependency failures during the forbidden hours and does not
+weaken manual-start admission, the 00:25 cleanup margin or the worker's quiet
+window. UUID queue entries arriving during an upload remain pending for the
+next run. Configure `AR_LOCAL_DRIVE_BACKUP_SPOOL` for ingest/recovery services
+so their terminal hook queues a backup. The queue worker can also be invoked
+explicitly with `request --reason <reason>`.
 
 ## Evidence and recovery
 

@@ -2,8 +2,10 @@
 Description=Drain new AR-local backup requests and retry interrupted uploads
 
 [Timer]
-OnCalendar=*-*-* *:00,30:00 Australia/Hobart
-Persistent=true
+OnCalendar=*-*-* 03:30:00 Australia/Hobart
+OnCalendar=*-*-* 04..23:00,30:00 Australia/Hobart
+# Never replay a missed trigger during the ingest/cleanup window at boot.
+Persistent=false
 AccuracySec=1min
 Unit=ar-local-drive-backup.service
 
