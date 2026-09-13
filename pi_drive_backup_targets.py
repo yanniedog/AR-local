@@ -48,6 +48,14 @@ class Targets:
         with index.open("xb"):
             pass
         self.db = sqlite3.connect(index)
+        try:
+            self.configure()
+        except BaseException:
+            self.db.close()
+            raise
+        self.file_count = self.source_bytes = self.target_count = 0
+
+    def configure(self) -> None:
         self.db.execute("PRAGMA cache_size=-2048")
         self.db.execute("PRAGMA temp_store=FILE")
         self.db.execute("""CREATE TABLE nodes (
@@ -57,7 +65,6 @@ class Targets:
         ) WITHOUT ROWID""")
         # Child membership and missing-child counts are the hot lookup paths.
         self.db.execute("CREATE INDEX nodes_parent ON nodes(parent)")
-        self.file_count = self.source_bytes = self.target_count = 0
 
     def add(self, row: dict, stage: Path, data: Path) -> None:
         path = Path(row["backup_path"])

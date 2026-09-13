@@ -3,13 +3,14 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 
 import pytest
 
 import pi_drive_backup as backup
 from pi_drive_backup_source import restore_relative
-from pi_drive_backup_targets import backup_targets
+from pi_drive_backup_targets import Targets, backup_targets
 
 
 @pytest.fixture
@@ -95,6 +96,24 @@ def test_hardlinked_selected_file_is_refused(scope):
     with pytest.raises(ValueError, match="unsafe backup source"):
         with prepare(scope, [row]):
             pass
+
+
+def test_index_initialization_failure_closes_database_for_stage_cleanup(scope, monkeypatch):
+    original, opened = sqlite3.connect, []
+    class FailedIndex(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            if sql.startswith("CREATE TABLE"):
+                raise sqlite3.OperationalError("injected disk full")
+            return super().execute(sql, parameters)
+    def connect(path):
+        db = original(path, factory=FailedIndex)
+        opened.append(db)
+        return db
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    with pytest.raises(sqlite3.OperationalError, match="disk full"):
+        Targets(scope[1], lambda: None)
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        opened[0].execute("SELECT 1")
 
 
 @pytest.mark.parametrize("files,bytes_", [(2, 1), (1, 2), (True, 1), (1, True)])
