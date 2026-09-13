@@ -13,12 +13,14 @@ from ar_local_operation_lock import production_lock
 from pi_drive_backup_resources import require_receipt, supervise
 
 
-def execute_worker(config, command, *, force, full, operation):
+def execute_worker(config, command, *, force, full, operation, recovery=None):
     import pi_drive_backup as backup
     request = {"config": {key: str(value) if isinstance(value, Path) else
         [str(item) for item in value] if key == "controls" else value
         for key, value in asdict(config).items()}, "command": command, "force": force, "full": full,
         "supervisor_pid": os.getpid()}
+    if recovery is not None:
+        request["recovery"] = recovery
     backup.atomic_json(operation / "request.json", request, immutable=True)
     resources = supervise([sys.executable, str(Path(backup.__file__).resolve()),
         command, "--worker-request", str(operation / "request.json")], operation / "resources.json", guard=backup.guard_window)
@@ -59,22 +61,29 @@ def validate_binding(spool, value):
         raise ValueError("accepted backup differs from supervised candidate")
 
 
-def run_protected(config, command="run", *, force=False, full=False):
+def run_protected(config, command="run", *, force=False, full=False, recovery=None):
     import pi_drive_backup as backup
     ready = backup.readiness(config)
     if ready["result"] != "PASS":
         raise backup.Blocked("; ".join(ready["reasons"]))
     config.spool.mkdir(parents=True, exist_ok=True, mode=0o700)
     with production_lock(config.spool / "backup.lock", "drive-backup"):
+        if recovery is not None:
+            from pi_drive_backup_recovery import recovery_admission
+            recovery = recovery_admission(config, command, recovery)
         operation = config.spool / "resource-runs" / uuid.uuid4().hex
         operation.mkdir(parents=True, mode=0o700)
-        candidate = execute_worker(config, command, force=force, full=full, operation=operation)
+        extra = {"recovery": recovery} if recovery is not None else {}
+        candidate = execute_worker(config, command, force=force, full=full, operation=operation, **extra)
         resources = json.loads((operation / "resources.json").read_text(encoding="utf-8"))
         require_receipt(resources)
         backup.guard_window()
         accepted = {**candidate, "resource_evidence": {"path": operation.relative_to(config.spool).as_posix(),
             **{f"{name}_sha256": backup.digest(operation / f"{name}.json") for name in ("request", "candidate", "resources")}}}
         validate_binding(config.spool, accepted)
+        if recovery is not None:
+            from pi_drive_backup_recovery import recovery_acceptance
+            recovery_acceptance(config, recovery, accepted)
         if command == "run" and candidate.get("action") != "NO_WORK":
             if not re.fullmatch(r"[0-9]{8}T[0-9]{6}-[0-9a-f]{12}", str(candidate.get("run_id", ""))):
                 raise ValueError("worker backup identity is invalid")
@@ -126,7 +135,11 @@ def worker_action(config, request):
     import pi_drive_backup as backup
     command = request["command"]
     if command == "run":
-        result = backup._run_locked(config, force=request["force"])
+        if request.get("recovery") is not None:
+            from pi_drive_backup_recovery import recover_snapshot
+            result = recover_snapshot(config, request["recovery"])
+        else:
+            result = backup._run_locked(config, force=request["force"])
     elif command == "init":
         backup.Restic(config).run("init", "--repository-version", "2")
         result = {"result": "PASS", "action": "INITIALIZED", "backup": "NOT_RUN"}

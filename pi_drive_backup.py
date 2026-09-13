@@ -434,11 +434,16 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--full", action="store_true", help="restore and verify all retained source bytes")
     cli.add_argument("--reason", default="terminal-observation")
     cli.add_argument("--worker-request", type=Path, help=argparse.SUPPRESS)
+    cli.add_argument("--recover-from", type=Path, help="explicit pinned descriptor for same-snapshot full restore recovery")
+    cli.add_argument("--recover-sha256", help="expected SHA256 of the reviewed recovery descriptor")
     return cli
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if ((args.recover_from is None) != (args.recover_sha256 is None)
+            or args.recover_from is not None and (args.command != "run" or args.worker_request or args.force)):
+        parser().error("recovery requires run plus both descriptor/hash, without force or worker-request")
     config = Config(args.data_root, args.spool, args.repository, args.password_file, args.rclone_config, args.control_file)
     try:
         if args.worker_request:
@@ -453,6 +458,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command in {"init", "restore"}:
             from pi_drive_backup_controller import run_protected
             result = run_protected(config, args.command, full=args.full)
+        elif args.recover_from:
+            from pi_drive_backup_recovery import descriptor
+            from pi_drive_backup_controller import run_protected
+            result = run_protected(config, recovery=descriptor(args.recover_from, args.recover_sha256))
         else:
             result = run_backup(config, force=args.force)
     except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
