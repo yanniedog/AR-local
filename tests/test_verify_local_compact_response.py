@@ -259,3 +259,60 @@ def test_preconnection_worker_stall_is_also_bounded_and_reaped(tmp_path, monkeyp
     with pytest.raises(TimeoutError):
         compact.read_json('http://test.invalid/', timeout=0.2)
     assert time.monotonic() - started < 1
+
+
+def provider_responses(section):
+    # Transport contract only: distinct provider aggregates expose misattribution
+    # while the full section aggregate and total row count remain unchanged.
+    rows = [{"provider": name, "product_key": name, "rate": rate, "account_class": "standard"}
+            for name, rate in (("First transport fixture", "0.02"),
+                               ("First transport fixture", "0.04"), ("Second transport fixture", "0.08"))]
+    aggregate = aggregate_ribbon(rows, section)
+    return {"ribbon": {"run_date": DAY, "section": section, **aggregate},
+            "section": {"run_date": DAY, "section": section, "rates": rows, "counts": {"rates": len(rows)}},
+            "compact": {"run_date": DAY, "section": section, "include_non_standard": False,
+                        **compact_history([DAY], {DAY: aggregate})}}
+
+
+@pytest.mark.parametrize('fault', ['swapped_stats', 'redistributed_counts', 'renamed_provider',
+                                  'missing_ribbon_providers', 'duplicate_ribbon_provider'])
+def test_current_provider_mismatch_is_fatal_even_with_matching_global_totals(transport, fault):
+    def response(kind):
+        def change(data):
+            value = provider_responses(data['section'])[kind]
+            if kind == 'compact':
+                first, second = value['providers']
+                a, b = first['by_date'][DAY], second['by_date'][DAY]
+                if fault == 'swapped_stats':
+                    for key in compact.STATS:
+                        a[key], b[key] = b[key], a[key]
+                elif fault == 'redistributed_counts':
+                    a['count'], b['count'] = b['count'], a['count']
+                elif fault == 'renamed_provider':
+                    first['provider'] = 'Stale transport fixture'
+            elif kind == 'ribbon':
+                if fault == 'missing_ribbon_providers':
+                    value.pop('providers')
+                elif fault == 'duplicate_ribbon_provider':
+                    value['providers'][1]['provider'] = value['providers'][0]['provider']
+            return value
+        return change
+    transport['changes'] = {kind: response(kind) for kind in ('section', 'ribbon', 'compact')}
+    assert smoke(transport) == 1
+
+
+def test_current_provider_parity_allows_order_rounding_and_sparse_old_series(transport):
+    def response(kind):
+        def change(data):
+            value = provider_responses(data['section'])[kind]
+            if kind == 'compact':
+                value['run_dates'].insert(0, OLD)
+                value['points'].insert(0, {'date': OLD, 'count': 0, **dict.fromkeys(compact.STATS)})
+                value['providers'].reverse()
+                value['providers'][0]['by_date'][DAY]['mean'] += 1e-15
+                value['providers'].append({'provider': 'Historical transport fixture',
+                                          'by_date': {OLD: {'count': 0, **dict.fromkeys(compact.STATS)}}})
+            return value
+        return change
+    transport['changes'] = {kind: response(kind) for kind in ('section', 'ribbon', 'compact')}
+    assert smoke(transport) == 0

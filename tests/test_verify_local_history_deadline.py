@@ -25,7 +25,7 @@ def endpoint_calls(monkeypatch):
         section = parse_qs(urlsplit(url).query)["section"][0]
         common = {"run_date": "2026-09-12", "section": section}
         if "/ribbon?" in url:
-            return {**common, "counts": {"rates": 0},
+            return {**common, "counts": {"rates": 0}, "providers": [],
                     "range": dict.fromkeys(("min", "max", "mean", "median"))}
         if "/section?" in url:
             return {**common, "rates": [], "counts": {"rates": 0}}

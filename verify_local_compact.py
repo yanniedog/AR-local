@@ -69,6 +69,37 @@ def envelope(value: dict, run_date: str, section: str) -> None:
         invalid("response date/section differs from request")
 
 
+def same_stats(actual: dict, expected: dict) -> bool:
+    for key in STATS:
+        if actual[key] is None or expected[key] is None:
+            if actual[key] is not expected[key]:
+                return False
+        elif not math.isclose(actual[key], expected[key], rel_tol=1e-12, abs_tol=1e-12):
+            return False
+    return True
+
+
+def validate_current_providers(current: dict, ribbon: dict) -> None:
+    providers = ribbon.get("providers")
+    if not isinstance(providers, list):
+        invalid("missing current ribbon providers")
+    expected = {}
+    for provider in providers:
+        if not isinstance(provider, dict) or not isinstance(provider.get("provider"), str) or not provider["provider"]:
+            invalid("invalid current ribbon provider")
+        name = provider["provider"]
+        if name in expected:
+            invalid("duplicate current ribbon provider")
+        value = {**provider, "count": provider.get("rates")}
+        stats(value)
+        expected[name] = value
+    if current.keys() != expected.keys():
+        invalid("current-day history provider names differ from the live ribbon")
+    for name, value in current.items():
+        if value["count"] != expected[name]["count"] or not same_stats(value, expected[name]):
+            invalid("current-day history provider counts/statistics differ from the live ribbon")
+
+
 def validate(history: dict, current: dict, ribbon: dict, run_date: str, section: str) -> None:
     """Check actual dated series against current SQL responses, not echoed labels.
 
@@ -103,6 +134,7 @@ def validate(history: dict, current: dict, ribbon: dict, run_date: str, section:
     if not isinstance(providers, list):
         invalid("missing provider series")
     names, current_provider_count = set(), 0
+    current_providers = {}
     for provider in providers:
         if not isinstance(provider, dict) or not isinstance(provider.get("provider"), str) or not provider["provider"]:
             invalid("invalid history provider")
@@ -114,6 +146,7 @@ def validate(history: dict, current: dict, ribbon: dict, run_date: str, section:
             total = stats(value)
             if when == run_date:
                 current_provider_count += total
+                current_providers[name] = value
     if current_count and run_date not in dates:
         invalid("current section has rows but compact history has no requested-day point")
     # Current ribbon and the compact anchor use the same standard-only SQL rate
@@ -124,14 +157,9 @@ def validate(history: dict, current: dict, ribbon: dict, run_date: str, section:
         point = points[dates.index(run_date)]
         if point["count"] != ribbon_count or current_provider_count != ribbon_count:
             invalid("current-day history/provider counts differ from the live ribbon")
-        for key in STATS:
-            actual, expected = point[key], ribbon["range"][key]
-            if (actual is None or expected is None):
-                equal = actual is expected
-            else:
-                equal = math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)
-            if not equal:
-                invalid("current-day history statistics differ from the live ribbon")
+        if not same_stats(point, ribbon["range"]):
+            invalid("current-day history statistics differ from the live ribbon")
+    validate_current_providers(current_providers, ribbon)
     if ribbon_count:
         point = points[dates.index(run_date)]
         if not point["count"] or any(point[key] is None for key in STATS) or not current_provider_count:
