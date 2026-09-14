@@ -249,3 +249,36 @@ CREATE TABLE IF NOT EXISTS document_graph_edges (
     UNIQUE(parent_node_id,extraction_id,reference_json)
 );
 CREATE INDEX IF NOT EXISTS document_graph_edges_parent ON document_graph_edges(parent_node_id);
+
+-- Deferred parser work is independent of successful HTTP capture. A crash keeps
+-- its running lease; recovery appends backoff/exhaustion, never empty terms.
+CREATE TABLE IF NOT EXISTS acquisition_processing (
+    processing_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES acquisition_requests(request_id),
+    check_id TEXT NOT NULL REFERENCES acquisition_checks(check_id),
+    node_id TEXT REFERENCES document_graph_nodes(node_id),
+    created_at TEXT NOT NULL,
+    UNIQUE(request_id,check_id,node_id)
+);
+CREATE TABLE IF NOT EXISTS acquisition_processing_events (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,
+    processing_id TEXT NOT NULL REFERENCES acquisition_processing(processing_id),
+    status TEXT NOT NULL CHECK(status IN ('queued','running','complete','retry_wait','blocked')),
+    observed_at TEXT NOT NULL,
+    lease_id TEXT,
+    lease_expires_at TEXT,
+    retry_after TEXT,
+    receipt_json TEXT NOT NULL,
+    CHECK(status!='running' OR (lease_id IS NOT NULL AND lease_expires_at IS NOT NULL)),
+    CHECK(status!='retry_wait' OR retry_after IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS acquisition_processing_latest ON acquisition_processing_events(processing_id,sequence DESC);
+CREATE INDEX IF NOT EXISTS acquisition_processing_node ON acquisition_processing(node_id);
+CREATE TABLE IF NOT EXISTS acquisition_dispositions (
+    request_id TEXT PRIMARY KEY REFERENCES acquisition_requests(request_id),
+    observed_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS acquisition_requests_document ON acquisition_requests(document_id,created_at);

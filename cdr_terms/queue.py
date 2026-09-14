@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from jsonschema import Draft202012Validator
 
@@ -28,7 +28,8 @@ class TermsQueue:
         self.store = store
 
     def enqueue(self, extraction_id: str, context: Mapping[str, Any], *,
-                priority: int = 1, now: str | None = None) -> str:
+                priority: int = 1, now: str | None = None,
+                completion_guard: Callable[[], None] | None = None) -> str:
         """Context binds product keys, source snapshots, registry and validator."""
         if priority not in (0, 1, 2):
             raise ValueError("Priorities are 0 changed current, 1 current, 2 historical")
@@ -46,12 +47,21 @@ class TermsQueue:
         body_sha = self.store.put_blob(canonical_json(context).encode("utf-8"))
         observed = timestamp(now or utc_now())
         with self.store.db:
+            if completion_guard:
+                # Context blob I/O is outside the transaction. An orphan blob
+                # is retained evidence, not authority to admit an analysis job.
+                self.store.db.execute("BEGIN IMMEDIATE")
+                completion_guard()
             self.store.db.execute("INSERT OR IGNORE INTO analysis_jobs VALUES (?,?,?,?,?,?)",
                                   (identity, extraction_id, context_sha, body_sha, priority, observed))
             previous = self.store.db.execute("SELECT 1 FROM job_events WHERE job_id=?", (identity,)).fetchone()
             if not previous:
                 self._event(identity, "queued", observed, None, None, None)
             self._prioritize(identity, priority, observed)
+            if completion_guard:
+                # Wall-clock lease expiry can occur while SQLite is writing.
+                # Refusal rolls back all job/event/priority writes together.
+                completion_guard()
         return identity
 
     def enqueue_historical(self, extraction_id: str, observation_ids: list[str], *,

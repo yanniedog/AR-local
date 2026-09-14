@@ -9,7 +9,7 @@ import ssl
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit
 
 from .discovery import document_url
@@ -25,6 +25,8 @@ class FetchPolicy:
     max_redirects: int = 5
     allowed_hosts: frozenset[str] = field(default_factory=frozenset)
     allow_http: bool = False
+    request_guard: Callable[[], str | None] | None = None
+    deadline_monotonic: float | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_bytes <= 64 * 1024 * 1024:
@@ -143,9 +145,18 @@ def fetch_document(url: str, *, policy: FetchPolicy,
     if not current:
         raise FetchFailure("invalid_document_url")
     deadline = time.monotonic() + policy.timeout_seconds
+    if policy.deadline_monotonic is not None:
+        deadline = min(deadline, policy.deadline_monotonic)
     redirects: list[str] = []
     validator_url = document_url(conditional_url) if conditional_url else None
     for _ in range(policy.max_redirects + 1):
+        if policy.request_guard:
+            try:
+                reason = policy.request_guard()
+            except Exception:
+                reason = "operational_guard_unavailable"
+            if reason:
+                raise FetchFailure("operational_guard:" + reason)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise FetchFailure("request_deadline")
