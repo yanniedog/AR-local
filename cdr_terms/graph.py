@@ -10,7 +10,7 @@ import ipaddress
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import PurePosixPath
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
 from .discovery import document_url
@@ -139,13 +139,13 @@ class DocumentGraph:
             cursor = self.store.db.execute("SELECT * FROM document_graph_nodes WHERE node_id=?", (cursor["parent_node_id"],)).fetchone() if cursor["parent_node_id"] else None
         return None
 
-    def pending(self) -> dict[str, Any] | None:
+    def pending(self, node_id: str | None = None) -> dict[str, Any] | None:
         row = self.store.db.execute(
             "SELECT n.* FROM document_graph_nodes n WHERE NOT EXISTS (SELECT 1 FROM document_graph_expansions x WHERE x.node_id=n.node_id) "
             "AND EXISTS (SELECT 1 FROM acquisition_events e JOIN acquisition_checks c USING(check_id) "
             "WHERE e.request_id=n.request_id AND e.status IN ('complete','retry_wait','blocked') AND c.status IN ('fetched','unchanged') "
             "AND (n.depth>0 OR e.check_id=(SELECT check_id FROM document_graph_roots WHERE root_id=n.root_id))) "
-            "ORDER BY n.depth,n.root_id,n.node_id LIMIT 1").fetchone()
+            "AND (? IS NULL OR n.node_id=?) ORDER BY n.depth,n.root_id,n.node_id LIMIT 1", (node_id, node_id)).fetchone()
         return dict(row) if row else None
 
     def request_hosts(self, request_id: str) -> frozenset[str]:
@@ -176,24 +176,30 @@ class DocumentGraph:
         return {"schema_version": 1, "root": dict(root), "scopes": scopes, "nodes": nodes, "edges": edges,
                 "scope": "current_capture_candidate_only", "effective_dates": "unknown", "legal_completeness": "unknown"}
 
-    def advance_one(self) -> dict[str, Any] | None:
+    def advance_one(self, node_id: str | None = None, *, completion_guard: Callable[[], None] | None = None,
+                    post_write_guard: Callable[[dict], None] | None = None) -> dict[str, Any] | None:
         """One bounded retained node per collector cycle, entirely offline.
 
         Expansion and new requests commit together. An interrupted transaction
         restarts from the same node; extraction blobs are independently idempotent.
         """
-        node = self.pending()
+        node = self.pending(node_id)
         if node is None:
+            if node_id is not None:
+                raise ValueError("Selected graph node is not accepted and pending")
             return None
         check = self._check(node)
         try:
             extraction = extract_version(self.store, check["document_version_id"], check_id=check["check_id"])
         except (OSError, ValueError):
-            return self._failed_expansion(node, check, "retained_evidence_unreadable_or_invalid")
+            return self._failed_expansion(node, check, "retained_evidence_unreadable_or_invalid",
+                                          completion_guard, post_write_guard)
         row = self.store.db.execute("SELECT * FROM extractions WHERE extraction_id=?", (extraction,)).fetchone()
         coverage = json.loads(row["coverage_json"])
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
+            if completion_guard:
+                completion_guard()
             if self.store.db.execute("SELECT 1 FROM document_graph_expansions WHERE node_id=?", (node["node_id"],)).fetchone():
                 return None
             policy = json.loads(self.store.db.execute("SELECT policy_json FROM document_graph_roots WHERE root_id=?", (node["root_id"],)).fetchone()[0])
@@ -213,16 +219,29 @@ class DocumentGraph:
                        "omitted_reason": "extractor_link_limit" if coverage.get("candidate_links_omitted") else None,
                        "extraction_status": row["status"], "extraction_reason": coverage.get("reason"),
                        "legal_completeness": "unknown"}
-            self.store.db.execute("INSERT INTO document_graph_expansions VALUES (?,?,?,?,?,?)",
-                                  (node["node_id"], check["check_id"], extraction, utc_now(), receipt["reason"], canonical_json(receipt)))
+            expansion = {"node_id": node["node_id"], "check_id": check["check_id"], "extraction_id": extraction,
+                         "observed_at": utc_now(), "reason": receipt["reason"], "receipt_json": canonical_json(receipt)}
+            self.store.db.execute("INSERT INTO document_graph_expansions VALUES (?,?,?,?,?,?)", tuple(expansion.values()))
+            if post_write_guard:
+                # SQL writes can outlast the lease. Validate our exact new
+                # expansion before committing it together with its frontier.
+                post_write_guard(expansion)
         return {"node_id": node["node_id"], **receipt}
 
-    def _failed_expansion(self, node: Mapping[str, Any], check: Mapping[str, Any], reason: str) -> dict[str, Any]:
+    def _failed_expansion(self, node: Mapping[str, Any], check: Mapping[str, Any], reason: str,
+                          completion_guard: Callable[[], None] | None = None,
+                          post_write_guard: Callable[[dict], None] | None = None) -> dict[str, Any]:
         receipt = {"node_id": node["node_id"], "reason": reason, "extraction_status": "failed",
                    "links_observed": None, "legal_completeness": "unknown"}
         with self.store.db:
-            self.store.db.execute("INSERT OR IGNORE INTO document_graph_expansions VALUES (?,?,NULL,?,?,?)",
-                                  (node["node_id"], check["check_id"], utc_now(), reason, canonical_json(receipt)))
+            self.store.db.execute("BEGIN IMMEDIATE")
+            if completion_guard:
+                completion_guard()
+            expansion = {"node_id": node["node_id"], "check_id": check["check_id"], "extraction_id": None,
+                         "observed_at": utc_now(), "reason": reason, "receipt_json": canonical_json(receipt)}
+            self.store.db.execute("INSERT OR IGNORE INTO document_graph_expansions VALUES (?,?,?,?,?,?)", tuple(expansion.values()))
+            if post_write_guard:
+                post_write_guard(expansion)
         return receipt
 
     @staticmethod

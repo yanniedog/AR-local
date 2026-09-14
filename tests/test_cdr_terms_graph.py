@@ -40,7 +40,7 @@ def retained(tmp_path):
         yield store, observation, queue
 
 
-def start(retained, markup, *, policy=None, final_url=URL):
+def start(retained, markup, *, policy=None, final_url=URL, media_type='text/html'):
     store, _, queue = retained
     target = store.db.execute("SELECT r.* FROM acquisition_requests r JOIN documents d USING(document_id) WHERE d.source_url=?", (URL,)).fetchone()
     # Complete other real CDR references with the actual retained JSON bytes.
@@ -49,10 +49,10 @@ def start(retained, markup, *, policy=None, final_url=URL):
         request = queue.claim()
         assert request
         chosen = request["request_id"] == target["request_id"]
-        body = markup.encode() if chosen else FIXTURE.read_bytes()
+        body = (markup if isinstance(markup, bytes) else markup.encode()) if chosen else FIXTURE.read_bytes()
         check_id = digest([request["request_id"], request["lease_id"]])
         store.record_check(document_id=request["document_id"], check_id=check_id, checked_at=utc_now(), status="fetched",
-                           body=body, media_type="text/html" if chosen else "application/json", metadata={"final_url": final_url if chosen else URL})
+                           body=body, media_type=media_type if chosen else "application/json", metadata={"final_url": final_url if chosen else URL})
         check = dict(store.db.execute("SELECT * FROM acquisition_checks WHERE check_id=?", (check_id,)).fetchone())
         if chosen:
             root = DocumentGraph(store).seed(request, check, policy=policy)
@@ -75,6 +75,41 @@ def test_real_raw_paths_and_product_observation_scope_remain_distinct(retained):
     assert all(item["parent_version_id"] == check["document_version_id"] for item in inventory["edges"])
     assert inventory["legal_completeness"] == "unknown" and inventory["effective_dates"] == "unknown"
     assert store.db.execute("SELECT COUNT(*) FROM term_revisions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('failure', ['invalid', 'encrypted', 'input_limit', 'unavailable'])
+def test_unscanned_pdf_failure_cannot_be_accounted_as_zero_links(retained, monkeypatch, failure):
+    import builtins
+    from cdr_terms import pdf_extraction as pdf
+    from tests.test_cdr_terms_pdf import protocol_pdf
+
+    body = b'%PDF-broken' if failure == 'invalid' else protocol_pdf(['Protocol.'], encrypted=failure == 'encrypted')
+    store, _, _ = retained
+    root, _, _ = start(retained, body, media_type='application/pdf')
+    if failure == 'input_limit':
+        monkeypatch.setattr(pdf, 'MAX_PDF_BYTES', len(body) - 1)
+    if failure == 'unavailable':
+        original_import = builtins.__import__
+        def unavailable(name, *args, **kwargs):
+            if name == 'pypdf':
+                raise ImportError('isolated unavailable parser')
+            return original_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, '__import__', unavailable)
+    graph = DocumentGraph(store)
+    receipt = graph.advance_one()
+    assert receipt['extraction_status'] == 'failed'
+    assert receipt['reason'] == 'incorporated_reference_extraction_unsupported'
+    assert receipt['links_observed'] is None and receipt['links_omitted'] is None
+    assert receipt['legal_completeness'] == 'unknown'
+    inventory = graph.inventory(root)
+    assert len(inventory['nodes']) == 1 and inventory['edges'] == []
+    expansion = inventory['nodes'][0]['expansion']
+    stored = json.loads(expansion['receipt_json'])
+    assert stored['links_observed'] is None and stored['reason'] == receipt['reason']
+    row = store.db.execute('SELECT coverage_json FROM extractions WHERE extraction_id=?', (expansion['extraction_id'],)).fetchone()
+    coverage = json.loads(row[0])
+    assert 'candidate_links' not in coverage
+    assert coverage['candidate_links_total'] is None and coverage['candidate_links_omitted'] is None
 
 
 def test_restart_idempotency_link_occurrences_cycles_and_same_content_distinct_urls(retained, monkeypatch):
@@ -265,8 +300,9 @@ def test_graph_only_worker_admission_uses_existing_bounded_supervisor_once(retai
         assert value["network_called"] is False and value["codex_called"] is False
         return receipt()
     monkeypatch.setattr(worker, "supervise", supervisor)
+    monkeypatch.setattr(pi_terms_acquire, "runtime_guard", lambda *_: lambda: None)
     result = worker.collect_one(store, Path(__file__).resolve().parents[1], store.root)
-    assert result["result"] == "INCOMPLETE" and result["graph_progress"]["legal_completeness"] == "unknown"
+    assert result["result"] == "INCOMPLETE" and result["processing"]["outcome"]["graph"]["legal_completeness"] == "unknown"
     assert worker.collect_one(store, Path(__file__).resolve().parents[1], store.root)["result"] == "NO_WORK"
     assert len(calls) == 1
 
