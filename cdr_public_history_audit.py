@@ -42,6 +42,17 @@ def decode(body: bytes) -> dict:
     return decode_json(body, compressed=True, max_plain=MAX_PLAIN)
 
 
+def read_cached(path: Path, maximum: int) -> bytes:
+    """Apply transport bounds to disk snapshots, including growth after stat."""
+    if path.stat().st_size > maximum:
+        raise ValueError('cached asset exceeds byte limit')
+    with path.open('rb') as handle:
+        body = handle.read(maximum + 1)
+    if len(body) > maximum:
+        raise ValueError('cached asset exceeds byte limit')
+    return body
+
+
 def audit_date(run_date: str, head: dict | None, root: Path,
                cached_cores: Path | None = None, include_details: bool = False) -> tuple[dict, list]:
     result = {'run_date': run_date, 'status': 'FAIL', 'checked_at': datetime.now(timezone.utc).isoformat()}
@@ -49,7 +60,7 @@ def audit_date(run_date: str, head: dict | None, root: Path,
     directory.mkdir()
     try:
         url = head['manifest_url'] if head else ROOT + 'app-payload-' + run_date + '/manifest.json'
-        manifest_bytes = ((cached_cores / run_date / 'manifest.json').read_bytes()
+        manifest_bytes = (read_cached(cached_cores / run_date / 'manifest.json', 1024**2)
                           if cached_cores else fetch(url, 1024**2))
         (directory / 'manifest.json').write_bytes(manifest_bytes)
         if head and sha(manifest_bytes) != head['manifest_sha256']:
@@ -61,7 +72,7 @@ def audit_date(run_date: str, head: dict | None, root: Path,
         if head and manifest.get('payload_revision', {}).get('bundle_sha256') != head['bundle_sha256']:
             raise ValueError('selected bundle mismatch')
         asset = manifest['files']['core']
-        body = ((cached_cores / run_date / 'core.json.gz').read_bytes()
+        body = (read_cached(cached_cores / run_date / 'core.json.gz', MAX_COMPRESSED)
                 if cached_cores else fetch(asset['url'], MAX_COMPRESSED))
         (directory / 'core.json.gz').write_bytes(body)
         if len(body) != asset['bytes'] or sha(body) != asset['sha256']:
@@ -86,7 +97,7 @@ def audit_date(run_date: str, head: dict | None, root: Path,
         if include_details:
             detail_asset = manifest['files']['details']
             cached_detail = cached_cores / run_date / 'details.json.gz' if cached_cores else None
-            detail_bytes = (cached_detail.read_bytes() if cached_detail and cached_detail.is_file()
+            detail_bytes = (read_cached(cached_detail, MAX_COMPRESSED) if cached_detail and cached_detail.is_file()
                             else fetch(detail_asset['url'], MAX_COMPRESSED))
             (directory / 'details.json.gz').write_bytes(detail_bytes)
             if len(detail_bytes) != detail_asset['bytes'] or sha(detail_bytes) != detail_asset['sha256']:
@@ -151,7 +162,7 @@ def main():
         cached = args.cached_cores.resolve()
         if cached == output or cached in output.parents or output in cached.parents:
             raise ValueError('audit output must be separate from cached evidence')
-        if (cached / 'dates-index.json').read_bytes() != raw:
+        if read_cached(cached / 'dates-index.json', 1024**2) != raw:
             raise ValueError('cached index differs from selected index')
     index = json.loads(raw)
     dates = ordered_dates(index)

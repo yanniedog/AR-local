@@ -2,6 +2,7 @@
 import gzip
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -83,3 +84,41 @@ def test_sealed_history_uses_the_verified_snapshot(tmp_path):
     report.attach_history(instance, source, output)
     assert instance['historical_banks'][0]['rate_row_observations'] == 0
     assert (output/'historical-products.csv').read_bytes() == (source/'bank-product-dates.csv').read_bytes()
+
+
+def test_cached_asset_size_is_refused_before_open(tmp_path, monkeypatch):
+    path = tmp_path / 'oversized'
+    path.write_bytes(b'x' * 65)
+    monkeypatch.setattr(Path, 'open', lambda *_a, **_k: pytest.fail('oversized cache was opened'))
+    with pytest.raises(ValueError, match='cached asset exceeds byte limit'):
+        history.read_cached(path, 64)
+
+
+def test_cached_asset_growth_is_still_a_bounded_read(tmp_path, monkeypatch):
+    path = tmp_path / 'changed-after-stat'
+    path.write_bytes(b'x' * 128)
+    original_open, reads = Path.open, []
+
+    class TrackedReader:
+        def __enter__(self):
+            self.handle = original_open(path, 'rb')
+            return self
+
+        def read(self, size=-1):
+            reads.append(size)
+            return self.handle.read(size)
+
+        def __exit__(self, *_):
+            self.handle.close()
+
+    monkeypatch.setattr(Path, 'stat', lambda *_a, **_k: SimpleNamespace(st_size=1))
+    monkeypatch.setattr(Path, 'open', lambda *_a, **_k: TrackedReader())
+    with pytest.raises(ValueError, match='cached asset exceeds byte limit'):
+        history.read_cached(path, 64)
+    assert reads == [65]
+
+
+def test_cached_asset_exact_limit_is_preserved(tmp_path):
+    path = tmp_path / 'bounded'
+    path.write_bytes(b'x' * 64)
+    assert history.read_cached(path, 64) == b'x' * 64
