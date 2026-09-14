@@ -111,12 +111,14 @@ def field_proofs(before, after, fee, index):
     return proofs
 
 
-def transform(source, core, original, *, deadline=None):
-    products, flat, product_rows, rate_rows, withheld = account(source, core, original)
+def transform(source, core, original, *, deadline=None, checkpoint=None):
+    products, flat, product_rows, rate_rows, withheld = account(source, core, original, checkpoint=checkpoint)
     candidate = copy.deepcopy(original)
     fees, changes, bindings, seen_flat = [], [], [], set()
     banks = defaultdict(Counter)
     for entry in product_rows:
+        if checkpoint is not None:
+            checkpoint()
         if deadline is not None and time.monotonic() >= deadline:
             raise ValueError('candidate_deadline_exceeded')
         key = entry['product_key']
@@ -128,13 +130,15 @@ def transform(source, core, original, *, deadline=None):
             index, product, raw = products[key]
             binding = {'product_key': key, **product_evidence(index, product, raw)}
             bindings.append(binding)
-            reason, flat_indices = fee_array_binding(key, product, raw, detail, flat)
+            reason, flat_indices = fee_array_binding(key, product, raw, detail, flat, checkpoint=checkpoint)
             reasons = reasons or ([reason] if reason else [])
             if not reasons:
                 # Value-only legacy projection differences are scoped conflicts.
                 # A changed label/name/info leaves array order unproved, so no
                 # fee in that product can donate fields by position.
                 for old, fee in zip(detail['fees'], raw['fees']):
+                    if checkpoint is not None:
+                        checkpoint()
                     projected = _fee_items({'fees': [fee]})[0]
                     if any((field in old) != (field in projected) or not exact(old.get(field), projected.get(field))
                            for field in ('label', 'name', 'info')):
@@ -160,6 +164,8 @@ def transform(source, core, original, *, deadline=None):
             fees.append({'product_key': key, 'status': 'EMPTY_ARRAY', 'fee_index': None,
                          'source_fees_present': 'fees' in raw, 'reasons': reasons})
         for index, old in enumerate(old_fees):
+            if checkpoint is not None:
+                checkpoint()
             row = {'product_key': key, 'fee_index': index, 'public_fee_canonical_sha256': canonical_sha(old)}
             if reasons:
                 row.update(status='WITHHELD', reasons=reasons)
@@ -185,15 +191,17 @@ def transform(source, core, original, *, deadline=None):
             fees.append({'status': 'SOURCE_ONLY_OR_WITHHELD', 'source_flattened_fee_index': index,
                          'product_key': row['product_key'], 'source_item_index': row['item_index'],
                          'reason': 'not_donated_to_candidate'})
-    verify_changes(original, candidate, changes)
+    verify_changes(original, candidate, changes, checkpoint=checkpoint)
     return candidate, {'products': product_rows, 'rates': rate_rows, 'fees': fees,
                        'changes': changes, 'bindings': bindings, 'banks': dict(banks)}
 
 
-def verify_changes(original, candidate, changes):
+def verify_changes(original, candidate, changes, *, checkpoint=None):
     restored = copy.deepcopy(candidate)
     seen = set()
     for change in changes:
+        if checkpoint is not None:
+            checkpoint()
         key, index = change['product_key'], change['fee_index']
         if (key, index) in seen:
             raise ValueError('duplicate_fee_change')
