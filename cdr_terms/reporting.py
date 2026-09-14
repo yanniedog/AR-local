@@ -129,6 +129,8 @@ def build_product_asset(store: EvidenceStore, product_key: str) -> dict[str, Any
 def validate_public_asset(payload: Mapping[str, Any]) -> None:
     if "historical_scope" in payload or "historical_target" in payload:
         raise ValueError("Historical-only staging cannot enter current product publication")
+    if 'incorporated_scope' in payload or 'incorporated_target' in payload:
+        raise ValueError('Incorporated candidate staging cannot enter current product publication')
     schema = json.loads(PUBLIC_SCHEMA.read_text(encoding="utf-8"))
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(payload)
     exact_value(payload)

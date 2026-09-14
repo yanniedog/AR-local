@@ -155,7 +155,7 @@ class ProcessingQueue:
     def _receipt_job(self, value: dict, check) -> None:
         job = self.store.db.execute('SELECT j.*,x.document_version_id FROM analysis_jobs j JOIN extractions x USING(extraction_id) '
                                     'WHERE job_id=?', (value['outcome']['analysis_job_id'],)).fetchone()
-        if (not job or value['node_id'] is not None or job['priority'] == 2
+        if (not job or job['priority'] == 2
                 or job['document_version_id'] != check['document_version_id']):
             raise ValueError('Processing job does not bind the captured document extraction')
         context = json.loads(self.store.read_blob(job['context_blob_sha256']))
@@ -164,6 +164,14 @@ class ProcessingQueue:
                 or 'historical_target' in context or not isinstance(sources, dict) or not sources
                 or context.get('product_keys') != sorted(sources)):
             raise ValueError('Processing job does not bind its exact source context')
+        if value['node_id'] is not None:
+            from .incorporated import validate_target
+            target = validate_target(self.store, job['extraction_id'], context, require_current=False)
+            if target['node_id'] != value['node_id'] or 'graph' not in value['outcome']:
+                raise ValueError('Incorporated job does not bind this exact graph completion')
+            return
+        if 'incorporated_target' in context:
+            raise ValueError('Direct processing cannot claim an incorporated target')
         bindings = {(row[0], row[1]) for row in self.store.db.execute(
             'SELECT o.product_key,o.source_sha256 FROM observations o JOIN acquisition_bindings b USING(observation_id) '
             'JOIN ingest_captures c USING(ingest_id) WHERE b.request_id=?', (value['request_id'],))}
@@ -354,7 +362,7 @@ class ProcessingQueue:
             if task["node_id"]:
                 receipt["graph"] = DocumentGraph(self.store).advance_one(task["node_id"],
                     completion_guard=lambda: self.assert_lease(task),
-                    post_write_guard=lambda expansion: self.assert_expansion(task, expansion))
+                    post_write_guard=lambda expansion: self._complete_expansion(task, expansion, request, check, registry_context, receipt))
             else:
                 if observations:
                     DocumentGraph(self.store).seed(request, check)
@@ -366,6 +374,19 @@ class ProcessingQueue:
         except (OSError, ValueError, RuntimeError, AssertionError) as exc:
             error = type(exc).__name__ + ":" + str(exc)[:200]
         return self.finish(task, receipt, error=error)
+
+    def _complete_expansion(self, task, expansion, request, check, registry_context, receipt):
+        from .incorporated import enqueue_expansion
+        guard = lambda: self.assert_expansion(task, expansion)
+        guard()
+        node = self.store.db.execute('SELECT depth FROM document_graph_nodes WHERE node_id=?', (task['node_id'],)).fetchone()
+        if node['depth'] == 0:
+            return  # Preserve the original root-expansion guard/caller contract.
+        job = enqueue_expansion(self.store, expansion, registry_context,
+                                priority=self.analysis_priority(request, check), guard=guard)
+        guard()
+        if job:
+            receipt['analysis_job_id'] = job
 
     def analysis_priority(self, request: dict, check: dict) -> int:
         # Preserve changed-current priority using earlier accepted checks, not

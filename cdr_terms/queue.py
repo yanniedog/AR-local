@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 
 from .identity import canonical_json, digest, exact_value, timestamp, utc_now
 from .historical import build_historical_target, historical_scope, validate_historical_target
+from .incorporated import validate_target, output_scope
 from .observation_checks import context_document_state
 from .store import EvidenceStore, validate_clause_locator
 
@@ -42,6 +43,10 @@ class TermsQueue:
             if priority != 2:
                 raise ValueError("Historical-only targets cannot become current jobs")
             validate_historical_target(self.store, extraction_id, context)
+        if "incorporated_target" in context:
+            if priority == 2:
+                raise ValueError("Incorporated candidates cannot become historical jobs")
+            validate_target(self.store, extraction_id, context)
         context_sha = digest(context)
         identity = digest([extraction_id, context_sha])
         body_sha = self.store.put_blob(canonical_json(context).encode("utf-8"))
@@ -52,16 +57,33 @@ class TermsQueue:
                 # is retained evidence, not authority to admit an analysis job.
                 self.store.db.execute("BEGIN IMMEDIATE")
                 completion_guard()
-            self.store.db.execute("INSERT OR IGNORE INTO analysis_jobs VALUES (?,?,?,?,?,?)",
-                                  (identity, extraction_id, context_sha, body_sha, priority, observed))
-            previous = self.store.db.execute("SELECT 1 FROM job_events WHERE job_id=?", (identity,)).fetchone()
-            if not previous:
-                self._event(identity, "queued", observed, None, None, None)
-            self._prioritize(identity, priority, observed)
+            self._insert_job(identity, extraction_id, context_sha, body_sha, priority, observed)
             if completion_guard:
                 # Wall-clock lease expiry can occur while SQLite is writing.
                 # Refusal rolls back all job/event/priority writes together.
                 completion_guard()
+        return identity
+
+    def _insert_job(self, identity, extraction_id, context_sha, body_sha, priority, observed):
+        self.store.db.execute("INSERT OR IGNORE INTO analysis_jobs VALUES (?,?,?,?,?,?)",
+                              (identity, extraction_id, context_sha, body_sha, priority, observed))
+        if not self.store.db.execute("SELECT 1 FROM job_events WHERE job_id=?", (identity,)).fetchone():
+            self._event(identity, "queued", observed, None, None, None)
+        self._prioritize(identity, priority, observed)
+
+    def enqueue_in_transaction(self, extraction_id, context, *, priority, completion_guard):
+        """Join an exact guarded graph transaction without committing its owner."""
+        if not self.store.db.in_transaction or not callable(completion_guard) or priority not in (0, 1):
+            raise ValueError("Incorporated enqueue requires a live guarded current transaction")
+        completion_guard()
+        validate_target(self.store, extraction_id, context)
+        exact_value(context)
+        context_sha = digest(context)
+        identity = digest([extraction_id, context_sha])
+        body_sha = self.store.put_blob(canonical_json(context).encode('utf-8'))
+        completion_guard()
+        self._insert_job(identity, extraction_id, context_sha, body_sha, priority, timestamp(utc_now()))
+        completion_guard()
         return identity
 
     def enqueue_historical(self, extraction_id: str, observation_ids: list[str], *,
@@ -194,6 +216,10 @@ class TermsQueue:
             raise ValueError("Analysis context integrity mismatch")
         if "historical_target" in context:
             return "current"  # Pinned immutable evidence, with historical-only output.
+        if "incorporated_target" in context:
+            if not check_blobs:
+                validate_target(self.store, context['incorporated_target']['extraction_id'], context, check_blobs=False)
+            return "current"  # Current ancestry, but legal applicability remains unreviewed.
         return context_document_state(self.store, row["document_id"], row["document_version_id"], context)
 
     def validate_input(self, job_id: str) -> dict[str, Any]:
@@ -211,6 +237,10 @@ class TermsQueue:
             if job["priority"] != 2:
                 raise ValueError("Historical-only target was assigned current priority")
             validate_historical_target(self.store, job["extraction_id"], context)
+        if "incorporated_target" in context:
+            if job['priority'] == 2:
+                raise ValueError('Incorporated candidate was assigned historical priority')
+            validate_target(self.store, job['extraction_id'], context)
         return context
 
     def validate_staging(self, job_id: str, output: Mapping[str, Any]) -> None:
@@ -228,6 +258,11 @@ class TermsQueue:
                 raise ValueError("Historical output must preserve its historical-only target scope")
         elif "historical_scope" in output:
             raise ValueError("Current output cannot claim a historical target scope")
+        if 'incorporated_target' in context:
+            if digest(output.get('incorporated_scope')) != digest(output_scope(context['incorporated_target'])):
+                raise ValueError('Incorporated output must preserve candidate-only unreviewed applicability')
+        elif 'incorporated_scope' in output:
+            raise ValueError('Direct output cannot claim incorporated candidate scope')
         coverage = json.loads(job['coverage_json']) if any(clause['page'] is not None for clause in output['clauses']) else {}
         for clause in output["clauses"]:
             validate_clause_locator(text, coverage, start=clause['start'], end=clause['end'],
