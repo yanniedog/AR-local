@@ -42,7 +42,7 @@ def test_real_excerpt_preserves_every_old_field_and_conflict(retained):
         key, index = change['product_key'], change['fee_index']
         old, new = retained['details']['products'][key]['fees'][index], candidate['products'][key]['fees'][index]
         for field, value in old.items():
-            if field == 'value' and change['rule_id'] == 'variable_zero_placeholder_v1':
+            if field == 'value' and change['rule_id'] == 'variable_zero_placeholder_v2':
                 assert field not in new
             else:
                 assert field in new and exact(value, new[field])
@@ -74,9 +74,113 @@ def test_real_variable_zero_discriminator_includes_method(retained, label):
     fee = decode(product['details_json'].encode())['fees'][fee_index]
     old = retained['details']['products'][product['product_key']]['fees'][fee_index]
     new, rule = builder.enrich(old, fee)
-    assert rule['rule_id'] == 'variable_zero_placeholder_v1'
+    assert rule['rule_id'] == 'variable_zero_placeholder_v2'
     assert rule['removed_fields'] == ['value'] and 'value' not in new
     assert exact(new['amount'], fee['amount']) and new['amountStatus'] == 'variable'
+
+
+@pytest.mark.parametrize('field,value', [('feeMethodUType', ' VARIABLE '), ('feeMethodUType', 'VaRiAbLe'),
+    ('feeMethodUType', 'variable '), ('feeType', 'variable'), ('feeType', ' VARIABLE ')])
+def test_normalized_variable_zero_uses_guarded_transform_and_keeps_source_spelling(retained, field, value):
+    name = 'zero_TRANSACTION' if field == 'feeMethodUType' else 'zero_VARIABLE'
+    pi, index = retained['examples_original_indices'][name]
+    product = retained['source']['products'][retained['source_product_indices'].index(pi)]
+    key = product['product_key']
+    raw = decode(product['details_json'].encode())
+    fee = raw['fees'][index]
+    old = retained['details']['products'][key]['fees'][index]
+    fee[field] = value
+    if field == 'feeType':
+        old['label'] = value  # Fault fixture's legacy label keeps the same source spelling.
+    product['details_json'] = encode(raw).decode()
+    flat = [row for row in retained['source']['fees'] if row['product_key'] == key and row['item_index'] == index + 1]
+    assert len(flat) == 1
+    flat[0]['details_json'], flat[0]['item_type'] = encode(fee).decode(), fee['feeType']
+    before = copy.deepcopy(retained)
+    candidate, audit = builder.transform(retained['source'], retained['core'], retained['details'])
+    assert exact(before, retained)
+    change = next((row for row in audit['changes'] if row['product_key'] == key and row['fee_index'] == index), None)
+    assert change is not None
+    assert change['rule_id'] == 'variable_zero_placeholder_v2'
+    assert change['removed_fields'] == ['value']
+    new = candidate['products'][key]['fees'][index]
+    assert 'value' not in new and new['amountStatus'] == 'variable'
+    assert new['label'] == old['label'] and new['amount'] == fee['amount']
+    if field == 'feeMethodUType':
+        assert new[field] == value
+    assert change['field_sources']['amountStatus']['inputs'][field] == {'present': True, 'value': value}
+    restored = copy.deepcopy(candidate)
+    for row in audit['changes']:
+        restored['products'][row['product_key']]['fees'][row['fee_index']] = row['before']
+    assert exact(restored, retained['details'])
+
+
+@pytest.mark.parametrize('field,value', [('provider', ['invalid']), ('provider', {'invalid': True}), ('product_key', 7)])
+def test_malformed_text_identity_is_refused_before_sorting_or_bank_tabulation(retained, field, value):
+    retained['source']['products'][0][field] = value
+    before = copy.deepcopy(retained)
+    with pytest.raises(ValueError, match='source_identity_type_invalid'):
+        builder.transform(retained['source'], retained['core'], retained['details'])
+    assert exact(before, retained)
+
+
+@pytest.mark.parametrize('array,field,value', [('rates', 'provider', 7), ('fees', 'product_key', 7),
+    ('rates', 'rate_family', 7), ('products', 'provider', False), ('products', 'product_name', None)])
+def test_text_identity_types_are_distinct_from_integer_indices(retained, array, field, value):
+    retained['source'][array][0][field] = value
+    with pytest.raises(ValueError, match='source_identity_type_invalid'):
+        builder.transform(retained['source'], retained['core'], retained['details'])
+
+
+@pytest.mark.parametrize('array,field', [('rates', 'rate_index'), ('fees', 'item_index')])
+@pytest.mark.parametrize('value', [False, '1', Decimal('1'), None])
+def test_row_indices_require_actual_integers_without_coercion(retained, array, field, value):
+    retained['source'][array][0][field] = value
+    with pytest.raises(ValueError, match='source_identity_type_invalid'):
+        builder.transform(retained['source'], retained['core'], retained['details'])
+
+
+@pytest.mark.parametrize('guard', ['second_conflict', 'additional_value', 'source_nonzero', 'lower_bound',
+                                  'old_bool', 'source_bool', 'source_missing'])
+def test_normalized_variable_rule_keeps_all_other_zero_guards(retained, guard):
+    pi, index = retained['examples_original_indices']['zero_TRANSACTION']
+    product = retained['source']['products'][retained['source_product_indices'].index(pi)]
+    fee = decode(product['details_json'].encode())['fees'][index]
+    old = retained['details']['products'][product['product_key']]['fees'][index]
+    fee['feeMethodUType'] = ' VARIABLE '
+    if guard == 'second_conflict':
+        old['unreviewedExistingField'] = None
+    elif guard == 'additional_value':
+        fee['additionalValue'] = '0'
+    elif guard == 'source_nonzero':
+        fee['amount'] = '1'
+    elif guard == 'lower_bound':
+        fee['variable'] = {'conditions': [{'minimumAmount': '0.0000000000000000001'}]}
+    elif guard == 'old_bool':
+        old['value'] = False
+    elif guard == 'source_bool':
+        fee['amount'] = False
+    else:
+        fee.pop('amount')
+    before = copy.deepcopy(old)
+    new, disposition = builder.enrich(old, fee)
+    assert disposition['status'] == 'WITHHELD' and exact(new, before)
+
+
+def test_versioned_zero_rule_preserves_legacy_reconstruction_and_rejects_unknown(retained):
+    candidate, audit = builder.transform(retained['source'], retained['core'], retained['details'])
+    zero_changes = [row for row in audit['changes'] if row['removed_fields']]
+    assert zero_changes and {row['rule_id'] for row in zero_changes} == {'variable_zero_placeholder_v2'}
+    legacy = copy.deepcopy(audit['changes'])
+    for row in legacy:
+        if row['removed_fields']:
+            row['rule_id'] = 'variable_zero_placeholder_v1'
+    # Structural restoration is backward compatible; it does not reclassify
+    # original evidence or claim that a v1 receipt used v2 source semantics.
+    builder.verify_changes(retained['details'], candidate, legacy)
+    next(row for row in legacy if row['removed_fields'])['rule_id'] = 'variable_zero_placeholder_v999'
+    with pytest.raises(ValueError, match='unapproved_fee_field_deletion'):
+        builder.verify_changes(retained['details'], candidate, legacy)
 
 
 @pytest.mark.parametrize('value', [False, True, '0.00000000000000000000000001', '1', 'NaN', 'Infinity', None])
