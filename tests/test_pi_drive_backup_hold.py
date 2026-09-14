@@ -72,3 +72,18 @@ def test_unreadable_hold_check_fails_closed(tmp_path, monkeypatch):
 def test_service_has_persistent_hold_condition():
     service = Path(__file__).resolve().parents[1] / 'deploy/pi/ar-local-drive-backup.service'
     assert 'ConditionPathExists=!/etc/ar-local/drive-write-hold.json' in service.read_text()
+@pytest.mark.parametrize('command', ['run', 'init', 'restore'])
+def test_real_cli_reports_hold_as_blocked(tmp_path, command):
+    import json
+    import subprocess
+    import sys
+
+    spool = tmp_path / 'spool'
+    spool.mkdir()
+    (spool / 'write-hold.json').write_bytes(b'')
+    result = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / 'pi_drive_backup.py'),
+                             command, '--spool', str(spool), '--data-root', str(tmp_path / 'data')],
+                            capture_output=True, text=True, timeout=30, check=False)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert json.loads(result.stdout)['result'] == 'BLOCKED'
+    assert not (spool / 'resource-runs').exists()

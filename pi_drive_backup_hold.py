@@ -12,6 +12,10 @@ SYSTEM_HOLD = Path('/etc/ar-local/drive-write-hold.json')
 SPOOL_HOLD_NAME = 'write-hold.json'
 
 
+class Blocked(RuntimeError):
+    """Shared refusal type, including when the backup CLI runs as __main__."""
+
+
 def hold_reason(spool: Path) -> str | None:
     """Existence alone blocks, including malformed and dangling-link markers.
 
@@ -31,8 +35,6 @@ def hold_reason(spool: Path) -> str | None:
 
 
 def require_writes_allowed(spool: Path) -> None:
-    from pi_drive_backup import Blocked
-
     reason = hold_reason(spool)
     if reason:
         raise Blocked(reason)

@@ -31,14 +31,10 @@ from pi_drive_backup_source import (SCHEMA, canonical_json_bytes, digest, freeze
     restore_relative, validate_layout, verify_direct_sources, verify_restore)
 from pi_drive_backup_manifest import SelectedRows, close_manifest, json_chunks, load_manifest
 from pi_drive_backup_diagnostics import StderrCapture
-from pi_drive_backup_hold import hold_reason, require_writes_allowed
+from pi_drive_backup_hold import Blocked, hold_reason, require_writes_allowed
 
 TZ = ZoneInfo("Australia/Hobart")
 TAG = "ar-local-drive-v1"
-
-
-class Blocked(RuntimeError):
-    pass
 
 
 def now() -> datetime:
