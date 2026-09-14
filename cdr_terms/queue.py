@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 
 from .identity import canonical_json, digest, exact_value, timestamp, utc_now
 from .historical import build_historical_target, historical_scope, validate_historical_target
+from .observation_checks import context_document_state
 from .store import EvidenceStore
 
 STAGING_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_terms" / "analysis-staging-v1.schema.json"
@@ -69,18 +70,25 @@ class TermsQueue:
 
     def next_due(self, now: str | None = None) -> dict[str, Any] | None:
         observed = timestamp(now or utc_now())
-        row = self.store.db.execute(
+        rows = self.store.db.execute(
             "SELECT j.*, (SELECT MIN(priority) FROM job_priorities WHERE job_id=j.job_id) AS effective_priority, "
             "x.document_version_id, x.text_sha256, x.extractor_version, e.status, e.retry_after "
             "FROM analysis_jobs j JOIN extractions x USING(extraction_id) JOIN job_events e ON "
             "e.sequence=(SELECT MAX(sequence) FROM job_events WHERE job_id=j.job_id) "
             "WHERE e.status='queued' OR (e.status='retry_wait' AND e.retry_after<=?) "
-            "ORDER BY effective_priority, j.created_at, j.job_id LIMIT 1", (observed,)).fetchone()
-        if not row:
-            return None
-        result = dict(row)
-        result["priority"] = result.pop("effective_priority")
-        return result
+            "ORDER BY effective_priority, j.created_at, j.job_id", (observed,))
+        for row in rows:
+            # Capture/acquisition writes precede their acceptance markers. Keep
+            # those jobs pending and allow unrelated admitted work to proceed.
+            try:
+                if self._source_state(row["job_id"], check_blobs=False) == "pending":
+                    continue
+            except (ValueError, OSError):
+                pass  # claim() records the existing durable integrity failure.
+            result = dict(row)
+            result["priority"] = result.pop("effective_priority")
+            return result
+        return None
 
     def event(self, job_id: str, status: str, now: str | None = None, *,
               retry_after: str | None = None, error_code: str | None = None,
@@ -161,14 +169,22 @@ class TermsQueue:
         return None
 
     def _source_current(self, job_id: str) -> bool:
-        context = self.validate_input(job_id)
-        if "historical_target" in context:
-            return True  # Pinned immutable evidence, with historical-only output.
-        row = self.store.db.execute("SELECT x.document_version_id,v.document_id FROM analysis_jobs j "
+        return self._source_state(job_id) == "current"
+
+    def _source_state(self, job_id: str, *, check_blobs: bool = True) -> str:
+        row = self.store.db.execute("SELECT j.context_sha256,j.context_blob_sha256,x.document_version_id,v.document_id FROM analysis_jobs j "
                                     "JOIN extractions x USING(extraction_id) JOIN document_versions v USING(document_version_id) "
                                     "WHERE job_id=?", (job_id,)).fetchone()
-        current = self.store.last_success(row["document_id"]) if row else None
-        return bool(current and current["document_version_id"] == row["document_version_id"])
+        if not row:
+            return "superseded"
+        # Readiness scans only small contexts; claim/admission still verify every
+        # source/extraction blob before any work or accepted state transition.
+        context = self.validate_input(job_id) if check_blobs else json.loads(self.store.read_blob(row["context_blob_sha256"]))
+        if digest(context) != row["context_sha256"]:
+            raise ValueError("Analysis context integrity mismatch")
+        if "historical_target" in context:
+            return "current"  # Pinned immutable evidence, with historical-only output.
+        return context_document_state(self.store, row["document_id"], row["document_version_id"], context)
 
     def validate_input(self, job_id: str) -> dict[str, Any]:
         job = self.store.db.execute("SELECT j.*,x.text_sha256,v.content_sha256 FROM analysis_jobs j "

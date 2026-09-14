@@ -93,6 +93,8 @@ class AcquisitionQueue:
                                           (check_id, request["document_id"])).fetchone()
             if not check:
                 raise ValueError("Acquisition result does not bind this document")
+            if not latest["observed_at"] <= check["checked_at"] <= observed:
+                raise ValueError("Acquisition result must be observed within its accepted lease")
             successful = check["status"] in {"fetched", "unchanged"} and not processing_error
             attempts = self.store.db.execute("SELECT COUNT(*) FROM acquisition_events WHERE request_id=? AND status='running'",
                                              (request["request_id"],)).fetchone()[0]

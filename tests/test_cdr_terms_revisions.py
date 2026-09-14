@@ -8,6 +8,7 @@ import sqlite3
 import pytest
 
 from cdr_terms.identity import canonical_json, digest
+from cdr_terms.observation_checks import bind_manual_check
 from cdr_terms.revisions import _applicability, register_rule_set, stage_term
 from tests.test_cdr_terms_evidence import LATER, NOW, _staged_term, evidence  # noqa: F401
 from tests.test_cdr_terms_historical import historical  # noqa: F401
@@ -162,6 +163,7 @@ def test_accepted_result_cannot_be_reused_after_source_or_job_supersession(evide
     store, _, _, doc, _, body, _ = evidence
     queue, job, _, arguments = _staged_term(evidence)
     store.record_check(document_id=doc, check_id="later-source", checked_at=LATER, status="fetched", body=body + b"\n", media_type="application/json")
+    bind_manual_check(store, arguments["observation_id"], "later-source")
     with pytest.raises(ValueError, match="source.*changed"):
         stage_term(store, **arguments)
     queue.event(job, "superseded", LATER)

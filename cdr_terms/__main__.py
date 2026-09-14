@@ -8,7 +8,7 @@ from pathlib import Path
 from .acquisition import FetchPolicy, acquire_observation
 from .acquisitions_queue import process_next_acquisition
 from .extraction import extract_version
-from .identity import canonical_json, utc_now
+from .identity import canonical_json, timestamp, utc_now
 from .reporting import build_product_asset
 from .store import EvidenceStore
 
@@ -28,6 +28,7 @@ def parser() -> argparse.ArgumentParser:
     archive.add_argument("--document-id", required=True)
     archive.add_argument("--media-type", required=True)
     archive.add_argument("--check-id", required=True)
+    archive.add_argument("--observed-at", required=True, type=timestamp, help="Evidenced acquisition time with timezone; never the import clock")
     acquire = sub.add_parser("fetch", help="Fetch a bounded part of an observation's known document inventory")
     acquire.add_argument("--observation-id", required=True)
     acquire.add_argument("--check-prefix", required=True)
@@ -57,9 +58,11 @@ def main() -> int:
         elif args.command == "archive":
             if args.input.stat().st_size > 64 * 1024 * 1024:
                 raise ValueError("Local document exceeds the 64 MiB single-document limit")
+            previous = store.db.execute("SELECT metadata_json FROM acquisition_checks WHERE check_id=?", (args.check_id,)).fetchone()
+            imported_at = json.loads(previous[0]).get("imported_at") if previous else timestamp(utc_now())
             result = {"document_version_id": store.record_check(document_id=args.document_id, check_id=args.check_id,
-                       checked_at=utc_now(), status="fetched", body=args.input.read_bytes(), media_type=args.media_type,
-                       metadata={"acquisition": "retained_official_file"})}
+                       checked_at=args.observed_at, status="fetched", body=args.input.read_bytes(), media_type=args.media_type,
+                       metadata={"acquisition": "retained_official_file", "imported_at": imported_at})}
         elif args.command == "fetch":
             result = {"checks": acquire_observation(store, args.observation_id, check_prefix=args.check_prefix,
                        max_documents=args.max_documents, max_total_bytes=args.max_total_bytes,

@@ -12,7 +12,8 @@ from cdr_clean_export import bank_base_row, inner_record
 from cdr_product_facts import NORMALIZATION_VERSION
 
 from .acquisitions_queue import AcquisitionQueue, enqueue_interpretation
-from .identity import byte_digest, digest, timestamp, utc_now
+from .capture_provenance import begin_capture, source_time
+from .identity import byte_digest, digest, utc_now
 from .store import EvidenceStore
 
 
@@ -52,6 +53,7 @@ def _complete_capture(store: EvidenceStore, path: Path, receipt: Mapping[str, An
 
 def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, *,
                       forbidden_roots: list[Path], observed_at: str | None = None,
+                      state_dir: Path | None = None,
                       max_products: int = 10000, max_total_bytes: int = 512 * 1024 * 1024,
                       max_seconds: float = 120) -> dict[str, Any]:
     """Archive all raw products or fail explicitly; never truncate a capture."""
@@ -64,13 +66,21 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
     if not 1 <= max_products <= 20000 or not 0 < max_seconds <= 300:
         raise ValueError("invalid_terms_capture_bounds")
     generation = finalized["generation_id"]
-    observation_time = timestamp(observed_at or utc_now())
     receipt_path = root / "captures" / (digest(generation) + ".json")
+    # A configured ingest must verify its finalized clock even on retry. Direct
+    # explicit imports reuse an already immutable receipt without redating it.
+    timing = source_time(finalized, state_dir=state_dir, observed_at=None) if observed_at is None else None
     with EvidenceStore(root) as store:
         if receipt_path.exists():
             receipt = _existing_capture(store, json.loads(receipt_path.read_text(encoding="utf-8")), finalized, run_root)
+            if timing and (receipt["observed_at"] != timing[0] or receipt.get("source_provenance") != timing[1]):
+                raise ValueError("source_observation_legacy_capture_requires_explicit_review")
             _complete_capture(store, receipt_path, receipt)
             return receipt
+        observation_time, provenance, contract_body = timing or source_time(finalized, state_dir=state_dir, observed_at=observed_at)
+        if contract_body is not None:
+            store.put_blob(contract_body)
+        captured_at = begin_capture(store, generation, observation_time, utc_now(), provenance)
         banks = run_root / "banks"
         if not banks.is_dir():
             raise ValueError("complete_raw_product_source_is_unavailable")
@@ -92,7 +102,7 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
             base = bank_base_row(path, banks, record)
             observation_id = store.observe(provider=base["provider"], product_key=base["product_key"],
                                              record=payload, source_bytes=body, observed_at=observation_time, ingest_id=generation)
-            acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=observation_time))
+            acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=captured_at))
             raw_versions = store.db.execute("SELECT v.document_version_id FROM applicability a JOIN document_versions v USING(document_id) "
                                             "WHERE a.observation_id=? AND a.relation='cdr_source' AND v.content_sha256=?",
                                             (observation_id, byte_digest(body))).fetchall()
@@ -109,7 +119,8 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
             raise ValueError("terms_source_count_disagrees_with_finalized_products")
         receipt = {"schema_version": 1, "status": "CAPTURED_AND_QUEUED", "generation_id": generation,
                    "export_contract_digest": finalized["export_contract_digest"], "source_run_date": finalized.get("run_date"),
-                   "observed_at": observation_time, "products": len(sources), "source_bytes": total_bytes,
+                   "observed_at": observation_time, "captured_at": captured_at, "source_provenance": provenance,
+                   "products": len(sources), "source_bytes": total_bytes,
                    "acquisition_requests": len(acquisition_ids), "analysis_jobs": len(analysis_ids),
                    "sources": sources, "network_called": False, "codex_called": False}
         receipt_path.parent.mkdir(exist_ok=True, mode=0o700)
@@ -125,7 +136,7 @@ def capture_if_configured(run_root: Path, finalized: Mapping[str, Any], *, state
         return None
     try:
         receipt = capture_finalized(run_root, finalized, Path(configured),
-                                    forbidden_roots=[state_dir, runs_root, export_root])
+                                    forbidden_roots=[state_dir, runs_root, export_root], state_dir=state_dir)
         receipt_path = Path(configured).expanduser().resolve() / "captures" / (digest(finalized["generation_id"]) + ".json")
         return {**{key: value for key, value in receipt.items() if key != "sources"},
                 "receipt_path": str(receipt_path), "receipt_sha256": byte_digest(receipt_path.read_bytes())}

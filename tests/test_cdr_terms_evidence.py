@@ -18,6 +18,7 @@ from cdr_terms.acquisition import FetchFailure, FetchPolicy, _public_address, ac
 from cdr_terms.discovery import discover_references, document_url
 from cdr_terms.extraction import extract_document, extract_version
 from cdr_terms.identity import byte_digest, canonical_json, digest, exact_value, timestamp
+from cdr_terms.observation_checks import bind_manual_check
 from cdr_terms.queue import TermsQueue
 from cdr_terms.reporting import build_product_asset, publish_product_asset, validate_public_asset
 from cdr_terms.revisions import REVIEW_CHECKS, record_change, review_term, stage_term
@@ -209,7 +210,9 @@ def test_failed_fetch_preserves_prior_terms_and_does_not_infer_removal(evidence,
     assert payload["changes"] == []
     assert payload["revisions"][0]["term_revision_id"] == term
     assert payload["coverage"]["calculation"]["status"] == "unknown"
-    assert any("failed" in gap for gap in payload["coverage"]["gaps"])
+    # An unscoped URL failure does not replace this exact raw snapshot check.
+    assert not any("failed" in gap for gap in payload["coverage"]["gaps"])
+    assert payload["coverage"]["acquisition"]["observed"] == 1
 
 
 def test_conditional_check_requires_retained_version_and_each_ingest_rechecks(evidence, monkeypatch):
@@ -287,6 +290,7 @@ def test_new_document_version_invalidates_dependent_terms_and_stale_promotion(ev
     # Mechanical byte revision, no fabricated rates or terms.
     store.record_check(document_id=doc, check_id="new-bytes", checked_at=LATER, status="fetched",
                        body=body + b"\n", media_type="application/json")
+    bind_manual_check(store, observation, "new-bytes")
     assert build_product_asset(store, key)["revisions"] == []
     with pytest.raises(ValueError, match="changed before publication"):
         publish_product_asset(store, original, expected_previous_identity=original["identity_sha256"],

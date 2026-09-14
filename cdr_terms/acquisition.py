@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlsplit
 
 from .discovery import document_url
 from .identity import digest, utc_now
+from .observation_checks import bind_manual_check
 from .store import EvidenceStore
 
 
@@ -251,7 +252,7 @@ def acquire_observation(store: EvidenceStore, observation_id: str, *, check_pref
     spent = 0
     chosen = policy or FetchPolicy()
     for row in rows:
-        check_id = digest([check_prefix, row[0]])
+        check_id = digest([check_prefix, observation_id, row[0]])
         if len(results) >= max_documents or spent >= max_total_bytes or time.monotonic() >= deadline:
             # Unattempted references remain pending. No artificial success receipt.
             break
@@ -259,6 +260,7 @@ def acquire_observation(store: EvidenceStore, observation_id: str, *, check_pref
                               min(chosen.timeout_seconds, deadline - time.monotonic()),
                               chosen.max_redirects, chosen.allowed_hosts, chosen.allow_http)
         result = acquire_document(store, row[0], check_id=check_id, policy=bounded)
+        bind_manual_check(store, observation_id, check_id)
         results.append(result)
         if result["status"] == "fetched":
             version = store.db.execute("SELECT byte_size FROM document_versions WHERE document_version_id=?",
