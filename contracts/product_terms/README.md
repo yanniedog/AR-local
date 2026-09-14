@@ -108,6 +108,31 @@ for publication. `save_staging` validates schema, exact quantities, source span
 bounds and product scope, then retains output as **staged**. Those mechanical
 checks do not verify semantics, complete coverage or eligibility.
 
+`stage_term` admits only one exact term from a lease-accepted, still-current
+staged result. The context must pin the observation's product key and raw source
+hash in `source_product_sha256`; the clauses must belong to that job's exact
+extraction and match its parameter-clause locators. Values and applicability
+match with JSON types preserved, including null, false, zero and empty text.
+Unknown digests, unstaged/superseded jobs, changed sources, historical targets
+and ambiguous results cannot create revisions. Source/job validation and the
+revision/source insertions share one write transaction. This admission rule
+does not rewrite earlier archive records or certify their provenance.
+
+Human interpretation follows the same enqueue, claim and `save_staging` path;
+there is no arbitrary-digest manual bypass. Nonempty staged conditions or
+exceptions, and a nonnull suggested `rule_pattern`, remain in staging until a
+reviewed adapter can preserve and bind them in the revision contract. The
+current envelope cannot silently drop qualifiers or turn a suggested pattern
+into an executable rule. A controller may separately attach an already reviewed
+registered rule set to an otherwise exactly matching unqualified staged term.
+
+Effective bounds preserve their original source strings. Two date-only bounds
+compare as calendar dates; two timezone-qualified timestamps compare as UTC
+instants. Mixed date/timestamp precision requires source-supported timezone
+clarification rather than inventing a timezone or time of day for the date.
+Either bound may remain null; a capture timestamp never supplies an effective
+bound.
+
 Controller review records bind independent source/applicability/value/exception/
 effective-date checks by hash. Display-only human-reviewed terms may have null
 `rule_set_id`; deterministic reviews require a registered benchmarked pattern.

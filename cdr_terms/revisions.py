@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date, datetime
 from typing import Any, Mapping, Sequence
 
 from .identity import canonical_json, digest, exact_value, require_sha, timestamp
+from .revision_staging import require_staged_term
 from .store import EvidenceStore
 
 APPLICABILITY_FIELDS = {"product_key", "tier", "package", "cohort", "effective_from", "effective_to"}
@@ -31,16 +33,18 @@ def _applicability(value: Mapping[str, Any], product_key: str) -> None:
         raise ValueError("Explicit complete applicability contract is required")
     if any(item is not None and not isinstance(item, str) for item in value.values()):
         raise ValueError("Applicability values must be source-supported text or null")
+    endpoints = []
     for key in ("effective_from", "effective_to"):
         if value[key] is not None:
-            # Dates may be date-only or fully timezone-qualified timestamps.
-            from datetime import date
+            # Preserve source spelling; compare UTC instants or calendar dates.
             if len(value[key]) == 10:
-                date.fromisoformat(value[key])
+                endpoints.append(date.fromisoformat(value[key]))
             else:
-                timestamp(value[key])
-    if value["effective_from"] and value["effective_to"]:
-        if value["effective_from"] > value["effective_to"]:
+                endpoints.append(datetime.fromisoformat(timestamp(value[key]).replace("Z", "+00:00")))
+    if len(endpoints) == 2:
+        if type(endpoints[0]) is not type(endpoints[1]):
+            raise ValueError("Mixed effective date precision requires source-supported timezone clarification")
+        if endpoints[0] > endpoints[1]:
             raise ValueError("Effective interval is inverted")
 
 
@@ -50,22 +54,12 @@ def stage_term(store: EvidenceStore, *, observation_id: str, parameter_key: str,
                observed_at: str, rule_set_id: str | None = None) -> str:
     exact_value(value)
     require_sha(context_sha256)
-    for job in store.db.execute("SELECT context_blob_sha256 FROM analysis_jobs WHERE context_sha256=?", (context_sha256,)):
-        if "historical_target" in json.loads(store.read_blob(job[0])):
-            raise ValueError("Historical-only staging cannot enter current term revisions")
     if not re.fullmatch(r"[a-z][a-z0-9_.]*", parameter_key) or not interpreter:
         raise ValueError("A canonical parameter key and interpreter identity are required")
     observation = store.db.execute("SELECT * FROM observations WHERE observation_id=?", (observation_id,)).fetchone()
     if not observation or not clause_ids or len(set(clause_ids)) != len(clause_ids):
         raise ValueError("Term requires an observation and distinct source clauses")
     _applicability(applicability, observation["product_key"])
-    for clause_id in clause_ids:
-        source = store.db.execute(
-            "SELECT 1 FROM clauses c JOIN extractions x USING(extraction_id) "
-            "JOIN document_versions v USING(document_version_id) JOIN applicability a USING(document_id) "
-            "WHERE c.clause_id=? AND a.observation_id=?", (clause_id, observation_id)).fetchone()
-        if not source:
-            raise ValueError("Term source has no product applicability evidence")
     if rule_set_id:
         rule = store.db.execute("SELECT * FROM rule_sets WHERE rule_set_id=?", (rule_set_id,)).fetchone()
         if not rule or parameter_key not in json.loads(rule["contract_json"])["parameter_keys"]:
@@ -75,6 +69,11 @@ def stage_term(store: EvidenceStore, *, observation_id: str, parameter_key: str,
               canonical_json(applicability), rule_set_id, observed, interpreter, context_sha256)
     identity = digest([*fields, sorted(clause_ids)])
     with store.db:
+        # Hold the source/job generation through both append-only insertions.
+        store.db.execute("BEGIN IMMEDIATE")
+        require_staged_term(store, observation=observation, context_sha256=context_sha256,
+                            parameter_key=parameter_key, value=value, unit=unit,
+                            applicability=applicability, clause_ids=clause_ids)
         store.db.execute("INSERT OR IGNORE INTO term_revisions VALUES (?,?,?,?,?,?,?,?,?,?)", (identity, *fields))
         for clause_id in sorted(clause_ids):
             store.db.execute("INSERT OR IGNORE INTO term_sources VALUES (?,?)", (identity, clause_id))

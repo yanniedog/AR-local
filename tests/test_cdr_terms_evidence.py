@@ -55,19 +55,44 @@ def _clause(evidence):
 
 
 def _term(evidence, *, reviewed=True):
-    store, observation, key, _, _, _, record = evidence
-    _, clause = _clause(evidence)
-    applicability = dict.fromkeys(("tier", "package", "cohort", "effective_from", "effective_to"))
-    applicability["product_key"] = key
-    term = stage_term(store, observation_id=observation, parameter_key="product.name", value=record["name"],
-                      unit=None, applicability=applicability, clause_ids=[clause], interpreter="test-source-reader",
-                      context_sha256=digest({"fixture": byte_digest(FIXTURE.read_bytes())}), observed_at=NOW)
+    store = evidence[0]
+    _, _, _, arguments = _staged_term(evidence)
+    term = stage_term(store, **arguments)
     if reviewed:
         proof = store.put_blob(canonical_json({"term_revision_id": term, "passed": True,
                                                "checks": sorted(REVIEW_CHECKS)}).encode())
         review_term(store, term, status="validated", reviewer="independent-test-review", reviewer_kind="human",
                     reviewed_at=NOW, evidence_sha256=proof, reason="Exact retained CDR product name and source span agree")
     return term
+
+
+def _staged_term(evidence, *, context_change=None, output_change=None, save=True):
+    """A human source reader uses the same retained staging contract as a worker."""
+    store, observation, key, _, _, body, record = evidence
+    extraction, clause = _clause(evidence)
+    applicability = dict.fromkeys(("tier", "package", "cohort", "effective_from", "effective_to"))
+    applicability["product_key"] = key
+    context = {"product_keys": [key], "source_product_sha256": {key: byte_digest(body)},
+               "registry_version": "test-fixture-1", **(context_change or {})}
+    queue = TermsQueue(store)
+    job = queue.enqueue(extraction, context, now=NOW)
+    locator = json.loads(store.db.execute("SELECT locator_json FROM clauses WHERE clause_id=?", (clause,)).fetchone()[0])
+    output = {"schema_version": 1, "extraction_id": extraction, "context_sha256": digest(context),
+              "clauses": [{"page": None, **locator, "disposition": "parameter", "reason": "Retained product name"}],
+              "terms": [{"parameter_key": "product.name", "value": record["name"], "unit": None,
+                         **applicability, "clause_indexes": [0], "rule_pattern": None,
+                         "conditions": [], "exceptions": []}],
+              "unresolved": ["Source name only; this is not complete legal interpretation"]}
+    if output_change:
+        output_change(output)
+    if save:
+        claim = queue.claim(NOW)
+        assert claim["job_id"] == job
+        queue.save_staging(job, output, lease_id=claim["lease_id"], now=NOW)
+    arguments = dict(observation_id=observation, parameter_key="product.name", value=record["name"],
+                     unit=None, applicability=applicability, clause_ids=[clause], interpreter="test-source-reader",
+                     context_sha256=digest(context), observed_at=NOW)
+    return queue, job, output, arguments
 
 
 def _job(evidence, priority=1, **context):
