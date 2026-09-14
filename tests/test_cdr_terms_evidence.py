@@ -188,11 +188,15 @@ def test_failed_fetch_preserves_prior_terms_and_does_not_infer_removal(evidence,
 
 
 def test_conditional_check_requires_retained_version_and_each_ingest_rechecks(evidence, monkeypatch):
-    store, _, _, doc, version, _, _ = evidence
+    store, _, _, doc, version, body, _ = evidence
+    url = store.db.execute("SELECT source_url FROM documents WHERE document_id=?", (doc,)).fetchone()[0]
+    store.record_check(document_id=doc, check_id="verified-entity", checked_at=NOW,
+                       status="fetched", body=body, media_type="application/json",
+                       metadata={"final_url": url, "etag": '"retained"'})
     calls = []
     def unchanged(*args, **kwargs):
         calls.append(args)
-        return {"status": "unchanged", "http_status": 304}
+        return {"status": "unchanged", "http_status": 304, "metadata": {"final_url": url}}
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", unchanged)
     assert acquire_document(store, doc, check_id="day1")["document_version_id"] == version
     acquire_document(store, doc, check_id="day1")

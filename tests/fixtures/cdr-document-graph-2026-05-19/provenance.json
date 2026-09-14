@@ -1,0 +1,19 @@
+{
+  "scope": "Exact retained public CDR responses; test timestamps and HTML transport snippets are protocol inputs, not historical/legal acceptance evidence.",
+  "files": [
+    {
+      "fixture": "bom-variable.json",
+      "source_run_date": "2026-05-19",
+      "source_relative_path": "banks/Mortgage/Bank of Melbourne/Variable Home Loan with Offset/BOMHLStandardVariable__b11b68d6155d/product-detail.json",
+      "sha256": "42be3e151553a126afbd2c089a39346faa85481f3ced49473e5d865eb7afcba9",
+      "bytes": 22725
+    },
+    {
+      "fixture": "bom-relocation.json",
+      "source_run_date": "2026-05-19",
+      "source_relative_path": "banks/Mortgage/Bank of Melbourne/Relocation Loan without end/BOMHLRelocationLoanWithoutEnd__7181620bb2d9/product-detail.json",
+      "sha256": "ad17990f22745c93bf36e296a38def9c56bc00e4afac3a89ea6aa9080ac8490d",
+      "bytes": 6333
+    }
+  ]
+}

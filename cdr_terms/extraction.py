@@ -12,7 +12,8 @@ from .discovery import document_url
 from .identity import utc_now
 from .store import EvidenceStore
 
-EXTRACTOR_VERSION = "document-text-1"
+EXTRACTOR_VERSION = "document-text-2"
+MAX_HTML_LINKS = 256
 
 
 class _HTMLText(HTMLParser):
@@ -20,7 +21,10 @@ class _HTMLText(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.source_url = source_url
         self.fragments: list[str] = []
-        self.links: list[dict[str, str]] = []
+        self.links: list[dict[str, Any]] = []
+        self.link_count = 0
+        self.active_link: dict[str, Any] | None = None
+        self.base_href_present = False
         self.hidden = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -33,13 +37,27 @@ class _HTMLText(HTMLParser):
         if tag in {"td", "th"}:
             self.fragments.append("\t")
         values = dict(attrs)
+        if tag == "base" and values.get("href"):
+            self.base_href_present = True
         if tag == "a" and values.get("href"):
-            url = document_url(urljoin(self.source_url, values["href"]))
-            if url:
-                self.links.append({"url": url, "sourceUrl": urljoin(self.source_url, values["href"]),
-                                   "relation": "candidate_incorporated_reference"})
+            self.link_count += 1
+            self.active_link = None
+            if len(self.links) < MAX_HTML_LINKS:
+                href = values["href"]
+                try:
+                    source = urljoin(self.source_url, href)
+                except ValueError:
+                    source = href
+                self.active_link = {"url": document_url(source), "sourceUrl": source,
+                                    "href": href, "anchor_index": self.link_count,
+                                    "line": self.getpos()[0], "column": self.getpos()[1],
+                                    "label": "", "rel": values.get("rel", ""),
+                                    "relation": "candidate_incorporated_reference"}
+                self.links.append(self.active_link)
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "a":
+            self.active_link = None
         if tag in {"script", "style"} and self.hidden:
             self.hidden -= 1
         elif not self.hidden and tag in {"p", "div", "tr", "li", "table"}:
@@ -48,6 +66,8 @@ class _HTMLText(HTMLParser):
     def handle_data(self, data: str) -> None:
         if not self.hidden:
             self.fragments.append(data)
+            if self.active_link is not None:
+                self.active_link["label"] = (self.active_link["label"] + data)[:2000]
 
 
 def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str, str, dict[str, Any]]:
@@ -63,11 +83,17 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
         except (LookupError, UnicodeDecodeError):
             return "", "failed", {"reason": "unverified_html_encoding"}
         parser = _HTMLText(source_url)
-        parser.feed(decoded)
-        parser.close()
+        try:
+            parser.feed(decoded)
+            parser.close()
+        except (ValueError, AssertionError):
+            return "", "failed", {"reason": "html_parse_failed"}
         return "".join(parser.fragments), "partial", {
             "reason": "html_layout_dynamic_content_and_incorporated_links_unreviewed",
-            "candidate_links": [json.loads(link) for link in sorted({json.dumps(link, sort_keys=True) for link in parser.links})],
+            "candidate_links": parser.links,
+            "candidate_links_total": parser.link_count,
+            "candidate_links_omitted": parser.link_count - len(parser.links),
+            "html_base_href_requires_review": parser.base_href_present,
         }
     if mime in {"text/plain", "application/json"}:
         try:
@@ -99,12 +125,22 @@ def _extract_pdf(body: bytes) -> tuple[str, str, dict[str, Any]]:
     }
 
 
-def extract_version(store: EvidenceStore, version_id: str) -> str:
+def extract_version(store: EvidenceStore, version_id: str, *, check_id: str | None = None) -> str:
     row = store.db.execute("SELECT v.*, d.source_url FROM document_versions v "
                            "JOIN documents d USING(document_id) WHERE document_version_id=?", (version_id,)).fetchone()
     if not row:
         raise ValueError("Extraction requires a retained document version")
+    check = store.db.execute("SELECT * FROM acquisition_checks WHERE document_version_id=? "
+                             + ("AND check_id=? " if check_id else "")
+                             + "ORDER BY checked_at DESC,sequence DESC LIMIT 1",
+                             (version_id, check_id) if check_id else (version_id,)).fetchone()
+    if check_id and not check:
+        raise ValueError("Extraction check must bind its retained document version")
+    metadata = json.loads(check["metadata_json"]) if check else {}
+    final_url = document_url(metadata.get("final_url"))
     text, status, coverage = extract_document(store.read_blob(row["content_sha256"]),
-                                              row["media_type"], row["source_url"])
+                                              row["media_type"], final_url or row["source_url"])
+    coverage["resolution_base_url"] = final_url or row["source_url"]
+    coverage["resolution_base_verified"] = final_url is not None
     return store.register_extraction(document_version_id=version_id, extractor_version=EXTRACTOR_VERSION,
                                      text=text, observed_at=utc_now(), status=status, coverage=coverage)

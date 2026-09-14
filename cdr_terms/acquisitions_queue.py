@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import secrets
 from datetime import datetime, timedelta
+from dataclasses import replace
 from typing import Any, Mapping
 
 from .acquisition import FetchPolicy, acquire_document
@@ -79,7 +80,7 @@ class AcquisitionQueue:
             return {**request, "status": "running", "lease_id": lease_id, "lease_expires_at": expiry}
 
     def finish(self, request: Mapping[str, Any], check_id: str, *, now: str | None = None,
-               processing_error: str | None = None) -> None:
+               processing_error: str | None = None, terminal: bool = False) -> None:
         observed = timestamp(now or utc_now())
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
@@ -95,7 +96,7 @@ class AcquisitionQueue:
             successful = check["status"] in {"fetched", "unchanged"} and not processing_error
             attempts = self.store.db.execute("SELECT COUNT(*) FROM acquisition_events WHERE request_id=? AND status='running'",
                                              (request["request_id"],)).fetchone()[0]
-            status = "complete" if successful else "blocked" if attempts >= 4 else "retry_wait"
+            status = "complete" if successful else "blocked" if terminal or attempts >= 4 else "retry_wait"
             self._event(request["request_id"], status, observed, lease_id=request["lease_id"], check_id=check_id,
                         retry_after=_after(observed, min(3600, 300 * 2 ** (attempts - 1))) if status == "retry_wait" else None,
                         error_code=processing_error or check["error_code"])
@@ -122,26 +123,49 @@ def enqueue_interpretation(store: EvidenceStore, version_id: str, observation_id
 def process_next_acquisition(store: EvidenceStore, *, registry_context: Mapping[str, Any],
                               policy: FetchPolicy | None = None) -> dict[str, Any]:
     """One bounded document, no model call. Runtime admission belongs to caller."""
+    from .graph import DocumentGraph, current_observations
+    graph = DocumentGraph(store)
+    progress = graph.advance_one()
     queue = AcquisitionQueue(store)
     request = queue.claim()
     if request is None:
+        if progress:
+            return {"result": "INCOMPLETE", "graph_progress": progress, "network_called": False, "codex_called": False}
         return {"result": "NO_WORK", "network_called": False, "codex_called": False}
+    observations = current_observations(store, request["request_id"])
+    hosts = graph.request_hosts(request["request_id"])
+    if not observations and not hosts:
+        check_id = digest([request["request_id"], request["lease_id"], "superseded"])
+        store.record_check(document_id=request["document_id"], check_id=check_id, checked_at=utc_now(),
+                           status="deferred", error_code="source_scope_superseded")
+        queue.finish(request, check_id, terminal=True)
+        return {"result": "INCOMPLETE", "error": "source_scope_superseded", "graph_progress": progress,
+                "network_called": False, "codex_called": False}
+    if not observations:
+        chosen = policy or FetchPolicy()
+        allowed = hosts & chosen.allowed_hosts if chosen.allowed_hosts else hosts
+        # An empty FetchPolicy allowlist means unrestricted, so retain the graph
+        # allowlist and let the preflight reject an explicitly disjoint caller.
+        if not allowed:
+            allowed = frozenset({"graph-policy-denied.invalid"})
+        policy = replace(chosen, allowed_hosts=allowed)
     previous = store.last_success(request["document_id"])
     check_id = digest([request["request_id"], request["lease_id"]])
     check = acquire_document(store, request["document_id"], check_id=check_id, policy=policy)
     processing_error = None
     job_id = None
     if check["status"] in {"fetched", "unchanged"}:
-        observations = [row[0] for row in store.db.execute("SELECT observation_id FROM acquisition_bindings WHERE request_id=? ORDER BY observation_id",
-                                                          (request["request_id"],))]
         changed = previous is None or previous["document_version_id"] != check["document_version_id"]
         try:
-            job_id = enqueue_interpretation(store, check["document_version_id"], observations,
-                                            priority=2 if request["priority"] == 2 else 0 if changed else 1,
-                                            registry_context=registry_context)
+            if observations:
+                graph.seed(request, check)
+                job_id = enqueue_interpretation(store, check["document_version_id"], observations,
+                                                priority=2 if request["priority"] == 2 else 0 if changed else 1,
+                                                registry_context=registry_context)
         except ValueError as exc:
             processing_error = str(exc)
     queue.finish(request, check_id, processing_error=processing_error)
     return {"result": "QUEUED_ANALYSIS" if job_id else "INCOMPLETE", "request_id": request["request_id"],
+            "graph_progress": progress,
             "check_id": check_id, "analysis_job_id": job_id, "error": processing_error or check["error_code"],
             "network_called": True, "codex_called": False}

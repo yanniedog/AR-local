@@ -191,3 +191,48 @@ CREATE TABLE IF NOT EXISTS ingest_captures (
     completed_at TEXT NOT NULL,
     products INTEGER NOT NULL CHECK(products > 0)
 );
+
+-- Candidate incorporated-document graph. These edges never add legal applicability
+-- or reviewed terms. Root bindings retain every raw CDR pointer and product scope.
+CREATE TABLE IF NOT EXISTS document_graph_roots (
+    root_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES acquisition_requests(request_id),
+    check_id TEXT NOT NULL REFERENCES acquisition_checks(check_id),
+    policy_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(request_id,check_id,policy_json)
+);
+CREATE TABLE IF NOT EXISTS document_graph_scopes (
+    root_id TEXT NOT NULL REFERENCES document_graph_roots(root_id),
+    applicability_id TEXT NOT NULL REFERENCES applicability(applicability_id),
+    PRIMARY KEY(root_id,applicability_id)
+);
+CREATE TABLE IF NOT EXISTS document_graph_nodes (
+    node_id TEXT PRIMARY KEY,
+    root_id TEXT NOT NULL REFERENCES document_graph_roots(root_id),
+    document_id TEXT NOT NULL REFERENCES documents(document_id),
+    parent_node_id TEXT REFERENCES document_graph_nodes(node_id),
+    request_id TEXT NOT NULL REFERENCES acquisition_requests(request_id),
+    depth INTEGER NOT NULL CHECK(depth>=0),
+    UNIQUE(root_id,document_id)
+);
+CREATE INDEX IF NOT EXISTS document_graph_node_request ON document_graph_nodes(request_id);
+CREATE TABLE IF NOT EXISTS document_graph_expansions (
+    node_id TEXT PRIMARY KEY REFERENCES document_graph_nodes(node_id),
+    check_id TEXT NOT NULL REFERENCES acquisition_checks(check_id),
+    extraction_id TEXT REFERENCES extractions(extraction_id),
+    observed_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    receipt_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS document_graph_edges (
+    edge_id TEXT PRIMARY KEY,
+    parent_node_id TEXT NOT NULL REFERENCES document_graph_nodes(node_id),
+    parent_version_id TEXT NOT NULL REFERENCES document_versions(document_version_id),
+    extraction_id TEXT NOT NULL REFERENCES extractions(extraction_id),
+    child_node_id TEXT REFERENCES document_graph_nodes(node_id),
+    reference_json TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    UNIQUE(parent_node_id,extraction_id,reference_json)
+);
+CREATE INDEX IF NOT EXISTS document_graph_edges_parent ON document_graph_edges(parent_node_id);
