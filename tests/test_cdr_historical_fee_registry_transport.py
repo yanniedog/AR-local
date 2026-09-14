@@ -39,6 +39,7 @@ def test_existing_autocrlf_checkout_retains_transport_bytes_after_attribute_chan
     git('config', 'user.name', 'Registry transport test')
     git('config', 'user.email', 'registry-test@example.invalid')
     git('config', 'core.autocrlf', 'true')
+    git('config', 'core.hooksPath', str(tmp_path / 'disabled-hooks'))
     git('config', 'commit.gpgsign', 'false')
     target = materialize(tmp_path, monkeypatch, REGISTRY_BYTES)
     git('add', plan.REGISTRY)
@@ -71,7 +72,9 @@ def test_exact_registry_transport_preserves_identity_and_raw_read_charge(tmp_pat
     assert plan.work_id(result) == plan.work_id(json.loads(REGISTRY_BYTES))
     receipt = budget.completed_reads[str(target.resolve())]
     assert receipt[2] == len(raw)
-    assert budget.counts['read_checksum'] >= 2 * len(raw)
+    assert receipt[1][2] == len(raw)  # The identity tuple also binds the raw size.
+    canonical_recheck = len(REGISTRY_BYTES) if ending == b'\r\n' else 0
+    assert budget.counts['read_checksum'] == 2 * len(raw) + canonical_recheck
     assert target.read_bytes() == raw
 
 
