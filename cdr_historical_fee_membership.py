@@ -23,9 +23,11 @@ def numeric_rate_equal(left, right):
         return False
 
 
-def _index(rows, fields):
+def _index(rows, fields, *, checkpoint=None):
     result = defaultdict(list)
     for index, row in enumerate(rows):
+        if checkpoint is not None and index % 256 == 0:
+            checkpoint()
         if not isinstance(row, dict) or any(field not in row for field in fields):
             raise ValueError('source_identity_shape_invalid')
         key = tuple(row[field] for field in fields)
@@ -47,17 +49,19 @@ def _product_reason(product, raw):
     return None
 
 
-def account(source, core, details):
+def account(source, core, details, *, checkpoint=None):
     """Return proved products and a disposition for every source/public rate/product."""
     if any(not isinstance(source.get(field), list) for field in ('products', 'rates', 'fees')):
         raise ValueError('source_export_arrays_required')
     if not isinstance(details.get('products'), dict) or set(core.get('sections', {})) != {'Mortgage', 'Savings', 'TD'}:
         raise ValueError('public_payload_shape_invalid')
-    products = _index(source['products'], ('product_key',))
-    rates = _index(source['rates'], ('product_key', 'rate_family', 'rate_index'))
-    flattened = _index(source['fees'], ('product_key', 'item_index'))
+    products = _index(source['products'], ('product_key',), checkpoint=checkpoint)
+    rates = _index(source['rates'], ('product_key', 'rate_family', 'rate_index'), checkpoint=checkpoint)
+    flattened = _index(source['fees'], ('product_key', 'item_index'), checkpoint=checkpoint)
     admitted, product_rows, rate_rows, withheld = {}, [], [], {}
     for key in sorted({key[0] for key in products} | set(details['products'])):
+        if checkpoint is not None:
+            checkpoint()
         variants = products.get((key,), [])
         reason = 'source_product_missing_or_ambiguous' if len(variants) != 1 else None
         if key not in details['products']:
@@ -85,6 +89,8 @@ def account(source, core, details):
         if not isinstance(content, dict) or not isinstance(content.get('rates'), list):
             raise ValueError('public_rate_array_required')
         for index, row in enumerate(content['rates']):
+            if checkpoint is not None:
+                checkpoint()
             if not isinstance(row, dict) or not isinstance(row.get('product_key'), str):
                 raise ValueError('public_rate_identity_shape_invalid')
             key = row['product_key']
@@ -118,6 +124,8 @@ def account(source, core, details):
                               'source_rate_indices': [item[0] for item in matches], 'status': 'WITHHELD' if reason else 'EXACT_MATCH',
                               'reason': reason, 'public_row_canonical_sha256': canonical_sha(row), **evidence})
     for identity, variants in rates.items():
+        if checkpoint is not None:
+            checkpoint()
         key, family, index = identity
         reason = None
         if len(variants) != 1 or type(index) is not int or index < 1 or family not in ('lending', 'deposit'):
@@ -142,7 +150,7 @@ def account(source, core, details):
     return admitted, flattened, product_rows, rate_rows, withheld
 
 
-def fee_array_binding(key, product, raw, detail, flattened):
+def fee_array_binding(key, product, raw, detail, flattened, *, checkpoint=None):
     """Full array/flattened alignment precedes any per-fee additive decision."""
     if not isinstance(detail, dict):
         return 'public_detail_not_object', []
@@ -156,6 +164,8 @@ def fee_array_binding(key, product, raw, detail, flattened):
     if actual != set(range(1, len(fees) + 1)):
         return 'flattened_fee_indices_do_not_match_complete_array', []
     for index, fee in enumerate(fees):
+        if checkpoint is not None:
+            checkpoint()
         rows = flattened.get((key, index + 1), [])
         if len(rows) != 1:
             return 'flattened_fee_identity_ambiguous', []

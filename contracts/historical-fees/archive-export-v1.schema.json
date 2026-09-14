@@ -1,0 +1,802 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:historical-fees:archive-export:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "contract": {
+      "const": "archive_export_fee_admission_v1"
+    },
+    "policy_version": {
+      "const": "may22-observation-archive-fees-v1"
+    },
+    "evidence_kind": {
+      "const": "verified_observation_archive_member"
+    },
+    "observation_date": {
+      "const": "2026-05-22"
+    },
+    "approved_design_sha256": {
+      "const": "2e217e2bb55bcbc176217a59765513cf75d1829245d0509b8bf21e83c722cb0f"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_kind": {
+          "const": "verified_observation_archive_member"
+        },
+        "archive": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "source_manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "backup_receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "source_member": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "data/runs/2026-05-22/_exports/banks-2026-05-22.json"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "cache_file": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}\\.bin$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256",
+            "cache_file"
+          ]
+        },
+        "generation_controls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "control0": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 536870912
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "cache_file": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "bytes",
+                    "sha256",
+                    "cache_file"
+                  ]
+                },
+                "value": {
+                  "type": "object"
+                },
+                "interpretation": {
+                  "const": "RETAINED_CONTROL_ONLY_NOT_COMPLETION_AUTHORITY"
+                }
+              },
+              "required": [
+                "member",
+                "value",
+                "interpretation"
+              ]
+            },
+            "control1": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 536870912
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "cache_file": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "bytes",
+                    "sha256",
+                    "cache_file"
+                  ]
+                },
+                "value": {
+                  "type": "object"
+                },
+                "interpretation": {
+                  "const": "RETAINED_CONTROL_ONLY_NOT_COMPLETION_AUTHORITY"
+                }
+              },
+              "required": [
+                "member",
+                "value",
+                "interpretation"
+              ]
+            }
+          },
+          "required": [
+            "control0",
+            "control1"
+          ]
+        },
+        "archive_membership_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_file_references": {
+          "const": "UNVERIFIED_NOT_DEREFERENCED"
+        }
+      },
+      "required": [
+        "evidence_kind",
+        "archive",
+        "source_manifest",
+        "backup_receipt",
+        "source_member",
+        "generation_controls",
+        "archive_membership_sha256",
+        "source_file_references"
+      ]
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source-manifest.json": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "receipt.json": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "anchor_manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "anchor_core": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "anchor_details": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "archive_container": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        },
+        "source_cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ]
+        }
+      },
+      "required": [
+        "source-manifest.json",
+        "receipt.json",
+        "anchor_manifest",
+        "anchor_core",
+        "anchor_details",
+        "archive_container",
+        "source_cache"
+      ]
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "observation_date": {
+          "const": "2026-05-22"
+        },
+        "source_generation_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "public_generation_time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backup_completed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legal_effective_from": {
+          "const": null
+        },
+        "legal_effective_to": {
+          "const": null
+        }
+      },
+      "required": [
+        "observation_date",
+        "source_generation_time",
+        "public_generation_time",
+        "backup_completed_at",
+        "legal_effective_from",
+        "legal_effective_to"
+      ]
+    },
+    "parent_kind": {
+      "const": "original_public_anchor"
+    },
+    "core_bytes_preserved": {
+      "const": true
+    },
+    "untouched_optional_assets": {
+      "type": "object"
+    },
+    "projection_source_sha256_lf": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "app_payload_details.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "app_payload_common.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "app_payload_details.py",
+        "app_payload_common.py"
+      ]
+    },
+    "adapter_source_sha256_lf": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cdr_historical_fee_archive.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cdr_historical_fee_archive_admission.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cdr_historical_fee_archive_candidate.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cdr_historical_fee_membership.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cdr_historical_fee_embedded.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cdr_historical_fee_exact.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "cdr_historical_fee_archive.py",
+        "cdr_historical_fee_archive_admission.py",
+        "cdr_historical_fee_archive_candidate.py",
+        "cdr_historical_fee_membership.py",
+        "cdr_historical_fee_embedded.py",
+        "cdr_historical_fee_exact.py"
+      ]
+    },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "products": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 536870912
+        },
+        "rates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 536870912
+        },
+        "fee_dispositions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "array_dispositions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "public_fee_objects": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 536870912
+        },
+        "source_flattened_fee_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 536870912
+        },
+        "source_only_or_withheld_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 536870912
+        },
+        "membership_canonical_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "products",
+        "rates",
+        "fee_dispositions",
+        "array_dispositions",
+        "public_fee_objects",
+        "source_flattened_fee_rows",
+        "source_only_or_withheld_rows",
+        "membership_canonical_sha256"
+      ]
+    },
+    "output_files": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "core.json.gz": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "details-candidate.json.gz": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "products.jsonl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "rates.jsonl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "fees.jsonl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "changes.jsonl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "bindings.jsonl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        },
+        "bank-dispositions.json": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ]
+        }
+      },
+      "required": [
+        "core.json.gz",
+        "details-candidate.json.gz",
+        "products.jsonl",
+        "rates.jsonl",
+        "fees.jsonl",
+        "changes.jsonl",
+        "bindings.jsonl",
+        "bank-dispositions.json"
+      ]
+    },
+    "publication": {
+      "const": "NOT_ATTEMPTED"
+    },
+    "calculation_completeness": {
+      "const": "UNKNOWN"
+    },
+    "customer_eligibility": {
+      "const": "UNKNOWN"
+    },
+    "full_fee_applicability": {
+      "const": "UNKNOWN"
+    },
+    "source_http_capture": {
+      "const": "NOT_SUPPLIED"
+    },
+    "admission_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract",
+    "policy_version",
+    "evidence_kind",
+    "observation_date",
+    "approved_design_sha256",
+    "created_at",
+    "container",
+    "inputs",
+    "generation",
+    "parent_kind",
+    "core_bytes_preserved",
+    "untouched_optional_assets",
+    "projection_source_sha256_lf",
+    "adapter_source_sha256_lf",
+    "membership",
+    "output_files",
+    "publication",
+    "calculation_completeness",
+    "customer_eligibility",
+    "full_fee_applicability",
+    "source_http_capture",
+    "admission_id"
+  ]
+}
