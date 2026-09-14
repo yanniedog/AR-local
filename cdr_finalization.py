@@ -9,7 +9,7 @@ from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
 from cdr_atomic import ImmutablePathError, atomic_write_json, canonical_json_bytes
-from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
+from cdr_export_contract import ReadBudget, artifact_records, build_contract, load_contract, read_json, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
     current_head_digest,
@@ -585,8 +585,11 @@ def _current_head_digest(state_dir: Path) -> Optional[str]:
     return current_head_digest(state_dir)
 
 
-def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: str) -> bool:
+def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: str, *,
+                             budget: ReadBudget | None = None) -> bool:
     try:
+        if budget is not None:
+            budget()
         if marker.get("finalization_schema_version") != 2:
             return False
         if marker.get("ledger_state") != "finalized":
@@ -599,7 +602,7 @@ def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: s
         contract_path = _safe_state_path(state_dir, marker.get("export_contract_path"))
         if contract_path is None:
             return False
-        contract = load_contract(contract_path)
+        contract = load_contract(contract_path, budget=budget)
         if contract["generation_id"] != marker.get("generation_id"):
             return False
         if contract["observation_date"] != date:
@@ -614,8 +617,8 @@ def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: s
             / date
             / f"{contract['generation_id']}.json"
         )
-        event = json.loads(event_path.read_text(encoding="utf-8"))
-        verify_event_artifacts(state_dir, event)
+        event = read_json(event_path, budget=budget)
+        verify_event_artifacts(state_dir, event, budget=budget)
         return event["event_digest"] == marker.get("ledger_event_digest")
     except (KeyError, OSError, ValueError, json.JSONDecodeError):
         return False
