@@ -128,7 +128,7 @@ def package_terms(snapshot, *, run_date, write_asset):
             raise ValueError('Terms product identity mismatch')
         singleton = {'schema_version': 1, 'run_date': run_date, 'products': {key: payload}}
         size = len(_json(singleton))
-        total += size
+        total += len(_json(payload))
         if size > MAX_SHARD_RAW or total > MAX_SNAPSHOT_RAW:
             raise ValueError('Terms shard/snapshot byte bound exceeded')
         proposed = {'schema_version': 1, 'run_date': run_date, 'products': {**group, key: payload}}

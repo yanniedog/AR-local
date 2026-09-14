@@ -108,6 +108,29 @@ def test_shard_overflow_refuses_without_dropping_terms(evidence, monkeypatch):
         terms.package_terms({payload['product_key']: payload}, run_date='2026-09-07',
                             write_asset=lambda *args: writes.append(args))
     assert not writes
+
+
+@pytest.mark.parametrize('budget_delta', [0, -1])
+def test_snapshot_budget_counts_product_input_without_shard_envelope(evidence, monkeypatch, budget_delta):
+    payload, _ = publish(evidence)
+    key = payload['product_key']
+    input_bytes = len(canonical_json(payload).encode('utf-8'))
+    monkeypatch.setattr(terms, 'MAX_SNAPSHOT_RAW', input_bytes + budget_delta)
+    writes = {}
+
+    def write_asset(name, body):
+        writes[name] = body
+        return {'name': name}
+
+    if budget_delta < 0:
+        with pytest.raises(ValueError, match='byte bound'):
+            terms.package_terms({key: payload}, run_date='2026-09-07', write_asset=write_asset)
+        assert not writes
+    else:
+        terms.package_terms({key: payload}, run_date='2026-09-07', write_asset=write_asset)
+        assert writes['terms_shard_000']['products'] == {key: payload}
+        assert len(terms._json(writes['terms_shard_000'])) > input_bytes
+
 def test_unchanged_daily_capture_can_rebind_published_projection(evidence):
     original, source = publish(evidence)
     store, old_observation, key, _, _, body, record = evidence
