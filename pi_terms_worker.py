@@ -34,7 +34,7 @@ STATE_NAME = 'interpreter-state.json'
 PUBLIC_CONTEXT_FIELDS = frozenset({
     'product_keys', 'source_product_sha256', 'document_schema_version',
     'structured_fact_normalization', 'interpretation_contract', 'executable_rules',
-    'historical_target',
+    'historical_target', 'incorporated_target',
 })
 
 
@@ -119,6 +119,9 @@ def prepare_job(store: EvidenceStore, job: dict, root: Path) -> None:
     if 'historical_target' in context:
         from cdr_terms.historical import historical_scope
         payload['expected_historical_scope'] = historical_scope(context['historical_target'])
+    if 'incorporated_target' in context:
+        from cdr_terms.incorporated import output_scope
+        payload['expected_incorporated_scope'] = output_scope(context['incorporated_target'])
     if len(canonical_json(payload).encode('utf-8')) > MAX_INPUT_BYTES:
         raise ValueError('complete_document_chunking_required')
     root.mkdir(parents=True, mode=0o700)
@@ -149,6 +152,10 @@ def complete_job(queue: TermsQueue, job: dict, root: Path, resources: dict) -> d
         from cdr_terms.historical import historical_scope
         receipt.update(result='STAGED_HISTORICAL', historical_scope=historical_scope(context['historical_target']),
                        current_publication='PROHIBITED_HISTORICAL_SCOPE')
+    if 'incorporated_target' in context:
+        from cdr_terms.incorporated import output_scope
+        receipt.update(result='STAGED_INCORPORATED_CANDIDATE', incorporated_scope=output_scope(context['incorporated_target']),
+                       current_publication='PROHIBITED_UNREVIEWED_APPLICABILITY')
     return receipt
 
 

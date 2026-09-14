@@ -74,10 +74,14 @@ def read_control(path, meter, *, limit=RECORD_LIMIT):
     # One reservation covers this read and its immediate SHA check.
     meter.admit_read(str(path), size)
     with stable_file(path) as stream:
+        info = os.fstat(stream.fileno())
         body = stream.read(size)
     meter.check()
     if len(body) != size:
         raise ValueError('control_short_read')
+    recorder = getattr(meter, 'note_completed_read', None)
+    if recorder is not None:
+        recorder(str(path), (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns), size)
     return body
 
 

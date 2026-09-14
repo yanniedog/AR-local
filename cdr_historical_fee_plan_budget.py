@@ -136,6 +136,7 @@ class ControlBudget:
         self.deadline = deadline
         self.counts = {'read_checksum': 0, 'output': 0}
         self.reads = {}
+        self.completed_reads = {}
         self.owner = __import__('threading').get_ident()
 
     def check(self):
@@ -158,3 +159,23 @@ class ControlBudget:
             raise ValueError('control_record_reread_bound')
         self.charge('read_checksum', amount)
         self.reads[name] = self.reads.get(name, 0) + 1
+
+    def note_completed_read(self, name, file_identity, size):
+        """Bind a successful already-admitted read; never charge/refund a new one.
+
+        A trusted bootstrap bridge may transfer its measured debits/read counts
+        first, then its successful handle identities. Failed reservations remain
+        charged and must not be registered as completed reads.
+        """
+        self.check()
+        count = self.reads.get(name, 0)
+        previous = self.completed_reads.get(name)
+        if (type(name) is not str or type(size) is not int or size < 0
+                or type(file_identity) is not tuple or len(file_identity) != 4
+                or any(type(value) is not int or value < 0 for value in file_identity)
+                or file_identity[2] != size
+                or type(count) is not int or count not in (1, 2)
+                or previous is not None and previous[0] >= count
+                or self.counts['read_checksum'] < size):
+            raise ValueError('successful_metered_read_identity_required')
+        self.completed_reads[name] = (count, file_identity, size)

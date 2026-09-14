@@ -120,6 +120,11 @@ def prompt(job: dict) -> str:
         'it exactly to historical_scope; otherwise omit historical_scope. Historical '
         'capture dates are explicitly UTC, not legal effective dates or inferred '
         'Hobart observation days. Never treat an archived version as current terms. '
+        'When expected_incorporated_scope is supplied, copy it exactly to '
+        'incorporated_scope; otherwise omit incorporated_scope. Incorporated '
+        'references identify candidate documents only: product applicability is '
+        'unreviewed. Retain possible terms and unresolved scope without asserting '
+        'that a linked clause applies to any product, customer or historical date. '
         'Source data begins as a JSON object below.\n'
         + json.dumps(job, ensure_ascii=False, separators=(',', ':'))
     )
