@@ -20,10 +20,10 @@ from cdr_historical_fee_exact import canonical_sha, decode, encode, exact, gzip_
 from cdr_historical_fee_membership import account, fee_array_binding, product_evidence
 
 POLICY = 'may13-embedded-export-fees-v1'
-VARIABLE_ZERO_RULE = 'variable_zero_placeholder_v2'
-# Structural reconstruction still accepts retained v1 receipts; new changes
-# explicitly identify the expanded normalized-discriminator rule as v2.
-VARIABLE_ZERO_REVIEW_RULES = frozenset(('variable_zero_placeholder_v1', VARIABLE_ZERO_RULE))
+VARIABLE_ZERO_RULE = 'variable_zero_placeholder_v3'
+# Earlier rules remain named solely for structural restoration of old receipts.
+# New literal and normalized corrections both require proven present bounds.
+VARIABLE_ZERO_REVIEW_RULES = frozenset(('variable_zero_placeholder_v1', 'variable_zero_placeholder_v2', VARIABLE_ZERO_RULE))
 PROJECTION_SOURCES = {
     'app_payload_details.py': '242f508dee9c48947eee73feefc4ed28413ff0cdc0ccf8416e2786ad34f80a47',
     'app_payload_common.py': 'cce4a7b19b4f86c7b52cde122b8a86d68c47b29dc1eb939fc7673a8225cd942d',
@@ -55,8 +55,8 @@ def _conflicting_lower_bound(value):
     if isinstance(value, dict):
         for key, child in value.items():
             if key.lower() in {'minimumamount', 'minimumvalue', 'minamount', 'lowerbound', 'loweramount'}:
-                unknown = child is None or isinstance(child, str) and child.strip().lower() in {'', 'null', 'none'}
-                if not unknown and (number(child) is None or number(child) != 0):
+                bound = number(child)
+                if bound is None or bound != 0:
                     return True
             if _conflicting_lower_bound(child):
                 return True
