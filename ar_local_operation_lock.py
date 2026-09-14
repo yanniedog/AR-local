@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import time
 import uuid
 from contextlib import contextmanager
@@ -14,6 +15,7 @@ from cdr_file_lock import FileLock
 from process_safety import process_alive
 
 LOCK_STALE_SECONDS = 6 * 60 * 60
+MAX_LOCK_RECORD_BYTES = 16 * 1024
 BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
 UPTIME_PATH = Path("/proc/uptime")
 
@@ -41,13 +43,23 @@ def _pid_is_alive(pid: int) -> bool:
 def _lock_values(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        with path.open('rb') as handle:
+            body = handle.read(MAX_LOCK_RECORD_BYTES + 1)
     except (OSError, UnicodeError):
         return values
+    if len(body) > MAX_LOCK_RECORD_BYTES:
+        return {}
+    try:
+        lines = body.decode('utf-8').splitlines()
+    except UnicodeError:
+        return {}
     for line in lines:
+        if not line:
+            continue
         key, separator, value = line.partition("=")
-        if separator and key and key not in values:
-            values[key] = value.strip()
+        if not separator or not key or key in values:
+            return {}
+        values[key] = value.strip()
     return values
 
 
@@ -55,10 +67,25 @@ def _existing_lock_is_stale(path: Path) -> bool:
     if path.is_symlink():
         return False
     try:
-        info = path.stat()
+        info = path.lstat()
     except OSError:
         return False
+    if not stat.S_ISREG(info.st_mode):
+        return False
     values = _lock_values(path)
+    # Held, partial, unreadable and malformed records are not evidence of a
+    # stale ordinary owner. Check this before boot/mtime/PID recovery. Old helper
+    # roles are included even when no explicit recovery flag was written.
+    if (values.get("recovery", "automatic") != "automatic"
+            or values.get("role", "").startswith("drive-hold-")
+            or not values.get("role")):
+        return False
+    try:
+        owner_pid = int(values.get("pid", ""))
+    except ValueError:
+        return False
+    if owner_pid <= 0:
+        return False
     boot_id = _current_boot_id()
     recorded_boot = values.get("boot_id", "")
     if boot_id and recorded_boot and boot_id != recorded_boot:
@@ -66,13 +93,7 @@ def _existing_lock_is_stale(path: Path) -> bool:
     boot_epoch = _boot_epoch()
     if boot_epoch is not None and info.st_mtime < boot_epoch - 1:
         return True
-    try:
-        owner_pid = int(values.get("pid", ""))
-    except ValueError:
-        owner_pid = 0
-    if owner_pid:
-        return not _pid_is_alive(owner_pid)
-    return time.time() - info.st_mtime > LOCK_STALE_SECONDS
+    return not _pid_is_alive(owner_pid)
 
 
 def _open_exclusive(path: Path, role: str) -> int:
