@@ -32,6 +32,7 @@ def paths(tmp_path, monkeypatch):
     system.mkdir()
     marker = system / 'drive-write-hold.json'
     monkeypatch.setattr(activation, 'SYSTEM_HOLD', marker)
+    monkeypatch.setattr(activation, 'verify_guard_inventory', lambda _: {'protocol': activation.GUARD_PROTOCOL})
     return spool, marker
 
 
@@ -200,6 +201,7 @@ from pathlib import Path
 import pi_drive_backup_hold_activate as helper
 helper.SYSTEM_HOLD = Path(sys.argv[2])
 helper.require_trusted_runtime = lambda: None  # Isolated filesystem fixture only.
+helper.verify_guard_inventory = lambda _: {'protocol': helper.GUARD_PROTOCOL}
 def pause_before_marker(*args):
     print('SPOOL_LOCKS_DURABLE', flush=True)
     while True:

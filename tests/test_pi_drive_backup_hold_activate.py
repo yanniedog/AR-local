@@ -24,6 +24,7 @@ def locations(tmp_path, monkeypatch):
     monkeypatch.setattr(activation, 'SYSTEM_HOLD', marker)
     # Filesystem protocol fixture only; entrypoint guards are tested separately.
     monkeypatch.setattr(activation, 'require_trusted_runtime', lambda: None)
+    monkeypatch.setattr(activation, 'verify_guard_inventory', lambda _: {'protocol': activation.GUARD_PROTOCOL})
     return spool, marker
 
 
@@ -58,7 +59,7 @@ def test_stale_or_unreadable_lock_is_never_recovered_or_modified(locations, body
     lock.write_bytes(body)
     os.utime(lock, (1, 1))
     before = lock.stat()
-    with pytest.raises(RuntimeError, match='unreconciled lock'):
+    with pytest.raises(activation.ActivationPending, match='unreconciled lock'):
         activation.activate_hold([spool], 'Preserve fallback')
     after = lock.stat()
     assert lock.read_bytes() == body
@@ -71,8 +72,8 @@ def test_crashed_global_activation_lock_requires_reconciliation(locations):
     lock = marker.parent / activation.GLOBAL_LOCK_NAME
     lock.write_bytes(b'pid=99999999\nrole=old-activation\n')
     before = lock.read_bytes()
-    with pytest.raises(RuntimeError, match='unreconciled lock'):
-        activation.activate_hold([spool], 'Preserve fallback')
+    result = activation.activate_hold([spool], 'Preserve fallback')
+    assert result['result'] == 'ACTIVATION_PENDING'
     assert lock.read_bytes() == before and not marker.exists()
     assert not (spool / 'backup.lock').exists()
 
@@ -125,8 +126,7 @@ def test_disjoint_spool_activations_serialize_global_marker_and_preserve_first_i
         first = executor.submit(activation.activate_hold, [spool], 'first operator reason')
         try:
             assert entered.wait(5)
-            with pytest.raises(RuntimeError, match='unreconciled lock'):
-                activation.activate_hold([other], 'different operator reason')
+            assert activation.activate_hold([other], 'different operator reason')['result'] == 'ACTIVATION_PENDING'
             assert not (other / 'backup.lock').exists()
         finally:
             release.set()
@@ -175,7 +175,7 @@ def test_helper_imports_only_standard_library_and_has_no_recovery_or_signal_depe
     tree = ast.parse(body)
     modules = {node.module.split('.')[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
     modules |= {alias.name.split('.')[0] for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
-    assert modules <= {'__future__', 'argparse', 'hashlib', 'json', 'os', 'stat', 'sys', 'uuid', 'contextlib', 'datetime', 'pathlib'}
+    assert modules <= {'__future__', 'argparse', 'hashlib', 'json', 'os', 'stat', 'sys', 'time', 'uuid', 'contextlib', 'datetime', 'pathlib'}
     assert 'production_lock' not in body and 'os.kill' not in body
 
 
