@@ -22,29 +22,33 @@ def locations(tmp_path, monkeypatch):
     marker = tmp_path / 'system' / 'drive-write-hold.json'
     marker.parent.mkdir(mode=0o700)
     monkeypatch.setattr(activation, 'SYSTEM_HOLD', marker)
+    # Filesystem protocol fixture only; entrypoint guards are tested separately.
+    monkeypatch.setattr(activation, 'require_trusted_runtime', lambda: None)
     return spool, marker
 
 
 def test_inflight_acceptance_prevents_activating_hold(locations):
     spool, marker = locations
-    with activation.exclusive_lock(spool / 'backup.lock', 'in-flight-acceptance'):
-        with pytest.raises(RuntimeError, match='unreconciled lock'):
-            activation.activate_hold([spool], 'Preserve accepted fallback')
-        assert not marker.exists()
-    assert activation.activate_hold([spool], 'Preserve accepted fallback')['result'] == 'HELD'
+    original = b'pid=1234\nrole=in-flight-acceptance\n'
+    (spool / 'backup.lock').write_bytes(original)
+    with pytest.raises(RuntimeError, match='unreconciled lock'):
+        activation.activate_hold([spool], 'Preserve accepted fallback')
+    assert not marker.exists()
+    assert (spool / 'backup.lock').read_bytes() == original
+    assert (marker.parent / activation.GLOBAL_LOCK_NAME).is_file()
 
 
-def test_all_spools_must_be_idle_and_only_owned_locks_release_on_failure(locations):
+def test_partial_activation_retains_new_and_preexisting_locks_on_failure(locations):
     spool, marker = locations
-    other = spool.parent / 'second-spool'
+    other = spool.parent / 'z-second-spool'
     other.mkdir()
-    with activation.exclusive_lock(other / 'backup.lock', 'other-operation'):
-        before = (other / 'backup.lock').read_bytes()
-        with pytest.raises(RuntimeError, match='unreconciled lock'):
-            activation.activate_hold([spool, other], 'Preserve accepted fallback')
-        assert not marker.exists() and not (spool / 'backup.lock').exists()
-        assert (other / 'backup.lock').read_bytes() == before
-        assert not (marker.parent / activation.GLOBAL_LOCK_NAME).exists()
+    before = b'pid=1234\nrole=other-operation\n'
+    (other / 'backup.lock').write_bytes(before)
+    with pytest.raises(RuntimeError, match='unreconciled lock'):
+        activation.activate_hold([spool, other], 'Preserve accepted fallback')
+    assert not marker.exists() and (spool / 'backup.lock').is_symlink()
+    assert (other / 'backup.lock').read_bytes() == before
+    assert (marker.parent / activation.GLOBAL_LOCK_NAME).is_file()
 
 
 @pytest.mark.parametrize('body', [b'', b'pid=99999999\nrole=old-backup\n', b'not-a-lock-record'])
@@ -101,8 +105,9 @@ def test_success_holds_every_distinct_spool_and_global_lock_during_marker_instal
     expected = sorted(str(path) for path in paths)
     assert seen == [expected] and result['coordinated_spools'] == expected
     assert json.loads(marker.read_bytes())['coordinated_spools'] == expected
-    assert all(not (path / 'backup.lock').exists() for path in paths)
-    assert not (marker.parent / activation.GLOBAL_LOCK_NAME).exists()
+    assert all((path / 'backup.lock').is_symlink() for path in paths)
+    assert (marker.parent / activation.GLOBAL_LOCK_NAME).is_file()
+    assert result['lock_reconciliation'] == 'MANUAL_ONLY_AFTER_EXPLICIT_OPERATOR_RESUME'
 
 
 def test_disjoint_spool_activations_serialize_global_marker_and_preserve_first_inventory(locations, monkeypatch):
@@ -214,7 +219,7 @@ def test_protected_installation_checks_entire_owner_mode_and_link_chain(tmp_path
             uid = 1000
         if broken and fault == 'hardlinked_helper' and current == helper:
             links = 2
-        return SimpleNamespace(st_mode=mode, st_uid=uid, st_nlink=links)
+        return SimpleNamespace(st_mode=mode, st_uid=uid, st_gid=0, st_nlink=links)
     monkeypatch.setattr(activation.os, 'lstat', metadata)
     activation.root_owned_chain(helper, file=True)
     broken = True
