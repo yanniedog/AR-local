@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ar_local_operation_lock import production_lock
 from pi_drive_backup_resources import require_receipt, supervise
+from pi_drive_backup_hold import require_writes_allowed
 
 
 def execute_worker(config, command, *, force, full, operation, recovery=None):
@@ -63,11 +64,13 @@ def validate_binding(spool, value):
 
 def run_protected(config, command="run", *, force=False, full=False, recovery=None):
     import pi_drive_backup as backup
+    require_writes_allowed(config.spool)
     ready = backup.readiness(config)
     if ready["result"] != "PASS":
         raise backup.Blocked("; ".join(ready["reasons"]))
     config.spool.mkdir(parents=True, exist_ok=True, mode=0o700)
     with production_lock(config.spool / "backup.lock", "drive-backup"):
+        require_writes_allowed(config.spool)
         if recovery is not None:
             from pi_drive_backup_recovery import recovery_admission
             recovery = recovery_admission(config, command, recovery)
@@ -81,6 +84,9 @@ def run_protected(config, command="run", *, force=False, full=False, recovery=No
         accepted = {**candidate, "resource_evidence": {"path": operation.relative_to(config.spool).as_posix(),
             **{f"{name}_sha256": backup.digest(operation / f"{name}.json") for name in ("request", "candidate", "resources")}}}
         validate_binding(config.spool, accepted)
+        # A hold installed during a worker run prevents queue acknowledgement or
+        # acceptance. Retain its candidate/resource evidence for reconciliation.
+        require_writes_allowed(config.spool)
         if recovery is not None:
             from pi_drive_backup_recovery import recovery_acceptance
             recovery_acceptance(config, recovery, accepted)
@@ -133,6 +139,7 @@ def worker(request_path):
 
 def worker_action(config, request):
     import pi_drive_backup as backup
+    require_writes_allowed(config.spool)
     command = request["command"]
     if command == "run":
         if request.get("recovery") is not None:

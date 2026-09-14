@@ -180,11 +180,12 @@ def test_fixed_unit_and_absent_pointer_admission_and_post_worker_guard(original,
     with pytest.raises(backup.Blocked):recovery.recovery_admission(original.config,"run",original.bound)
 
 
-def test_recovery_worker_route_never_enters_normal_freeze(monkeypatch):
+def test_recovery_worker_route_never_enters_normal_freeze(monkeypatch, tmp_path):
     expected={"result":"PASS"}
     monkeypatch.setattr(recovery,"recover_snapshot",lambda cfg,arg:expected)
     monkeypatch.setattr(backup,"_run_locked",lambda *a,**k:pytest.fail("normal freeze path"))
-    assert controller.worker_action(None,{"command":"run","recovery":{"fixture":True}}) is expected
+    config = backup.Config(tmp_path, tmp_path, '', tmp_path / 'password', tmp_path / 'rclone', [])
+    assert controller.worker_action(config,{"command":"run","recovery":{"fixture":True}}) is expected
 
 
 @pytest.mark.parametrize('patch',[{'request_ids':['f'*32]},{'snapshot_id':'9'*64},{'backup_date':'2026-09-14'},

@@ -31,6 +31,7 @@ from pi_drive_backup_source import (SCHEMA, canonical_json_bytes, digest, freeze
     restore_relative, validate_layout, verify_direct_sources, verify_restore)
 from pi_drive_backup_manifest import SelectedRows, close_manifest, json_chunks, load_manifest
 from pi_drive_backup_diagnostics import StderrCapture
+from pi_drive_backup_hold import hold_reason, require_writes_allowed
 
 TZ = ZoneInfo("Australia/Hobart")
 TAG = "ar-local-drive-v1"
@@ -100,6 +101,9 @@ class Config:
 
 def readiness(config: Config, *, remote: bool = False) -> dict:
     reasons = []
+    held = hold_reason(config.spool)
+    if held:
+        reasons.append(held)
     try:
         validate_layout(config.data, config.spool, config.controls)
     except (OSError, ValueError) as error:
@@ -148,6 +152,9 @@ class Restic:
         self.config = config
 
     def run(self, *args: str) -> str:
+        # Even check/read commands can create repository locks. A hold therefore
+        # blocks all backend access, including alternate direct/manual callers.
+        require_writes_allowed(self.config.spool)
         guard_window()
         cfg = self.config
         env = os.environ.copy()
@@ -341,6 +348,7 @@ def run_backup(config: Config, *, force: bool = False) -> dict:
 
 
 def _run_locked(config: Config, *, force: bool) -> dict:
+    require_writes_allowed(config.spool)
     guard_window()
     current = now()
     last = _load(config.spool / "latest-verified.json")
