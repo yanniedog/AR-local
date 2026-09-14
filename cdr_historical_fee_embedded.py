@@ -20,6 +20,10 @@ from cdr_historical_fee_exact import canonical_sha, decode, encode, exact, gzip_
 from cdr_historical_fee_membership import account, fee_array_binding, product_evidence
 
 POLICY = 'may13-embedded-export-fees-v1'
+VARIABLE_ZERO_RULE = 'variable_zero_placeholder_v2'
+# Structural reconstruction still accepts retained v1 receipts; new changes
+# explicitly identify the expanded normalized-discriminator rule as v2.
+VARIABLE_ZERO_REVIEW_RULES = frozenset(('variable_zero_placeholder_v1', VARIABLE_ZERO_RULE))
 PROJECTION_SOURCES = {
     'app_payload_details.py': '242f508dee9c48947eee73feefc4ed28413ff0cdc0ccf8416e2786ad34f80a47',
     'app_payload_common.py': 'cce4a7b19b4f86c7b52cde122b8a86d68c47b29dc1eb939fc7673a8225cd942d',
@@ -72,12 +76,11 @@ def enrich(old, fee):
     rule = 'missing_structured_fee_fields_v1'
     retained = dict(old)
     if (conflicts == {'value'} and 'value' not in projected and projected.get('amountStatus') == 'variable'
-            and (fee.get('feeType') == 'VARIABLE' or fee.get('feeMethodUType') == 'variable')
             and number(old['value']) == 0 and number(fee.get('amount')) == 0
             and not _conflicting_lower_bound(fee)):
         retained.pop('value')
         conflicts.clear()
-        rule = 'variable_zero_placeholder_v1'
+        rule = VARIABLE_ZERO_RULE
     if conflicts:
         return old, {'status': 'WITHHELD', 'reason': 'published_fee_conflicts_with_retained_projection',
                      'conflicting_fields': sorted(conflicts)}
@@ -208,7 +211,7 @@ def verify_changes(original, candidate, changes, *, checkpoint=None):
         seen.add((key, index))
         old, new = original['products'][key]['fees'][index], candidate['products'][key]['fees'][index]
         removed = set(old) - set(new)
-        if removed and (removed != {'value'} or change['rule_id'] != 'variable_zero_placeholder_v1'):
+        if removed and (removed != {'value'} or change['rule_id'] not in VARIABLE_ZERO_REVIEW_RULES):
             raise ValueError('unapproved_fee_field_deletion')
         if not set(new) - set(old) <= OUTPUT_FIELDS or any(not exact(value, new[field]) for field, value in old.items() if field not in removed):
             raise ValueError('existing_fee_value_type_or_presence_changed')

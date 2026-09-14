@@ -30,8 +30,11 @@ def _index(rows, fields, *, checkpoint=None):
             checkpoint()
         if not isinstance(row, dict) or any(field not in row for field in fields):
             raise ValueError('source_identity_shape_invalid')
+        if any(field in row and not isinstance(row[field], str) for field in IDENTITY_FIELDS):
+            raise ValueError('source_identity_type_invalid')
         key = tuple(row[field] for field in fields)
-        if any(not isinstance(value, (str, int)) or type(value) is bool for value in key):
+        if any((type(value) is not int if field in ('rate_index', 'item_index') else not isinstance(value, str))
+               for field, value in zip(fields, key)):
             raise ValueError('source_identity_type_invalid')
         result[key].append((index, row))
     return result
