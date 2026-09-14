@@ -84,8 +84,9 @@ def run_protected(config, command="run", *, force=False, full=False, recovery=No
         accepted = {**candidate, "resource_evidence": {"path": operation.relative_to(config.spool).as_posix(),
             **{f"{name}_sha256": backup.digest(operation / f"{name}.json") for name in ("request", "candidate", "resources")}}}
         validate_binding(config.spool, accepted)
-        # A hold installed during a worker run prevents queue acknowledgement or
-        # acceptance. Retain its candidate/resource evidence for reconciliation.
+        # Observe out-of-band refusal markers before acceptance. Official hold
+        # activation uses this same backup.lock, so it cannot be declared active
+        # between this check and completion of the acceptance critical section.
         require_writes_allowed(config.spool)
         if recovery is not None:
             from pi_drive_backup_recovery import recovery_acceptance
