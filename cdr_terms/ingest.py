@@ -14,12 +14,14 @@ from cdr_product_facts import NORMALIZATION_VERSION
 from .acquisitions_queue import AcquisitionQueue, enqueue_interpretation
 from .capture_provenance import begin_capture, source_time
 from .identity import byte_digest, digest, utc_now
+from .parameter_registry import registry_contract
 from .store import EvidenceStore
 
 
 def registry_context() -> dict[str, Any]:
     return {"document_schema_version": 1, "structured_fact_normalization": NORMALIZATION_VERSION,
-            "interpretation_contract": "analysis-staging-v1", "executable_rules": "unapproved"}
+            "interpretation_contract": "analysis-staging-v1", "executable_rules": "unapproved",
+            "parameter_registry": registry_contract()}
 
 
 def _outside_sources(root: Path, source_roots: list[Path]) -> None:

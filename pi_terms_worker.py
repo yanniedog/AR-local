@@ -34,7 +34,7 @@ STATE_NAME = 'interpreter-state.json'
 PUBLIC_CONTEXT_FIELDS = frozenset({
     'product_keys', 'source_product_sha256', 'document_schema_version',
     'structured_fact_normalization', 'interpretation_contract', 'executable_rules',
-    'historical_target', 'incorporated_target',
+    'historical_target', 'incorporated_target', 'parameter_registry',
 })
 
 
