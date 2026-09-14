@@ -171,7 +171,8 @@ def publish_product_asset(store: EvidenceStore, payload: Mapping[str, Any], *,
             raise ValueError("Product source observation changed; stale promotion rejected")
         if build_product_asset(store, product_key) != payload:
             raise ValueError("Document, validation or coverage changed before publication")
-        if identity == payload["identity_sha256"]:
+        if (identity == payload["identity_sha256"]
+                and previous["observation_id"] == expected_observation_id):
             return previous["publication_id"]
         fields = (product_key, expected_observation_id, payload["identity_sha256"],
                   expected_previous_identity, timestamp(published_at), canonical_json(payload))
