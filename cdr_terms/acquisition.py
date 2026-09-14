@@ -136,13 +136,14 @@ def _body(response: http.client.HTTPResponse, connection: http.client.HTTPConnec
 
 
 def fetch_document(url: str, *, policy: FetchPolicy,
-                   conditional: dict[str, str] | None = None) -> dict[str, Any]:
+                   conditional: dict[str, str] | None = None,
+                   conditional_url: str | None = None) -> dict[str, Any]:
     current = document_url(url)
     if not current:
         raise FetchFailure("invalid_document_url")
     deadline = time.monotonic() + policy.timeout_seconds
     redirects: list[str] = []
-    initial_host = urlsplit(current).hostname
+    validator_url = document_url(conditional_url) if conditional_url else None
     for _ in range(policy.max_redirects + 1):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -161,7 +162,7 @@ def fetch_document(url: str, *, policy: FetchPolicy,
             parsed = urlsplit(current)
             headers = {"Accept": "application/pdf,text/html,text/plain,application/json;q=0.8,*/*;q=0.1",
                        "Accept-Encoding": "identity", "User-Agent": "AR-local-document-evidence/1"}
-            if parsed.hostname == initial_host:
+            if current == validator_url:
                 headers.update(conditional or {})
             target = parsed.path + (("?" + parsed.query) if parsed.query else "")
             connection.request("GET", target, headers=headers)
@@ -177,6 +178,8 @@ def fetch_document(url: str, *, policy: FetchPolicy,
                         "etag": response.getheader("ETag"),
                         "last_modified": response.getheader("Last-Modified")}
             if response.status == 304:
+                if current != validator_url or not conditional:
+                    raise FetchFailure("unbound_not_modified", 304)
                 return {"status": "unchanged", "http_status": 304, "metadata": metadata}
             if response.status != 200:
                 raise FetchFailure("http_error", response.status)
@@ -204,17 +207,23 @@ def acquire_document(store: EvidenceStore, document_id: str, *, check_id: str,
         raise ValueError("Document must originate from the evidence inventory")
     previous = store.last_success(document_id)
     headers: dict[str, str] = {}
+    validator_url = None
     if previous:
         metadata = json.loads(previous["metadata_json"])
+        validator_url = document_url(metadata.get("final_url"))
         for field, header in (("etag", "If-None-Match"), ("last_modified", "If-Modified-Since")):
             if metadata.get(field):
                 headers[header] = metadata[field]
     checked_at = utc_now()
     try:
-        result = fetch_document(row["source_url"], policy=policy or FetchPolicy(), conditional=headers)
+        result = fetch_document(row["source_url"], policy=policy or FetchPolicy(),
+                                conditional=headers, conditional_url=validator_url)
         if result["status"] == "unchanged":
             if not previous:
                 raise FetchFailure("unchanged_without_retained_version", 304)
+            if (not validator_url or not headers
+                    or document_url(result.get("metadata", {}).get("final_url")) != validator_url):
+                raise FetchFailure("unbound_not_modified", 304)
             result["previous_version_id"] = previous["document_version_id"]
             # Servers may omit validators on 304. Retain the previously bound
             # values instead of silently turning the next check unconditional.

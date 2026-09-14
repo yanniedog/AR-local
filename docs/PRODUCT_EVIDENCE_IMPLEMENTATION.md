@@ -84,12 +84,62 @@ review/publication/consumer gates. The full legal corpus, OCR/fixed-point linked
 document traversal, reviewed canonical registry and every-product applicability
 adapter remain unfinished.
 
-Historical interpretation has an additional explicit boundary: the current queue
-requires the latest successful source version for every priority, so a retained
-older version is superseded once that source URL has a newer version. Priority 2
-does not bypass source safety. Future historical interpretation requires a reviewed
-pinned observation/version target and a separate promotion namespace. The May 19
-deterministic fee repair uses its own dated source contract, not this interpreter.
+Historical interpretation now has an explicit immutable target in `historical.py`:
+`enqueue_historical` binds observation IDs, raw hashes, document version, extraction,
+context and UTC capture dates. It can stage a retained older version after the
+source URL advances. Priority 2 alone never bypasses source safety. The worker's
+`STAGED_HISTORICAL` receipt and mandatory `historical_only` result scope prohibit
+current publication; legal effective dates and Hobart observation days are not
+inferred from UTC timestamps. The May 19 deterministic fee repair uses its own
+dated source contract, separate from this interpreter.
+
+## Bounded incorporated-document graph (D-002)
+
+`cdr_terms/graph.py` adds a durable candidate frontier in the dedicated append-only
+evidence database. A root binds one successful acquisition check and every raw CDR
+applicability pointer associated with that request. Each edge binds its parent
+node, exact document version and extraction, HTML anchor occurrence, original href,
+resolved URL and label. Shared URLs reuse acquisition requests within an ingest;
+distinct URLs keep distinct version identities even when their bytes share one
+content hash. Cycles and repeated anchors remain visible. These candidate edges
+do not add reviewed product applicability, analysis jobs or public terms.
+
+The existing collector performs at most one offline retained-node expansion and
+one guarded document fetch per cycle. Expansion, edges and new frontier requests
+commit atomically; interrupted expansion restarts idempotently. Existing acquisition
+leases govern fetch ownership. Only an exact lease-accepted successful capture
+activates its seeded graph, including when its interpretation remains unavailable.
+An uncompleted or superseded lease cannot activate it. New observations supersede
+old scope only after their complete-ingest marker exists; unfinished captures stay
+as evidence. Changed completed observations, parent versions or final URL locations
+stop current traversal, with an explicit retained disposition. Malformed HTML or
+unreadable retained bytes receive durable failed expansion records, so a broken
+node cannot indefinitely prevent sibling requests from progressing.
+
+Default limits are depth 3, 32 URL nodes per root and 128 followable anchors per
+node. The extractor retains at most 256 anchor occurrences and records the exact
+remaining count against the retained original bytes. Depth, node and link limits,
+unsafe references, non-document assets and unapproved hosts have explicit reasons.
+No unsupported PDF/plain-text reference detector or empty HTML link set establishes
+legal closure. Scans, OCR, dynamic content, HTML base overrides and material clause
+coverage still require additional work and independent review.
+
+Host grants come from exact original CDR references or an explicit retained review
+receipt; no linked page can grant another domain or subdomain. Network DNS/IP and
+redirect guards remain enforced. Relative HTML links use the acquisition's verified
+final URL. Conditional validators are sent only to their exact retained final URL;
+an unbound 304 or changed redirect destination is a failed check, never an inferred
+unchanged document. Old bytes/checks remain intact. Graph-only captures retain
+today's actual observation time and never become historical legal evidence.
+
+The graph contract is described in
+[`document-graph-v1.md`](../contracts/product_terms/document-graph-v1.md).
+Local tests do not establish deployed behavior or whole-catalogue completion.
+The existing one-fetch/15-minute schedule has a separate capacity deficit: the
+recorded baseline has 1,565 normalized URLs but only 73 admissible scheduled cycles
+per day, requiring at least 22 days before recursion, retries or deferrals. Daily
+rechecking therefore remains unfulfilled. This slice does not widen runtime
+windows, resource guards, timer frequency or fetch counts.
 
 ## Authority and reviewed material
 

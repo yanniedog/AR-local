@@ -312,13 +312,14 @@ def run_one(repo: Path, root: Path, auth_home: Path, executable: Path) -> dict:
 
 def collect_one(store: EvidenceStore, repo: Path, root: Path) -> dict:
     from cdr_terms.acquisitions_queue import AcquisitionQueue
+    from cdr_terms.graph import DocumentGraph
     from cdr_terms.ingest import registry_context
     due = AcquisitionQueue(store).next_due()
     expired = store.db.execute(
         "SELECT 1 FROM acquisition_events e WHERE sequence=(SELECT MAX(sequence) FROM acquisition_events "
         "WHERE request_id=e.request_id) AND status='running' AND lease_expires_at<=? LIMIT 1",
         (timestamp(utc_now().isoformat()),)).fetchone()
-    if due is None and expired is None:
+    if due is None and expired is None and DocumentGraph(store).pending() is None:
         return {'result': 'NO_WORK', 'network_called': False, 'codex_called': False}
     operation = root / 'acquisition-runs' / uuid.uuid4().hex
     if operation.resolve() != operation:
