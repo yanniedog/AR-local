@@ -12,7 +12,7 @@ from jsonschema import Draft202012Validator
 from .identity import canonical_json, digest, exact_value, timestamp, utc_now
 from .historical import build_historical_target, historical_scope, validate_historical_target
 from .observation_checks import context_document_state
-from .store import EvidenceStore
+from .store import EvidenceStore, validate_clause_locator
 
 STAGING_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_terms" / "analysis-staging-v1.schema.json"
 _TRANSITIONS = {
@@ -207,7 +207,7 @@ class TermsQueue:
         schema = json.loads(STAGING_SCHEMA.read_text(encoding="utf-8"))
         Draft202012Validator(schema).validate(output)
         exact_value(output)
-        job = self.store.db.execute("SELECT j.*,x.text_sha256 FROM analysis_jobs j "
+        job = self.store.db.execute("SELECT j.*,x.text_sha256,x.coverage_json FROM analysis_jobs j "
                                     "JOIN extractions x USING(extraction_id) WHERE job_id=?", (job_id,)).fetchone()
         if not job or output["extraction_id"] != job["extraction_id"] or output["context_sha256"] != job["context_sha256"]:
             raise ValueError("Staged output is bound to a different input generation")
@@ -218,9 +218,10 @@ class TermsQueue:
                 raise ValueError("Historical output must preserve its historical-only target scope")
         elif "historical_scope" in output:
             raise ValueError("Current output cannot claim a historical target scope")
+        coverage = json.loads(job['coverage_json']) if any(clause['page'] is not None for clause in output['clauses']) else {}
         for clause in output["clauses"]:
-            if not 0 <= clause["start"] < clause["end"] <= len(text):
-                raise ValueError("Staged clause is outside the pinned source extraction")
+            validate_clause_locator(text, coverage, start=clause['start'], end=clause['end'],
+                                    page=clause['page'], section=clause['section'])
         for term in output["terms"]:
             if term["product_key"] not in context["product_keys"]:
                 raise ValueError("Staged term escaped the input product applicability")

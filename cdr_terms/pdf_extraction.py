@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlsplit
 
 from .discovery import document_url
 
-PDF_POLICY_VERSION = 'pdf-page-evidence-2'
+PDF_POLICY_VERSION = 'pdf-page-evidence-3'
 MAX_PDF_BYTES = 16 * 1024**2
 MAX_PAGES = 512
 MAX_TEXT_CHARACTERS = 2_000_000
@@ -99,8 +99,8 @@ def _page_links(page, text, page_number, start, source_url, base_requires_review
 def extract_pdf(body: bytes, source_url: str):
     coverage = {'policy_version': PDF_POLICY_VERSION, 'media_type': 'application/pdf',
                 'reason': 'pdf_tables_footnotes_layout_and_ocr_require_review',
-                'page_spans': [], 'unreadable_pages': [], 'candidate_links': [],
-                'candidate_links_total': 0, 'candidate_links_omitted': 0,
+                'page_spans': [], 'unreadable_pages': [],
+                'candidate_links_total': None, 'candidate_links_omitted': None,
                 'layout_status': 'unreviewed', 'table_structure_status': 'unreviewed',
                 'footnote_associations_status': 'unreviewed', 'ocr_status': 'not_performed',
                 'incorporated_references_status': 'unreviewed'}
@@ -118,7 +118,10 @@ def extract_pdf(body: bytes, source_url: str):
         count = len(reader.pages)
     except Exception:
         return '', 'failed', {**coverage, 'reason': 'pdf_extraction_failed'}
-    coverage.update(pages=count, pages_processed=0, unprocessed_page_range=None)
+    # Field presence grants candidate-link capability to the graph. An early
+    # failure did not scan references and must retain unknown counts.
+    coverage.update(pages=count, pages_processed=0, unprocessed_page_range=None,
+                    candidate_links=[], candidate_links_total=0, candidate_links_omitted=0)
     try:
         coverage['pdf_uri_base_requires_review'] = '/URI' in reader.trailer['/Root']
     except Exception:
