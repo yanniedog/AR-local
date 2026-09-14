@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Private May13 embedded-export fee admission; no publication authority",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "contract": {
+      "const": "embedded_export_fee_admission_v1"
+    },
+    "evidence_kind": {
+      "const": "embedded_export_details_json"
+    },
+    "observation_date": {
+      "const": "2026-05-13"
+    },
+    "source_generation_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_observed_at": {
+      "type": "null"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "policy_version": {
+      "const": "may13-embedded-export-fees-v1"
+    },
+    "container": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "sealed_recovered_export"
+        },
+        "source_member_path": {
+          "const": "/srv/ar-local/data/runs/2026-05-13/_exports/banks-2026-05-13.json"
+        },
+        "image_sha256_from_prior_receipts": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "image_read_this_run": {
+          "const": false
+        },
+        "prior_filesystem_recovery_required": {
+          "const": true
+        },
+        "original_http_capture_supplied": {
+          "const": false
+        },
+        "original_http_availability": {
+          "const": "unverified"
+        },
+        "source_and_core_details_byte_agreement": {
+          "const": true
+        },
+        "control_manifest_differs_from_original_public_anchor": {
+          "const": true
+        }
+      },
+      "required": [
+        "kind",
+        "source_member_path",
+        "image_sha256_from_prior_receipts",
+        "image_read_this_run",
+        "prior_filesystem_recovery_required",
+        "original_http_capture_supplied",
+        "original_http_availability",
+        "source_and_core_details_byte_agreement",
+        "control_manifest_differs_from_original_public_anchor"
+      ],
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fingerprint": {
+            "type": "object",
+            "properties": {
+              "device": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "inode": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mtime_ns": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "device",
+              "inode",
+              "bytes",
+              "mtime_ns"
+            ],
+            "additionalProperties": false
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "bytes",
+          "fingerprint",
+          "limit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parent_kind": {
+      "const": "UNPUBLISHED_TAXONOMY_CANDIDATE"
+    },
+    "parent_lineage": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "taxonomy_additions_preserved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "taxonomy_source_proofs_rechecked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "all_existing_rate_values_order_and_multiplicity_preserved": {
+          "const": true
+        }
+      },
+      "required": [
+        "rows",
+        "taxonomy_additions_preserved",
+        "taxonomy_source_proofs_rechecked",
+        "all_existing_rate_values_order_and_multiplicity_preserved"
+      ],
+      "additionalProperties": false
+    },
+    "projection_source_sha256_lf": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "adapter_source_sha256_lf": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "untouched_optional_assets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "membership": {
+      "type": "object",
+      "properties": {
+        "products": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fee_dispositions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "membership_canonical_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "array_dispositions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "public_fee_objects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_flattened_fee_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_only_or_withheld_rows": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "products",
+        "rates",
+        "fee_dispositions",
+        "membership_canonical_sha256",
+        "array_dispositions",
+        "public_fee_objects",
+        "source_flattened_fee_rows",
+        "source_only_or_withheld_rows"
+      ],
+      "additionalProperties": false
+    },
+    "publication": {
+      "const": "NOT_ATTEMPTED"
+    },
+    "calculation_completeness": {
+      "const": "UNKNOWN"
+    },
+    "customer_eligibility": {
+      "const": "UNKNOWN"
+    },
+    "full_fee_applicability": {
+      "const": "UNKNOWN"
+    },
+    "admission_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract",
+    "evidence_kind",
+    "observation_date",
+    "source_generation_time",
+    "source_observed_at",
+    "created_at",
+    "policy_version",
+    "container",
+    "inputs",
+    "parent_kind",
+    "parent_lineage",
+    "projection_source_sha256_lf",
+    "adapter_source_sha256_lf",
+    "untouched_optional_assets",
+    "membership",
+    "publication",
+    "calculation_completeness",
+    "customer_eligibility",
+    "full_fee_applicability",
+    "admission_id"
+  ],
+  "additionalProperties": false
+}

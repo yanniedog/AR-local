@@ -191,6 +191,19 @@ CREATE TABLE IF NOT EXISTS ingest_captures (
     completed_at TEXT NOT NULL,
     products INTEGER NOT NULL CHECK(products > 0)
 );
+-- Written before the first raw observation; completion remains independently gated.
+CREATE TABLE IF NOT EXISTS ingest_capture_attempts (
+    ingest_id TEXT PRIMARY KEY,
+    source_observed_at TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    provenance_json TEXT NOT NULL
+);
+-- Explicit manual fetch scope. Unscoped archive imports never acquire this binding.
+CREATE TABLE IF NOT EXISTS observation_acquisitions (
+    observation_id TEXT NOT NULL REFERENCES observations(observation_id),
+    check_id TEXT NOT NULL REFERENCES acquisition_checks(check_id),
+    PRIMARY KEY(observation_id,check_id)
+);
 
 -- Candidate incorporated-document graph. These edges never add legal applicability
 -- or reviewed terms. Root bindings retain every raw CDR pointer and product scope.

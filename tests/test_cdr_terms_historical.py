@@ -11,6 +11,7 @@ from cdr_terms.extraction import extract_version
 from cdr_terms.historical import historical_scope
 from cdr_terms.identity import digest
 from cdr_terms.ingest import registry_context
+from cdr_terms.observation_checks import bind_manual_check
 from cdr_terms.queue import TermsQueue
 from cdr_terms.reporting import build_product_asset, publish_product_asset
 from cdr_terms.revisions import stage_term
@@ -54,11 +55,12 @@ def test_historical_target_pins_observed_evidence_without_inferred_effective_dat
 
 
 def test_historical_pin_survives_url_source_advance_while_current_job_is_superseded(historical):
-    store, queue, job, output, context, _, key, document, body = historical
+    store, queue, job, output, context, observation, key, document, body = historical
     current_context = {k: v for k, v in context.items() if k != "historical_target"}
     current = queue.enqueue(output["extraction_id"], current_context, priority=0, now=NOW)
     store.record_check(document_id=document, check_id="subsequent-source", checked_at=NOW,
                        status="fetched", body=body + b"\n", media_type="application/json")
+    bind_manual_check(store, observation, "subsequent-source")
     claim = queue.claim(NOW)
     assert claim["job_id"] == job
     assert store.db.execute("SELECT status FROM job_events WHERE job_id=? ORDER BY sequence DESC LIMIT 1", (current,)).fetchone()[0] == "superseded"
