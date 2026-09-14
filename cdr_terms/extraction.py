@@ -1,7 +1,6 @@
 """Conservative extraction: original bytes remain authoritative and private."""
 from __future__ import annotations
 
-import io
 import json
 import re
 from html.parser import HTMLParser
@@ -10,9 +9,10 @@ from urllib.parse import urljoin
 
 from .discovery import document_url
 from .identity import utc_now
+from .pdf_extraction import extract_pdf
 from .store import EvidenceStore
 
-EXTRACTOR_VERSION = "document-text-2"
+EXTRACTOR_VERSION = "document-text-3"
 MAX_HTML_LINKS = 256
 
 
@@ -74,7 +74,7 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
     """Return text, completeness status and evidence; never claim semantics."""
     mime = media_type.split(";", 1)[0].strip().lower()
     if body.startswith(b"%PDF-") or mime == "application/pdf":
-        return _extract_pdf(body)
+        return extract_pdf(body, source_url)
     if mime in {"text/html", "application/xhtml+xml"}:
         charset_match = re.search(r"charset=([^;\s]+)", media_type, re.I)
         charset = charset_match.group(1).strip("\"'") if charset_match else "utf-8"
@@ -104,25 +104,6 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
             return "", "failed", {"reason": "invalid_text_encoding_or_json"}
         return text, "complete" if text else "failed", {"characters": len(text)}
     return "", "failed", {"reason": "unsupported_document_type"}
-
-
-def _extract_pdf(body: bytes) -> tuple[str, str, dict[str, Any]]:
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        return "", "failed", {"reason": "pdf_extractor_unavailable"}
-    try:
-        reader = PdfReader(io.BytesIO(body))
-        if reader.is_encrypted:
-            return "", "failed", {"reason": "encrypted_pdf"}
-        pages = [page.extract_text() or "" for page in reader.pages]
-    except Exception:
-        return "", "failed", {"reason": "pdf_extraction_failed"}
-    unreadable = [index + 1 for index, page in enumerate(pages) if not page.strip()]
-    return "\n\f\n".join(pages), "partial", {
-        "pages": len(pages), "unreadable_pages": unreadable,
-        "reason": "pdf_tables_footnotes_layout_and_ocr_require_review",
-    }
 
 
 def extract_version(store: EvidenceStore, version_id: str, *, check_id: str | None = None) -> str:

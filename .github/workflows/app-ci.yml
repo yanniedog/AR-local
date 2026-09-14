@@ -32,6 +32,7 @@ on:
       - 'deploy/pi/ar-local-ingest-now.service'
       - 'cleanup_removed_cdr_sector.py'
       - 'requirements.txt'
+      - 'requirements-terms.txt'
       - 'tests/**'
       - '.github/workflows/app-ci.yml'
   push:
@@ -64,6 +65,7 @@ on:
       - 'deploy/pi/ar-local-ingest-now.service'
       - 'cleanup_removed_cdr_sector.py'
       - 'requirements.txt'
+      - 'requirements-terms.txt'
       - 'tests/**'
       - '.github/workflows/app-ci.yml'
 
@@ -93,7 +95,7 @@ jobs:
         # cryptography is an optional runtime dep (lazy import) but tests exercise the
         # payload-encryption path, so install it here to run those rather than skip.
         # openpyxl is test-only: production XLSX output remains stdlib-only.
-        run: python -m pip install --quiet -r requirements.txt cryptography openpyxl pytest
+        run: python -m pip install --quiet -r requirements.txt -r requirements-terms.txt cryptography openpyxl pytest
       - name: Verify PowerShell 7 for installer regression
         run: pwsh --version
       - name: Parse laptop backup PowerShell helpers
