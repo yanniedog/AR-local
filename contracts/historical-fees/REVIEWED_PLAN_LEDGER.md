@@ -23,7 +23,7 @@ terminal receipts. No object contains its own content hash. Code manifests
 contain exact raw and LF hashes plus lengths of the complete named adapter,
 projection and schema file set. Runtime paths and approvals remain private.
 
-`execute(plan_bytes, approval_bytes, trusted_verifier=..., control_budget=...)`
+`execute(plan_bytes, approval_bytes, trusted_verifier=..., control_budget=..., bootstrap_cache=...)`
 is an internal trusted-launcher boundary. `TrustedAttestation` is **not an
 authentication mechanism** and cannot authenticate a file claiming root approval.
 No verifier is installed here. A future separately reviewed root launcher must:
@@ -56,6 +56,47 @@ the root attestation, validates exact registry/limits/code identities, then
 creates the permanent work claim before any source-body operation. Bootstrap
 authentication before that claim is the launcher's explicit durable admission
 responsibility, not an implied guarantee supplied by a callback type.
+
+### Optional verified bootstrap source cache
+
+The optional cache closes the first-verification reread seam; it does not install
+a launcher or authorize a source attempt. Existing callers omit it and retain
+their two physical code-verification passes. No registry, financial policy,
+ledger schema, limit or publication authority changes.
+
+The trusted bootstrap loads project modules from exactly verified resident bytes,
+and transfers every measured read/checksum/output debit and attempted read count
+into the **same** `ControlBudget` with the original deadline. It must retain failed
+maximum reservations. `note_completed_read(canonical_path, (device, inode, size,
+mtime_ns), size)` records a successful already-admitted read only; it increments
+no counters and refunds nothing. `read_control` automatically records this stable
+handle identity after a full successful read. Failed or short reads receive no
+success receipt. A private bootstrap bridge must supply its measured identities,
+not invent successful receipts for failed reads.
+
+`seal_bootstrap_code(plan, control, resident_bodies)` accepts exactly `CODE_FILES`,
+immutable bytes, bounded lengths, raw/LF hashes, canonical paths and unchanged
+identities matching successful first-read receipts on that meter. Each resident
+hash pass is charged explicitly, including cache construction/manifest hashing.
+There is no new physical read or allowance. The returned `BootstrapCodeCache`
+binds the concrete meter, original deadline and an exact manifest `sha256`.
+
+For the cache path only, the reviewed verifier also receives `bootstrap_cache`
+and must issue `TrustedAttestation(..., bootstrap_cache_sha256=cache.sha256)`.
+The new attestation field defaults to `None` for existing callers. The verifier
+must authenticate the real bootstrap/cache/loader and its full transitive code
+closure; Python objects and hash-shaped fields are not authorization themselves.
+Bootstrap code outside `CODE_FILES` remains separately pinned launcher scope.
+
+`execute` requires the supplied original meter when a cache is present. The first
+`verify_code` consumes that cache once, repeats charged resident hashes and
+checks current file identities without reopening source. It supplies the same
+schema bytes to the candidate. Failed consumption is not reusable. The final
+`verify_code` always physically reads each file, so bootstrap plus execution
+uses two physical reads, not three. Changes after the first pass fail settlement
+and preserve the unknown attempt. Deadline, thread, foreign/incomplete-cache,
+attestation and original-read mismatches refuse. No import loader, supervisor,
+durable bootstrap gate or actual May23 cache/body execution is introduced here.
 
 ## Limits and accounting
 

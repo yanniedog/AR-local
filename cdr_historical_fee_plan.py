@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
 from cdr_historical_fee_ledger_io import canonical, digest, parse, read_control
+from cdr_historical_fee_archive import safe_path
+from cdr_historical_fee_plan_budget import CONTROL, ControlBudget
 
 REGISTRY = 'contracts/historical-fees/may23-reviewed-registry-v1.json'
 REGISTRY_SHA = '78906ab97dbd3cfa6d64cc0835d180015be1538ddfae44fbace9e1b296fbd314'
@@ -85,7 +89,101 @@ def validate_plan(value, reviewed):
             raise ValueError('absolute_private_execution_path_required')
 
 
-def verify_code(plan, meter):
+def _cached_identity(path):
+    info = safe_path(path).stat()
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
+
+
+def _cache_entries(plan, meter, bodies):
+    keys(plan['code'], CODE_FILES)
+    keys(bodies, CODE_FILES)
+    if sum(len(body) for body in bodies.values() if type(body) is bytes) > CONTROL:
+        raise ValueError('bootstrap_cache_byte_bound')
+    entries = []
+    for name in sorted(CODE_FILES):
+        body, expected = bodies[name], plan['code'][name]
+        if type(body) is not bytes or not 0 < len(body) <= 1024**2:
+            raise ValueError('bootstrap_cache_body_required')
+        path = safe_path(Path(__file__).parent / name)
+        identity = _cached_identity(path)
+        receipt = meter.completed_reads.get(str(path))
+        if (not identity[1] or meter.reads.get(str(path)) != 1 or receipt != (1, identity, len(body))):
+            raise ValueError('bootstrap_first_read_receipt_required')
+        # Resident raw and LF hash passes consume the same meter, even when no
+        # control_work context is active during trusted bootstrap construction.
+        meter.charge('read_checksum', 2 * len(body))
+        if (len(body) != expected['bytes'] or hashlib.sha256(body).hexdigest() != expected['sha256']
+                or hashlib.sha256(body.replace(b'\r\n', b'\n')).hexdigest() != expected['lf_sha256']):
+            raise ValueError('reviewed_code_identity_mismatch')
+        meter.check()
+        if _cached_identity(path) != identity:
+            raise ValueError('bootstrap_code_identity_changed')
+        entries.append((name, str(path), identity, body))
+    return tuple(entries)
+
+
+def _cache_digest(entries, meter):
+    # Identity nanoseconds may exceed the exact JSON integer range; decimal text
+    # preserves them without changing the public financial counter grammar.
+    manifest = [{'name': name, 'path': path, 'file_identity': [str(v) for v in identity]}
+                for name, path, identity, _ in entries]
+    for row, (_, _, _, body) in zip(manifest, entries):
+        meter.charge('read_checksum', 2 * len(body))
+        row.update(bytes=len(body), sha256=hashlib.sha256(body).hexdigest(),
+                   lf_sha256=hashlib.sha256(body.replace(b'\r\n', b'\n')).hexdigest())
+    encoded = canonical(manifest)
+    meter.charge('read_checksum', len(encoded))
+    result = hashlib.sha256(encoded).hexdigest()
+    meter.check()
+    return result
+
+
+@dataclass(frozen=True)
+class BootstrapCodeCache:
+    """Resident evidence for a separately trusted launcher, not authentication."""
+    sha256: str
+    _meter: ControlBudget = field(repr=False, compare=False)
+    _deadline: float = field(repr=False)
+    _entries: tuple = field(repr=False)
+    _consumed: bool = field(default=False, init=False, repr=False)
+
+    def check_binding(self, meter):
+        if (type(meter) is not ControlBudget or self._meter is not meter
+                or type(meter.deadline) not in (int, float) or not math.isfinite(meter.deadline)
+                or self._deadline != meter.deadline or self._consumed):
+            raise ValueError('bootstrap_cache_meter_deadline_or_lifetime_mismatch')
+        meter.check()
+
+    def consume(self, plan, meter):
+        self.check_binding(meter)
+        # Failed cache validation cannot silently retry this first pass.
+        object.__setattr__(self, '_consumed', True)
+        bodies = {name: body for name, _, _, body in self._entries}
+        entries = _cache_entries(plan, meter, bodies)
+        if entries != self._entries or _cache_digest(entries, meter) != self.sha256:
+            raise ValueError('bootstrap_cache_identity_mismatch')
+        return bodies
+
+
+def seal_bootstrap_code(plan, control, resident_bodies):
+    """Seal already-read bytes against successful read1 on the original meter.
+
+    This never reads source files. The trusted bootstrap must load code from
+    these exact bytes and transfer every prior debit/read into this same meter.
+    """
+    if (type(control) is not ControlBudget or type(control.deadline) not in (int, float)
+            or not math.isfinite(control.deadline)):
+        raise ValueError('same_concrete_control_budget_required')
+    control.check()
+    entries = _cache_entries(plan, control, resident_bodies)
+    return BootstrapCodeCache(_cache_digest(entries, control), control, control.deadline, entries)
+
+
+def verify_code(plan, meter, *, bootstrap_cache=None):
+    if bootstrap_cache is not None:
+        if type(bootstrap_cache) is not BootstrapCodeCache:
+            raise ValueError('sealed_bootstrap_cache_required')
+        return bootstrap_cache.consume(plan, meter)
     bodies = {}
     for name, identity in plan['code'].items():
         body = read_control(Path(__file__).parent / name, meter, limit=1024**2)
@@ -111,9 +209,10 @@ class TrustedAttestation:
     owner_sha256: str
     launcher_sha256: str
     outer_timeout_seconds: int
+    bootstrap_cache_sha256: str | None = None
 
 
-def admit(plan_body, approval_body, reviewed, verifier, *, control=None):
+def admit(plan_body, approval_body, reviewed, verifier, *, control=None, bootstrap_cache=None):
     if verifier is None or not callable(verifier):
         raise ValueError('trusted_root_canary_verifier_required')
     plan, approval = parse(plan_body), parse(approval_body)
@@ -131,13 +230,22 @@ def admit(plan_body, approval_body, reviewed, verifier, *, control=None):
     # The verifier is trusted launcher code, not a source-supplied callable.
     # Every authentication/closure read made here must use the same explicit
     # control allowance. Its implementation is part of the reviewed launcher.
-    proof = verifier(plan_body, approval_body, control=control)
+    if bootstrap_cache is None:
+        proof = verifier(plan_body, approval_body, control=control)
+    else:
+        if type(bootstrap_cache) is not BootstrapCodeCache:
+            raise ValueError('sealed_bootstrap_cache_required')
+        bootstrap_cache.check_binding(control)
+        proof = verifier(plan_body, approval_body, control=control, bootstrap_cache=bootstrap_cache)
     if (type(proof) is not TrustedAttestation or proof.plan_sha256 != digest(plan_body)
             or proof.approval_sha256 != digest(approval_body) or proof.ledger_root != plan['paths']['ledger']
             or proof.owner_sha256 != digest(canonical(approval['owner']))
             or type(proof.outer_timeout_seconds) is not int or proof.outer_timeout_seconds != 660):
         raise ValueError('trusted_attestation_binding_mismatch')
     hash_value(proof.launcher_sha256)
+    expected_cache = None if bootstrap_cache is None else bootstrap_cache.sha256
+    if proof.bootstrap_cache_sha256 != expected_cache:
+        raise ValueError('trusted_bootstrap_cache_binding_mismatch')
     return plan, approval, proof
 
 
