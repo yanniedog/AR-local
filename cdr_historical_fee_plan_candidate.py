@@ -115,27 +115,30 @@ def _candidate(paths, plan, approval, budget, schema_body):
             'phase_counters_final': budget.snapshot()}
 
 
-def execute(plan_body, approval_body, *, trusted_verifier=None, control_budget=None):
+def execute(plan_body, approval_body, *, trusted_verifier=None, control_budget=None, bootstrap_cache=None):
     """Only a separately root-reviewed exact launcher may supply the verifier.
 
     This API never launches a process. The attested 660s outer timeout must
     actually be installed by that launcher; library code cannot attest itself.
     """
     started = time.monotonic()
+    if bootstrap_cache is not None and control_budget is None:
+        raise ValueError('bootstrap_cache_requires_original_control_budget')
     control = control_budget or ControlBudget(deadline=started + 600)
     if type(control) is not ControlBudget or control.deadline > started + 600:
         raise ValueError('shared_bootstrap_control_deadline_required')
     with control_work(control):
-        return _execute(plan_body, approval_body, trusted_verifier, control)
+        return _execute(plan_body, approval_body, trusted_verifier, control, bootstrap_cache)
 
 
-def _execute(plan_body, approval_body, trusted_verifier, control):
+def _execute(plan_body, approval_body, trusted_verifier, control, bootstrap_cache):
     if len(plan_body) > 65536 or len(approval_body) > 65536:
         raise ValueError('plan_or_approval_byte_bound')
     control.admit_read('private_plan_bytes', len(plan_body))
     control.admit_read('private_approval_bytes', len(approval_body))
     reviewed = registry(control)
-    plan, approval, proof = admit(plan_body, approval_body, reviewed, trusted_verifier, control=control)
+    plan, approval, proof = admit(plan_body, approval_body, reviewed, trusted_verifier,
+                                  control=control, bootstrap_cache=bootstrap_cache)
     control.check()
     ledger = Ledger(plan, approval, control)
     # Existing work is metadata-only, never a new attempt under a new alias.
@@ -146,7 +149,7 @@ def _execute(plan_body, approval_body, trusted_verifier, control):
     budget = PhaseBudget(deadline=control.deadline)
     budget.guard_directories((paths['archive'], paths['anchor'], paths['ledger'], paths['output'].parent, paths['cache'].parent))
     try:
-        code = verify_code(plan, control)
+        code = verify_code(plan, control, bootstrap_cache=bootstrap_cache)
         if _REGISTRY.get() is not None:
             raise ValueError('nested_plan_execution_refused')
         token = _REGISTRY.set(copy.deepcopy(reviewed))
