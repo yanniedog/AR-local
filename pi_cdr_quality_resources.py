@@ -16,10 +16,11 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Callable
 
 GIB = 1024**3
 SCHEMA = "ar-local-quality-resources-v2"
-UNIT = re.compile(r"ar-local-quality-(?:canary|resource-test)-[a-z0-9]+\.service")
+UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
 
 
 @dataclass(frozen=True)
@@ -245,10 +246,29 @@ def restrict_address_space(limit: int) -> None:
     resource.setrlimit(resource.RLIMIT_AS, (bound, bound))
 
 
-def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dict, receipt: dict) -> None:
+class PriorityYield(RuntimeError):
+    """Only the supervisor's owned workload yields; production is never signaled."""
+
+
+def check_priority(guard: Callable[[], str | None] | None, receipt: dict) -> None:
+    if guard is None:
+        return
+    receipt['priority_checks'] = receipt.get('priority_checks', 0) + 1
+    try:
+        reason = guard()
+    except Exception:
+        reason = 'operational_priority_unavailable'
+    if reason:
+        receipt['priority_reason'] = reason
+        raise PriorityYield('operational_priority_yield')
+
+
+def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dict, receipt: dict,
+            priority_guard: Callable[[], str | None] | None = None) -> None:
     started = previous = time.monotonic()
     previous_host = baseline.get("admission_sample", baseline)
     while True:
+        check_priority(priority_guard, receipt)
         sample, host = aggregate(cgroup), host_sample()
         now = time.monotonic()
         gap = now - previous
@@ -282,14 +302,15 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
         time.sleep(limits.sample_seconds)
 
 
-def supervise(command: list[str], output: Path, limits: Limits) -> dict:
+def supervise(command: list[str], output: Path, limits: Limits, *,
+              priority_guard: Callable[[], str | None] | None = None) -> dict:
     limits.validate()
     if not command or not output.is_absolute() or output.resolve() != output or output.exists():
         raise ValueError("command and a new canonical absolute resource receipt path required")
     receipt = {"schema": SCHEMA, "result": "BLOCKED", "mode": "sampled_cgroup_rss",
         "limits": asdict(limits), "command": command, "samples": 0, "peak_rss_bytes": 0, "peak_processes": 0,
         "peak_workload_swap_bytes": 0, "cold_swap_in_bytes": 0,
-        "maximum_sample_gap_seconds": 0, "workload_exit_code": None, "group_clean": False}
+        "maximum_sample_gap_seconds": 0, "workload_exit_code": None, "workload_started": False, "group_clean": False}
     child = cgroup = None
     owned = False
     saved_signals = {}
@@ -308,14 +329,21 @@ def supervise(command: list[str], output: Path, limits: Limits) -> dict:
             raise RuntimeError("supervisor_interrupted")
         for signum in (signal.SIGTERM, signal.SIGINT):
             saved_signals[signum] = signal.signal(signum, interrupted)
+        check_priority(priority_guard, receipt)
         child = subprocess.Popen(command, shell=False, start_new_session=True,
             preexec_fn=lambda: restrict_address_space(limits.address_space_bytes))
-        monitor(child, cgroup, limits, baseline, receipt)
+        receipt['workload_started'] = True
+        if priority_guard is None:
+            monitor(child, cgroup, limits, baseline, receipt)
+        else:
+            monitor(child, cgroup, limits, baseline, receipt, priority_guard)
         receipt["result"] = "PASS"
     except Exception as error:
         receipt.update(result="FAIL" if child else "BLOCKED", reason=f"{type(error).__name__}: {error}")
         if isinstance(error, MemoryAccountingError):
             receipt["accounting_error"] = error.details
+        if isinstance(error, PriorityYield):
+            receipt['operational_outcome'] = 'PRIORITY_YIELD'
     finally:
         for signum, handler in saved_signals.items():
             signal.signal(signum, signal.SIG_IGN)

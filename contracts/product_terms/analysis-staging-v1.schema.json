@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:product-terms:analysis-staging:v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "extraction_id", "context_sha256", "clauses", "terms", "unresolved"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "extraction_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "context_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "historical_scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scope", "target_sha256", "document_version_id", "extraction_id", "observation_dates_utc"],
+      "properties": {
+        "scope": {"const": "historical_only"},
+        "target_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "document_version_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "extraction_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "observation_dates_utc": {"type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}}
+      }
+    },
+    "clauses": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["start", "end", "page", "section", "disposition", "reason"],
+        "properties": {
+          "start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1},
+          "page": {"type": ["integer", "null"], "minimum": 1}, "section": {"type": ["string", "null"]},
+          "disposition": {"enum": ["parameter", "non_contractual", "unresolved"]},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "terms": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["parameter_key", "value", "unit", "product_key", "tier", "package", "cohort", "effective_from", "effective_to", "clause_indexes", "rule_pattern", "conditions", "exceptions"],
+        "properties": {
+          "parameter_key": {"type": "string", "pattern": "^[a-z][a-z0-9_.]*$"},
+          "value": {"type": ["string", "boolean", "integer", "null"]},
+          "unit": {"type": ["string", "null"]}, "product_key": {"type": "string", "minLength": 1},
+          "tier": {"type": ["string", "null"]}, "package": {"type": ["string", "null"]},
+          "cohort": {"type": ["string", "null"]},
+          "effective_from": {"type": ["string", "null"]}, "effective_to": {"type": ["string", "null"]},
+          "clause_indexes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+          "rule_pattern": {"type": ["string", "null"]},
+          "conditions": {"type": "array", "items": {"type": "string"}},
+          "exceptions": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "unresolved": {"type": "array", "items": {"type": "string"}}
+  }
+}

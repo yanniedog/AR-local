@@ -1,0 +1,50 @@
+[Unit]
+Description=AR-local document interpretation staging (ChatGPT subscription)
+After=network-online.target
+Wants=network-online.target
+# Activation requires a reviewed private account, auth, resource canary and hold.
+ConditionPathExists=/etc/ar-local/terms-worker-approved
+
+[Service]
+Type=oneshot
+User={{AR_TERMS_USER}}
+Group={{AR_TERMS_GROUP}}
+WorkingDirectory={{AR_TERMS_CODE}}
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+ExecStart=/usr/bin/python3 {{AR_TERMS_CODE}}/pi_terms_worker.py --evidence-root {{AR_TERMS_ROOT}} --codex-home {{AR_TERMS_AUTH}} --codex-bin {{AR_TERMS_CODEX_BIN}}
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=100%
+IOWeight=10
+MemoryHigh=2G
+MemoryMax=3G
+MemorySwapMax=0
+TasksMax=128
+KillMode=control-group
+TimeoutStartSec=16min
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictRealtime=true
+RemoveIPC=true
+ReadWritePaths={{AR_TERMS_ROOT}} {{AR_TERMS_AUTH}}
+InaccessiblePaths=-/var/lib/ar-local-drive-backup/credentials -/etc/ar-local/drive-backup.env -/etc/ar-local/app-payload.env -/root
+# Raw product/state reads are controller admission only, never writable here.
+ReadOnlyPaths={{AR_LOCAL_DATA_ROOT}}
+
+[Install]
+WantedBy=multi-user.target
