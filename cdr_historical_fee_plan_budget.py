@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import time
+import stat
+from pathlib import Path
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -58,14 +60,21 @@ class PhaseBudget:
         self.owner = __import__('threading').get_ident()
         self.closed = False
         self.directories = {}
+        self._directory_paths = ()
 
     def guard_directories(self, paths):
         from cdr_historical_fee_archive import safe_path
         for path in paths:
-            info = safe_path(path, directory=True).stat()
+            path = safe_path(path, directory=True)
+            info = path.stat()
             if not info.st_ino:
                 raise ValueError('directory_identity_unavailable')
             self.directories[str(path)] = (info.st_dev, info.st_ino)
+        # Cache only path names, never filesystem evidence. Shared ancestors
+        # need one fresh check per checkpoint, rather than one per descendant.
+        self._directory_paths = tuple(dict.fromkeys(
+            part for name in self.directories
+            for part in (Path(name), *Path(name).parents)))
 
     def claim_directory(self, path):
         self.check()
@@ -78,12 +87,15 @@ class PhaseBudget:
             raise ValueError('inline_budget_owner_or_lifetime_mismatch')
         if time.monotonic() >= self.deadline:
             raise ValueError('archive_deadline_exceeded')
-        if self.directories:
-            from cdr_historical_fee_archive import safe_path
-            for path, expected in self.directories.items():
-                info = safe_path(path, directory=True).stat()
-                if (info.st_dev, info.st_ino) != expected:
-                    raise ValueError('admitted_directory_identity_changed')
+        for path in self._directory_paths:
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+                raise ValueError('input_reparse_or_symlink_refused')
+            if not stat.S_ISDIR(info.st_mode):
+                raise ValueError('regular_input_required')
+            expected = self.directories.get(str(path))
+            if expected is not None and (info.st_dev, info.st_ino) != expected:
+                raise ValueError('admitted_directory_identity_changed')
         if kind is not None:
             integer(amount)
             if kind not in self.limits:
