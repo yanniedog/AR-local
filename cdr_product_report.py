@@ -204,14 +204,13 @@ def _chain(first, iterator):
 
 
 def date_coverage(root, manifest):
+    from cdr_history_validation import ordered_dates
     path = root / 'dates-index.json'
     if not path.is_file():
         return {'status': 'index_not_supplied'}
     raw = path.read_bytes()
     index = json.loads(raw)
-    dates = sorted(set(index['dates']))
-    if not dates:
-        raise ValueError('empty historical index')
+    dates = ordered_dates(index)
     expected = []
     cursor, end = date.fromisoformat(dates[0]), date.fromisoformat(dates[-1])
     while cursor <= end:
@@ -226,15 +225,18 @@ def date_coverage(root, manifest):
 
 def attach_history(report: dict, source: Path, output: Path):
     """Join the completed dated audit only when its selected index is identical."""
+    import io
+    from cdr_history_validation import verified_exports
     raw = (source / 'summary.json').read_bytes()
     summary = json.loads(raw)
     if summary['index_sha256'] != report['historical_coverage']['index_sha256']:
         raise ValueError('historical audit uses a different selected date index')
     if sorted(item['run_date'] for item in summary['results']) != report['historical_coverage']['dates']:
         raise ValueError('historical audit omits or duplicates selected dates')
+    exports = verified_exports(source, summary)
     audited = {'summary_sha256': digest(raw), **summary, 'exports': {}}
     by_bank = defaultdict(lambda: {'dates': set(), 'products': set(), 'rate_rows': 0, 'observations': 0})
-    with (source / 'bank-product-dates.csv').open(encoding='utf-8-sig', newline='') as stream:
+    with io.StringIO(exports['bank-product-dates.csv'].decode('utf-8-sig'), newline='') as stream:
         for row in csv.DictReader(stream):
             bank = by_bank[row['provider']]
             bank['dates'].add(row['run_date'])
@@ -259,7 +261,7 @@ def attach_history(report: dict, source: Path, output: Path):
     for name, target in [('dates.csv', 'historical-dates.csv'),
                          ('bank-product-dates.csv', 'historical-products.csv'),
                          ('summary.json', 'historical-audit.json')]:
-        body = (source / name).read_bytes()
+        body = raw if name == 'summary.json' else exports[name]
         (output / target).write_bytes(body)
         audited['exports'][target] = {'bytes': len(body), 'sha256': digest(body)}
     report['historical_coverage']['individual_dated_audit'] = audited
