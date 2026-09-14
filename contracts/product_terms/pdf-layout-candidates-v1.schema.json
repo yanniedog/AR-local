@@ -1,0 +1,920 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:private:pdf-layout-candidates:v1",
+  "title": "Private PDF parser geometry candidates; no legal or reading-order authority",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/page"
+    }
+  ],
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "pdf_layout_manifest"
+        },
+        "status": {
+          "const": "partial"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "document_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "document_version_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "source_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "extraction_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "text_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "coverage_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "page_spans_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "source_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16777216
+            },
+            "extractor_version": {
+              "type": "string"
+            },
+            "extraction_status": {
+              "enum": [
+                "partial",
+                "failed",
+                "complete"
+              ]
+            }
+          },
+          "required": [
+            "document_id",
+            "document_version_id",
+            "source_sha256",
+            "extraction_id",
+            "text_sha256",
+            "coverage_sha256",
+            "page_spans_sha256",
+            "source_bytes",
+            "extractor_version",
+            "extraction_status"
+          ]
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": "pdf-layout-candidates-1"
+            },
+            "parser_version_required": {
+              "const": "6.10.0"
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "input_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16777216
+                },
+                "pages": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 512
+                },
+                "page_characters": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000
+                },
+                "total_characters": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000000
+                },
+                "callbacks_per_page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20000
+                },
+                "callbacks_total": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000
+                },
+                "operators_per_page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50000
+                },
+                "operators_total": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 250000
+                },
+                "characters_per_callback": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16000
+                },
+                "page_json_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1048576
+                },
+                "output_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16777216
+                },
+                "regions_per_page": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 128
+                },
+                "regions_total": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1024
+                },
+                "seconds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 105
+                }
+              },
+              "required": [
+                "input_bytes",
+                "pages",
+                "page_characters",
+                "total_characters",
+                "callbacks_per_page",
+                "callbacks_total",
+                "operators_per_page",
+                "operators_total",
+                "characters_per_callback",
+                "page_json_bytes",
+                "output_bytes",
+                "regions_per_page",
+                "regions_total",
+                "seconds"
+              ]
+            },
+            "source_sha256_lf": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pdf_layout.py": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "pdf_layout_contract.py": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "pdf-layout-candidates-v1.schema.json": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "pdf_layout.py",
+                "pdf_layout_contract.py",
+                "pdf-layout-candidates-v1.schema.json"
+              ]
+            },
+            "policy_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "version",
+            "parser_version_required",
+            "limits",
+            "source_sha256_lf",
+            "policy_sha256"
+          ]
+        },
+        "parser_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pages_total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "file": {
+                "type": "string",
+                "pattern": "^page-[0-9]{4}\\.json$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "status": {
+                "enum": [
+                  "available_unreviewed",
+                  "textless_nontext_review_required",
+                  "partial"
+                ]
+              }
+            },
+            "required": [
+              "page",
+              "file",
+              "bytes",
+              "sha256",
+              "status"
+            ]
+          },
+          "maxItems": 512
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32
+        },
+        "alignment_status": {
+          "const": "alignment_unverified"
+        },
+        "table_structure_status": {
+          "const": "unreviewed"
+        },
+        "footnote_associations_status": {
+          "const": "unreviewed"
+        },
+        "ocr_status": {
+          "const": "not_performed"
+        },
+        "remaining_callback_count": {
+          "type": "null"
+        },
+        "unprocessed_page_ranges": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "maxItems": 513
+        },
+        "publication": {
+          "const": "NOT_ATTEMPTED"
+        },
+        "counters_before_manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "callbacks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "operators": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "characters": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "regions": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "callbacks",
+            "operators",
+            "characters",
+            "regions",
+            "output"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "status",
+        "binding",
+        "policy",
+        "parser_version",
+        "pages_total",
+        "pages",
+        "reasons",
+        "alignment_status",
+        "table_structure_status",
+        "footnote_associations_status",
+        "ocr_status",
+        "remaining_callback_count",
+        "unprocessed_page_ranges",
+        "publication",
+        "counters_before_manifest"
+      ]
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "pdf_layout_page"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "retained_page_text_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retained_page_span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "available_unreviewed",
+            "textless_nontext_review_required",
+            "partial"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32
+        },
+        "media_box": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                "maxLength": 128
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "crop_box": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                "maxLength": 128
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "user_unit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coordinate_status": {
+          "const": "parser_coordinates_unverified"
+        },
+        "printed_page_label": {
+          "type": "null"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/run"
+          },
+          "maxItems": 20000
+        },
+        "primitives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/primitive"
+          },
+          "maxItems": 50000
+        },
+        "omissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "callback_ordinal": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "characters": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "const": "characters_per_callback_limit"
+              }
+            },
+            "required": [
+              "callback_ordinal",
+              "characters",
+              "reason"
+            ]
+          },
+          "maxItems": 20000
+        },
+        "unsupported_operators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 9
+        },
+        "table_candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          },
+          "maxItems": 128
+        },
+        "footnote_candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          },
+          "maxItems": 128
+        },
+        "alignment_status": {
+          "const": "alignment_unverified"
+        },
+        "remaining_callback_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "observed_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text_callbacks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "operator_callbacks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "callback_characters": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unretained_operator_callbacks": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "text_callbacks",
+            "operator_callbacks",
+            "callback_characters",
+            "unretained_operator_callbacks"
+          ]
+        },
+        "text_status": {
+          "enum": [
+            "available_unreviewed",
+            "no_text_observed_requires_review",
+            "text_observation_incomplete"
+          ]
+        },
+        "region_candidates_omitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining_region_candidate_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "page",
+        "retained_page_text_sha256",
+        "retained_page_span",
+        "status",
+        "reasons",
+        "media_box",
+        "crop_box",
+        "rotation",
+        "user_unit",
+        "coordinate_status",
+        "printed_page_label",
+        "runs",
+        "primitives",
+        "omissions",
+        "unsupported_operators",
+        "table_candidates",
+        "footnote_candidates",
+        "alignment_status",
+        "remaining_callback_count",
+        "observed_counts",
+        "text_status",
+        "region_candidates_omitted",
+        "remaining_region_candidate_count"
+      ]
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replacement_character_present": {
+          "type": "boolean"
+        },
+        "annotation_scan_status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page",
+        "start",
+        "end",
+        "text_sha256",
+        "status",
+        "reason",
+        "replacement_character_present"
+      ]
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "callback_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "event_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "text_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cm": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                "maxLength": 128
+              },
+              "minItems": 6,
+              "maxItems": 6
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tm": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                "maxLength": 128
+              },
+              "minItems": 6,
+              "maxItems": 6
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "font_size": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coordinate_status": {
+          "enum": [
+            "parser_coordinates_unverified",
+            "invalid_geometry"
+          ]
+        },
+        "source_text_span": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "id",
+        "callback_ordinal",
+        "event_ordinal",
+        "text",
+        "text_sha256",
+        "cm",
+        "tm",
+        "font_name",
+        "font_size",
+        "coordinate_status",
+        "source_text_span"
+      ]
+    },
+    "primitive": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "operator_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "event_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "operator": {
+          "enum": [
+            "m",
+            "l",
+            "re",
+            "c",
+            "v",
+            "y",
+            "cm",
+            "Do",
+            "W",
+            "W*",
+            "q",
+            "Q",
+            "h",
+            "S",
+            "s",
+            "f",
+            "F",
+            "f*",
+            "B",
+            "B*",
+            "b",
+            "b*",
+            "n",
+            "gs",
+            "sh",
+            "INLINE IMAGE"
+          ]
+        },
+        "operands": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+            "maxLength": 128
+          },
+          "maxItems": 6
+        },
+        "cm": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                "maxLength": 128
+              },
+              "minItems": 6,
+              "maxItems": 6
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tm": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                "maxLength": 128
+              },
+              "minItems": 6,
+              "maxItems": 6
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coordinate_status": {
+          "enum": [
+            "parser_coordinates_unverified",
+            "invalid_geometry"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "operator_ordinal",
+        "event_ordinal",
+        "operator",
+        "operands",
+        "cm",
+        "tm",
+        "coordinate_status"
+      ]
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "const": "candidate_unreviewed"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128
+        },
+        "reason": {
+          "enum": [
+            "repeated_rule_operators_require_table_review",
+            "explicit_marker_text_requires_review"
+          ]
+        },
+        "association": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "evidence_ids",
+        "reason",
+        "association"
+      ]
+    }
+  }
+}
