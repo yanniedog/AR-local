@@ -68,6 +68,8 @@ def require_staged_term(store: EvidenceStore, *, observation: Mapping[str, Any],
     context = queue.validate_input(job_id)
     if "historical_target" in context:
         raise ValueError("Historical-only staging cannot enter current term revisions")
+    if "incorporated_target" in context:
+        raise ValueError("Incorporated candidate staging has no reviewed legal applicability")
     products = context.get("source_product_sha256")
     if (context.get("product_keys", []).count(observation["product_key"]) != 1
             or not isinstance(products, dict) or products.get(observation["product_key"]) != observation["source_sha256"]):

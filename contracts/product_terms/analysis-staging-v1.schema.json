@@ -7,6 +7,17 @@
     "schema_version": {"const": 1},
     "extraction_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "context_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "incorporated_scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scope", "applicability_status", "target_sha256", "document_version_id", "extraction_id"],
+      "properties": {
+        "scope": {"const": "incorporated_candidate_only"},
+        "applicability_status": {"const": "unreviewed"},
+        "target_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "document_version_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "extraction_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
     "historical_scope": {
       "type": "object", "additionalProperties": false,
       "required": ["scope", "target_sha256", "document_version_id", "extraction_id", "observation_dates_utc"],

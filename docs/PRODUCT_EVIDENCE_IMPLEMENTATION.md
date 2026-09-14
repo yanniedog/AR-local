@@ -12,8 +12,10 @@ worker before the outstanding operational gates pass.
 The optional finalization capture, immutable evidence store and acquisition queue
 are implemented separately from public payload promotion. The dedicated
 `pi_terms_worker.py` cycle first admits work against production priority and disk
-reserve, then supervises at most one due acquisition for 120 seconds and at most
-one due interpreter for 720 seconds. No due acquisition starts no HTTP request.
+reserve, then supervises a bounded sequential acquisition batch for 120 seconds
+and at most one due interpreter for 720 seconds. The batch admits at most 32
+attempts/64 MiB, stops admitting at 105 seconds and reserves 15 seconds for durable
+completion. No due acquisition starts no HTTP request.
 Acquisition remains independent of subscription authentication and quota cooldown.
 The queue's 180-second acquisition lease recovers an interrupted fetch; the
 900-second interpretation lease rejects stale completion. A 15-minute timer is
@@ -102,10 +104,15 @@ node, exact document version and extraction, HTML anchor occurrence, original hr
 resolved URL and label. Shared URLs reuse acquisition requests within an ingest;
 distinct URLs keep distinct version identities even when their bytes share one
 content hash. Cycles and repeated anchors remain visible. These candidate edges
-do not add reviewed product applicability, analysis jobs or public terms.
+do not add reviewed product applicability or public terms. Usable child text now
+enters the existing interpretation queue with a pinned candidate-only context;
+the expansion and job commit atomically under the exact processing lease. Its
+worker result remains `STAGED_INCORPORATED_CANDIDATE`, with applicability unreviewed
+and current term promotion prohibited. See
+[INCORPORATED_INTERPRETATION.md](INCORPORATED_INTERPRETATION.md).
 
 The existing collector performs at most one offline retained-node expansion and
-one guarded document fetch per cycle. Expansion, edges and new frontier requests
+one bounded sequential acquisition batch per cycle. Expansion, edges and new frontier requests
 commit atomically; interrupted expansion restarts idempotently. Existing acquisition
 leases govern fetch ownership. Only an exact lease-accepted successful capture
 activates its seeded graph, including when its interpretation remains unavailable.
@@ -135,11 +142,11 @@ today's actual observation time and never become historical legal evidence.
 The graph contract is described in
 [`document-graph-v1.md`](../contracts/product_terms/document-graph-v1.md).
 Local tests do not establish deployed behavior or whole-catalogue completion.
-The existing one-fetch/15-minute schedule has a separate capacity deficit: the
-recorded baseline has 1,565 normalized URLs but only 73 admissible scheduled cycles
-per day, requiring at least 22 days before recursion, retries or deferrals. Daily
-rechecking therefore remains unfulfilled. This slice does not widen runtime
-windows, resource guards, timer frequency or fetch counts.
+The recorded baseline has 1,565 normalized URLs but only 73 admissible scheduled
+cycles per day. The former one-fetch schedule required at least 22 days before
+recursion or retries. The implemented batch cap permits up to 32 sequential
+attempts per cycle; configured capacity is not measured daily recheck proof.
+Current runtime activation and full-catalogue throughput remain unverified.
 
 ## Authority and reviewed material
 
