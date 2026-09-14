@@ -217,6 +217,15 @@ class EvidenceStore:
             raise ValueError("Clause locator is outside its retained extraction")
         locator = {"start": start, "end": end}
         if page is not None:
+            coverage = json.loads(row['coverage_json'])
+            spans = coverage.get('page_spans', [])
+            matches = [span for span in spans if isinstance(span, dict) and span.get('page') == page]
+            if (len(matches) != 1 or matches[0].get('status') != 'text_available'
+                    or not matches[0]['start'] <= start < end <= matches[0]['end']):
+                raise ValueError('Page locator is not bound to the retained extraction span')
+            span = matches[0]
+            if byte_digest(text[span['start']:span['end']].encode('utf-8')) != span['text_sha256']:
+                raise ValueError('Page text hash differs from retained extraction')
             locator["page"] = page
         if section is not None:
             locator["section"] = section
