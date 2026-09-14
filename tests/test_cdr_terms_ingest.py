@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.cdr_terms_source_fixture import source_generation
 from cdr_terms.acquisition import FetchFailure
 from cdr_terms.acquisitions_queue import AcquisitionQueue, process_next_acquisition
 from cdr_terms.identity import byte_digest, digest
@@ -21,18 +22,8 @@ NOW = "2026-09-14T01:00:00Z"
 
 @pytest.fixture
 def source_tree(tmp_path):
-    body = FIXTURE.read_bytes()
-    record = json.loads(body)["data"]
-    runs = tmp_path / "runs"
-    run = runs / "2026-09-07"
-    path = run / "banks" / "Mortgage" / record["brand"] / record["name"] / record["productId"] / "product-detail.json"
-    path.parent.mkdir(parents=True)
-    path.write_bytes(body)
-    # The capture interface is tested separately from the real ledger's own
-    # finalization tests; this identity binds the unchanged retained test bytes.
-    finalized = {"finalization_schema_version": 2, "ledger_state": "finalized",
-                 "generation_id": "retained-" + byte_digest(body), "export_contract_digest": digest({"source": byte_digest(body)}),
-                 "run_date": run.name, "out_dir": str(run / "_exports"), "banks": {"products": 1}}
+    run, _, finalized = source_generation(tmp_path, "2026-09-07", OBSERVED)
+    path = next((run / "banks").rglob("product-detail.json"))
     return run, tmp_path / "derived", finalized, path
 
 
@@ -58,7 +49,7 @@ def test_full_raw_capture_is_no_network_and_same_generation_idempotent(source_tr
 def test_each_new_ingest_rechecks_documents_even_when_cdr_last_updated_and_bytes_unchanged(source_tree):
     run, root, finalized, _ = source_tree
     first = capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=OBSERVED)
-    next_ingest = {**finalized, "generation_id": finalized["generation_id"] + "-next"}
+    next_ingest = {**finalized, "generation_id": finalized["generation_id"] + "-next", "run_date": "2026-09-14"}
     second = capture_finalized(run, next_ingest, root, forbidden_roots=[run.parent], observed_at=NOW)
     assert first["sources"][0]["sha256"] == second["sources"][0]["sha256"]
     with EvidenceStore(root) as store:
@@ -85,7 +76,7 @@ def test_capture_failure_retains_source_and_durable_separate_receipt(source_tree
     run, root, finalized, source = source_tree
     monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(root))
     wrong_counts = {**finalized, "banks": {"products": 2}}
-    state = root.parent / "state"
+    state = run.parent.parent / "state"
     receipt = capture_if_configured(run, wrong_counts, state_dir=state, runs_root=run.parent, export_root=run / "_exports")
     assert receipt["status"] == "CAPTURE_FAILED" and receipt["raw_stage_preserved"]
     assert source.read_bytes() == FIXTURE.read_bytes()
@@ -97,8 +88,8 @@ def test_capture_failure_retains_source_and_durable_separate_receipt(source_tree
 
 def test_capture_retries_from_verified_marker_without_reingest(source_tree, monkeypatch):
     run, root, finalized, _ = source_tree
-    state = root.parent / "state"
-    state.mkdir()
+    state = run.parent.parent / "state"
+    state.mkdir(exist_ok=True)
     marker = state / "done.json"
     marker.write_text(json.dumps(finalized), encoding="utf-8")
     monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(root))
@@ -149,4 +140,8 @@ def test_acquisition_lease_recovers_crash_and_rejects_stale_owner(source_tree):
                            status="failed", error_code="transport_error")
         with pytest.raises(ValueError, match="stale completion"):
             queue.finish(first, "failed-transport", now="2026-09-14T01:00:03Z")
-        queue.finish(recovered, "failed-transport", now="2026-09-14T01:00:03Z")
+        with pytest.raises(ValueError, match="within its accepted lease"):
+            queue.finish(recovered, "failed-transport", now="2026-09-14T01:00:03Z")
+        store.record_check(document_id=first["document_id"], check_id="retried-transport", checked_at="2026-09-14T01:00:02Z",
+                           status="failed", error_code="transport_error")
+        queue.finish(recovered, "retried-transport", now="2026-09-14T01:00:03Z")

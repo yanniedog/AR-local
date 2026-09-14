@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .identity import canonical_json, digest, exact_value, timestamp
+from .observation_checks import current_observation, selected_check
 from .revisions import term_source_versions
 from .store import EvidenceStore
 
@@ -18,35 +19,29 @@ def _stage(status: str, expected: int | None, observed: int) -> dict[str, Any]:
     return {"status": status, "expected": expected, "observed": observed}
 
 
-def current_observation(store: EvidenceStore, product_key: str) -> dict[str, Any]:
-    row = store.db.execute("SELECT * FROM observations WHERE product_key=? "
-                           "ORDER BY observed_at DESC, observation_id DESC LIMIT 1", (product_key,)).fetchone()
-    if not row:
-        raise ValueError("Product has no retained source inventory")
-    return dict(row)
-
-
-def _documents(store: EvidenceStore, observation_id: str) -> tuple[list[dict[str, Any]], int, int, int]:
-    rows = store.db.execute("SELECT DISTINCT document_id FROM applicability WHERE observation_id=? ORDER BY document_id",
-                            (observation_id,)).fetchall()
+def _documents(store: EvidenceStore, observation: Mapping[str, Any]) -> tuple[list[dict[str, Any]], int, int, int, list[str]]:
+    rows = store.db.execute("SELECT DISTINCT document_id,source_url FROM applicability JOIN documents USING(document_id) "
+                            "WHERE observation_id=? ORDER BY document_id", (observation["observation_id"],)).fetchall()
     documents: list[dict[str, Any]] = []
+    gaps = []
     success = failure = 0
     for row in rows:
-        latest = store.db.execute("SELECT status FROM acquisition_checks WHERE document_id=? ORDER BY checked_at DESC,sequence DESC LIMIT 1",
-                                   (row[0],)).fetchone()
-        success += bool(latest and latest[0] in {"fetched", "unchanged"})
-        failure += bool(latest and latest[0] == "failed")
-        retained = store.last_success(row[0])
-        if not retained:
+        latest = selected_check(store, observation, row["document_id"])
+        status = latest["status"] if latest else "pending"
+        success += status in {"fetched", "unchanged"}
+        failure += status == "failed"
+        if status not in {"fetched", "unchanged"}:
+            gaps.append(f"Document {status}: {row['source_url']}"
+                        + (f" ({latest['error_code']})" if latest and latest["error_code"] else ""))
             continue
         version = store.db.execute("SELECT v.*,d.source_url FROM document_versions v JOIN documents d USING(document_id) "
-                                    "WHERE document_version_id=?", (retained["document_version_id"],)).fetchone()
+                                    "WHERE document_version_id=?", (latest["document_version_id"],)).fetchone()
         # Verify originals still exist before claiming archived coverage.
         store.read_blob(version["content_sha256"])
         documents.append({key: version[key] for key in (
             "document_version_id", "source_url", "content_sha256", "media_type", "byte_size",
             "observed_at", "effective_from", "effective_to")})
-    return sorted(documents, key=lambda doc: doc["document_version_id"]), len(rows), success, failure
+    return sorted(documents, key=lambda doc: doc["document_version_id"]), len(rows), success, failure, gaps
 
 
 def _revisions(store: EvidenceStore, observation: Mapping[str, Any], versions: set[str]
@@ -62,7 +57,8 @@ def _revisions(store: EvidenceStore, observation: Mapping[str, Any], versions: s
     revisions: list[dict[str, Any]] = []
     clauses: dict[str, dict[str, Any]] = {}
     for term in candidates:
-        if term["term_revision_id"] in superseded or not term_source_versions(store, term["term_revision_id"]) <= versions:
+        source_versions = term_source_versions(store, term["term_revision_id"])
+        if term["term_revision_id"] in superseded or not source_versions <= versions:
             continue
         sources = store.db.execute("SELECT c.*,x.document_version_id FROM term_sources s JOIN clauses c USING(clause_id) "
                                    "JOIN extractions x USING(extraction_id) WHERE term_revision_id=? ORDER BY clause_id",
@@ -115,7 +111,7 @@ def _coverage(store: EvidenceStore, documents: list[dict[str, Any]], expected: i
 
 def build_product_asset(store: EvidenceStore, product_key: str) -> dict[str, Any]:
     observation = current_observation(store, product_key)
-    documents, expected, successes, failures = _documents(store, observation["observation_id"])
+    documents, expected, successes, failures, gaps = _documents(store, observation)
     revisions, clauses = _revisions(store, observation, {doc["document_version_id"] for doc in documents})
     changes = [{key: row[key] for key in ("term_change_id", "before_revision_id", "after_revision_id", "kind", "observed_at")}
                for row in store.db.execute("SELECT * FROM term_changes WHERE product_key=? ORDER BY observed_at,term_change_id", (product_key,))]
@@ -124,14 +120,7 @@ def build_product_asset(store: EvidenceStore, product_key: str) -> dict[str, Any
         "clauses": clauses, "revisions": revisions,
         "coverage": _coverage(store, documents, expected, successes, failures, revisions), "changes": changes,
     }
-    for row in store.db.execute(
-        "SELECT DISTINCT d.source_url,c.status,c.error_code FROM applicability a JOIN documents d USING(document_id) "
-        "LEFT JOIN acquisition_checks c ON c.sequence=(SELECT sequence FROM acquisition_checks WHERE document_id=d.document_id "
-        "ORDER BY checked_at DESC,sequence DESC LIMIT 1) "
-        "WHERE a.observation_id=? AND (c.status IS NULL OR c.status NOT IN ('fetched','unchanged')) ORDER BY d.source_url",
-        (observation["observation_id"],)):
-        payload["coverage"]["gaps"].append(f"Document {row['status'] or 'pending'}: {row['source_url']}"
-                                            + (f" ({row['error_code']})" if row["error_code"] else ""))
+    payload["coverage"]["gaps"].extend(sorted(gaps))
     payload["identity_sha256"] = digest(payload)
     validate_public_asset(payload)
     return payload
