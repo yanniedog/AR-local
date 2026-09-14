@@ -29,4 +29,3 @@ def source_generation(tmp_path, date, observed_at, body=None):
                  "generation_id": contract["generation_id"], "export_contract_digest": contract["contract_digest"],
                  "export_contract_path": path.relative_to(state).as_posix(), "out_dir": str(run / "_exports"), "banks": {"products": 1}}
     return run, state, finalized
-
