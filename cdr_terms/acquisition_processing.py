@@ -8,6 +8,15 @@ from typing import Any
 from .identity import canonical_json, digest, timestamp, utc_now
 from .store import EvidenceStore
 
+SCHEDULE_MAINTENANCE = 64
+SCHEDULE_DUE_SQL = (
+    "SELECT p.*,s.status,s.event_id schedule_event_id,s.priority schedule_priority,"
+    "s.due_at schedule_due_at,s.created_at schedule_created_at,s.evidence_json schedule_evidence_json "
+    "FROM acquisition_processing_schedule s INDEXED BY acquisition_processing_schedule_due "
+    "JOIN acquisition_processing p USING(processing_id) "
+    "WHERE s.status IN ('queued','retry_wait') AND s.priority=? AND s.due_at<=? "
+    "ORDER BY s.due_at,s.created_at,s.processing_id LIMIT 1")
+
 
 class ProcessingGuardFailure(ValueError):
     """No parser disposition can replace rejected source/lease admission."""
@@ -29,10 +38,68 @@ class ProcessingQueue:
     def _event(self, identity: str, status: str, now: str, receipt: dict, *,
                lease_id=None, expiry=None, retry_after=None) -> str:
         values = (identity, status, timestamp(now), lease_id, expiry, retry_after, canonical_json(receipt))
-        self.store.db.execute("INSERT OR IGNORE INTO acquisition_processing_events "
-                              "(event_id,processing_id,status,observed_at,lease_id,lease_expires_at,retry_after,receipt_json) "
-                              "VALUES (?,?,?,?,?,?,?,?)", (digest(values), *values))
+        if not self.store.db.in_transaction:
+            self.store.db.execute("BEGIN")
+        self.store.db.execute("SAVEPOINT processing_event_schedule")
+        try:
+            self.store.db.execute("INSERT OR IGNORE INTO acquisition_processing_events "
+                                  "(event_id,processing_id,status,observed_at,lease_id,lease_expires_at,retry_after,receipt_json) "
+                                  "VALUES (?,?,?,?,?,?,?,?)", (digest(values), *values))
+            self._refresh_schedule(identity)
+        except Exception:
+            self.store.db.execute("ROLLBACK TO processing_event_schedule")
+            raise
+        finally:
+            self.store.db.execute("RELEASE processing_event_schedule")
         return digest(values)
+
+    def schedule_incomplete(self) -> bool:
+        row = self.store.db.execute("SELECT complete FROM acquisition_processing_schedule_migration WHERE singleton=1").fetchone()
+        if not row:
+            raise ValueError("Processing schedule migration state missing")
+        return row[0] != 1
+
+    def _refresh_schedule(self, identity: str) -> tuple:
+        """Mutable selection hint; only immutable events/source checks authorize."""
+        task = self.store.db.execute("SELECT * FROM acquisition_processing WHERE processing_id=?", (identity,)).fetchone()
+        event = self.store.db.execute("SELECT * FROM acquisition_processing_events WHERE processing_id=? ORDER BY sequence DESC LIMIT 1", (identity,)).fetchone()
+        if not task or not event:
+            raise ValueError("Processing schedule requires its authoritative task and event")
+        priority, reason, observations = 2, "terminal_or_unverified", []
+        if event["status"] in {"queued", "retry_wait"}:
+            try:
+                request, check, observations = self.validate(dict(task))
+                if task["node_id"]:
+                    priority, reason = self.analysis_priority(request, check), "accepted_graph_node"
+                elif observations:
+                    priority, reason = self.analysis_priority(request, check), "accepted_current_capture"
+                else:
+                    reason = "redundant_graph_only_processing"
+            except ValueError as error:
+                reason = str(error)
+        evidence = canonical_json({"schema_version": 1, "request_id": task["request_id"],
+            "check_id": task["check_id"], "observation_ids": observations, "reason": reason})
+        due = event["retry_after"] if event["status"] == "retry_wait" else task["created_at"]
+        values = (event["event_id"], priority, event["status"], due, task["created_at"], evidence)
+        self.store.db.execute("INSERT INTO acquisition_processing_schedule VALUES (?,?,?,?,?,?,?) "
+            "ON CONFLICT(processing_id) DO UPDATE SET event_id=excluded.event_id,priority=excluded.priority,"
+            "status=excluded.status,due_at=excluded.due_at,created_at=excluded.created_at,evidence_json=excluded.evidence_json",
+            (identity, *values))
+        return values
+
+    def _backfill_schedule(self) -> None:
+        """Bounded keyset migration; no startup scan or inferred completion."""
+        state = self.store.db.execute("SELECT * FROM acquisition_processing_schedule_migration WHERE singleton=1").fetchone()
+        if not state:
+            raise ValueError("Processing schedule migration state missing")
+        if state["complete"]:
+            return
+        rows = self.store.db.execute("SELECT processing_id FROM acquisition_processing WHERE processing_id>? "
+            "ORDER BY processing_id LIMIT ?", (state["after_processing_id"], SCHEDULE_MAINTENANCE)).fetchall()
+        for row in rows:
+            self._refresh_schedule(row[0])
+        self.store.db.execute("UPDATE acquisition_processing_schedule_migration SET after_processing_id=?,complete=? WHERE singleton=1",
+            (rows[-1][0] if rows else state["after_processing_id"], int(len(rows) < SCHEDULE_MAINTENANCE)))
 
     def receipt(self, event_id: str) -> dict:
         row = self.store.db.execute("SELECT e.*,p.request_id,p.check_id,p.node_id FROM acquisition_processing_events e "
@@ -123,16 +190,18 @@ class ProcessingQueue:
             "ORDER BY n.depth,n.root_id,n.node_id LIMIT ?", (limit,)).fetchall()
 
     def due(self, now: str | None = None) -> dict | None:
-        row = self.store.db.execute(
-            "SELECT p.*,e.status FROM acquisition_processing p JOIN acquisition_processing_events e ON "
-            "e.sequence=(SELECT MAX(sequence) FROM acquisition_processing_events WHERE processing_id=p.processing_id) "
-            "WHERE e.status='queued' OR (e.status='retry_wait' AND e.retry_after<=?) "
-            "ORDER BY p.created_at,p.processing_id LIMIT 1", (timestamp(now or utc_now()),)).fetchone()
-        return dict(row) if row else None
+        observed = timestamp(now or utc_now())
+        # Each priority is an indexed due-time range: terminal history and
+        # future high-priority retries cannot obscure ready lower-priority work.
+        for priority in (0, 1, 2):
+            row = self.store.db.execute(SCHEDULE_DUE_SQL, (priority, observed)).fetchone()
+            if row:
+                return dict(row)
+        return None
 
     def has_work(self, now: str | None = None) -> bool:
         observed = timestamp(now or utc_now())
-        return bool(self.due(observed) or self._graph_candidates(1) or self.store.db.execute(
+        return bool(self.schedule_incomplete() or self.due(observed) or self._graph_candidates(1) or self.store.db.execute(
             "SELECT 1 FROM acquisition_processing_events e WHERE e.sequence=(SELECT MAX(sequence) "
             "FROM acquisition_processing_events WHERE processing_id=e.processing_id) "
             "AND status='running' AND lease_expires_at<=? LIMIT 1", (observed,)).fetchone())
@@ -199,23 +268,34 @@ class ProcessingQueue:
         observed = timestamp(now or utc_now())
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
+            self._backfill_schedule()
             self._recover(observed)
             graph = DocumentGraph(self.store)
             for row in self._graph_candidates():
                 node = graph.pending(row[0])
                 if node:
                     self.enqueue(node["request_id"], graph._check(node)["check_id"], node_id=row[0], now=observed)
-            task = self.due(observed)
-            if task is None:
-                return None
-            try:
-                self.validate(task)
-            except ValueError as error:
-                event_id = self._event(task["processing_id"], "blocked", observed, {"reason": str(error), "legal_completeness": "unknown"})
-                return self.receipt(event_id)
-            lease, expiry = secrets.token_hex(32), _after(observed, lease_seconds)
-            self._event(task["processing_id"], "running", observed, {}, lease_id=lease, expiry=expiry)
-            return {**task, "status": "running", "lease_id": lease, "lease_expires_at": expiry}
+            for _ in range(SCHEDULE_MAINTENANCE):
+                task = self.due(observed)
+                if task is None:
+                    return None
+                hinted = (task["schedule_event_id"], task["schedule_priority"], task["status"],
+                          task["schedule_due_at"], task["schedule_created_at"], task["schedule_evidence_json"])
+                if self._refresh_schedule(task["processing_id"]) != hinted:
+                    continue  # Changed/tampered hint cannot authorize this claim.
+                try:
+                    _, _, observations = self.validate(task)
+                except ValueError as error:
+                    event_id = self._event(task["processing_id"], "blocked", observed, {"reason": str(error), "legal_completeness": "unknown"})
+                    return self.receipt(event_id)
+                if not task["node_id"] and not observations and graph.request_hosts(task["request_id"]):
+                    self._event(task["processing_id"], "blocked", observed,
+                        {"reason": "redundant_graph_only_processing", "legal_completeness": "unknown"})
+                    continue  # Preserve the old row; process its real node this tick.
+                lease, expiry = secrets.token_hex(32), _after(observed, lease_seconds)
+                self._event(task["processing_id"], "running", observed, {}, lease_id=lease, expiry=expiry)
+                return {**task, "status": "running", "lease_id": lease, "lease_expires_at": expiry}
+            return None
 
     def finish(self, task: dict, receipt: dict, *, error: str | None = None, now: str | None = None) -> dict:
         observed = timestamp(now or utc_now())
@@ -292,7 +372,13 @@ class ProcessingQueue:
         # orphan captures. The HTTP request's original priority remains intact.
         previous = self.store.db.execute(
             "SELECT c.document_version_id FROM acquisition_checks c JOIN acquisition_events e USING(check_id) "
-            "WHERE c.document_id=? AND c.sequence<? AND c.status IN ('fetched','unchanged') "
-            "AND e.status IN ('complete','retry_wait','blocked') AND e.lease_id IS NOT NULL "
-            "ORDER BY c.sequence DESC LIMIT 1", (check["document_id"], check["sequence"])).fetchone()
+            "JOIN acquisition_requests r ON r.request_id=e.request_id AND r.document_id=c.document_id "
+            "JOIN ingest_captures accepted_capture ON accepted_capture.ingest_id=r.ingest_id "
+            "JOIN acquisition_events lease ON lease.request_id=e.request_id AND lease.lease_id=e.lease_id "
+            "WHERE c.document_id=? AND (c.checked_at<? OR (c.checked_at=? AND c.sequence<?)) "
+            "AND r.priority!=2 AND c.status IN ('fetched','unchanged') AND e.status IN ('complete','retry_wait','blocked') "
+            "AND lease.status='running' AND lease.sequence<e.sequence AND c.checked_at>=lease.observed_at "
+            "AND c.checked_at<=e.observed_at AND e.observed_at<lease.lease_expires_at "
+            "ORDER BY c.checked_at DESC,c.sequence DESC LIMIT 1",
+            (check["document_id"], check["checked_at"], check["checked_at"], check["sequence"])).fetchone()
         return 0 if not previous or previous[0] != check["document_version_id"] else request["priority"]

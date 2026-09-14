@@ -364,7 +364,10 @@ def test_stale_acquisition_lease_cannot_activate_seeded_graph(retained):
     check = dict(store.db.execute("SELECT * FROM acquisition_checks WHERE check_id=?", (check_id,)).fetchone())
     root = DocumentGraph(store).seed(first, check)
     recovered = queue.claim("2026-09-14T10:00:02Z")
-    assert recovered["request_id"] == first["request_id"]
+    assert recovered["request_id"] != first["request_id"]  # Sibling runs during crash backoff.
+    event = store.db.execute("SELECT * FROM acquisition_events WHERE request_id=? ORDER BY sequence DESC LIMIT 1",
+                             (first["request_id"],)).fetchone()
+    assert event["status"] == "retry_wait" and event["retry_after"] == "2026-09-14T10:05:02.000000Z"
     with pytest.raises(ValueError, match="stale completion"):
         queue.finish(first, check_id, now="2026-09-14T10:00:03Z")
     assert root is not None and DocumentGraph(store).pending() is None

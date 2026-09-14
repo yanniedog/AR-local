@@ -214,15 +214,18 @@ def test_lease_orphan_cannot_satisfy_coverage_but_accepted_extraction_failure_ca
         old = queue.claim("2026-09-14T00:00:00Z", lease_seconds=1)
         store.record_check(document_id=old["document_id"], check_id="orphan", checked_at="2026-09-14T00:00:00Z",
                            status="fetched", body=body, media_type="application/json")
-        new = queue.claim("2026-09-14T00:00:02Z")
+        sibling = queue.claim("2026-09-14T00:00:02Z")
+        assert sibling["request_id"] != old["request_id"]
+        new = queue.claim("2026-09-14T00:05:03Z")
+        assert new["request_id"] == old["request_id"]
         with pytest.raises(ValueError, match="stale completion"):
-            queue.finish(old, "orphan", now="2026-09-14T00:00:03Z")
+            queue.finish(old, "orphan", now="2026-09-14T00:05:04Z")
         with pytest.raises(ValueError, match="within its accepted lease"):
-            queue.finish(new, "orphan", now="2026-09-14T00:00:03Z")
+            queue.finish(new, "orphan", now="2026-09-14T00:05:04Z")
         assert build_product_asset(store, KEY)["coverage"]["acquisition"]["observed"] == 1
-        store.record_check(document_id=new["document_id"], check_id="accepted", checked_at="2026-09-14T00:00:03Z",
+        store.record_check(document_id=new["document_id"], check_id="accepted", checked_at="2026-09-14T00:05:04Z",
                            status="fetched", body=body, media_type="application/json")
-        queue.finish(new, "accepted", now="2026-09-14T00:00:03Z", processing_error="unsupported_extractor")
+        queue.finish(new, "accepted", now="2026-09-14T00:05:04Z", processing_error="unsupported_extractor")
         payload = build_product_asset(store, KEY)
         assert payload["coverage"]["acquisition"]["observed"] == 2
         assert payload["coverage"]["calculation"]["status"] == "unknown"

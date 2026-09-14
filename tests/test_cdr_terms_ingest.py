@@ -134,14 +134,16 @@ def test_acquisition_lease_recovers_crash_and_rejects_stale_owner(source_tree):
     with EvidenceStore(root) as store:
         queue = AcquisitionQueue(store)
         first = queue.claim(NOW, lease_seconds=1)
-        recovered = queue.claim("2026-09-14T01:00:02Z")
+        sibling = queue.claim("2026-09-14T01:00:02Z")
+        assert sibling["request_id"] != first["request_id"]
+        recovered = queue.claim("2026-09-14T01:05:03Z")
         assert recovered["request_id"] == first["request_id"] and recovered["lease_id"] != first["lease_id"]
         store.record_check(document_id=first["document_id"], check_id="failed-transport", checked_at=NOW,
                            status="failed", error_code="transport_error")
         with pytest.raises(ValueError, match="stale completion"):
-            queue.finish(first, "failed-transport", now="2026-09-14T01:00:03Z")
+            queue.finish(first, "failed-transport", now="2026-09-14T01:05:04Z")
         with pytest.raises(ValueError, match="within its accepted lease"):
-            queue.finish(recovered, "failed-transport", now="2026-09-14T01:00:03Z")
-        store.record_check(document_id=first["document_id"], check_id="retried-transport", checked_at="2026-09-14T01:00:02Z",
+            queue.finish(recovered, "failed-transport", now="2026-09-14T01:05:04Z")
+        store.record_check(document_id=first["document_id"], check_id="retried-transport", checked_at="2026-09-14T01:05:03Z",
                            status="failed", error_code="transport_error")
-        queue.finish(recovered, "retried-transport", now="2026-09-14T01:00:03Z")
+        queue.finish(recovered, "retried-transport", now="2026-09-14T01:05:04Z")
