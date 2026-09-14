@@ -9,8 +9,11 @@ import argparse
 import csv
 import gzip
 import hashlib
+import io
 import json
+import os
 import re
+import tempfile
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -225,7 +228,6 @@ def date_coverage(root, manifest):
 
 def attach_history(report: dict, source: Path, output: Path):
     """Join the completed dated audit only when its selected index is identical."""
-    import io
     from cdr_history_validation import verified_exports
     raw = (source / 'summary.json').read_bytes()
     summary = json.loads(raw)
@@ -233,26 +235,99 @@ def attach_history(report: dict, source: Path, output: Path):
         raise ValueError('historical audit uses a different selected date index')
     if sorted(item['run_date'] for item in summary['results']) != report['historical_coverage']['dates']:
         raise ValueError('historical audit omits or duplicates selected dates')
+    if not summary['results'] or any(item.get('status') != 'PASS' for item in summary['results']):
+        raise ValueError('historical audit contains failed selected dates')
+    if type(summary.get('dates_passed')) is not int or summary['dates_passed'] != len(summary['results']):
+        raise ValueError('historical audit passed-date count is inconsistent')
     exports = verified_exports(source, summary)
+    selected_dates = {item['run_date']: item['status'] for item in summary['results']}
+    _validate_history_dates(exports['dates.csv'], selected_dates)
     audited = {'summary_sha256': digest(raw), **summary, 'exports': {}}
     by_bank = defaultdict(lambda: {'dates': set(), 'products': set(), 'rate_rows': 0, 'observations': 0})
-    with io.StringIO(exports['bank-product-dates.csv'].decode('utf-8-sig'), newline='') as stream:
-        for row in csv.DictReader(stream):
-            bank = by_bank[row['provider']]
-            bank['dates'].add(row['run_date'])
-            bank['products'].add(row['product_key'])
-            bank['rate_rows'] += int(row['rate_rows'])
-            bank['observations'] += 1
-    report['historical_banks'] = [
+    for row in _history_csv_rows(exports['bank-product-dates.csv'], 'bank-product-dates.csv',
+                                 {'provider', 'run_date', 'product_key', 'rate_rows'}, allow_empty=True):
+        if row['run_date'] not in selected_dates:
+            raise ValueError('historical audit bank-product-dates.csv contains an unselected date')
+        bank = by_bank[row['provider']]
+        bank['dates'].add(row['run_date'])
+        bank['products'].add(row['product_key'])
+        bank['rate_rows'] += int(row['rate_rows'])
+        bank['observations'] += 1
+    historical_banks = [
         {'provider': provider, 'observed_dates': len(bank['dates']),
          'first_observed_date': min(bank['dates']), 'last_observed_date': max(bank['dates']),
          'distinct_product_keys': len(bank['products']), 'product_section_days': bank['observations'],
          'rate_row_observations': bank['rate_rows'], 'absence_meaning': 'not_determined'}
         for provider, bank in sorted(by_bank.items())]
-    report['export_row_counts']['historical-banks.csv'] = write_csv(output / 'historical-banks.csv', report['historical_banks'])
+    # Parameters can fail only after streaming millions of rows. Stage them on
+    # disk so validation finishes before changing the report or its outputs.
+    with tempfile.TemporaryDirectory(prefix='.historical-report-', dir=output.parent) as temporary:
+        stage = Path(temporary)
+        row_counts = _prepare_history_exports(stage, source, summary, raw, exports, historical_banks, audited)
+        _admit_history_exports(stage, output)
+    report['historical_banks'] = historical_banks
+    report['export_row_counts'].update(row_counts)
+    report['historical_coverage']['individual_dated_audit'] = audited
+    report['historical_coverage']['status'] = 'selected_dated_assets_audited; source_accuracy_and_missing_dates_unresolved'
+
+
+def _history_csv_rows(body, name, required, *, allow_empty=False):
+    """Parse verified bytes once, refusing ambiguous headers and malformed rows."""
+    try:
+        text = body.decode('utf-8-sig')
+        if allow_empty and not text:  # write_csv emits only a BOM for zero observations.
+            return
+        with io.StringIO(text, newline='') as stream:
+            reader = csv.reader(stream, strict=True)
+            fields = next(reader, [])
+            if (not required.issubset(fields) or len(fields) != len(set(fields))
+                    or any(not field for field in fields)):
+                raise ValueError(f'historical audit {name} requires unique nonempty headers')
+            for values in reader:
+                if len(values) != len(fields):
+                    raise ValueError(f'historical audit {name} row width is inconsistent')
+                yield dict(zip(fields, values))
+    except (UnicodeError, csv.Error) as error:
+        raise ValueError(f'historical audit {name} is malformed') from error
+
+
+def _validate_history_dates(body, selected_dates):
+    """The sealed date ledger must agree with every admitted summary result."""
+    seen = set()
+    for row in _history_csv_rows(body, 'dates.csv', {'run_date', 'status'}):
+        run_date = row['run_date']
+        if run_date not in selected_dates or run_date in seen:
+            raise ValueError('historical audit dates.csv contains an unselected or duplicate date')
+        if row['status'] != selected_dates[run_date]:
+            raise ValueError('historical audit dates.csv status disagrees with selected summary')
+        seen.add(run_date)
+    if seen != set(selected_dates):
+        raise ValueError('historical audit dates.csv omits selected dates')
+
+
+def _admit_history_exports(stage, output):
+    """Retain interrupted output; recovery uses a new immutable report directory."""
+    targets = sorted(stage.iterdir())
+    if any((output / path.name).exists() or (output / path.name).is_symlink() for path in targets):
+        raise ValueError('historical report output already exists')
+    admitted = []
+    try:
+        for path in targets:
+            os.link(path, output / path.name)  # Same filesystem; never replace existing output.
+            admitted.append(path.name)
+    except OSError as error:
+        # Path-based rollback could delete a replacement created by another writer.
+        names = ', '.join(admitted) or 'none'
+        raise OSError(f'historical report admission incomplete: {len(admitted)} files linked ({names}); '
+                      'preserve this incomplete output and retry with a new output directory') from error
+
+
+def _prepare_history_exports(output, source, summary, raw, exports, historical_banks, audited):
+    """No report mutation: invalid later detail evidence discards only this stage."""
+    row_counts = {'historical-banks.csv': write_csv(output / 'historical-banks.csv', historical_banks)}
     if 'details' in summary.get('assets_checked_per_date', []):
         from cdr_historical_parameters import rows as parameter_changes
-        report['export_row_counts']['historical-parameter-changes.csv.gz'] = write_csv(
+        row_counts['historical-parameter-changes.csv.gz'] = write_csv(
             output / 'historical-parameter-changes.csv.gz', parameter_changes(source, summary))
         audited['parameter_changes_semantics'] = (
             'Every captured field at baseline and after calendar gaps, then changes on consecutive observation dates. '
@@ -264,8 +339,7 @@ def attach_history(report: dict, source: Path, output: Path):
         body = raw if name == 'summary.json' else exports[name]
         (output / target).write_bytes(body)
         audited['exports'][target] = {'bytes': len(body), 'sha256': digest(body)}
-    report['historical_coverage']['individual_dated_audit'] = audited
-    report['historical_coverage']['status'] = 'selected_dated_assets_audited; source_accuracy_and_missing_dates_unresolved'
+    return row_counts
 
 
 def generate(root: Path, output: Path, history_audit: Path | None = None,
