@@ -167,8 +167,36 @@ context content reuses one interpretation job even across ingests.
 Capture failure writes a separate `state/terms-capture-receipts` failure record,
 preserves the raw stage and leaves the verified rate completion marker unchanged.
 The already-finalized/recovered paths retry the capture without rerunning ingest.
-The retained stage still needs the existing verified cleanup path after repair;
-capture recovery by itself does not delete source staging.
+Cleanup requires a separate version-2 seal from the original run. The caller
+supplies its actual prepared `runs/day` raw target and, only when used by that
+run, the `exports/day/_exports` RAM directory. Its day ancestor and unrelated
+siblings are preserved. The seal binds those roles, exact paths, complete
+inventories and generation. A stale optional RAM export beside an automatic
+persistent export is excluded. Finalized retries cannot derive ownership from directory existence;
+legacy unproved seals remain preserved. Capture recovery alone is insufficient.
+
+Seal serialization checks exact canonical UTF-8 bytes including the newline
+against the 32 MiB receipt limit before immutable creation. The shared cleanup
+limits remain 1 GiB of charged file/serialization work, 100,000 inventory entries
+and 30 cooperative seconds. The completed-generation lookup uses only the
+verified primary-key index, at most two fixed-size result rows, a 2 MiB SQLite
+cache, disabled mmap and at most 10,000 VM steps under the same deadline. It
+does not charge the size of the whole historical archive or claim measured
+physical I/O. Cleanup additionally requires native `setlimit`/`getlimit` APIs:
+it sets and reads back the 64 KiB SQLite value/row length limit and parser limits
+before any query. A malformed oversized TEXT/BLOB must not be materialized first
+and checked afterward. SQL row counts, expressions and page caches do not supply
+this allocation guarantee. **Python 3.10 optional cleanup is unsupported**: it
+returns `PRESERVED` with `capture_cleanup_sqlite_value_limits_unavailable` before
+opening the cleanup database. Verified finalization and derived capture still
+succeed; original and retried raw stages remain available until cleanup runs in
+a separately approved capable runtime. No upgrade or activation is automatic.
+Python 3.11 is tested with native limits. These limits do not claim to bound the
+entire Python/SQLite process heap, physical I/O or blocking native operations.
+Immutable read-only access,
+exact schema/application and receipt identity, and before/after file identity
+and uncheckpointed-WAL checks remain required. These cleanup bounds do not alter
+capture receipts, source clocks, legal applicability or the Drive backup hold.
 
 Source clocks and archive clocks are separate. Configured capture verifies the
 finalized marker's exact generation, contract digest and observation date, then
