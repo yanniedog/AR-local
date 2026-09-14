@@ -12,6 +12,9 @@ from .discovery import discover_references, document_url
 from .identity import byte_digest, canonical_json, digest, require_sha, timestamp
 
 
+DERIVED_MUTABLE_TABLES = frozenset({"acquisition_processing_schedule", "acquisition_processing_schedule_migration"})
+
+
 def validate_clause_locator(text: str, coverage: Mapping[str, Any], *, start: int, end: int,
                             page: int | None = None, section: str | None = None) -> dict[str, Any]:
     """Validate the same retained locator before staging or registering a clause."""
@@ -43,8 +46,9 @@ def validate_clause_locator(text: str, coverage: Mapping[str, Any], *, start: in
 class EvidenceStore:
     """One private database plus content-addressed files, never a source DB.
 
-    SQL denies UPDATE/DELETE even to accidental direct writes. Corrections are
-    new records. OS permissions separate this controller from untrusted workers;
+    SQL denies evidence UPDATE/DELETE even to accidental direct writes. Only the
+    two named scheduling caches are mutable; corrections to evidence are new
+    records. OS permissions separate this controller from untrusted workers;
     the class is not a sandbox for model-generated code.
     """
 
@@ -77,6 +81,10 @@ class EvidenceStore:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()
         for row in tables:
+            # These caches never authorize evidence. Their referenced immutable
+            # processing events and source/lease guards remain the authority.
+            if row[0] in DERIVED_MUTABLE_TABLES:
+                continue
             # Names come only from this checked-in schema, never source strings.
             for operation in ("UPDATE", "DELETE"):
                 self.db.execute(

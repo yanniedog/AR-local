@@ -275,6 +275,27 @@ CREATE TABLE IF NOT EXISTS acquisition_processing_events (
 );
 CREATE INDEX IF NOT EXISTS acquisition_processing_latest ON acquisition_processing_events(processing_id,sequence DESC);
 CREATE INDEX IF NOT EXISTS acquisition_processing_node ON acquisition_processing(node_id);
+-- Explicitly DERIVED scheduling caches. Original processing/events remain immutable.
+-- Only these two tables may be updated by the sole version-matched controller.
+CREATE TABLE IF NOT EXISTS acquisition_processing_schedule (
+    processing_id TEXT PRIMARY KEY REFERENCES acquisition_processing(processing_id),
+    event_id TEXT NOT NULL REFERENCES acquisition_processing_events(event_id),
+    priority INTEGER NOT NULL CHECK(priority IN (0,1,2)),
+    status TEXT NOT NULL CHECK(status IN ('queued','running','complete','retry_wait','blocked')),
+    due_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    evidence_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS acquisition_processing_schedule_due
+    ON acquisition_processing_schedule(priority,due_at,created_at,processing_id)
+    WHERE status IN ('queued','retry_wait');
+CREATE TABLE IF NOT EXISTS acquisition_processing_schedule_migration (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    after_processing_id TEXT NOT NULL,
+    complete INTEGER NOT NULL CHECK(complete IN (0,1))
+);
+INSERT OR IGNORE INTO acquisition_processing_schedule_migration
+    SELECT 1,'',CASE WHEN EXISTS (SELECT 1 FROM acquisition_processing LIMIT 1) THEN 0 ELSE 1 END;
 CREATE TABLE IF NOT EXISTS acquisition_dispositions (
     request_id TEXT PRIMARY KEY REFERENCES acquisition_requests(request_id),
     observed_at TEXT NOT NULL,

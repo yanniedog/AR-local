@@ -4,11 +4,12 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import math
 import socket
 import ssl
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit
 
@@ -33,6 +34,9 @@ class FetchPolicy:
             raise ValueError("Document byte bound must be between 1 and 64 MiB")
         if not 0 < self.timeout_seconds <= 120 or not 0 <= self.max_redirects <= 10:
             raise ValueError("Document request timeout/redirect bounds are invalid")
+        if self.deadline_monotonic is not None and (type(self.deadline_monotonic) not in (int, float)
+                                                   or not math.isfinite(self.deadline_monotonic)):
+            raise ValueError("Document admission deadline must be finite")
 
 
 class FetchFailure(Exception):
@@ -40,6 +44,21 @@ class FetchFailure(Exception):
         self.code = code
         self.http_status = http_status
         super().__init__(code)
+
+
+class OperationalDeferral(FetchFailure):
+    """Only a live policy guard produces this scheduling disposition."""
+
+    def __init__(self, reason: str):
+        if not isinstance(reason, str) or not reason or len(reason) > 200:
+            reason = "operational_guard_unavailable"
+        self.reason = reason
+        super().__init__("operational_guard:" + reason)
+
+
+def deferral_metadata(document_id: str, check_id: str, error_code: str) -> dict:
+    return {"operational_deferral_v1": {"document_id": document_id, "check_id": check_id,
+                                       "error_code": error_code}}
 
 
 def _public_address(host: str, port: int, timeout: float = 30) -> str:
@@ -156,7 +175,7 @@ def fetch_document(url: str, *, policy: FetchPolicy,
             except Exception:
                 reason = "operational_guard_unavailable"
             if reason:
-                raise FetchFailure("operational_guard:" + reason)
+                raise OperationalDeferral(reason)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise FetchFailure("request_deadline")
@@ -241,6 +260,9 @@ def acquire_document(store: EvidenceStore, document_id: str, *, check_id: str,
             # values instead of silently turning the next check unconditional.
             old_metadata = json.loads(previous["metadata_json"])
             result["metadata"] = {**old_metadata, **{key: value for key, value in result.get("metadata", {}).items() if value is not None}}
+    except OperationalDeferral as exc:
+        result = {"status": "deferred", "error_code": exc.code,
+                  "metadata": deferral_metadata(document_id, check_id, exc.code)}
     except FetchFailure as exc:
         result = {"status": "failed", "error_code": exc.code, "http_status": exc.http_status}
     except (OSError, http.client.HTTPException, ValueError):
@@ -258,18 +280,20 @@ def acquire_observation(store: EvidenceStore, observation_id: str, *, check_pref
         raise ValueError("Invalid batch byte budget")
     rows = store.db.execute("SELECT DISTINCT document_id FROM applicability WHERE observation_id=? AND relation!='cdr_source' ORDER BY document_id",
                             (observation_id,)).fetchall()
+    chosen = policy or FetchPolicy()
     deadline = time.monotonic() + max_seconds
+    if chosen.deadline_monotonic is not None:
+        deadline = min(deadline, chosen.deadline_monotonic)
     results: list[dict[str, Any]] = []
     spent = 0
-    chosen = policy or FetchPolicy()
     for row in rows:
         check_id = digest([check_prefix, observation_id, row[0]])
         if len(results) >= max_documents or spent >= max_total_bytes or time.monotonic() >= deadline:
             # Unattempted references remain pending. No artificial success receipt.
             break
-        bounded = FetchPolicy(min(chosen.max_bytes, max_total_bytes - spent),
-                              min(chosen.timeout_seconds, deadline - time.monotonic()),
-                              chosen.max_redirects, chosen.allowed_hosts, chosen.allow_http)
+        bounded = replace(chosen, max_bytes=min(chosen.max_bytes, max_total_bytes - spent),
+                          timeout_seconds=min(chosen.timeout_seconds, deadline - time.monotonic()),
+                          deadline_monotonic=deadline)
         result = acquire_document(store, row[0], check_id=check_id, policy=bounded)
         bind_manual_check(store, observation_id, check_id)
         results.append(result)
