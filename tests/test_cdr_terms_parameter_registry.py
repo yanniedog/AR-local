@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from cdr_terms.identity import digest
+from cdr_terms.identity import byte_digest, digest
 from cdr_terms.ingest import registry_context
 from cdr_terms.parameter_registry import (canonical_parameter, registry_contract,
                                          validate_parameter_terms, validate_registry_context)
@@ -98,3 +98,35 @@ def test_immutable_legacy_context_retains_its_existing_contract(evidence):
     queue, job, output, args = _staged_term(evidence)
     queue.validate_staging(job, output)
     assert stage_term(evidence[0], **args)
+
+@pytest.mark.parametrize('inject_profile', [False, True])
+def test_worker_envelope_admits_exact_registry_and_refuses_nested_profile(evidence, tmp_path, inject_profile):
+    from cdr_terms.queue import TermsQueue
+    from pi_terms_worker import prepare_job
+    from tests.test_cdr_terms_evidence import _clause, NOW
+
+    store, _, key, _, _, body, _ = evidence
+    extraction, _ = _clause(evidence)
+    context = {**registry_context(), 'product_keys': [key],
+               'source_product_sha256': {key: byte_digest(body)}}
+    if inject_profile:
+        context['parameter_registry']['customer_profile'] = {'private': 'must not reach transport'}
+    queue = TermsQueue(store)
+    job_id = queue.enqueue(extraction, context, now=NOW)
+    # Exercise the actual transport preparation boundary, including its queue
+    # input validation, without a model call or test-only context whitelist.
+    job = dict(store.db.execute('SELECT j.*, x.text_sha256, x.document_version_id '
+                               'FROM analysis_jobs j JOIN extractions x USING(extraction_id) '
+                               'WHERE job_id=?', (job_id,)).fetchone())
+    job['lease_id'] = 'transport-contract-test-only'
+    operation = (tmp_path / 'worker-operation').resolve()
+    if inject_profile:
+        with pytest.raises(ValueError, match='registry context'):
+            prepare_job(store, job, operation)
+        assert not operation.exists()
+    else:
+        prepare_job(store, job, operation)
+        payload = json.loads((operation / 'input.json').read_bytes())
+        assert payload['context'] == context
+        assert payload['context']['parameter_registry'] == registry_contract()
+        assert payload['source_text'] == store.read_blob(job['text_sha256']).decode('utf-8')
