@@ -27,12 +27,17 @@ in progress. Declaring the hold active requires coordinated activation below.
    and independent reclaim restoration. Do not kill an unknown upload or clear
    a lock to install a hold.
 3. Disable the existing daily and queue write timers, preserving their original
-   controls. Activate the marker with `pi_drive_backup_hold_activate.py`, supplying
-   `--spool` for every inventoried dispatch spool and an explicit `--reason`.
-   The helper acquires each `backup.lock`, including the parent's complete
-   acceptance and acknowledgement critical section, before creating the marker.
-   It refuses an active lock without waiting or killing the owner. If blocked,
-   retain ownership and reconcile the in-flight operation before retrying.
+   controls. Install only the reviewed standalone helper through the protected
+   installation transaction below; never run root Python from a Pi-owned checkout.
+   Invoke its protected copy with `-I -S`, supplying `--spool` for every inventoried
+   dispatch spool and an explicit `--reason`. A global root-owned activation lock
+   serializes invocations even when their spool arguments differ. The helper then
+   acquires each `backup.lock`, including the parent's complete acceptance and
+   acknowledgement critical section, before atomically creating the marker.
+   Every pre-existing lock refuses activation: active, dead-PID, malformed and
+   empty locks are all unreconciled. The helper never recovers, renames, clears,
+   waits on or signals an existing lock owner. If blocked, retain ownership and
+   reconcile the original operation and its receipts before a later retry.
    A manually created marker alone is not proof of coordinated activation.
    Install the service-level refusal. Preserve original controls
    and queue identities in the local hold receipt. Leave reclaim reconciliation
@@ -47,3 +52,62 @@ in progress. Declaring the hold active requires coordinated activation below.
 Removing a marker or re-enabling the schedules requires explicit operator
 approval. The code intentionally provides no automatic release command. This
 document and passing unit tests do not establish an installed Pi hold.
+
+## Protected installation and invocation
+
+This is a scoped helper installation, not a reinstall of the backup service,
+credentials, dispatchers, reclaim controls or historical backup component. The
+sole operator must record the approved commit and SHA-256 of the exact
+`pi_drive_backup_hold_activate.py` bytes before transferring them. The expected
+hash must come from that independent reviewed artifact, not from whichever bytes
+happen to be present in the mutable Pi checkout at installation time.
+
+Use an already trusted root-owned operator shell and trusted system utilities.
+Do not execute a repository Python module, shell installer, `sudo python` command
+from the checkout, or a script placed in a Pi-writable staging directory as root.
+Treat the source file only as data: copy it to a fresh temporary file inside
+`/usr/local/libexec/ar-local-drive-hold`, owned by root and non-writable by others;
+verify its bytes against the independently recorded hash; then install that
+verified file at `/usr/local/libexec/ar-local-drive-hold/activate.py` with owner
+root:root and mode 0555. Verify the installed hash again. On mismatch, stop and
+preserve the candidate for investigation; do not execute it.
+
+Both that directory's entire ancestor chain and `/etc/ar-local` must be canonical,
+root-owned directories without group/other write permission. Existing installed
+helper bytes must be inventoried before replacement; never blindly overwrite an
+unknown installation. The activation CLI verifies its fixed installation path,
+file ownership/mode/link count, protected ancestors and Python isolation flags.
+These runtime checks supplement the installation contract: they cannot make
+executing an already malicious script from a mutable checkout safe.
+
+The only supported activation command shape is:
+
+```text
+/usr/bin/python3 -I -S /usr/local/libexec/ar-local-drive-hold/activate.py --spool /canonical/inventoried/spool --spool /another/inventoried/spool --reason "Preserve the accepted fallback during product evidence repairs"
+```
+
+The helper is standard-library-only. `-I` excludes working-directory, user-site
+and Python environment injection; `-S` excludes site initialization. The helper
+imports no backup, queue, operation-lock or checkout module. The system Python
+and its standard library are part of the trusted host installation.
+
+The protected `.drive-write-hold-activation.lock` is also non-recovering. A crash
+can leave it or a newly created acceptance lock behind; inspect the exact owner,
+terminal receipts and marker/control state rather than deleting it automatically.
+Success removes only locks created by that invocation whose identity still matches.
+A replaced lock is preserved. The immutable marker uses a flushed temporary file
+and atomic no-replace link, so a competing marker can never be overwritten.
+
+An existing marker returns `ALREADY_HELD`, its hash and its original parsed content
+when readable. It does not replace the old reason or spool inventory, and does
+not re-attest coordinated activation. Empty or malformed markers still block
+Drive dispatch but require separate coordination evidence. A repeat call with a
+different inventory cannot silently expand the original receipt. The caller must
+inventory every actual dispatch spool before first activation and reconcile any
+missing scope explicitly while preserving the hold.
+
+Record the installed helper/hash/ownership, trusted command, complete spool
+inventory, marker hash and original content, timer and acceptance refusals, and
+unchanged accepted-backup/queue identities. Local tests cover protocol behavior;
+root installation, actual Pi lock coordination and reboot refusal remain separate
+runtime gates. No installation or activation is implied by this document.
