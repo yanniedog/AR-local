@@ -2,6 +2,8 @@
 
 PDF extraction records the actual parser version, physical page ordinals, exact text offsets and hashes, textless/unreadable page dispositions, and explicit unprocessed page ranges. A corrupt or oversized page does not discard successfully extracted sibling pages. Printed URLs and URI annotations are candidate references with page provenance; no PDF action is executed. Wrapped or indirect references remain subject to review.
 
+Policy `pdf-page-evidence-2` recognizes any ASCII letter case in printed HTTP(S) schemes while preserving the exact source spelling and character span. Its linear delimiter scan trims trailing unmatched closing parentheses/brackets/braces and sentence punctuation, retaining balanced URL punctuation and encoded delimiters. It does not join whitespace-separated or wrapped text. URI annotation values retain their exact declared spelling; printed-text punctuation rules do not rewrite annotation targets.
+
 PDF status remains partial. Textless pages may be blank or carry scanned content; they are not automatically declared blank or sent through unverified OCR. Tables, footnote associations, layout and incorporated documents remain unreviewed. Physical page ordinals are not inferred printed page labels. Page-qualified clauses must fit one retained page span and its exact hash; a guessed page, cross-page range or separator is refused. Unqualified text offsets remain available for existing evidence.
 
 The optional document runtime pins pypdf in requirements-terms.txt. Product CI installs it so protocol tests run rather than skip. Ingest does not install packages. The Pi's installed dependency inventory and controlled runtime activation are separate gates.
