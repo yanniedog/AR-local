@@ -96,6 +96,7 @@ def pending_counts(store: EvidenceStore) -> dict:
     counts["processing_pending"] = store.db.execute("SELECT COUNT(*) FROM acquisition_processing_events e WHERE sequence="
         "(SELECT MAX(sequence) FROM acquisition_processing_events WHERE processing_id=e.processing_id) "
         "AND status IN ('queued','running','retry_wait')").fetchone()[0]
+    counts["processing_schedule_migration_complete"] = not ProcessingQueue(store).schedule_incomplete()
     return counts
 
 
@@ -120,6 +121,8 @@ def run_batch(store: EvidenceStore, *, registry_context: dict, deadline: float,
         # Lease is committed before parsing. A crash cannot reset its attempts.
         state["processing"] = ProcessingQueue(store).process_one(registry_context)
         _collect(store, registry_context, deadline, guard, limits, state)
+        if state["stop_reason"] == "no_due_work" and ProcessingQueue(store).has_work():
+            state["stop_reason"] = "processing_pending"
     elif work:
         state["stop_reason"] = "admission_deadline"
     progress = bool(state["items"] or state["dispositions"] or state["processing"])

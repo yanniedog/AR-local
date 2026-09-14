@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 from dataclasses import replace
 from typing import Any, Callable, Mapping
 
-from .acquisition import FetchPolicy, acquire_document
+from .acquisition import FetchPolicy, acquire_document, deferral_metadata
 from .extraction import extract_version
-from .identity import digest, timestamp, utc_now
+from .identity import canonical_json, digest, timestamp, utc_now
 from .queue import TermsQueue
 from .store import EvidenceStore
 
@@ -18,9 +18,36 @@ def _after(now: str, seconds: int) -> str:
     return timestamp((datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(seconds=seconds)).isoformat())
 
 
+DEFERRAL_EVENT = "operational_deferral_v1"
+
+
+def _valid_deferral(request_id, lease_id, document_id, check_id, status, error, metadata) -> bool:
+    """A failed string, manual check or malformed marker never forgives a lease."""
+    return (status == "deferred" and isinstance(error, str) and error.startswith("operational_guard:")
+            and 0 < len(error.removeprefix("operational_guard:")) <= 200
+            and check_id == digest([request_id, lease_id])
+            and metadata == canonical_json(deferral_metadata(document_id, check_id, error)))
+
+
 class AcquisitionQueue:
     def __init__(self, store: EvidenceStore):
         self.store = store
+        store.db.create_function("ar_valid_operational_deferral", 7, _valid_deferral, deterministic=True)
+
+    def charged_attempts(self, request_id: str) -> int:
+        """Only the sole exact terminal acknowledgement can exempt its lease."""
+        return self.store.db.execute(
+            "SELECT COUNT(*) FROM acquisition_events lease JOIN acquisition_requests r USING(request_id) "
+            "WHERE lease.request_id=? AND lease.status='running' AND NOT EXISTS "
+            "(SELECT 1 FROM acquisition_events e JOIN acquisition_checks c USING(check_id) "
+            "WHERE e.request_id=lease.request_id AND e.lease_id=lease.lease_id AND e.sequence>lease.sequence "
+            "AND e.status='retry_wait' AND e.error_code=? AND c.document_id=r.document_id "
+            "AND c.checked_at>=lease.observed_at AND c.checked_at<=e.observed_at "
+            "AND e.observed_at<lease.lease_expires_at AND ar_valid_operational_deferral "
+            "(lease.request_id,lease.lease_id,r.document_id,c.check_id,c.status,c.error_code,c.metadata_json) "
+            "AND NOT EXISTS (SELECT 1 FROM acquisition_events other WHERE other.request_id=lease.request_id "
+            "AND other.lease_id=lease.lease_id AND other.sequence>lease.sequence AND other.sequence!=e.sequence "
+            "AND other.status IN ('complete','retry_wait','blocked')))", (request_id, DEFERRAL_EVENT)).fetchone()[0]
 
     def enqueue(self, observation_id: str, *, ingest_id: str, now: str,
                 priority: int = 1) -> list[str]:
@@ -80,7 +107,10 @@ class AcquisitionQueue:
                 "SELECT e.* FROM acquisition_events e WHERE e.sequence=(SELECT MAX(sequence) FROM acquisition_events WHERE request_id=e.request_id) "
                 "AND e.status='running' AND e.lease_expires_at<=?", (observed,)).fetchall()
             for row in expired:
-                self._event(row["request_id"], "retry_wait", observed, retry_after=observed, error_code="acquisition_lease_expired")
+                attempts = self.charged_attempts(row["request_id"])
+                self._event(row["request_id"], "blocked" if attempts >= 4 else "retry_wait", observed,
+                            retry_after=None if attempts >= 4 else _after(observed, min(3600, 300 * 2 ** max(0, attempts - 1))),
+                            lease_id=row["lease_id"], error_code="acquisition_lease_expired")
             request = self.next_due(observed, fair=fair)
             if request is None:
                 return None
@@ -106,16 +136,23 @@ class AcquisitionQueue:
                 raise ValueError("Acquisition result does not bind this document")
             if not latest["observed_at"] <= check["checked_at"] <= observed:
                 raise ValueError("Acquisition result must be observed within its accepted lease")
+            deferred = not processing_error and not terminal and _valid_deferral(
+                request["request_id"], request["lease_id"], request["document_id"], check_id,
+                check["status"], check["error_code"], check["metadata_json"])
             successful = check["status"] in {"fetched", "unchanged"} and not processing_error
-            attempts = self.store.db.execute("SELECT COUNT(*) FROM acquisition_events WHERE request_id=? AND status='running'",
-                                             (request["request_id"],)).fetchone()[0]
-            status = "complete" if successful else "blocked" if terminal or attempts >= 4 else "retry_wait"
+            attempts = self.charged_attempts(request["request_id"])
+            status = "complete" if successful else "retry_wait" if deferred else "blocked" if terminal or attempts >= 4 else "retry_wait"
             self._event(request["request_id"], status, observed, lease_id=request["lease_id"], check_id=check_id,
-                        retry_after=_after(observed, min(3600, 300 * 2 ** (attempts - 1))) if status == "retry_wait" else None,
-                        error_code=processing_error or check["error_code"])
+                        retry_after=_after(observed, 300 if deferred else min(3600, 300 * 2 ** max(0, attempts - 1))) if status == "retry_wait" else None,
+                        error_code=DEFERRAL_EVENT if deferred else processing_error or check["error_code"])
             if successful and defer_processing:
                 from .acquisition_processing import ProcessingQueue
-                ProcessingQueue(self.store).enqueue(request["request_id"], check_id, now=observed)
+                from .graph import DocumentGraph, current_observations
+                # A graph-only request gets its exact node task in the bounded
+                # graph frontier reconciliation. Direct/shared scope still parses.
+                if (current_observations(self.store, request["request_id"])
+                        or not DocumentGraph(self.store).request_hosts(request["request_id"])):
+                    ProcessingQueue(self.store).enqueue(request["request_id"], check_id, now=observed)
 
 
 def enqueue_interpretation(store: EvidenceStore, version_id: str, observation_ids: list[str], *,
