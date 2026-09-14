@@ -58,7 +58,29 @@ def test_real_reexport_recovers_all_25_rows_with_source_rates_unchanged(reexport
         original = originals[product["product_key"]]
         assert product["dataset"] == original["expected_dataset"]
         assert product["category"] == original["product"]["category"]
-        assert json.loads(product["details_json"]) == json.loads(original["product"]["details_json"])
+        source_detail = json.loads(original["product"]["details_json"])
+        cleaned = json.loads(product["details_json"])
+        references = cleaned.pop("sourceDocuments", [])
+        # Only additive provenance may differ; retain whole original equality.
+        assert "sourceDocuments" not in source_detail
+        assert cleaned == source_detail
+        relations = {"overviewUri": "overview", "eligibilityUri": "eligibility",
+                     "feesAndPricingUri": "fees", "termsUri": "terms", "bundleUri": "bundle"}
+        expected_paths = {"/additionalInformation/" + field: relation
+                          for field, relation in relations.items()
+                          if field in source_detail.get("additionalInformation", {})}
+        assert len(references) == len(expected_paths)
+        assert {ref["sourcePath"] for ref in references} == set(expected_paths)
+        for ref in references:
+            assert set(ref) == {"sourcePath", "sourceUrl", "url", "relation"}
+            source_value = source_detail
+            # Follow the original pointer independently of discovery/cleaning.
+            for token in ref["sourcePath"].split("/")[1:]:
+                token = token.replace("~1", "/").replace("~0", "~")
+                source_value = source_value[int(token)] if isinstance(source_value, list) else source_value[token]
+            assert isinstance(source_value, str)
+            assert ref["sourceUrl"] == ref["url"] == source_value
+            assert ref["relation"] == expected_paths[ref["sourcePath"]]
     for row in banks["rates"]:
         original = originals[row["product_key"]]["rates"][row["rate_index"] - 1]
         for field in ("rate", "rate_type", "application_type", "application_frequency", "term", "category"):

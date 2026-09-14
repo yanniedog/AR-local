@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:product-terms:historical-target:v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "scope", "document_version_id", "document_content_sha256", "document_observed_at", "extraction_id", "extraction_text_sha256", "extractor_version", "observations", "target_sha256"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "scope": {"const": "historical_only"},
+    "document_version_id": {"$ref": "#/$defs/sha256"},
+    "document_content_sha256": {"$ref": "#/$defs/sha256"},
+    "document_observed_at": {"type": "string", "format": "date-time"},
+    "extraction_id": {"$ref": "#/$defs/sha256"},
+    "extraction_text_sha256": {"$ref": "#/$defs/sha256"},
+    "extractor_version": {"type": "string", "minLength": 1},
+    "target_sha256": {"$ref": "#/$defs/sha256"},
+    "observations": {
+      "type": "array", "minItems": 1, "maxItems": 1000, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["observation_id", "product_key", "source_sha256", "observed_at", "observation_date_utc", "ingest_id"],
+        "properties": {
+          "observation_id": {"$ref": "#/$defs/sha256"},
+          "product_key": {"type": "string", "minLength": 1},
+          "source_sha256": {"$ref": "#/$defs/sha256"},
+          "observed_at": {"type": "string", "format": "date-time"},
+          "observation_date_utc": {"type": "string", "format": "date"},
+          "ingest_id": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+}

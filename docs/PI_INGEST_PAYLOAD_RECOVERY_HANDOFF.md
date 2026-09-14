@@ -36872,3 +36872,39 @@ active. Removing the hold or resuming any Drive write requires fresh explicit
 operator approval; elapsed time and completion of product repairs are not
 approval. Native app tests, controlled Pi deployment and a natural independent
 cycle remain separate outstanding acceptance gates.
+
+## 2026-09-14 — D-029 critical-window supervision and continuous takeover record
+
+The operator additionally required a comprehensive, continuously maintained
+handoff that allows a fresh LLM thread to take over at any stage, and explicit
+protection, assistance and supervision around the Pi's critical scheduled work,
+including the next day's natural CDR ingest. This extends the observation role;
+it does not relax D-028's indefinite Google Drive write prohibition.
+
+The existing continuation was repurposed, not duplicated. Its backup-writing
+scope remains disabled; its prior prompt and paused state were archived privately.
+The same sole owner now receives critical-window supervision checkpoints covering
+the 22:00 analysis cutoff, 00:25 and 00:58 preflights around the last-known 01:00
+Australia/Hobart natural ingest, and progress/post-run observations. The actual
+timer and host timezone must be read back when authenticated access returns.
+
+This local continuation depends on Windows/Codex availability and is not a
+Pi-resident supervisor or a guarantee of exact-time preflights. Delayed or missed
+observations remain missed; later healthy state cannot establish them. SSH is
+still awaiting operator authentication, and the installed Pi all-dispatch Drive
+hold and independent timers remain unverified. No task-initiated Drive writes
+or live Pi changes occurred as part of this scheduling update.
+
+Keep the 00:30-through-terminal-ingest quiet window. Do not deploy, restart,
+run a canary, change packages, force ingestion, manipulate publication or perform
+heavy scans then. Terms analysis must yield to ingest, publication and recovery
+priority. Preserve natural timers, unknown lock owners, resource gates, disk
+reserves and independent reclaim/recovery controls. Observe with bounded reads;
+intervene only under the current controlled procedure and verified ownership.
+
+The private operational takeover record is updated at material checkpoints and
+before/after live actions, with current scope, authority, owners, exact branches
+and commits, PR/review state, test and source receipts, blockers, next commands
+and acceptance boundaries. Preserve prior checkpoints. A fresh thread must read
+it and discover current ownership before resuming. Neither this entry, a merged
+PR nor a configured schedule establishes live hold or natural-cycle acceptance.

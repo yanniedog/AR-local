@@ -1,11 +1,17 @@
 # AR-local ? Agent configuration
 
-> **Google Drive hold (operator decision 2026-09-14):** The latest recovery
-> handoff entry D-028 supersedes the unattended daily Drive-write authority for
+> **Google Drive hold (operator decision 2026-09-14):** Recovery handoff
+> entry D-028 supersedes the unattended daily Drive-write authority for
 > product-evidence and historical-coverage work. Preserve the accepted fallback;
 > do not resume backup writes until the operator explicitly approves. Runtime
 > hold installation is not implied by merged code. Read the latest handoff and
 > `docs/DRIVE_WRITE_HOLD.md` before any backup action.
+
+> **Critical-window supervision (operator decision 2026-09-14):** D-029 extends
+> the existing continuation to supervise scheduled ingest while preserving the
+> Drive write hold, sole ownership and quiet window. Maintain the private takeover
+> record at material checkpoints. A configured local schedule does not prove a
+> Pi-resident supervisor or successful exact-time preflight.
 
 > **Daily CDR quality pipeline (operator decision 2026-09-11):** Read
 > **`docs/CDR_QUALITY_PIPELINE.md`** and the latest chronological recovery

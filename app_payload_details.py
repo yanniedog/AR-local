@@ -21,7 +21,8 @@ def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[
                 {
                     "label": item.get(type_key) or item.get("name"),
                     "name": item.get("name"),
-                    "value": item.get("additionalValue") or item.get("amount"),
+                    "value": (item.get("additionalValue") if _present(item.get("additionalValue"))
+                              else item.get("amount")),
                     "info": item.get("additionalInfo"),
                 }
             )
@@ -138,7 +139,7 @@ def _detail_links(record: Dict[str, Any]) -> Dict[str, str]:
     )
 
 
-def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = False) -> Dict[str, Dict[str, Any]]:
     details: Dict[str, Dict[str, Any]] = {}
     for product in products:
         key = product.get("product_key")
@@ -162,6 +163,9 @@ def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "links": _detail_links(record),
+                # Full scoped references belong in lazy per-product evidence
+                # assets; duplicating them in v1 can exceed its 4 MiB budget.
+                "sourceDocuments": record.get("sourceDocuments") if include_source_documents else None,
             }
         )
         details[key] = entry

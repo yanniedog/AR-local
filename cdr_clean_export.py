@@ -13,6 +13,7 @@ from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns
 from cdr_product_facts import clean_fact_rows
 from cdr_rate_normalize import normalized_rate_value, rate_divisor
 from cdr_product_classification import has_savings_term_deposit_evidence
+from cdr_terms.discovery import discover_references
 NOISE_KEYS = {
     "links",
     "meta",
@@ -145,6 +146,11 @@ def detail_json(record: Mapping[str, Any]) -> str:
         # Generic cleaning intentionally removes arbitrary URLs. Restore only the
         # CDR-defined lender metadata fields that the app can identify and label.
         cleaned["additionalInformation"] = links
+    references = [reference.as_dict() for reference in discover_references(record)]
+    if references:
+        # Capture from the raw source: restoring only the five display links
+        # loses fee/tier-local additionalInfoUri and supplementary documents.
+        cleaned["sourceDocuments"] = references
     return json.dumps(cleaned, ensure_ascii=False, sort_keys=True)
 
 

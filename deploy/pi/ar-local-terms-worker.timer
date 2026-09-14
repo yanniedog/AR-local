@@ -1,0 +1,13 @@
+[Unit]
+Description=Retry due AR-local document interpretation without Windows
+
+[Timer]
+OnCalendar=*-*-* 03:30,45:00 Australia/Hobart
+OnCalendar=*-*-* 04..21:00,15,30,45:00 Australia/Hobart
+Persistent=false
+AccuracySec=30s
+RandomizedDelaySec=20s
+Unit=ar-local-terms-worker.service
+
+[Install]
+WantedBy=timers.target
