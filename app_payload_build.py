@@ -215,6 +215,8 @@ def build_payload(
     tag: str = DEFAULT_TAG,
     dashboard_dir: Path = BASE_DIR / "dashboard",
     contract_coverage: Optional[Mapping[str, Any]] = None,
+    source_observation: Optional[Mapping[str, Any]] = None,
+    terms_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
     # Only the rolling release ships search-index + history assets (see _package's
@@ -225,7 +227,18 @@ def build_payload(
         include_history=is_rolling_tag(tag),
         contract_coverage=contract_coverage,
     )
+    if source_observation:
+        data['source_observation'] = dict(source_observation)
+    _attach_terms(data, terms_root)
     return _package_payload(data, out_dir, repo=repo, tag=tag)
+
+
+def _attach_terms(data, terms_root):
+    if terms_root is not None:
+        from app_payload_terms import load_published_terms
+        data['terms'] = load_published_terms(
+            terms_root, source_observation=data.get('source_observation'),
+            run_date=data['run_date'], product_keys=data['details']['products'])
 
 
 def _apply_contract_provider_counts(
@@ -475,6 +488,7 @@ def _package_payload(
         bank_spread_history=data.get("bank_spread_history"),
         rba_calendar=data.get("rba_calendar"),
         source_observation=data.get("source_observation"),
+        terms=data.get('terms'),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -497,6 +511,7 @@ def _package(
     rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
     source_observation: Optional[Mapping[str, Any]] = None,
+    terms: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -526,6 +541,12 @@ def _package(
         files["rba_calendar"] = _asset(
             out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
         )
+    if terms:
+        if enc_key:
+            raise ValueError('Terms shards require a consumer-compatible unencrypted evidence channel')
+        from app_payload_terms import package_terms
+        files.update(package_terms(terms, run_date=run_date, write_asset=lambda kind, value:
+            _asset(out_dir, kind, run_date, _gzip_bytes(value), release_base)))
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
@@ -608,6 +629,7 @@ def build_and_publish_dual(
     state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
     source_observation: Optional[Mapping[str, Any]] = None,
+    terms_root: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -638,6 +660,8 @@ def build_and_publish_dual(
     from app_payload_revisions import publish_revision_bundle, revision_mode_enabled
 
     revisions = revision_mode_enabled()
+    if terms_root is not None and not revisions:
+        raise ValueError('Terms publication requires immutable revisions and a shipped consumer')
     if revisions and state_dir is None:
         raise ValueError("revision publication requires persistent state_dir")
     data = _app_payload("_compute_payload")(
@@ -648,6 +672,8 @@ def build_and_publish_dual(
     )
     if source_observation:
         data["source_observation"] = dict(source_observation)
+
+    _attach_terms(data, terms_root)
 
     if revisions:
         # The caller holds the production lock through archive verification,
