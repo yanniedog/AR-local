@@ -39,7 +39,27 @@ def reexport(tmp_path, evidence):
 def test_real_reexport_changes_only_prize_rate_facets(reexport, evidence):
     _, banks = reexport
     original = evidence["products"][0]["details_json"]
-    assert json.loads(banks["products"][0]["details_json"]) == original
+    cleaned = json.loads(banks["products"][0]["details_json"])
+    references = cleaned.pop("sourceDocuments")
+    # Only additive provenance may differ; every original field stays exact.
+    assert "sourceDocuments" not in original
+    assert cleaned == original
+    relations = {"overviewUri": "overview", "eligibilityUri": "eligibility",
+                 "feesAndPricingUri": "fees", "termsUri": "terms"}
+    expected_paths = {"/additionalInformation/" + field: relation
+                      for field, relation in relations.items()}
+    assert len(references) == len(expected_paths) == 4
+    assert {ref["sourcePath"] for ref in references} == set(expected_paths)
+    for ref in references:
+        assert set(ref) == {"sourcePath", "sourceUrl", "url", "relation"}
+        source = original
+        # Resolve the retained JSON pointer, without the production discoverer.
+        for token in ref["sourcePath"].split("/")[1:]:
+            token = token.replace("~1", "/").replace("~0", "~")
+            source = source[int(token)] if isinstance(source, list) else source[token]
+        assert isinstance(source, str)
+        assert ref["sourceUrl"] == ref["url"] == source
+        assert ref["relation"] == expected_paths[ref["sourcePath"]]
     assert len(banks["rates"]) == len(original["depositRates"]) == 13
     for row in banks["rates"]:
         source = original["depositRates"][row["rate_index"] - 1]
