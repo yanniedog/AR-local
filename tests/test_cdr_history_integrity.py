@@ -53,7 +53,8 @@ def audit_source(tmp_path, *, sealed=True):
              'product_key':'protocol-only', 'rate_rows':0}]
     report.write_csv(source / 'bank-product-dates.csv', rows)
     report.write_csv(source / 'dates.csv', [{'run_date':'2026-09-14', 'status':'PASS'}])
-    summary = {'index_sha256':'pinned', 'results':[{'run_date':'2026-09-14'}]}
+    summary = {'index_sha256':'pinned', 'dates_passed':1,
+               'results':[{'run_date':'2026-09-14', 'status':'PASS'}]}
     if sealed:
         summary['exports'] = {name:{'bytes':(source/name).stat().st_size,
             'sha256':report.digest((source/name).read_bytes())}
@@ -122,3 +123,44 @@ def test_cached_asset_exact_limit_is_preserved(tmp_path):
     path = tmp_path / 'bounded'
     path.write_bytes(b'x' * 64)
     assert history.read_cached(path, 64) == b'x' * 64
+
+
+@pytest.mark.parametrize('status', ['FAIL', 'PARTIAL', None])
+def test_failed_selected_date_cannot_authorize_partial_history_totals(tmp_path, monkeypatch, status):
+    import copy
+    import cdr_history_validation
+    source, output, instance = audit_source(tmp_path)
+    before = copy.deepcopy(instance)
+    summary = json.loads((source / 'summary.json').read_text())
+    summary['results'][0]['status'] = status
+    summary['dates_passed'] = 0
+    (source / 'summary.json').write_text(json.dumps(summary))
+    monkeypatch.setattr(cdr_history_validation, 'verified_exports',
+                        lambda *_: pytest.fail('failed audit was used to read tables'))
+    with pytest.raises(ValueError, match='failed selected dates'):
+        report.attach_history(instance, source, output)
+    assert instance == before and list(output.iterdir()) == []
+
+
+def test_late_details_failure_leaves_report_and_outputs_unchanged(tmp_path, monkeypatch):
+    import copy
+    import cdr_historical_parameters
+    source, output, instance = audit_source(tmp_path)
+    before = copy.deepcopy(instance)
+    sentinel = output / 'existing-current-table.csv'
+    sentinel.write_bytes(b'preserve current output')
+    summary = json.loads((source / 'summary.json').read_text())
+    summary['assets_checked_per_date'] = ['core', 'details']
+    (source / 'summary.json').write_text(json.dumps(summary))
+
+    def fails_after_streaming_row(*_):
+        yield {'source': 'protocol-only-before-later-hash-failure'}
+        raise ValueError('retained detail hash mismatch')
+
+    monkeypatch.setattr(cdr_historical_parameters, 'rows', fails_after_streaming_row)
+    with pytest.raises(ValueError, match='retained detail hash mismatch'):
+        report.attach_history(instance, source, output)
+    assert instance == before
+    assert list(output.iterdir()) == [sentinel]
+    assert sentinel.read_bytes() == b'preserve current output'
+    assert sorted(path.name for path in tmp_path.iterdir()) == ['audit', 'output']

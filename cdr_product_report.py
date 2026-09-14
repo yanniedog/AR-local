@@ -10,7 +10,9 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 import re
+import tempfile
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -233,6 +235,10 @@ def attach_history(report: dict, source: Path, output: Path):
         raise ValueError('historical audit uses a different selected date index')
     if sorted(item['run_date'] for item in summary['results']) != report['historical_coverage']['dates']:
         raise ValueError('historical audit omits or duplicates selected dates')
+    if not summary['results'] or any(item.get('status') != 'PASS' for item in summary['results']):
+        raise ValueError('historical audit contains failed selected dates')
+    if type(summary.get('dates_passed')) is not int or summary['dates_passed'] != len(summary['results']):
+        raise ValueError('historical audit passed-date count is inconsistent')
     exports = verified_exports(source, summary)
     audited = {'summary_sha256': digest(raw), **summary, 'exports': {}}
     by_bank = defaultdict(lambda: {'dates': set(), 'products': set(), 'rate_rows': 0, 'observations': 0})
@@ -243,16 +249,34 @@ def attach_history(report: dict, source: Path, output: Path):
             bank['products'].add(row['product_key'])
             bank['rate_rows'] += int(row['rate_rows'])
             bank['observations'] += 1
-    report['historical_banks'] = [
+    historical_banks = [
         {'provider': provider, 'observed_dates': len(bank['dates']),
          'first_observed_date': min(bank['dates']), 'last_observed_date': max(bank['dates']),
          'distinct_product_keys': len(bank['products']), 'product_section_days': bank['observations'],
          'rate_row_observations': bank['rate_rows'], 'absence_meaning': 'not_determined'}
         for provider, bank in sorted(by_bank.items())]
-    report['export_row_counts']['historical-banks.csv'] = write_csv(output / 'historical-banks.csv', report['historical_banks'])
+    # Parameters can fail only after streaming millions of rows. Stage them on
+    # disk so validation finishes before changing the report or its outputs.
+    with tempfile.TemporaryDirectory(prefix='.historical-report-', dir=output.parent) as temporary:
+        stage = Path(temporary)
+        row_counts = _prepare_history_exports(stage, source, summary, raw, exports, historical_banks, audited)
+        targets = sorted(stage.iterdir())
+        if any((output / path.name).exists() or (output / path.name).is_symlink() for path in targets):
+            raise ValueError('historical report output already exists')
+        for path in targets:
+            os.link(path, output / path.name)  # Same filesystem; never replace an existing output.
+    report['historical_banks'] = historical_banks
+    report['export_row_counts'].update(row_counts)
+    report['historical_coverage']['individual_dated_audit'] = audited
+    report['historical_coverage']['status'] = 'selected_dated_assets_audited; source_accuracy_and_missing_dates_unresolved'
+
+
+def _prepare_history_exports(output, source, summary, raw, exports, historical_banks, audited):
+    """No report mutation: invalid later detail evidence discards only this stage."""
+    row_counts = {'historical-banks.csv': write_csv(output / 'historical-banks.csv', historical_banks)}
     if 'details' in summary.get('assets_checked_per_date', []):
         from cdr_historical_parameters import rows as parameter_changes
-        report['export_row_counts']['historical-parameter-changes.csv.gz'] = write_csv(
+        row_counts['historical-parameter-changes.csv.gz'] = write_csv(
             output / 'historical-parameter-changes.csv.gz', parameter_changes(source, summary))
         audited['parameter_changes_semantics'] = (
             'Every captured field at baseline and after calendar gaps, then changes on consecutive observation dates. '
@@ -264,8 +288,7 @@ def attach_history(report: dict, source: Path, output: Path):
         body = raw if name == 'summary.json' else exports[name]
         (output / target).write_bytes(body)
         audited['exports'][target] = {'bytes': len(body), 'sha256': digest(body)}
-    report['historical_coverage']['individual_dated_audit'] = audited
-    report['historical_coverage']['status'] = 'selected_dated_assets_audited; source_accuracy_and_missing_dates_unresolved'
+    return row_counts
 
 
 def generate(root: Path, output: Path, history_audit: Path | None = None,
