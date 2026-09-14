@@ -5,6 +5,8 @@ import hashlib
 import io
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,75 @@ import pytest
 from cdr_terms.identity import digest
 from cdr_terms.pdf_layout import build_pdf_layout
 from cdr_terms.pdf_layout_contract import LayoutLimits, RetainedExtraction
+
+
+def layout_validator():
+    from jsonschema import Draft202012Validator
+    schema = json.loads((Path(__file__).parents[1] / 'contracts/product_terms/pdf-layout-candidates-v1.schema.json').read_bytes())
+    return Draft202012Validator(schema)
+
+
+@pytest.mark.parametrize('target', ['manifest', 'span'])
+@pytest.mark.parametrize('number', [0, 513])
+def test_nested_page_ordinals_outside_physical_range_are_refused(tmp_path, target, number):
+    manifest, pages = build(tmp_path)
+    record = manifest if target == 'manifest' else pages[0]
+    nested = record['pages'][0] if target == 'manifest' else record['retained_page_span']
+    nested['page'] = number
+    if target == 'manifest':
+        nested['file'] = f'page-{number:04d}.json'
+    assert not layout_validator().is_valid(record)
+
+
+@pytest.mark.parametrize('status', ['complete', 'future_status', ''])
+def test_retained_span_status_requires_known_extraction_state(tmp_path, status):
+    _, pages = build(tmp_path)
+    pages[0]['retained_page_span']['status'] = status
+    assert not layout_validator().is_valid(pages[0])
+
+
+@pytest.mark.parametrize('number', [1, 512])
+@pytest.mark.parametrize('status', ['text_available', 'textless_review_required', 'unreadable'])
+def test_known_nested_page_bounds_and_span_states_remain_schema_valid(tmp_path, number, status):
+    manifest, pages = build(tmp_path)
+    manifest['pages'][0].update(page=number, file=f'page-{number:04d}.json')
+    pages[0]['page'] = number
+    pages[0]['retained_page_span'].update(page=number, status=status)
+    # Schema ranges are distinct from cross-record/text identity verification.
+    layout_validator().validate(manifest)
+    layout_validator().validate(pages[0])
+
+
+def test_private_sidecar_creation_requests_owner_only_modes(tmp_path, monkeypatch):
+    actual_mkdir, actual_open = os.mkdir, os.open
+    directory_modes, file_modes = [], []
+    output = tmp_path / 'sidecar'
+    def mkdir(path, mode=0o777, *args, **kwargs):
+        if Path(path) == output:
+            directory_modes.append(mode)
+        return actual_mkdir(path, mode, *args, **kwargs)
+    def opened(path, flags, mode=0o777, *args, **kwargs):
+        if Path(path).parent == output:
+            file_modes.append((Path(path).name, mode, flags))
+        return actual_open(path, flags, mode, *args, **kwargs)
+    monkeypatch.setattr(os, 'mkdir', mkdir)
+    monkeypatch.setattr(os, 'open', opened)
+    build(tmp_path)
+    assert directory_modes == [0o700]
+    assert {name for name, _, _ in file_modes} == {'page-0001.json', 'manifest.pending.json'}
+    assert all(mode == 0o600 and flags & os.O_EXCL and flags & os.O_CREAT for _, mode, flags in file_modes)
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='Windows mode requests do not prove POSIX permissions or ACL privacy')
+@pytest.mark.parametrize('mask', [0o000, 0o022])
+def test_private_posix_modes_with_permissive_umask_in_child(tmp_path, mask):
+    script = ('import os,stat,sys; from pathlib import Path; '
+              'from tests.test_cdr_terms_pdf_layout import build; '
+              'os.umask(int(sys.argv[2])); root=Path(sys.argv[1]); build(root); '
+              'out=root/"sidecar"; assert stat.S_IMODE(out.stat().st_mode)==0o700; '
+              'assert all(stat.S_IMODE(p.stat().st_mode)==0o600 for p in out.iterdir())')
+    subprocess.run([sys.executable, '-c', script, str(tmp_path), str(mask)],
+                   cwd=Path(__file__).parents[1], check=True, timeout=30, capture_output=True, text=True)
 
 
 def protocol_pdf(content=b'BT /F1 10 Tf 10 40 Td (protocol) Tj ET', *, pages=1, encrypted=False,
@@ -513,15 +584,16 @@ def test_manifest_collision_preserves_unknown_path(tmp_path,monkeypatch,which):
 
 
 def test_short_write_never_seals(tmp_path,monkeypatch):
+    import builtins
     import cdr_terms.pdf_layout_contract as contract
-    original=Path.open
+    original=builtins.open
     class ShortWriter:
         def __enter__(self):return self
         def __exit__(self,*args):pass
         def write(self,body):return len(body)-1
     def short(path,mode='r',*args,**kwargs):
         return ShortWriter() if mode=='xb' else original(path,mode,*args,**kwargs)
-    monkeypatch.setattr(Path,'open',short)
+    monkeypatch.setattr(builtins,'open',short)
     with pytest.raises(OSError,match='short_output_write'):
         build(tmp_path)
     assert not (tmp_path/'sidecar/manifest.json').exists()

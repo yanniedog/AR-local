@@ -244,7 +244,8 @@
             "properties": {
               "page": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 1,
+                "maximum": 512
               },
               "file": {
                 "type": "string",
@@ -635,7 +636,8 @@
       "properties": {
         "page": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1,
+          "maximum": 512
         },
         "start": {
           "type": "integer",
@@ -650,7 +652,11 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "status": {
-          "type": "string"
+          "enum": [
+            "text_available",
+            "textless_review_required",
+            "unreadable"
+          ]
         },
         "reason": {
           "type": [
