@@ -103,11 +103,23 @@ acceptance, and no worker resource limits are changed by this builder.
 ## Files and final visibility
 
 The output directory must be new and private; reuse, cleanup and automatic resume
-are refused. Parent symlink/reparse paths are refused. The builder receives bytes,
+are refused. On POSIX, the directory is created with mode `0700` and files with
+mode `0600`, subject only to further restrictions from the process umask. These
+permissions apply at creation; no initially public file is repaired with chmod.
+Windows mode arguments do not establish ACL privacy: the caller must supply a
+parent whose ACLs protect the retained content. This builder does not inspect or
+modify Windows ACLs. Parent symlink/reparse paths are refused. The builder receives bytes,
 so the caller is responsible for keeping the output directory separate from
 immutable source directories. Pages are create-only `page-NNNN.json` files. The
 manifest binds PDF, retained extraction/text/spans, actual parser version,
 policy/limits, reviewed module/schema hashes and every page artifact hash.
+The schema restricts manifest page records and retained-span ordinals to 1–512,
+and retained-span statuses to `text_available`, `textless_review_required` or
+`unreadable`. Unknown fields remain refused. Schema validation does not replace
+checking the filename, manifest/page identity, source-span hashes or offsets.
+Source page totals and unprocessed ranges can truthfully exceed the processing
+cap. The stricter schema and file creation modes do not rewrite prior evidence;
+new sidecars bind the revised module/schema hashes in their policy identity.
 
 Each file is flushed, fsynced and read back. All page identities and hashes are
 rechecked before final sealing. The manifest first becomes a create-only
