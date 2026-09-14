@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlsplit
 
 from .discovery import document_url
 
-PDF_POLICY_VERSION = 'pdf-page-evidence-1'
+PDF_POLICY_VERSION = 'pdf-page-evidence-2'
 MAX_PDF_BYTES = 16 * 1024**2
 MAX_PAGES = 512
 MAX_TEXT_CHARACTERS = 2_000_000
@@ -36,10 +36,30 @@ def _page_text(page, maximum):
     return text
 
 
+def _printed_url(value):
+    """Trim trailing prose delimiters in one pass; keep balanced URL punctuation."""
+    opened = {'(': 0, '[': 0, '{': 0}
+    closing = {')': '(', ']': '[', '}': '{'}
+    end = 0
+    for index, character in enumerate(value):
+        if character in opened:
+            opened[character] += 1
+        elif character in closing:
+            opener = closing[character]
+            if not opened[opener]:
+                continue
+            opened[opener] -= 1
+        elif character in '.,;':
+            continue
+        end = index + 1
+    return value[:end]
+
+
 def _page_links(page, text, page_number, start, source_url, base_requires_review):
     """Candidate references only; never execute actions or guess wrapped URLs."""
-    for index, match in enumerate(re.finditer(r'https?://[^\s<>"\x00-\x1f]+', text), 1):
-        value = match.group().rstrip('.,;')
+    # Scheme letters are ASCII case-insensitive; whitespace remains Unicode-aware.
+    for index, match in enumerate(re.finditer(r'(?ai:https?)://[^\s<>"\x00-\x1f]+', text), 1):
+        value = _printed_url(match.group())
         yield {'sourceUrl': value, 'url': document_url(value), 'href': value,
                'page': page_number, 'text_start': start + match.start(),
                'text_end': start + match.start() + len(value), 'label': value[:2000],

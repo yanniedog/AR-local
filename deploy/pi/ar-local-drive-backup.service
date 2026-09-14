@@ -4,6 +4,7 @@ After=network-online.target ar-local-drive-reclaim.service
 Wants=network-online.target
 Requires=ar-local-drive-reclaim.service
 ConditionPathExists=!/etc/ar-local/drive-write-hold.json
+ConditionPathExists=!/etc/ar-local/.drive-write-hold-activation.lock
 
 [Service]
 Type=oneshot

@@ -386,8 +386,8 @@ def test_snapshot_verification_rejects_special_file(tmp_path: Path) -> None:
 
 def test_backup_lock_recovers_dead_owner_and_removes_own_lock(monkeypatch, tmp_path: Path) -> None:
     lock = tmp_path / "daily-ingest.lock"
-    lock.write_text("pid=999999\nrole=backup\nboot_id=current\n", encoding="utf-8")
-    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "current")
+    lock.write_text("pid=999999\nrole=backup\nboot_id=f67c2221-5510-4f96-84a4-fc2362a6b137\n", encoding="utf-8")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "f67c2221-5510-4f96-84a4-fc2362a6b137")
     monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
     monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _pid: False)
     with operation_lock.production_lock(lock, "backup"):
@@ -397,8 +397,8 @@ def test_backup_lock_recovers_dead_owner_and_removes_own_lock(monkeypatch, tmp_p
 
 def test_backup_lock_never_replaces_live_owner(monkeypatch, tmp_path: Path) -> None:
     lock = tmp_path / "daily-ingest.lock"
-    lock.write_text("pid=1234\nrole=ingest\nboot_id=current\n", encoding="utf-8")
-    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "current")
+    lock.write_text("pid=1234\nrole=ingest\nboot_id=f67c2221-5510-4f96-84a4-fc2362a6b137\n", encoding="utf-8")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "f67c2221-5510-4f96-84a4-fc2362a6b137")
     monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
     monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _pid: True)
     with pytest.raises(RuntimeError, match="production lock is active"):
@@ -409,18 +409,18 @@ def test_backup_lock_never_replaces_live_owner(monkeypatch, tmp_path: Path) -> N
 
 def test_backup_lock_recovers_prior_boot_even_if_pid_was_reused(monkeypatch, tmp_path: Path) -> None:
     lock = tmp_path / "daily-ingest.lock"
-    lock.write_text("pid=1234\nrole=backup\nboot_id=prior\n", encoding="utf-8")
-    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "current")
+    lock.write_text("pid=1234\nrole=backup\nboot_id=755c69a0-f0d1-41f6-81ec-cc8ae22b010b\n", encoding="utf-8")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "f67c2221-5510-4f96-84a4-fc2362a6b137")
     monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
     monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _pid: True)
     with operation_lock.production_lock(lock, "backup"):
-        assert "boot_id=current" in lock.read_text(encoding="utf-8")
+        assert "boot_id=f67c2221-5510-4f96-84a4-fc2362a6b137" in lock.read_text(encoding="utf-8")
     assert not lock.exists()
 
 
 def test_stale_lock_recovery_rechecks_under_recovery_mutex(monkeypatch, tmp_path: Path) -> None:
     lock = tmp_path / "daily-ingest.lock"
-    live_payload = "pid=1234\nrole=ingest\nboot_id=current\n"
+    live_payload = "pid=1234\nrole=ingest\nboot_id=f67c2221-5510-4f96-84a4-fc2362a6b137\n"
     lock.write_text(live_payload, encoding="utf-8")
     stale_checks = iter((True, False))
     monkeypatch.setattr(operation_lock, "_existing_lock_is_stale", lambda _path: next(stale_checks))

@@ -26,7 +26,7 @@ def staged(monkeypatch, tmp_path):
     monkeypatch.setattr(health, "restart_dashboard_and_nginx", Mock(return_value=0))
     monkeypatch.setattr(health, "restart_tailscaled", Mock(return_value=0))
     # Never call POSIX os.kill(pid, 0) on a Windows test process.
-    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "test-boot")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "f67c2221-5510-4f96-84a4-fc2362a6b137")
     monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
     monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _: True)
     health.save_state({"http_fail_streak": 2, "tailscale_fail_streak": 0})
@@ -54,7 +54,7 @@ def test_existing_production_owner_prevents_both_service_mutations(staged, role)
 def test_ingest_acquired_after_failed_probe_is_not_restarted(staged, monkeypatch):
     state, args = staged
     lock = state / "daily-ingest.lock"
-    evidence = b"pid=987654321\nrole=ingest\nboot_id=test-boot\n"
+    evidence = b"pid=987654321\nrole=ingest\nboot_id=f67c2221-5510-4f96-84a4-fc2362a6b137\n"
 
     def probe(**_kwargs):
         lock.write_bytes(evidence)
