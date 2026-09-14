@@ -12,6 +12,34 @@ from .discovery import discover_references, document_url
 from .identity import byte_digest, canonical_json, digest, require_sha, timestamp
 
 
+def validate_clause_locator(text: str, coverage: Mapping[str, Any], *, start: int, end: int,
+                            page: int | None = None, section: str | None = None) -> dict[str, Any]:
+    """Validate the same retained locator before staging or registering a clause."""
+    if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text)
+            or (page is not None and (type(page) is not int or page < 1))):
+        raise ValueError("Clause locator is outside its retained extraction")
+    locator = {"start": start, "end": end}
+    if page is not None:
+        spans = coverage.get('page_spans', []) if isinstance(coverage, Mapping) else []
+        if not isinstance(spans, list):
+            raise ValueError('Page locator requires retained page spans')
+        matches = [span for span in spans if isinstance(span, dict)
+                   and type(span.get('page')) is int and span['page'] == page]
+        if len(matches) != 1:
+            raise ValueError('Page locator is not bound to the retained extraction span')
+        span = matches[0]
+        if (span.get('status') != 'text_available'
+                or type(span.get('start')) is not int or type(span.get('end')) is not int
+                or not 0 <= span['start'] <= start < end <= span['end'] <= len(text)):
+            raise ValueError('Page locator is not bound to the retained extraction span')
+        if byte_digest(text[span['start']:span['end']].encode('utf-8')) != span.get('text_sha256'):
+            raise ValueError('Page text hash differs from retained extraction')
+        locator["page"] = page
+    if section is not None:
+        locator["section"] = section
+    return locator
+
+
 class EvidenceStore:
     """One private database plus content-addressed files, never a source DB.
 
@@ -212,23 +240,8 @@ class EvidenceStore:
         if not row:
             raise ValueError("Clause requires a retained extraction")
         text = self.read_blob(row["text_sha256"]).decode("utf-8")
-        if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text)
-                or (page is not None and (type(page) is not int or page < 1))):
-            raise ValueError("Clause locator is outside its retained extraction")
-        locator = {"start": start, "end": end}
-        if page is not None:
-            coverage = json.loads(row['coverage_json'])
-            spans = coverage.get('page_spans', [])
-            matches = [span for span in spans if isinstance(span, dict) and span.get('page') == page]
-            if (len(matches) != 1 or matches[0].get('status') != 'text_available'
-                    or not matches[0]['start'] <= start < end <= matches[0]['end']):
-                raise ValueError('Page locator is not bound to the retained extraction span')
-            span = matches[0]
-            if byte_digest(text[span['start']:span['end']].encode('utf-8')) != span['text_sha256']:
-                raise ValueError('Page text hash differs from retained extraction')
-            locator["page"] = page
-        if section is not None:
-            locator["section"] = section
+        coverage = json.loads(row['coverage_json']) if page is not None else {}
+        locator = validate_clause_locator(text, coverage, start=start, end=end, page=page, section=section)
         identity = digest([extraction_id, locator, text[start:end]])
         with self.db:
             self.db.execute("INSERT OR IGNORE INTO clauses VALUES (?,?,?,?)",
