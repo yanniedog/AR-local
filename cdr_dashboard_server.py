@@ -32,6 +32,7 @@ from cdr_dashboard_bank_sql import (
     register_bank_category_filter,
     select_bank_history_rows,
 )
+from cdr_dashboard_history_coverage import history_inventory, read_selected_history, compact_contribution_coverage
 from cdr_economic_local import (
     economic_catalog_payload,
     economic_health_payload,
@@ -677,7 +678,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     site_cache = CachedFiles(site_root)
     # Each entry stores (raw_json, gz_json). gz is computed once at cache-insert
     # time and lives exactly as long as the raw — no cross-payload aliasing.
-    history_cache: Dict[Tuple[str, str, Tuple[Tuple[str, float, int], ...]], Tuple[bytes, bytes | None]] = {}
+    history_cache: Dict[tuple, Tuple[bytes, bytes | None]] = {}
     history_cache_lock = threading.Lock()
     section_cache: OrderedDict[Tuple[str, str, str, float, int], Tuple[bytes, bytes | None]] = OrderedDict()
     section_cache_lock = threading.Lock()
@@ -697,26 +698,12 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             artifact_caches[exports_root] = cached
             return exports_root, cached
 
-    def bank_history_db_paths(max_run_date: str) -> list[Path]:
-        if export_resolver.fixed_root is not None:
-            candidate = export_resolver.fixed_root / "local-cdr.sqlite"
-            return [candidate] if candidate.is_file() else []
-        runs_root = export_resolver.runs_root
-        if not runs_root.is_dir():
-            return []
-        selected = selected_exports_root(runs_root)
-        selected_date = selected.relative_to(runs_root).parts[0] if selected is not None else None
-        dbs: list[Path] = []
-        for child in sorted(runs_root.iterdir(), key=lambda p: p.name):
-            if not child.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name):
-                continue
-            if max_run_date and child.name > max_run_date:
-                continue
-            exports = selected if child.name == selected_date else child / "_exports"
-            candidate = exports / "local-cdr.sqlite"
-            if candidate.is_file():
-                dbs.append(candidate.resolve())
-        return dbs[-DEFAULT_HISTORY_RUN_LIMIT:]
+    def bank_history_inventory(max_run_date: str):
+        selected = None
+        if export_resolver.fixed_root is None and export_resolver.runs_root.is_dir():
+            selected = selected_exports_root(export_resolver.runs_root)
+        return history_inventory(export_resolver.runs_root, export_resolver.fixed_root,
+                                 max_run_date, DEFAULT_HISTORY_RUN_LIMIT, selected)
 
     def bank_db_for_date(run_date: str) -> Path:
         exports_root = export_resolver.root_for_date(run_date)
@@ -857,20 +844,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         return body, maybe_gzip(body, "application/json")
 
     def bank_history_payload(max_run_date: str, section: str = "") -> Tuple[bytes, bytes | None]:
-        dbs = bank_history_db_paths(max_run_date)
-        signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
-        cache_key = (max_run_date, section, signature)
+        inventory = bank_history_inventory(max_run_date)
+        cache_key = (max_run_date, section, inventory.signature)
         with history_cache_lock:
             cached = history_cache.get(cache_key)
             if cached is not None:
                 return cached
-        rows: list[dict[str, object]] = []
-        for db_path in dbs:
-            try:
-                rows.extend(read_bank_history_db(db_path, max_run_date, section))
-            except sqlite3.Error as exc:
-                print(f"Skipping unreadable history DB {db_path}: {exc}")
-        run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        rows, run_dates, coverage = read_selected_history(inventory, read_bank_history_db, max_run_date, section)
         filled_rows, carry_forward_count = fill_history_gaps(rows, run_dates)
         body = json.dumps(
             {
@@ -878,6 +858,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "section": section,
                 "rates": filled_rows,
                 "carry_forward_count": carry_forward_count,
+                "history_coverage": coverage,
             },
             separators=(",", ":"),
             ensure_ascii=False,
@@ -901,11 +882,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         rows. Standard-only by default; ``include_non_standard`` serves the toggle's
         other variant. Window selection stays client-side over these compact points.
         """
-        dbs = bank_history_db_paths(max_run_date)
-        signature = tuple(
-            (str(path), (st := path.stat()).st_mtime, st.st_size) for path in dbs
-        )
-        cache_key = (f"compact:{int(include_non_standard)}:{max_run_date}", section, signature)
+        inventory = bank_history_inventory(max_run_date)
+        cache_key = (f"compact:{int(include_non_standard)}:{max_run_date}", section, inventory.signature)
         with history_cache_lock:
             cached = history_cache.get(cache_key)
             if cached is not None:
@@ -913,13 +891,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         # Reuse the raw read + gap-fill so the compact aggregate is identity-faithful
         # to /api/banks/history/section (carry-forward over transient ingest gaps),
         # then aggregate each day with the shared comparison-rate kernel.
-        rows: list[dict[str, object]] = []
-        for db_path in dbs:
-            try:
-                rows.extend(read_bank_history_db(db_path, max_run_date, section))
-            except sqlite3.Error as exc:
-                print(f"Skipping unreadable history DB {db_path}: {exc}")
-        run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        rows, run_dates, coverage = read_selected_history(inventory, read_bank_history_db, max_run_date, section)
         filled_rows, _carry = fill_history_gaps(rows, run_dates)
         if not include_non_standard:
             filled_rows = [
@@ -941,12 +913,15 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             day = str(row.get("run_date") or "")
             if day:
                 rows_by_date.setdefault(day, []).append(row)
-        aggregates = {day: aggregate_ribbon(rows_by_date.get(day, []), section) for day in run_dates}
+        aggregates = {day: aggregate_ribbon(rows_by_date.get(day, []), section, include_provenance=True)
+                      for day in run_dates}
+        coverage.update(compact_contribution_coverage(aggregates))
         payload = {
             "run_date": max_run_date,
             "section": section,
             "include_non_standard": include_non_standard,
-            **compact_history(run_dates, aggregates),
+            **compact_history(run_dates, aggregates, include_provenance=True),
+            "history_coverage": coverage,
         }
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         entry = (body, maybe_gzip(body, "application/json"))
@@ -1081,6 +1056,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/calculator.js",
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
+                "/assets/history-coverage.js",
                 "/assets/cdr-ribbon-map.js",
                 "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
