@@ -73,6 +73,8 @@ def _existing_lock_is_stale(path: Path) -> bool:
     if not stat.S_ISREG(info.st_mode):
         return False
     values = _lock_values(path)
+    if set(values) - {'pid', 'role', 'boot_id', 'recovery'}:
+        return False  # An unfamiliar schema is not an ordinary recoverable owner.
     # Held, partial, unreadable and malformed records are not evidence of a
     # stale ordinary owner. Check this before boot/mtime/PID recovery. Old helper
     # roles are included even when no explicit recovery flag was written.

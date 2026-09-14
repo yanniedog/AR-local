@@ -6,12 +6,17 @@ All backup writes remain held until the operator explicitly approves resuming.
 This decision supersedes the daily-upload policy for this task; it does not
 relax source immutability, natural ingest, resource or reclaim safeguards.
 
-The root-owned marker `/etc/ar-local/drive-write-hold.json` blocks the systemd
-backup service and every application dispatch path, including forced runs,
+The root-owned marker `/etc/ar-local/drive-write-hold.json` and the global intent
+record `/etc/ar-local/.drive-write-hold-activation.lock` each block the systemd
+backup service and every checked-in application dispatch path, including forced runs,
 direct backend calls, init, remote readiness and restore (which may acquire
 repository locks). A `write-hold.json` in the configured spool is an additional
 local hold. Empty, malformed or unreadable markers fail closed. An alternate
-spool or `--force` cannot bypass the system marker. No automatic expiry exists.
+spool or `--force` cannot bypass either global marker. No automatic expiry exists.
+The intent record alone is `ACTIVATION_PENDING`: new dispatch is refused by
+upgraded guards, but complete spool coordination has not been established.
+`HELD` from activation requires every inventoried spool lock and the final marker.
+An existence-only runtime check never attests that coordination succeeded.
 
 Terminal ingest requests still queue durably. A hold prevents dispatch and
 acceptance/acknowledgement; held work is not successful backup evidence. A
@@ -27,18 +32,29 @@ in progress. Declaring the hold active requires coordinated activation below.
    and independent reclaim restoration. Do not kill an unknown upload or clear
    a lock to install a hold.
 3. Disable the existing daily and queue write timers, preserving their original
-   controls. Install only the reviewed standalone helper through the protected
-   installation transaction below; never run root Python from a Pi-owned checkout.
+   controls. Before activation, commission and independently verify the complete
+   protected guard bundle and every authorized launcher/control path using the
+   [installed proof contract](DRIVE_GUARD_INVENTORY.md). Legacy workers that know
+   only their spool lock do not honor a global intent record. Their dispatch
+   authority must be removed or routed through the verified guarded controller.
+   Timer pauses alone do not account for direct or alternate-spool launches.
+   Install the reviewed standalone helper through the protected installation
+   transaction below; never run root Python from a Pi-owned checkout.
    Invoke its protected copy with `-I -S`, supplying `--spool` for every inventoried
-   dispatch spool and an explicit `--reason`. A global root-owned activation lock
-   serializes invocations even when their spool arguments differ. The helper then
+   dispatch spool and an explicit `--reason`. The helper first validates the fixed
+   protected proof and exact installed bytes without importing or executing them.
+   Missing, malformed, changed, incomplete or over-budget proof refuses before
+   creating the global record. Its atomic creation blocks new admission only
+   after the global guard has been installed on every authorized path. The helper then
    acquires each `backup.lock` as a symlink to its protected global activation
    record, including the parent's complete acceptance and
    acknowledgement critical section, before atomically creating the marker.
    Every pre-existing lock refuses activation: active, dead-PID, malformed and
    empty locks are all unreconciled. The helper never recovers, renames, clears,
    waits on or signals an existing lock owner. If blocked, retain ownership and
-   reconcile the original operation and its receipts before a later retry.
+   reconcile the original operation and its receipts. An existing global record
+   returns `ACTIVATION_PENDING` with exit 2 and is never recovered or retried into
+   `HELD` automatically. Partial or empty record bytes still block dispatch.
    A manually created marker alone is not proof of coordinated activation.
    Install the service-level refusal. Preserve original controls
    and queue identities in the local hold receipt. Leave reclaim reconciliation
@@ -56,8 +72,9 @@ document and passing unit tests do not establish an installed Pi hold.
 
 ## Protected installation and invocation
 
-This is a scoped helper installation, not a reinstall of the backup service,
-credentials, dispatchers, reclaim controls or historical backup component. The
+This code does not install the helper, guard bundle, backup service, credentials,
+dispatchers or controls. Protected bundle/launcher commissioning and proof
+approval are prerequisites to the following scoped helper installation. The
 sole operator must record the approved commit and SHA-256 of the exact
 `pi_drive_backup_hold_activate.py` bytes before transferring them. The expected
 hash must come from that independent reviewed artifact, not from whichever bytes
@@ -96,7 +113,8 @@ imports no backup, queue, operation-lock or checkout module. The system Python
 and its standard library are part of the trusted host installation.
 
 The protected `.drive-write-hold-activation.lock` is also non-recovering. It records
-the requested reason and complete spool inventory before any spool lock is
+`ACTIVATION_PENDING`, the requested reason/spool inventory and verified proof
+identity before any spool lock is
 created. **Every newly created activation record and spool lock remains after
 success or failure.** The helper never unlinks a lock pathname, including a
 replacement entry; a separate inode check followed by unlink is not atomic in a
@@ -109,20 +127,25 @@ record. The previous operation-lock implementation bound by the fixture ignores 
 but refuses symlinks before examining their target or applying PID, boot or age
 recovery. Linux `O_CREAT|O_EXCL` also refuses dangling symlink entries. The target
 is the permanent record in the protected system directory; the helper never
-removes that target. This preserves refusal if activation stops before the system
-marker exists. A directory sentinel is unsafe with old code because stale recovery
+removes that target. These links preserve refusal on spools whose links were
+created if activation stops before the system marker exists. Untouched spools
+depend on the previously installed global guard; symlink compatibility alone
+cannot protect them. A directory sentinel is unsafe with old code because stale recovery
 can rename it away before unlink fails. New workers additionally refuse legacy
 hold-role records, `recovery=manual`, nonregular entries and unreadable, malformed
-or partial records. Well-formed ordinary PID/role locks retain stale-owner and
+or partial records. Unknown keys are refused before PID/boot/age recovery.
+Only `pid`, `role`, optional `boot_id` and optional `recovery=automatic` form the
+recognized ordinary schema. Well-formed ordinary PID/role locks retain stale-owner and
 prior-boot recovery; unknown age alone never authorizes removal.
 
 The old-worker compatibility fixture is bound to commit
 `4ee90f76b7ddf300e5f963cf20eb15b81af34886`, source file
 `ar_local_operation_lock.py`, SHA-256
 `9eb985e6a6cec7e86e3b69dc8a1a5447b59af139bb6f710df68010627a6527d4`.
-Inventory the actual installed worker versions and compare their lock protocol
-before activation. This local work has not verified an installed Pi version.
-Executables without the verified symlink refusal remain
+Inventory the actual installed worker versions, global guard, full import closure,
+launch environment and controller critical section before activation. This local
+work has not verified an installed Pi version. Executables without the verified
+global guard and inventoried spool-lock critical section remain
 unauthorized dispatch paths, as required by step 4. Passing fixture tests is not
 proof of the installed Pi version. Activation is Linux-only; Windows differs for
 dangling-link `O_EXCL`, so that native case is exercised by Linux CI and remains
@@ -145,3 +168,9 @@ inventory, marker hash and original content, timer and acceptance refusals, and
 unchanged accepted-backup/queue identities. Local tests cover protocol behavior;
 root installation, actual Pi lock coordination and reboot refusal remain separate
 runtime gates. No installation or activation is implied by this document.
+
+The checked-in service still launches from the configured repository checkout.
+Its additional systemd intent-record condition is useful defense, but that launch
+is not a protected isolated bundle proof. It remains unqualified for this new
+activation contract until separately reviewed protected commissioning. Natural
+ingest, durable backup requests and reclaim reconciliation remain enabled.
