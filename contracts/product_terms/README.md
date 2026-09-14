@@ -170,6 +170,44 @@ The already-finalized/recovered paths retry the capture without rerunning ingest
 The retained stage still needs the existing verified cleanup path after repair;
 capture recovery by itself does not delete source staging.
 
+Source clocks and archive clocks are separate. Configured capture verifies the
+finalized marker's exact generation, contract digest and observation date, then
+retains the verified contract and its generation timestamp. That instant must
+fall on the source run's **Australia/Hobart** calendar day; Sep 14 can begin on
+Sep 13 UTC. `source_run_date`, normalized UTC `observed_at` and actual derived
+`captured_at` remain distinct. This timestamp describes the source generation,
+not each bank's HTTP response time or a legal effective date. A later backfill's
+contract creation time cannot establish an older observation: capture fails and
+preserves raw staging until retained timestamp evidence is supplied. Legacy
+receipts with unbound or conflicting clocks require explicit review; this change
+does not rewrite them.
+
+Capture intent is written before any product observation. Partial generations
+cannot become current reporting authority until their capture completes; exact
+timestamp ties between distinct eligible observations remain ambiguous. Explicit
+standalone inventory remains readable. Acquisition counts and public document
+metadata use only the selected raw response check, its accepted acquisition
+lease events, or its explicit manual `fetch --observation-id` bindings. Old URL
+successes, unscoped imports and orphaned worker writes never establish a new
+observation's freshness. Accepted document acquisition can be successful while
+extraction is still incomplete; no stage grants another stage's completeness.
+
+Current analysis admission uses that same observation/check authority. An
+unfinished capture cannot suppress a previously admitted interpretation, while
+an accepted replacement still invalidates its old source. Jobs written before
+capture or acquisition completion remain queued and are skipped until admitted;
+they do not block independent ready jobs. Readiness scans verify only context
+blobs; claim and revision admission additionally verify full source/extraction
+bytes. Historical targets retain their separate immutable scope. Legacy jobs
+without an exact source-product context can remain private staging, but cannot
+pass the independently enforced revision-admission contract.
+
+`archive` requires `--observed-at` with the evidenced original acquisition time.
+It records the local `imported_at` separately and preserves it on an idempotent
+retry. Importing old bytes does not satisfy a current observation's pending
+check. These additive private schema tables preserve all existing evidence;
+there is no public schema or backup change.
+
 The scheduled resource-controlled collector runs one
 `python -m cdr_terms --store <private-directory> acquire-next` child at a time.
 No due acquisition means no HTTP and no model call. Requests use recoverable
