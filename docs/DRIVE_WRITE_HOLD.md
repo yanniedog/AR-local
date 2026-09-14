@@ -32,7 +32,8 @@ in progress. Declaring the hold active requires coordinated activation below.
    Invoke its protected copy with `-I -S`, supplying `--spool` for every inventoried
    dispatch spool and an explicit `--reason`. A global root-owned activation lock
    serializes invocations even when their spool arguments differ. The helper then
-   acquires each `backup.lock`, including the parent's complete acceptance and
+   acquires each `backup.lock` as a symlink to its protected global activation
+   record, including the parent's complete acceptance and
    acknowledgement critical section, before atomically creating the marker.
    Every pre-existing lock refuses activation: active, dead-PID, malformed and
    empty locks are all unreconciled. The helper never recovers, renames, clears,
@@ -77,6 +78,9 @@ root-owned directories without group/other write permission. Existing installed
 helper bytes must be inventoried before replacement; never blindly overwrite an
 unknown installation. The activation CLI verifies its fixed installation path,
 file ownership/mode/link count, protected ancestors and Python isolation flags.
+The installed leaf must be root:root and exactly mode 0555, including no special
+permission bits. The `activate_hold()` entrypoint enforces these checks itself,
+so importing it does not bypass the trusted-runtime gate.
 These runtime checks supplement the installation contract: they cannot make
 executing an already malicious script from a mutable checkout safe.
 
@@ -91,15 +95,45 @@ and Python environment injection; `-S` excludes site initialization. The helper
 imports no backup, queue, operation-lock or checkout module. The system Python
 and its standard library are part of the trusted host installation.
 
-The protected `.drive-write-hold-activation.lock` is also non-recovering. A crash
-can leave it or a newly created acceptance lock behind; inspect the exact owner,
-terminal receipts and marker/control state rather than deleting it automatically.
-Success removes only locks created by that invocation whose identity still matches.
-A replaced lock is preserved. The immutable marker uses a flushed temporary file
-and atomic no-replace link, so a competing marker can never be overwritten.
+The protected `.drive-write-hold-activation.lock` is also non-recovering. It records
+the requested reason and complete spool inventory before any spool lock is
+created. **Every newly created activation record and spool lock remains after
+success or failure.** The helper never unlinks a lock pathname, including a
+replacement entry; a separate inode check followed by unlink is not atomic in a
+service-writable spool directory. Inspect the exact owner, terminal receipts and
+marker/control state. Removal requires explicit operator resume approval and
+manual reconciliation; this helper provides no release or cleanup command.
+
+Spool locks deliberately use symlinks rather than a new flag in an ordinary PID
+record. The previous operation-lock implementation bound by the fixture ignores new flags
+but refuses symlinks before examining their target or applying PID, boot or age
+recovery. Linux `O_CREAT|O_EXCL` also refuses dangling symlink entries. The target
+is the permanent record in the protected system directory; the helper never
+removes that target. This preserves refusal if activation stops before the system
+marker exists. A directory sentinel is unsafe with old code because stale recovery
+can rename it away before unlink fails. New workers additionally refuse legacy
+hold-role records, `recovery=manual`, nonregular entries and unreadable, malformed
+or partial records. Well-formed ordinary PID/role locks retain stale-owner and
+prior-boot recovery; unknown age alone never authorizes removal.
+
+The old-worker compatibility fixture is bound to commit
+`4ee90f76b7ddf300e5f963cf20eb15b81af34886`, source file
+`ar_local_operation_lock.py`, SHA-256
+`9eb985e6a6cec7e86e3b69dc8a1a5447b59af139bb6f710df68010627a6527d4`.
+Inventory the actual installed worker versions and compare their lock protocol
+before activation. This local work has not verified an installed Pi version.
+Executables without the verified symlink refusal remain
+unauthorized dispatch paths, as required by step 4. Passing fixture tests is not
+proof of the installed Pi version. Activation is Linux-only; Windows differs for
+dangling-link `O_EXCL`, so that native case is exercised by Linux CI and remains
+an explicit Pi acceptance check. No Windows activation is supported.
+
+The immutable marker uses a flushed temporary file and atomic no-replace link,
+so a competing marker can never be overwritten.
 
 An existing marker returns `ALREADY_HELD`, its hash and its original parsed content
-when readable. It does not replace the old reason or spool inventory, and does
+when readable, before attempting any new activation locks. It does not replace
+the old reason or spool inventory, and does
 not re-attest coordinated activation. Empty or malformed markers still block
 Drive dispatch but require separate coordination evidence. A repeat call with a
 different inventory cannot silently expand the original receipt. The caller must

@@ -13,7 +13,7 @@ import os
 import stat
 import sys
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,7 +42,8 @@ def root_owned_chain(path: Path, *, file: bool = False) -> None:
         regular = current == path and file
         if (info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022
                 or (not stat.S_ISREG(info.st_mode) if regular else not stat.S_ISDIR(info.st_mode))
-                or (regular and info.st_nlink != 1)):
+                or (regular and (info.st_nlink != 1 or info.st_gid != 0
+                                 or stat.S_IMODE(info.st_mode) != 0o555))):
             raise ValueError('installation and control paths must be root-owned and non-writable by others')
 
 
@@ -59,15 +60,22 @@ def require_trusted_runtime() -> None:
 
 
 @contextmanager
-def exclusive_lock(path: Path, role: str):
-    """Create our lock only. Any existing entry, even a dead PID, is a refusal."""
+def exclusive_lock(path: Path, role: str, *, context: dict | None = None):
+    """Create a permanent reconciliation record; never unlink a lock pathname.
+
+    Even successful activation retains the record. No portable atomic
+    compare-and-unlink operation exists for a service-writable spool directory.
+    """
+    payload = (f'protocol=ar-drive-hold-activation-v2\nrecovery=manual\npid={os.getpid()}\n'
+               f'role={role}\nnonce={uuid.uuid4().hex}\n'
+               f'context_json={json.dumps(context or {}, ensure_ascii=True, sort_keys=True)}\n').encode('ascii')
+    if len(payload) > MAX_MARKER_BYTES:
+        raise ValueError('activation record exceeds safe bound')
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
     except FileExistsError as error:
         raise RuntimeError('unreconciled lock already exists: ' + str(path)) from error
-    owned = os.fstat(descriptor)
     try:
-        payload = f'pid={os.getpid()}\nrole={role}\nnonce={uuid.uuid4().hex}\n'.encode('ascii')
         written = os.write(descriptor, payload)
         if written != len(payload):
             raise OSError('incomplete lock write')
@@ -75,20 +83,21 @@ def exclusive_lock(path: Path, role: str):
         fsync_directory(path.parent)
         yield
     finally:
-        # Never unlink a replaced, renamed or symlinked lock belonging to someone
-        # else. Cooperative backup owners cannot replace this live lock.
-        remove_owned = False
-        try:
-            current = os.lstat(path)
-            remove_owned = (stat.S_ISREG(current.st_mode)
-                            and (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino))
-        except FileNotFoundError:
-            pass
-        finally:
-            os.close(descriptor)
-        if remove_owned:
-            path.unlink()
-            fsync_directory(path.parent)
+        os.close(descriptor)
+
+
+def spool_hold_lock(path: Path, control: Path) -> None:
+    """An atomic symlink is refused by old and current Linux backup workers.
+
+    Old workers ignore new payload flags, but explicitly refuse symlinks before
+    PID/boot/age recovery. O_EXCL refuses even a dangling symlink on Linux. A
+    directory is unsafe: old recovery can rename it before unlink fails.
+    """
+    try:
+        os.symlink(control, path)
+    except FileExistsError as error:
+        raise RuntimeError('unreconciled lock already exists: ' + str(path)) from error
+    fsync_directory(path.parent)
 
 
 def existing_hold(path: Path) -> dict | None:
@@ -135,6 +144,7 @@ def install_marker(path: Path, value: dict) -> None:
 
 
 def activate_hold(spools: list[Path], reason: str) -> dict:
+    require_trusted_runtime()
     if not spools or not isinstance(reason, str) or not reason.strip() or len(reason) > 4096:
         raise ValueError('inventoried spools and a bounded operator reason are required')
     if (not SYSTEM_HOLD.is_absolute() or SYSTEM_HOLD.resolve() != SYSTEM_HOLD
@@ -146,19 +156,27 @@ def activate_hold(spools: list[Path], reason: str) -> dict:
     for spool in paths:
         if not spool.is_absolute() or spool.resolve() != spool or not spool.is_dir():
             raise ValueError('every inventoried spool must be an existing canonical directory')
+    previous = existing_hold(SYSTEM_HOLD)
+    if previous is not None:
+        return previous  # Preserve the earlier receipt; no re-attestation or new locks.
     # The protected global lock serializes different spool inventories too.
     # It deliberately has no stale recovery; crashed activation needs review.
-    with ExitStack() as stack:
-        stack.enter_context(exclusive_lock(SYSTEM_HOLD.parent / GLOBAL_LOCK_NAME, 'drive-hold-global-activation'))
+    control = SYSTEM_HOLD.parent / GLOBAL_LOCK_NAME
+    context = {'reason': reason.strip(), 'coordinated_spools': [str(path) for path in paths]}
+    with exclusive_lock(control, 'drive-hold-global-activation', context=context):
         for spool in paths:
-            stack.enter_context(exclusive_lock(spool / 'backup.lock', 'drive-hold-activation'))
+            spool_hold_lock(spool / 'backup.lock', control)
         previous = existing_hold(SYSTEM_HOLD)
         if previous is not None:
             return previous
         value = {'schema_version': 1, 'state': 'HELD',
                  'activated_at': datetime.now(timezone.utc).isoformat(),
                  'reason': reason.strip(), 'explicit_operator_resume_required': True,
-                 'coordinated_spools': [str(path) for path in paths]}
+                 'coordinated_spools': [str(path) for path in paths],
+                 'activation_lock_protocol': 'ar-drive-hold-activation-v2',
+                 'retained_activation_record': str(control),
+                 'retained_spool_locks': [str(path / 'backup.lock') for path in paths],
+                 'lock_reconciliation': 'MANUAL_ONLY_AFTER_EXPLICIT_OPERATOR_RESUME'}
         try:
             install_marker(SYSTEM_HOLD, value)
         except FileExistsError:
@@ -175,7 +193,6 @@ def main() -> int:
     parser.add_argument('--reason', required=True)
     args = parser.parse_args()
     try:
-        require_trusted_runtime()
         result = activate_hold(args.spool, args.reason)
     except (OSError, RuntimeError, ValueError):
         print(json.dumps({'result': 'BLOCKED', 'reason': 'trusted_installation_lock_or_path_unavailable'}))
