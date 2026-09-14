@@ -45,6 +45,7 @@ from cdr_same_day_reuse import (
     reconcile_same_day_reuse, seed_same_day_reuse, validate_reuse_destination,
 )
 from cdr_terms.ingest import capture_if_configured, retry_capture_if_configured
+from cdr_ram_capture_cleanup import cleanup_captured_ram_stage, seal_ram_capture_stage
 
 
 def local_date() -> str:
@@ -357,6 +358,19 @@ def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, e
         )
 
 
+def retry_terms_capture(marker: Path, args: argparse.Namespace, state_dir: Path,
+                        runs_root: Path, date: str) -> dict | None:
+    """A finalized retry may clean only its previously sealed original RAM tree."""
+    result = retry_capture_if_configured(marker, state_dir=state_dir, runs_root=runs_root)
+    if result is not None:
+        finalized = json.loads(marker.read_text(encoding="utf-8"))
+        if finalized.get("ram_staged") is True:
+            result = {**result, "ram_cleanup": cleanup_captured_ram_stage(
+                finalized, result, ram_root=args.ram_root, state_dir=state_dir,
+                runs_root=runs_root, run_date=date, clean=args.clean_ram_stage)}
+    return result
+
+
 def run_once(args: argparse.Namespace) -> int:
     """Return 0 when skipped, 1 on success, 2 when banking export is empty."""
     script_dir = Path(__file__).resolve().parent
@@ -388,7 +402,7 @@ def run_once(args: argparse.Namespace) -> int:
     if not args.force:
         selected_marker = verified_pointer_marker_for_date(state_dir, date)
         if selected_marker is not None:
-            resumed_terms = retry_capture_if_configured(selected_marker, state_dir=state_dir, runs_root=persistent_runs_root)
+            resumed_terms = retry_terms_capture(selected_marker, args, state_dir, persistent_runs_root, date)
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
             print(
@@ -404,7 +418,7 @@ def run_once(args: argparse.Namespace) -> int:
             return 0
         recovered_marker = recover_pending_finalization(state_dir, date)
         if recovered_marker is not None:
-            resumed_terms = retry_capture_if_configured(recovered_marker, state_dir=state_dir, runs_root=persistent_runs_root)
+            resumed_terms = retry_terms_capture(recovered_marker, args, state_dir, persistent_runs_root, date)
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
             print(
@@ -423,7 +437,7 @@ def run_once(args: argparse.Namespace) -> int:
     marker_trusted = marker_exists and not resume_same_day and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
         if marker_trusted:
-            resumed_terms = retry_capture_if_configured(marker, state_dir=state_dir, runs_root=persistent_runs_root)
+            resumed_terms = retry_terms_capture(marker, args, state_dir, persistent_runs_root, date)
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
             try:
@@ -665,6 +679,11 @@ def run_once(args: argparse.Namespace) -> int:
         # Emit the legacy v1 integrity manifest after the mandatory ledger-v2
         # event and completion marker have landed.
         _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
+    cleanup_seal = None
+    if ram_cleanup_paths is not None:
+        cleanup_seal = seal_ram_capture_stage(
+            finalized, ram_root=args.ram_root, state_dir=state_dir,
+            runs_root=persistent_runs_root, run_date=date, clean=args.clean_ram_stage)
     terms_capture = capture_if_configured(
         terms_raw_root, finalized, state_dir=state_dir,
         runs_root=persistent_runs_root, export_root=target_export_root,
@@ -674,7 +693,16 @@ def run_once(args: argparse.Namespace) -> int:
         if terms_capture["status"] == "CAPTURE_FAILED":
             print("terms-evidence: capture failed; verified rates remain finalized and raw stage is preserved", file=sys.stderr)
     terms_captured = terms_capture is None or terms_capture["status"] == "CAPTURED_AND_QUEUED"
-    if ram_cleanup_paths is not None and args.clean_ram_stage and terms_captured:
+    if ram_cleanup_paths is not None and terms_capture is not None:
+        finalized = {**finalized, "ram_cleanup_seal": cleanup_seal,
+                     "ram_cleanup": cleanup_captured_ram_stage(
+                         finalized, terms_capture, ram_root=args.ram_root, state_dir=state_dir,
+                         runs_root=persistent_runs_root, run_date=date, clean=args.clean_ram_stage)}
+        # Persistent derived exports retain their existing independent cleanup.
+        if (args.clean_ram_stage and terms_captured and persistent_output_stage
+                and finalized["ram_cleanup"]["status"] == "CLEANED"):
+            cleanup_persistent_export_stage(persistent_runs_root, date)
+    elif ram_cleanup_paths is not None and args.clean_ram_stage and terms_captured:
         if not verify_completion_marker(finalized, state_dir, date):
             raise RuntimeError(
                 "refusing RAM-stage cleanup until the completion marker verifies"
