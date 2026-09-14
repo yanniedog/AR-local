@@ -14,6 +14,7 @@ import pytest
 
 import cdr_daily
 import cdr_ram_capture_cleanup as cleanup
+from cdr_ram_capture_lookup import sqlite_value_limits_available
 from cdr_finalization import finalize_observation, verify_completion_marker
 from cdr_outputs import build_outputs
 from cdr_terms.ingest import capture_if_configured
@@ -21,6 +22,8 @@ from cdr_terms.ingest import capture_if_configured
 FIXTURE = Path(__file__).parent / "fixtures/cdr-canary-2026-09-07/Bank of Melbourne-null-detail.json"
 DAY = "2026-09-07"
 SOURCE_OBSERVED = DAY + "T00:00:00Z"
+requires_lookup_limits = pytest.mark.skipif(not sqlite_value_limits_available(),
+    reason='Optional cleanup requires enforceable native SQLite value limits; unsupported preservation tested separately')
 
 
 @pytest.fixture
@@ -57,13 +60,15 @@ def completed(tmp_path, monkeypatch, source_generation_clock):
     return finalized, capture, options, raw, source, marker, archive
 
 
-def _seal(completed):
+def _seal(completed, *, exports=None):
     finalized, _, options, *_ = completed
-    outcome = cleanup.seal_ram_capture_stage(finalized, **options)
+    owned = {'raw': completed[3], **({'exports': exports} if exports is not None else {})}
+    outcome = cleanup.seal_ram_capture_stage(finalized, **options, owned_targets=owned)
     assert outcome["status"] == "SEALED", outcome
     return outcome
 
 
+@requires_lookup_limits
 def test_bound_capture_cleans_exact_stage_and_preserves_finalized_artifacts(completed):
     finalized, capture, options, raw, _, marker, archive = completed
     originals = {path: hashlib.sha256(path.read_bytes()).hexdigest() for root in (options["runs_root"], options["state_dir"], archive)
@@ -86,6 +91,7 @@ def test_unsealed_legacy_stage_is_never_adopted_on_retry(completed):
 
 
 @pytest.mark.parametrize("change", ["extra_product", "extra_note", "missing_product", "changed_product", "changed_note", "replacement"])
+@requires_lookup_limits
 def test_changed_or_replaced_stage_is_preserved(completed, change):
     finalized, capture, options, raw, source, *_ = completed
     _seal(completed)
@@ -130,6 +136,7 @@ def test_configuration_and_generation_gates_preserve_source(completed, monkeypat
     assert source.read_bytes() == FIXTURE.read_bytes()
 
 
+@requires_lookup_limits
 def test_receipt_must_have_a_completed_archive_binding(completed, monkeypatch):
     finalized, capture, options, raw, source, marker, archive = completed
     _seal(completed)
@@ -147,6 +154,7 @@ def test_receipt_must_have_a_completed_archive_binding(completed, monkeypatch):
 
 
 @pytest.mark.parametrize("phase", ["after_rename", "before_file"])
+@requires_lookup_limits
 def test_interrupted_quarantine_resumes_without_touching_new_same_day_stage(completed, phase):
     finalized, capture, options, raw, source, *_ = completed
     _seal(completed)
@@ -164,6 +172,7 @@ def test_interrupted_quarantine_resumes_without_touching_new_same_day_stage(comp
     assert replacement.read_text() == "New same-day stage must survive"
 
 
+@requires_lookup_limits
 def test_unexpected_quarantine_content_is_preserved(completed):
     finalized, capture, options, raw, source, *_ = completed
     _seal(completed)
@@ -180,6 +189,7 @@ def test_unexpected_quarantine_content_is_preserved(completed):
 
 
 @pytest.mark.parametrize("kind", ["file_symlink", "directory_symlink", "hardlink"])
+@requires_lookup_limits
 def test_linked_or_shared_stage_nodes_are_preserved(completed, tmp_path, kind):
     finalized, capture, options, raw, source, *_ = completed
     _seal(completed)
@@ -213,6 +223,7 @@ def test_cleanup_budget_is_shared_across_phases_and_preserves_unremoved_data(com
 
 
 @pytest.mark.parametrize("selection", ["selected", "recovered", "trusted"])
+@requires_lookup_limits
 def test_all_finalized_early_returns_cleanup_after_successful_retry(completed, monkeypatch, selection):
     finalized, capture, options, raw, source, marker, archive = completed
     _seal(completed)
@@ -230,9 +241,13 @@ def test_all_finalized_early_returns_cleanup_after_successful_retry(completed, m
 
 
 @pytest.mark.parametrize("automatic_pi", [False, True])
+@requires_lookup_limits
 def test_original_failed_capture_seals_stage_and_successful_retry_releases_it(tmp_path, monkeypatch, automatic_pi, source_generation_clock):
     import cdr_terms.ingest as ingest
     ram, runs, state, archive = [tmp_path / name for name in ("ram", "runs", "state", "archive")]
+    stale_export = ram / 'exports' / DAY / 'unrelated-older-stage.txt'
+    stale_export.parent.mkdir(parents=True)
+    stale_export.write_text('Unrelated optional RAM export must survive')
     monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(archive))
     monkeypatch.setattr(cdr_daily, "local_date", lambda: DAY)
     monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: automatic_pi)
@@ -265,7 +280,8 @@ def test_original_failed_capture_seals_stage_and_successful_retry_releases_it(tm
     assert cdr_daily.run_once(args) == 0
     assert len(calls) == 2
     assert not (ram / "runs" / DAY).exists()
-    assert not (ram / "exports" / DAY).exists()
+    assert stale_export.read_text() == 'Unrelated optional RAM export must survive'
+    assert not (ram / "exports" / DAY / '_exports').exists()
     assert marker.read_bytes() == before
 
 
@@ -331,6 +347,7 @@ def test_membership_rescan_checks_the_same_deadline(completed, monkeypatch):
     assert scans == [True, False] and source.exists()
 
 
+@requires_lookup_limits
 def test_partial_removal_resumes_only_the_recorded_quarantine(completed):
     finalized, capture, options, raw, *_ = completed
     _seal(completed)
@@ -347,6 +364,7 @@ def test_partial_removal_resumes_only_the_recorded_quarantine(completed):
     assert cleanup.cleanup_captured_ram_stage(finalized, capture, **options)["status"] == "CLEANED"
 
 
+@requires_lookup_limits
 def test_budget_exhaustion_after_quarantine_is_preserving_and_resumable(completed):
     finalized, capture, options, raw, *_ = completed
     _seal(completed)
@@ -368,13 +386,14 @@ class SimulatedCleanupCrash(BaseException):
 
 def _two_target_seal(completed):
     _, _, options, *_ = completed
-    export = options["ram_root"] / "exports" / DAY
+    export = options["ram_root"] / "exports" / DAY / '_exports'
     export.mkdir(parents=True)
     (export / "retained-copy.json").write_bytes(FIXTURE.read_bytes())
-    _seal(completed)
+    _seal(completed, exports=export)
     return export
 
 
+@requires_lookup_limits
 def test_crash_after_root_removal_resumes_remaining_target(completed, monkeypatch):
     finalized, capture, options, raw, source, *_ = completed
     export = _two_target_seal(completed)
@@ -389,7 +408,7 @@ def test_crash_after_root_removal_resumes_remaining_target(completed, monkeypatc
         patch.setattr(cleanup, "_once", crash_before_done)
         with pytest.raises(SimulatedCleanupCrash):
             cleanup.cleanup_captured_ram_stage(finalized, capture, **options)
-    assert len(reached) == 1 and reached[0]["relative_path"] == "exports/" + DAY
+    assert len(reached) == 1 and reached[0]["relative_path"] == "exports/" + DAY + '/_exports'
     assert not export.exists() and not (options["ram_root"] / reached[0]["quarantine_relative_path"]).exists()
     assert source.read_bytes() == FIXTURE.read_bytes()
     export.mkdir()
@@ -402,6 +421,7 @@ def test_crash_after_root_removal_resumes_remaining_target(completed, monkeypatc
 
 
 @pytest.mark.parametrize("phase", ["before_emptied", "after_emptied", "after_root_removal"])
+@requires_lookup_limits
 def test_emptied_transition_interruptions_preserve_new_stage_and_resume(completed, phase):
     finalized, capture, options, raw, source, *_ = completed
     export = _two_target_seal(completed)
@@ -427,6 +447,7 @@ def test_emptied_transition_interruptions_preserve_new_stage_and_resume(complete
 
 
 @pytest.mark.parametrize("change", ["replacement_empty_root", "unknown_child", "missing_attempt", "wrong_transition"])
+@requires_lookup_limits
 def test_emptied_transition_never_authorizes_changed_quarantine(completed, change):
     finalized, capture, options, raw, source, *_ = completed
     _two_target_seal(completed)
@@ -459,6 +480,7 @@ def test_emptied_transition_never_authorizes_changed_quarantine(completed, chang
         assert (quarantine / "new-unknown.txt").read_text() == "Preserve"
 
 
+@requires_lookup_limits
 def test_absent_quarantine_without_emptied_transition_is_not_cleanup_authority(completed):
     finalized, capture, options, raw, source, *_ = completed
     _two_target_seal(completed)
@@ -473,3 +495,217 @@ def test_absent_quarantine_without_emptied_transition_is_not_cleanup_authority(c
     result = cleanup.cleanup_captured_ram_stage(finalized, capture, **options)
     assert result["status"] == "PRESERVED", result
     assert raw.is_dir() and source.read_bytes() == FIXTURE.read_bytes()
+
+
+def test_original_seal_requires_explicit_owned_targets(completed):
+    finalized, _, options, raw, source, *_ = completed
+    result = cleanup.seal_ram_capture_stage(finalized, **options)
+    assert result['status'] == 'PRESERVED' and 'ownership' in result['reason']
+    assert source.read_bytes() == FIXTURE.read_bytes()
+    assert not cleanup._seal_path(options['state_dir'], finalized['generation_id']).exists()
+
+
+@requires_lookup_limits
+def test_explicit_raw_ownership_does_not_adopt_unrelated_ram_export(completed):
+    finalized, capture, options, raw, source, *_ = completed
+    stale = options['ram_root'] / 'exports' / DAY
+    stale.mkdir(parents=True)
+    sentinel = stale / 'unrelated-prior-export.txt'
+    sentinel.write_text('Preserve prior export')
+    result = cleanup.seal_ram_capture_stage(finalized, **options, owned_targets={'raw': raw})
+    assert result['status'] == 'SEALED', result
+    seal = json.loads(cleanup._seal_path(options['state_dir'], finalized['generation_id']).read_bytes())
+    assert seal['schema_version'] == 2 and seal['ownership'] == {'raw': 'runs/' + DAY}
+    assert set(seal['targets']) == {'runs/' + DAY}
+    assert cleanup.cleanup_captured_ram_stage(finalized, capture, **options)['status'] == 'CLEANED'
+    assert not raw.exists() and sentinel.read_text() == 'Preserve prior export'
+
+
+@requires_lookup_limits
+def test_completed_lookup_does_not_charge_the_whole_historical_database(completed, monkeypatch):
+    finalized, capture, _, _, _, _, archive = completed
+    original = cleanup._node
+    database = archive / 'evidence.sqlite3'
+    class LogicalSize:
+        st_size = 1024**3 + 1
+        def __init__(self, original):
+            self.original = original
+        def __getattr__(self, key):
+            return getattr(self.original, key)
+    def node(path, directory):
+        value = original(path, directory)
+        return LogicalSize(value) if path == database else value
+    monkeypatch.setattr(cleanup, '_node', node)
+    budget = cleanup.CleanupBudget()
+    receipt = cleanup._capture(finalized, capture, budget)
+    assert receipt['generation_id'] == finalized['generation_id']
+    assert budget.bytes_read < 1024**2
+
+
+def test_oversized_seal_refused_before_immutable_write(tmp_path):
+    path = tmp_path / 'state' / 'oversized.json'
+    with pytest.raises(ValueError, match='receipt_exceeds_byte_budget'):
+        cleanup._once(path, {'protocol': 'x' * (32 * 1024**2)}, cleanup.CleanupBudget())
+    assert not path.exists() and not path.parent.exists()
+
+
+@pytest.mark.parametrize('mutation', ['missing_raw', 'unknown', 'wrong_date', 'persistent_export', 'wrong_role', 'missing_export'])
+def test_invalid_original_ownership_cannot_seal(completed, mutation):
+    finalized, _, options, raw, source, *_ = completed
+    owned = {'raw': raw}
+    if mutation == 'missing_raw':
+        owned = {}
+    elif mutation == 'unknown':
+        owned['other'] = raw
+    elif mutation == 'wrong_date':
+        owned['raw'] = raw.with_name('2026-09-08')
+    elif mutation == 'persistent_export':
+        owned['exports'] = options['runs_root'] / DAY
+    elif mutation == 'wrong_role':
+        owned['exports'] = raw
+    else:
+        owned['exports'] = options['ram_root'] / 'exports' / DAY / '_exports'
+    result = cleanup.seal_ram_capture_stage(finalized, **options, owned_targets=owned)
+    assert result['status'] == 'PRESERVED', result
+    assert source.read_bytes() == FIXTURE.read_bytes()
+    assert not cleanup._seal_path(options['state_dir'], finalized['generation_id']).exists()
+
+
+@pytest.mark.parametrize('mutation', ['legacy', 'bool_version', 'unknown_key', 'unknown_role', 'ownership_missing_target'])
+def test_unproved_or_malformed_seal_never_authorizes_capture_lookup(completed, monkeypatch, mutation):
+    finalized, capture, options, raw, source, *_ = completed
+    _seal(completed)
+    path = cleanup._seal_path(options['state_dir'], finalized['generation_id'])
+    value = json.loads(path.read_bytes())
+    if mutation == 'legacy':
+        value['schema_version'] = 1
+        del value['ownership']
+    elif mutation == 'bool_version':
+        value['schema_version'] = True
+    elif mutation == 'unknown_key':
+        value['future_permission'] = True
+    elif mutation == 'unknown_role':
+        value['ownership']['unknown'] = 'runs/' + DAY
+    else:
+        value['ownership']['exports'] = 'exports/' + DAY + '/_exports'
+    # Deliberate corruption of a disposable protocol seal, never a real receipt.
+    path.write_text(json.dumps(value), encoding='utf-8')
+    before = path.read_bytes()
+    monkeypatch.setattr(cleanup, '_capture', lambda *_: pytest.fail('Unproved seal cannot reach capture admission'))
+    assert cleanup.cleanup_captured_ram_stage(finalized, capture, **options)['status'] == 'PRESERVED'
+    assert path.read_bytes() == before and source.read_bytes() == FIXTURE.read_bytes()
+
+
+def test_exact_32mib_canonical_seal_is_readable_and_replayable(tmp_path):
+    from cdr_atomic import canonical_json_bytes
+    path = tmp_path / 'exact.json'
+    payload = {'protocol': 'x' * (cleanup.MAX_RECEIPT_BYTES - len(canonical_json_bytes({'protocol': ''})))}
+    expected = canonical_json_bytes(payload)
+    budget = cleanup.CleanupBudget()
+    cleanup._once(path, payload, budget)
+    assert len(expected) == 32 * 1024**2
+    assert cleanup._read_receipt(path, budget) == expected
+    before = path.stat().st_ino
+    cleanup._once(path, payload, budget)
+    assert path.stat().st_ino == before and path.read_bytes() == expected
+
+
+@pytest.mark.parametrize('extra', [0, 1])
+def test_receipt_limit_counts_unicode_utf8_and_newline(tmp_path, monkeypatch, extra):
+    from cdr_atomic import canonical_json_bytes
+    payload = {'protocol': 'é' * 1024 + ('x' if extra else '')}
+    limit = len(canonical_json_bytes({'protocol': 'é' * 1024}))
+    monkeypatch.setattr(cleanup, 'MAX_RECEIPT_BYTES', limit)
+    path = tmp_path / 'unicode.json'
+    if extra:
+        with pytest.raises(ValueError, match='receipt_exceeds'):
+            cleanup._once(path, payload, cleanup.CleanupBudget())
+        assert not path.exists()
+    else:
+        cleanup._once(path, payload, cleanup.CleanupBudget())
+        assert path.read_bytes() == canonical_json_bytes(payload)
+
+
+def test_seal_serialization_crossing_deadline_creates_no_immutable_state(tmp_path, monkeypatch):
+    original = cleanup.json.JSONEncoder.iterencode
+    budget = cleanup.CleanupBudget()
+    def delayed(encoder, *args, **kwargs):
+        yield from original(encoder, *args, **kwargs)
+        monkeypatch.setattr(cleanup.time, 'monotonic', lambda: budget.started + 31)
+    monkeypatch.setattr(cleanup.json.JSONEncoder, 'iterencode', delayed)
+    path = tmp_path / 'new-state' / 'late.json'
+    with pytest.raises(ValueError, match='budget'):
+        cleanup._once(path, {'protocol': 'deadline'}, budget)
+    assert not path.exists() and not path.parent.exists()
+
+
+def test_already_oversized_seal_is_preserved_without_replacement(tmp_path):
+    path = tmp_path / 'old-seal.json'
+    original = b' ' * (cleanup.MAX_RECEIPT_BYTES + 1)
+    path.write_bytes(original)
+    with pytest.raises(ValueError, match='receipt_exceeds'):
+        cleanup._once(path, {'protocol': 'bounded new payload'}, cleanup.CleanupBudget())
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('boundary', ['steps', 'deadline', 'database_changed', 'wal_arrives'])
+@requires_lookup_limits
+def test_bounded_lookup_failure_preserves_stage_and_receipts(completed, monkeypatch, boundary):
+    finalized, capture, options, raw, source, _, archive = completed
+    _seal(completed)
+    original = cleanup.completed_receipt_hash
+    budget = cleanup.CleanupBudget(max_query_steps=1 if boundary == 'steps' else 10000)
+    def changed(database, generation, actual_budget):
+        result = original(database, generation, actual_budget)
+        if boundary == 'deadline':
+            monkeypatch.setattr(cleanup.time, 'monotonic', lambda: budget.started + 31)
+        elif boundary == 'database_changed':
+            info = database.stat()
+            os.utime(database, ns=(info.st_atime_ns, info.st_mtime_ns + 1000000))
+        elif boundary == 'wal_arrives':
+            database.with_name(database.name + '-wal').write_bytes(b'Protocol new WAL')
+        return result
+    monkeypatch.setattr(cleanup, 'completed_receipt_hash', changed)
+    result = cleanup.cleanup_captured_ram_stage(finalized, capture, **options, budget=budget)
+    assert result['status'] == 'PRESERVED', result
+    assert source.read_bytes() == FIXTURE.read_bytes() and raw.is_dir()
+    if boundary == 'steps':
+        assert budget.exhausted and budget.query_steps == 2
+
+
+@requires_lookup_limits
+def test_lookup_cost_is_bounded_with_10000_unrelated_completion_markers(completed):
+    import sqlite3
+    finalized, capture, _, _, _, _, archive = completed
+    first = cleanup.CleanupBudget()
+    cleanup._capture(finalized, capture, first)
+    # Extra completion metadata is solely an indexed lookup load fixture;
+    # no product, fee, observation or business acceptance values are invented.
+    database = archive / 'evidence.sqlite3'
+    with sqlite3.connect(database) as connection:
+        connection.executemany('INSERT INTO ingest_captures VALUES (?,?,?,?)', [
+            (f'protocol-lookup-{index:05}', capture['receipt_sha256'], SOURCE_OBSERVED, 1) for index in range(10000)])
+    connection.close()  # Checkpoint this disposable writer before immutable reading.
+    before = database.read_bytes()
+    second = cleanup.CleanupBudget()
+    assert cleanup._capture(finalized, capture, second)['generation_id'] == finalized['generation_id']
+    assert second.query_steps <= first.query_steps + 20 < 10000
+    assert second.bytes_read == first.bytes_read and database.read_bytes() == before
+
+
+@requires_lookup_limits
+def test_completion_lookup_refuses_unindexed_same_named_table(completed, tmp_path, monkeypatch):
+    import sqlite3
+    finalized, capture, _, _, _, _, archive = completed
+    alternative = tmp_path / 'unindexed-archive'
+    shutil.copytree(archive, alternative)
+    database = alternative / 'evidence.sqlite3'
+    with sqlite3.connect(database) as connection:
+        connection.execute('DROP TABLE ingest_captures')
+        connection.execute('CREATE TABLE ingest_captures(ingest_id TEXT, receipt_sha256 TEXT NOT NULL, completed_at TEXT NOT NULL, products INTEGER NOT NULL)')
+        connection.execute('INSERT INTO ingest_captures VALUES (?,?,?,?)',
+                           (finalized['generation_id'], capture['receipt_sha256'], SOURCE_OBSERVED, 1))
+    connection.close()
+    monkeypatch.setenv('AR_LOCAL_TERMS_ROOT', str(alternative))
+    with pytest.raises(ValueError, match='completion_schema_invalid'):
+        cleanup._capture(finalized, capture, cleanup.CleanupBudget())
