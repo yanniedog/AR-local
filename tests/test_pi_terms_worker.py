@@ -213,6 +213,24 @@ def test_retry_bounds_and_timezones():
     assert not worker.runtime_window(datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc))
 
 
+def acquisition_receipt(operation, result='NO_WORK'):
+    from cdr_terms.identity import digest, byte_digest, canonical_json
+    body = {'result': result, 'codex_called': False, 'network_called': False,
+            'publication': 'NOT_ATTEMPTED', 'legal_completeness': 'unknown',
+            'items': [], 'dispositions': [], 'attempts': 0, 'charged_bytes': 0, 'actual_body_bytes': 0,
+            'limits': {'attempts': 32, 'body_bytes': 64 * 1024**2, 'maintenance': 128,
+                       'admission_seconds': 105, 'receipt_reserve_seconds': 15}}
+    batch = {
+        **body, 'schema_version': 2, 'batch_sha256': digest(body),
+        'input_sha256': transport.file_hash(operation / 'input.json', transport.MAX_INPUT_BYTES)}
+    encoded = canonical_json(batch).encode('utf-8')
+    transport.write_receipt(operation / 'batch.json', batch)
+    transport.write_receipt(operation / 'acquisition.json', {
+        'schema_version': 2, 'input_sha256': batch['input_sha256'], 'result': result,
+        'codex_called': False, 'network_called': False,
+        'batch_file_sha256': byte_digest(encoded), 'batch_file_bytes': len(encoded)})
+
+
 def test_acquisition_proceeds_without_auth_or_model_calls(setup, monkeypatch):
     from cdr_terms.acquisitions_queue import AcquisitionQueue
     (setup[1] / 'auth.json').unlink()
@@ -223,9 +241,7 @@ def test_acquisition_proceeds_without_auth_or_model_calls(setup, monkeypatch):
         assert limits.runtime_seconds == 120
         assert 'pi_terms_acquire.py' in command[1]
         assert '--codex-home' not in command and '--codex-bin' not in command
-        transport.write_receipt(output.parent / 'acquisition.json', {
-            'schema_version': 1, 'result': 'NO_WORK', 'codex_called': False, 'network_called': False,
-            'input_sha256': transport.file_hash(output.parent / 'input.json', transport.MAX_INPUT_BYTES)})
+        acquisition_receipt(output.parent)
         return receipt()
     monkeypatch.setattr(worker, 'supervise', supervised)
     value = invoke(setup)
@@ -243,9 +259,7 @@ def test_acquisition_is_independent_of_subscription_quota_cooldown(setup, monkey
     def supervised(command, output, limits, **kwargs):
         calls.append(command)
         assert limits.runtime_seconds == 120
-        transport.write_receipt(output.parent / 'acquisition.json', {
-            'schema_version': 1, 'result': 'INCOMPLETE', 'codex_called': False, 'network_called': True,
-            'input_sha256': transport.file_hash(output.parent / 'input.json', transport.MAX_INPUT_BYTES)})
+        acquisition_receipt(output.parent, 'INCOMPLETE')
         return receipt()
     monkeypatch.setattr(worker, 'supervise', supervised)
     value = invoke(setup)

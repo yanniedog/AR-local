@@ -300,8 +300,9 @@ def test_graph_only_worker_admission_uses_existing_bounded_supervisor_once(retai
         assert value["network_called"] is False and value["codex_called"] is False
         return receipt()
     monkeypatch.setattr(worker, "supervise", supervisor)
+    monkeypatch.setattr(pi_terms_acquire, "runtime_guard", lambda *_: lambda: None)
     result = worker.collect_one(store, Path(__file__).resolve().parents[1], store.root)
-    assert result["result"] == "INCOMPLETE" and result["graph_progress"]["legal_completeness"] == "unknown"
+    assert result["result"] == "INCOMPLETE" and result["processing"]["outcome"]["graph"]["legal_completeness"] == "unknown"
     assert worker.collect_one(store, Path(__file__).resolve().parents[1], store.root)["result"] == "NO_WORK"
     assert len(calls) == 1
 
