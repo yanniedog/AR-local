@@ -15,6 +15,8 @@ from cdr_historical_fee_plan_budget import CONTROL, ControlBudget
 
 REGISTRY = 'contracts/historical-fees/may23-reviewed-registry-v1.json'
 REGISTRY_SHA = '78906ab97dbd3cfa6d64cc0835d180015be1538ddfae44fbace9e1b296fbd314'
+# Exact former Windows checkout: same reviewed bytes with one terminal CRLF.
+_REGISTRY_CRLF_SHA = '44071664c6ab6867cde45821a5f7c87f2e4ce343d42b4203321b5308390eee58'
 DEPENDENCIES = {'745': 'f4f5aa44129074a91b244e02adee90a8f9f3e212',
                 '746': 'bc580b3d03527b18cb5aba66ecceb26228738fee'}
 CODE_FILES = frozenset((
@@ -59,7 +61,13 @@ def owner_value(value):
 
 def registry(meter):
     body = read_control(Path(__file__).parent / REGISTRY, meter)
-    if digest(body) != REGISTRY_SHA:
+    raw_sha = digest(body)
+    if len(body) == 2644 and raw_sha == _REGISTRY_CRLF_SHA:
+        # Authenticate the entire raw representation before adapting its sole
+        # line ending. Never normalize arbitrary JSON or mutate retained files.
+        body = body[:-2] + b'\n'
+        raw_sha = digest(body)
+    if raw_sha != REGISTRY_SHA:
         raise ValueError('reviewed_registry_changed')
     return parse(body)
 
