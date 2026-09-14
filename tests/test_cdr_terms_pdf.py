@@ -135,7 +135,7 @@ def test_scanner_does_not_reassemble_broken_schemes_or_rewrite_annotation_uri():
     assert status == 'partial' and coverage['candidate_links_total'] == 1
     assert coverage['candidate_links'][0]['source_kind'] == 'pdf_uri_annotation_candidate'
     assert coverage['candidate_links'][0]['sourceUrl'] == 'https://example.test/literal)'
-    assert coverage['policy_version'] == 'pdf-page-evidence-2'
+    assert coverage['policy_version'] == 'pdf-page-evidence-3'
 
 
 def test_scanner_retains_unicode_whitespace_boundaries_and_exact_occurrences():
@@ -205,3 +205,82 @@ def test_page_locator_cannot_point_at_another_page_or_separator(tmp_path):
                                  (first['end'], second['start'], 1), (second['start'], second['end'], 999)]:
             with pytest.raises(ValueError, match='Page locator'):
                 store.add_clause(extraction, start=start, end=end, page=page)
+
+
+def _pdf_staging(store, *, coverage_change=None):
+    from cdr_terms.extraction import extract_version
+    from cdr_terms.identity import digest
+    from cdr_terms.queue import TermsQueue
+
+    body = protocol_pdf(['Alpha.', 'Beta.'])
+    document = store.register_document('https://example.test/terms.pdf')
+    version = store.record_check(document_id=document, check_id=hashlib.sha256(body).hexdigest(),
+        checked_at='2026-09-14T00:00:00Z', status='fetched', http_status=200, body=body,
+        media_type='application/pdf', metadata={'final_url': 'https://example.test/terms.pdf'})
+    extraction = extract_version(store, version)
+    row = store.db.execute('SELECT * FROM extractions WHERE extraction_id=?', (extraction,)).fetchone()
+    coverage = json.loads(row['coverage_json'])
+    if coverage_change:
+        coverage_change(coverage)
+        extraction = store.register_extraction(document_version_id=version, extractor_version='protocol-boundary',
+            text=store.read_blob(row['text_sha256']).decode(), observed_at='2026-09-14T00:00:01Z',
+            status='partial', coverage=coverage)
+    # Private unbound staging protocol: not a bank or a publishable product scope.
+    context = {'product_keys': ['protocol-only']}
+    queue = TermsQueue(store)
+    job = queue.enqueue(extraction, context, now='2026-09-14T00:00:02Z')
+    output = {'schema_version': 1, 'extraction_id': extraction, 'context_sha256': digest(context),
+              'clauses': [], 'terms': [], 'unresolved': ['Protocol only; no legal completeness']}
+    return queue, job, output, coverage
+
+
+@pytest.mark.parametrize('case', ['wrong_page', 'cross_page', 'separator', 'missing_page', 'bad_page_hash'])
+def test_staging_rejects_invalid_page_before_terminal_state_and_can_retry(tmp_path, case):
+    def change(coverage):
+        if case == 'bad_page_hash':
+            coverage['page_spans'][0]['text_sha256'] = '0' * 64
+
+    with EvidenceStore(tmp_path / 'evidence') as store:
+        queue, job, output, coverage = _pdf_staging(store, coverage_change=change)
+        first, second = coverage['page_spans']
+        start, end, page = first['start'], first['end'], 1
+        if case == 'wrong_page':
+            page = 2
+        elif case == 'cross_page':
+            end = second['end']
+        elif case == 'separator':
+            start, end = first['end'], second['start']
+        elif case == 'missing_page':
+            page = 999
+        output['clauses'] = [{'start': start, 'end': end, 'page': page, 'section': None,
+                              'disposition': 'unresolved', 'reason': 'Protocol locator'}]
+        lease = queue.claim('2026-09-14T00:00:03Z')
+        before = sorted(str(p.relative_to(store.blobs)) for p in store.blobs.rglob('*') if p.is_file())
+        with pytest.raises(ValueError, match='Page'):
+            queue.save_staging(job, output, lease_id=lease['lease_id'], now='2026-09-14T00:00:04Z')
+        assert sorted(str(p.relative_to(store.blobs)) for p in store.blobs.rglob('*') if p.is_file()) == before
+        assert store.db.execute('SELECT status FROM job_events WHERE job_id=? ORDER BY sequence DESC', (job,)).fetchone()[0] == 'running'
+        assert store.db.execute('SELECT COUNT(*) FROM clauses').fetchone()[0] == 0
+        queue.event(job, 'retry_wait', '2026-09-14T00:00:05Z', lease_id=lease['lease_id'],
+                    retry_after='2026-09-14T00:00:06Z', error_code='invalid_locator')
+        retry = queue.claim('2026-09-14T00:00:06Z')
+        assert retry['job_id'] == job and retry['lease_id'] != lease['lease_id']
+        # The retained bad hash cannot authorize page1; plain text remains usable.
+        output['clauses'][0].update(start=first['start'], end=first['end'], page=None if case == 'bad_page_hash' else 1)
+        queue.save_staging(job, output, lease_id=retry['lease_id'], now='2026-09-14T00:00:07Z')
+        assert store.db.execute('SELECT status FROM job_events WHERE job_id=? ORDER BY sequence DESC', (job,)).fetchone()[0] == 'staged'
+
+
+def test_direct_staged_event_cannot_bypass_page_locator_validation(tmp_path):
+    from cdr_terms.identity import canonical_json
+
+    with EvidenceStore(tmp_path / 'evidence') as store:
+        queue, job, output, coverage = _pdf_staging(store)
+        first = coverage['page_spans'][0]
+        output['clauses'] = [{'start': first['start'], 'end': first['end'], 'page': 2, 'section': None,
+                              'disposition': 'unresolved', 'reason': 'Wrong page protocol'}]
+        lease = queue.claim('2026-09-14T00:00:03Z')
+        result_sha = store.put_blob(canonical_json(output).encode())
+        with pytest.raises(ValueError, match='Page'):
+            queue.event(job, 'staged', '2026-09-14T00:00:04Z', lease_id=lease['lease_id'], result_sha256=result_sha)
+        assert store.db.execute('SELECT status FROM job_events WHERE job_id=? ORDER BY sequence DESC', (job,)).fetchone()[0] == 'running'
