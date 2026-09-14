@@ -11,15 +11,17 @@ import os
 import sqlite3
 import stat
 import time
-from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from cdr_atomic import atomic_write_json
+from cdr_atomic import atomic_write_bytes
 from cdr_finalization import verify_completion_marker
+from cdr_ram_capture_lookup import completed_receipt_hash
 from cdr_terms.identity import byte_digest, canonical_json, digest, require_sha
+
+MAX_RECEIPT_BYTES = 32 * 1024 * 1024
 
 
 @dataclass
@@ -31,10 +33,14 @@ class CleanupBudget:
     entries: int = 0
     started: float = 0
     exhausted: bool = False
+    max_query_steps: int = 10000
+    query_steps: int = 0
 
     def __post_init__(self):
         if not 0 < self.max_bytes <= 1024 ** 3 or not 0 < self.max_entries <= 100000 or not 0 < self.max_seconds <= 30:
             raise ValueError("invalid_cleanup_bounds")
+        if type(self.max_query_steps) is not int or not 0 < self.max_query_steps <= 10000:
+            raise ValueError("invalid_cleanup_query_bounds")
         self.started = time.monotonic()
 
     def check(self, *, size: int = 0, entries: int = 0, reserve_bytes: int = 0):
@@ -44,6 +50,13 @@ class CleanupBudget:
             raise ValueError("cleanup_budget_exhausted")
         self.bytes_read += size
         self.entries += entries
+
+    def query_step(self):
+        self.query_steps += 1
+        if self.query_steps > self.max_query_steps:
+            self.exhausted = True
+        self.check()
+        return 0
 
 
 def _node(path: Path, directory: bool):
@@ -143,7 +156,7 @@ def _inventory(root: Path, budget: CleanupBudget) -> dict[str, dict]:
 
 def _read_receipt(path: Path, budget: CleanupBudget) -> bytes:
     before = _node(path, False)
-    if before.st_size > 32 * 1024 * 1024:
+    if before.st_size > MAX_RECEIPT_BYTES:
         raise ValueError("cleanup_receipt_exceeds_byte_budget")
     budget.check(size=before.st_size)
     with path.open("rb") as stream:
@@ -179,40 +192,62 @@ def _seal_path(state_dir: Path, generation: str) -> Path:
 
 
 def _once(path: Path, payload: dict, budget: CleanupBudget):
-    budget.check()
+    # Bound the exact UTF-8 bytes, including the canonical final newline,
+    # before creating even a parent directory or exposing immutable state.
+    body = bytearray()
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    for part in encoder.iterencode(payload):
+        chunk = part.encode("utf-8")
+        if len(body) + len(chunk) + 1 > MAX_RECEIPT_BYTES:
+            raise ValueError("cleanup_receipt_exceeds_byte_budget")
+        budget.check(reserve_bytes=len(body) + len(chunk) + 1)
+        body.extend(chunk)
+    body.extend(b"\n")
+    budget.check(size=len(body))
     if path.exists():
-        if canonical_json(json.loads(_read_receipt(path, budget))) != canonical_json(payload):
+        if _read_receipt(path, budget) != body:
             raise ValueError("cleanup_receipt_identity_conflict")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     _absolute(path.parent)
-    atomic_write_json(path, payload, create_once=True)
+    budget.check()
+    atomic_write_bytes(path, bytes(body), create_once=True)
+    budget.check()
 
 
 def _outcome(status: str, budget: CleanupBudget, **extra):
     return {"status": status, "bytes_charged": budget.bytes_read, "entries_checked": budget.entries,
-            "elapsed_seconds": round(time.monotonic() - budget.started, 6), **extra}
+            "query_steps": budget.query_steps, "elapsed_seconds": round(time.monotonic() - budget.started, 6), **extra}
+
+
+def _owned_targets(root: Path, day: str, owned_targets: Mapping[str, Path] | None) -> dict[str, str]:
+    if not isinstance(owned_targets, dict) or 'raw' not in owned_targets or set(owned_targets) - {'raw', 'exports'}:
+        raise ValueError('original_stage_ownership_required')
+    expected = {'raw': f'runs/{day}', 'exports': f'exports/{day}/_exports'}
+    ownership = {}
+    for role, path in owned_targets.items():
+        if not isinstance(path, Path) or _absolute(path) != root / expected[role]:
+            raise ValueError('original_stage_ownership_path_invalid')
+        ownership[role] = expected[role]
+    return ownership
 
 
 def seal_ram_capture_stage(finalized: Mapping[str, Any], *, ram_root: Path, state_dir: Path,
-                           runs_root: Path, run_date: str, clean: bool, budget: CleanupBudget | None = None) -> dict:
+                           runs_root: Path, run_date: str, clean: bool, budget: CleanupBudget | None = None,
+                           owned_targets: Mapping[str, Path] | None = None) -> dict:
     """Original-run only. A failed seal never changes finalization or source files."""
     budget = budget or CleanupBudget()
     if not clean or not os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
         return _outcome("DISABLED", budget)
     try:
         root, day = _layout(finalized, ram_root, state_dir, runs_root, run_date, budget)
+        ownership = _owned_targets(root, day, owned_targets)
         targets = {}
-        for relative in (f"runs/{day}", f"exports/{day}"):
-            # RAM exports are optional; the persistent export stage is separate.
-            if not (root / relative).exists():
-                if relative.startswith("runs/"):
-                    raise ValueError("original_ram_source_stage_missing")
-                continue
+        for relative in sorted(ownership.values()):
             targets[relative] = _inventory(_inside(root, relative), budget)
-        seal = {"schema_version": 1, "generation_id": finalized["generation_id"],
+        seal = {"schema_version": 2, "generation_id": finalized["generation_id"],
                 "export_contract_digest": finalized["export_contract_digest"], "run_date": day,
-                "ram_root": str(root), "targets": targets}
+                "ram_root": str(root), "ownership": ownership, "targets": targets}
         path = _seal_path(state_dir, finalized["generation_id"])
         budget.check()
         _once(path, seal, budget)
@@ -238,22 +273,19 @@ def _capture(finalized, capture, budget: CleanupBudget) -> dict:
         if receipt.get(field) != expected or capture.get(field) != expected:
             raise ValueError("capture_receipt_generation_mismatch")
     database = _inside(root, "evidence.sqlite3")
-    database_size = _node(database, False).st_size
+    before = _identity(_node(database, False), False)
     # Immutable read mode cannot create or modify WAL/SHM sidecars. A live WAL
     # may hold newer completion state, so defer instead of ignoring it.
     wal = database.with_name(database.name + "-wal")
     if wal.exists() or wal.is_symlink():
         if _node(wal, False).st_size:
             raise ValueError("capture_archive_has_uncheckpointed_wal")
-    # Charge the entire database conservatively for the bounded indexed lookup;
-    # this is a work allowance, not a claim of measured SQLite physical reads.
-    budget.check(size=database_size, entries=1)
-    with closing(sqlite3.connect(database.as_uri() + "?mode=ro&immutable=1", uri=True, timeout=1)) as connection:
-        connection.set_progress_handler(lambda: (budget.check() or 0), 100)
-        if connection.execute("PRAGMA application_id").fetchone()[0] != 0x4152544D or connection.execute("PRAGMA user_version").fetchone()[0] != 1:
-            raise ValueError("capture_archive_is_not_a_completed_terms_store")
-        row = connection.execute("SELECT receipt_sha256 FROM ingest_captures WHERE ingest_id=?", (finalized["generation_id"],)).fetchone()
-    if not row or row[0] != capture["receipt_sha256"]:
+    bound_hash = completed_receipt_hash(database, finalized["generation_id"], budget)
+    if _identity(_node(database, False), False) != before:
+        raise ValueError('capture_archive_changed_during_lookup')
+    if (wal.exists() or wal.is_symlink()) and _node(wal, False).st_size:
+        raise ValueError('capture_archive_has_uncheckpointed_wal')
+    if bound_hash != capture["receipt_sha256"]:
         raise ValueError("capture_receipt_has_no_completed_archive_record")
     budget.check()
     return receipt
@@ -305,7 +337,7 @@ def _finish_empty_target(root, quarantine_relative, expected, attempt_path, plan
         _match(_inventory(quarantine, budget), {"": expected[""]}, partial=False)
         if fault:
             fault("before_emptied", quarantine)
-        # atomic_write_json flushes the file before linking the immutable
+        # atomic_write_bytes flushes the file before linking the immutable
         # transition. Windows has no directory-fsync guarantee here; this is a
         # process-restart protocol, not a claim of hard power-loss durability.
         _once(emptied, transition, budget)
@@ -396,13 +428,19 @@ def cleanup_captured_ram_stage(finalized: Mapping[str, Any], capture: Mapping[st
         path = _seal_path(state_dir, finalized["generation_id"])
         body = _read_receipt(path, budget)
         seal, seal_sha = json.loads(body), byte_digest(body)
-        for key, expected in (("schema_version", 1), ("generation_id", finalized["generation_id"]),
+        if (not isinstance(seal, dict) or set(seal) != {'schema_version', 'generation_id', 'export_contract_digest',
+                                                       'run_date', 'ram_root', 'ownership', 'targets'}):
+            raise ValueError('cleanup_seal_ownership_unproved')
+        for key, expected in (("schema_version", 2), ("generation_id", finalized["generation_id"]),
                               ("export_contract_digest", finalized["export_contract_digest"]),
                               ("run_date", day), ("ram_root", str(root))):
             if canonical_json(seal.get(key)) != canonical_json(expected):
                 raise ValueError("cleanup_seal_generation_mismatch")
         targets = seal["targets"]
-        if f"runs/{day}" not in targets or set(targets) - {f"runs/{day}", f"exports/{day}"}:
+        ownership = seal['ownership']
+        if (not isinstance(ownership, dict) or 'raw' not in ownership or set(ownership) - {'raw', 'exports'}
+                or ownership != {role: (f'runs/{day}' if role == 'raw' else f'exports/{day}/_exports') for role in ownership}
+                or not isinstance(targets, dict) or set(targets) != set(ownership.values())):
             raise ValueError("cleanup_seal_targets_invalid")
         receipt = _capture(finalized, capture, budget)
         if (not isinstance(receipt.get("sources"), list) or type(receipt.get("products")) is not int

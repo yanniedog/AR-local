@@ -683,7 +683,9 @@ def run_once(args: argparse.Namespace) -> int:
     if ram_cleanup_paths is not None:
         cleanup_seal = seal_ram_capture_stage(
             finalized, ram_root=args.ram_root, state_dir=state_dir,
-            runs_root=persistent_runs_root, run_date=date, clean=args.clean_ram_stage)
+            runs_root=persistent_runs_root, run_date=date, clean=args.clean_ram_stage,
+            owned_targets={"raw": ram_cleanup_paths[0],
+                           **({"exports": staged_exports_to_install} if not persistent_output_stage else {})})
     terms_capture = capture_if_configured(
         terms_raw_root, finalized, state_dir=state_dir,
         runs_root=persistent_runs_root, export_root=target_export_root,

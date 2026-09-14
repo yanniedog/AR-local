@@ -121,7 +121,7 @@ def prepare(archive_dir, anchor_dir, cache, output):
                    'publication': 'NOT_ATTEMPTED', 'admission_id': admission['admission_id'],
                    'admission_sha256': sha(payloads['admission.json']),
                    'files': {name: {'bytes': len(body), 'sha256': sha(body)} for name, body in payloads.items()},
-                   'resources': {'elapsed_seconds_before_seal': str(time.monotonic() - budget.started), 'counters_before_seal': budget.counts},
+                   'resources': {'elapsed_seconds_before_seal': str(time.monotonic() - budget.started), 'counters_before_seal': dict(budget.counts)},
                    'required_next': ['Independent reconstruction', 'Immutable revision review', 'Separate publication gates'],
                    'limitations': ['Embedded export is not HTTP capture.', 'Legal effective dates and fee applicability remain unknown.',
                                    'No customer eligibility or complete cost claim.', 'Original public anchor only; no unreviewed parent chain.']}

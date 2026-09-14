@@ -192,14 +192,16 @@ def create_output(path: Path, budget: Budget) -> Path:
     budget.check()
     path = Path(path).absolute()
     safe_path(path.parent, directory=True)
-    path.mkdir()  # No reuse, cleanup, replacement or automatic resume.
+    # POSIX privacy is established at creation, never by chmod after exposure.
+    # Windows callers must provide a parent protected by appropriate ACLs.
+    path.mkdir(mode=0o700)  # No reuse, cleanup, replacement or automatic resume.
     budget.check()
     return path
 
 
 def write_exclusive(path: Path, body: bytes, budget: Budget):
     budget.output(len(body))
-    with path.open('xb') as stream:
+    with open(path, 'xb', opener=lambda name, flags: os.open(name, flags, 0o600)) as stream:
         for offset in range(0, len(body), 64 * 1024):
             budget.check()
             chunk = body[offset:offset + 64 * 1024]

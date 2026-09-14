@@ -386,6 +386,29 @@ def protocol_candidate_writer(tmp_path, monkeypatch, budget):
     return output, lambda: candidate.prepare(tmp_path / 'original', tmp_path / 'anchor', tmp_path / 'private/cache', output)
 
 
+def test_candidate_return_matches_exact_sealed_receipt(tmp_path, monkeypatch):
+    from cdr_historical_fee_exact import encode
+    budget = Budget()
+    output, operation = protocol_candidate_writer(tmp_path, monkeypatch, budget)
+    returned = operation()
+    assert encode(returned) == (output / 'receipt.json').read_bytes()
+
+
+def test_candidate_pre_seal_counters_survive_later_budget_work(tmp_path, monkeypatch):
+    from cdr_historical_fee_exact import decode, encode
+    budget = Budget()
+    output, operation = protocol_candidate_writer(tmp_path, monkeypatch, budget)
+    returned = operation()
+    sealed = (output / 'receipt.json').read_bytes()
+    before = decode(sealed)['resources']['counters_before_seal']
+    budget.check('output', 1)
+    budget.check('verified_read', 2)
+    budget.check('compressed', 3)
+    assert returned['resources']['counters_before_seal'] == before
+    assert returned['resources']['counters_before_seal'] is not budget.counts
+    assert encode(returned) == sealed == (output / 'receipt.json').read_bytes()
+
+
 @pytest.mark.parametrize('which', ['cache', 'candidate'])
 @pytest.mark.parametrize('fault', ['fsync_failure', 'fsync_deadline'])
 def test_seal_fsync_failure_or_deadline_never_exposes_final_receipt(tmp_path, monkeypatch, which, fault):
