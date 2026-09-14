@@ -209,9 +209,8 @@
   }
 
   function refreshRetainedRunDatesCache() {
-    // The compact history payload carries the authoritative full retained date
-    // set for the section; prefer it over the current-only seed's single date so
-    // the window UI and drilldown timeline both see every run_date.
+    // Prefer the loaded compact timeline over the current-only seed. Inventory
+    // metadata separately discloses the file cap and any unreadable/missing files.
     const compact = currentCompactHistory();
     const raw = (compact && Array.isArray(compact.run_dates))
       ? compact.run_dates
@@ -278,7 +277,7 @@
     });
   }
 
-  /** All run dates retained by /api/banks/history (not limited to the current chart slice). */
+  /** Loaded timeline dates, not proof of all retained history. */
   function retainedRunDates() {
     if (!state.retainedRunDatesSorted) refreshRetainedRunDatesCache();
     return (state.retainedRunDatesSorted || []).slice();
@@ -319,6 +318,7 @@
       run_dates: sortedValidRunDates(Array.isArray(payload.run_dates) ? payload.run_dates : []),
       points: Array.isArray(payload.points) ? payload.points : [],
       providers: Array.isArray(payload.providers) ? payload.providers : [],
+      history_coverage: payload.history_coverage || null,
     };
   }
 
@@ -414,13 +414,16 @@
     const byProvider = {};
     const sliceDates = new Set();
     const byDate = {};
-    const accumulate = (slot, rate) => {
-      if (!slot) return { min: rate, max: rate, sum: rate, count: 1, rates: [rate] };
+    const accumulate = (slot, rate, carried) => {
+      if (!slot) return { min: rate, max: rate, sum: rate, count: 1, rates: [rate],
+        observed_count: carried ? 0 : 1, carry_forward_count: carried ? 1 : 0 };
       slot.min = Math.min(slot.min, rate);
       slot.max = Math.max(slot.max, rate);
       slot.sum += rate;
       slot.count += 1;
       slot.rates.push(rate);
+      slot.observed_count += carried ? 0 : 1;
+      slot.carry_forward_count += carried ? 1 : 0;
       return slot;
     };
     historyRows.forEach((row) => {
@@ -431,8 +434,8 @@
       sliceDates.add(date);
       if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {} };
       const p = byProvider[provider];
-      p.byDate[date] = accumulate(p.byDate[date], rate);
-      byDate[date] = accumulate(byDate[date], rate);
+      p.byDate[date] = accumulate(p.byDate[date], rate, row.carry_forward === '1');
+      byDate[date] = accumulate(byDate[date], rate, row.carry_forward === '1');
     });
     const retained = retainedRunDates();
     const sliceDatesSorted = sortedValidRunDates(Array.from(sliceDates));
@@ -440,7 +443,8 @@
     const dates = historyDatesInWindow(timelineSource);
     const points = dates.map((date) => {
       const agg = byDate[date];
-      if (!agg) return { date, min: null, max: null, mean: null, median: null, count: 0 };
+      if (!agg) return { date, min: null, max: null, mean: null, median: null, count: 0,
+        observed_count: 0, carry_forward_count: 0 };
       return {
         date,
         min: agg.min,
@@ -448,6 +452,8 @@
         mean: agg.sum / Math.max(1, agg.count),
         median: medianOf(agg.rates),
         count: agg.count,
+        observed_count: agg.observed_count,
+        carry_forward_count: agg.carry_forward_count,
       };
     });
     const providers = Object.values(byProvider).map((p) => {
@@ -461,6 +467,8 @@
           mean: point.sum / Math.max(1, point.count),
           median: medianOf(point.rates),
           count: point.count,
+          observed_count: point.observed_count,
+          carry_forward_count: point.carry_forward_count,
         };
       });
       return { label: p.label, byDate: visible };
@@ -587,6 +595,7 @@
       points,
       providers,
       allDates,
+      historyCoverage: compact.history_coverage,
       descending: state.descending,
       currentRange,
       totalHistoryRows,
@@ -618,6 +627,8 @@
       points: aggregate.points,
       providers: aggregate.providers,
       allDates: aggregate.allDates,
+      historyCoverage: state.bankHistory && state.bankHistory.history_coverage,
+      currentOnly: !!(state.bankHistory && state.bankHistory.current_only),
       descending: state.descending,
       currentRange: currentRateRange(rows),
       totalHistoryRows: historyRows.length,
@@ -660,6 +671,7 @@
       }],
       providers,
       allDates: [date],
+      currentOnly: true,
       descending: state.descending,
       currentRange: {
         min: range.min == null ? null : Number(range.min),
@@ -911,16 +923,7 @@
     });
     const status = $('history-window-status');
     if (!status) return;
-    if (!items || items.kind !== 'bank-history' || !items.dates.length) {
-      status.textContent = 'Historical ribbon: no retained run data for this slice.';
-      return;
-    }
-    const first = items.dates[0];
-    const last = items.dates[items.dates.length - 1];
-    const label = first === last ? first : `${first} through ${last}`;
-    const inRange = items.dates.length;
-    const retained = items.allDates.length;
-    status.textContent = `Visible window: ${label}. ${num(inRange)} in range, ${num(retained)} retained.`;
+    status.textContent = window.LocalCdrHistoryCoverage.status(items, num);
   }
 
   function parseIsoMs(value) {
@@ -1247,7 +1250,7 @@
     setHistoryWindowUi(items);
     updateHero(finalRows, items);
     if (items && items.kind === 'bank-history') {
-      $('chart-status').textContent = `${num(finalRows.length)} current rows / ${num(items.totalHistoryRows)} historical rows`;
+      $('chart-status').textContent = `${num(finalRows.length)} current rows / ${num(items.totalHistoryRows)} history contributions`;
     } else {
       $('chart-status').textContent = `${num(finalRows.length)} local rate rows loaded`;
     }

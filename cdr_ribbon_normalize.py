@@ -79,7 +79,7 @@ def effective_rate(row: Mapping[str, Any]) -> Any:
     return row.get("rate")
 
 
-def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, Any]:
+def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str, *, include_provenance: bool = False) -> Dict[str, Any]:
     keys = [
         str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
         for row in rows
@@ -96,6 +96,7 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
     providers: Dict[str, Dict[str, Any]] = {}
     rates: List[float] = []
     products: set[str] = set()
+    carry_count = 0
     for key, row in zip(keys, rows):
         rate = normalized_rate_value(effective_rate(row), section, key in percent_style)
         if rate is None:
@@ -103,15 +104,20 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
         provider = str(row.get("provider") or "Unknown")
         products.add(key)
         rates.append(rate)
-        bucket = providers.setdefault(provider, {"rates": [], "products": set()})
+        bucket = providers.setdefault(provider, {"rates": [], "products": set(), "carry_count": 0})
         bucket["rates"].append(rate)
         bucket["products"].add(key)
+        if row.get("carry_forward") == "1":
+            carry_count += 1
+            bucket["carry_count"] += 1
 
     return {
         "counts": {
             "rates": len(rates),
             "products": len(products),
             "providers": len(providers),
+            **({"observed_rates": len(rates) - carry_count, "carry_forward_rates": carry_count}
+               if include_provenance else {}),
         },
         "range": ribbon_stats(rates),
         "providers": [
@@ -119,6 +125,8 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
                 "provider": provider,
                 "rates": len(bucket["rates"]),
                 "products": len(bucket["products"]),
+                **({"observed_rates": len(bucket["rates"]) - bucket["carry_count"],
+                    "carry_forward_rates": bucket["carry_count"]} if include_provenance else {}),
                 **ribbon_stats(bucket["rates"]),
             }
             for provider, bucket in sorted(providers.items())
@@ -129,6 +137,7 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
 def compact_history(
     run_dates: List[str],
     aggregates: Mapping[str, Mapping[str, Any]],
+    *, include_provenance: bool = False,
 ) -> Dict[str, Any]:
     """Reshape per-day ``aggregate_ribbon`` outputs into a compact history series.
 
@@ -145,7 +154,8 @@ def compact_history(
     for date in ordered:
         agg = aggregates.get(date)
         if not agg:
-            points.append({"date": date, "min": None, "max": None, "mean": None, "median": None, "count": 0})
+            points.append({"date": date, "min": None, "max": None, "mean": None, "median": None, "count": 0,
+                           **({"observed_count": 0, "carry_forward_count": 0} if include_provenance else {})})
             continue
         rng = agg.get("range") or {}
         counts = agg.get("counts") or {}
@@ -156,6 +166,8 @@ def compact_history(
             "mean": rng.get("mean"),
             "median": rng.get("median"),
             "count": counts.get("rates", 0),
+            **({"observed_count": counts.get("observed_rates", 0),
+                "carry_forward_count": counts.get("carry_forward_rates", 0)} if include_provenance else {}),
         })
         for prov in agg.get("providers") or []:
             name = prov.get("provider") or "Unknown"
@@ -165,6 +177,8 @@ def compact_history(
                 "mean": prov.get("mean"),
                 "median": prov.get("median"),
                 "count": prov.get("rates", 0),
+                **({"observed_count": prov.get("observed_rates", 0),
+                    "carry_forward_count": prov.get("carry_forward_rates", 0)} if include_provenance else {}),
             }
     providers = [
         {"provider": name, "by_date": series}
