@@ -13,6 +13,7 @@ from .identity import canonical_json, digest, exact_value, timestamp, utc_now
 from .historical import build_historical_target, historical_scope, validate_historical_target
 from .incorporated import validate_target, output_scope
 from .observation_checks import context_document_state
+from .parameter_registry import validate_parameter_terms, validate_registry_context
 from .store import EvidenceStore, validate_clause_locator
 
 STAGING_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_terms" / "analysis-staging-v1.schema.json"
@@ -231,6 +232,7 @@ class TermsQueue:
         context = json.loads(self.store.read_blob(job["context_blob_sha256"]))
         if digest(context) != job["context_sha256"]:
             raise ValueError("Analysis context integrity mismatch")
+        validate_registry_context(context)
         self.store.read_blob(job["text_sha256"])
         self.store.read_blob(job["content_sha256"])
         if "historical_target" in context:
@@ -253,6 +255,7 @@ class TermsQueue:
             raise ValueError("Staged output is bound to a different input generation")
         text = self.store.read_blob(job["text_sha256"]).decode("utf-8")
         context = self.validate_input(job_id)
+        validate_parameter_terms(context, output["terms"])
         if "historical_target" in context:
             if output.get("historical_scope") != historical_scope(context["historical_target"]):
                 raise ValueError("Historical output must preserve its historical-only target scope")
