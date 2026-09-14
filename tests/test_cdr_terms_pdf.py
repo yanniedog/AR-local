@@ -23,7 +23,8 @@ def protocol_pdf(texts, *, uri=None, indirect_uri=False, uri_base=None, encrypte
         page[NameObject('/Resources')] = DictionaryObject({NameObject('/Font'):
             DictionaryObject({NameObject('/F1'): writer._add_object(font)})})
         stream = DecodedStreamObject()
-        stream.set_data(('BT /F1 10 Tf 10 100 Td (' + text + ') Tj ET').encode('ascii'))
+        literal = text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+        stream.set_data(('BT /F1 10 Tf 10 100 Td (' + literal + ') Tj ET').encode('ascii'))
         page[NameObject('/Contents')] = writer._add_object(stream)
         if uri:
             action_type = NameObject('/URI')
@@ -91,6 +92,76 @@ def test_pdf_candidates_keep_occurrences_and_never_execute_uri_actions(monkeypat
     assert text[first['text_start']:first['text_end']] == first['sourceUrl']
     assert second['url'] == 'https://example.test/linked.pdf' and second['page'] == 1
     assert first['relation'] == second['relation'] == 'candidate_incorporated_reference'
+
+
+@pytest.mark.parametrize('scheme', ['HTTPS', 'Http', 'hTtPs'])
+def test_printed_scheme_case_keeps_exact_source_and_normalized_fetch_url(scheme):
+    printed = scheme + '://Example.Test/Terms.pdf?Section=Fees'
+    text, status, coverage = pdf.extract_pdf(protocol_pdf(['First page.', 'Read ' + printed]), 'https://example.test/')
+    assert status == 'partial' and coverage['candidate_links_total'] == 1
+    link = coverage['candidate_links'][0]
+    assert link['sourceUrl'] == link['href'] == printed
+    assert link['url'] == scheme.lower() + '://example.test/Terms.pdf?Section=Fees'
+    assert link['page'] == 2 and text[link['text_start']:link['text_end']] == printed
+
+
+@pytest.mark.parametrize(('printed', 'expected'), [
+    ('(https://example.test/terms)', 'https://example.test/terms'),
+    ('[https://example.test/terms].', 'https://example.test/terms'),
+    ('{https://example.test/terms};', 'https://example.test/terms'),
+    ('([https://example.test/terms_(Fees)]).', 'https://example.test/terms_(Fees)'),
+    ('https://example.test/terms_(Fees)', 'https://example.test/terms_(Fees)'),
+    ('https://example.test/terms_(Nested_(Fees))', 'https://example.test/terms_(Nested_(Fees))'),
+    ('https://example.test/terms_[Fees]', 'https://example.test/terms_[Fees]'),
+    ('https://example.test/terms_{Fees}', 'https://example.test/terms_{Fees}'),
+    ('https://example.test/terms_(Fees;)', 'https://example.test/terms_(Fees;)'),
+    ('https://example.test/terms?range=[0,1]', 'https://example.test/terms?range=[0,1]'),
+    ('(https://example.test/terms_%28Fees%29)', 'https://example.test/terms_%28Fees%29'),
+    ('https://example.test/terms)(Fees)', 'https://example.test/terms)(Fees)'),
+])
+def test_printed_url_trims_only_trailing_unmatched_delimiters(printed, expected):
+    text, status, coverage = pdf.extract_pdf(protocol_pdf(['Prefix.', 'Read ' + printed]), 'https://example.test/')
+    assert status == 'partial' and coverage['candidate_links_total'] == 1
+    link = coverage['candidate_links'][0]
+    assert link['sourceUrl'] == link['href'] == expected
+    assert link['url'] == expected
+    assert link['page'] == 2 and text[link['text_start']:link['text_end']] == expected
+    assert coverage['page_spans'][1]['start'] <= link['text_start'] < link['text_end'] <= coverage['page_spans'][1]['end']
+
+
+def test_scanner_does_not_reassemble_broken_schemes_or_rewrite_annotation_uri():
+    body = protocol_pdf(['HTTp:/ /example.test/wrapped'], uri='https://example.test/literal)')
+    _, status, coverage = pdf.extract_pdf(body, 'https://example.test/')
+    assert status == 'partial' and coverage['candidate_links_total'] == 1
+    assert coverage['candidate_links'][0]['source_kind'] == 'pdf_uri_annotation_candidate'
+    assert coverage['candidate_links'][0]['sourceUrl'] == 'https://example.test/literal)'
+    assert coverage['policy_version'] == 'pdf-page-evidence-2'
+
+
+def test_scanner_retains_unicode_whitespace_boundaries_and_exact_occurrences():
+    text = '(HTTPS://example.test/one)\u00a0[hTtPs://example.test/two]. http\u017f://example.test/not-ascii'
+    links = list(pdf._page_links({}, text, 3, 100, 'https://example.test/', False))
+    assert len(links) == 2
+    assert [link['sourceUrl'] for link in links] == ['HTTPS://example.test/one', 'hTtPs://example.test/two']
+    for link in links:
+        assert text[link['text_start']-100:link['text_end']-100] == link['sourceUrl']
+
+
+def test_trimmed_case_insensitive_candidates_still_obey_retention_limit(monkeypatch):
+    monkeypatch.setattr(pdf, 'MAX_LINKS', 2)
+    body = protocol_pdf(['(HTTPS://example.test/one) [https://example.test/two] {hTtPs://example.test/three}'])
+    text, status, coverage = pdf.extract_pdf(body, 'https://example.test/')
+    assert status == 'partial'
+    assert coverage['candidate_links_total'] == 3 and coverage['candidate_links_omitted'] == 1
+    assert len(coverage['candidate_links']) == 2
+    assert [link['anchor_index'] for link in coverage['candidate_links']] == [1, 2]
+    for link in coverage['candidate_links']:
+        assert text[link['text_start']:link['text_end']] == link['sourceUrl']
+
+
+def test_delimiter_scan_preserves_inner_punctuation_with_long_trailing_suffix():
+    value = 'https://example.test/terms_(Fees;)' + ')' * 10000 + '].;'
+    assert pdf._printed_url(value) == 'https://example.test/terms_(Fees;)'
 
 
 def test_encrypted_and_invalid_pdf_remain_failed():
