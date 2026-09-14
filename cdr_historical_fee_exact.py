@@ -14,6 +14,8 @@ JSON_LIMIT = 96 * 1024**2
 
 
 def sha(body: bytes) -> str:
+    from cdr_historical_fee_plan_budget import account_exact
+    account_exact('checksum', len(body))
     return hashlib.sha256(body).hexdigest()
 
 
@@ -28,8 +30,9 @@ def _pairs(pairs):
 
 def decode(body: bytes, *, compressed=False, limit=JSON_LIMIT):
     if compressed:
+        from cdr_historical_fee_plan_budget import read_exact_work
         with gzip.GzipFile(fileobj=io.BytesIO(body)) as stream:
-            body = stream.read(limit + 1)
+            body = read_exact_work(stream, limit + 1)
     if len(body) > limit:
         raise ValueError('json_byte_bound_exceeded')
     return json.loads(body.decode('utf-8', errors='strict'), object_pairs_hook=_pairs,

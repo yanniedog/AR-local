@@ -77,14 +77,23 @@ def read_exact(stream, size, budget, kind=None):
     parts, remaining = [], size
     while remaining:
         budget.check()
-        body = stream.read(min(CHUNK, remaining))
+        body = counted_read(stream, min(CHUNK, remaining), budget, kind)
         if not body:
             raise ValueError('truncated_archive')
-        if kind:
-            budget.check(kind, len(body))
         parts.append(body)
         remaining -= len(body)
     return b''.join(parts)
+
+
+def counted_read(stream, size, budget, kind):
+    """Reviewed inline phases reserve before I/O; legacy accounting is unchanged."""
+    if callable(getattr(budget, 'read', None)):
+        return budget.read(stream, size, kind or 'verified_read')
+    budget.check()
+    body = stream.read(size)
+    if kind:
+        budget.check(kind, len(body))
+    return body
 
 
 def verify_frame(stream, identity, budget):
@@ -126,7 +135,7 @@ def verify_frame(stream, identity, budget):
     if descriptor & 4:
         take(4)
     budget.check()
-    if stream.tell() != identity['bytes'] or stream.read(1) or digest.hexdigest() != identity['sha256']:
+    if stream.tell() != identity['bytes'] or counted_read(stream, 1, budget, 'compressed') or digest.hexdigest() != identity['sha256']:
         raise ValueError('container_hash_size_or_frame_boundary_mismatch')
 
 
@@ -135,10 +144,7 @@ class CountedSource:
         self.stream, self.budget = stream, budget
 
     def read(self, size):
-        self.budget.check()
-        body = self.stream.read(min(size, CHUNK))
-        self.budget.check('compressed', len(body))
-        return body
+        return counted_read(self.stream, min(size, CHUNK), self.budget, 'compressed')
 
 
 def _pax(body):
@@ -191,8 +197,7 @@ def _tar(stream, files, selected, cache, budget, resume):
                 raise ValueError('invalid_tar_end_records')
             while True:
                 budget.check()
-                padding = stream.read(CHUNK)
-                budget.check('decoded', len(padding))
+                padding = counted_read(stream, CHUNK, budget, 'decoded')
                 if not padding:
                     break
                 if len(padding) % 512 or any(padding):
@@ -329,7 +334,7 @@ def verify_pending_seal(path):
         raise ValueError('cache_pending_seal_hardlink_identity_mismatch')
 
 
-def inspect_archive(path, identity, files, selected, cache, budget):
+def inspect_archive(path, identity, files, selected, cache, budget, *, allow_resume=True):
     """Cache only selected evidence; every resume revalidates the same archive."""
     import zstandard
     _validate_inputs(identity, files, selected, budget)
@@ -337,6 +342,8 @@ def inspect_archive(path, identity, files, selected, cache, budget):
     if cache == path or cache in path.parents or path.parent in cache.parents:
         raise ValueError('cache_must_be_separate_from_source')
     resume = cache.exists()
+    if resume and not allow_resume:
+        raise ValueError('reviewed_plan_cache_collision')
     binding = {'policy': POLICY, 'archive': identity, 'inventory_sha256': sha(encode(files)), 'selected_paths': selected}
     if resume:
         safe_path(cache, directory=True)
@@ -350,7 +357,10 @@ def inspect_archive(path, identity, files, selected, cache, budget):
         if {p.name for p in cache.iterdir()} != {'receipt.json', 'receipt.pending.json'} | {role + '.bin' for role in selected}:
             raise ValueError('cache_contains_unknown_files')
     else:
-        cache.mkdir()
+        if callable(getattr(budget, 'claim_directory', None)):
+            budget.claim_directory(cache)
+        else:
+            cache.mkdir()
     with stable_file(path) as stream:
         if os.fstat(stream.fileno()).st_size != identity['bytes']:
             raise ValueError('container_size_mismatch')

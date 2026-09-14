@@ -1,0 +1,828 @@
+{
+  "$defs": {
+    "codeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "maximum": 1048576,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "lf_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "sha256",
+        "lf_sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:ar-local:historical-fees:reviewed-plan-admission:v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "calculation_completeness": {
+      "const": "UNKNOWN"
+    },
+    "container": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "archive_membership_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "backup_receipt": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "evidence_kind": {
+          "const": "verified_observation_archive_member"
+        },
+        "generation_controls": {
+          "additionalProperties": false,
+          "properties": {
+            "control0": {
+              "additionalProperties": false,
+              "properties": {
+                "interpretation": {
+                  "const": "RETAINED_CONTROL_ONLY_NOT_COMPLETION_AUTHORITY"
+                },
+                "member": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "maximum": 536870912,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "cache_file": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "bytes",
+                    "sha256",
+                    "cache_file"
+                  ],
+                  "type": "object"
+                },
+                "value": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "member",
+                "value",
+                "interpretation"
+              ],
+              "type": "object"
+            },
+            "control1": {
+              "additionalProperties": false,
+              "properties": {
+                "interpretation": {
+                  "const": "RETAINED_CONTROL_ONLY_NOT_COMPLETION_AUTHORITY"
+                },
+                "member": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "maximum": 536870912,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "cache_file": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "bytes",
+                    "sha256",
+                    "cache_file"
+                  ],
+                  "type": "object"
+                },
+                "value": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "member",
+                "value",
+                "interpretation"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "control0",
+            "control1"
+          ],
+          "type": "object"
+        },
+        "source_file_references": {
+          "const": "UNVERIFIED_NOT_DEREFERENCED"
+        },
+        "source_manifest": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "source_member": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cache_file": {
+              "pattern": "^[a-z][a-z0-9_]{0,31}\\.bin$",
+              "type": "string"
+            },
+            "path": {
+              "const": "data/runs/2026-05-23/_exports/banks-2026-05-23.json"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256",
+            "cache_file"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "evidence_kind",
+        "archive",
+        "source_manifest",
+        "backup_receipt",
+        "source_member",
+        "generation_controls",
+        "archive_membership_sha256",
+        "source_file_references"
+      ],
+      "type": "object"
+    },
+    "contract": {
+      "const": "reviewed_original_anchor_fee_admission_v2"
+    },
+    "core_bytes_preserved": {
+      "const": true
+    },
+    "full_fee_applicability": {
+      "const": "UNKNOWN"
+    },
+    "generation": {
+      "additionalProperties": false,
+      "properties": {
+        "backup_completed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legal_effective_from": {
+          "const": null
+        },
+        "legal_effective_to": {
+          "const": null
+        },
+        "observation_date": {
+          "const": "2026-05-23"
+        },
+        "public_generation_time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_generation_time": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observation_date",
+        "source_generation_time",
+        "public_generation_time",
+        "backup_completed_at",
+        "legal_effective_from",
+        "legal_effective_to"
+      ],
+      "type": "object"
+    },
+    "inputs": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor_core": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "anchor_details": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "anchor_manifest": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "archive_container": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "receipt.json": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "source-manifest.json": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "source_cache": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "source-manifest.json",
+        "receipt.json",
+        "anchor_manifest",
+        "anchor_core",
+        "anchor_details",
+        "archive_container",
+        "source_cache"
+      ],
+      "type": "object"
+    },
+    "membership": {
+      "additionalProperties": false,
+      "properties": {
+        "fee_dispositions": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "products": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "products_canonical_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "rates": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "products",
+        "rates",
+        "fee_dispositions",
+        "products_canonical_sha256"
+      ],
+      "type": "object"
+    },
+    "observation_date": {
+      "const": "2026-05-23"
+    },
+    "output_files": {
+      "additionalProperties": false,
+      "properties": {
+        "bank-dispositions.json": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "bindings.jsonl": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "changes.jsonl": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "core.json.gz": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "details-candidate.json.gz": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "fees.jsonl": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "products.jsonl": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "rates.jsonl": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 536870912,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "core.json.gz",
+        "details-candidate.json.gz",
+        "products.jsonl",
+        "rates.jsonl",
+        "fees.jsonl",
+        "changes.jsonl",
+        "bindings.jsonl",
+        "bank-dispositions.json"
+      ],
+      "type": "object"
+    },
+    "parent": {
+      "const": {
+        "assets": {
+          "core": {
+            "archive_member": "data/runs/2026-05-23/_exports/app-payload/core-2026-05-23-f6997f97281a.json.gz",
+            "bytes": 222516,
+            "sha256": "f6997f97281a71e1d13c3fa8c3c4e39f39bcf0a0245194e5c9233cc3c05d7f0d"
+          },
+          "details": {
+            "archive_member": "data/runs/2026-05-23/_exports/app-payload/details-2026-05-23-89386863e21e.json.gz",
+            "bytes": 419920,
+            "sha256": "89386863e21ee055f89150fd36b565ab5ca59556953dc19d7995e43af65420d7"
+          },
+          "manifest": {
+            "archive_member": "data/runs/2026-05-23/_exports/app-payload/manifest.json",
+            "bytes": 1112,
+            "sha256": "08f0c39ac38553972b28b97f054bb8d24af28484cf61f9bb07b2e8dfb8ed80a3"
+          }
+        },
+        "kind": "original_public_anchor",
+        "observation_date": "2026-05-23"
+      }
+    },
+    "plan_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "policy_version": {
+      "const": "may23-reviewed-original-anchor-fees-v2"
+    },
+    "publication": {
+      "const": "NOT_ATTEMPTED"
+    },
+    "schema_version": {
+      "const": 2,
+      "type": "integer"
+    },
+    "source_code": {
+      "additionalProperties": false,
+      "properties": {
+        "app_payload_common.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "app_payload_details.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_clean_export.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_admission.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_archive.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_archive_admission.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_archive_candidate.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_embedded.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_exact.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_ledger.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_ledger_io.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_membership.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_plan.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_plan_budget.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_historical_fee_plan_candidate.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "cdr_savings_conditions.py": {
+          "$ref": "#/$defs/codeIdentity"
+        },
+        "contracts/historical-fees/reviewed-plan-admission-v2.schema.json": {
+          "$ref": "#/$defs/codeIdentity"
+        }
+      },
+      "required": [
+        "app_payload_common.py",
+        "app_payload_details.py",
+        "cdr_clean_export.py",
+        "cdr_historical_fee_admission.py",
+        "cdr_historical_fee_archive.py",
+        "cdr_historical_fee_archive_admission.py",
+        "cdr_historical_fee_archive_candidate.py",
+        "cdr_historical_fee_embedded.py",
+        "cdr_historical_fee_exact.py",
+        "cdr_historical_fee_ledger.py",
+        "cdr_historical_fee_ledger_io.py",
+        "cdr_historical_fee_membership.py",
+        "cdr_historical_fee_plan.py",
+        "cdr_historical_fee_plan_budget.py",
+        "cdr_historical_fee_plan_candidate.py",
+        "cdr_savings_conditions.py",
+        "contracts/historical-fees/reviewed-plan-admission-v2.schema.json"
+      ],
+      "type": "object"
+    },
+    "source_http_capture": {
+      "const": "NOT_SUPPLIED"
+    },
+    "untouched_optional_assets": {
+      "type": "object"
+    },
+    "work_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "container",
+    "inputs",
+    "generation",
+    "untouched_optional_assets",
+    "core_bytes_preserved",
+    "output_files",
+    "publication",
+    "full_fee_applicability",
+    "calculation_completeness",
+    "source_http_capture",
+    "schema_version",
+    "contract",
+    "policy_version",
+    "observation_date",
+    "work_id",
+    "plan_sha256",
+    "parent",
+    "source_code",
+    "membership"
+  ],
+  "type": "object"
+}
