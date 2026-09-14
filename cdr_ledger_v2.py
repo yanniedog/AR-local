@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from cdr_atomic import atomic_write_json, canonical_json_bytes
-from cdr_export_contract import contract_digest, hash_file, load_contract
+from cdr_export_contract import ReadBudget, contract_digest, hash_file, load_contract, read_json
 from cdr_file_lock import FileLock
 
 SCHEMA_VERSION = 2
@@ -113,14 +113,14 @@ def _generation_event_path(root: Path, observation_date: str, generation_id: str
 
 
 def _load_generation_event(
-    root: Path, observation_date: str, generation_id: str
+    root: Path, observation_date: str, generation_id: str, *, budget: ReadBudget | None = None
 ) -> dict[str, Any]:
     if not _GENERATION.fullmatch(generation_id):
         raise ValueError("invalid parent_generation_id")
     path = _generation_event_path(root, observation_date, generation_id)
     if not path.is_file():
         raise ValueError("revision parent generation does not exist on this date")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json(path, budget=budget)
     _validate_event(payload)
     if payload.get("generation_id") != generation_id:
         raise ValueError("revision parent event path does not match its generation")
@@ -130,7 +130,7 @@ def _load_generation_event(
 
 
 def _validate_parent_binding(
-    state_dir: Path, event: Mapping[str, Any]
+    state_dir: Path, event: Mapping[str, Any], *, budget: ReadBudget | None = None
 ) -> Optional[dict[str, Any]]:
     if event.get("event_type") != "revision_finalized":
         return None
@@ -147,10 +147,11 @@ def _validate_parent_binding(
                 ledger_root(state_dir),
                 str(event["observation_date"]),
                 parent_generation_id,
+                budget=budget,
             )
         return None
     parent = _load_generation_event(
-        ledger_root(state_dir), str(event["observation_date"]), parent_generation_id
+        ledger_root(state_dir), str(event["observation_date"]), parent_generation_id, budget=budget
     )
     if parent.get("event_digest") != event.get("parent_event_digest"):
         raise ValueError("revision parent event digest mismatch")
@@ -319,11 +320,13 @@ def find_contract_event_locked(
     return matches[0] if matches else None
 
 
-def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
+def verify_event(state_dir: Path, event: Mapping[str, Any], *, budget: ReadBudget | None = None) -> dict[str, Any]:
+    if budget is not None:
+        budget(entries=1)
     _validate_event(event)
     root = ledger_root(state_dir)
     event_path = root / "events" / str(event["observation_date"]) / f"{event['generation_id']}.json"
-    stored = json.loads(event_path.read_text(encoding="utf-8"))
+    stored = read_json(event_path, budget=budget)
     _validate_event(stored)
     if stored != event:
         raise ValueError("ledger event does not match stored event")
@@ -333,7 +336,7 @@ def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
         contract_path.relative_to(state_dir)
     except ValueError as error:
         raise ValueError("ledger event contract_path escapes state root") from error
-    contract = load_contract(contract_path)
+    contract = load_contract(contract_path, budget=budget)
     if contract["contract_digest"] != event["contract_digest"]:
         raise ValueError("ledger event contract binding mismatch")
     if contract.get("prior_ledger_head") != event.get("previous_event_digest"):
@@ -341,29 +344,31 @@ def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
     for field in ("generation_id", "observation_date", "observation_state"):
         if contract.get(field) != event.get(field):
             raise ValueError(f"ledger event {field} does not match contract")
-    _validate_parent_binding(state_dir, stored)
+    _validate_parent_binding(state_dir, stored, budget=budget)
     return stored
 
 
 def verify_event_artifacts(
-    state_dir: Path, event: Mapping[str, Any]
+    state_dir: Path, event: Mapping[str, Any], *, budget: ReadBudget | None = None
 ) -> dict[str, Any]:
     """Re-hash one event and every resolvable revision ancestor's artifacts."""
 
     state_dir = state_dir.expanduser().resolve()
-    current = verify_event(state_dir, event)
-    _verify_artifacts(state_dir, current)
+    current = verify_event(state_dir, event, budget=budget)
+    _verify_artifacts(state_dir, current, budget=budget)
     seen = {str(current["event_digest"])}
     while True:
-        parent = _validate_parent_binding(state_dir, current)
+        if budget is not None:
+            budget(entries=1)
+        parent = _validate_parent_binding(state_dir, current, budget=budget)
         if parent is None:
             break
         parent_digest = str(parent["event_digest"])
         if parent_digest in seen:
             raise ValueError("revision parent chain contains a loop")
         seen.add(parent_digest)
-        current = verify_event(state_dir, parent)
-        _verify_artifacts(state_dir, current)
+        current = verify_event(state_dir, parent, budget=budget)
+        _verify_artifacts(state_dir, current, budget=budget)
     return dict(event)
 
 
@@ -484,13 +489,13 @@ def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str
     }
 
 
-def _verify_artifacts(state_dir: Path, event: Mapping[str, Any]) -> None:
+def _verify_artifacts(state_dir: Path, event: Mapping[str, Any], *, budget: ReadBudget | None = None) -> None:
     contract_path = (state_dir / str(event["contract_path"])).resolve()
     try:
         contract_path.relative_to(state_dir)
     except ValueError as error:
         raise ValueError("ledger event contract_path escapes state root") from error
-    contract = load_contract(contract_path)
+    contract = load_contract(contract_path, budget=budget)
     data_root = state_dir.parent.resolve()
     source_root = (data_root / str(contract["source_path"])).resolve()
     try:
@@ -498,12 +503,14 @@ def _verify_artifacts(state_dir: Path, event: Mapping[str, Any]) -> None:
     except ValueError as error:
         raise ValueError("contract source_path escapes data root") from error
     for artifact in contract["artifacts"]:
+        if budget is not None:
+            budget(entries=1)
         path = source_root / str(artifact["path"])
         if not path.is_file():
             raise ValueError(f"missing artifact: {artifact['path']}")
         if path.stat().st_size != int(artifact["bytes"]):
             raise ValueError(f"artifact size changed: {artifact['path']}")
-        if hash_file(path) != artifact["sha256"]:
+        if hash_file(path, budget=budget) != artifact["sha256"]:
             raise ValueError(f"artifact hash changed: {artifact['path']}")
 
 
