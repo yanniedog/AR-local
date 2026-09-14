@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import stat
 import sys
+import time as monotonic_time
 import uuid
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
@@ -311,31 +314,22 @@ def run_one(repo: Path, root: Path, auth_home: Path, executable: Path) -> dict:
 
 
 def collect_one(store: EvidenceStore, repo: Path, root: Path) -> dict:
-    from cdr_terms.acquisitions_queue import AcquisitionQueue
-    from cdr_terms.graph import DocumentGraph
+    from cdr_terms.acquisition_batch import ADMISSION_SECONDS, has_work
     from cdr_terms.ingest import registry_context
-    due = AcquisitionQueue(store).next_due()
-    expired = store.db.execute(
-        "SELECT 1 FROM acquisition_events e WHERE sequence=(SELECT MAX(sequence) FROM acquisition_events "
-        "WHERE request_id=e.request_id) AND status='running' AND lease_expires_at<=? LIMIT 1",
-        (timestamp(utc_now().isoformat()),)).fetchone()
-    if due is None and expired is None and DocumentGraph(store).pending() is None:
+    if not has_work(store):
         return {'result': 'NO_WORK', 'network_called': False, 'codex_called': False}
     operation = root / 'acquisition-runs' / uuid.uuid4().hex
     if operation.resolve() != operation:
         raise ValueError('canonical private acquisition root required')
     operation.mkdir(parents=True, mode=0o700)
-    write_receipt(operation / 'input.json', {'evidence_root': str(root), 'registry_context': registry_context()})
+    write_receipt(operation / 'input.json', {'evidence_root': str(root), 'registry_context': registry_context(),
+                  'admission_deadline': monotonic_time.monotonic() + ADMISSION_SECONDS})
     command = [sys.executable, str(repo / 'pi_terms_acquire.py'), '--job-root', str(operation)]
     try:
         resources = supervise(command, operation / 'resources.json', Limits(runtime_seconds=120),
                               priority_guard=lambda: priority_guard(repo, root))
         require_receipt(resources)
-        result = json.loads(read_bounded(operation / 'acquisition.json', MAX_RECEIPT_BYTES))
-        if (result.get('schema_version') != 1 or result.get('codex_called') is not False
-                or result.get('input_sha256') != file_hash(operation / 'input.json', MAX_INPUT_BYTES)
-                or result.get('result') not in {'NO_WORK', 'QUEUED_ANALYSIS', 'INCOMPLETE'}):
-            raise ValueError('bound acquisition receipt required')
+        result = read_acquisition_batch(operation, store=store)
         return {**result, 'operation': str(operation)}
     except (OSError, ValueError, KeyError, RuntimeError):
         # The acquisition queue owns its short lease and retry reconciliation.
@@ -344,6 +338,52 @@ def collect_one(store: EvidenceStore, repo: Path, root: Path) -> dict:
                   'network_called': None, 'codex_called': False, 'publication': 'NOT_ATTEMPTED'}
         write_receipt(operation / 'controller-result.json', result)
         return {**result, 'operation': str(operation)}
+
+
+def read_acquisition_batch(operation: Path, *, store: EvidenceStore | None = None) -> dict:
+    from cdr_terms.acquisition_batch import MAX_BATCH_RECEIPT_BYTES, validate_batch_evidence, validate_batch_receipt
+    descriptor = json.loads(read_acquisition_file(operation, 'acquisition.json', MAX_RECEIPT_BYTES))
+    body = read_acquisition_file(operation, 'batch.json', MAX_BATCH_RECEIPT_BYTES)
+    result = json.loads(body)
+    if not isinstance(descriptor, dict) or not isinstance(result, dict):
+        raise ValueError('bound acquisition batch receipt required')
+    if (type(descriptor.get('schema_version')) is not int or type(result.get('schema_version')) is not int
+            or descriptor['schema_version'] != 2 or result['schema_version'] != 2
+            or descriptor.get('batch_file_sha256') != byte_digest(body)
+            or type(descriptor.get('batch_file_bytes')) is not int or descriptor['batch_file_bytes'] != len(body)
+            or result.get('codex_called') is not False
+            or result.get('input_sha256') != byte_digest(read_acquisition_file(operation, 'input.json', MAX_INPUT_BYTES))
+            or any(result.get(key) != descriptor.get(key) for key in ('input_sha256', 'result', 'network_called', 'codex_called'))
+            or result.get('result') not in {'NO_WORK', 'INCOMPLETE'}):
+        raise ValueError('bound acquisition batch receipt required')
+    validate_batch_receipt(result)
+    if store is not None:
+        validate_batch_evidence(store, result)
+    return result
+
+
+def read_acquisition_file(operation: Path, name: str, maximum: int) -> bytes:
+    """Fixed private artifact paths, bounded bytes and stable unlinked identity."""
+    private_directory(operation)
+    path = operation / name
+    if name not in {'batch.json', 'acquisition.json', 'input.json'} or path.resolve() != path:
+        raise ValueError('canonical acquisition artifact required')
+    before = path.lstat()
+    def identity(info):
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > maximum
+                or getattr(info, 'st_file_attributes', 0) & 0x400):
+            raise ValueError('regular unlinked acquisition artifact required')
+        return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
+    expected = identity(before)
+    with path.open('rb') as handle:
+        if identity(os.fstat(handle.fileno())) != expected:
+            raise ValueError('acquisition artifact changed before read')
+        body = handle.read(maximum + 1)
+        if identity(os.fstat(handle.fileno())) != expected:
+            raise ValueError('acquisition artifact changed during read')
+    if len(body) != before.st_size or identity(path.lstat()) != expected or path.resolve() != path:
+        raise ValueError('acquisition artifact changed after read')
+    return body
 
 
 def interpret_one(queue: TermsQueue, repo: Path, root: Path, auth_home: Path, executable: Path) -> dict:

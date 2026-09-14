@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import datetime, timedelta
 from dataclasses import replace
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .acquisition import FetchPolicy, acquire_document
 from .extraction import extract_version
@@ -51,16 +51,26 @@ class AcquisitionQueue:
                               "(event_id,request_id,status,observed_at,retry_after,lease_id,lease_expires_at,check_id,error_code) "
                               "VALUES (?,?,?,?,?,?,?,?,?)", (digest(values), *values))
 
-    def next_due(self, now: str | None = None) -> dict[str, Any] | None:
+    def next_due(self, now: str | None = None, *, fair: bool = False) -> dict[str, Any] | None:
+        ordering = "r.priority,r.created_at,r.request_id"
+        if fair:
+            # Only accepted attempts move a document's place; an orphan check,
+            # a new generation or a parser failure cannot reset this clock.
+            ordering = ("r.priority,COALESCE((SELECT MAX(done.observed_at) FROM acquisition_events done "
+                        "JOIN acquisition_requests prior ON prior.request_id=done.request_id "
+                        "WHERE prior.document_id=r.document_id AND done.status IN ('complete','retry_wait','blocked') "
+                        "AND done.check_id IS NOT NULL AND done.lease_id IS NOT NULL), "
+                        "(SELECT MIN(first.created_at) FROM acquisition_requests first WHERE first.document_id=r.document_id)), "
+                        "r.created_at,r.request_id")
         row = self.store.db.execute(
             "SELECT r.*,e.status,e.retry_after FROM acquisition_requests r JOIN acquisition_events e ON "
             "e.sequence=(SELECT MAX(sequence) FROM acquisition_events WHERE request_id=r.request_id) "
             "WHERE (e.status='queued' OR (e.status='retry_wait' AND e.retry_after<=?)) "
             "AND EXISTS (SELECT 1 FROM ingest_captures c WHERE c.ingest_id=r.ingest_id) "
-            "ORDER BY r.priority,r.created_at,r.request_id LIMIT 1", (timestamp(now or utc_now()),)).fetchone()
+            "ORDER BY " + ordering + " LIMIT 1", (timestamp(now or utc_now()),)).fetchone()
         return dict(row) if row else None
 
-    def claim(self, now: str | None = None, *, lease_seconds: int = 180) -> dict[str, Any] | None:
+    def claim(self, now: str | None = None, *, lease_seconds: int = 180, fair: bool = False) -> dict[str, Any] | None:
         if not 1 <= lease_seconds <= 900:
             raise ValueError("Acquisition lease must be between one second and 15 minutes")
         observed = timestamp(now or utc_now())
@@ -71,7 +81,7 @@ class AcquisitionQueue:
                 "AND e.status='running' AND e.lease_expires_at<=?", (observed,)).fetchall()
             for row in expired:
                 self._event(row["request_id"], "retry_wait", observed, retry_after=observed, error_code="acquisition_lease_expired")
-            request = self.next_due(observed)
+            request = self.next_due(observed, fair=fair)
             if request is None:
                 return None
             lease_id = secrets.token_hex(32)
@@ -80,7 +90,8 @@ class AcquisitionQueue:
             return {**request, "status": "running", "lease_id": lease_id, "lease_expires_at": expiry}
 
     def finish(self, request: Mapping[str, Any], check_id: str, *, now: str | None = None,
-               processing_error: str | None = None, terminal: bool = False) -> None:
+               processing_error: str | None = None, terminal: bool = False,
+               defer_processing: bool = False) -> None:
         observed = timestamp(now or utc_now())
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
@@ -102,10 +113,14 @@ class AcquisitionQueue:
             self._event(request["request_id"], status, observed, lease_id=request["lease_id"], check_id=check_id,
                         retry_after=_after(observed, min(3600, 300 * 2 ** (attempts - 1))) if status == "retry_wait" else None,
                         error_code=processing_error or check["error_code"])
+            if successful and defer_processing:
+                from .acquisition_processing import ProcessingQueue
+                ProcessingQueue(self.store).enqueue(request["request_id"], check_id, now=observed)
 
 
 def enqueue_interpretation(store: EvidenceStore, version_id: str, observation_ids: list[str], *,
-                           priority: int, registry_context: Mapping[str, Any]) -> str:
+                           priority: int, registry_context: Mapping[str, Any],
+                           completion_guard: Callable[[], None] | None = None) -> str:
     extraction = extract_version(store, version_id)
     row = store.db.execute("SELECT * FROM extractions WHERE extraction_id=?", (extraction,)).fetchone()
     if row["status"] == "failed" or not store.read_blob(row["text_sha256"]):
@@ -119,7 +134,8 @@ def enqueue_interpretation(store: EvidenceStore, version_id: str, observation_id
             raise ValueError("Ambiguous product source context requires review")
         products[observation[0]] = observation[1]
     context = {**registry_context, "product_keys": sorted(products), "source_product_sha256": products}
-    return TermsQueue(store).enqueue(extraction, context, priority=priority)
+    return TermsQueue(store).enqueue(extraction, context, priority=priority,
+                                     completion_guard=completion_guard)
 
 
 def process_next_acquisition(store: EvidenceStore, *, registry_context: Mapping[str, Any],

@@ -208,13 +208,75 @@ retry. Importing old bytes does not satisfy a current observation's pending
 check. These additive private schema tables preserve all existing evidence;
 there is no public schema or backup change.
 
-The scheduled resource-controlled collector runs one
-`python -m cdr_terms --store <private-directory> acquire-next` child at a time.
+The scheduled resource-controlled collector runs one `pi_terms_acquire.py` child
+at a time. The manual `acquire-next` command retains its single-item behavior.
 No due acquisition means no HTTP and no model call. Requests use recoverable
 leases, retain every failed check and retry at bounded future deadlines, with
 four attempts before a blocked state. A new natural ingest creates fresh check
 requests. The collector queues available extracted text for interpretation;
 unsupported PDF/OCR and other extraction failures remain explicit gaps.
+
+The scheduled child now captures sequential batches: at most 32 attempts and
+64 MiB of charged response bodies. A successful body is charged by its exact
+retained size; an unsuccessful attempt with unknown partial-transfer size is
+conservatively charged its entire reserved per-document allowance. The receipt's
+`actual_body_bytes` totals known successful bodies only; it does not describe
+unknown bytes discarded during failures. A DNS timeout stops the batch to avoid
+accumulating unresolved daemon resolver threads. There are no parallel fetches.
+
+The parent binds a monotonic admission deadline before child launch: 105 seconds
+leaves 15 seconds of the unchanged 120-second supervisor limit for receipts and
+cleanup. Each request timeout is clipped to the remaining admission time. Before
+each item and redirect, checked-in code rechecks the operating window, production
+priority, disk, host memory/swap and aggregate RSS; the existing outer supervisor
+continues sampling throughout. Exact raw-CDR/reviewed graph host grants constrain
+every redirect. HTTPS, pinned public DNS and conditional final-URL binding remain.
+
+Accepted capture and its deferred-processing identity commit together. A capture
+success proves neither extraction nor interpretation. At most one deferred
+extraction/graph item runs early in a child; its processing lease is committed
+before parsing. A lost lease appends future retry backoff, with at most four
+attempts before an explicit exhausted/unknown state. After context blob storage,
+the analysis queue checks the processing lease and exact original observation set
+inside the job transaction, both before writes and before commit. Loss of a single
+shared product scope also refuses admission; any orphan immutable context bytes
+remain evidence, not a successful job. The optional guard preserves existing
+unguarded callers. Graph admission is checked inside its expansion transaction.
+A poisoned parser cannot
+reset its attempts by restarting, and backed-off/exhausted work does not block
+other due items. PDF parsing retains the outer hard timeout: a pathological parser
+can still prevent a cycle receipt, so the admission reserve is not a universal
+parser completion guarantee. Every prior capture and attempt remains retained.
+
+Within existing priority classes, selection uses document-level accepted attempt
+or first-discovery time; a new generation does not reset a URL's place. Bounded
+maintenance appends an obsolete-current disposition only when every old product
+scope has an exact later completed observation and no valid graph scope remains.
+The disposition binds replacement observation/ingest/capture identities. Partial
+captures, tied observations and historical targets never supply that proof;
+ambiguous scopes remain explicit unresolved dispositions. Shared URLs retain all
+original product bindings. Today's acquisition never becomes historical evidence.
+
+Version-2 private batch receipts bind every item/check/version, processing result,
+stop reason, charged/known body counts and remaining queue counts with a canonical
+hash, plus the input identity. Full disposition proofs stay in the append-only
+private database; batch entries reference their canonical hashes. The batch file
+has a separate 64 KiB read/write bound. The unchanged 16 KiB transport receipt
+contains only its exact byte size, hash and input/result binding; both are checked
+before the controller continues. Readback rejects links/reparse paths, changed
+file identity, malformed content and out-of-bound bytes, then checks item and
+disposition identities against accepted leases and the private evidence database.
+Processing receipts include an exact immutable processing event and its stored
+outcome. Readback verifies the event's lease and accepted request/check, then binds
+analysis jobs to their extraction/version, hashed context and original product
+source bindings, or graph output to the exact durable expansion. Failed processing
+does not retain success fields in its returned outcome. Later source replacement
+does not rewrite a previously accepted event; it still gates future work normally.
+They remain separate from public product assets.
+The retained baseline has 1,565 URLs and 73 nominal admitted ticks per day. Larger
+caps and local fixture replay do not prove daily coverage: network latency,
+recursive documents, parser throughput, retries and runtime deferrals remain
+unmeasured. No timer, installed worker or legal-completeness claim changes here.
 
 The caller must apply the Pi operating window, operation locks, disk reserve
 and existing resource supervisor. Keep the acquisition child below 120 seconds
