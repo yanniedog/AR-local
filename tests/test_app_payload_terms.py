@@ -6,6 +6,7 @@ import json
 import pytest
 
 import app_payload_terms as terms
+from app_payload_terms import load_published_terms
 from app_payload_build import _package, _attach_terms
 from app_payload_revisions_state import bundle_sha256
 from cdr_terms.identity import canonical_json
@@ -107,3 +108,29 @@ def test_shard_overflow_refuses_without_dropping_terms(evidence, monkeypatch):
         terms.package_terms({payload['product_key']: payload}, run_date='2026-09-07',
                             write_asset=lambda *args: writes.append(args))
     assert not writes
+def test_unchanged_daily_capture_can_rebind_published_projection(evidence):
+    original, source = publish(evidence)
+    store, old_observation, key, _, _, body, record = evidence
+    assert load_published_terms(store.root, source_observation=source,
+        run_date='2026-09-07', product_keys=[key]) == {key: original}
+    new_generation = 'retained-september8'
+    new_observation = store.observe(provider=record['brand'], product_key=key,
+        record=json.loads(body), source_bytes=body, observed_at='2026-09-08T00:00:00Z',
+        ingest_id=new_generation)
+    receipt = {'generation_id': new_generation, 'source_run_date': '2026-09-08',
+        'export_contract_digest': 'b' * 64}
+    blob = store.put_blob(canonical_json(receipt).encode())
+    with store.db:
+        store.db.execute('INSERT INTO ingest_captures VALUES (?,?,?,?)',
+            (new_generation, blob, '2026-09-08T01:00:00Z', 1))
+    current = build_product_asset(store, key)
+    assert current == original, 'Unchanged evidence should retain its public identity'
+    publication = publish_product_asset(store, current, expected_previous_identity=original['identity_sha256'],
+        expected_observation_id=new_observation, published_at='2026-09-08T01:00:00Z')
+    assert publish_product_asset(store, current, expected_previous_identity=original['identity_sha256'],
+        expected_observation_id=new_observation, published_at='2026-09-08T02:00:00Z') == publication
+    assert store.db.execute('SELECT COUNT(*) FROM publications').fetchone()[0] == 2
+    assert new_observation != old_observation
+    assert load_published_terms(store.root, source_observation={
+        'generation_id': new_generation, 'contract_digest': 'b' * 64},
+        run_date='2026-09-08', product_keys=[key]) == {key: current}
