@@ -1,0 +1,20 @@
+{
+  "observation_date": "2026-05-13",
+  "source_export_sha256": "5da7f5ebc1ee11591a062b086757a737d4da92c9fbc95e44e0214e38823b73d6",
+  "public_core_sha256": "3f291b09725d3b3ca8235e2aeb8641d78ed9e058d95f63572b778058b5e1b390",
+  "fixture_sha256": "4c1815ad102fb40aec9a109b91cb1711bf6c41d4d5d5664a51d8832dcdc1ec30",
+  "fixture_bytes": 26553,
+  "note": "Verbatim retained product records and source/public rate rows. Pointers address the complete originals. Embedded details_json preserves captured CDR data, not full original HTTP bytes. Tests may mutate copies solely to probe rejection.",
+  "labels": [
+    "amp_variable",
+    "amp_fixed",
+    "bank_australia_holdout",
+    "bank_first_holdout",
+    "td_maturity",
+    "td_conflicting_period",
+    "savings_farm_range",
+    "normalized_bos_rate",
+    "normalized_tcu_rate",
+    "td_month_range"
+  ]
+}
