@@ -164,3 +164,40 @@ def test_late_details_failure_leaves_report_and_outputs_unchanged(tmp_path, monk
     assert list(output.iterdir()) == [sentinel]
     assert sentinel.read_bytes() == b'preserve current output'
     assert sorted(path.name for path in tmp_path.iterdir()) == ['audit', 'output']
+
+
+@pytest.mark.parametrize('failure_at', [1, 2, 3, 4])
+def test_link_admission_reports_incomplete_output_and_safe_retry(tmp_path, monkeypatch, failure_at):
+    import copy
+    source, output, instance = audit_source(tmp_path)
+    before = copy.deepcopy(instance)
+    source_bytes = {p.name: p.read_bytes() for p in source.iterdir()}
+    link, admitted = report.os.link, []
+
+    def fails_once(path, destination):
+        if len(admitted) + 1 == failure_at:
+            # A replaced earlier destination is never removed during failure handling.
+            if admitted:
+                admitted[0].unlink()
+                admitted[0].write_bytes(b'preserve replacement')
+            raise OSError('injected link failure')
+        link(path, destination)
+        admitted.append(destination)
+
+    monkeypatch.setattr(report.os, 'link', fails_once)
+    with pytest.raises(OSError, match='retry with a new output directory') as error:
+        report.attach_history(instance, source, output)
+    assert isinstance(error.value.__cause__, OSError)
+    assert f'{failure_at - 1} files linked' in str(error.value)
+    assert instance == before
+    assert {p.name: p.read_bytes() for p in source.iterdir()} == source_bytes
+    assert set(output.iterdir()) == set(admitted)
+    if admitted:
+        assert admitted[0].read_bytes() == b'preserve replacement'
+    preserved = {p.name: p.read_bytes() for p in output.iterdir()}
+    monkeypatch.setattr(report.os, 'link', link)
+    fresh = tmp_path / 'retry-output'
+    fresh.mkdir()
+    report.attach_history(instance, source, fresh)
+    assert 'historical_banks' in instance
+    assert {p.name: p.read_bytes() for p in output.iterdir()} == preserved

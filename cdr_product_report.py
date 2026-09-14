@@ -260,15 +260,28 @@ def attach_history(report: dict, source: Path, output: Path):
     with tempfile.TemporaryDirectory(prefix='.historical-report-', dir=output.parent) as temporary:
         stage = Path(temporary)
         row_counts = _prepare_history_exports(stage, source, summary, raw, exports, historical_banks, audited)
-        targets = sorted(stage.iterdir())
-        if any((output / path.name).exists() or (output / path.name).is_symlink() for path in targets):
-            raise ValueError('historical report output already exists')
-        for path in targets:
-            os.link(path, output / path.name)  # Same filesystem; never replace an existing output.
+        _admit_history_exports(stage, output)
     report['historical_banks'] = historical_banks
     report['export_row_counts'].update(row_counts)
     report['historical_coverage']['individual_dated_audit'] = audited
     report['historical_coverage']['status'] = 'selected_dated_assets_audited; source_accuracy_and_missing_dates_unresolved'
+
+
+def _admit_history_exports(stage, output):
+    """Retain interrupted output; recovery uses a new immutable report directory."""
+    targets = sorted(stage.iterdir())
+    if any((output / path.name).exists() or (output / path.name).is_symlink() for path in targets):
+        raise ValueError('historical report output already exists')
+    admitted = []
+    try:
+        for path in targets:
+            os.link(path, output / path.name)  # Same filesystem; never replace existing output.
+            admitted.append(path.name)
+    except OSError as error:
+        # Path-based rollback could delete a replacement created by another writer.
+        names = ', '.join(admitted) or 'none'
+        raise OSError(f'historical report admission incomplete: {len(admitted)} files linked ({names}); '
+                      'preserve this incomplete output and retry with a new output directory') from error
 
 
 def _prepare_history_exports(output, source, summary, raw, exports, historical_banks, audited):
