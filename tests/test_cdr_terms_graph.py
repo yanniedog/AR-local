@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -348,7 +349,29 @@ def test_image_only_html_seeds_graph_despite_unavailable_interpretation(retained
     assert store.db.execute("SELECT COUNT(*) FROM analysis_jobs").fetchone()[0] == 0
 
 
-def test_malformed_child_html_is_durable_and_does_not_starve_sibling_fetch(retained, monkeypatch):
+@pytest.mark.parametrize("parser_failure", [None, AssertionError, ValueError],
+                         ids=["native-markup", "assertion-fault", "value-fault"])
+def test_malformed_child_html_is_durable_and_does_not_starve_sibling_fetch(retained, monkeypatch, parser_failure):
+    # CPython 3.11.7 raises for this declaration; 3.11.16 treats it as a bogus
+    # comment. Exercise that native behavior, plus both explicit error boundaries
+    # independently of which parser patch release happens to run this test.
+    import cdr_terms.extraction as extraction
+    malformed = '<![broken]><p>Unreadable declaration</p>'
+    expected_status = "partial"
+    native = HTMLParser()
+    try:
+        native.feed(malformed)
+        native.close()
+    except (AssertionError, ValueError):
+        expected_status = "failed"
+    if parser_failure:
+        expected_status = "failed"
+        native_feed = extraction._HTMLText.feed
+        def fail_selected_document(parser, text):
+            if text == malformed:
+                raise parser_failure("isolated parser failure boundary")
+            return native_feed(parser, text)
+        monkeypatch.setattr(extraction._HTMLText, "feed", fail_selected_document)
     store, _, queue = retained
     root, _, _ = start(retained, '<a href="/one">A</a><a href="/two">B</a>')
     graph = DocumentGraph(store)
@@ -361,16 +384,32 @@ def test_malformed_child_html_is_durable_and_does_not_starve_sibling_fetch(retai
     calls = []
     def fetch(url, **kwargs):
         calls.append(url)
-        body = b'<![broken]><p>Unreadable declaration</p>' if len(calls) == 1 else b'<p>Boundary text</p>'
+        body = malformed.encode() if len(calls) == 1 else b'<p>Boundary text</p>'
         return {"status": "fetched", "http_status": 200, "body": body, "media_type": "text/html", "metadata": {"final_url": url}}
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", fetch)
     process_next_acquisition(store, registry_context={})
     assert len(calls) == 1 and graph.pending()
+    node = graph.pending()
+    captured = graph._check(node)
     result = process_next_acquisition(store, registry_context={})
     assert len(calls) == 2
-    assert result["graph_progress"]["extraction_status"] == "failed"
-    assert result["graph_progress"]["extraction_reason"] == "html_parse_failed"
+    assert result["graph_progress"]["node_id"] == node["node_id"]
+    assert result["graph_progress"]["extraction_status"] == expected_status
+    expected_reason = "html_parse_failed" if expected_status == "failed" else "html_layout_dynamic_content_and_incorporated_links_unreviewed"
+    assert result["graph_progress"]["extraction_reason"] == expected_reason
     assert result["graph_progress"]["legal_completeness"] == "unknown"
+    expansion = store.db.execute("SELECT * FROM document_graph_expansions WHERE node_id=?", (node["node_id"],)).fetchone()
+    assert expansion["check_id"] == captured["check_id"]
+    extracted = store.db.execute("SELECT * FROM extractions WHERE extraction_id=?", (expansion["extraction_id"],)).fetchone()
+    assert extracted["document_version_id"] == captured["document_version_id"]
+    assert extracted["status"] == expected_status
+    assert store.read_blob(extracted["text_sha256"]).decode().strip() == ("" if expected_status == "failed" else "Unreadable declaration")
+    original_sha = store.db.execute("SELECT content_sha256 FROM document_versions WHERE document_version_id=?", (captured["document_version_id"],)).fetchone()[0]
+    assert store.read_blob(original_sha) == malformed.encode()
+    assert graph.pending()["node_id"] != node["node_id"]
+    process_next_acquisition(store, registry_context={})
+    assert process_next_acquisition(store, registry_context={})["result"] == "NO_WORK"
+    assert len(calls) == 2 and graph.pending() is None
 
 
 def test_corrupt_retained_blob_has_durable_terminal_graph_disposition(retained):
