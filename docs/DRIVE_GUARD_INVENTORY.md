@@ -92,6 +92,12 @@ before and after chunks of at most 1 MiB. It is not a hard interruption of an
 individual blocked filesystem call. Sizes are checked before opening; bounded
 reads detect growth and file identity is checked before/after reading. Exceeding
 any bound refuses activation without widening limits or deleting evidence.
+The complete serialized final receipt is also checked against its 64 KiB bound
+before any permanent barrier is created. Both repeated spool-path lists, the
+operator reason, proof summary and every other field are included. The actual
+post-coordination timestamp uses fixed-width UTC microseconds, so replacing the
+prospective timestamp cannot enlarge a receipt that passed preflight. The global
+activation record separately checks its complete serialized bound before creation.
 
 The permanent intent record and final marker bind the proof path/hash, reviewed
 commit/receipt identity, verified byte/file counts and a digest of the exact

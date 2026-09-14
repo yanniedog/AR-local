@@ -371,11 +371,16 @@ def existing_hold(path: Path) -> dict | None:
             'existing_marker': value, 'coordination': 'PRESERVED_EXISTING_MARKER_NOT_REATTESTED'}
 
 
-def install_marker(path: Path, value: dict) -> None:
-    """Fully flushed bytes become visible atomically; never replace a marker."""
+def marker_bytes(value: dict) -> bytes:
     body = (json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False) + '\n').encode('utf-8')
     if len(body) > MAX_MARKER_BYTES:
         raise ValueError('hold receipt exceeds safe bound')
+    return body
+
+
+def install_marker(path: Path, value: dict) -> None:
+    """Fully flushed bytes become visible atomically; never replace a marker."""
+    body = marker_bytes(value)
     temporary = path.with_name('.' + path.name + '.tmp-' + uuid.uuid4().hex)
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -401,7 +406,23 @@ def pending_result(control: Path) -> dict:
             'explicit_operator_resume_required': True}
 
 
-def _coordinate_spools(paths: list[Path], reason: str, proof: dict) -> dict:
+def prospective_hold(paths: list[Path], reason: str, proof: dict) -> dict:
+    """Preflight every final receipt field before creating permanent barriers."""
+    control = SYSTEM_HOLD.parent / GLOBAL_LOCK_NAME
+    value = {'schema_version': 1, 'state': 'HELD',
+             'activated_at': datetime.now(timezone.utc).isoformat(timespec='microseconds'),
+             'reason': reason.strip(), 'explicit_operator_resume_required': True,
+             'coordinated_spools': [str(path) for path in paths],
+             'activation_lock_protocol': 'ar-drive-hold-activation-v2',
+             'installed_guard': proof,
+             'retained_activation_record': str(control),
+             'retained_spool_locks': [str(path / 'backup.lock') for path in paths],
+             'lock_reconciliation': 'MANUAL_ONLY_AFTER_EXPLICIT_OPERATOR_RESUME'}
+    marker_bytes(value)
+    return value
+
+
+def _coordinate_spools(paths: list[Path], reason: str, proof: dict, value: dict) -> dict:
     control = SYSTEM_HOLD.parent / GLOBAL_LOCK_NAME
     context = {'state': 'ACTIVATION_PENDING', 'reason': reason.strip(),
                'requested_spools': [str(path) for path in paths], 'installed_guard': proof}
@@ -411,15 +432,9 @@ def _coordinate_spools(paths: list[Path], reason: str, proof: dict) -> dict:
         previous = existing_hold(SYSTEM_HOLD)
         if previous is not None:
             return previous
-        value = {'schema_version': 1, 'state': 'HELD',
-                 'activated_at': datetime.now(timezone.utc).isoformat(),
-                 'reason': reason.strip(), 'explicit_operator_resume_required': True,
-                 'coordinated_spools': [str(path) for path in paths],
-                 'activation_lock_protocol': 'ar-drive-hold-activation-v2',
-                 'installed_guard': proof,
-                 'retained_activation_record': str(control),
-                 'retained_spool_locks': [str(path / 'backup.lock') for path in paths],
-                 'lock_reconciliation': 'MANUAL_ONLY_AFTER_EXPLICIT_OPERATOR_RESUME'}
+        # Actual coordination time replaces only a fixed-width timestamp. It
+        # cannot increase the complete serialized size checked before admission.
+        value['activated_at'] = datetime.now(timezone.utc).isoformat(timespec='microseconds')
         try:
             install_marker(SYSTEM_HOLD, value)
         except FileExistsError:
@@ -454,8 +469,9 @@ def activate_hold(spools: list[Path], reason: str) -> dict:
     else:
         return pending_result(control)  # No parsing, cleanup or re-attestation.
     proof = verify_guard_inventory(paths)  # Must precede the first durable barrier.
+    value = prospective_hold(paths, reason, proof)
     try:
-        return _coordinate_spools(paths, reason, proof)
+        return _coordinate_spools(paths, reason, proof, value)
     except (OSError, RuntimeError, ValueError) as error:
         # Once created, even interrupted/empty record bytes block new admission.
         # Existing spool owners are never recovered, waited on or signalled.

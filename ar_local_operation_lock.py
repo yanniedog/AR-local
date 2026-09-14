@@ -40,6 +40,13 @@ def _pid_is_alive(pid: int) -> bool:
     return process_alive(pid)
 
 
+def _canonical_boot_id(value: str) -> bool:
+    try:
+        return len(value) == 36 and str(uuid.UUID(value)) == value
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 def _lock_values(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
@@ -88,8 +95,12 @@ def _existing_lock_is_stale(path: Path) -> bool:
         return False
     if owner_pid <= 0:
         return False
-    boot_id = _current_boot_id()
     recorded_boot = values.get("boot_id", "")
+    if "boot_id" in values and not _canonical_boot_id(recorded_boot):
+        return False  # Truncation is not evidence that an owner belongs to a prior boot.
+    boot_id = _current_boot_id()
+    if boot_id and not _canonical_boot_id(boot_id):
+        return False
     if boot_id and recorded_boot and boot_id != recorded_boot:
         return True
     boot_epoch = _boot_epoch()

@@ -136,7 +136,11 @@ hold-role records, `recovery=manual`, nonregular entries and unreadable, malform
 or partial records. Unknown keys are refused before PID/boot/age recovery.
 Only `pid`, `role`, optional `boot_id` and optional `recovery=automatic` form the
 recognized ordinary schema. Well-formed ordinary PID/role locks retain stale-owner and
-prior-boot recovery; unknown age alone never authorizes removal.
+prior-boot recovery; unknown age alone never authorizes removal. A present
+`boot_id` must be a canonical lowercase hyphenated UUID. Empty, truncated or
+otherwise malformed identities fail closed before any boot, age or PID recovery
+decision. A malformed current boot identity also cannot authorize recovery.
+Legacy ordinary records without a boot field retain PID-based recovery.
 
 The old-worker compatibility fixture is bound to commit
 `4ee90f76b7ddf300e5f963cf20eb15b81af34886`, source file
