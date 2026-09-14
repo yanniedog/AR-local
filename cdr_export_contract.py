@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
@@ -17,6 +17,7 @@ from jsonschema.exceptions import ValidationError
 from cdr_atomic import atomic_write_json, canonical_json_bytes
 
 SCHEMA_VERSION = 2
+ReadBudget = Callable[..., None]
 NORMALIZATION_VERSION = "legacy-v1"
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _PROVIDER_STATES = {"complete", "empty", "partial", "failed", "not_attempted"}
@@ -45,8 +46,42 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def hash_file(path: Path) -> str:
+def _budgeted_chunks(path: Path, budget: ReadBudget):
+    """Cooperative checks bound work between reads, not an OS-blocked read."""
+    budget(entries=1)
+    expected_size = path.stat().st_size
+    remaining = expected_size
+    with path.open("rb") as stream:
+        while remaining:
+            amount = min(1024 * 1024, remaining)
+            budget(reserve_bytes=amount)
+            chunk = stream.read(amount)
+            budget(size=len(chunk))
+            if not chunk:
+                raise ValueError("artifact changed during bounded verification")
+            remaining -= len(chunk)
+            yield chunk
+        budget()
+        if path.stat().st_size != expected_size:
+            raise ValueError("artifact size changed during bounded verification")
+
+
+def read_json(path: Path, *, budget: ReadBudget | None = None) -> Any:
+    if budget is None:
+        return json.loads(path.read_text(encoding="utf-8"))
+    if path.stat().st_size > 32 * 1024 * 1024:
+        raise ValueError("verification JSON exceeds bounded read limit")
+    payload = json.loads(b"".join(_budgeted_chunks(path, budget)).decode("utf-8"))
+    budget()
+    return payload
+
+
+def hash_file(path: Path, *, budget: ReadBudget | None = None) -> str:
     digest = hashlib.sha256()
+    if budget is not None:
+        for chunk in _budgeted_chunks(path, budget):
+            digest.update(chunk)
+        return digest.hexdigest()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b""):
             digest.update(chunk)
@@ -80,9 +115,18 @@ def _finite_numbers(value: Any, path: str = "$") -> None:
             _finite_numbers(child, f"{path}[{index}]")
 
 
-def validate_contract(contract: Mapping[str, Any]) -> None:
+def validate_contract(contract: Mapping[str, Any], *, budget: ReadBudget | None = None) -> None:
     try:
-        _contract_validator().validate(dict(contract))
+        if budget is None:
+            validator = _contract_validator()
+        else:
+            schema_path = Path(__file__).resolve().parent / "contracts" / "export-contract-v2.schema.json"
+            schema = read_json(schema_path, budget=budget)
+            Draft202012Validator.check_schema(schema)
+            validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        validator.validate(dict(contract))
+        if budget is not None:
+            budget()
     except ValidationError as error:
         location = ".".join(str(part) for part in error.absolute_path) or "$"
         raise ValueError(f"export contract schema violation at {location}: {error.message}") from error
@@ -266,11 +310,13 @@ def write_contract(state_dir: Path, contract: Mapping[str, Any]) -> Path:
     return path
 
 
-def load_contract(path: Path) -> dict[str, Any]:
-    contract = json.loads(path.read_text(encoding="utf-8"))
-    validate_contract(contract)
+def load_contract(path: Path, *, budget: ReadBudget | None = None) -> dict[str, Any]:
+    contract = read_json(path, budget=budget)
+    validate_contract(contract, budget=budget)
     if source_generation_digest(contract) != contract.get("source_generation_digest"):
         raise ValueError("export contract source generation digest mismatch")
     if contract_digest(contract) != contract.get("contract_digest"):
         raise ValueError("export contract digest mismatch")
+    if budget is not None:
+        budget()
     return contract
