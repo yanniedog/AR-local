@@ -42,7 +42,7 @@ def test_real_excerpt_preserves_every_old_field_and_conflict(retained):
         key, index = change['product_key'], change['fee_index']
         old, new = retained['details']['products'][key]['fees'][index], candidate['products'][key]['fees'][index]
         for field, value in old.items():
-            if field == 'value' and change['rule_id'] == 'variable_zero_placeholder_v2':
+            if field == 'value' and change['rule_id'] == 'variable_zero_placeholder_v3':
                 assert field not in new
             else:
                 assert field in new and exact(value, new[field])
@@ -74,7 +74,7 @@ def test_real_variable_zero_discriminator_includes_method(retained, label):
     fee = decode(product['details_json'].encode())['fees'][fee_index]
     old = retained['details']['products'][product['product_key']]['fees'][fee_index]
     new, rule = builder.enrich(old, fee)
-    assert rule['rule_id'] == 'variable_zero_placeholder_v2'
+    assert rule['rule_id'] == 'variable_zero_placeholder_v3'
     assert rule['removed_fields'] == ['value'] and 'value' not in new
     assert exact(new['amount'], fee['amount']) and new['amountStatus'] == 'variable'
 
@@ -101,7 +101,7 @@ def test_normalized_variable_zero_uses_guarded_transform_and_keeps_source_spelli
     assert exact(before, retained)
     change = next((row for row in audit['changes'] if row['product_key'] == key and row['fee_index'] == index), None)
     assert change is not None
-    assert change['rule_id'] == 'variable_zero_placeholder_v2'
+    assert change['rule_id'] == 'variable_zero_placeholder_v3'
     assert change['removed_fields'] == ['value']
     new = candidate['products'][key]['fees'][index]
     assert 'value' not in new and new['amountStatus'] == 'variable'
@@ -167,16 +167,17 @@ def test_normalized_variable_rule_keeps_all_other_zero_guards(retained, guard):
     assert disposition['status'] == 'WITHHELD' and exact(new, before)
 
 
-def test_versioned_zero_rule_preserves_legacy_reconstruction_and_rejects_unknown(retained):
+@pytest.mark.parametrize('legacy_rule', ['variable_zero_placeholder_v1', 'variable_zero_placeholder_v2'])
+def test_versioned_zero_rule_preserves_legacy_reconstruction_and_rejects_unknown(retained, legacy_rule):
     candidate, audit = builder.transform(retained['source'], retained['core'], retained['details'])
     zero_changes = [row for row in audit['changes'] if row['removed_fields']]
-    assert zero_changes and {row['rule_id'] for row in zero_changes} == {'variable_zero_placeholder_v2'}
+    assert zero_changes and {row['rule_id'] for row in zero_changes} == {'variable_zero_placeholder_v3'}
     legacy = copy.deepcopy(audit['changes'])
     for row in legacy:
         if row['removed_fields']:
-            row['rule_id'] = 'variable_zero_placeholder_v1'
+            row['rule_id'] = legacy_rule
     # Structural restoration is backward compatible; it does not reclassify
-    # original evidence or claim that a v1 receipt used v2 source semantics.
+    # original evidence or claim that an earlier receipt used v3 source semantics.
     builder.verify_changes(retained['details'], candidate, legacy)
     next(row for row in legacy if row['removed_fields'])['rule_id'] = 'variable_zero_placeholder_v999'
     with pytest.raises(ValueError, match='unapproved_fee_field_deletion'):
@@ -350,6 +351,8 @@ def test_interrupted_candidate_has_no_seal_and_cannot_overwrite_on_retry(retaine
         builder.prepare(*(tmp_path / ('source-' + str(i)) for i in range(5)), output)
     assert output.exists() and not (output / 'receipt.json').exists()
     preserved = {path.name: path.read_bytes() for path in output.iterdir()}
+    changes = [decode(line) for line in preserved['changes.jsonl'].splitlines()]
+    assert {row['rule_id'] for row in changes if row['removed_fields']} == {'variable_zero_placeholder_v3'}
     with pytest.raises(ValueError, match='new_separate'):
         builder.prepare(*(tmp_path / ('source-' + str(i)) for i in range(5)), output)
     assert preserved == {path.name: path.read_bytes() for path in output.iterdir()}

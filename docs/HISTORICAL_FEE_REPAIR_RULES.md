@@ -5,7 +5,7 @@ embedded-export and May 22 archive admission schemas continue to bind the same
 exact source scopes. They do not grant broader date, archive, parent or
 publication authority when a field correction rule changes.
 
-New embedded-export corrections use `variable_zero_placeholder_v2` for the only
+New embedded-export corrections use `variable_zero_placeholder_v3` for the only
 permitted old-field deletion: the misleading legacy `value` of a variable-zero
 fee. Its variable discriminator is the existing, hash-pinned fee projection's
 `amountStatus`. That projection strips surrounding whitespace and normalizes
@@ -15,18 +15,29 @@ labels and retained structured values are never rewritten or normalized.
 All remaining conditions still apply together: `value` is the only conflicting
 old field; the projection supplies no replacement `value`; both source `amount`
 and old `value` are finite exact numeric zero, excluding booleans and unknowns;
-and no conflicting nonzero or unreadable lower bound occurs. Full product,
+and every present recognized lower bound is finite exact numeric zero. Full product,
 rate, fee-array, flattened-row and exact source membership precedes this rule.
 Display-field differences continue to withhold the whole product's fee array.
 
-Each new deletion records the explicit v2 `rule_id` in `changes.jsonl`, with its
+The lower-bound check recursively inspects dictionaries and lists for
+`minimumAmount`, `minimumValue`, `minAmount`, `lowerBound` and `lowerAmount`
+(case-insensitive keys). An absent bound is permitted. A present null, `"null"`,
+`"none"`, blank string, boolean, container, nonfinite value, unreadable value or
+any exact nonzero value withholds the entire conflicted fee unchanged. A zero
+bound elsewhere cannot override it. Unrelated unknown metadata is preserved and
+does not by itself block a correction. Both literal and normalized variable
+discriminators use this v3 guard; source spelling and numeric types are retained.
+
+Each new deletion records the explicit v3 `rule_id` in `changes.jsonl`, with its
 exact source spelling in the existing derived amount-status proof. The May 13
 receipt's rule totals and both adapters' source-hash bindings preserve that
-identity. Existing v1 receipts and sealed candidates remain unchanged. The
-structural change verifier accepts named v1 and v2 rules so retained v1 changes
-can still be reconstructed; it rejects unknown deletion rules. Structural
-restoration alone does not validate either version's original source proof or
-retroactively apply v2 semantics to v1 evidence. The independent May 19 raw
+identity. Existing v1/v2 receipts and sealed candidates remain unchanged. Those
+versions allowed some present unknown bounds; v3 narrows the destructive rule
+and does not relabel or replay their results. The structural change verifier
+accepts only named v1, v2 and v3 deletion rules so retained earlier changes can
+still be reconstructed; it rejects unknown future deletion rules. Structural
+restoration alone does not validate any version's original source proof or
+retroactively apply v3 semantics to earlier evidence. The independent May 19 raw
 response repair remains on its existing v1 rule and is unchanged.
 
 Membership indexing rejects present non-string textual identities with a
