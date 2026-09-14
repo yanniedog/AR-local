@@ -15,8 +15,9 @@ spool or `--force` cannot bypass the system marker. No automatic expiry exists.
 
 Terminal ingest requests still queue durably. A hold prevents dispatch and
 acceptance/acknowledgement; held work is not successful backup evidence. A
-worker that finishes after the hold appears retains candidate/resource records
-for explicit reconciliation rather than replacing the accepted receipt.
+worker that observes the hold at its final check retains candidate/resource
+records for reconciliation. A check alone cannot revoke an acceptance already
+in progress. Declaring the hold active requires coordinated activation below.
 
 ## Controlled runtime transition
 
@@ -25,8 +26,15 @@ for explicit reconciliation rather than replacing the accepted receipt.
 2. Let any in-flight backup reach a verified terminal state; preserve receipts
    and independent reclaim restoration. Do not kill an unknown upload or clear
    a lock to install a hold.
-3. Install the persistent root-owned marker and service-level refusal, then
-   disable the existing daily and queue write timers. Preserve original controls
+3. Disable the existing daily and queue write timers, preserving their original
+   controls. Activate the marker with `pi_drive_backup_hold_activate.py`, supplying
+   `--spool` for every inventoried dispatch spool and an explicit `--reason`.
+   The helper acquires each `backup.lock`, including the parent's complete
+   acceptance and acknowledgement critical section, before creating the marker.
+   It refuses an active lock without waiting or killing the owner. If blocked,
+   retain ownership and reconcile the in-flight operation before retrying.
+   A manually created marker alone is not proof of coordinated activation.
+   Install the service-level refusal. Preserve original controls
    and queue identities in the local hold receipt. Leave reclaim reconciliation
    and natural ingest enabled.
 4. Activate only the tested scoped component with current bindings. Direct
