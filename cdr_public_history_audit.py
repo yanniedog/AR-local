@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from cdr_product_report import GROUPS, identity, write_csv
 from cdr_report_io import decode_json
+from cdr_history_validation import ordered_dates, manifest_shape, core_shape, details_shape, export_bindings
 from cdr_terms.acquisition import FetchFailure, FetchPolicy, fetch_document
 
 ROOT = 'https://github.com/yanniedog/AR-local/releases/download/'
@@ -41,6 +42,17 @@ def decode(body: bytes) -> dict:
     return decode_json(body, compressed=True, max_plain=MAX_PLAIN)
 
 
+def read_cached(path: Path, maximum: int) -> bytes:
+    """Apply transport bounds to disk snapshots, including growth after stat."""
+    if path.stat().st_size > maximum:
+        raise ValueError('cached asset exceeds byte limit')
+    with path.open('rb') as handle:
+        body = handle.read(maximum + 1)
+    if len(body) > maximum:
+        raise ValueError('cached asset exceeds byte limit')
+    return body
+
+
 def audit_date(run_date: str, head: dict | None, root: Path,
                cached_cores: Path | None = None, include_details: bool = False) -> tuple[dict, list]:
     result = {'run_date': run_date, 'status': 'FAIL', 'checked_at': datetime.now(timezone.utc).isoformat()}
@@ -48,23 +60,25 @@ def audit_date(run_date: str, head: dict | None, root: Path,
     directory.mkdir()
     try:
         url = head['manifest_url'] if head else ROOT + 'app-payload-' + run_date + '/manifest.json'
-        manifest_bytes = ((cached_cores / run_date / 'manifest.json').read_bytes()
+        manifest_bytes = (read_cached(cached_cores / run_date / 'manifest.json', 1024**2)
                           if cached_cores else fetch(url, 1024**2))
         (directory / 'manifest.json').write_bytes(manifest_bytes)
         if head and sha(manifest_bytes) != head['manifest_sha256']:
             raise ValueError('selected manifest hash changed')
         manifest = json.loads(manifest_bytes)
+        manifest_shape(manifest, run_date, details=include_details)
         if manifest['run_date'] != run_date:
             raise ValueError('dated manifest mismatch')
         if head and manifest.get('payload_revision', {}).get('bundle_sha256') != head['bundle_sha256']:
             raise ValueError('selected bundle mismatch')
         asset = manifest['files']['core']
-        body = ((cached_cores / run_date / 'core.json.gz').read_bytes()
+        body = (read_cached(cached_cores / run_date / 'core.json.gz', MAX_COMPRESSED)
                 if cached_cores else fetch(asset['url'], MAX_COMPRESSED))
         (directory / 'core.json.gz').write_bytes(body)
         if len(body) != asset['bytes'] or sha(body) != asset['sha256']:
             raise ValueError('dated core hash or length mismatch')
         core = decode(body)
+        core_shape(core, run_date)
         if core['run_date'] != run_date or set(core['sections']) != {'Mortgage', 'Savings', 'TD'}:
             raise ValueError('dated core structure mismatch')
         rows, all_rates = [], defaultdict(list)
@@ -82,11 +96,14 @@ def audit_date(run_date: str, head: dict | None, root: Path,
                              'observation_status': 'published_observation; terms_not_verified'})
         if include_details:
             detail_asset = manifest['files']['details']
-            detail_bytes = fetch(detail_asset['url'], MAX_COMPRESSED)
+            cached_detail = cached_cores / run_date / 'details.json.gz' if cached_cores else None
+            detail_bytes = (read_cached(cached_detail, MAX_COMPRESSED) if cached_detail and cached_detail.is_file()
+                            else fetch(detail_asset['url'], MAX_COMPRESSED))
             (directory / 'details.json.gz').write_bytes(detail_bytes)
             if len(detail_bytes) != detail_asset['bytes'] or sha(detail_bytes) != detail_asset['sha256']:
                 raise ValueError('dated details hash or length mismatch')
             details = decode(detail_bytes)
+            details_shape(details, run_date, GROUPS)
             if details['run_date'] != run_date or not isinstance(details['products'], dict):
                 raise ValueError('dated details structure mismatch')
             for key in sorted(set(details['products']) - set(all_rates)):
@@ -115,7 +132,7 @@ def audit_date(run_date: str, head: dict | None, root: Path,
                       missing_taxonomy_rows=sum(r['missing_taxonomy_rows'] for r in rows),
                       zero_rate_rows=sum(r['zero_rate_rows'] for r in rows))
         return result, rows
-    except (OSError, ValueError, KeyError, FetchFailure) as error:
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError, FetchFailure) as error:
         # Exception classes preserve a useful disposition without signing URLs,
         # authentication headers or arbitrary remote error bodies in the report.
         result['reason'] = type(error).__name__
@@ -145,12 +162,10 @@ def main():
         cached = args.cached_cores.resolve()
         if cached == output or cached in output.parents or output in cached.parents:
             raise ValueError('audit output must be separate from cached evidence')
-        if (cached / 'dates-index.json').read_bytes() != raw:
+        if read_cached(cached / 'dates-index.json', 1024**2) != raw:
             raise ValueError('cached index differs from selected index')
     index = json.loads(raw)
-    dates = index['dates']
-    if dates != sorted(set(dates)) or any(not re.fullmatch(r'\d{4}-\d{2}-\d{2}', d) for d in dates):
-        raise ValueError('invalid ordered date index')
+    dates = ordered_dates(index)
     output.mkdir(parents=True)
     (output / 'dates-index.json').write_bytes(raw)
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -168,6 +183,7 @@ def main():
     write_csv(output / 'dates.csv', audits, columns)
     write_csv(output / 'bank-product-dates.csv', products)
     summary = {'schema_version': 1, 'index_sha256': sha(raw), 'dates_checked': len(audits),
+               'exports': export_bindings(output),
                'dates_passed': sum(r['status'] == 'PASS' for r in audits),
                'product_section_days': len(products), 'results': audits,
                'assets_checked_per_date': ['manifest', 'core', 'details'] if args.include_details else ['manifest', 'core'],
