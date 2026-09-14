@@ -36832,3 +36832,43 @@ for 04:00 Hobart beginning 2026-09-13, replacing the paused laptop/UAC heartbeat
 No producer deployment, revision activation, Google Drive authorization, Drive
 snapshot or restore success is claimed by this decision. Natural timer execution
 and physical recovery remain separate proof categories.
+
+## 2026-09-14 — D-028 product evidence repair and indefinite Drive write hold
+
+The operator approved implementing the current and historical product coverage
+audit, evidence-backed repairs, exhaustive official product document capture and
+comparable terms for Mortgage, Savings and Term Deposits, including linked
+accounts and packages affecting those products. Today's evidence must not be
+backdated, and original retained observations remain unchanged. Corrections use
+separate derived outputs and higher immutable publication revisions.
+
+The operator explicitly prohibited updating the accepted Google Drive fallback
+during this work and required all backup writes held until they explicitly
+approve resumption. This supersedes D-027's daily Drive-write authority. Do not
+upload, check/restore through a backend that acquires repository locks, resume
+backup timers, or acknowledge held requests as completed backups. Preserve
+reclaim reconciliation, resource controls and natural ingest.
+
+The prior owner provided a safe-idle acknowledgement and released Pi mutation
+ownership. The same daily audit automation was paused and retargeted to the
+current owner; no duplicate was created. The private operational handoff was
+also appended with this decision. Its accepted snapshot/receipt remains the
+fallback; none has been replaced by this task.
+
+Repository hold enforcement (#723) and coordinated activation (#724) are merged.
+Runtime activation remains BLOCKED_EXTERNAL: Tailscale SSH requires a fresh
+operator authentication check. No Pi shell command has succeeded in this task,
+so independent Pi backup timers and the installed all-dispatch hold are still
+UNVERIFIED. Do not infer an installed hold from this entry or passing tests.
+
+Resume with the current owner and fresh authentication. Inspect actual active
+workers, spools, receipts, leases, runtime bindings and schedule state. Disable
+write schedules and coordinate activation under every inventoried backup lock
+using the scoped tested helper described in `docs/DRIVE_WRITE_HOLD.md`. Do not
+kill an unknown upload, bypass the live owner, reinstall the entire historical
+backup component indiscriminately, or stop independent reclaim protection.
+Record the exact installed controls and refusal proof before claiming the hold
+active. Removing the hold or resuming any Drive write requires fresh explicit
+operator approval; elapsed time and completion of product repairs are not
+approval. Native app tests, controlled Pi deployment and a natural independent
+cycle remain separate outstanding acceptance gates.
