@@ -33,10 +33,8 @@ export function isMatrixCommitOnly(paths) {
   return sorted.every((p, i) => p === expected[i]);
 }
 
-/** Shown when protected main rejects workflow push (no ruleset bypass). */
-export const MATRIX_PUSH_BYPASS_HINT = `Protected main rejected the matrix push. One-time repo setup (Settings → Rules → Rulesets):
-1. Add or edit the main branch ruleset.
-2. Under Bypass list, add "GitHub Actions" (bypass mode: always).
-3. Optionally scope bypass to workflow file .github/workflows/pr-bot-spreadsheet.yml.
-Legacy branch protection alone cannot grant path-scoped push bypass; a ruleset bypass is required.
-See docs/PR_BOT_MATRIX.md → "Direct commit to main".`;
+/** Legacy export name retained; a rejected local push never justifies weakening protection. */
+export const MATRIX_PUSH_BYPASS_HINT = `Protected main rejected the matrix push. Preserve existing branch protection.
+Keep the generated reports locally, or submit the intended changes through a pull request.
+The automated matrix report uses read-only Actions summaries and downloadable artifacts.
+See docs/PR_BOT_MATRIX.md.`;
