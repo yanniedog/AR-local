@@ -97,6 +97,7 @@ def validate_instantiated_input(template, inputs, *, complete=True):
 
 def validate_scenario(template, contract, scenario, *, complete):
     lifecycle = contract['tdLifecycle']
+    bind_adapter = complete or template['evaluatorVersion'] == 'product-terms-engine-v8'
     # Retained v7 refusal deliberately injected a non-adapter opening balance.
     historical_fault = not complete and template['evaluatorVersion'] == 'product-terms-engine-v7'
     principal_decimal(scenario.get('openingBalance'), historical_fault_injection=historical_fault)
@@ -131,12 +132,12 @@ def validate_scenario(template, contract, scenario, *, complete):
             date.fromisoformat(value)
         expected = {'deposit_principal': scenario['openingBalance'], 'funded_date': lifecycle['fundedDate'],
                     'maturity_date': lifecycle['nominalMaturityDate']}.get(definition['binding'])
-        if complete and expected is not None and (Decimal(value) != Decimal(expected) if kind == 'decimal' else value != expected):
+        if bind_adapter and expected is not None and (Decimal(value) != Decimal(expected) if kind == 'decimal' else value != expected):
             raise ValueError('Executable scenario-owned fact binding mismatch')
-    if complete:
+    if bind_adapter:
         confirmation = scenario['tdConfirmation']
         if (not isinstance(confirmation, dict) or scenario['openingBalance'] != lifecycle['investmentAmount']
                 or confirmation.get('principal') != lifecycle['investmentAmount']
                 or confirmation.get('fundedDate') != lifecycle['fundedDate']
                 or confirmation.get('maturityDate') != lifecycle['nominalMaturityDate']):
-            raise ValueError('Executable complete scenario confirmation differs from contract')
+            raise ValueError('Executable scenario confirmation differs from contract')

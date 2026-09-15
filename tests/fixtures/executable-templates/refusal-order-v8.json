@@ -1,0 +1,652 @@
+{
+  "kind": "technical_actual_td_validation_order",
+  "sourceCommit": "0a0a42967fc62c9012dd85993ce9f4286eafb5c8",
+  "sources": [
+    {
+      "file": "mobile/src/lib/productTermsEngine/accountAuthority.ts",
+      "sha256": "3854f40519777f23b23e5244b14bb49d9b66b6678df69cfcba3744f944b2f84f"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/accountPort.ts",
+      "sha256": "de52caef2b3f2a5c91b4b69967cd689d98aebcbba9c81079a15575abb3a5ce92"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/calendar.ts",
+      "sha256": "603d30b36a6acf9e619c78125f42200f6f20471682c80edf3d2e6a74caa616f3"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/dateIndex.ts",
+      "sha256": "b60458e945396c1789d2456b25cd441ada87eb4df76d1783e1890c37f62d7026"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/decimal.ts",
+      "sha256": "9ca602b847b122ed0be9571d758e495734d9acb0dfb9f26c3af07d66ea91596f"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/eligibility.ts",
+      "sha256": "c3229bf90bcf52ed2feacbed35fbac17a7d4bba4b1c9a8dee3fc00ca8e443e52"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/evaluationBudget.ts",
+      "sha256": "12cee647f15fd96fde43e6ea2a1b8b40664462faea6511b8e5247c86f8372db0"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/feeLedger.ts",
+      "sha256": "e736ad4f57935285e0e86183393a3bc6de17bee053917ae64f57f13d8b8081c4"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/feePricing.ts",
+      "sha256": "c4ab0c70cb881a1fda4ff1bf081bfcd926269f653cdbc8aaf41cfe085e8dfc9e"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/feeSchedule.ts",
+      "sha256": "05c4664c56edd707ad7dcbeec3efaa562f9cf01bf6bfd8a461a2b37067ea45a5"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/feeTypes.ts",
+      "sha256": "8b7796afbe89beabbe1cc0c88d9d1a11013e2f1213291501bad41fae57c710c5"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/feeValidation.ts",
+      "sha256": "1e157bb1b83a7032a5f29d613be792f3cc0422ed58b49e31491adda65cfb16a9"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/index.ts",
+      "sha256": "b94d779a6bbdc39d6077b21589451a768adc27c34da2a5475d8ee461d738fb56"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/interestAccrual.ts",
+      "sha256": "ad1bf6ba6ee9f09b80bf8328929438664f7d9fdb71addee8c3d0ab178a840c0b"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/ledger.ts",
+      "sha256": "f055ac1a21ceba9f44e2d2d6058e93eebfd1532121dd63882803f65ccd539ecd"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/loanComponents.ts",
+      "sha256": "8cde7058b3784eaa3fe95d7cb8c50150522264e92995766c4a7f46766cbe4080"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/loanLedger.ts",
+      "sha256": "79cb53c617042813ceb225af1a27bbf882745a3e8854f73e61444471196270df"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/loanTypes.ts",
+      "sha256": "0856c42a07e0d81410ade80ebb90ccc203f463cb68b6890a0d3ec42db0d6f727"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/loanValidation.ts",
+      "sha256": "5a1ecf8bf8c4e794a2d77525a77ea1df90dec7fbabf5cbbecc7a6835d1054c6d"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolio.ts",
+      "sha256": "fa5faf9c3a7d6a57651d4cea39f5c82b2154881b800c2f4b3dc288a744b0b128"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioAccounting.ts",
+      "sha256": "131e6165123af705e01581065bbfbf40793ae6ee03c1afb9a5692b67fa459625"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioActivity.ts",
+      "sha256": "15f90b85850c3929e33244220f77897ee894b6dd8d0ffcb2ebf507574f952548"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioAuthority.ts",
+      "sha256": "4758ff9766c4f9680ced1ae2daac68b25afe557680a4d155c5a597bc76be2660"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioComparison.ts",
+      "sha256": "ef2c83614f0ae55ac5f0b267505105d2873c137b5e615e68909765cdfd72c203"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioFeeFunding.ts",
+      "sha256": "694d6bb579901f389a8f85fbed95d56504dba3164faf9acca27121a8170fd207"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioOffsets.ts",
+      "sha256": "6f279944b861bb0227320735c73fbd59d037a871ee4386abb6d7a0ad43dc9966"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioTypes.ts",
+      "sha256": "6c946dfe52fe69a7fa48427cec4206c015f48442b00cb9c1bdb25c843cada951"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/portfolioValidation.ts",
+      "sha256": "6f6e84ca5533eae15d2b2affc472e4762fb9d517e39491d844b5bee73a3210a3"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/runtimeConformance.ts",
+      "sha256": "6e133e72a2cdef15fa4f2c49d5b38bf4f04995eb4b969e8e7acd57805ceaafa8"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/runtimeSavingsConformance.ts",
+      "sha256": "6dbd5ed765db9b3cbd9bdd4b254eea3b4f98d7d8ee998506e98a1ee080faa049"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsAccrual.ts",
+      "sha256": "8678b94e902ae66b7ed8ca2765fdeabf0d7a2664e9a68faaed3545403bb31c19"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsActivity.ts",
+      "sha256": "cd7460f72c4879c446728ae0d25ebb26136b311a71afe841a96a2b3686e81a4a"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsActivityTypes.ts",
+      "sha256": "8c00025300f4873cb89f80a7aace2173576ba88dbcdad4af9eabfc25990dce95"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsActivityValidation.ts",
+      "sha256": "cfe6c7f3bac175441cffc258f0d28f500eac6abdf22dadca485008ad03d2b93e"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsAllocation.ts",
+      "sha256": "b98319f75556ed44d341ab728f341c05c9eb2058dee912d7790b56a5e09e59d3"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsTypes.ts",
+      "sha256": "78d939621f305d3b02187e24031288c29e6cf4c48de0135de3bdd6a8ca8bbbfe"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/savingsValidation.ts",
+      "sha256": "f7cadb789734c3985860052b80315429b1786bd8da427fcbe703d78005fc3c22"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/tdLedger.ts",
+      "sha256": "05ee0df687cf4c943a5c4d84f1ef8d926f3fa806346798ce157f5403bdc24bcc"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/tdSchedule.ts",
+      "sha256": "dd2106978219f9fa4e4a2a09743ffbb0f40d0039bc79a8225692301c2184a9e8"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/tdTypes.ts",
+      "sha256": "f2f29ca81dedc04572268833135317cca0075cce60074c0ec0982663c378de54"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/tdValidation.ts",
+      "sha256": "fa8f375b3108b1891b4905d0922fc6eec499d8d1fe194caee8280bf93eae71cd"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/testSupport.ts",
+      "sha256": "f7ed74f5c2b747dc2359ad34abd94bd4b94e4cb6fe2ef03d00fb1c311a884be9"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/types.ts",
+      "sha256": "a157474cf84a4276af821758da55209460ee659ff43e94982311d89601ad6026"
+    },
+    {
+      "file": "mobile/src/lib/productTermsEngine/validation.ts",
+      "sha256": "1f8e31adf9899b67b6867075b2e77822d3ac0c5e1d06bca7d430908ca4c741d3"
+    }
+  ],
+  "typescriptVersion": "5.9.3",
+  "scope": "Actual validateTd on unchanged retained technical contract; evidence-reference callback is a no-op. This is validation-order evidence, not full financial or product acceptance.",
+  "cases": [
+    {
+      "name": "baseline",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_confirmed_rate_mismatch"
+    },
+    {
+      "name": "principal",
+      "localInput": {
+        "principal": "999.00",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "999.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "999.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "fundedDate",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2024-01-30",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2024-01-30",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "maturityDate",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2024-02-28",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2024-02-28",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "source",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "unconfirmed",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "noWithholding",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": false
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": false
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "timestamp_space",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2026-01-01 00:00:00+00:00",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2026-01-01 00:00:00+00:00",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "timestamp_offset_seconds",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2026-01-01T00:00:00+00:00:01",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2026-01-01T00:00:00+00:00:01",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "timestamp_offset_minutes",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00+12:99",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00+12:99",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {
+          "protocol_amount": {
+            "type": "decimal",
+            "value": "1000",
+            "unit": "AUD"
+          },
+          "protocol_funded": {
+            "type": "date",
+            "value": "2028-01-31"
+          },
+          "protocol_maturity": {
+            "type": "date",
+            "value": "2028-02-29"
+          }
+        },
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_user_confirmation_missing"
+    },
+    {
+      "name": "scenario_facts_not_reached",
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "scenario": {
+        "tdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.03",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        },
+        "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "productId": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "startDate": "2028-01-31",
+        "endDateExclusive": "2028-03-01",
+        "openingBalance": "1000.00",
+        "initialOffset": "0",
+        "facts": {},
+        "events": [],
+        "assumptions": []
+      },
+      "error": "td_confirmed_rate_mismatch"
+    }
+  ]
+}
