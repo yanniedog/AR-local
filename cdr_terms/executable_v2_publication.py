@@ -4,6 +4,7 @@ import json
 from .executable_sources import source_checked
 from .executable_v2_contract import validate_asset
 from .executable_v2_reviews import current_approval
+from .executable_v2_sources import selected_assets
 from .identity import canonical_json, digest, require_sha, timestamp
 from .observation_checks import current_observation
 
@@ -17,6 +18,14 @@ def build_asset(store, product_key, *, core_asset_sha256, details_asset_sha256, 
         'ORDER BY s.scope_id LIMIT 33',(product_key,observation['observation_id'])).fetchall()
     if len(rows)>32:
         raise ValueError('Eligibility current product scope bound exceeded')
+    if not rows:
+        raise ValueError('Eligibility removal requires retained current source binding')
+    for row in rows:
+        source_subject=json.loads(row['subject_json'])
+        source=source_subject['source']
+        if (source['runDate'],source['coreAssetSha256'],source['detailsAssetSha256']) != (run_date,core_asset_sha256,details_asset_sha256):
+            raise ValueError('Eligibility publication adopted source differs')
+        selected_assets(store,source_subject)
     items=[]
     for row in rows:
         subject=json.loads(row['subject_json'])

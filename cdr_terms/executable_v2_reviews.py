@@ -35,7 +35,7 @@ def review_subject(store, subject_id, *, decision, reviewer, reviewer_kind, revi
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
         row = store.db.execute('SELECT * FROM executable_subjects_v2 WHERE subject_id=?',(subject_id,)).fetchone()
-        if row is None or row['interpreter'] == reviewer:
+        if row is None or row['interpreter'].strip() == reviewer.strip():
             raise ValueError('Eligibility review requires separate reviewer')
         subject = json.loads(row['subject_json'])
         previous = store.db.execute('SELECT * FROM executable_reviews_v2 WHERE subject_id=? ORDER BY sequence DESC LIMIT 1',(subject_id,)).fetchone()
