@@ -1,0 +1,89 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "subjectId",
+    "capability",
+    "adapterVersion",
+    "evaluatorVersion",
+    "sourceSnapshotSha256",
+    "benchmarkResultSha256",
+    "previousReviewId",
+    "checks",
+    "passed"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "subjectId": {
+      "$ref": "#/$defs/sha"
+    },
+    "capability": {
+      "const": "eligibility_only"
+    },
+    "adapterVersion": {
+      "const": "scoped-eligibility-v1"
+    },
+    "evaluatorVersion": {
+      "const": "product-terms-engine-v8"
+    },
+    "sourceSnapshotSha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "benchmarkResultSha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "previousReviewId": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_alignment",
+        "scope_coverage",
+        "input_bindings",
+        "rule_semantics",
+        "variant_binding"
+      ],
+      "properties": {
+        "source_alignment": {
+          "const": true
+        },
+        "scope_coverage": {
+          "const": true
+        },
+        "input_bindings": {
+          "const": true
+        },
+        "rule_semantics": {
+          "const": true
+        },
+        "variant_binding": {
+          "const": true
+        }
+      }
+    },
+    "passed": {
+      "const": true
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:executable-positive-review:v2:draft",
+  "$comment": "Private independently authored evidence; accepted only through controller identity/CAS/source/benchmark checks.",
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

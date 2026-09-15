@@ -1,0 +1,151 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "productKey",
+    "sourceObservationId",
+    "sourceGenerationId",
+    "runDate",
+    "coreAssetSha256",
+    "detailsAssetSha256",
+    "approvalPolicy",
+    "subjects",
+    "identitySha256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "productKey": {
+      "$ref": "#/$defs/key"
+    },
+    "sourceObservationId": {
+      "$ref": "#/$defs/sha"
+    },
+    "sourceGenerationId": {
+      "$ref": "#/$defs/key"
+    },
+    "runDate": {
+      "$ref": "#/$defs/date"
+    },
+    "coreAssetSha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "detailsAssetSha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "approvalPolicy": {
+      "const": "as_of_adopted_edition"
+    },
+    "subjects": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "approval"
+        ],
+        "properties": {
+          "subject": {
+            "$ref": "executable-subject-v2.schema.json"
+          },
+          "approval": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "subjectId",
+              "capability",
+              "reviewId",
+              "reviewEvidenceSha256",
+              "benchmarkResultSha256",
+              "sourceSnapshotSha256",
+              "reviewedAt",
+              "checks"
+            ],
+            "properties": {
+              "subjectId": {
+                "$ref": "#/$defs/sha"
+              },
+              "capability": {
+                "const": "eligibility_only"
+              },
+              "reviewId": {
+                "$ref": "#/$defs/sha"
+              },
+              "reviewEvidenceSha256": {
+                "$ref": "#/$defs/sha"
+              },
+              "benchmarkResultSha256": {
+                "$ref": "#/$defs/sha"
+              },
+              "sourceSnapshotSha256": {
+                "$ref": "#/$defs/sha"
+              },
+              "reviewedAt": {
+                "type": "string",
+                "format": "date-time",
+                "maxLength": 40
+              },
+              "checks": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source_alignment",
+                  "scope_coverage",
+                  "input_bindings",
+                  "rule_semantics",
+                  "variant_binding"
+                ],
+                "properties": {
+                  "source_alignment": {
+                    "const": "verified"
+                  },
+                  "scope_coverage": {
+                    "const": "verified"
+                  },
+                  "input_bindings": {
+                    "const": "verified"
+                  },
+                  "rule_semantics": {
+                    "const": "verified"
+                  },
+                  "variant_binding": {
+                    "const": "verified"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "identitySha256": {
+      "$ref": "#/$defs/sha"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:executable-asset:v2:draft",
+  "$comment": "DRAFT ONLY. Empty subjects is an explicit current-edition removal; approval never implies monetary coverage.",
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "format": "date",
+      "maxLength": 10
+    }
+  }
+}

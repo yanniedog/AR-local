@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Mapping
+from app_payload_optional_assets import iter_payload_assets
 
 KIB = 1024
 MIB = 1024 * KIB
@@ -67,7 +68,7 @@ def validate_payload_network_budget(
         raise ValueError("payload manifest must declare core and details files")
 
     sizes: dict[str, int] = {}
-    for key, entry in files.items():
+    for key, entry in iter_payload_assets(manifest):
         size = _declared_bytes(str(key), entry)
         cap = _asset_cap(str(key))
         if size > cap:

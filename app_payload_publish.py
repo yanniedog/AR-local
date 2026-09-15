@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from pi_payload_freshness import fresh_document_url
+from app_payload_optional_assets import iter_payload_assets, executable_asset_url
 
 from app_payload_common import (
     DATED_TAG_PREFIX,
@@ -370,7 +371,9 @@ def publish_payload(
         raise RuntimeError("immutable revision archives must use the revision coordinator")
     if revision_mode_enabled() and not manifest.get("payload_revision"):
         raise RuntimeError("revision mode refuses an unversioned alias publish")
-    names = [entry["name"] for entry in manifest["files"].values()]
+    if 'executable_v2' in manifest:
+        executable_asset_url(manifest, manifest['executable_v2']['index'], repo=repo)
+    names = [entry["name"] for _, entry in iter_payload_assets(manifest)]
     # Upload the data assets first and the manifest LAST, so the rolling manifest is
     # never left pointing at a missing/half-replaced asset if an upload fails.
     data_assets = [payload_dir / n for n in names]

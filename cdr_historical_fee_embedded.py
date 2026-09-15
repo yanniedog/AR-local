@@ -30,6 +30,12 @@ PROJECTION_SOURCES = {
     'app_payload_details.py': '6963791b2d12805d74b963124a264c4bb33075dc78a4f283f01c0a27c1650126',
     'app_payload_common.py': 'cce4a7b19b4f86c7b52cde122b8a86d68c47b29dc1eb939fc7673a8225cd942d',
 }
+# Additive reviewed code identity: display metadata changes no fee helper.
+# Preserve the earlier pin for retained receipt interpretation.
+CURRENT_PROJECTION_SOURCES = {
+    **PROJECTION_SOURCES,
+    'app_payload_details.py': '533ddce96c8e4bbdcaa1b011343e5643f8ea40636ba72ef79f36d82d29bc3510',
+}
 DIRECT_FIELDS = frozenset(('amount', 'currency', 'additionalValue', 'balanceRate', 'transactionRate',
                           'accruedRate', 'accrualFrequency', 'feeCap', 'feeCapPeriod', 'feeMethodUType',
                           'fixedAmount', 'variable', 'rateBased', 'discounts'))
@@ -38,9 +44,13 @@ SOURCE_FIELDS = DIRECT_FIELDS | {'feeType', 'name', 'additionalInfo'}
 
 
 def verify_projection():
+    observed = {}
     for name, expected in PROJECTION_SOURCES.items():
-        if sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n')) != expected:
+        actual = sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n'))
+        if actual not in {expected, CURRENT_PROJECTION_SOURCES[name]}:
             raise ValueError('fee_projection_changed_requires_review')
+        observed[name] = actual
+    return observed
 
 
 def number(value):
@@ -241,7 +251,7 @@ def prepare(source, recovery, anchor, parent, parent_review, output):
     if not output.parent.is_dir() or shutil.disk_usage(output.parent).free < 3 * 1024**3:
         raise ValueError('candidate_requires_existing_parent_and_3gib_free_space')
     started = time.monotonic()
-    verify_projection()
+    projection_sources = verify_projection()
     loaded = load_inputs(*paths)
     candidate, audit = transform(loaded['source'], loaded['anchor_core'], loaded['details'], deadline=started + 600)
     candidate_json = encode(candidate)
@@ -263,7 +273,7 @@ def prepare(source, recovery, anchor, parent, parent_review, output):
                  'created_at': datetime.now(timezone.utc).isoformat(), 'policy_version': POLICY,
                  'container': loaded['container'], 'inputs': loaded['inputs'].records,
                  'parent_kind': 'UNPUBLISHED_TAXONOMY_CANDIDATE', 'parent_lineage': loaded['parent_lineage'],
-                 'projection_source_sha256_lf': PROJECTION_SOURCES,
+                 'projection_source_sha256_lf': projection_sources,
                  'adapter_source_sha256_lf': {name: sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n'))
                      for name in ('cdr_historical_fee_exact.py', 'cdr_historical_fee_admission.py',
                                   'cdr_historical_fee_membership.py', 'cdr_historical_fee_embedded.py')},

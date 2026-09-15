@@ -24,6 +24,7 @@ from app_payload_revisions_state import (
     validate_index, validate_manifest,
 )
 from ar_local_operation_lock import production_lock
+from app_payload_optional_assets import iter_payload_assets
 
 
 @dataclass(frozen=True)
@@ -114,7 +115,7 @@ def _preserve_alias(
         "schema_version": 1, "source_manifest_sha256": digest(raw),
         "source_tag": alias, "source_manifest_file": "source-manifest.json",
     }))
-    paths = [destination / entry["name"] for entry in original["files"].values()]
+    paths = [destination / entry["name"] for _, entry in iter_payload_assets(original)]
     paths.extend([destination / "source-manifest.json", destination / "preservation.json",
                   destination / "manifest.json"])
     store.archive(tag, paths)
@@ -140,7 +141,7 @@ def _prepare_archive(
         archived = decode_document(existing.read_bytes())
         if archived.get("payload_revision") != identity or bundle_sha256(archived) != reservation["bundle_sha256"]:
             raise RevisionError("reserved archive identity differs from staged bytes")
-    for entry in manifest["files"].values():
+    for _, entry in iter_payload_assets(manifest):
         write_once(destination / entry["name"], (payload_dir / entry["name"]).read_bytes())
     write_once(existing, canonical(archived))
     return archived
@@ -216,7 +217,7 @@ def _publish_locked(
             "candidate_manifest_sha256": digest((payload_dir / "manifest.json").read_bytes()),
             "bundle_sha256": reservation["bundle_sha256"],
         }))
-    paths = [destination / entry["name"] for entry in archived["files"].values()]
+    paths = [destination / entry["name"] for _, entry in iter_payload_assets(archived)]
     paths.extend([destination / "revision-delta.json", destination / "publication-provenance.json",
                   destination / "manifest.json"])
     store.archive(archived["tag"], paths)
