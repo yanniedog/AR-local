@@ -1,0 +1,747 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:monetary-wire3-draft:savings-policy",
+  "$comment": "DRAFT ONLY. No freeze, bank approval or runtime adoption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "currency",
+    "maxHorizonDays",
+    "calculationMode",
+    "initialUnpostedAccrual",
+    "openingClearedFunds",
+    "postingInventory",
+    "externalMovements",
+    "withholding",
+    "bonus",
+    "intro",
+    "offset",
+    "linkedAccounts",
+    "fees",
+    "intervals",
+    "eligibility",
+    "inputDefinitions"
+  ],
+  "properties": {
+    "kind": {
+      "const": "aud_savings_base_period_v1"
+    },
+    "currency": {
+      "const": "AUD"
+    },
+    "maxHorizonDays": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 366
+    },
+    "calculationMode": {
+      "const": "historical_holding_period"
+    },
+    "initialUnpostedAccrual": {
+      "const": "zero_user_confirmed"
+    },
+    "openingClearedFunds": {
+      "const": "confirm_all_cleared_when_any_interval_uses_cleared_only"
+    },
+    "postingInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "toExclusive",
+        "coverage",
+        "boundary",
+        "calendarAdjustment",
+        "rule",
+        "dueDates",
+        "evidenceIds"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "toExclusive": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "coverage": {
+          "const": "all_source_due_dates"
+        },
+        "boundary": {
+          "const": "from_inclusive_to_exclusive"
+        },
+        "calendarAdjustment": {
+          "const": "none_source_declared"
+        },
+        "rule": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "evidenceIds"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "calendar_month_end"
+                },
+                "evidenceIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "sourceFrom",
+                "sourceToExclusive",
+                "sourceDueDates",
+                "completenessEvidenceIds"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "explicit_dated_source_schedule"
+                },
+                "sourceFrom": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                },
+                "sourceToExclusive": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                },
+                "sourceDueDates": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 366,
+                  "items": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                  },
+                  "uniqueItems": true
+                },
+                "completenessEvidenceIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            }
+          ]
+        },
+        "dueDates": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 366,
+          "items": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+          },
+          "uniqueItems": true
+        },
+        "evidenceIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "externalMovements": {
+      "const": "none_user_confirmed"
+    },
+    "withholding": {
+      "const": "none_user_confirmed_before_tax"
+    },
+    "bonus": {
+      "const": "none_source_declared"
+    },
+    "intro": {
+      "const": "none_source_declared"
+    },
+    "offset": {
+      "const": "none_source_declared"
+    },
+    "linkedAccounts": {
+      "const": "none_source_declared"
+    },
+    "fees": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage",
+        "deferredObligations",
+        "inventory",
+        "evidenceIds"
+      ],
+      "properties": {
+        "coverage": {
+          "const": "reviewed_complete_no_fees"
+        },
+        "deferredObligations": {
+          "const": "none_source_declared"
+        },
+        "inventory": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "categoryId",
+              "state",
+              "evidenceIds"
+            ],
+            "properties": {
+              "categoryId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "state": {
+                "const": "none_applicable"
+              },
+              "evidenceIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        },
+        "evidenceIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "intervals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "from",
+          "toExclusive",
+          "authorityId",
+          "kind",
+          "rateMeaning",
+          "allocation",
+          "tiers",
+          "interest",
+          "fieldEvidenceIds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+          },
+          "toExclusive": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+          },
+          "authorityId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "kind": {
+            "const": "base"
+          },
+          "rateMeaning": {
+            "const": "additive"
+          },
+          "allocation": {
+            "enum": [
+              "marginal",
+              "whole_balance"
+            ]
+          },
+          "tiers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "upperInclusive",
+                "annualRate",
+                "evidenceIds"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "upperInclusive": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,2})?$"
+                    },
+                    {
+                      "const": null
+                    }
+                  ]
+                },
+                "annualRate": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,12})?$"
+                },
+                "evidenceIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            }
+          },
+          "interest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dayCount",
+              "balanceBasis",
+              "eventOrder",
+              "dailyRateRounding",
+              "dailyAccrualScale",
+              "accrualRounding",
+              "dailyAccrualRounding",
+              "postingRounding",
+              "postingResidue",
+              "postingDestination",
+              "postingCalendar",
+              "postingDates",
+              "depositSettlementBasis",
+              "evidenceIds"
+            ],
+            "properties": {
+              "dayCount": {
+                "const": "actual_365_fixed"
+              },
+              "balanceBasis": {
+                "const": "closing_balance_before_posted_interest"
+              },
+              "eventOrder": {
+                "const": "ordered_events_then_accrual_then_posting"
+              },
+              "dailyRateRounding": {
+                "oneOf": [
+                  {
+                    "const": null
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "scale",
+                      "unit",
+                      "mode"
+                    ],
+                    "properties": {
+                      "scale": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 12
+                      },
+                      "unit": {
+                        "enum": [
+                          "fraction",
+                          "percent"
+                        ]
+                      },
+                      "mode": {
+                        "enum": [
+                          "half_up",
+                          "half_even",
+                          "toward_zero"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "dailyAccrualScale": {
+                "oneOf": [
+                  {
+                    "const": null
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 12
+                  }
+                ]
+              },
+              "accrualRounding": {
+                "enum": [
+                  "half_up",
+                  "half_even",
+                  "toward_zero"
+                ]
+              },
+              "dailyAccrualRounding": {
+                "enum": [
+                  "aggregate",
+                  "per_tier"
+                ]
+              },
+              "postingRounding": {
+                "enum": [
+                  "half_up",
+                  "half_even",
+                  "toward_zero"
+                ]
+              },
+              "postingResidue": {
+                "const": "discard_with_rounding_adjustment"
+              },
+              "postingDestination": {
+                "const": "same_account"
+              },
+              "postingCalendar": {
+                "const": "explicit_calendar_dates_no_business_adjustment"
+              },
+              "postingDates": {
+                "type": "array",
+                "minItems": 0,
+                "maxItems": 366,
+                "items": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                },
+                "uniqueItems": true
+              },
+              "depositSettlementBasis": {
+                "enum": [
+                  "cleared_only",
+                  "cleared_and_uncleared"
+                ]
+              },
+              "evidenceIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              }
+            }
+          },
+          "fieldEvidenceIds": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rates",
+              "allocation",
+              "dayCount",
+              "balanceBasis",
+              "eventOrder",
+              "dailyRateRounding",
+              "dailyAccrualRounding",
+              "postingRounding",
+              "postingResidue",
+              "postingDates",
+              "postingDestination",
+              "depositSettlementBasis",
+              "noBonusIntro",
+              "noOffsetLinkedAccounts",
+              "feeCoverage",
+              "noDeferredObligations"
+            ],
+            "properties": {
+              "rates": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "allocation": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "dayCount": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "balanceBasis": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "eventOrder": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "dailyRateRounding": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "dailyAccrualRounding": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "postingRounding": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "postingResidue": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "postingDates": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "postingDestination": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "depositSettlementBasis": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "noBonusIntro": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "noOffsetLinkedAccounts": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "feeCoverage": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              },
+              "noDeferredObligations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "eligibility": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/rule"
+    },
+    "inputDefinitions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "label",
+          "type",
+          "unit",
+          "binding",
+          "evidenceIds"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "type": {
+            "enum": [
+              "decimal",
+              "date",
+              "text",
+              "boolean"
+            ]
+          },
+          "unit": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "const": null
+              }
+            ]
+          },
+          "binding": {
+            "enum": [
+              "customer_fact",
+              "opening_balance",
+              "calculation_start_date",
+              "calculation_end_date"
+            ]
+          },
+          "evidenceIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "head": "a9cae733944ce7e7c7e9bd0215feb4dd228bdc80",
+  "representation": "actual executed worktree UTF8 bytes; each code file equals committed blob after CRLF/LF normalization",
+  "parserPath": "C:\\code\\AR-local-monetary-wire3-0915\\cdr_terms\\executable_imports.py",
+  "parserSha256": "4684cc18e3cdab163c42d3a50432733dbccaebfb3837d29327644f5a1edd917b",
+  "roles": [
+    {
+      "role": "adapter",
+      "files": 95,
+      "bytes": 1302105,
+      "manifestSha256": "deb5417964d3f42e87bdddc678965f20e6634f0975890a0e036d081516b603b3"
+    },
+    {
+      "role": "evaluator",
+      "files": 32,
+      "bytes": 792702,
+      "manifestSha256": "3fad8f42fa1c3f5f5f46f71f1bcd68af328f6a419c6639adaab461e0c979973f"
+    }
+  ],
+  "unionFiles": 95
+}

@@ -1,0 +1,94 @@
+{
+  "frozenAtUtc": "2026-09-15T06:51:07.402849+00:00",
+  "purpose": "Shared engineering contract freeze for monetary wire3 initial savings implementation; not source/bank approval or runtime acceptance",
+  "capability": "savings_calculation",
+  "kind": "aud_savings_base_period_v1",
+  "baseProducerCommit": "fd004d7bdabb1caebebdd7bb305640dcdf194292",
+  "reviewedRemoval": "internal append-only removed tombstone with NULL payload; omit product and empty route; public subjects remains minItems1",
+  "preservation": "v1/v2 and frozen001 unchanged; retain these exact UTF8 bytes using path-specific Git attributes",
+  "sqlPreflight": {
+    "receipt": "sql002-isolated-preflight-receipt.json",
+    "sha256": "d9301bae428cfe9258580e4b11358fc2798aa5562f7c46568355722bc5afc624",
+    "rootVerified": "All retained input/output hashes and two complete JUnit cases; harness read; isolated syntax/old-row/view compatibility only"
+  },
+  "files": [
+    {
+      "contractPath": "schemas/asset.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\asset.schema.json",
+      "bytes": 4335,
+      "sha256": "ea0ea8abf97dcc79402fa513950d2ef3fb0b3927baecf96216f26d31bf807e54"
+    },
+    {
+      "contractPath": "schemas/authority-graph.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\authority-graph.schema.json",
+      "bytes": 15665,
+      "sha256": "1b74f532b02d91cddbada2866d3c8a296905b7224874494036d9ec867be50f87"
+    },
+    {
+      "contractPath": "schemas/common.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\common.schema.json",
+      "bytes": 11937,
+      "sha256": "b010652573c3c1a03c846d85dd89aacea983762b2538b5c9b27a9bf05efac3e2"
+    },
+    {
+      "contractPath": "schemas/index.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\index.schema.json",
+      "bytes": 1235,
+      "sha256": "d6cd44173318d6d13fc8ee36ad1b7f8e9882d1f8e7fe9d84378b947fc84f43c6"
+    },
+    {
+      "contractPath": "schemas/namespace.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\namespace.schema.json",
+      "bytes": 7298,
+      "sha256": "58b42a39863c6fce917d00a372f9ee4fae0bd8d8c840a569a2b789523d07a27d"
+    },
+    {
+      "contractPath": "schemas/savings-policy.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\savings-policy.schema.json",
+      "bytes": 21866,
+      "sha256": "f3c506bed4e2ff8dbb8e7dfef5b256b35c9841e1ab70280e87fb4c201f4e54a1"
+    },
+    {
+      "contractPath": "schemas/shard.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\shard.schema.json",
+      "bytes": 1194,
+      "sha256": "36560d9409c42b2ccb02d93a54afcf240ec95ef33214cb3c6ad49f5277557b92"
+    },
+    {
+      "contractPath": "schemas/subject.schema.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\subject.schema.json",
+      "bytes": 1999,
+      "sha256": "4bcf6a854e519897be8db20366968d9454d1fadaa34fee1e5268c7e11069de7e"
+    },
+    {
+      "contractPath": "controls/README.md",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\README.md",
+      "bytes": 9734,
+      "sha256": "aa4b94f159e428f94b69a18a156b37c2fed6c0feecf21a5a7ce1e21e6c2f26ce"
+    },
+    {
+      "contractPath": "controls/positive-technical-example.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\positive-technical-example.json",
+      "bytes": 18490,
+      "sha256": "d02b9a11a5a7a181a17c896264187fc49318c43fbf308efe7c09b33ad7e8ea92"
+    },
+    {
+      "contractPath": "controls/negative-inventory.json",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-draft\\negative-inventory.json",
+      "bytes": 4693,
+      "sha256": "8f1199fd7527ee531a59ad2a5681f7938630baa145af808dace6ae4f6cd82dba"
+    },
+    {
+      "contractPath": "storage/002_monetary_wire3.sql",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-storage-draft\\002_monetary_wire3.sql",
+      "bytes": 20560,
+      "sha256": "42c6935dfb97f2eb4e91be9dd9878b9340d74c642e804aee8bbbb80e41e477a4"
+    },
+    {
+      "contractPath": "storage/REVIEW-NOTES.md",
+      "sourcePath": "C:\\code\\AR-local-product-evidence-0914\\runs\\product-audit-20260914\\monetary-wire3-storage-draft\\REVIEW-NOTES.md",
+      "bytes": 6419,
+      "sha256": "59fa0517fc9fe20cf63d36869ed5471004948502d77812d1d5965a54982bbf0d"
+    }
+  ]
+}

@@ -1,0 +1,496 @@
+{
+  "purpose": "SCHEMA ENGINEERING ONLY. Placeholder routing/source identities; not retained admissible bank evidence, approval or actual adapter output.",
+  "subject": {
+    "schemaVersion": 3,
+    "capability": "savings_calculation",
+    "kind": "aud_savings_base_period_v1",
+    "adapterVersion": "aud-savings-base-v1",
+    "evaluatorVersion": "product-terms-engine-v8",
+    "id": "9c5072fd55f4bddd2f2c016021e62e65c08a92bfb0c6f84d351515b3d94d2f60",
+    "scopeId": "42af973be87deae747a2ef29911804adacb233b2ef5ff86e82ba7c00e66cdefa",
+    "scope": {
+      "productKey": "technical-savings-only",
+      "family": "Savings",
+      "cohortKey": "technical-cohort",
+      "tierKey": "all_source_declared",
+      "packageKey": "none_source_declared",
+      "from": "2026-01-01",
+      "toExclusive": "2026-01-11",
+      "coverage": "whole_calculation_horizon"
+    },
+    "routing": {
+      "productKey": "technical-savings-only",
+      "sourceGenerationId": "technical-generation",
+      "exportContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "runDate": "2026-01-12",
+      "coreAssetSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "detailsAssetSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "productRecordSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "authorityGraph": {
+      "schemaVersion": 1,
+      "identitySha256": "52900e75d596bb54b917332c289876bef036734695bcddfb1a1afa673ddec911",
+      "members": [
+        {
+          "sha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "bytes": 101,
+          "decodedBytes": 101,
+          "encoding": "identity",
+          "kind": "source_document"
+        }
+      ],
+      "authorities": [
+        {
+          "id": "504a94094daf7d50b004d47e9f32363f9228a39e3bbd2e65df9e86e4f7bb37b2",
+          "scope": {
+            "productKey": "technical-savings-only",
+            "family": "Savings",
+            "cohortKey": "technical-cohort",
+            "tierKey": "all_source_declared",
+            "packageKey": "none_source_declared",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "coverage": "whole_calculation_horizon"
+          },
+          "from": "2026-01-01",
+          "toExclusive": "2026-01-11",
+          "evidenceIds": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ],
+          "fieldCoverage": [
+            {
+              "field": "rates",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "allocation",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "dayCount",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "balanceBasis",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "eventOrder",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "dailyRateRounding",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "dailyAccrualRounding",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "postingRounding",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [
+                "2026-01-10"
+              ],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "postingResidue",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [
+                "2026-01-10"
+              ],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "postingDates",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [
+                "2026-01-10"
+              ],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "postingDestination",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [
+                "2026-01-10"
+              ],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "depositSettlementBasis",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "noBonusIntro",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "noOffsetLinkedAccounts",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "feeCoverage",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "noDeferredObligations",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            },
+            {
+              "field": "eligibility",
+              "from": "2026-01-01",
+              "toExclusive": "2026-01-11",
+              "postingEventDates": [],
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            }
+          ],
+          "kind": "dated_official_clause",
+          "documentVersionIds": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "documentSha256s": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ],
+          "datedRateAndPolicyClauseIds": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ],
+          "observedRateRows": false
+        }
+      ],
+      "supersessions": [],
+      "completedPeriod": {
+        "asOf": "2026-01-12T00:00:00Z",
+        "completedThroughExclusive": "2026-01-11",
+        "timezone": "Australia/Sydney",
+        "basis": "reviewed_data_completeness",
+        "sourceSnapshotSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ]
+      }
+    },
+    "policy": {
+      "kind": "aud_savings_base_period_v1",
+      "currency": "AUD",
+      "maxHorizonDays": 366,
+      "calculationMode": "historical_holding_period",
+      "initialUnpostedAccrual": "zero_user_confirmed",
+      "openingClearedFunds": "confirm_all_cleared_when_any_interval_uses_cleared_only",
+      "postingInventory": {
+        "from": "2026-01-01",
+        "toExclusive": "2026-01-11",
+        "coverage": "all_source_due_dates",
+        "boundary": "from_inclusive_to_exclusive",
+        "calendarAdjustment": "none_source_declared",
+        "rule": {
+          "kind": "explicit_dated_source_schedule",
+          "sourceFrom": "2026-01-01",
+          "sourceToExclusive": "2026-01-11",
+          "sourceDueDates": [
+            "2026-01-10"
+          ],
+          "completenessEvidenceIds": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ]
+        },
+        "dueDates": [
+          "2026-01-10"
+        ],
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ]
+      },
+      "externalMovements": "none_user_confirmed",
+      "withholding": "none_user_confirmed_before_tax",
+      "bonus": "none_source_declared",
+      "intro": "none_source_declared",
+      "offset": "none_source_declared",
+      "linkedAccounts": "none_source_declared",
+      "fees": {
+        "coverage": "reviewed_complete_no_fees",
+        "deferredObligations": "none_source_declared",
+        "inventory": [
+          {
+            "categoryId": "all_fees",
+            "state": "none_applicable",
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          }
+        ],
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ]
+      },
+      "intervals": [
+        {
+          "id": "period-1",
+          "from": "2026-01-01",
+          "toExclusive": "2026-01-11",
+          "authorityId": "504a94094daf7d50b004d47e9f32363f9228a39e3bbd2e65df9e86e4f7bb37b2",
+          "kind": "base",
+          "rateMeaning": "additive",
+          "allocation": "marginal",
+          "tiers": [
+            {
+              "id": "tier-1",
+              "upperInclusive": null,
+              "annualRate": "0.0365",
+              "evidenceIds": [
+                "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+              ]
+            }
+          ],
+          "interest": {
+            "dayCount": "actual_365_fixed",
+            "balanceBasis": "closing_balance_before_posted_interest",
+            "eventOrder": "ordered_events_then_accrual_then_posting",
+            "dailyRateRounding": null,
+            "dailyAccrualScale": null,
+            "accrualRounding": "half_up",
+            "dailyAccrualRounding": "aggregate",
+            "postingRounding": "half_up",
+            "postingResidue": "discard_with_rounding_adjustment",
+            "postingDestination": "same_account",
+            "postingCalendar": "explicit_calendar_dates_no_business_adjustment",
+            "postingDates": [
+              "2026-01-10"
+            ],
+            "depositSettlementBasis": "cleared_only",
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          "fieldEvidenceIds": {
+            "rates": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "allocation": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "dayCount": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "balanceBasis": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "eventOrder": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "dailyRateRounding": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "dailyAccrualRounding": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "postingRounding": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "postingResidue": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "postingDates": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "postingDestination": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "depositSettlementBasis": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "noBonusIntro": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "noOffsetLinkedAccounts": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "feeCoverage": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ],
+            "noDeferredObligations": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          }
+        }
+      ],
+      "eligibility": {
+        "id": "nonnegative-balance",
+        "op": "compare",
+        "field": "balance",
+        "comparison": "gte",
+        "expected": {
+          "type": "decimal",
+          "value": "0",
+          "unit": "AUD"
+        },
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ]
+      },
+      "inputDefinitions": [
+        {
+          "key": "balance",
+          "label": "Opening balance",
+          "type": "decimal",
+          "unit": "AUD",
+          "binding": "opening_balance",
+          "evidenceIds": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ]
+        },
+        {
+          "key": "start",
+          "label": "Period start",
+          "type": "date",
+          "unit": null,
+          "binding": "calculation_start_date",
+          "evidenceIds": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ]
+        },
+        {
+          "key": "end",
+          "label": "Period end",
+          "type": "date",
+          "unit": null,
+          "binding": "calculation_end_date",
+          "evidenceIds": [
+            "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+          ]
+        }
+      ]
+    },
+    "documentVersionIds": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "termRevisionIds": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "evidence": [
+      {
+        "id": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+        "clauseId": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+        "documentVersionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "documentSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+        "sourceUrl": "https://example.invalid/technical-only",
+        "locator": "Engineering schema example",
+        "quote": "Technical example only: base rate 0.0365, actual/365, explicit dates and rounding. Not a bank source.",
+        "quoteSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      }
+    ]
+  },
+  "privateInputExample": {
+    "accountId": "local-technical-1",
+    "startDate": "2026-01-01",
+    "endDateExclusive": "2026-01-11",
+    "openingBalance": "1000",
+    "confirmedAnnualRates": [
+      "0.0365"
+    ],
+    "confirmedAt": "2026-01-12T01:00:00Z",
+    "openingAccrualZero": true,
+    "openingFundsCleared": true,
+    "noMovements": true,
+    "noWithholding": true
+  },
+  "independentExpected": {
+    "interest": "1.00",
+    "closingPostedBalance": "1001.00",
+    "basis": "Python Decimal vector saved separately; no app adapter exists yet"
+  },
+  "namespace": {
+    "schema_version": 3,
+    "capabilities": {
+      "savings_calculation": {
+        "index": {
+          "name": "monetary_v3_savings_calculation_index-2026-01-12-aaaaaaaaaaaa.json.gz",
+          "bytes": 1,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "shards": {
+          "monetary_v3_savings_calculation_shard_000": {
+            "name": "monetary_v3_savings_calculation_shard_000-2026-01-12-aaaaaaaaaaaa.json.gz",
+            "bytes": 1,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      }
+    }
+  }
+}

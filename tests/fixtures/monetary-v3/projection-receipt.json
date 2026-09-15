@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "head": "a9cae733944ce7e7c7e9bd0215feb4dd228bdc80",
+  "scope": "separate lossless schema generator provenance; not additional runtime reachability",
+  "generator": "mobile/scripts/generate-monetary-schemas.mjs",
+  "output": "mobile/src/data/monetaryContracts/runtimeSchemas.ts",
+  "inputs": [
+    "mobile/src/data/monetaryContracts/schemas/asset.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/authority-graph.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/common.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/index.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/namespace.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/savings-policy.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/shard.schema.json",
+    "mobile/src/data/monetaryContracts/schemas/subject.schema.json",
+    "mobile/src/data/eligibilityContracts/executable-asset-v2.schema.json",
+    "mobile/src/data/eligibilityContracts/executable-index-v2.schema.json",
+    "mobile/src/data/eligibilityContracts/executable-namespace-v2.schema.json",
+    "mobile/src/data/eligibilityContracts/executable-shard-v2.schema.json",
+    "mobile/src/data/eligibilityContracts/executable-subject-v2.schema.json"
+  ],
+  "files": [
+    {
+      "path": "mobile/scripts/generate-monetary-schemas.mjs",
+      "sha256": "1d08aa2d8cbe3e7336dfe42f1ee95a95d1df9f95084fe5e1f8f4a4c20b1960ba",
+      "bytes": 2974
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/runtimeSchemas.ts",
+      "sha256": "2f457d5c0e000489a9b46f6bd3b4d46cf6dad97e39d0b36a8cc0bbe67c078594",
+      "bytes": 24305
+    },
+    {
+      "path": "mobile/__tests__/monetarySchemaProjection.test.ts",
+      "sha256": "dd06632938d2431bd88d09e4d02d7992e5880a6ab3909270326c4f3b5b26623b",
+      "bytes": 3234
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/asset.schema.json",
+      "sha256": "ea0ea8abf97dcc79402fa513950d2ef3fb0b3927baecf96216f26d31bf807e54",
+      "bytes": 4335
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/authority-graph.schema.json",
+      "sha256": "1b74f532b02d91cddbada2866d3c8a296905b7224874494036d9ec867be50f87",
+      "bytes": 15665
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/common.schema.json",
+      "sha256": "b010652573c3c1a03c846d85dd89aacea983762b2538b5c9b27a9bf05efac3e2",
+      "bytes": 11937
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/index.schema.json",
+      "sha256": "d6cd44173318d6d13fc8ee36ad1b7f8e9882d1f8e7fe9d84378b947fc84f43c6",
+      "bytes": 1235
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/namespace.schema.json",
+      "sha256": "58b42a39863c6fce917d00a372f9ee4fae0bd8d8c840a569a2b789523d07a27d",
+      "bytes": 7298
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/savings-policy.schema.json",
+      "sha256": "f3c506bed4e2ff8dbb8e7dfef5b256b35c9841e1ab70280e87fb4c201f4e54a1",
+      "bytes": 21866
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/shard.schema.json",
+      "sha256": "36560d9409c42b2ccb02d93a54afcf240ec95ef33214cb3c6ad49f5277557b92",
+      "bytes": 1194
+    },
+    {
+      "path": "mobile/src/data/monetaryContracts/schemas/subject.schema.json",
+      "sha256": "4bcf6a854e519897be8db20366968d9454d1fadaa34fee1e5268c7e11069de7e",
+      "bytes": 1999
+    },
+    {
+      "path": "mobile/src/data/eligibilityContracts/executable-asset-v2.schema.json",
+      "sha256": "6189ac30c5cf9bb1a3e1087cc3944dc9438947003d3a777b855f01a192c369c3",
+      "bytes": 4006
+    },
+    {
+      "path": "mobile/src/data/eligibilityContracts/executable-index-v2.schema.json",
+      "sha256": "da5d47ba20caa1026a526405c812a59d55baf52aa1223779555f0d456dad828c",
+      "bytes": 1130
+    },
+    {
+      "path": "mobile/src/data/eligibilityContracts/executable-namespace-v2.schema.json",
+      "sha256": "56efeb3b300979ba976ae46d76d4adcf37a901cec904f0688a17a844e597e52c",
+      "bytes": 1459
+    },
+    {
+      "path": "mobile/src/data/eligibilityContracts/executable-shard-v2.schema.json",
+      "sha256": "5cdf27ffe2b3059e3a67439fef8006c15fe3b91cd5dff0177760210876952d2e",
+      "bytes": 1101
+    },
+    {
+      "path": "mobile/src/data/eligibilityContracts/executable-subject-v2.schema.json",
+      "sha256": "f17004d33d23c65694a58303cfe5cd53ec1c5aaea45e081eba2f392015dfc804",
+      "bytes": 15057
+    }
+  ],
+  "verification": {
+    "command": "npm --prefix mobile test -- --runInBand __tests__/monetaryBridge.test.ts __tests__/monetarySchemaProjection.test.ts",
+    "result": "2 suites / 4 tests PASS",
+    "log": "C:\\Users\\jkoka\\.codex\\private\\ar-app275\\savings-v3-final-bridge-a9cae73.log",
+    "logSha256": "4de2927ccbdabe6438ac53f0c75bf28c34344db02ba03be4ab8a67090bc5fbab",
+    "checks": [
+      "deterministic generation",
+      "exact thirteen-schema reconstruction including all metadata and refs",
+      "every reference resolves",
+      "shared nodes remain unchanged under validation"
+    ]
+  }
+}
