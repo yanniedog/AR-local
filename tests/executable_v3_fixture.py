@@ -41,7 +41,7 @@ def monetary_protocol(tmp_path):
     yield from technical_protocol(tmp_path)
 
 
-def technical_protocol(tmp_path,source_description=None):
+def technical_protocol(tmp_path,source_description=None,adopted_assets=None):
     value=subject();scope=value['scope'];now='2026-01-12T01:00:00Z';run_date='2026-01-12'
     data={'name':'Technical savings only','brand':'Protocol only','productId':'protocol','productCategory':'TRANS_AND_SAVINGS_ACCOUNTS'}
     if source_description:data['description']=source_description
@@ -84,8 +84,15 @@ def technical_protocol(tmp_path,source_description=None):
         graph['completedPeriod']['sourceSnapshotSha256']=byte_digest(raw)
         core={'run_date':run_date,'sections':{'Savings':{'rates':[]}}}
         details={'run_date':run_date,'products':{scope['productKey']:{'name':'Technical savings only','features':[]}}}
+        def asset_bytes(kind,decoded):
+            if adopted_assets is None:return _gzip_bytes(decoded)
+            import gzip
+            raw,expected=adopted_assets[kind]
+            assert byte_digest(raw)==expected, 'Retained technical asset hash differs'
+            assert json.loads(gzip.decompress(raw))==decoded, 'Retained technical asset content differs'
+            return raw
         value['routing'].update(sourceGenerationId=finalized['generation_id'],exportContractSha256=finalized['export_contract_digest'],runDate=run_date,
-            coreAssetSha256=store.put_blob(_gzip_bytes(core)),detailsAssetSha256=store.put_blob(_gzip_bytes(details)),productRecordSha256=digest(details['products'][scope['productKey']]))
+            coreAssetSha256=store.put_blob(asset_bytes('core',core)),detailsAssetSha256=store.put_blob(asset_bytes('details',details)),productRecordSha256=digest(details['products'][scope['productKey']]))
         capture={'schema_version':1,'status':'CAPTURED_AND_QUEUED','products':1,'generation_id':finalized['generation_id'],'source_run_date':run_date,
             'export_contract_digest':finalized['export_contract_digest'],'source_provenance':{'basis':'finalized_source_generation','contract_sha256':store.put_blob((state/finalized['export_contract_path']).read_bytes()),'contract_digest':finalized['export_contract_digest']},
             'sources':[{'observation_id':observation,'product_key':scope['productKey'],'sha256':byte_digest(raw)}]}

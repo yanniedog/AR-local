@@ -1,5 +1,6 @@
 """No-stub connected technical controller cycle using retained actual app execution."""
 import json
+import pytest
 from tests.executable_v3_fixture import technical_protocol,reidentify
 from tests.executable_v3_bridge_fixture import ROOT,retain_benchmark
 from cdr_terms.identity import canonical_json,byte_digest
@@ -14,9 +15,20 @@ from app_payload_build import _gzip_bytes
 NOW='2026-09-15T07:50:00Z'
 
 
-def test_actual_same_subject_source_benchmark_review_publication_revocation(tmp_path):
+@pytest.mark.parametrize('alternate_gzip_header',[False,True])
+def test_actual_same_subject_source_benchmark_review_publication_revocation(tmp_path,monkeypatch,alternate_gzip_header):
     bridge=json.loads((ROOT/'connected-bridge.json').read_bytes())
-    generator=technical_protocol(tmp_path,source_description=(ROOT/'technical-policy-declaration.txt').read_text(encoding='utf8'))
+    if alternate_gzip_header:
+        import tests.executable_v3_fixture as fixture
+        def alternate(value):
+            raw=bytearray(_gzip_bytes(value));raw[9]=254  # Different from both Linux and retained Windows.
+            return bytes(raw)
+        assert byte_digest(alternate(bridge['context']['core']))!=bridge['selection']['subject']['routing']['coreAssetSha256']
+        monkeypatch.setattr(fixture,'_gzip_bytes',alternate)
+    routing=bridge['selection']['subject']['routing']
+    retained={kind:((ROOT/'blobs'/routing[field]).read_bytes(),routing[field]) for kind,field in
+        (('core','coreAssetSha256'),('details','detailsAssetSha256'))}
+    generator=technical_protocol(tmp_path,source_description=(ROOT/'technical-policy-declaration.txt').read_text(encoding='utf8'),adopted_assets=retained)
     store,subject,observation=next(generator)
     try:
         graph=subject['authorityGraph'];bound=graph['completedPeriod']
@@ -50,3 +62,13 @@ def test_actual_same_subject_source_benchmark_review_publication_revocation(tmp_
         assert load_published_executable_v3(store.root,**args)=={}
     finally:
         generator.close()
+
+
+@pytest.mark.parametrize('wrong_hash',[False,True])
+def test_connected_retained_assets_reject_changed_identity_or_content(tmp_path,wrong_hash):
+    raw=_gzip_bytes({'not':'the technical core'})
+    retained={'core':(raw,'0'*64 if wrong_hash else byte_digest(raw))}
+    generator=technical_protocol(tmp_path,adopted_assets=retained)
+    with pytest.raises(AssertionError,match='Retained technical asset (hash|content) differs'):
+        next(generator)
+    generator.close()
