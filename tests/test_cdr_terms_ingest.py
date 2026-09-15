@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 from tests.cdr_terms_source_fixture import source_generation
 from cdr_terms.acquisition import FetchFailure
 from cdr_terms.acquisitions_queue import AcquisitionQueue, process_next_acquisition
@@ -111,7 +113,7 @@ def test_acquisition_idle_path_never_fetches_or_calls_codex(tmp_path, monkeypatc
         raise AssertionError("no due requests must perform no network operation")
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", forbidden)
     with EvidenceStore(tmp_path / "empty") as store:
-        assert process_next_acquisition(store, registry_context={}) == {"result": "NO_WORK", "network_called": False, "codex_called": False}
+        assert process_next_acquisition(store, registry_context=registry_context()) == {"result": "NO_WORK", "network_called": False, "codex_called": False}
 
 
 def test_document_failure_retries_after_deadline_without_fabricating_terms(source_tree, monkeypatch):
@@ -121,7 +123,7 @@ def test_document_failure_retries_after_deadline_without_fabricating_terms(sourc
         raise FetchFailure("http_error", 503)
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", failed)
     with EvidenceStore(root) as store:
-        result = process_next_acquisition(store, registry_context={"registry_version": "test"})
+        result = process_next_acquisition(store, registry_context=registry_context())
         assert result["result"] == "INCOMPLETE" and result["codex_called"] is False
         latest = store.db.execute("SELECT * FROM acquisition_events WHERE request_id=? ORDER BY sequence DESC LIMIT 1", (result["request_id"],)).fetchone()
         assert latest["status"] == "retry_wait" and latest["retry_after"] > latest["observed_at"]

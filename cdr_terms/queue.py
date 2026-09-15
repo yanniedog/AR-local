@@ -25,6 +25,10 @@ _TRANSITIONS = {
 }
 
 
+class StagingValidationError(ValueError):
+    """Deterministic staged-output rejection; retrying transport cannot repair it."""
+
+
 class TermsQueue:
     def __init__(self, store: EvidenceStore):
         self.store = store
@@ -33,6 +37,7 @@ class TermsQueue:
                 priority: int = 1, now: str | None = None,
                 completion_guard: Callable[[], None] | None = None) -> str:
         """Context binds product keys, source snapshots, registry and validator."""
+        validate_registry_context(context, new_job=True)
         if priority not in (0, 1, 2):
             raise ValueError("Priorities are 0 changed current, 1 current, 2 historical")
         if not isinstance(context.get("product_keys"), list) or not context["product_keys"]:
@@ -74,6 +79,7 @@ class TermsQueue:
 
     def enqueue_in_transaction(self, extraction_id, context, *, priority, completion_guard):
         """Join an exact guarded graph transaction without committing its owner."""
+        validate_registry_context(context, new_job=True)
         if not self.store.db.in_transaction or not callable(completion_guard) or priority not in (0, 1):
             raise ValueError("Incorporated enqueue requires a live guarded current transaction")
         completion_guard()
@@ -246,6 +252,12 @@ class TermsQueue:
         return context
 
     def validate_staging(self, job_id: str, output: Mapping[str, Any]) -> None:
+        try:
+            self._validate_staging(job_id, output)
+        except ValueError as error:
+            raise StagingValidationError(str(error)) from error
+
+    def _validate_staging(self, job_id: str, output: Mapping[str, Any]) -> None:
         schema = json.loads(STAGING_SCHEMA.read_text(encoding="utf-8"))
         Draft202012Validator(schema).validate(output)
         exact_value(output)

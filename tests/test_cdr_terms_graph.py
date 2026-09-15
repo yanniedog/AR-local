@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 from cdr_terms.acquisition import FetchPolicy, acquire_document, fetch_document
 from cdr_terms.acquisitions_queue import AcquisitionQueue, process_next_acquisition
 from cdr_terms.extraction import MAX_HTML_LINKS, extract_document, extract_version
@@ -128,7 +130,7 @@ def test_restart_idempotency_link_occurrences_cycles_and_same_content_distinct_u
     before = store.db.execute("SELECT COUNT(*) FROM analysis_jobs").fetchone()[0]
     for _ in range(16):
         previous = len(calls)
-        result = process_next_acquisition(store, registry_context={})
+        result = process_next_acquisition(store, registry_context=registry_context())
         assert len(calls) - previous <= 1
         if result["result"] == "NO_WORK":
             break
@@ -221,7 +223,7 @@ def test_source_advance_blocks_stale_frontier_without_network_or_removal(retaine
         store.record_check(document_id=claimed["document_id"], check_id=claimed["lease_id"], checked_at=utc_now(), status="deferred", error_code="test_disposition")
         AcquisitionQueue(store).finish(claimed, claimed["lease_id"], terminal=True)
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", lambda *a, **k: pytest.fail("stale graph fetched"))
-    result = process_next_acquisition(store, registry_context={})
+    result = process_next_acquisition(store, registry_context=registry_context())
     assert result["network_called"] is False and result["error"] == "source_scope_superseded"
     assert len(graph.inventory(root)["edges"]) == 1
     assert store.db.execute("SELECT 1 FROM document_versions WHERE document_version_id=?", (check["document_version_id"],)).fetchone()
@@ -379,7 +381,7 @@ def test_image_only_html_seeds_graph_despite_unavailable_interpretation(retained
     body = b'<a href="/incorporated-terms.pdf"><img src="/download.svg" alt="Terms"></a>'
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", lambda url, **kwargs: {
         "status": "fetched", "http_status": 200, "body": body, "media_type": "text/html", "metadata": {"final_url": url}})
-    result = process_next_acquisition(store, registry_context={})
+    result = process_next_acquisition(store, registry_context=registry_context())
     assert result["result"] == "INCOMPLETE" and result["analysis_job_id"] is None
     assert store.db.execute("SELECT COUNT(*) FROM document_graph_roots").fetchone()[0] == 1
     graph = DocumentGraph(store)
@@ -426,11 +428,11 @@ def test_malformed_child_html_is_durable_and_does_not_starve_sibling_fetch(retai
         body = malformed.encode() if len(calls) == 1 else b'<p>Boundary text</p>'
         return {"status": "fetched", "http_status": 200, "body": body, "media_type": "text/html", "metadata": {"final_url": url}}
     monkeypatch.setattr("cdr_terms.acquisition.fetch_document", fetch)
-    process_next_acquisition(store, registry_context={})
+    process_next_acquisition(store, registry_context=registry_context())
     assert len(calls) == 1 and graph.pending()
     node = graph.pending()
     captured = graph._check(node)
-    result = process_next_acquisition(store, registry_context={})
+    result = process_next_acquisition(store, registry_context=registry_context())
     assert len(calls) == 2
     assert result["graph_progress"]["node_id"] == node["node_id"]
     assert result["graph_progress"]["extraction_status"] == expected_status
@@ -446,8 +448,8 @@ def test_malformed_child_html_is_durable_and_does_not_starve_sibling_fetch(retai
     original_sha = store.db.execute("SELECT content_sha256 FROM document_versions WHERE document_version_id=?", (captured["document_version_id"],)).fetchone()[0]
     assert store.read_blob(original_sha) == malformed.encode()
     assert graph.pending()["node_id"] != node["node_id"]
-    process_next_acquisition(store, registry_context={})
-    assert process_next_acquisition(store, registry_context={})["result"] == "NO_WORK"
+    process_next_acquisition(store, registry_context=registry_context())
+    assert process_next_acquisition(store, registry_context=registry_context())["result"] == "NO_WORK"
     assert len(calls) == 2 and graph.pending() is None
 
 

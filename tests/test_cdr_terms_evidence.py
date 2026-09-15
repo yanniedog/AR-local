@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 from app_payload_details import _detail_items, build_details
 from cdr_clean_export import detail_json
 from cdr_terms.acquisition import FetchFailure, FetchPolicy, _public_address, acquire_document, acquire_observation
@@ -67,16 +69,26 @@ def _term(evidence, *, reviewed=True):
     return term
 
 
-def _staged_term(evidence, *, context_change=None, output_change=None, save=True):
+def _staged_term(evidence, *, context_change=None, output_change=None, save=True, retained_legacy=False):
     """A human source reader uses the same retained staging contract as a worker."""
     store, observation, key, _, _, body, record = evidence
     extraction, clause = _clause(evidence)
     applicability = dict.fromkeys(("tier", "package", "cohort", "effective_from", "effective_to"))
     applicability["product_key"] = key
     context = {"product_keys": [key], "source_product_sha256": {key: byte_digest(body)},
-               "registry_version": "test-fixture-1", **(context_change or {})}
+               **registry_context(), **(context_change or {})}
     queue = TermsQueue(store)
-    job = queue.enqueue(extraction, context, now=NOW)
+    if retained_legacy:
+        # Explicit retained-row fixture for old revision semantics. Public
+        # enqueue never admits a new unregistered interpretation context.
+        context.pop('parameter_registry')
+        context_sha = digest(context)
+        job = digest([extraction, context_sha])
+        blob = store.put_blob(canonical_json(context).encode('utf-8'))
+        with store.db:
+            queue._insert_job(job, extraction, context_sha, blob, 1, NOW)
+    else:
+        job = queue.enqueue(extraction, context, now=NOW)
     locator = json.loads(store.db.execute("SELECT locator_json FROM clauses WHERE clause_id=?", (clause,)).fetchone()[0])
     output = {"schema_version": 1, "extraction_id": extraction, "context_sha256": digest(context),
               "clauses": [{"page": None, **locator, "disposition": "parameter", "reason": "Retained product name"}],
@@ -100,7 +112,7 @@ def _job(evidence, priority=1, **context):
     store, _, key, _, _, _, _ = evidence
     extraction, _ = _clause(evidence)
     queue = TermsQueue(store)
-    job = queue.enqueue(extraction, {"product_keys": [key], "registry_version": "test-fixture-1", **context},
+    job = queue.enqueue(extraction, {"product_keys": [key], **registry_context(), **context},
                         priority=priority, now=NOW)
     output = {"schema_version": 1, "extraction_id": extraction,
               "context_sha256": store.db.execute("SELECT context_sha256 FROM analysis_jobs WHERE job_id=?", (job,)).fetchone()[0],
