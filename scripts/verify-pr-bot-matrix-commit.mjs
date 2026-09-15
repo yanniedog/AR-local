@@ -7,9 +7,15 @@ import {
   isMatrixCommitPath,
   MATRIX_COMMIT_REL_PATHS,
   MATRIX_COMMIT_MESSAGE,
+  MATRIX_PUSH_BYPASS_HINT,
 } from './lib/pr-bot-matrix-commit.mjs';
 
 const failures = [];
+if (/bypass mode|bypass is required|add.*GitHub Actions|delete.*protection/i.test(MATRIX_PUSH_BYPASS_HINT)
+    || !MATRIX_PUSH_BYPASS_HINT.includes('pull request')
+    || !MATRIX_PUSH_BYPASS_HINT.includes('Preserve existing branch protection')) {
+  failures.push('Protected-push guidance must preserve protection and offer the PR path');
+}
 
 for (const [path, want] of [
   ['reports/pr-bot-matrix.md', true],
