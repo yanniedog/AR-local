@@ -137,14 +137,15 @@ class Snapshot:
         if (key, observation['observation_id'], observation['source_sha256']) not in members:
             raise ValueError('Report selected observation not in finalized capture')
         self.verify_blob(observation['source_sha256'])
-        current = self.execute('SELECT observation_id FROM observations o WHERE product_key=? '
+        current = self.execute('SELECT observation_id,observed_at FROM observations o WHERE product_key=? '
                               'AND EXISTS(SELECT 1 FROM ingest_captures c WHERE c.ingest_id=o.ingest_id) '
-                              'ORDER BY observed_at DESC,observation_id DESC LIMIT 1', (key,)).fetchone()
+                              'ORDER BY observed_at DESC,observation_id DESC LIMIT 2', (key,)).fetchall()
+        ambiguous = len(current) == 2 and current[0]['observed_at'] == current[1]['observed_at']
         documents, references = self.documents(observation)
         interpretations = self.interpretations(observation)
         return {'status': 'reported', 'observation_id': observation['observation_id'],
                 'source_sha256': observation['source_sha256'], 'observed_at': observation['observed_at'],
-                'matches_current_observation': current is not None and current[0] == observation['observation_id'],
+                'matches_current_observation': None if ambiguous else bool(current and current[0]['observation_id'] == observation['observation_id']),
                 'document_references': references, 'documents': documents,
                 'graph': self.graph(observation['observation_id']), 'interpretations': interpretations,
                 'executables': self.executables(observation),
@@ -249,8 +250,8 @@ class Snapshot:
             columns = 'publication_id,observation_id,identity_sha256,published_at'
             if capability is None:
                 columns += ',capability,state'
-            for row in self.execute(f'SELECT {columns} FROM {table} WHERE product_key=? ORDER BY sequence',
-                                    (observation['product_key'],)).fetchall():
+            for row in self.execute(f'SELECT {columns} FROM {table} WHERE product_key=? AND observation_id=? ORDER BY sequence',
+                                    (observation['product_key'], observation['observation_id'])).fetchall():
                 publications.append({**dict(row), **({'capability': capability, 'state': 'active'} if capability else {})})
         return {'status': 'reported', 'subjects': subjects, 'publications': publications}
 

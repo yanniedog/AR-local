@@ -201,7 +201,8 @@ def export_evidence(bundle, store, output, *, technical=False):
         (stage / 'evidence.json').write_bytes(body)
         seal = {'contract': VERSION, 'file': 'evidence.json', 'bytes': len(body), 'sha256': sha(body), 'products': len(keys)}
         (stage / 'seal.json').write_bytes(encoded(seal))
-        os.rename(stage, output)
+        from cdr_report_admission import admit_new_directory
+        admit_new_directory(stage, output)
     finally:
         if stage.exists():
             shutil.rmtree(stage)
@@ -224,6 +225,8 @@ def admit_evidence(root, binding, keys):
     if sha(raw) != seal['sha256']:
         raise ValueError('Report evidence hash differs')
     value = json.loads(raw)
+    if encoded(value) != raw:
+        raise ValueError('Report evidence must use canonical sealed JSON')
     if set(value) != {'schema_version', 'contract', 'binding', 'products', 'generated_at', 'snapshot',
                       'exporter_code_sha256s', 'bank_acceptance_policy'}:
         raise ValueError('Report evidence header contract invalid')
