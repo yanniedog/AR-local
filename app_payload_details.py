@@ -154,8 +154,8 @@ def _detail_links(record: Dict[str, Any]) -> Dict[str, str]:
 def _display_identity(product, record):
     """Exact supplied display labels; missing metadata never becomes a classification."""
     result = {}
-    for key, value, bound in (('name', product.get('product_name'), 256),
-                              ('provider', product.get('provider'), 256),
+    for key, value, bound in (('name', record.get('name') or record.get('productName'), 256),
+                              ('provider', record.get('brand'), 256),
                               ('productCategory', record.get('productCategory'), 80)):
         if isinstance(value, str) and value.strip() and len(value) <= bound:
             result[key] = value

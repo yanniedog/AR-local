@@ -5,7 +5,7 @@ import cdr_historical_fee_embedded as projection
 
 def test_current_observed_identity_and_historical_pin_remain_distinct():
     observed=projection.verify_projection()
-    assert observed==projection.CURRENT_PROJECTION_SOURCES
+    assert observed==projection.SOURCE_LABEL_PROJECTION_SOURCES
     assert projection.PROJECTION_SOURCES['app_payload_details.py']=='6963791b2d12805d74b963124a264c4bb33075dc78a4f283f01c0a27c1650126'
     assert observed['app_payload_details.py']!=projection.PROJECTION_SOURCES['app_payload_details.py']
 

@@ -67,3 +67,13 @@ for (const [limit, pr] of [['0',''], ['101',''], ['1; echo injected',''], ['2','
   if (result.status === 0 || !/must be/.test(result.stderr)) throw new Error('Malformed dispatch input did not fail before generation');
 }
 console.log('PASS artifact-only matrix workflow: read-only output, merged trigger and invalid dispatch controls');
+const { buildMatrixMarkdown } = await import('./lib/pr-bot-matrix-markdown.mjs');
+const markdown = buildMatrixMarkdown({ generatedAt: '2026-01-01', prCount: 0, rows: [] });
+const summaryLine = inline.split('\n').find(line => line.startsWith('const summary = '));
+const summary = new Function('readFileSync', 'path', 'output', `${summaryLine}; return summary;`)(() => markdown, { join: () => '' }, '');
+if (summary.includes('](pr-bot-matrix.') || !markdown.includes('](pr-bot-matrix.')) throw new Error('Job summary retains artifact-relative links or artifact footer was lost');
+const operator = readFileSync(new URL('./github-bot-gates-operator.mjs', import.meta.url), 'utf8');
+for (const unsafe of ['DELETE legacy branch protection', 'commits reports/* directly to main', 'mode Always (actor_id 15368)']) {
+  if (operator.includes(unsafe)) throw new Error('Operator still requests matrix protection bypass');
+}
+console.log('PASS summary removes artifact-relative footer; operator preserves protection');

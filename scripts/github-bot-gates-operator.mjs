@@ -63,13 +63,13 @@ Steps:
        Target branches: refs/heads/main, ~DEFAULT_BRANCH
        Required checks:  bot-presence-gate, bot-feedback-gate (strict)
        PR rule:          squash only, conversation resolution ON, 0 approvals
-       Bypass list:      GitHub Actions — mode Always (actor_id 15368)
+       Bypass list:      do not add or expand bypass for matrix reporting
   4. Save → Enforcement: Active
-  5. DELETE legacy branch protection on main (Settings → Branches → main rule)
-     Keeping both blocks workflow direct pushes even with ruleset bypass.
+  5. Preserve existing main branch protection. Matrix reporting needs no bypass.
 
-Why Actions bypass:
-  - pr-bot-spreadsheet commits reports/* directly to main
+Matrix reporting:
+  - pr-bot-spreadsheet uses read-only permissions and retains Actions artifacts.
+  - It never pushes reports to main or requires protection changes.
 
 API note: POST ruleset with bypass_actors often returns 422 on personal repos — use UI import.
 

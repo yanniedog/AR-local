@@ -24,7 +24,7 @@ def stage_template(store, template, *, interpreter, staged_at):
     validate_template(template)
     if template['evaluatorVersion'] != 'product-terms-engine-v8':
         raise ValueError('New executable staging requires evaluator v8 confirmed rate')
-    if not interpreter or len(interpreter) > 256:
+    if not isinstance(interpreter,str) or not interpreter.strip() or len(interpreter) > 256:
         raise ValueError('Executable interpreter identity required')
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
@@ -66,12 +66,13 @@ def _approval_evidence(store, template, evidence_sha, previous_review_id):
 @source_checked
 def review_template(store, template_id, *, decision, reviewer, reviewer_kind, reviewed_at, evidence_sha256, reason,
                     expected_previous_review_id):
-    if decision not in {'approved', 'rejected', 'revoked'} or not reviewer or not reason or reviewer_kind not in {'human', 'deterministic'}:
+    if (decision not in {'approved', 'rejected', 'revoked'} or not isinstance(reviewer,str)
+            or not reviewer.strip() or len(reviewer)>256 or not reason or reviewer_kind not in {'human', 'deterministic'}):
         raise ValueError('Independent executable disposition required')
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
         row = store.db.execute('SELECT * FROM executable_templates WHERE template_id=?', (template_id,)).fetchone()
-        if row is None or reviewer == row['interpreter']:
+        if row is None or reviewer.strip() == row['interpreter'].strip():
             raise ValueError('Executable approval requires a separate reviewer')
         template = json.loads(row['template_json'])
         previous = store.db.execute('SELECT review_id FROM executable_reviews WHERE template_id=? ORDER BY sequence DESC LIMIT 1',
