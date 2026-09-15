@@ -68,14 +68,16 @@ def test_actual_adapter_evaluator_bridge_passes_full_benchmark(tmp_path, version
         validate_template(template)
         independently_check(record)
         input_sha = put(record['instantiatedInput'])
+        raw_binding = {'adapterInputSha256': put(record['localInput']),
+                       'executionKind': 'adapter_and_evaluator' if record['name'] == 'positive' else 'evaluator_fault_injection'} if version == 8 else {}
         actual = dict(templateId=template['id'], inputSha256=input_sha,
             adapterVersion=bridge['adapterVersion'], evaluatorVersion=bridge['evaluatorVersion'],
-            **codes, result=record['output'])
+            **codes, **raw_binding, result=record['output'])
         # The actual values are accepted only after the separate Decimal/date derivation above.
         expected = dict(templateId=template['id'], inputSha256=input_sha,
-            derivationSha256=store.put_blob(Path(__file__).read_bytes()), result=record['output'])
-        cases.append(dict(id=record['name'], inputSha256=input_sha, actualSha256=put(actual)))
-        expectations.append(dict(id=record['name'], inputSha256=input_sha, expectationSha256=put(expected)))
+            derivationSha256=store.put_blob(Path(__file__).read_bytes()), **raw_binding, result=record['output'])
+        cases.append(dict(id=record['name'], inputSha256=input_sha, actualSha256=put(actual), **raw_binding))
+        expectations.append(dict(id=record['name'], inputSha256=input_sha, expectationSha256=put(expected), **raw_binding))
     suite = dict(expectationAuthor='independent-python-decimal-calendar', expectationKind='deterministic',
         **codes, cases=expectations)
     run = dict(schemaVersion=1, templateId=template['id'], adapterVersion=bridge['adapterVersion'],
