@@ -7,6 +7,7 @@ from cdr_terms.identity import digest
 from cdr_terms.executable_v3_publication import build_asset
 from cdr_terms.executable_v3_evidence import evidence_operation
 from cdr_terms.observation_checks import current_observation
+from cdr_terms.monetary_capabilities import TUPLES
 
 
 def load_published_executable_v3(root,*,source_observation,run_date,core_asset_sha256,details_asset_sha256,product_keys):
@@ -16,8 +17,8 @@ def load_published_executable_v3(root,*,source_observation,run_date,core_asset_s
     try:
         with evidence_operation(view) as operation:
             result,total={},0
-            for key in sorted(keys):
-                row=view.db.execute('SELECT * FROM executable_publications_v3 WHERE product_key=? AND capability=? ORDER BY sequence DESC LIMIT 1',(key,CAPABILITY)).fetchone()
+            for capability,key in ((c,k) for c in sorted(TUPLES) for k in sorted(keys)):
+                row=view.db.execute('SELECT * FROM executable_publications_v3 WHERE product_key=? AND capability=? ORDER BY sequence DESC LIMIT 1',(key,capability)).fetchone()
                 if row is None:continue
                 observation=current_observation(view,key)
                 if observation['observation_id']!=row['observation_id'] or observation['ingest_id']!=source_observation['generation_id']:
@@ -26,26 +27,26 @@ def load_published_executable_v3(root,*,source_observation,run_date,core_asset_s
                     # A tombstone must still agree with current dispositions, never hide unresolved candidates.
                     product=operation.adopted_json(details_asset_sha256).get('products',{}).get(key)
                     if not isinstance(product,dict):raise ValueError('Monetary removal product missing from destination')
-                    expected=digest(dict(schemaVersion=3,capability=CAPABILITY,productKey=key,observationId=observation['observation_id'],state='removed'))
+                    expected=digest(dict(schemaVersion=3,capability=capability,productKey=key,observationId=observation['observation_id'],state='removed'))
                     if row['identity_sha256']!=expected:raise ValueError('Monetary tombstone identity differs')
                     routing=dict(productKey=key,sourceGenerationId=source_observation['generation_id'],exportContractSha256=source_observation['contract_digest'],runDate=run_date,
                         coreAssetSha256=core_asset_sha256,detailsAssetSha256=details_asset_sha256,productRecordSha256=digest(product))
-                    if row['payload_json'] is not None or build_asset(view,key,routing=routing) is not None:raise ValueError('Monetary removed publication changed')
+                    if row['payload_json'] is not None or build_asset(view,key,routing=routing,capability=capability) is not None:raise ValueError('Monetary removed publication changed')
                     continue
                 raw=row['payload_json'].encode('utf8');total+=len(raw)
                 if len(raw)>MAX_SHARD_RAW or total>MAX_SNAPSHOT_RAW:raise ValueError('Monetary snapshot bound exceeded')
                 asset=json.loads(raw);validate_asset(asset,key);routing=asset['routing']
                 if (routing['runDate']!=run_date or routing['sourceGenerationId']!=source_observation['generation_id']
                     or routing['exportContractSha256']!=source_observation['contract_digest'] or routing['coreAssetSha256']!=core_asset_sha256 or routing['detailsAssetSha256']!=details_asset_sha256
-                    or row['identity_sha256']!=asset['identitySha256'] or asset!=build_asset(view,key,routing=routing)):
+                    or row['identity_sha256']!=asset['identitySha256'] or asset['capability']!=capability or asset!=build_asset(view,key,routing=routing,capability=capability)):
                     raise ValueError('Monetary published approval/source changed')
-                result[key]=asset
-            return {CAPABILITY:result} if result else {}
+                result.setdefault(capability,{})[key]=asset
+            return result
     finally:view.db.close()
 
 
 def package_executable_v3(snapshot,*,core,details,core_asset_sha256,details_asset_sha256,run_date,write_asset):
-    if set(snapshot)-{CAPABILITY}:raise ValueError('Monetary unsupported producer route')
+    if set(snapshot)-set(TUPLES):raise ValueError('Monetary unsupported producer route')
     routes={};total=0;public_total=len(_json(core))+len(_json(details))
     if any(snapshot.values()) and public_total>MAX_SNAPSHOT_RAW:raise ValueError('Monetary adopted public snapshot bound exceeded')
     for capability,products in sorted(snapshot.items()):

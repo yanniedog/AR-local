@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 3,
+  "capability": "mortgage_calculation",
+  "kind": "aud_mortgage_confirmed_obligations_v1",
+  "adapterVersion": "aud-mortgage-confirmed-obligations-v1",
+  "evaluatorVersion": "product-terms-engine-v8",
+  "id": "d17fdcdf9ffa0f44a03e1fe05144c87d22d675424807272c3748158d12e9f350",
+  "scopeId": "115f1d9deaf62b126aba4ed464bd1dc7bdd66c803f68370318b78faa17650da8",
+  "scope": {
+    "productKey": "technical-mortgage-only",
+    "family": "Mortgage",
+    "cohortKey": "technical-cohort",
+    "tierKey": "all_source_declared",
+    "packageKey": "none_source_declared",
+    "from": "2026-01-01",
+    "toExclusive": "2026-01-11",
+    "coverage": "whole_calculation_horizon"
+  },
+  "routing": {
+    "productKey": "technical-mortgage-only",
+    "sourceGenerationId": "technical-generation",
+    "exportContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runDate": "2026-01-12",
+    "coreAssetSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "detailsAssetSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "productRecordSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "authorityGraph": {
+    "schemaVersion": 1,
+    "identitySha256": "0eeb75f582103e2bf2de521adc06f33143e0992363beaf92d362e2538dd842cd",
+    "members": [
+      {
+        "sha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+        "bytes": 101,
+        "decodedBytes": 101,
+        "encoding": "identity",
+        "kind": "source_document"
+      }
+    ],
+    "authorities": [
+      {
+        "id": "a0aeb5213bd1ea51f174608648a21d56c4d3829390f6fab6b885a429185db9bd",
+        "scope": {
+          "productKey": "technical-mortgage-only",
+          "family": "Mortgage",
+          "cohortKey": "technical-cohort",
+          "tierKey": "all_source_declared",
+          "packageKey": "none_source_declared",
+          "from": "2026-01-01",
+          "toExclusive": "2026-01-11",
+          "coverage": "whole_calculation_horizon"
+        },
+        "from": "2026-01-01",
+        "toExclusive": "2026-01-11",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ],
+        "fieldCoverage": [
+          {
+            "field": "rates",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "interestBasis",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "allocation",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "paymentPhase",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "paymentRounding",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "accruedSettlement",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "dayCount",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "dailyRateRounding",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "dailyAccrualRounding",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "postingRounding",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "postingResidue",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "postingDates",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "obligationCalendar",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "openingState",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "feeInventory",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "feeSettlement",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "excludedPeriodEffects",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          },
+          {
+            "field": "eligibility",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "postingEventDates": [],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+            ]
+          }
+        ],
+        "kind": "dated_official_clause",
+        "documentVersionIds": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "documentSha256s": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ],
+        "datedRateAndPolicyClauseIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ],
+        "observedRateRows": false
+      }
+    ],
+    "supersessions": [],
+    "completedPeriod": {
+      "asOf": "2026-01-12T00:00:00Z",
+      "completedThroughExclusive": "2026-01-11",
+      "timezone": "Australia/Sydney",
+      "basis": "reviewed_data_completeness",
+      "sourceSnapshotSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+      "evidenceIds": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ]
+    }
+  },
+  "policy": {
+    "kind": "aud_mortgage_confirmed_obligations_v1",
+    "currency": "AUD",
+    "mode": "historical_confirmed_obligations",
+    "maxHorizonDays": 366,
+    "authorityIds": [
+      "a0aeb5213bd1ea51f174608648a21d56c4d3829390f6fab6b885a429185db9bd"
+    ],
+    "annualRate": "0.0365",
+    "interestBearing": [
+      "principal"
+    ],
+    "allocation": [
+      "accruedInterest",
+      "postedInterest",
+      "capitalizedCharges",
+      "otherDebt",
+      "principal"
+    ],
+    "paymentPhase": "before_accrual",
+    "paymentRounding": "half_up",
+    "accruedSettlement": "round_before_each_payment",
+    "dayCount": "actual_365_fixed",
+    "dailyRateRounding": null,
+    "dailyAccrualScale": null,
+    "accrualRounding": "half_up",
+    "postingRounding": "half_up",
+    "postingResidue": "round_component_then_transfer_all_to_posted_debt",
+    "postingInventory": {
+      "rule": "calendar_month_end",
+      "boundary": "from_inclusive_to_exclusive",
+      "calendarAdjustment": "none_source_declared",
+      "dueDates": [],
+      "coverage": "all_source_due_dates"
+    },
+    "obligationCalendar": {
+      "cadence": "monthly",
+      "monthConvention": "clamp",
+      "anchorBinding": "private_original_anchor",
+      "amountBinding": "private_confirmed_fixed_amount",
+      "calendarAdjustment": "none_source_declared",
+      "paymentAdmission": "exact_due_date_and_phase_no_cumulative_excess"
+    },
+    "openingState": "confirm_no_carried_overdue_obligations_or_default",
+    "excludedPeriodEffects": "source_reviewed_absence_in_selected_period_of_advances_extra_payments_redraw_offset_reversals_packages_closure",
+    "fees": {
+      "coverage": "complete_source_inventory",
+      "ordering": "before_scenario_events",
+      "occurrences": []
+    },
+    "eligibility": {
+      "id": "adult",
+      "op": "compare",
+      "field": "adult",
+      "comparison": "eq",
+      "expected": {
+        "type": "boolean",
+        "value": true
+      },
+      "evidenceIds": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ]
+    },
+    "inputDefinitions": [
+      {
+        "field": "adult",
+        "label": "Technical adult criterion",
+        "type": "boolean",
+        "unit": null,
+        "binding": "customer_fact",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ]
+      }
+    ],
+    "fieldEvidenceIds": {
+      "rates": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "interestBasis": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "allocation": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "paymentPhase": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "paymentRounding": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "accruedSettlement": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "dayCount": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "dailyRateRounding": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "dailyAccrualRounding": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "postingRounding": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "postingResidue": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "postingDates": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "obligationCalendar": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "openingState": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "feeInventory": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "feeSettlement": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "excludedPeriodEffects": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "eligibility": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ]
+    }
+  },
+  "documentVersionIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "termRevisionIds": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "evidence": [
+    {
+      "id": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+      "clauseId": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+      "documentVersionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "documentSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+      "sourceUrl": "https://example.invalid/technical-only",
+      "locator": "Engineering schema example",
+      "quote": "Technical example only: base rate 0.0365, actual/365, explicit dates and rounding. Not a bank source.",
+      "quoteSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+    }
+  ],
+  "target": {
+    "kind": "product",
+    "productCategory": "RESIDENTIAL_MORTGAGES"
+  }
+}

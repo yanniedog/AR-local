@@ -19,7 +19,7 @@ def _covers(ranges,lower,upper):
     return False
 
 
-def validate_graph(subject):
+def validate_inventory(subject):
     graph,scope=subject['authorityGraph'],subject['scope']
     if graph['identitySha256']!=identity(graph,'identitySha256'):
         raise ValueError('Monetary authority graph identity differs')
@@ -69,6 +69,12 @@ def validate_graph(subject):
     used_members.update(e['documentSha256'] for e in subject['evidence'])
     if len(observations)>366 or len(documents)>256 or used_members!=set(members):
         raise ValueError('Monetary missing/orphan authority members or bound exceeded')
+    return authorities
+
+
+def validate_graph(subject):
+    authorities=validate_inventory(subject)
+    graph=subject['authorityGraph']
     used=set()
     for period in subject['policy']['intervals']:
         selected=authorities.get(period['authorityId'])

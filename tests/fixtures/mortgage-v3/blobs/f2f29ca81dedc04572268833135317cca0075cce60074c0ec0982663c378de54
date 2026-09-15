@@ -1,0 +1,47 @@
+import type { ISODate } from './types';
+
+/** Bank-confirmed lifecycle, owned by the reviewed contract, never scenario events. */
+export interface TdLifecycle {
+  schemaVersion: 1;
+  mode: 'digital_notice_no_interest' | 'legacy_noncompounding' | 'fixed_maturity';
+  cohortKey: string;
+  evidenceIds: string[];
+  confirmationEvidenceIds: string[];
+  investmentAmount: string;
+  fundedDate: ISODate;
+  /** Explicit confirmation handles legacy non-business-day NPP funding. */
+  accrualStartDate: ISODate;
+  term: { unit: 'days' | 'months'; count: number; monthConvention: 'clamp' | 'preserve_month_end' };
+  nominalMaturityDate: ISODate;
+  calendar: TdBusinessCalendar | null;
+  roundingReviewed: boolean;
+  taxTreatment: 'none_confirmed' | 'unknown';
+  /** Confirmed period-end dates; posting shifts only under the declared legacy calendar. */
+  payments: { cadence: 'maturity' | 'monthly' | 'quarterly' | 'half_yearly' | 'annual';
+    destination: 'linked_account' | 'term_deposit' | 'unknown';
+    firstPeriodEnd: ISODate | null; monthConvention: 'clamp' | 'preserve_month_end';
+    periodEnds: ISODate[]; evidenceIds: string[] };
+  closure: {
+    kind: 'maturity' | 'early_notice' | 'hardship' | 'rollover';
+    confirmedDate: ISODate | null;
+    acceptedNoticeDate: ISODate | null;
+    feeDecision: 'charge_25_percent' | 'waived' | 'unknown';
+    principalRecovery: 'confirmed_if_required' | 'unknown';
+    evidenceIds: string[];
+  };
+}
+export interface TdBusinessCalendar {
+  id: string;
+  accountAllocatedState: string;
+  from: ISODate;
+  toExclusive: ISODate;
+  holidays: ISODate[];
+  evidenceIds: string[];
+}
+export interface TdSchedule {
+  maturity: ISODate | null;
+  closure: ISODate | null;
+  accrualToExclusive: ISODate | null;
+  postingDates: ISODate[];
+  issues: string[];
+}

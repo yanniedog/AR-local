@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:monetary-mortgage-draft:subject",
+  "$comment": "DRAFT ONLY. No freeze, bank approval or runtime adoption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "capability",
+    "kind",
+    "adapterVersion",
+    "evaluatorVersion",
+    "id",
+    "scopeId",
+    "scope",
+    "routing",
+    "authorityGraph",
+    "policy",
+    "documentVersionIds",
+    "termRevisionIds",
+    "evidence",
+    "target"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 3
+    },
+    "capability": {
+      "const": "mortgage_calculation"
+    },
+    "kind": {
+      "const": "aud_mortgage_confirmed_obligations_v1"
+    },
+    "adapterVersion": {
+      "const": "aud-mortgage-confirmed-obligations-v1"
+    },
+    "evaluatorVersion": {
+      "const": "product-terms-engine-v8"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scopeId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scope": {
+      "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/scope"
+    },
+    "routing": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/routing"
+    },
+    "authorityGraph": {
+      "$ref": "urn:ar-local:monetary-mortgage-draft:authority-graph"
+    },
+    "policy": {
+      "$ref": "urn:ar-local:monetary-mortgage-draft:policy"
+    },
+    "documentVersionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "termRevisionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/evidence"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "productCategory"
+          ],
+          "properties": {
+            "kind": {
+              "const": "product"
+            },
+            "productCategory": {
+              "const": "RESIDENTIAL_MORTGAGES"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "section",
+            "coreRowIndex",
+            "rateIndex",
+            "rowSha256",
+            "rateUnit",
+            "annualRate"
+          ],
+          "properties": {
+            "kind": {
+              "const": "rate_variant"
+            },
+            "section": {
+              "const": "Mortgage"
+            },
+            "coreRowIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200000
+            },
+            "rateIndex": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200000
+            },
+            "rowSha256": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/sha"
+            },
+            "rateUnit": {
+              "const": "fraction"
+            },
+            "annualRate": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rate"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

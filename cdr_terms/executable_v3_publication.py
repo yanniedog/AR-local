@@ -9,7 +9,9 @@ from .executable_v3_evidence import evidence_checked
 
 @evidence_checked
 def build_asset(store,product_key,*,routing,capability=CAPABILITY):
-    if capability!=CAPABILITY or routing['productKey']!=product_key:raise ValueError('Unsupported monetary publication capability/product')
+    from .monetary_capabilities import require_capability
+    require_capability(capability)
+    if routing['productKey']!=product_key:raise ValueError('Unsupported monetary publication capability/product')
     observation=current_observation(store,product_key)
     if observation['ingest_id']!=routing['sourceGenerationId']:raise ValueError('Monetary publication routing stale')
     rows=store.db.execute('SELECT s.* FROM executable_subjects_v3 s JOIN executable_scopes_v3 k USING(scope_id) '

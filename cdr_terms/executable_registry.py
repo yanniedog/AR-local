@@ -17,9 +17,11 @@ def lookup_subject(store, identity):
             raise ValueError('Executable subject not found')
         value = json.loads(row['subject_json'])
         version = row['wire_version']
-        capability = {1: 'fixed_td_calculation', 2: 'eligibility_only',3:'savings_calculation'}.get(version)
-        if version==3 and (row['kind'],value.get('kind'),value.get('adapterVersion'),value.get('evaluatorVersion'))!=('aud_savings_base_period_v1','aud_savings_base_period_v1','aud-savings-base-v1','product-terms-engine-v8'):
-            raise ValueError('Executable monetary registry tuple mismatch')
+        capability = {1: 'fixed_td_calculation', 2: 'eligibility_only'}.get(version)
+        if version==3:
+            from .monetary_capabilities import validate_tuple
+            capability=validate_tuple(value)
+            if row['kind']!=value['kind'] or row['capability']!=capability:raise ValueError('Executable monetary registry tuple mismatch')
         if capability is None or value.get('schemaVersion') != version or row['capability'] != capability:
             raise ValueError('Executable registry wire/capability mismatch')
     else:

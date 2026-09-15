@@ -85,7 +85,8 @@ class EvidenceOperation:
         self.documents.update(subject['documentVersionIds'])
         for authority in graph['authorities']:
             self.observations.update(x['observationId'] for x in authority.get('observations',[]))
-        self.intervals.update((subject['id'],x['id']) for x in subject['policy']['intervals'])
+        from .monetary_capabilities import periods
+        self.intervals.update((subject['id'],x['id']) for x in periods(subject))
         self.postings.update((subject['id'],x) for x in subject['policy']['postingInventory']['dueDates'])
         self.supersessions.update(json.dumps(x,sort_keys=True) for x in graph['supersessions'])
         pending=[subject['policy']['eligibility']]

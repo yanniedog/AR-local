@@ -1,0 +1,1733 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:monetary-mortgage-field-v1:draft",
+  "$comment": "UNFROZEN mortgage18-field material schema. No registry/source admission integration.",
+  "$defs": {
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rules"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "enum": [
+                "and",
+                "or"
+              ]
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 128,
+              "items": {
+                "$ref": "urn:ar-local:monetary-mortgage-field-v1:draft#/$defs/rule"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rule"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "not"
+            },
+            "rule": {
+              "$ref": "urn:ar-local:monetary-mortgage-field-v1:draft#/$defs/rule"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "field",
+            "comparison",
+            "expected"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "compare"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "comparison": {
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "expected": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value",
+                    "unit"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "decimal"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,24})?$",
+                      "maxLength": 72
+                    },
+                    "unit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "date",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "boolean"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "rates"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "currency",
+            "annualRate",
+            "rateUnit"
+          ],
+          "properties": {
+            "currency": {
+              "const": "AUD"
+            },
+            "annualRate": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rate"
+            },
+            "rateUnit": {
+              "const": "fraction_per_year"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "interestBasis"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "interestBearing",
+            "balanceBasis",
+            "currency"
+          ],
+          "properties": {
+            "interestBearing": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "items": {
+                "enum": [
+                  "principal",
+                  "postedInterest",
+                  "accruedInterest",
+                  "capitalizedCharges",
+                  "otherDebt"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "balanceBasis": {
+              "const": "loan_declared_component_basis"
+            },
+            "currency": {
+              "const": "AUD"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "allocation"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "allocation",
+            "overpayment"
+          ],
+          "properties": {
+            "allocation": {
+              "type": "array",
+              "minItems": 5,
+              "maxItems": 5,
+              "items": {
+                "enum": [
+                  "principal",
+                  "postedInterest",
+                  "accruedInterest",
+                  "capitalizedCharges",
+                  "otherDebt"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "overpayment": {
+              "const": "reject"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "paymentPhase"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "paymentPhase",
+            "eventOrder",
+            "obligationMeasurement"
+          ],
+          "properties": {
+            "paymentPhase": {
+              "enum": [
+                "before_accrual",
+                "after_accrual"
+              ]
+            },
+            "eventOrder": {
+              "const": "loan_declared_payment_phase_then_posting"
+            },
+            "obligationMeasurement": {
+              "const": "before_payment_phase"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "paymentRounding"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "paymentRounding",
+            "amountUnit",
+            "scale"
+          ],
+          "properties": {
+            "paymentRounding": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rounding"
+            },
+            "amountUnit": {
+              "const": "AUD"
+            },
+            "scale": {
+              "const": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "accruedSettlement"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "accruedSettlement",
+            "amountUnit",
+            "scale"
+          ],
+          "properties": {
+            "accruedSettlement": {
+              "const": "round_before_each_payment"
+            },
+            "amountUnit": {
+              "const": "AUD"
+            },
+            "scale": {
+              "const": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "dayCount"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dayCount"
+          ],
+          "properties": {
+            "dayCount": {
+              "const": "actual_365_fixed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "dailyRateRounding"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dailyRateRounding",
+            "annualRateUnit"
+          ],
+          "properties": {
+            "dailyRateRounding": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scale",
+                    "unit",
+                    "mode"
+                  ],
+                  "properties": {
+                    "scale": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 12
+                    },
+                    "unit": {
+                      "enum": [
+                        "fraction",
+                        "percent"
+                      ]
+                    },
+                    "mode": {
+                      "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rounding"
+                    }
+                  }
+                }
+              ]
+            },
+            "annualRateUnit": {
+              "const": "fraction_per_year"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "dailyAccrualRounding"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dailyAccrualScale",
+            "accrualRounding",
+            "amountUnit"
+          ],
+          "properties": {
+            "dailyAccrualScale": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 12
+                }
+              ]
+            },
+            "accrualRounding": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rounding"
+            },
+            "amountUnit": {
+              "const": "AUD"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "postingRounding"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "postingRounding",
+            "amountUnit",
+            "scale"
+          ],
+          "properties": {
+            "postingRounding": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rounding"
+            },
+            "amountUnit": {
+              "const": "AUD"
+            },
+            "scale": {
+              "const": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "postingResidue"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "postingResidue",
+            "amountUnit"
+          ],
+          "properties": {
+            "postingResidue": {
+              "const": "round_component_then_transfer_all_to_posted_debt"
+            },
+            "amountUnit": {
+              "const": "AUD"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "postingDates"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "postingInventory"
+          ],
+          "properties": {
+            "postingInventory": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule",
+                "boundary",
+                "calendarAdjustment",
+                "dueDates",
+                "coverage"
+              ],
+              "properties": {
+                "rule": {
+                  "const": "calendar_month_end"
+                },
+                "boundary": {
+                  "const": "from_inclusive_to_exclusive"
+                },
+                "calendarAdjustment": {
+                  "const": "none_source_declared"
+                },
+                "dueDates": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 13,
+                  "items": {
+                    "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+                  }
+                },
+                "coverage": {
+                  "const": "all_source_due_dates"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "obligationCalendar"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "obligationCalendar"
+          ],
+          "properties": {
+            "obligationCalendar": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cadence",
+                "monthConvention",
+                "anchorBinding",
+                "amountBinding",
+                "calendarAdjustment",
+                "paymentAdmission"
+              ],
+              "properties": {
+                "cadence": {
+                  "const": "monthly"
+                },
+                "monthConvention": {
+                  "enum": [
+                    "clamp",
+                    "preserve_month_end"
+                  ]
+                },
+                "anchorBinding": {
+                  "const": "private_original_anchor"
+                },
+                "amountBinding": {
+                  "const": "private_confirmed_fixed_amount"
+                },
+                "calendarAdjustment": {
+                  "const": "none_source_declared"
+                },
+                "paymentAdmission": {
+                  "const": "exact_due_date_and_phase_no_cumulative_excess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "openingState"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "openingState",
+            "accruedMaximumScale",
+            "otherComponentMaximumScale",
+            "outstandingMaximumScale",
+            "reconciliation",
+            "provenance"
+          ],
+          "properties": {
+            "openingState": {
+              "const": "confirm_no_carried_overdue_obligations_or_default"
+            },
+            "accruedMaximumScale": {
+              "const": 12
+            },
+            "otherComponentMaximumScale": {
+              "const": 2
+            },
+            "outstandingMaximumScale": {
+              "const": 12
+            },
+            "reconciliation": {
+              "const": "exact_sum"
+            },
+            "provenance": {
+              "const": "user_reported_bank_offer_and_statement"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "feeInventory"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fees",
+            "currency",
+            "incurrenceAdmission",
+            "orderAdmission"
+          ],
+          "properties": {
+            "fees": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "coverage",
+                "ordering",
+                "occurrences"
+              ],
+              "properties": {
+                "coverage": {
+                  "const": "complete_source_inventory"
+                },
+                "ordering": {
+                  "enum": [
+                    "before_scenario_events",
+                    "after_scenario_events"
+                  ]
+                },
+                "occurrences": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "incurredDate",
+                      "dueDate",
+                      "order",
+                      "amount",
+                      "debit",
+                      "settlement",
+                      "externalAccountRole"
+                    ],
+                    "properties": {
+                      "id": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                      },
+                      "incurredDate": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+                      },
+                      "dueDate": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 31
+                      },
+                      "amount": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+                      },
+                      "debit": {
+                        "const": "external_account"
+                      },
+                      "settlement": {
+                        "const": "exact_cleared_due_date_amount_and_account"
+                      },
+                      "externalAccountRole": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "currency": {
+              "const": "AUD"
+            },
+            "incurrenceAdmission": {
+              "const": "period_start_lte_incurred_lte_due_lt_period_end"
+            },
+            "orderAdmission": {
+              "const": "source_order_unique_per_due_date"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "feeSettlement"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fees",
+            "currency",
+            "positiveFeeCash",
+            "zeroFeeCash"
+          ],
+          "properties": {
+            "fees": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "coverage",
+                "ordering",
+                "occurrences"
+              ],
+              "properties": {
+                "coverage": {
+                  "const": "complete_source_inventory"
+                },
+                "ordering": {
+                  "enum": [
+                    "before_scenario_events",
+                    "after_scenario_events"
+                  ]
+                },
+                "occurrences": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "incurredDate",
+                      "dueDate",
+                      "order",
+                      "amount",
+                      "debit",
+                      "settlement",
+                      "externalAccountRole"
+                    ],
+                    "properties": {
+                      "id": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                      },
+                      "incurredDate": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+                      },
+                      "dueDate": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+                      },
+                      "order": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 31
+                      },
+                      "amount": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+                      },
+                      "debit": {
+                        "const": "external_account"
+                      },
+                      "settlement": {
+                        "const": "exact_cleared_due_date_amount_and_account"
+                      },
+                      "externalAccountRole": {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "currency": {
+              "const": "AUD"
+            },
+            "positiveFeeCash": {
+              "const": "exact_cleared_due_date_amount_and_external_account"
+            },
+            "zeroFeeCash": {
+              "const": "no_settlement_required"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "excludedPeriodEffects"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "excludedPeriodEffects",
+            "mode",
+            "maxHorizonDays"
+          ],
+          "properties": {
+            "excludedPeriodEffects": {
+              "const": "source_reviewed_absence_in_selected_period_of_advances_extra_payments_redraw_offset_reversals_packages_closure"
+            },
+            "mode": {
+              "const": "historical_confirmed_obligations"
+            },
+            "maxHorizonDays": {
+              "const": 366
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "field",
+        "scope",
+        "from",
+        "toExclusive",
+        "material"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "field": {
+          "const": "eligibility"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productKey",
+            "cohortKey",
+            "tierKey",
+            "packageKey"
+          ],
+          "properties": {
+            "productKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "cohortKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "tierKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            },
+            "packageKey": {
+              "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+            }
+          }
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "eligibility",
+            "inputDefinitions"
+          ],
+          "properties": {
+            "eligibility": {
+              "$ref": "urn:ar-local:monetary-mortgage-field-v1:draft#/$defs/rule"
+            },
+            "inputDefinitions": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "field",
+                  "label",
+                  "type",
+                  "unit",
+                  "binding"
+                ],
+                "properties": {
+                  "field": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "type": {
+                    "enum": [
+                      "boolean",
+                      "decimal",
+                      "date",
+                      "text"
+                    ]
+                  },
+                  "unit": {
+                    "oneOf": [
+                      {
+                        "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "binding": {
+                    "enum": [
+                      "customer_fact",
+                      "opening_principal",
+                      "obligation_amount",
+                      "from_date",
+                      "to_exclusive_date",
+                      "confirmed_annual_rate",
+                      "offer_purpose",
+                      "offer_security",
+                      "repayment_type"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -12,6 +12,10 @@ POSITIVE={'schemaVersion','subjectId','capability','adapterVersion','evaluatorVe
 
 def material_projection(subject):
     authorities={x['id']:x for x in subject['authorityGraph']['authorities']}
+    if subject['capability']=='mortgage_calculation':
+        return {'scope':subject['scope'],'routing':subject['routing'],'target':subject['target'],
+                'completedPeriod':subject['authorityGraph']['completedPeriod'],'policy':subject['policy'],
+                'authorities':[authorities[k] for k in subject['policy']['authorityIds']]}
     return {'scope':subject['scope'],'routing':subject['routing'],'completedPeriod':subject['authorityGraph']['completedPeriod'],
         'inputDefinitions':subject['policy']['inputDefinitions'],'eligibility':subject['policy']['eligibility'],
         'fees':subject['policy']['fees'],'postingInventory':subject['policy']['postingInventory'],
