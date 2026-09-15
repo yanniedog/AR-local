@@ -1,6 +1,6 @@
 name: pr-bot-spreadsheet
 
-# Maintain an in-repo matrix (Markdown + HTML + JSON): rows = merged PRs, columns = review bots,
+# Publish an Actions matrix (Markdown + HTML + JSON): rows = merged PRs, columns = review bots,
 # color-coded by feedback presence, address-before-merge, and quota/limit hits.
 on:
   schedule:
@@ -19,7 +19,8 @@ on:
         default: ''
 
 permissions:
-  contents: write
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: pr-bot-spreadsheet
@@ -37,22 +38,45 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Sync PR bot matrix to repo artifacts
+      - name: Generate matrix and job summary
         env:
-          GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          MATRIX_LIMIT: ${{ inputs.limit || '50' }}
+          MATRIX_PR: ${{ inputs.pr_number }}
         run: |
-          set -euo pipefail
-          ARGS=(--limit "${{ inputs.limit || '50' }}")
-          if [ -n "${{ inputs.pr_number }}" ]; then
-            ARGS+=(--pr "${{ inputs.pr_number }}")
-          fi
-          # Merged-PR events run a full sync (no --pr) so the committed matrix keeps
-          # all rows; single-PR mode is workflow_dispatch only and upserts via sync.
-          npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}"
-      - name: Commit and push matrix to main
-        run: npm run pr:bot-matrix:commit
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process';
+          import { appendFileSync, mkdtempSync, readFileSync } from 'node:fs';
+          import path from 'node:path';
+          const limit = process.env.MATRIX_LIMIT;
+          const pr = process.env.MATRIX_PR || '';
+          if (!/^[1-9][0-9]{0,2}$/.test(limit) || Number(limit) > 100) {
+            throw new Error('limit must be an integer from 1 through 100');
+          }
+          if (pr && !/^[1-9][0-9]{0,8}$/.test(pr)) {
+            throw new Error('pr_number must be a positive integer of at most 9 digits');
+          }
+          const output = mkdtempSync(path.join(process.env.RUNNER_TEMP, 'pr-bot-matrix-'));
+          const args = ['run', 'pr:bot-spreadsheet:sync', '--', '--limit', limit, '--output-dir', output];
+          if (pr) args.push('--pr', pr);
+          const result = spawnSync('npm', args, { stdio: 'inherit' });
+          if (result.error) throw result.error;
+          if (result.status !== 0) process.exit(result.status || 1);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, readFileSync(path.join(output, 'pr-bot-matrix.md')));
+          appendFileSync(process.env.GITHUB_ENV, `MATRIX_OUTPUT=${output}\n`);
+          NODE
+      - name: Retain matrix files
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-bot-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.MATRIX_OUTPUT }}/pr-bot-matrix.md
+            ${{ env.MATRIX_OUTPUT }}/pr-bot-matrix.html
+            ${{ env.MATRIX_OUTPUT }}/pr-bot-matrix.json
+          if-no-files-found: error
+          retention-days: 30
