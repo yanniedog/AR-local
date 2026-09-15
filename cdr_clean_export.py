@@ -14,6 +14,7 @@ from cdr_product_facts import clean_fact_rows
 from cdr_rate_normalize import normalized_rate_value, rate_divisor
 from cdr_product_classification import has_savings_term_deposit_evidence
 from cdr_terms.discovery import discover_references
+from cdr_rate_conditions import encoded as encode_rate_conditions, extract_rate_conditions
 NOISE_KEYS = {
     "links",
     "meta",
@@ -409,9 +410,16 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
     if holders_root.exists():
         dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
     for path in sorted(banks_root.rglob("product-detail.json")):
-        rec = inner_record(load_json(path))
+        source = path.read_bytes()
+        rec = inner_record(json.loads(source))
         base = bank_base_row(path, banks_root, rec)
-        dataset["products"].append({**base, "details_json": detail_json(rec)})
+        product = {**base, "details_json": detail_json(rec)}
+        conditions = extract_rate_conditions(source, base.get('dataset', ''))
+        if conditions:
+            # A separate producer-owned field cannot be supplied by a CDR key.
+            # Capture original pointers before clean_value compacts source arrays.
+            product['rate_conditions_json'] = encode_rate_conditions(conditions).decode('utf-8')
+        dataset["products"].append(product)
         append_bank_details(dataset, base, rec)
         dataset["product_facts"].extend(clean_fact_rows(rec, base))
     return dataset
