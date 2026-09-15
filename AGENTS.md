@@ -33,18 +33,19 @@ Local CDR ingest, exports, and dashboard. Workflow matches **Australian Rates** 
 
 ## Ship bar
 
-Full procedure ? branch, commit, PR, CI, bot wait, feedback synthesis, thread closure, merge, **local dashboard**, **`npm run verify:local`** ? all steps required unless the user explicitly waives in writing for that PR.
+Full procedure: branch, commit, PR, applicable CI, feedback synthesis, thread closure, guarded merge, then authorized runtime acceptance through **local dashboard** and **`npm run verify:local`**. Review vendors are advisory; every substantive finding that arrives requires an Implemented, Deferred or Declined disposition and thread resolution. Applicable product CI and `bot-feedback-gate` must pass on the exact head.
 
 **Read `WORKFLOW.md` in full** before opening or merging a PR.
 
-Anti-early-stop:
+Explicit closeout after exact-head CI and feedback verification:
 
 ```sh
-npm run ship:closeout:strict && npm run wait-for-bots
+npm run pr:merge -- --pr <n> --no-sync
 ```
 
-- Exit **2** from `ship:closeout:strict` ? open PR still exists; continue `WORKFLOW.md` steps 5?9.
-- Exit **2** from `wait-for-bots` ? bots/CI not settled; re-run until exit **0** (or use `--watch`).
+- Synchronize a stale topic branch separately, then verify its new exact head before closeout.
+- When only GitHub-owned work remains, park ownership and check once in a later turn. Do not use watch loops or require reviewer presence as a merge gate.
+- Follow `WORKFLOW.md` for post-merge feedback audit and controlled runtime acceptance. A merge alone does not prove deployment.
 
 Cursor rules live under **`.cursor/rules/`** (mirrors AustralianRates rule names and intent; Cloudflare and production-URL steps are replaced with local equivalents).
 
@@ -54,7 +55,7 @@ Same expectations as Australian Rates:
 
 - Fresh **`origin/main`**, distinctive **`agent/<slug>`** (or feat/fix), no branch reuse across concurrent agents.
 - Rebase/merge when stale; resolve overlaps with other topic branches deliberately.
-- **`ci_result` (or equivalent) green ? merge-ready** ? complete wait gate, synthesis, and threaded replies per **`WORKFLOW.md`**.
+- **`ci_result` (or equivalent) green is insufficient**: verify applicable exact-head CI, synthesis and threaded dispositions per **`WORKFLOW.md`**.
 - **Soft target ~800 LOC per file**, **hard ceiling ~1000 LOC**; split along natural seams when adding non-trivial code.
 - **~50 lines per function** where practical; avoid copying the same logic in 3+ places.
 
