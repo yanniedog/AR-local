@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 from cdr_terms.acquisition_processing import ProcessingGuardFailure, ProcessingQueue
 from cdr_terms.graph import DocumentGraph
 from cdr_terms.identity import digest
@@ -45,7 +47,7 @@ def test_expired_processing_lease_cannot_write_children_or_failure_expansion(ret
         return original(*args, **kwargs)
     monkeypatch.setattr(graph_module, 'extract_version', expired)
     with pytest.raises(ProcessingGuardFailure, match='Stale processing admission'):
-        ProcessingQueue(store).process_one({})
+        ProcessingQueue(store).process_one(registry_context())
     assert {table: store.db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in before} == before
     event = store.db.execute('SELECT status FROM acquisition_processing_events ORDER BY sequence DESC LIMIT 1').fetchone()[0]
     assert event == 'running'  # Guard refusal is not completion or parser exhaustion.
@@ -63,7 +65,7 @@ def test_new_completed_source_during_parse_rolls_back_graph_frontier(retained, c
         return extraction
     monkeypatch.setattr(graph_module, 'extract_version', replace_source)
     with pytest.raises(ProcessingGuardFailure, match='superseded'):
-        ProcessingQueue(store).process_one({})
+        ProcessingQueue(store).process_one(registry_context())
     inventory = DocumentGraph(store).inventory(root)
     assert len(inventory['nodes']) == 1 and inventory['edges'] == []
     assert inventory['nodes'][0]['expansion'] is None
@@ -93,7 +95,7 @@ def test_unaccepted_graph_root_cannot_keep_collector_runnable(retained, clock):
     orphan = dict(store.db.execute("SELECT * FROM acquisition_checks WHERE check_id='unaccepted-capture'").fetchone())
     other_root = DocumentGraph(store).seed(request, orphan)
     assert other_root != root
-    ProcessingQueue(store).process_one({})
+    ProcessingQueue(store).process_one(registry_context())
     assert ProcessingQueue(store).has_work() is False
     assert store.db.execute('SELECT COUNT(*) FROM document_graph_expansions').fetchone()[0] == 0
 
@@ -134,7 +136,7 @@ def test_analysis_admission_rolls_back_expired_owner_at_actual_transaction(retai
             clock.advance(181)
         monkeypatch.setattr(TermsQueue, '_prioritize', delayed)
     with pytest.raises(ProcessingGuardFailure, match='Stale processing admission'):
-        ProcessingQueue(store).process_one({})
+        ProcessingQueue(store).process_one(registry_context())
     assert observed_transactions == [boundary == 'after_job_writes']
     assert {table: store.db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
             for table in ('analysis_jobs', 'job_events', 'job_priorities')} == {
@@ -160,7 +162,7 @@ def test_changed_completed_scope_during_context_storage_cannot_enqueue(retained,
         return original(body)
     monkeypatch.setattr(store, 'put_blob', replace_source)
     with pytest.raises(ProcessingGuardFailure, match='superseded'):
-        ProcessingQueue(store).process_one({})
+        ProcessingQueue(store).process_one(registry_context())
     assert replaced
     assert store.db.execute('SELECT COUNT(*) FROM analysis_jobs').fetchone()[0] == 0
 
@@ -169,7 +171,7 @@ def test_current_processing_output_readback_binds_job_context_and_event(retained
     store, _, _ = retained
     _capture_deferred(retained, clock)
     queue = ProcessingQueue(store)
-    value = queue.process_one({})
+    value = queue.process_one(registry_context())
     assert value['status'] == 'complete' and value['outcome']['analysis_job_id']
     queue.validate_receipt(value)
     # Later current observations cannot rewrite the accepted historical receipt.
@@ -181,8 +183,8 @@ def test_current_processing_output_readback_binds_job_context_and_event(retained
 def test_processing_output_corruption_cannot_pass_batch_controller(retained, clock, field):
     store, _, _ = retained
     _capture_deferred(retained, clock)
-    receipt = ProcessingQueue(store).process_one({})
-    value = batch.run_batch(store, registry_context={}, deadline=105, guard=lambda: 'protocol-stop')
+    receipt = ProcessingQueue(store).process_one(registry_context())
+    value = batch.run_batch(store, registry_context=registry_context(), deadline=105, guard=lambda: 'protocol-stop')
     value['processing'] = json.loads(json.dumps(receipt))
     if field == 'analysis_job_id':
         value['processing']['outcome'][field] = 'f' * 64
@@ -198,7 +200,7 @@ def test_queued_processing_cannot_claim_an_invented_completed_job(retained, cloc
     store, _, _ = retained
     check = _capture_deferred(retained, clock)
     task = ProcessingQueue(store).due()
-    value = batch.run_batch(store, registry_context={}, deadline=105, guard=lambda: 'protocol-stop')
+    value = batch.run_batch(store, registry_context=registry_context(), deadline=105, guard=lambda: 'protocol-stop')
     value['processing'] = {'processing_id': task['processing_id'], 'check_id': check, 'analysis_job_id': 'f' * 64}
     with pytest.raises(ValueError, match='(?i)processing'):
         batch.validate_batch_evidence(store, value)
@@ -207,7 +209,7 @@ def test_queued_processing_cannot_claim_an_invented_completed_job(retained, cloc
 def test_graph_processing_receipt_matches_actual_expansion(retained, clock):
     store, _, _ = retained
     start(retained, '<a href="/protocol-reference">Protocol link only</a>')
-    value = ProcessingQueue(store).process_one({})
+    value = ProcessingQueue(store).process_one(registry_context())
     assert value['outcome']['graph']['links_observed'] == 1
     ProcessingQueue(store).validate_receipt(value)
     changed = json.loads(json.dumps(value))
@@ -222,7 +224,7 @@ def test_failed_parser_receipt_does_not_claim_a_job(retained, clock, monkeypatch
     def fail(*args, **kwargs):
         raise ValueError('Isolated parser protocol failure')
     monkeypatch.setattr('cdr_terms.acquisitions_queue.enqueue_interpretation', fail)
-    value = ProcessingQueue(store).process_one({})
+    value = ProcessingQueue(store).process_one(registry_context())
     assert value['status'] == 'retry_wait' and value['outcome']['attempts'] == 1
     assert 'analysis_job_id' not in value['outcome']
     ProcessingQueue(store).validate_receipt(value)
@@ -231,7 +233,7 @@ def test_failed_parser_receipt_does_not_claim_a_job(retained, clock, monkeypatch
 def test_guard_checks_both_transaction_boundaries_for_idempotent_job(retained, clock, monkeypatch):
     store, _, _ = retained
     _capture_deferred(retained, clock)
-    value = ProcessingQueue(store).process_one({})
+    value = ProcessingQueue(store).process_one(registry_context())
     job = store.db.execute('SELECT * FROM analysis_jobs WHERE job_id=?', (value['outcome']['analysis_job_id'],)).fetchone()
     context = json.loads(store.read_blob(job['context_blob_sha256']))
     calls = []
@@ -251,12 +253,12 @@ def test_processing_job_corruption_rejected_after_all_artifact_hashes_match(reta
     from cdr_terms.identity import byte_digest, canonical_json
     store, _, _ = retained
     _capture_deferred(retained, clock)
-    processing = ProcessingQueue(store).process_one({})
-    result = batch.run_batch(store, registry_context={}, deadline=105, guard=lambda: 'protocol-stop')
+    processing = ProcessingQueue(store).process_one(registry_context())
+    result = batch.run_batch(store, registry_context=registry_context(), deadline=105, guard=lambda: 'protocol-stop')
     result['processing'] = processing
     operation = tmp_path / 'private-artifacts'
     operation.mkdir(mode=0o700)
-    write_receipt(operation / 'input.json', {'evidence_root': str(store.root), 'registry_context': {}})
+    write_receipt(operation / 'input.json', {'evidence_root': str(store.root), 'registry_context': registry_context()})
     def write_artifacts():
         result['batch_sha256'] = digest({key: value for key, value in result.items() if key != 'batch_sha256'})
         value = {'schema_version': 2, 'input_sha256': byte_digest((operation / 'input.json').read_bytes()), **result}
@@ -271,7 +273,7 @@ def test_processing_job_corruption_rejected_after_all_artifact_hashes_match(reta
     processing['outcome']['analysis_job_id'] = 'f' * 64
     operation = tmp_path / 'corrupted-artifacts'
     operation.mkdir(mode=0o700)
-    write_receipt(operation / 'input.json', {'evidence_root': str(store.root), 'registry_context': {}})
+    write_receipt(operation / 'input.json', {'evidence_root': str(store.root), 'registry_context': registry_context()})
     write_artifacts()  # Integrity hashes alone cannot certify a nonexistent job.
     with pytest.raises(ValueError, match='durable outcome'):
         read_acquisition_batch(operation, store=store)
@@ -295,7 +297,7 @@ def test_expiry_during_final_graph_sql_rolls_back_unaccepted_children_and_expans
     store.db.set_trace_callback(trace)
     try:
         with pytest.raises(ValueError,match='Stale processing'):
-            ProcessingQueue(store).process_one({})
+            ProcessingQueue(store).process_one(registry_context())
     finally:
         # Python3.10 sqlite's set_authorizer(None) bug is unrelated; this trace
         # callback API can be cleared normally without installing a new runtime.
@@ -339,7 +341,7 @@ def test_graph_post_write_validation_cannot_cross_lease_expiry(retained, clock, 
     store.db.set_trace_callback(trace)
     try:
         with pytest.raises(ProcessingGuardFailure, match='Stale processing'):
-            ProcessingQueue(store).process_one({})
+            ProcessingQueue(store).process_one(registry_context())
     finally:
         store.db.set_trace_callback(None)
     assert observed == [True]
@@ -358,7 +360,7 @@ def test_post_write_guard_binds_every_exact_expansion_field(retained, clock, mon
         return original(queue, task, changed)
     monkeypatch.setattr(ProcessingQueue, 'assert_expansion', corrupt_expected)
     with pytest.raises(ProcessingGuardFailure, match='expansion_identity_mismatch'):
-        ProcessingQueue(store).process_one({})
+        ProcessingQueue(store).process_one(registry_context())
     assert graph_sql_counts(store) == before
 
 
@@ -377,7 +379,7 @@ def test_post_write_guard_rejects_source_scope_loss(retained, clock, monkeypatch
         return result
     monkeypatch.setattr(ProcessingQueue, 'validate', changed_source)
     with pytest.raises(ProcessingGuardFailure, match='source superseded'):
-        ProcessingQueue(store).process_one({})
+        ProcessingQueue(store).process_one(registry_context())
     assert graph_sql_counts(store) == before
 
 
@@ -396,7 +398,7 @@ def test_live_guard_accepts_pending_then_only_its_new_exact_expansion(retained, 
         boundaries.append((expanded, store.db.in_transaction))
         return original(queue, task, observation_ids=observation_ids, expanded=expanded)
     monkeypatch.setattr(ProcessingQueue, 'assert_lease', capture_guard)
-    result = ProcessingQueue(store).process_one({})
+    result = ProcessingQueue(store).process_one(registry_context())
     assert boundaries == [(False, True), (True, True)]
     assert result['status'] == 'complete'
     ProcessingQueue(store).validate_receipt(result)

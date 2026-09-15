@@ -7,11 +7,11 @@ from typing import Any, Mapping, Sequence
 
 from .identity import digest
 
-VERSION = "terms-parameters-v1"
+VERSION = "terms-parameters-v2"
+LEGACY_VERSION = "terms-parameters-v1"
 _DECIMAL = re.compile(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
-# Aliases are exact CDR field names from cdr_product_facts._CANONICAL_LEAF,
-# not speculative natural-language synonyms. Ambiguous amount/value fields
-# deliberately have no global mapping.
+# Retained v1 aliases are preserved byte-for-byte. V2 omits bare leaves:
+# cdr_product_facts._path_context shows that their meaning depends on containers.
 _TEXT = (
     ("product.name", ("name",)), ("product.description", ("description",)),
     ("product.brand_name", ("brandName",)), ("product.category", ("productCategory",)),
@@ -22,8 +22,10 @@ _TEXT = (
 )
 
 
-def registry_contract() -> dict[str, Any]:
+def registry_contract(version: str = VERSION) -> dict[str, Any]:
     """Return fresh JSON values so callers cannot mutate the process registry."""
+    if version not in (VERSION, LEGACY_VERSION):
+        raise ValueError("Unsupported parameter registry version")
     parameters = [{"key": key, "aliases": list(aliases), "type": "text", "unit": None}
                   for key, aliases in _TEXT]
     parameters.append({"key": "product.tailored", "aliases": ["isTailored"],
@@ -32,23 +34,31 @@ def registry_contract() -> dict[str, Any]:
         parameters.append({"key": key, "aliases": [alias], "type": "decimal",
                            "unit": "fraction_per_year"})
     for row in parameters:
+        if version == VERSION:
+            # A leaf has no container identity: even rate can belong to a fee,
+            # and nested product attributes are not root product attributes.
+            row['aliases'] = []
         row.update(applicability="source_scoped_only", supported_rule_patterns=[])
-    body = {"version": VERSION, "parameters": sorted(parameters, key=lambda row: row["key"]),
+    body = {"version": version, "parameters": sorted(parameters, key=lambda row: row["key"]),
             "unknown_policy": "Retain unmatched wording as unresolved clauses with a reason; do not invent canonical keys.",
             "qualification_policy": "Preserve source product/tier/package/cohort, conditions, exceptions and dates; recognition is not semantic or executable approval."}
     return {**body, "sha256": digest(body)}
 
 
-def validate_registry_context(context: Mapping[str, Any]) -> None:
+def validate_registry_context(context: Mapping[str, Any], *, new_job: bool = False) -> None:
     if "parameter_registry" not in context:
+        if new_job:
+            raise ValueError("Current parameter registry required for new jobs")
         return  # Immutable legacy jobs keep their existing interpretation contract.
     supplied = context["parameter_registry"]
-    if not isinstance(supplied, dict) or supplied != registry_contract():
+    version = supplied.get('version') if isinstance(supplied, dict) else None
+    supported = (VERSION,) if new_job else (VERSION, LEGACY_VERSION)
+    if version not in supported or supplied != registry_contract(version):
         raise ValueError("Unsupported or altered parameter registry context")
 
 
 def canonical_parameter(value: str) -> str | None:
-    """Exact aliases assist interpretation; staged output must use the canonical key."""
+    """Recognize current canonical identifiers; bare source leaves are ambiguous."""
     for row in registry_contract()["parameters"]:
         if value == row["key"] or value in row["aliases"]:
             return row["key"]
@@ -59,7 +69,7 @@ def validate_parameter_terms(context: Mapping[str, Any], terms: Sequence[Mapping
     validate_registry_context(context)
     if "parameter_registry" not in context:
         return
-    definitions = {row["key"]: row for row in registry_contract()["parameters"]}
+    definitions = {row["key"]: row for row in context['parameter_registry']["parameters"]}
     for term in terms:
         definition = definitions.get(term["parameter_key"])
         if definition is None:

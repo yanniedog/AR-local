@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 import pi_terms_codex as transport
 import pi_terms_worker as worker
 from cdr_atomic import atomic_write_json
@@ -38,7 +40,7 @@ def setup(tmp_path, monkeypatch):
         row = store.db.execute('SELECT document_id FROM documents WHERE source_url=?', (source['links']['self'],)).fetchone()
         extraction = extract_version(store, store.last_success(row[0])['document_version_id'])
         queue = TermsQueue(store)
-        job_id = queue.enqueue(extraction, {'product_keys': ['Bank of Melbourne|' + source['data']['productId']]})
+        job_id = queue.enqueue(extraction, {**registry_context(), 'product_keys': ['Bank of Melbourne|' + source['data']['productId']]})
         job = store.db.execute('SELECT * FROM analysis_jobs WHERE job_id=?', (job_id,)).fetchone()
         output = {'schema_version': 1, 'extraction_id': extraction, 'context_sha256': job['context_sha256'],
                   'clauses': [], 'terms': [], 'unresolved': ['Protocol test, not a complete financial interpretation']}
@@ -107,7 +109,7 @@ def test_quota_cooldown_applies_to_other_jobs_and_survives_new_invocation(setup,
     assert worker.parsed_time(first['retry_after']) == reset + timedelta(minutes=1)
     with EvidenceStore(setup[0]) as store:
         job = store.db.execute('SELECT extraction_id FROM analysis_jobs WHERE job_id=?', (setup[3],)).fetchone()
-        TermsQueue(store).enqueue(job[0], {'product_keys': ['second-context-protocol-only']})
+        TermsQueue(store).enqueue(job[0], {**registry_context(), 'product_keys': ['second-context-protocol-only']})
     assert invoke(setup)['reason'] == 'account_cooldown' and len(calls) == 1
     # Replacing valid credentials cannot bypass a quota deadline.
     (setup[1] / 'auth.json').write_text(json.dumps({'auth_mode': 'chatgpt', 'tokens': {'access_token': 'replacement-test-only'}}))
@@ -309,7 +311,7 @@ def test_unreviewed_context_cannot_upload_customer_profile(setup):
         queue = TermsQueue(store)
         old = queue.claim(now=NOW.isoformat())
         queue.event(old['job_id'], 'blocked', lease_id=old['lease_id'], error_code='protocol_setup')
-        job_id = queue.enqueue(old['extraction_id'], {'product_keys': ['protocol-only'],
+        job_id = queue.enqueue(old['extraction_id'], {**registry_context(), 'product_keys': ['protocol-only'],
                                                     'customer_profile': {'private': 'must remain local'}})
         job = queue.claim(now=NOW.isoformat())
         operation = setup[0] / 'forbidden-profile-operation'
@@ -361,7 +363,7 @@ def test_historical_output_without_required_scope_cannot_stage(setup, monkeypatc
     job, _ = historical_setup(setup)
     del setup[4]['historical_scope']
     simulate(monkeypatch, setup)
-    assert invoke(setup)['result'] == 'DEFERRED'
+    assert invoke(setup)['result'] == 'BLOCKED'
     with EvidenceStore(setup[0]) as store:
         row = store.db.execute('SELECT status FROM job_events WHERE job_id=? ORDER BY sequence DESC LIMIT 1', (job,)).fetchone()
-        assert row[0] == 'retry_wait'
+        assert row[0] == 'blocked'

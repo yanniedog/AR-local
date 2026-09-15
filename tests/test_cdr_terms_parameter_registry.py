@@ -85,7 +85,7 @@ def test_context_hash_binds_definitions_and_rejects_rehashed_injected_fields():
 
 
 def test_exact_cdr_aliases_do_not_guess_narrative_or_ambiguous_amounts():
-    assert canonical_parameter('comparisonRate') == 'rate.comparison'
+    assert canonical_parameter('comparisonRate') is None
     assert canonical_parameter('rate.comparison') == 'rate.comparison'
     assert canonical_parameter('cheap interest') is None
     assert canonical_parameter('amount') is None
@@ -94,7 +94,7 @@ def test_exact_cdr_aliases_do_not_guess_narrative_or_ambiguous_amounts():
     assert registry_contract()['parameters']
 
 
-def test_immutable_legacy_context_retains_its_existing_contract(evidence):
+def test_current_context_retains_staging_and_revision_contract(evidence):
     queue, job, output, args = _staged_term(evidence)
     queue.validate_staging(job, output)
     assert stage_term(evidence[0], **args)
@@ -112,6 +112,11 @@ def test_worker_envelope_admits_exact_registry_and_refuses_nested_profile(eviden
     if inject_profile:
         context['parameter_registry']['customer_profile'] = {'private': 'must not reach transport'}
     queue = TermsQueue(store)
+    if inject_profile:
+        with pytest.raises(ValueError, match='registry context'):
+            queue.enqueue(extraction, context, now=NOW)
+        assert not (tmp_path / 'worker-operation').exists()
+        return
     job_id = queue.enqueue(extraction, context, now=NOW)
     # Exercise the actual transport preparation boundary, including its queue
     # input validation, without a model call or test-only context whitelist.
@@ -120,13 +125,8 @@ def test_worker_envelope_admits_exact_registry_and_refuses_nested_profile(eviden
                                'WHERE job_id=?', (job_id,)).fetchone())
     job['lease_id'] = 'transport-contract-test-only'
     operation = (tmp_path / 'worker-operation').resolve()
-    if inject_profile:
-        with pytest.raises(ValueError, match='registry context'):
-            prepare_job(store, job, operation)
-        assert not operation.exists()
-    else:
-        prepare_job(store, job, operation)
-        payload = json.loads((operation / 'input.json').read_bytes())
-        assert payload['context'] == context
-        assert payload['context']['parameter_registry'] == registry_contract()
-        assert payload['source_text'] == store.read_blob(job['text_sha256']).decode('utf-8')
+    prepare_job(store, job, operation)
+    payload = json.loads((operation / 'input.json').read_bytes())
+    assert payload['context'] == context
+    assert payload['context']['parameter_registry'] == registry_contract()
+    assert payload['source_text'] == store.read_blob(job['text_sha256']).decode('utf-8')

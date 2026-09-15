@@ -22,7 +22,7 @@ from jsonschema.exceptions import ValidationError
 from ar_local_operation_lock import production_lock
 from cdr_atomic import atomic_write_json
 from cdr_terms.identity import byte_digest, canonical_json, timestamp
-from cdr_terms.queue import STAGING_SCHEMA, TermsQueue
+from cdr_terms.queue import STAGING_SCHEMA, StagingValidationError, TermsQueue
 from cdr_terms.store import EvidenceStore
 from pi_cdr_quality_resources import Limits, require_receipt, supervise
 from pi_terms_codex import (MAX_INPUT_BYTES, MAX_LOG_BYTES, MAX_RECEIPT_BYTES,
@@ -285,7 +285,7 @@ def process_job(queue: TermsQueue, job: dict, repo: Path, root: Path, auth_home:
                         reason = 'transport'
                     result = defer(queue, job, root, state, reason, auth_sha,
                                    reset_at=transport.get('reset_at'), codex_called=transport.get('codex_called'))
-    except ValidationError:
+    except (ValidationError, StagingValidationError):
         result = {'result': transition_owned(queue, job, 'blocked', reason='invalid_staging_schema'),
                   'reason': 'invalid_staging_schema', 'job_id': job['job_id'], 'publication': 'NOT_ATTEMPTED'}
     except (OSError, ValueError, KeyError, RuntimeError):

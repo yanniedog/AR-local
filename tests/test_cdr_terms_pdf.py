@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 pypdf = pytest.importorskip('pypdf')
 from pypdf.generic import ArrayObject, DecodedStreamObject, DictionaryObject, NameObject, TextStringObject
 
@@ -226,7 +228,7 @@ def _pdf_staging(store, *, coverage_change=None):
             text=store.read_blob(row['text_sha256']).decode(), observed_at='2026-09-14T00:00:01Z',
             status='partial', coverage=coverage)
     # Private unbound staging protocol: not a bank or a publishable product scope.
-    context = {'product_keys': ['protocol-only']}
+    context = {**registry_context(), 'product_keys': ['protocol-only']}
     queue = TermsQueue(store)
     job = queue.enqueue(extraction, context, now='2026-09-14T00:00:02Z')
     output = {'schema_version': 1, 'extraction_id': extraction, 'context_sha256': digest(context),

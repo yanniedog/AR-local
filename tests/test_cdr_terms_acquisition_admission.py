@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 import pi_terms_acquire
 from cdr_terms import acquisition as http
 from cdr_terms import acquisition_batch as batch
@@ -78,7 +80,7 @@ def test_shared_document_preserves_unsuperseded_product_binding(tmp_path, clock)
 def test_parent_deadline_is_not_reset_after_child_startup(retained, clock, monkeypatch, tmp_path):
     operation = tmp_path / 'operation'
     operation.mkdir(mode=0o700)
-    write_receipt(operation / 'input.json', {'evidence_root': str(retained.root), 'registry_context': {}, 'admission_deadline': 105})
+    write_receipt(operation / 'input.json', {'evidence_root': str(retained.root), 'registry_context': registry_context(), 'admission_deadline': 105})
     clock.advance(106)
     monkeypatch.setattr(pi_terms_acquire, 'runtime_guard', lambda *a: lambda: None)
     monkeypatch.setattr(http, 'fetch_document', lambda *a, **k: pytest.fail('expired parent admission cannot fetch'))
@@ -129,7 +131,7 @@ def test_128_dispositions_fit_bounded_batch_and_small_transport_receipts(tmp_pat
             # Repeated source observations test generation accounting only.
             observed = (datetime(2026, 9, 7, tzinfo=timezone.utc) + timedelta(minutes=index)).isoformat()
             add_source(store, ingest='protocol-generation-' + str(index), observed=observed)
-    write_receipt(operation / 'input.json', {'evidence_root': str(evidence), 'registry_context': {}, 'admission_deadline': 105})
+    write_receipt(operation / 'input.json', {'evidence_root': str(evidence), 'registry_context': registry_context(), 'admission_deadline': 105})
     monkeypatch.setattr(pi_terms_acquire, 'runtime_guard', lambda *_: lambda: None)
     monkeypatch.setattr(http, 'fetch_document', lambda *_a, **_k: pytest.fail('maintenance bound stops before current capture'))
     value = pi_terms_acquire.run(operation)

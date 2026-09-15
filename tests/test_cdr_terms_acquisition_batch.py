@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from cdr_terms.ingest import registry_context
+
 from cdr_terms import acquisition as http
 from cdr_terms import acquisition_batch as batch
 from cdr_terms.acquisition_processing import ProcessingQueue
@@ -81,7 +83,7 @@ def replay(monkeypatch, clock, *, elapsed=0):
 
 
 def run(store, clock, *, guard=lambda: None, **kwargs):
-    return batch.run_batch(store, registry_context={}, deadline=clock.elapsed + 105, guard=guard, **kwargs)
+    return batch.run_batch(store, registry_context=registry_context(), deadline=clock.elapsed + 105, guard=guard, **kwargs)
 
 
 def test_24_retained_urls_capture_sequentially_without_synchronous_parser(retained, clock, monkeypatch):
@@ -196,7 +198,7 @@ def test_processing_crash_lease_backoff_and_four_attempt_exhaustion_allows_sibli
     for attempt in range(2, 5):
         clock.advance(4000)
         with pytest.raises(SystemExit):
-            parser.process_one({})
+            parser.process_one(registry_context())
         clock.advance(181)
         parser.claim()  # expired owner becomes backoff/exhausted, never immediate retry
     event = retained.db.execute('SELECT * FROM acquisition_processing_events WHERE processing_id=? ORDER BY sequence DESC LIMIT 1', (poison,)).fetchone()

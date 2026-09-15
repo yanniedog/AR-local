@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 import pytest
+
+from cdr_terms.ingest import registry_context
 from cdr_terms import acquisition as http, acquisition_batch as batch
 from cdr_terms.acquisitions_queue import AcquisitionQueue
 from cdr_terms.acquisition_processing import ProcessingQueue
@@ -205,8 +207,8 @@ def test_graph_child_does_not_consume_generic_then_node_processing_slots(retaine
     if legacy_generic:
         with store.db:
             legacy = processing.enqueue(request['request_id'], digest([request['request_id'], request['lease_id']]), now=clock.now())
-    first=processing.process_one({})
-    second=processing.process_one({})
+    first=processing.process_one(registry_context())
+    second=processing.process_one(registry_context())
     rows=[dict(x) for x in store.db.execute('SELECT * FROM acquisition_processing WHERE request_id=?',(child['request_id'],))]
     assert first['status']=='complete' and first['node_id']==child['node_id'] and 'graph' in first['outcome']
     assert second is None
@@ -236,7 +238,7 @@ def test_changed_current_capture_precedes_older_unchanged_processing(retained,cl
         clock.advance(1)
     assert [x['analysis_priority'] for x in checks]==[1,1,0]
     due=parser.due()
-    actual=parser.process_one({})
+    actual=parser.process_one(registry_context())
     assert actual['status']=='complete' and actual['outcome']['analysis_job_id']
     assert actual['check_id']==checks[-1]['check_id'], 'Changed current evidence is queued behind unchanged parser work'
 
@@ -319,7 +321,7 @@ def test_actual_graph_capture_priority_and_process_one_order(retained, clock, mo
         assert store.db.execute('SELECT COUNT(*) FROM acquisition_processing_schedule').fetchone()[0] <= 64
         row = store.db.execute('SELECT * FROM acquisition_processing_schedule WHERE processing_id=?', (identity,)).fetchone()
         assert row['priority'] == (1 if state == 'unchanged' else 0), row['evidence_json']
-    result = parser.process_one({})
+    result = parser.process_one(registry_context())
     expected = direct if state == 'unchanged' else check
     assert result['status'] == 'complete' and result['check_id'] == expected['check_id']
     if state != 'unchanged':

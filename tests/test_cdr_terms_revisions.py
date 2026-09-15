@@ -127,7 +127,7 @@ def test_revision_fields_must_match_one_exact_staged_term(evidence, field, new_v
 def test_type_exact_staging_comparison_preserves_unknown_false_zero_and_text(evidence, staged_value, revision_value):
     def altered(output):
         output["terms"][0]["value"] = staged_value
-    _, _, _, arguments = _staged_term(evidence, output_change=altered)
+    _, _, _, arguments = _staged_term(evidence, output_change=altered, retained_legacy=True)
     arguments["value"] = revision_value
     with pytest.raises(ValueError, match="exact staged term"):
         stage_term(evidence[0], **arguments)
@@ -154,7 +154,7 @@ def test_ambiguous_or_unrepresented_staging_cannot_be_silently_promoted(evidence
             output["terms"][0][mutation] = "unreviewed-pattern"
         else:
             output["terms"][0][mutation] = ["Retained qualifier must not disappear"]
-    _, _, _, arguments = _staged_term(evidence, output_change=alter)
+    _, _, _, arguments = _staged_term(evidence, output_change=alter, retained_legacy=True)
     with pytest.raises(ValueError, match="staged term|qualifier|rule pattern"):
         stage_term(evidence[0], **arguments)
 
