@@ -5,6 +5,7 @@ from cdr_terms.executable_inputs import material_contract
 from tests.executable_code_fixture import retained_code_artifacts
 from datetime import date, timedelta
 from decimal import Decimal
+from cdr_terms.executable_eligibility import verify_eligibility
 
 
 def benchmark_control(store, template):
@@ -49,7 +50,7 @@ def benchmark_control(store, template):
             'contractId': template['id'], 'dependencies': [template['id']], 'status': status,
             'completeness': 'factual_complete' if complete else 'unsupported', 'issueDetails': [],
             'claimAvailable': complete, 'issues': [] if complete else ['td_confirmed_rate_mismatch'], 'assumptions': [],
-            'eligibility': {'status': 'meets', 'reasons': [], 'trace': {'id': 'protocol', 'status': 'meets', 'evidenceIds': []}} if complete else None,
+            'eligibility': verify_eligibility(template['eligibility'], inputs['scenario']['facts']) if complete else None,
             'totals': {key: None if key == 'principalRepaid' else '0.00' for key in TOTALS} if complete else None,
             'ledger': [{'date': '2026-01-01', 'id': 'protocol', 'type': 'interest_posting', 'amount': '0.00', 'balance': '0.00', 'evidenceIds': []}] if complete else []}
         if complete and template['evaluatorVersion'] == 'product-terms-engine-v8':

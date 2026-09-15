@@ -11,6 +11,7 @@ from .identity import byte_digest, canonical_json
 from .executable_inputs import validate_instantiated_input
 from .executable_code import verify_code_artifact
 from .executable_adapter_input import validate_adapter_input
+from .executable_eligibility import verify_eligibility
 
 TOTALS = frozenset(('openingBalance', 'externalCashflowNet', 'principalRepaid', 'externalInflows',
                    'externalOutflows', 'interestAccrued', 'interestPosted', 'interestUnposted',
@@ -112,8 +113,9 @@ def validate_result(result, template, inputs):
             raise ValueError('Executable benchmark local confirmation timestamp lacks zone')
     eligibility = result['eligibility']
     _object(eligibility, ('status', 'trace', 'reasons'), 'eligibility')
-    if eligibility['status'] != 'meets' or eligibility['reasons'] != []:
-        raise ValueError('Executable benchmark eligibility not met')
+    evaluated = verify_eligibility(template['eligibility'], inputs['scenario']['facts'])
+    if evaluated['status'] != 'meets' or eligibility != evaluated:
+        raise ValueError('Executable benchmark eligibility differs from actual facts')
     _trace(eligibility['trace'])
     if not isinstance(result['ledger'], list) or not 1 <= len(result['ledger']) <= 10000:
         raise ValueError('Executable benchmark ledger bound exceeded')

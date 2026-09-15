@@ -5,12 +5,10 @@ import re
 
 from .identity import byte_digest, require_sha
 from .executable_sources import _OPERATION
+from .executable_imports import literal_imports
 
 ENTRYPOINTS = {'adapter': 'mobile/src/data/executableContracts/instantiate.ts',
               'evaluator': 'mobile/src/lib/productTermsEngine/ledger.ts'}
-IMPORTS = re.compile(r'''(?:\b(?:import|export)\s+(?:type\s+)?[^;]*?\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)['"]([^'"]+)['"]''')
-CALLS = re.compile(r'\b(?:require|import)\s*\(')
-LITERAL_CALL = re.compile(r'''\b(?:require|import)\s*\(\s*(?:'[^'\\\r\n]*'|"[^"\\\r\n]*")\s*\)''')
 PATH = re.compile(r'[A-Za-z0-9_@. /-]+')
 MAX_FILES = 256
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
@@ -64,9 +62,7 @@ def verify_code_artifact(store, identity, role, version):
             raise ValueError('Executable local import missing: ' + path)
         seen.add(path)
         text = sources[path].decode('utf-8-sig')
-        if any(not LITERAL_CALL.match(text, match.start()) for match in CALLS.finditer(text)):
-            raise ValueError('Executable nonliteral dynamic import unsupported')
-        for specifier in IMPORTS.findall(text):
+        for specifier in literal_imports(text):
             if not specifier.startswith('.'):
                 externals.add('/'.join(specifier.split('/')[:2]) if specifier.startswith('@') else specifier.split('/')[0])
                 continue

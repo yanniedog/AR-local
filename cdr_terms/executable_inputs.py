@@ -5,6 +5,19 @@ from decimal import Decimal
 import re
 
 
+def principal_decimal(value, *, historical_fault_injection=False):
+    pattern = r'(?:0|[1-9][0-9]*)\.[0-9]{2}'
+    if historical_fault_injection:
+        pattern = r'(?:0|[1-9][0-9]*)(?:\.[0-9]{1,24})?'
+    if (not isinstance(value, str) or len(value) > 72
+            or not re.fullmatch(pattern, value)):
+        raise ValueError('Executable adapter principal syntax invalid')
+    amount = Decimal(value)
+    if amount <= 0:
+        raise ValueError('Executable adapter principal must be positive cents')
+    return amount
+
+
 def material_contract(template, principal, funded, maturity):
     """Exact source-derived contract fields; customer values remain private."""
     t, refs = template, template['fieldClauseIds']
@@ -36,7 +49,7 @@ def validate_instantiated_input(template, inputs, *, complete=True):
     lifecycle = contract.get('tdLifecycle') or {}
     try:
         principal = lifecycle['investmentAmount']
-        amount = Decimal(principal)
+        amount = principal_decimal(principal)
         start = date.fromisoformat(lifecycle['fundedDate'])
         end = date.fromisoformat(lifecycle['nominalMaturityDate'])
         term = template['term']
@@ -48,7 +61,7 @@ def validate_instantiated_input(template, inputs, *, complete=True):
             last = monthrange(year, month + 1)[1]
             day = last if term['monthConvention'] == 'preserve_month_end' and start.day == monthrange(start.year, start.month)[1] else min(start.day, last)
             expected_end = date(year, month + 1, day)
-        if (not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal('.01'))
+        if (not amount.is_finite() or amount <= 0
                 or end != expected_end or not 0 < (end - start).days <= 3660
                 or not template['effectiveFrom'] <= start.isoformat() < template['effectiveToExclusive']
                 or template['effectiveScope'] == 'whole_accrual_horizon' and end.isoformat() > template['effectiveToExclusive']):
@@ -84,6 +97,13 @@ def validate_instantiated_input(template, inputs, *, complete=True):
 
 def validate_scenario(template, contract, scenario, *, complete):
     lifecycle = contract['tdLifecycle']
+    # Retained v7 refusal deliberately injected a non-adapter opening balance.
+    historical_fault = not complete and template['evaluatorVersion'] == 'product-terms-engine-v7'
+    principal_decimal(scenario.get('openingBalance'), historical_fault_injection=historical_fault)
+    confirmation = scenario.get('tdConfirmation')
+    if not isinstance(confirmation, dict):
+        raise ValueError('Executable scenario confirmation required')
+    principal_decimal(confirmation.get('principal'), historical_fault_injection=historical_fault)
     fixed = {'accountId': 'td_' + template['id'], 'productId': template['productKey'],
              'cohortKey': template['cohortKey'], 'startDate': lifecycle['fundedDate'],
              'endDateExclusive': contract['applicability']['toExclusive'], 'initialOffset': '0',
@@ -115,8 +135,8 @@ def validate_scenario(template, contract, scenario, *, complete):
             raise ValueError('Executable scenario-owned fact binding mismatch')
     if complete:
         confirmation = scenario['tdConfirmation']
-        if (not isinstance(confirmation, dict) or Decimal(scenario['openingBalance']) != Decimal(lifecycle['investmentAmount'])
-                or Decimal(confirmation.get('principal', 'NaN')) != Decimal(lifecycle['investmentAmount'])
+        if (not isinstance(confirmation, dict) or scenario['openingBalance'] != lifecycle['investmentAmount']
+                or confirmation.get('principal') != lifecycle['investmentAmount']
                 or confirmation.get('fundedDate') != lifecycle['fundedDate']
                 or confirmation.get('maturityDate') != lifecycle['nominalMaturityDate']):
             raise ValueError('Executable complete scenario confirmation differs from contract')

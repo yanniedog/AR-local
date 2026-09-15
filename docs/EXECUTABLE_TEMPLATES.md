@@ -187,3 +187,20 @@ the positive execution; `evaluator_fault_injection` identifies the negative
 engine scenario. The latter does not claim that the adapter returned a scenario
 for the mismatched raw input: the adapter rejects it before instantiation.
 Existing actual bridge bytes and v7 retrospective case formats are unchanged.
+
+The source scanner tokenizes comments, strings and template expressions before
+finding supported literal imports. It rejects ambiguous statement/regex slash
+boundaries and unsupported dynamic expressions; this remains a bounded source
+closure check, not a universal JavaScript parser or runtime attestation.
+
+Complete receipts must exactly match the independent eligibility verification
+oracle, including ordered reasons and trace. The oracle is checked against 33
+retained outputs from the actual TypeScript evaluator at commit
+`0a0a42967fc62c9012dd85993ce9f4286eafb5c8`; the fixture records source hashes.
+It verifies eligibility only and does not execute financial calculations.
+Missing and explicit-null customer facts cannot be replaced by a claimed meets
+status. Adapter-produced principal fields must use canonical positive two-decimal
+strings. The retained unsupported v7 fault-injection scenario retains its original
+engine-valid amount spelling; all complete cases and v8 cases require canonical
+adapter spelling. Source snapshots reuse the already validated product projection
+within that operation, with no persistent authorization cache.

@@ -194,4 +194,4 @@ def validate_current_sources(store, template):
                     'sourceUrl': row['source_url'], 'locator': canonical_json(json.loads(row['locator_json'])), 'quote': row['text']}
         if any(item[k] != v for k, v in expected.items()):
             raise ValueError('Executable clause evidence changed')
-    return observation
+    return asset
