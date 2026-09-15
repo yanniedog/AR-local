@@ -8,6 +8,25 @@ from cdr_terms.executable_v2_publication import build_asset
 from tests.executable_protocol_fixture import protocol,NOW
 from tests.test_executable_v2_sources import v2_protocol
 
+@pytest.mark.parametrize('author,reviewer',[('alice','alice '),(' alice ','alice')])
+def test_v1_whitespace_does_not_create_independence(protocol,author,reviewer):
+    store,template,_,_=protocol
+    stage_subject(store,template,interpreter=author,staged_at=NOW)
+    with pytest.raises(ValueError,match='separate reviewer'):
+        review_subject(store,template['id'],decision='approved',reviewer=reviewer,reviewer_kind='human',reviewed_at=NOW,
+            evidence_sha256='0'*64,reason='Technical control',expected_previous_review_id=None)
+    assert store.db.execute('SELECT COUNT(*) FROM executable_reviews').fetchone()[0]==0
+
+@pytest.mark.parametrize('actor',[None,' ',42])
+def test_v1_blank_or_nonstrings_refuse(protocol,actor):
+    store,template,_,_=protocol
+    with pytest.raises(ValueError,match='identity required'):
+        stage_subject(store,template,interpreter=actor,staged_at=NOW)
+    stage_subject(store,template,interpreter='author',staged_at=NOW)
+    with pytest.raises(ValueError,match='disposition required'):
+        review_subject(store,template['id'],decision='approved',reviewer=actor,reviewer_kind='human',reviewed_at=NOW,
+            evidence_sha256='0'*64,reason='Technical control',expected_previous_review_id=None)
+
 @pytest.mark.parametrize('field',['core_asset_sha256','details_asset_sha256','run_date'])
 def test_empty_subject_publication_rejects_unbound_assets(v2_protocol,field):
     store,subject,_,_=v2_protocol
