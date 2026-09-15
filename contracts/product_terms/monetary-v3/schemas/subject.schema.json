@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:monetary-wire3-draft:subject",
+  "$comment": "DRAFT ONLY. No freeze, bank approval or runtime adoption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "capability",
+    "kind",
+    "adapterVersion",
+    "evaluatorVersion",
+    "id",
+    "scopeId",
+    "scope",
+    "routing",
+    "authorityGraph",
+    "policy",
+    "documentVersionIds",
+    "termRevisionIds",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 3
+    },
+    "capability": {
+      "const": "savings_calculation"
+    },
+    "kind": {
+      "const": "aud_savings_base_period_v1"
+    },
+    "adapterVersion": {
+      "const": "aud-savings-base-v1"
+    },
+    "evaluatorVersion": {
+      "const": "product-terms-engine-v8"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scopeId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scope": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/scope"
+    },
+    "routing": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/routing"
+    },
+    "authorityGraph": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:authority-graph"
+    },
+    "policy": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:savings-policy"
+    },
+    "documentVersionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "termRevisionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/evidence"
+    }
+  }
+}

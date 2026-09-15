@@ -1,0 +1,143 @@
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
+import { dayNumber } from './calendar';
+import { Decimal } from './decimal';
+import { EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, PORTFOLIO_EVALUATOR_VERSION, LOAN_EVALUATOR_VERSION, FEE_EVALUATOR_VERSION, LEGACY_EVALUATOR_VERSION, SAVINGS_EVALUATOR_VERSION, TD_EVALUATOR_VERSION, type CalculationReceipt, type LedgerContract, type LedgerScenario, type Rule } from './types';
+import { validateLoan } from './loanValidation';
+import { nonNegativeComponent } from './loanComponents';
+import type { AccountAuthority } from './accountAuthority';
+import { validateSavings } from './savingsValidation';
+import { validateTd } from './tdValidation';
+import { validateFees } from './feeValidation';
+
+export function hashText(text: string): string { return bytesToHex(sha256(utf8ToBytes(text))); }
+export function canonical(value: unknown, depth = 0): string {
+  if (depth > 40) throw new Error('input_depth_exceeded');
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  if (Array.isArray(value)) {
+    if (value.length > 20_000) throw new Error('input_array_limit');
+    return '[' + value.map(item => canonical(item, depth + 1)).join(',') + ']';
+  }
+  if (typeof value !== 'object' || value === undefined) throw new Error('non_json_input');
+  return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical((value as Record<string, unknown>)[key], depth + 1)).join(',') + '}';
+}
+const digest = (value: string): boolean => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+export function money(value: string): Decimal {
+  const parsed = Decimal.parse(value);
+  if (parsed.compare(parsed.rounded(2, 'toward_zero')) !== 0) throw new Error('money_requires_exact_cents');
+  return parsed;
+}
+export function nonNegative(value: string): Decimal {
+  const parsed = money(value);
+  if (parsed.compare(Decimal.parse('0')) < 0) throw new Error('negative_amount_unsupported');
+  return parsed;
+}
+export function rate(value: string): Decimal {
+  const parsed = Decimal.parse(value);
+  if (parsed.compare(Decimal.parse('-1')) < 0 || parsed.compare(Decimal.parse('1')) > 0) throw new Error('rate_fraction_out_of_bounds');
+  return parsed;
+}
+
+export function validateLedger(contract: LedgerContract, scenario: LedgerScenario, details: NonNullable<CalculationReceipt['issueDetails']> = [], authority?: AccountAuthority): string[] {
+  if (contract.schemaVersion !== 1 || ![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, PORTFOLIO_EVALUATOR_VERSION, LOAN_EVALUATOR_VERSION, FEE_EVALUATOR_VERSION, LEGACY_EVALUATOR_VERSION, SAVINGS_EVALUATOR_VERSION, TD_EVALUATOR_VERSION].includes(contract.evaluatorVersion) ||
+      (![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, PORTFOLIO_EVALUATOR_VERSION, LOAN_EVALUATOR_VERSION, FEE_EVALUATOR_VERSION, TD_EVALUATOR_VERSION].includes(contract.evaluatorVersion as typeof EVALUATOR_VERSION) && contract.tdLifecycle !== undefined) ||
+      (![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, PORTFOLIO_EVALUATOR_VERSION, LOAN_EVALUATOR_VERSION, FEE_EVALUATOR_VERSION].includes(contract.evaluatorVersion as typeof EVALUATOR_VERSION) && contract.feeSchedule !== undefined) ||
+      (![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, PORTFOLIO_EVALUATOR_VERSION, LOAN_EVALUATOR_VERSION].includes(contract.evaluatorVersion as typeof EVALUATOR_VERSION) && (contract.loanContract !== undefined || scenario.loan !== undefined)) ||
+      (![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, PORTFOLIO_EVALUATOR_VERSION].includes(contract.evaluatorVersion as typeof EVALUATOR_VERSION) && scenario.executionAssumption !== undefined) ||
+      (contract.evaluatorVersion === LEGACY_EVALUATOR_VERSION && (contract.savingsSchedule !== undefined || scenario.savingsAssessments !== undefined))) throw new Error('contract_version_unsupported');
+  if (scenario.tdConfirmation !== undefined && (![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION].includes(contract.evaluatorVersion as typeof EVALUATOR_VERSION) || contract.tdLifecycle?.mode !== 'fixed_maturity')) throw new Error('td_confirmation_version_unsupported');
+  if (!contract.id || !contract.productId || scenario.productId !== contract.productId) throw new Error('product_mismatch');
+  if (contract.currency !== 'AUD' || !['asset', 'liability'].includes(contract.direction)) throw new Error('currency_or_direction_unsupported');
+  const start = dayNumber(scenario.startDate), end = dayNumber(scenario.endDateExclusive);
+  if (end <= start || end - start > 18_300) throw new Error('scenario_horizon_unsupported');
+  if (contract.loanContract) nonNegativeComponent(scenario.openingBalance); else nonNegative(scenario.openingBalance);
+  nonNegative(scenario.initialOffset); rate(contract.initialAnnualRate);
+  if (!Array.isArray(contract.evidence) || !contract.evidence.length || contract.evidence.length > 4096) throw new Error('source_evidence_required');
+  const known = new Set<string>();
+  for (const evidence of contract.evidence) {
+    const url = new URL(evidence.sourceUrl);
+    if (!evidence.id || known.has(evidence.id) || !evidence.clauseId || !evidence.locator ||
+        url.protocol !== 'https:' || url.username || url.password || !digest(evidence.documentSha256) ||
+        !evidence.quote || evidence.quote.length > 4000 || hashText(evidence.quote) !== evidence.quoteSha256) throw new Error('source_evidence_invalid');
+    known.add(evidence.id);
+  }
+  const refs = (ids: string[]): void => {
+    if (!Array.isArray(ids) || !ids.length || ids.some(id => !known.has(id))) throw new Error('source_reference_missing');
+  };
+  if (!digest(contract.review.benchmarkSha256)) throw new Error('reviewed_benchmark_required');
+  if (!Array.isArray(contract.dependencyIds) || !contract.dependencyIds.length ||
+      contract.dependencyIds.some(id => typeof id !== 'string' || !id) || new Set(contract.dependencyIds).size !== contract.dependencyIds.length) throw new Error('dependency_identity_invalid');
+  const issues: string[] = [];
+  for (const key of ['applicability', 'materialTerms', 'feeCoverage', 'rateSchedule'] as const) {
+    if (contract.review[key] !== 'verified') issues.push(`unverified:${key}`);
+  }
+  const scope = contract.applicability;
+  if (!scope.cohortKey || scope.cohortKey !== scenario.cohortKey || !scope.from || !scope.toExclusive) issues.push('applicability_not_proven_for_horizon');
+  else if (dayNumber(scope.from) > start || dayNumber(scope.toExclusive) < end) issues.push('outside_effective_interval');
+  if (!Array.isArray(contract.unsupportedTerms)) throw new Error('unsupported_term_inventory_required');
+  issues.push(...contract.unsupportedTerms.map(term => `unsupported_term:${term}`));
+  if (!Array.isArray(scenario.assumptions) || scenario.assumptions.some(value => typeof value !== 'string')) throw new Error('assumptions_invalid');
+  if (!scenario.facts || typeof scenario.facts !== 'object' || Array.isArray(scenario.facts)) throw new Error('facts_invalid');
+  const interest = contract.interest;
+  const expectedBasis = contract.loanContract ? 'loan_declared_component_basis' : 'closing_balance_before_posted_interest';
+  const expectedOrder = contract.loanContract ? 'loan_declared_payment_phase_then_posting' : 'ordered_events_then_accrual_then_posting';
+  if (!['actual_365_fixed', 'actual_actual'].includes(interest.dayCount) || interest.balanceBasis !== expectedBasis ||
+      interest.eventOrder !== expectedOrder || !['none', 'capped_at_balance'].includes(interest.offset)) throw new Error('interest_pattern_unsupported');
+  if (interest.offset === 'none' && nonNegative(scenario.initialOffset).compare(Decimal.parse('0')) !== 0) throw new Error('offset_unsupported');
+  if (contract.direction === 'asset' && interest.offset !== 'none') throw new Error('deposit_offset_unsupported');
+  const scale = (value: number): void => { if (!Number.isInteger(value) || value < 0 || value > 12) throw new Error('rounding_scale_unsupported'); };
+  if (interest.dailyAccrualScale !== null) scale(interest.dailyAccrualScale);
+  const modes = ['half_up', 'half_even', 'toward_zero'];
+  if (!modes.includes(interest.accrualRounding) || !modes.includes(interest.postingRounding)) throw new Error('rounding_mode_unsupported');
+  if (interest.dailyRateRounding !== null) {
+    scale(interest.dailyRateRounding.scale);
+    if (!['fraction', 'percent'].includes(interest.dailyRateRounding.unit) || !modes.includes(interest.dailyRateRounding.mode)) throw new Error('daily_rate_rounding_unsupported');
+  }
+  refs(interest.evidenceIds); refs(contract.initialRateEvidenceIds);
+  if (!Array.isArray(interest.postingDates) || interest.postingDates.length > 18_300 || new Set(interest.postingDates).size !== interest.postingDates.length) throw new Error('posting_dates_invalid');
+  for (const date of interest.postingDates) if (dayNumber(date) < start || dayNumber(date) >= end) throw new Error('posting_date_outside_horizon');
+  let ruleCount = 0;
+  const ruleIds = new Set<string>();
+  const ruleRefs = (rule: Rule, depth = 0): void => {
+    if (!rule || depth > 16 || ++ruleCount > 512) throw new Error('rule_depth_or_size_invalid');
+    if (!rule.id || ruleIds.has(rule.id)) throw new Error('rule_identity_invalid');
+    ruleIds.add(rule.id);
+    if (rule.op === 'and' || rule.op === 'or') { if (!Array.isArray(rule.rules) || !rule.rules.length || rule.rules.length > 128) throw new Error('rule_group_invalid'); rule.rules.forEach(child => ruleRefs(child, depth + 1)); }
+    else if (rule.op === 'not') ruleRefs(rule.rule, depth + 1);
+    else if (rule.op === 'compare') refs(rule.evidenceIds!);
+    else if (rule.op !== 'unknown') throw new Error('rule_operator_unsupported');
+  };
+  ruleRefs(contract.eligibility);
+  if (!Array.isArray(scenario.events) || scenario.events.length > 10_000) throw new Error('event_limit_exceeded');
+  const identities = new Set<string>(), orderKeys = new Set<string>(), charges = new Set<string>();
+  for (const event of scenario.events) {
+    const day = dayNumber(event.date), orderKey = `${event.date}:${event.order}`;
+    if (day < start || day >= end || !event.id || identities.has(event.id) || !Number.isSafeInteger(event.order) || event.order < 0 || orderKeys.has(orderKey)) throw new Error('event_identity_date_order_invalid');
+    identities.add(event.id); orderKeys.add(orderKey);
+    if (event.type === 'cashflow') money(event.delta);
+    else if (event.type === 'offset') { nonNegative(event.balance); if (interest.offset === 'none') throw new Error('offset_unsupported'); }
+    else if (event.type === 'rate') { rate(event.annualRate); refs(event.evidenceIds); }
+    else if (event.type === 'fee') {
+      if (!event.chargeKey || charges.has(event.chargeKey)) throw new Error('duplicate_or_missing_charge_key');
+      charges.add(event.chargeKey); refs(event.evidenceIds);
+      if (event.waiver) ruleRefs(event.waiver);
+      if (event.amount.type === 'fixed') nonNegative(event.amount.value);
+      else if (event.amount.type === 'percentage') {
+        if (!modes.includes(event.amount.rounding)) throw new Error('fee_rounding_unsupported');
+        if (rate(event.amount.fraction).compare(Decimal.parse('0')) < 0) throw new Error('negative_fee_rate');
+        nonNegative(event.amount.basis);
+        if (event.amount.minimum !== undefined) nonNegative(event.amount.minimum);
+        if (event.amount.maximum !== undefined) nonNegative(event.amount.maximum);
+        if (event.amount.minimum !== undefined && event.amount.maximum !== undefined && money(event.amount.minimum).compare(money(event.amount.maximum)) > 0) throw new Error('fee_cap_range_invalid');
+      } else throw new Error('fee_pattern_unsupported');
+    } else throw new Error('event_pattern_unsupported');
+  }
+  validateSavings(contract, scenario, refs, ruleRefs);
+  issues.push(...validateFees(contract, scenario, refs, ruleRefs, authority));
+  issues.push(...validateTd(contract, scenario, refs));
+  issues.push(...validateLoan(contract, scenario, refs, (code, assumptionId) => {
+    details.push({ index: issues.length, code, kind: 'acknowledged_assumption', assumptionId }); issues.push(code);
+  }, authority));
+  return issues;
+}

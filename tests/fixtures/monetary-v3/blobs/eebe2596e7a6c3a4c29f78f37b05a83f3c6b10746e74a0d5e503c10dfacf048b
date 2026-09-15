@@ -1,0 +1,66 @@
+import { addCalendarMonths, calendarDate, dayNumber } from './calendar';
+import { EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION, type LedgerContract, type LedgerScenario } from './types';
+import { tdSchedule } from './tdSchedule';
+import { Decimal } from './decimal';
+
+export function validateTd(contract: LedgerContract, scenario: LedgerScenario, refs: (ids: string[]) => void): string[] {
+  const td = contract.tdLifecycle;
+  if (!td) return [];
+  if (td.schemaVersion !== 1 || !['digital_notice_no_interest', 'legacy_noncompounding', 'fixed_maturity'].includes(td.mode)) throw new Error('td_mode_unsupported');
+  if (td.mode === 'fixed_maturity' && (![EVALUATOR_VERSION, FIXED_MATURITY_EVALUATOR_VERSION].includes(contract.evaluatorVersion as typeof EVALUATOR_VERSION) || td.calendar !== null || td.closure.kind !== 'maturity' || td.closure.acceptedNoticeDate !== null || td.closure.feeDecision !== 'waived' || td.payments.cadence !== 'maturity' || td.payments.destination !== 'linked_account' || td.accrualStartDate !== td.fundedDate)) throw new Error('td_fixed_maturity_policy_unsupported');
+  if (contract.direction !== 'asset' || contract.savingsSchedule || scenario.events.length || contract.interest.postingDates.length ||
+      contract.interest.offset !== 'none' || contract.interest.dayCount !== 'actual_365_fixed') throw new Error('td_mixed_scenario_unsupported');
+  if (Decimal.parse(contract.initialAnnualRate).compare(Decimal.parse('0')) < 0) throw new Error('td_negative_rate_unsupported');
+  refs(td.evidenceIds);
+  if (td.mode === 'fixed_maturity') {
+    const c = scenario.tdConfirmation;
+    if (td.confirmationEvidenceIds.length || !c || c.source !== 'user_supplied_bank_confirmation' || !/^\d{4}-\d\d-\d\dT/.test(c.recordedAt) || !Number.isFinite(Date.parse(c.recordedAt)) || c.noWithholding !== true || c.principal !== td.investmentAmount || c.fundedDate !== td.fundedDate || c.maturityDate !== td.nominalMaturityDate) throw new Error('td_user_confirmation_missing');
+    if (contract.evaluatorVersion === EVALUATOR_VERSION && (!c.annualRate || !/^\d+(\.\d{1,12})?$/.test(c.annualRate) || Decimal.parse(c.annualRate).compare(Decimal.parse(contract.initialAnnualRate)) !== 0)) throw new Error('td_confirmed_rate_mismatch');
+  } else refs(td.confirmationEvidenceIds); refs(td.payments.evidenceIds); refs(td.closure.evidenceIds);
+  const amount = Decimal.parse(td.investmentAmount);
+  if (amount.compare(amount.rounded(2, 'toward_zero')) !== 0 || amount.compare(Decimal.parse(scenario.openingBalance)) !== 0) throw new Error('td_confirmed_investment_amount_mismatch');
+  if (!td.cohortKey || td.cohortKey !== scenario.cohortKey || td.cohortKey !== contract.applicability.cohortKey) throw new Error('td_cohort_mismatch');
+  const funded = dayNumber(td.fundedDate), accrual = dayNumber(td.accrualStartDate), nominal = dayNumber(td.nominalMaturityDate);
+  if (td.fundedDate !== scenario.startDate || accrual < funded || accrual >= nominal || nominal <= funded) throw new Error('td_funding_dates_invalid');
+  const term = td.term;
+  if (!term || !['days', 'months'].includes(term.unit) || !Number.isInteger(term.count) || term.count <= 0 || term.count > (term.unit === 'days' ? 18300 : 600)) throw new Error('td_term_invalid');
+  const expected = term.unit === 'days' ? calendarDate(funded + term.count) : addCalendarMonths(td.fundedDate, term.count, term.monthConvention);
+  if (expected !== td.nominalMaturityDate) throw new Error('td_term_maturity_mismatch');
+  if (typeof td.roundingReviewed !== 'boolean' || !['none_confirmed', 'unknown'].includes(td.taxTreatment)) throw new Error('td_policy_invalid');
+  if (!['maturity', 'early_notice', 'hardship', 'rollover'].includes(td.closure.kind) || !['charge_25_percent', 'waived', 'unknown'].includes(td.closure.feeDecision)) throw new Error('td_closure_policy_invalid');
+  if (!['confirmed_if_required', 'unknown'].includes(td.closure.principalRecovery) ||
+      (td.closure.kind === 'maturity' && td.closure.feeDecision === 'charge_25_percent')) throw new Error('td_fee_recovery_policy_invalid');
+  for (const date of [td.closure.confirmedDate, td.closure.acceptedNoticeDate]) if (date !== null && dayNumber(date) < funded) throw new Error('td_closure_before_funding');
+  if (!['maturity', 'monthly', 'quarterly', 'half_yearly', 'annual'].includes(td.payments.cadence) || !Array.isArray(td.payments.periodEnds) || td.payments.periodEnds.length > 600) throw new Error('td_payment_schedule_invalid');
+  if (!['linked_account', 'term_deposit', 'unknown'].includes(td.payments.destination)) throw new Error('td_payment_destination_invalid');
+  if (new Set(td.payments.periodEnds).size !== td.payments.periodEnds.length || (td.payments.cadence === 'maturity' && td.payments.periodEnds.length)) throw new Error('td_payment_schedule_invalid');
+  for (const date of td.payments.periodEnds) if (dayNumber(date) <= funded || dayNumber(date) >= nominal) throw new Error('td_payment_outside_term');
+  if (td.payments.cadence === 'maturity') {
+    if (td.payments.firstPeriodEnd !== null) throw new Error('td_maturity_payment_anchor_invalid');
+  } else {
+    const step = { monthly: 1, quarterly: 3, half_yearly: 6, annual: 12 }[td.payments.cadence];
+    const anchor = td.payments.firstPeriodEnd;
+    if (!anchor || dayNumber(anchor) <= funded || anchor > addCalendarMonths(td.fundedDate, step, td.payments.monthConvention)) throw new Error('td_payment_anchor_invalid');
+    const expectedDates: string[] = [];
+    for (let i = 0; i < 601; i++) {
+      const date = addCalendarMonths(anchor, i * step, td.payments.monthConvention);
+      if (date >= td.nominalMaturityDate) break;
+      expectedDates.push(date);
+    }
+    if (JSON.stringify(expectedDates) !== JSON.stringify(td.payments.periodEnds)) throw new Error('td_payment_cadence_incomplete');
+  }
+  if (td.mode === 'digital_notice_no_interest' && (td.accrualStartDate !== td.fundedDate || td.payments.cadence !== 'maturity' ||
+      td.payments.destination === 'term_deposit' || td.calendar !== null || td.closure.feeDecision === 'charge_25_percent')) throw new Error('td_digital_legacy_policy_conflict');
+  if (td.calendar) {
+    const c = td.calendar;
+    refs(c.evidenceIds);
+    if (!c.id || !['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'].includes(c.accountAllocatedState) ||
+        dayNumber(c.toExclusive) <= dayNumber(c.from) || !Array.isArray(c.holidays) || c.holidays.length > 5000 || new Set(c.holidays).size !== c.holidays.length) throw new Error('td_calendar_invalid');
+    for (const d of c.holidays) if (dayNumber(d) < dayNumber(c.from) || dayNumber(d) >= dayNumber(c.toExclusive)) throw new Error('td_calendar_holiday_outside_coverage');
+  }
+  const schedule = tdSchedule(td);
+  if (td.mode === 'legacy_noncompounding' && schedule.closure && schedule.maturity && schedule.closure >= schedule.maturity && td.closure.feeDecision === 'charge_25_percent') throw new Error('td_break_fee_not_before_maturity');
+  if (new Set(schedule.postingDates).size !== schedule.postingDates.length) throw new Error('td_duplicate_shifted_posting');
+  if (schedule.closure && scenario.endDateExclusive !== calendarDate(dayNumber(schedule.closure) + 1)) throw new Error('td_horizon_must_include_exact_closure');
+  return schedule.issues;
+}

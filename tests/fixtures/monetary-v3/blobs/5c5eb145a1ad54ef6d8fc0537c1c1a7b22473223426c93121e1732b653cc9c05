@@ -1,0 +1,22 @@
+import { dayNumber, calendarDate } from '../../lib/productTermsEngine/calendar';
+import { canonical } from '../../lib/productTermsEngine/validation';
+import type { SavingsSubject, SavingsInterest } from './types';
+export function exactList(a: unknown, b: unknown, reason: string) { if (canonical(a) !== canonical(b)) throw new Error(reason); }
+export function interval(from: string, to: string) { const days = dayNumber(to) - dayNumber(from); if (days <= 0 || days > 366) throw new Error('Unsupported savings interval'); return days; }
+export function includesInterval(from: string, to: string, start: string, end: string) { return from <= start && to >= end; }
+export function postingDates(subject: SavingsSubject) {
+  const p = subject.policy.postingInventory; interval(p.from, p.toExclusive);
+  if (p.from !== subject.scope.from || p.toExclusive !== subject.scope.toExclusive) throw new Error('Posting coverage differs from savings scope');
+  let due: string[];
+  if (p.rule.kind === 'calendar_month_end') {
+    due = []; for (let d = dayNumber(p.from); d < dayNumber(p.toExclusive); d++) if (calendarDate(d + 1).slice(8) === '01') due.push(calendarDate(d));
+  } else {
+    const rule = p.rule; interval(rule.sourceFrom, rule.sourceToExclusive);
+    if (!includesInterval(rule.sourceFrom, rule.sourceToExclusive, p.from, p.toExclusive) || rule.sourceDueDates.some(d => d < rule.sourceFrom || d >= rule.sourceToExclusive)) throw new Error('Source posting inventory incomplete');
+    exactList(rule.sourceDueDates, [...new Set(rule.sourceDueDates)].sort(), 'Source posting dates must be sorted unique');
+    due = rule.sourceDueDates.filter(d => d >= p.from && d < p.toExclusive);
+  }
+  exactList(p.dueDates, due, 'Required posting dates omitted or changed');
+  return due;
+}
+export function stableInterest(value: SavingsInterest) { const { postingDates: _dates, evidenceIds: _refs, ...policy } = value; return policy; }

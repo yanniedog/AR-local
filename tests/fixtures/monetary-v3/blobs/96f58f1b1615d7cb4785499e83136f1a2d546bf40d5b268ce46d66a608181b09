@@ -1,0 +1,9 @@
+/** Local section-best selection/toFraction and ribbon sanitization, NOT financial-ledger execution. */
+export const HISTORY_DERIVATION_VERSION = 'section-best-and-ribbon-normalization-v1';
+export type HistoryDateStatus = 'verified' | 'unavailable';
+export function historyDateStatuses(dates: readonly string[], identities: Record<string, string>): Record<string, HistoryDateStatus> {
+  return Object.fromEntries(dates.map(date => [date, identities[date] ? 'verified' : 'unavailable']));
+}
+
+/** Local sanitization of a producer preaggregated compact asset, not core derivation. */
+export const COMPACT_HISTORY_NORMALIZATION_VERSION = 'compact-ribbon-normalization-v1';

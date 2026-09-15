@@ -191,7 +191,7 @@ def download_manifest_assets(
     store: Any, manifest: dict[str, Any], destination: Path,
 ) -> None:
     for key, entry in iter_payload_assets(manifest):
-        url = executable_asset_url(manifest, entry, repo=store.repo) if key.startswith('executable_v2_') else entry['url']
+        url = executable_asset_url(manifest, entry, repo=store.repo) if key.startswith(('executable_v2_','monetary_v3_')) else entry['url']
         raw = store.read_url(url, entry["bytes"])
         if raw is None or len(raw) != entry["bytes"] or digest(raw) != entry["sha256"]:
             raise RevisionError(f"source asset fails hash verification: {entry['name']}")

@@ -1,0 +1,6 @@
+/** Presentation only: never mutate verified payloads or apply to typed financial facts. */
+export function descriptiveValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return !text || /^(null|none)$/i.test(text) ? null : text;
+}

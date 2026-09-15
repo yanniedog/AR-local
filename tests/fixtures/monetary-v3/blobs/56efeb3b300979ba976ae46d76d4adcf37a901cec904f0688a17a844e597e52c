@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:executable-namespace:v2:draft",
+  "$comment": "Proposed compatibility amendment, pending root freeze. Top-level manifest.executable_v2; never manifest.files. URL-free immutable release asset descriptors.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "index",
+    "shards"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "index": {
+      "$ref": "#/$defs/descriptor"
+    },
+    "shards": {
+      "type": "object",
+      "maxProperties": 999,
+      "propertyNames": {
+        "pattern": "^executable_v2_shard_[0-9]{3}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/descriptor"
+      }
+    }
+  },
+  "$defs": {
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^executable_v2_(?:index|shard_[0-9]{3})-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\\.json\\.gz$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 524288
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}
