@@ -105,3 +105,8 @@ Decimal/calendar checks for all 29 accrual days, maturity settlement and totals.
 The fixture is technical protocol evidence, not approval of any bank product.
 The initial Windows diagnostic read omitted UTF-8 and produced a false identity
 mismatch; byte-based JSON reads preserve the original Unicode identities.
+
+Every `review_template` call supplies `expected_previous_review_id` (null for
+the first review). Approval evidence also contains that exact `previousReviewId`.
+The transaction rejects stale approvals arriving after a rejection or revocation;
+intentional reapproval requires new evidence naming the observed negative review.

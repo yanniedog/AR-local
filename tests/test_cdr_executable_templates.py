@@ -16,7 +16,8 @@ from tests.executable_protocol_fixture import NOW, VECTOR, protocol, reidentify,
 def approve(store, template, *, proof=None, reviewer='protocol-independent-review', reviewer_kind='human'):
     proof = proof or stage_and_proof(store, template)
     return review_template(store, template['id'], decision='approved', reviewer=reviewer, reviewer_kind=reviewer_kind,
-        reviewed_at=NOW, evidence_sha256=store.put_blob(canonical_json(proof).encode()), reason='Protocol transition only')
+        reviewed_at=NOW, evidence_sha256=store.put_blob(canonical_json(proof).encode()), reason='Protocol transition only',
+        expected_previous_review_id=proof['previousReviewId'])
 
 
 def build(store, template):
@@ -55,7 +56,8 @@ def test_positive_protocol_publication_and_revocation_invalidate_read(protocol):
     assert load(store, template, source) == {template['productKey']: asset}
     negative = store.put_blob(canonical_json({'templateId': template['id'], 'decision': 'revoked'}).encode())
     review_template(store, template['id'], decision='revoked', reviewer='protocol-reviewer', reviewer_kind='human',
-        reviewed_at=NOW, evidence_sha256=negative, reason='Protocol revocation')
+        reviewed_at=NOW, evidence_sha256=negative, reason='Protocol revocation',
+        expected_previous_review_id=store.db.execute('SELECT review_id FROM executable_reviews ORDER BY sequence DESC LIMIT 1').fetchone()[0])
     with pytest.raises(ValueError, match='changed'):
         load(store, template, source)
     replacement = build(store, template)
@@ -146,6 +148,26 @@ def test_additive_schema_preserves_exact_existing_rows_and_blobs(protocol):
     assert all((store.root / path).read_bytes() == raw for path, raw in blobs.items())
 
 
+def test_late_approval_cannot_override_revocation(protocol):
+    store, template, *_ = protocol
+    proof = stage_and_proof(store, template)
+    first = approve(store, template, proof=proof)
+    stale = {**proof, 'previousReviewId': first}
+    negative = store.put_blob(canonical_json({'templateId': template['id'], 'decision': 'revoked'}).encode())
+    revoked = review_template(store, template['id'], decision='revoked', reviewer='independent-revoker',
+        reviewer_kind='human', reviewed_at=NOW, evidence_sha256=negative, reason='Protocol control',
+        expected_previous_review_id=first)
+    with pytest.raises(ValueError, match='CAS'):
+        approve(store, template, proof=stale)
+    with pytest.raises(ValueError, match='previous review'):
+        review_template(store, template['id'], decision='approved', reviewer='fresh-reviewer', reviewer_kind='human',
+            reviewed_at=NOW, evidence_sha256=store.put_blob(canonical_json(stale).encode()), reason='Stale proof',
+            expected_previous_review_id=revoked)
+    fresh = {**proof, 'previousReviewId': revoked}
+    approve(store, template, proof=fresh, reviewer='fresh-reviewer')
+    assert len(build(store, template)['templates']) == 1
+
+
 def test_manifest_addressed_packaging_binds_destination_core(protocol):
     store, template, core, source = protocol
     approve(store, template)
@@ -180,7 +202,8 @@ def test_explicit_public_build_api_and_same_core_revocation_edition(protocol, tm
     assert 'executable_index' in before['files']
     negative = store.put_blob(canonical_json({'templateId': template['id'], 'decision': 'revoked'}).encode())
     review_template(store, template['id'], decision='revoked', reviewer='protocol-reviewer', reviewer_kind='human',
-        reviewed_at=NOW, evidence_sha256=negative, reason='Protocol revocation')
+        reviewed_at=NOW, evidence_sha256=negative, reason='Protocol revocation',
+        expected_previous_review_id=store.db.execute('SELECT review_id FROM executable_reviews ORDER BY sequence DESC LIMIT 1').fetchone()[0])
     with pytest.raises(ValueError, match='changed'):
         builder.build_payload(tmp_path, tmp_path/'stale', source_observation=source, executable_root=store.root)
     assert not (tmp_path/'stale/manifest.json').exists()

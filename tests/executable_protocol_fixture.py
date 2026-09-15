@@ -90,5 +90,6 @@ def stage_and_proof(store, template):
     benchmark = benchmark_control(store, template)
     proof = {'schemaVersion': 1, 'templateId': template['id'], 'adapterVersion': template['adapterVersion'],
         'evaluatorVersion': template['evaluatorVersion'], 'sourceSnapshotSha256': source_snapshot(store, template),
+        'previousReviewId': None,
         'benchmarkResultSha256': store.put_blob(canonical_json(benchmark).encode()), 'checks': sorted(REVIEW_CHECKS), 'passed': True}
     return proof

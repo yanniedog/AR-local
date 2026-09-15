@@ -42,14 +42,16 @@ def stage_template(store, template, *, interpreter, staged_at):
     return template['id']
 
 
-def _approval_evidence(store, template, evidence_sha):
+def _approval_evidence(store, template, evidence_sha, previous_review_id):
     evidence = json.loads(store.read_blob(evidence_sha))
     if (set(evidence) != {'schemaVersion', 'templateId', 'adapterVersion', 'evaluatorVersion',
-                         'sourceSnapshotSha256', 'benchmarkResultSha256', 'checks', 'passed'}
+                         'sourceSnapshotSha256', 'benchmarkResultSha256', 'checks', 'passed', 'previousReviewId'}
             or evidence['schemaVersion'] != 1 or evidence['passed'] is not True
             or not isinstance(evidence['checks'], list) or set(evidence['checks']) != REVIEW_CHECKS
             or len(evidence['checks']) != len(REVIEW_CHECKS)):
         raise ValueError('Independent executable review checks missing')
+    if evidence['previousReviewId'] != previous_review_id:
+        raise ValueError('Executable approval previous review changed')
     if any(evidence[k] != template[t] for k, t in (
             ('templateId', 'id'), ('adapterVersion', 'adapterVersion'), ('evaluatorVersion', 'evaluatorVersion'))):
         raise ValueError('Executable approval evidence identity mismatch')
@@ -60,7 +62,8 @@ def _approval_evidence(store, template, evidence_sha):
 
 
 @source_checked
-def review_template(store, template_id, *, decision, reviewer, reviewer_kind, reviewed_at, evidence_sha256, reason):
+def review_template(store, template_id, *, decision, reviewer, reviewer_kind, reviewed_at, evidence_sha256, reason,
+                    expected_previous_review_id):
     if decision not in {'approved', 'rejected', 'revoked'} or not reviewer or not reason or reviewer_kind not in {'human', 'deterministic'}:
         raise ValueError('Independent executable disposition required')
     with store.db:
@@ -69,9 +72,13 @@ def review_template(store, template_id, *, decision, reviewer, reviewer_kind, re
         if row is None or reviewer == row['interpreter']:
             raise ValueError('Executable approval requires a separate reviewer')
         template = json.loads(row['template_json'])
+        previous = store.db.execute('SELECT review_id FROM executable_reviews WHERE template_id=? ORDER BY sequence DESC LIMIT 1',
+                                    (template_id,)).fetchone()
+        if (previous[0] if previous else None) != expected_previous_review_id:
+            raise ValueError('Executable review CAS changed')
         benchmark = None
         if decision == 'approved':
-            benchmark = _approval_evidence(store, template, evidence_sha256)['benchmarkResultSha256']
+            benchmark = _approval_evidence(store, template, evidence_sha256, expected_previous_review_id)['benchmarkResultSha256']
         else:
             evidence = json.loads(store.read_blob(evidence_sha256))
             if evidence.get('templateId') != template_id or evidence.get('decision') != decision:
@@ -90,7 +97,9 @@ def current_approval(store, template):
                            (template['id'],)).fetchone()
     if row is None or row['decision'] != 'approved':
         return None
-    _approval_evidence(store, template, row['evidence_sha256'])
+    previous = store.db.execute('SELECT review_id FROM executable_reviews WHERE template_id=? AND sequence<? ORDER BY sequence DESC LIMIT 1',
+                                (template['id'], row['sequence'])).fetchone()
+    _approval_evidence(store, template, row['evidence_sha256'], previous[0] if previous else None)
     return {'templateId': template['id'], 'reviewId': row['review_id'], 'reviewEvidenceSha256': row['evidence_sha256'],
             'benchmarkResultSha256': row['benchmark_sha256'], 'reviewedAt': row['reviewed_at'],
             'review': {key: 'verified' for key in ('applicability', 'materialTerms', 'feeCoverage', 'rateSchedule')}}
