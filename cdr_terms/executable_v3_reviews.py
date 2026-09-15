@@ -55,7 +55,7 @@ def review_subject(store,subject_id,*,decision,reviewer,reviewer_kind,reviewed_a
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
         row=store.db.execute('SELECT * FROM executable_subjects_v3 WHERE subject_id=?',(subject_id,)).fetchone()
-        if row is None or reviewer==row['interpreter']:raise ValueError('Monetary review requires separate reviewer')
+        if row is None or reviewer.strip()==row['interpreter'].strip():raise ValueError('Monetary review requires separate reviewer')
         subject=json.loads(row['subject_json'])
         previous=store.db.execute('SELECT * FROM executable_reviews_v3 WHERE subject_id=? ORDER BY sequence DESC LIMIT 1',(subject_id,)).fetchone()
         if (previous['review_id'] if previous else None)!=expected_previous_review_id:raise ValueError('Monetary review CAS changed')
