@@ -1,0 +1,622 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "capability",
+    "adapterVersion",
+    "evaluatorVersion",
+    "id",
+    "scopeId",
+    "scope",
+    "source",
+    "inputDefinitions",
+    "eligibility",
+    "fieldClauseIds",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "kind": {
+      "const": "scoped_eligibility_v1"
+    },
+    "capability": {
+      "const": "eligibility_only"
+    },
+    "adapterVersion": {
+      "const": "scoped-eligibility-v1"
+    },
+    "evaluatorVersion": {
+      "const": "product-terms-engine-v8"
+    },
+    "id": {
+      "$ref": "#/$defs/sha"
+    },
+    "scopeId": {
+      "$ref": "#/$defs/sha"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "inputDefinitions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/input"
+      }
+    },
+    "eligibility": {
+      "$ref": "#/$defs/rule"
+    },
+    "fieldClauseIds": {
+      "$ref": "#/$defs/fieldRefs"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidence"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:executable-subject:v2:draft",
+  "$comment": "DRAFT ONLY; not loaded by current controller. No approved products. Semantic checks and IDs are specified in the accompanying migration design.",
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "format": "date",
+      "maxLength": 10
+    },
+    "hashes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha"
+      }
+    },
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rules"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "enum": [
+                "and",
+                "or"
+              ]
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/rule"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rule"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "not"
+            },
+            "rule": {
+              "$ref": "#/$defs/rule"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "field",
+            "comparison",
+            "expected",
+            "evidenceIds"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "compare"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "comparison": {
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "expected": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value",
+                    "unit"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "decimal"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,24})?$",
+                      "maxLength": 72
+                    },
+                    "unit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "date",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "boolean"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              ]
+            },
+            "evidenceIds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/sha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "clauseId",
+          "documentVersionId",
+          "documentSha256",
+          "sourceUrl",
+          "locator",
+          "quote",
+          "quoteSha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "clauseId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "locator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "quoteSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "label",
+        "type",
+        "unit",
+        "clauseIds",
+        "binding"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "not": {
+            "enum": [
+              "constructor",
+              "prototype",
+              "__proto__"
+            ]
+          }
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "type": {
+          "enum": [
+            "decimal",
+            "date",
+            "text",
+            "boolean"
+          ]
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "clauseIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "binding": {
+          "enum": [
+            "customer_fact",
+            "scenario_amount",
+            "assessment_date",
+            "scenario_purpose",
+            "scenario_security_value",
+            "scenario_security_type",
+            "scenario_ownership"
+          ]
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "family",
+        "cohortKey",
+        "tierKey",
+        "packageKey",
+        "effectiveFrom",
+        "effectiveToExclusive",
+        "effectiveScope",
+        "coverage",
+        "rateIndexes",
+        "intervalBasis"
+      ],
+      "properties": {
+        "productKey": {
+          "$ref": "#/$defs/key"
+        },
+        "family": {
+          "enum": [
+            "Mortgage",
+            "Savings",
+            "TD"
+          ]
+        },
+        "cohortKey": {
+          "$ref": "#/$defs/key"
+        },
+        "tierKey": {
+          "$ref": "#/$defs/key"
+        },
+        "packageKey": {
+          "$ref": "#/$defs/key"
+        },
+        "effectiveFrom": {
+          "$ref": "#/$defs/date"
+        },
+        "effectiveToExclusive": {
+          "$ref": "#/$defs/date"
+        },
+        "effectiveScope": {
+          "const": "assessment_date"
+        },
+        "coverage": {
+          "enum": [
+            "product",
+            "rate_variants"
+          ]
+        },
+        "rateIndexes": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200000
+          }
+        },
+        "intervalBasis": {
+          "const": "reviewed_assessment_coverage"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "coverage": {
+                "const": "product"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rateIndexes": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "rateIndexes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rateRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coreRowIndex",
+        "rateIndex",
+        "rowSha256"
+      ],
+      "properties": {
+        "coreRowIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200000
+        },
+        "rateIndex": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000
+        },
+        "rowSha256": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationId",
+        "sourceSha256",
+        "generationId",
+        "exportContractSha256",
+        "runDate",
+        "provenanceManifestSha256",
+        "coreAssetSha256",
+        "detailsAssetSha256",
+        "productRecordSha256",
+        "rateRows",
+        "documentVersionIds",
+        "termRevisionIds"
+      ],
+      "properties": {
+        "observationId": {
+          "$ref": "#/$defs/sha"
+        },
+        "sourceSha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "generationId": {
+          "$ref": "#/$defs/key"
+        },
+        "exportContractSha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "runDate": {
+          "$ref": "#/$defs/date"
+        },
+        "provenanceManifestSha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "coreAssetSha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "detailsAssetSha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "productRecordSha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "rateRows": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/rateRow"
+          }
+        },
+        "documentVersionIds": {
+          "$ref": "#/$defs/hashes"
+        },
+        "termRevisionIds": {
+          "$ref": "#/$defs/hashes"
+        }
+      }
+    },
+    "fieldRefs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product",
+        "family",
+        "cohort",
+        "tier",
+        "package",
+        "effectiveInterval",
+        "effectiveScope",
+        "coverage",
+        "eligibility"
+      ],
+      "properties": {
+        "product": {
+          "$ref": "#/$defs/hashes"
+        },
+        "family": {
+          "$ref": "#/$defs/hashes"
+        },
+        "cohort": {
+          "$ref": "#/$defs/hashes"
+        },
+        "tier": {
+          "$ref": "#/$defs/hashes"
+        },
+        "package": {
+          "$ref": "#/$defs/hashes"
+        },
+        "effectiveInterval": {
+          "$ref": "#/$defs/hashes"
+        },
+        "effectiveScope": {
+          "$ref": "#/$defs/hashes"
+        },
+        "coverage": {
+          "$ref": "#/$defs/hashes"
+        },
+        "eligibility": {
+          "$ref": "#/$defs/hashes"
+        }
+      }
+    }
+  }
+}

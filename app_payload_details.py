@@ -151,6 +151,17 @@ def _detail_links(record: Dict[str, Any]) -> Dict[str, str]:
     )
 
 
+def _display_identity(product, record):
+    """Exact supplied display labels; missing metadata never becomes a classification."""
+    result = {}
+    for key, value, bound in (('name', product.get('product_name'), 256),
+                              ('provider', product.get('provider'), 256),
+                              ('productCategory', record.get('productCategory'), 80)):
+        if isinstance(value, str) and value.strip() and len(value) <= bound:
+            result[key] = value
+    return result or None
+
+
 def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = False) -> Dict[str, Dict[str, Any]]:
     details: Dict[str, Dict[str, Any]] = {}
     for product in products:
@@ -166,6 +177,7 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
             record = {}
         entry = compact(
             {
+                "displayIdentity": _display_identity(product, record),
                 "description": product.get("description") or record.get("description"),
                 "last_updated": product.get("last_updated"),
                 "fees": _fee_items(record),

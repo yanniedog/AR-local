@@ -1,0 +1,129 @@
+{
+  "purpose": "Technical cross-language identity only; no banking or source approval.",
+  "subject": {
+    "schemaVersion": 2,
+    "kind": "scoped_eligibility_v1",
+    "capability": "eligibility_only",
+    "adapterVersion": "scoped-eligibility-v1",
+    "evaluatorVersion": "product-terms-engine-v8",
+    "scope": {
+      "productKey": "protocol-only|café|零|😀",
+      "cohortKey": "protocol-only",
+      "tierKey": "protocol-tier",
+      "packageKey": "none_source_declared",
+      "effectiveFrom": "2026-01-01",
+      "effectiveToExclusive": "2027-01-01",
+      "family": "TD",
+      "effectiveScope": "assessment_date",
+      "intervalBasis": "reviewed_assessment_coverage",
+      "coverage": "rate_variants",
+      "rateIndexes": [
+        1
+      ]
+    },
+    "source": {
+      "observationId": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "generationId": "protocol-only-generation",
+      "runDate": "2026-01-01",
+      "documentVersionIds": [
+        "6666666666666666666666666666666666666666666666666666666666666666"
+      ],
+      "termRevisionIds": [
+        "7777777777777777777777777777777777777777777777777777777777777777"
+      ],
+      "exportContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "detailsAssetSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productRecordSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "provenanceManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "coreAssetSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "rateRows": [
+        {
+          "coreRowIndex": 0,
+          "rateIndex": 1,
+          "rowSha256": "5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      ]
+    },
+    "inputDefinitions": [
+      {
+        "key": "protocol_amount",
+        "label": "Protocol amount — café",
+        "type": "decimal",
+        "unit": "AUD",
+        "clauseIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "binding": "scenario_amount"
+      },
+      {
+        "key": "protocol_funded",
+        "label": "Protocol date protocol_funded",
+        "type": "date",
+        "unit": null,
+        "clauseIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "binding": "assessment_date"
+      }
+    ],
+    "eligibility": {
+      "id": "protocol-rule",
+      "op": "compare",
+      "field": "protocol_amount",
+      "comparison": "gte",
+      "expected": {
+        "type": "decimal",
+        "value": "0.00",
+        "unit": "AUD"
+      },
+      "evidenceIds": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ]
+    },
+    "evidence": [
+      {
+        "id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "clauseId": "1111111111111111111111111111111111111111111111111111111111111111",
+        "documentVersionId": "6666666666666666666666666666666666666666666666666666666666666666",
+        "documentSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "sourceUrl": "https://example.invalid/protocol",
+        "locator": "{\"end\":70,\"start\":0}",
+        "quote": "Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.",
+        "quoteSha256": "40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315"
+      }
+    ],
+    "fieldClauseIds": {
+      "product": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "family": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "cohort": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "tier": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "package": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "effectiveInterval": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "effectiveScope": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "coverage": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "eligibility": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ]
+    },
+    "scopeId": "5390a987cb4b2c3d47eda20d9d06ca91b8a9fd9a2ca279d5af671a7c14f3507f",
+    "id": "caef222b594337018466e771216c778651e840fe3104aa85ff18631cd27ec842"
+  },
+  "canonicalWithoutId": "{\"adapterVersion\":\"scoped-eligibility-v1\",\"capability\":\"eligibility_only\",\"eligibility\":{\"comparison\":\"gte\",\"evidenceIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"expected\":{\"type\":\"decimal\",\"unit\":\"AUD\",\"value\":\"0.00\"},\"field\":\"protocol_amount\",\"id\":\"protocol-rule\",\"op\":\"compare\"},\"evaluatorVersion\":\"product-terms-engine-v8\",\"evidence\":[{\"clauseId\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"documentSha256\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"documentVersionId\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"id\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"locator\":\"{\\\"end\\\":70,\\\"start\\\":0}\",\"quote\":\"Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.\",\"quoteSha256\":\"40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315\",\"sourceUrl\":\"https://example.invalid/protocol\"}],\"fieldClauseIds\":{\"cohort\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"coverage\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"effectiveInterval\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"effectiveScope\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"eligibility\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"family\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"package\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"product\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"tier\":[\"1111111111111111111111111111111111111111111111111111111111111111\"]},\"inputDefinitions\":[{\"binding\":\"scenario_amount\",\"clauseIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"key\":\"protocol_amount\",\"label\":\"Protocol amount — café\",\"type\":\"decimal\",\"unit\":\"AUD\"},{\"binding\":\"assessment_date\",\"clauseIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"key\":\"protocol_funded\",\"label\":\"Protocol date protocol_funded\",\"type\":\"date\",\"unit\":null}],\"kind\":\"scoped_eligibility_v1\",\"schemaVersion\":2,\"scope\":{\"cohortKey\":\"protocol-only\",\"coverage\":\"rate_variants\",\"effectiveFrom\":\"2026-01-01\",\"effectiveScope\":\"assessment_date\",\"effectiveToExclusive\":\"2027-01-01\",\"family\":\"TD\",\"intervalBasis\":\"reviewed_assessment_coverage\",\"packageKey\":\"none_source_declared\",\"productKey\":\"protocol-only|café|零|😀\",\"rateIndexes\":[1],\"tierKey\":\"protocol-tier\"},\"scopeId\":\"5390a987cb4b2c3d47eda20d9d06ca91b8a9fd9a2ca279d5af671a7c14f3507f\",\"source\":{\"coreAssetSha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"detailsAssetSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"documentVersionIds\":[\"6666666666666666666666666666666666666666666666666666666666666666\"],\"exportContractSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"generationId\":\"protocol-only-generation\",\"observationId\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"productRecordSha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"provenanceManifestSha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"rateRows\":[{\"coreRowIndex\":0,\"rateIndex\":1,\"rowSha256\":\"5555555555555555555555555555555555555555555555555555555555555555\"}],\"runDate\":\"2026-01-01\",\"sourceSha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"termRevisionIds\":[\"7777777777777777777777777777777777777777777777777777777777777777\"]}}"
+}

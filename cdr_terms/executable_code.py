@@ -9,15 +9,20 @@ from .executable_imports import literal_imports
 
 ENTRYPOINTS = {'adapter': 'mobile/src/data/executableContracts/instantiate.ts',
               'evaluator': 'mobile/src/lib/productTermsEngine/ledger.ts'}
+ELIGIBILITY_ENTRYPOINTS = {'adapter': 'mobile/src/data/eligibilityContracts/adapter.ts',
+                         'evaluator': 'mobile/src/lib/productTermsEngine/eligibility.ts'}
 PATH = re.compile(r'[A-Za-z0-9_@. /-]+')
 MAX_FILES = 256
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
 
-def verify_code_artifact(store, identity, role, version):
+def verify_code_artifact(store, identity, role, version, *, capability='fixed_td_calculation'):
+    entrypoints = {'fixed_td_calculation': ENTRYPOINTS, 'eligibility_only': ELIGIBILITY_ENTRYPOINTS}.get(capability)
+    if entrypoints is None or role not in entrypoints:
+        raise ValueError('Executable code capability/role unsupported')
     operation = _OPERATION.get()
     cache = operation.setdefault('code_artifacts', {}) if operation is not None and operation['store'] is store else {}
-    key = (identity, role, version)
+    key = (identity, role, version, capability)
     if key in cache:
         return cache[key]
     raw = store.read_blob(identity)
@@ -26,7 +31,7 @@ def verify_code_artifact(store, identity, role, version):
     manifest = json.loads(raw)
     if (not isinstance(manifest, dict) or set(manifest) != {'schemaVersion', 'role', 'version', 'entrypoints', 'files', 'packageLock', 'externalPackages', 'scope'}
             or manifest['schemaVersion'] != 1 or manifest['role'] != role or manifest['version'] != version
-            or manifest['entrypoints'] != [ENTRYPOINTS[role]] or manifest['scope'] != 'local_literal_import_closure_with_locked_external_metadata'):
+            or manifest['entrypoints'] != [entrypoints[role]] or manifest['scope'] != 'local_literal_import_closure_with_locked_external_metadata'):
         raise ValueError('Executable code manifest role/version/scope mismatch')
     files = manifest['files']
     if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES:

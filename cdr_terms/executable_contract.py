@@ -22,7 +22,7 @@ def _schema(name):
     return json.loads((SCHEMAS / name).read_bytes())
 
 
-def _bounded(value, limit):
+def _bounded(value, limit, *, ascii_keys=True):
     pending, nodes = [(value, 0)], 0
     while pending:
         item, depth = pending.pop()
@@ -30,7 +30,7 @@ def _bounded(value, limit):
         if depth > 40 or nodes > 20000:
             raise ValueError('Executable structure depth/node bound exceeded')
         if isinstance(item, dict):
-            if any(type(k) is not str or not k.isascii() for k in item):
+            if any(type(k) is not str or (ascii_keys and not k.isascii()) for k in item):
                 raise ValueError('Executable schema keys must be ASCII strings')
             pending.extend((child, depth + 1) for child in item.values())
         elif isinstance(item, list):

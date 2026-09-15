@@ -19,6 +19,7 @@ from typing import Any
 
 from ar_local_backup_policy import atomic_create_json
 from app_payload_common import DEFAULT_REPO
+from app_payload_optional_assets import iter_payload_assets
 
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_ASSET_BYTES = 64 * 1024 * 1024
@@ -80,7 +81,7 @@ def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> Non
     if not isinstance(files, dict) or not {"core", "details"}.issubset(files):
         raise RevisionError("manifest must describe core and details")
     names: set[str] = set()
-    for entry in files.values():
+    for _, entry in iter_payload_assets(manifest):
         if not isinstance(entry, dict):
             raise RevisionError("invalid asset descriptor")
         name = entry.get("name", "")
@@ -226,7 +227,8 @@ def revision_delta(
     new_rates = _rates(root, manifest)
     old_products = _products(previous_root, previous) if previous_root and previous else {}
     old_rates = _rates(previous_root, previous) if previous_root and previous else Counter()
-    old_files = (previous or {}).get("files", {})
+    old_files = dict(iter_payload_assets(previous)) if previous else {}
+    new_files = dict(iter_payload_assets(manifest))
     return {
         "schema_version": 1, "run_date": manifest["run_date"],
         "comparison": "previous_selected_revision" if previous else "initial",
@@ -240,7 +242,7 @@ def revision_delta(
             "added": dict(sorted((new_rates - old_rates).items())),
             "removed": dict(sorted((old_rates - new_rates).items())),
         },
-        "assets_changed": sorted(key for key in set(old_files) | set(manifest["files"])
+        "assets_changed": sorted(key for key in set(old_files) | set(new_files)
                                  if old_files.get(key, {}).get("sha256")
-                                 != manifest["files"].get(key, {}).get("sha256")),
+                                 != new_files.get(key, {}).get("sha256")),
     }
