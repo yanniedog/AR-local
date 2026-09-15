@@ -1,0 +1,930 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:executable-template:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "adapterVersion",
+    "evaluatorVersion",
+    "id",
+    "productKey",
+    "cohortKey",
+    "effectiveFrom",
+    "effectiveToExclusive",
+    "sourceObservationId",
+    "sourceSha256",
+    "sourceGenerationId",
+    "runDate",
+    "selectedRate",
+    "documentVersionIds",
+    "termRevisionIds",
+    "annualRate",
+    "term",
+    "interest",
+    "policies",
+    "inputDefinitions",
+    "eligibility",
+    "fieldClauseIds",
+    "evidence",
+    "currency",
+    "effectiveScope",
+    "tierKey",
+    "packageKey",
+    "principalBounds"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "fixed_aud_td_maturity_v1"
+    },
+    "adapterVersion": {
+      "const": "fixed-aud-td-v1"
+    },
+    "evaluatorVersion": {
+      "const": "product-terms-engine-v7"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "productKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "cohortKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "effectiveFrom": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "maxLength": 64
+    },
+    "effectiveToExclusive": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "maxLength": 64
+    },
+    "sourceObservationId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "sourceSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "sourceGenerationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "runDate": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "maxLength": 64
+    },
+    "selectedRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceManifestSha256",
+        "coreAssetSha256",
+        "coreRowIndex",
+        "rowSha256",
+        "rateIndex"
+      ],
+      "properties": {
+        "sourceManifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "coreAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "coreRowIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200000
+        },
+        "rowSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "rateIndex": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000
+        }
+      }
+    },
+    "documentVersionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha"
+      }
+    },
+    "termRevisionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha"
+      }
+    },
+    "annualRate": {
+      "type": "string",
+      "pattern": "^(?:0(?:\\.[0-9]{1,12})?|1(?:\\.0{1,12})?)$",
+      "maxLength": 64
+    },
+    "term": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "count",
+        "monthConvention"
+      ],
+      "properties": {
+        "unit": {
+          "enum": [
+            "days",
+            "months"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3660
+        },
+        "monthConvention": {
+          "enum": [
+            "clamp",
+            "preserve_month_end"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "unit": {
+              "const": "days"
+            },
+            "count": {
+              "maximum": 3660
+            }
+          }
+        },
+        {
+          "properties": {
+            "unit": {
+              "const": "months"
+            },
+            "count": {
+              "maximum": 120
+            }
+          }
+        }
+      ]
+    },
+    "interest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dayCount",
+        "dailyAccrualScale",
+        "dailyRateRounding",
+        "accrualRounding",
+        "postingRounding"
+      ],
+      "properties": {
+        "dayCount": {
+          "const": "actual_365_fixed"
+        },
+        "dailyAccrualScale": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dailyRateRounding": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scale",
+                "unit",
+                "mode"
+              ],
+              "properties": {
+                "scale": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 12
+                },
+                "unit": {
+                  "enum": [
+                    "fraction",
+                    "percent"
+                  ]
+                },
+                "mode": {
+                  "enum": [
+                    "half_up",
+                    "half_even",
+                    "toward_zero"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accrualRounding": {
+          "enum": [
+            "half_up",
+            "half_even",
+            "toward_zero"
+          ]
+        },
+        "postingRounding": {
+          "enum": [
+            "half_up",
+            "half_even",
+            "toward_zero"
+          ]
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "posting",
+        "businessDayAdjustment",
+        "compounding",
+        "offset",
+        "feeDisposition",
+        "accrualBoundary"
+      ],
+      "properties": {
+        "posting": {
+          "const": "calendar_day_maturity"
+        },
+        "businessDayAdjustment": {
+          "const": "none_source_declared"
+        },
+        "compounding": {
+          "const": "none"
+        },
+        "offset": {
+          "const": "none"
+        },
+        "feeDisposition": {
+          "const": "complete_no_fees"
+        },
+        "accrualBoundary": {
+          "const": "funded_inclusive_maturity_exclusive"
+        }
+      }
+    },
+    "inputDefinitions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "label",
+          "type",
+          "unit",
+          "clauseIds",
+          "binding"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "type": {
+            "enum": [
+              "decimal",
+              "date",
+              "text",
+              "boolean"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "clauseIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/sha"
+            }
+          },
+          "binding": {
+            "enum": [
+              "customer_fact",
+              "deposit_principal",
+              "funded_date",
+              "maturity_date"
+            ]
+          }
+        }
+      }
+    },
+    "eligibility": {
+      "$ref": "#/$defs/rule"
+    },
+    "fieldClauseIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "annualRate",
+        "term",
+        "dayCount",
+        "dailyAccrualScale",
+        "dailyRateRounding",
+        "accrualRounding",
+        "postingRounding",
+        "postingPolicy",
+        "businessDayAdjustment",
+        "compounding",
+        "offset",
+        "feeDisposition",
+        "eligibility",
+        "effectiveInterval",
+        "cohort",
+        "accrualBoundary",
+        "effectiveScope",
+        "tier",
+        "package",
+        "principalBounds"
+      ],
+      "properties": {
+        "annualRate": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "term": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "dayCount": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "dailyAccrualScale": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "dailyRateRounding": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "accrualRounding": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "postingRounding": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "postingPolicy": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "businessDayAdjustment": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "compounding": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "offset": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "feeDisposition": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "eligibility": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "effectiveInterval": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "cohort": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "accrualBoundary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "effectiveScope": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "tier": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "package": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        },
+        "principalBounds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sha"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "clauseId",
+          "documentVersionId",
+          "documentSha256",
+          "sourceUrl",
+          "locator",
+          "quote",
+          "quoteSha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "clauseId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "locator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "quoteSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "currency": {
+      "const": "AUD"
+    },
+    "effectiveScope": {
+      "enum": [
+        "funded_date",
+        "whole_accrual_horizon"
+      ]
+    },
+    "tierKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "packageKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "principalBounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "properties": {
+        "minimum": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "value",
+                "inclusive"
+              ],
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+                },
+                "inclusive": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "unbounded"
+              ],
+              "properties": {
+                "unbounded": {
+                  "const": true
+                }
+              }
+            }
+          ]
+        },
+        "maximum": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "value",
+                "inclusive"
+              ],
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+                },
+                "inclusive": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "unbounded"
+              ],
+              "properties": {
+                "unbounded": {
+                  "const": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rules"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "enum": [
+                "and",
+                "or"
+              ]
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/rule"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rule"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "not"
+            },
+            "rule": {
+              "$ref": "#/$defs/rule"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "field",
+            "comparison",
+            "expected",
+            "evidenceIds"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "compare"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "comparison": {
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "expected": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value",
+                    "unit"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "decimal"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+                      "maxLength": 64
+                    },
+                    "unit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "date",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "boolean"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              ]
+            },
+            "evidenceIds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/sha"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

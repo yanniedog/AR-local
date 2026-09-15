@@ -1,0 +1,187 @@
+{
+  "purpose": "Technical serialization vector only. Not banking data, review, publication, or calculation approval.",
+  "template": {
+    "schemaVersion": 1,
+    "kind": "fixed_aud_td_maturity_v1",
+    "adapterVersion": "fixed-aud-td-v1",
+    "evaluatorVersion": "product-terms-engine-v7",
+    "productKey": "protocol-only|café|零|😀",
+    "cohortKey": "protocol-only",
+    "effectiveFrom": "2026-01-01",
+    "effectiveToExclusive": "2027-01-01",
+    "sourceObservationId": "1111111111111111111111111111111111111111111111111111111111111111",
+    "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "sourceGenerationId": "protocol-only-generation",
+    "runDate": "2026-01-01",
+    "selectedRate": {
+      "sourceManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "coreAssetSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "coreRowIndex": 0,
+      "rowSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "rateIndex": 1
+    },
+    "documentVersionIds": [
+      "6666666666666666666666666666666666666666666666666666666666666666"
+    ],
+    "termRevisionIds": [
+      "7777777777777777777777777777777777777777777777777777777777777777"
+    ],
+    "annualRate": "0.0500",
+    "term": {
+      "unit": "days",
+      "count": 100,
+      "monthConvention": "clamp"
+    },
+    "interest": {
+      "dayCount": "actual_365_fixed",
+      "dailyAccrualScale": null,
+      "dailyRateRounding": null,
+      "accrualRounding": "half_up",
+      "postingRounding": "half_up"
+    },
+    "policies": {
+      "posting": "calendar_day_maturity",
+      "businessDayAdjustment": "none_source_declared",
+      "compounding": "none",
+      "offset": "none",
+      "feeDisposition": "complete_no_fees",
+      "accrualBoundary": "funded_inclusive_maturity_exclusive"
+    },
+    "inputDefinitions": [
+      {
+        "key": "protocol_amount",
+        "label": "Protocol amount — café",
+        "type": "decimal",
+        "unit": "AUD",
+        "clauseIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "binding": "deposit_principal"
+      },
+      {
+        "key": "protocol_funded",
+        "label": "Protocol date protocol_funded",
+        "type": "date",
+        "unit": null,
+        "clauseIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "binding": "funded_date"
+      },
+      {
+        "key": "protocol_maturity",
+        "label": "Protocol date protocol_maturity",
+        "type": "date",
+        "unit": null,
+        "clauseIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "binding": "maturity_date"
+      }
+    ],
+    "eligibility": {
+      "id": "protocol-rule",
+      "op": "compare",
+      "field": "protocol_amount",
+      "comparison": "gte",
+      "expected": {
+        "type": "decimal",
+        "value": "0.00",
+        "unit": "AUD"
+      },
+      "evidenceIds": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ]
+    },
+    "fieldClauseIds": {
+      "annualRate": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "term": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "dayCount": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "dailyAccrualScale": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "dailyRateRounding": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "accrualRounding": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "postingRounding": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "postingPolicy": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "businessDayAdjustment": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "compounding": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "offset": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "feeDisposition": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "eligibility": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "effectiveInterval": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "cohort": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "accrualBoundary": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "effectiveScope": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "tier": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "package": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "principalBounds": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ]
+    },
+    "evidence": [
+      {
+        "id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "clauseId": "1111111111111111111111111111111111111111111111111111111111111111",
+        "documentVersionId": "6666666666666666666666666666666666666666666666666666666666666666",
+        "documentSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "sourceUrl": "https://example.invalid/protocol",
+        "locator": "{\"end\":70,\"start\":0}",
+        "quote": "Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.",
+        "quoteSha256": "40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315"
+      }
+    ],
+    "id": "9a6e6219cc65b269fce99e9bd44d8bb50df1da0b5b842ed37795a28831b9d62f",
+    "currency": "AUD",
+    "effectiveScope": "whole_accrual_horizon",
+    "tierKey": "protocol-tier",
+    "packageKey": "none_source_declared",
+    "principalBounds": {
+      "minimum": {
+        "value": "0.00",
+        "inclusive": true
+      },
+      "maximum": {
+        "unbounded": true
+      }
+    }
+  },
+  "canonicalWithoutId": "{\"adapterVersion\":\"fixed-aud-td-v1\",\"annualRate\":\"0.0500\",\"cohortKey\":\"protocol-only\",\"currency\":\"AUD\",\"documentVersionIds\":[\"6666666666666666666666666666666666666666666666666666666666666666\"],\"effectiveFrom\":\"2026-01-01\",\"effectiveScope\":\"whole_accrual_horizon\",\"effectiveToExclusive\":\"2027-01-01\",\"eligibility\":{\"comparison\":\"gte\",\"evidenceIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"expected\":{\"type\":\"decimal\",\"unit\":\"AUD\",\"value\":\"0.00\"},\"field\":\"protocol_amount\",\"id\":\"protocol-rule\",\"op\":\"compare\"},\"evaluatorVersion\":\"product-terms-engine-v7\",\"evidence\":[{\"clauseId\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"documentSha256\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"documentVersionId\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"id\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"locator\":\"{\\\"end\\\":70,\\\"start\\\":0}\",\"quote\":\"Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.\",\"quoteSha256\":\"40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315\",\"sourceUrl\":\"https://example.invalid/protocol\"}],\"fieldClauseIds\":{\"accrualBoundary\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"accrualRounding\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"annualRate\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"businessDayAdjustment\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"cohort\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"compounding\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"dailyAccrualScale\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"dailyRateRounding\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"dayCount\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"effectiveInterval\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"effectiveScope\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"eligibility\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"feeDisposition\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"offset\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"package\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"postingPolicy\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"postingRounding\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"principalBounds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"term\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"tier\":[\"1111111111111111111111111111111111111111111111111111111111111111\"]},\"inputDefinitions\":[{\"binding\":\"deposit_principal\",\"clauseIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"key\":\"protocol_amount\",\"label\":\"Protocol amount — café\",\"type\":\"decimal\",\"unit\":\"AUD\"},{\"binding\":\"funded_date\",\"clauseIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"key\":\"protocol_funded\",\"label\":\"Protocol date protocol_funded\",\"type\":\"date\",\"unit\":null},{\"binding\":\"maturity_date\",\"clauseIds\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"key\":\"protocol_maturity\",\"label\":\"Protocol date protocol_maturity\",\"type\":\"date\",\"unit\":null}],\"interest\":{\"accrualRounding\":\"half_up\",\"dailyAccrualScale\":null,\"dailyRateRounding\":null,\"dayCount\":\"actual_365_fixed\",\"postingRounding\":\"half_up\"},\"kind\":\"fixed_aud_td_maturity_v1\",\"packageKey\":\"none_source_declared\",\"policies\":{\"accrualBoundary\":\"funded_inclusive_maturity_exclusive\",\"businessDayAdjustment\":\"none_source_declared\",\"compounding\":\"none\",\"feeDisposition\":\"complete_no_fees\",\"offset\":\"none\",\"posting\":\"calendar_day_maturity\"},\"principalBounds\":{\"maximum\":{\"unbounded\":true},\"minimum\":{\"inclusive\":true,\"value\":\"0.00\"}},\"productKey\":\"protocol-only|café|零|😀\",\"runDate\":\"2026-01-01\",\"schemaVersion\":1,\"selectedRate\":{\"coreAssetSha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"coreRowIndex\":0,\"rateIndex\":1,\"rowSha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"sourceManifestSha256\":\"3333333333333333333333333333333333333333333333333333333333333333\"},\"sourceGenerationId\":\"protocol-only-generation\",\"sourceObservationId\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"sourceSha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"term\":{\"count\":100,\"monthConvention\":\"clamp\",\"unit\":\"days\"},\"termRevisionIds\":[\"7777777777777777777777777777777777777777777777777777777777777777\"],\"tierKey\":\"protocol-tier\"}",
+  "expectedId": "9a6e6219cc65b269fce99e9bd44d8bb50df1da0b5b842ed37795a28831b9d62f"
+}
