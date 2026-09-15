@@ -7,6 +7,18 @@ from typing import Any, Dict, List
 from app_payload_common import compact
 from cdr_clean_export import official_product_links
 from cdr_savings_conditions import winner_rate_disclosures
+from cdr_rate_conditions import MAX_ENVELOPE_BYTES, validate_rate_conditions
+
+
+def _rate_conditions(product: Dict[str, Any]) -> Dict[str, Any] | None:
+    raw = product.get('rate_conditions_json')
+    if raw is None:
+        return None  # Legacy exports cannot acquire source identity after the fact.
+    if not isinstance(raw, str) or len(raw.encode('utf-8')) > MAX_ENVELOPE_BYTES:
+        raise ValueError('rate_conditions_envelope_byte_bound')
+    value = json.loads(raw)
+    validate_rate_conditions(value)
+    return value
 
 def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[str, Any]]:
     items = record.get(key)
@@ -162,6 +174,7 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
                 ),
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
+                "rateConditions": _rate_conditions(product),
                 "links": _detail_links(record),
                 # Full scoped references belong in lazy per-product evidence
                 # assets; duplicating them in v1 can exceed its 4 MiB budget.
