@@ -17,7 +17,7 @@ NOW='2026-09-15T07:50:00Z'
 
 @pytest.mark.parametrize('alternate_gzip_header',[False,True])
 def test_actual_same_subject_source_benchmark_review_publication_revocation(tmp_path,monkeypatch,alternate_gzip_header):
-    bridge=json.loads((ROOT/'connected-bridge.json').read_bytes())
+    bridge=json.loads((ROOT/'connected-material-bridge.json').read_bytes())
     if alternate_gzip_header:
         import tests.executable_v3_fixture as fixture
         def alternate(value):

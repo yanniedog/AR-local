@@ -1,0 +1,1338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:monetary-savings-base-field-v1:draft",
+  "$comment": "DRAFT. Await independent mapping freeze; no source approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "field",
+    "scope",
+    "from",
+    "toExclusive",
+    "material"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "field": {
+      "enum": [
+        "allocation",
+        "balanceBasis",
+        "dailyAccrualRounding",
+        "dailyRateRounding",
+        "dayCount",
+        "depositSettlementBasis",
+        "eligibility",
+        "eventOrder",
+        "feeCoverage",
+        "noBonusIntro",
+        "noDeferredObligations",
+        "noOffsetLinkedAccounts",
+        "postingDates",
+        "postingDestination",
+        "postingResidue",
+        "postingRounding",
+        "rates"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "cohortKey",
+        "tierKey",
+        "packageKey"
+      ],
+      "properties": {
+        "productKey": {
+          "$ref": "#/$defs/key"
+        },
+        "cohortKey": {
+          "$ref": "#/$defs/key"
+        },
+        "tierKey": {
+          "$ref": "#/$defs/key"
+        },
+        "packageKey": {
+          "$ref": "#/$defs/key"
+        }
+      }
+    },
+    "from": {
+      "$ref": "#/$defs/date"
+    },
+    "toExclusive": {
+      "$ref": "#/$defs/date"
+    },
+    "material": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "format": "date",
+      "maxLength": 10
+    },
+    "hashes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha"
+      }
+    },
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rules"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "enum": [
+                "and",
+                "or"
+              ]
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/rule"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rule"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "not"
+            },
+            "rule": {
+              "$ref": "#/$defs/rule"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "field",
+            "comparison",
+            "expected"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+              "maxLength": 180,
+              "not": {
+                "enum": [
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "op": {
+              "const": "compare"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "comparison": {
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "expected": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value",
+                    "unit"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "decimal"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,24})?$",
+                      "maxLength": 72
+                    },
+                    "unit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "date",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "boolean"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "clauseId",
+          "documentVersionId",
+          "documentSha256",
+          "sourceUrl",
+          "locator",
+          "quote",
+          "quoteSha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "clauseId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "locator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "quoteSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "family",
+        "cohortKey",
+        "tierKey",
+        "packageKey",
+        "from",
+        "toExclusive",
+        "coverage"
+      ],
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "family": {
+          "const": "Savings"
+        },
+        "cohortKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "tierKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "packageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "from": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "toExclusive": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "coverage": {
+          "const": "whole_calculation_horizon"
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "sourceGenerationId",
+        "exportContractSha256",
+        "runDate",
+        "coreAssetSha256",
+        "detailsAssetSha256",
+        "productRecordSha256"
+      ],
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "sourceGenerationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "exportContractSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "runDate": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "coreAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "detailsAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "productRecordSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationId",
+        "generationId",
+        "exportContractSha256",
+        "manifestSha256",
+        "coreAssetSha256",
+        "detailsAssetSha256",
+        "rawSourceSha256",
+        "productRecordSha256",
+        "observedAt",
+        "rateRows"
+      ],
+      "properties": {
+        "observationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "generationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "exportContractSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "coreAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "detailsAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "rawSourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "productRecordSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "rateRows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "coreRowIndex",
+              "rateIndex",
+              "rowSha256"
+            ],
+            "properties": {
+              "coreRowIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 200000
+              },
+              "rateIndex": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200000
+              },
+              "rowSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "allocation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "allocation",
+              "amountUnit",
+              "tiers"
+            ],
+            "properties": {
+              "allocation": {
+                "enum": [
+                  "marginal",
+                  "whole_balance"
+                ]
+              },
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "tiers": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "upperInclusive"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "upperInclusive": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,2})?$"
+                        },
+                        {
+                          "const": null
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "balanceBasis"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "currency",
+              "balanceBasis",
+              "externalMovements",
+              "withholding",
+              "initialUnpostedAccrual",
+              "calculationMode",
+              "maxHorizonDays"
+            ],
+            "properties": {
+              "currency": {
+                "const": "AUD"
+              },
+              "balanceBasis": {
+                "const": "closing_balance_before_posted_interest"
+              },
+              "externalMovements": {
+                "const": "none_user_confirmed"
+              },
+              "withholding": {
+                "const": "none_user_confirmed_before_tax"
+              },
+              "initialUnpostedAccrual": {
+                "const": "zero_user_confirmed"
+              },
+              "calculationMode": {
+                "const": "historical_holding_period"
+              },
+              "maxHorizonDays": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 366
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "dailyAccrualRounding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "amountUnit",
+              "dailyAccrualScale",
+              "accrualRounding",
+              "dailyAccrualRounding"
+            ],
+            "properties": {
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "dailyAccrualScale": {
+                "oneOf": [
+                  {
+                    "const": null
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 12
+                  }
+                ]
+              },
+              "accrualRounding": {
+                "enum": [
+                  "half_up",
+                  "half_even",
+                  "toward_zero"
+                ]
+              },
+              "dailyAccrualRounding": {
+                "enum": [
+                  "aggregate",
+                  "per_tier"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "dailyRateRounding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rateUnit",
+              "dailyRateRounding"
+            ],
+            "properties": {
+              "rateUnit": {
+                "const": "fraction_per_year"
+              },
+              "dailyRateRounding": {
+                "oneOf": [
+                  {
+                    "const": null
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "scale",
+                      "unit",
+                      "mode"
+                    ],
+                    "properties": {
+                      "scale": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 12
+                      },
+                      "unit": {
+                        "enum": [
+                          "fraction",
+                          "percent"
+                        ]
+                      },
+                      "mode": {
+                        "enum": [
+                          "half_up",
+                          "half_even",
+                          "toward_zero"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "dayCount"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dayCount"
+            ],
+            "properties": {
+              "dayCount": {
+                "const": "actual_365_fixed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "depositSettlementBasis"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "depositSettlementBasis",
+              "openingClearedFunds"
+            ],
+            "properties": {
+              "depositSettlementBasis": {
+                "enum": [
+                  "cleared_only",
+                  "cleared_and_uncleared"
+                ]
+              },
+              "openingClearedFunds": {
+                "const": "confirm_all_cleared_when_any_interval_uses_cleared_only"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "eligibility"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "eligibility",
+              "inputDefinitions"
+            ],
+            "properties": {
+              "eligibility": {
+                "$ref": "#/$defs/rule"
+              },
+              "inputDefinitions": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key",
+                    "label",
+                    "type",
+                    "unit",
+                    "binding"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    "type": {
+                      "enum": [
+                        "decimal",
+                        "date",
+                        "text",
+                        "boolean"
+                      ]
+                    },
+                    "unit": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        {
+                          "const": null
+                        }
+                      ]
+                    },
+                    "binding": {
+                      "enum": [
+                        "customer_fact",
+                        "opening_balance",
+                        "calculation_start_date",
+                        "calculation_end_date"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "eventOrder"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "eventOrder"
+            ],
+            "properties": {
+              "eventOrder": {
+                "const": "ordered_events_then_accrual_then_posting"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "feeCoverage"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "currency",
+              "coverage",
+              "inventory"
+            ],
+            "properties": {
+              "currency": {
+                "const": "AUD"
+              },
+              "coverage": {
+                "const": "reviewed_complete_no_fees"
+              },
+              "inventory": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "categoryId",
+                    "state"
+                  ],
+                  "properties": {
+                    "categoryId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "state": {
+                      "const": "none_applicable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "noBonusIntro"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bonus",
+              "intro"
+            ],
+            "properties": {
+              "bonus": {
+                "const": "none_source_declared"
+              },
+              "intro": {
+                "const": "none_source_declared"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "noDeferredObligations"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "deferredObligations"
+            ],
+            "properties": {
+              "deferredObligations": {
+                "const": "none_source_declared"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "noOffsetLinkedAccounts"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "offset",
+              "linkedAccounts"
+            ],
+            "properties": {
+              "offset": {
+                "const": "none_source_declared"
+              },
+              "linkedAccounts": {
+                "const": "none_source_declared"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "postingDates"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "postingInventory",
+              "postingCalendar"
+            ],
+            "properties": {
+              "postingInventory": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "from",
+                  "toExclusive",
+                  "coverage",
+                  "boundary",
+                  "calendarAdjustment",
+                  "rule",
+                  "dueDates"
+                ],
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                  },
+                  "toExclusive": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                  },
+                  "coverage": {
+                    "const": "all_source_due_dates"
+                  },
+                  "boundary": {
+                    "const": "from_inclusive_to_exclusive"
+                  },
+                  "calendarAdjustment": {
+                    "const": "none_source_declared"
+                  },
+                  "rule": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kind"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "const": "calendar_month_end"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kind",
+                          "sourceFrom",
+                          "sourceToExclusive",
+                          "sourceDueDates"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "const": "explicit_dated_source_schedule"
+                          },
+                          "sourceFrom": {
+                            "type": "string",
+                            "format": "date",
+                            "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                          },
+                          "sourceToExclusive": {
+                            "type": "string",
+                            "format": "date",
+                            "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                          },
+                          "sourceDueDates": {
+                            "type": "array",
+                            "minItems": 0,
+                            "maxItems": 366,
+                            "items": {
+                              "type": "string",
+                              "format": "date",
+                              "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                            },
+                            "uniqueItems": true
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "dueDates": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 366,
+                    "items": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+                    },
+                    "uniqueItems": true
+                  }
+                }
+              },
+              "postingCalendar": {
+                "const": "explicit_calendar_dates_no_business_adjustment"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "postingDestination"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "postingDestination"
+            ],
+            "properties": {
+              "postingDestination": {
+                "const": "same_account"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "postingResidue"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "amountUnit",
+              "postingResidue"
+            ],
+            "properties": {
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "postingResidue": {
+                "const": "discard_with_rounding_adjustment"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "postingRounding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "amountUnit",
+              "postingScale",
+              "postingRounding"
+            ],
+            "properties": {
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "postingScale": {
+                "const": 2
+              },
+              "postingRounding": {
+                "enum": [
+                  "half_up",
+                  "half_even",
+                  "toward_zero"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "rates"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "currency",
+              "rateUnit",
+              "amountUnit",
+              "kind",
+              "rateMeaning",
+              "tiers"
+            ],
+            "properties": {
+              "currency": {
+                "const": "AUD"
+              },
+              "rateUnit": {
+                "const": "fraction_per_year"
+              },
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "kind": {
+                "const": "base"
+              },
+              "rateMeaning": {
+                "const": "additive"
+              },
+              "tiers": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "upperInclusive",
+                    "annualRate"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "upperInclusive": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,2})?$"
+                        },
+                        {
+                          "const": null
+                        }
+                      ]
+                    },
+                    "annualRate": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,12})?$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

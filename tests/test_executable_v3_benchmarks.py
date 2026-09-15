@@ -21,6 +21,8 @@ def test_actual_final_bridge_private_gzip_code_projection_arithmetic(actual_savi
     lambda r:r['calculationInputs']['scenario'].update(openingBalance='1001.00'),
     lambda r:r['calculationInputs']['contract']['interest'].update(postingDates=[]),
     lambda r:r['adapterInputs']['facts']['balance'].update(value='2000'),
+    lambda r:r.update(verificationScope='Verified by the bank'),
+    lambda r:r.update(basis='After tax account result'),
 ])
 def test_material_adapter_projection_tampering(actual_savings_bridge,mutate):
     _,subject,_,_,bridge=actual_savings_bridge

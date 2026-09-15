@@ -29,3 +29,11 @@ executes the exact content-derived technical source subject used by the no-stub
 controller regression. Its preapproval transport metadata is explicitly benchmark
 bootstrap data, not an independent approval. The test independently creates review
 records after actual benchmark verification and verifies revocation/removal.
+
+That description-only capture remains unchanged as historical technical evidence.
+The current connected admission regression uses `connected-material-bridge.json`
+(SHA-256 `334b3682aab648d08cc7420f883b0dc812be3776094440dd16ec9f4e89bec656`).
+It was executed by the same exact app a9cae733944ce7e7c7e9bd0215feb4dd228bdc80
+against newly content-derived technical revisions for all 17 material fields.
+The producer independently stages, reviews, publishes and revokes that same subject.
+These fixtures demonstrate protocol mechanics, never bank policy acceptance.

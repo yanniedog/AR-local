@@ -14,13 +14,13 @@ from cdr_product_facts import NORMALIZATION_VERSION
 from .acquisitions_queue import AcquisitionQueue, enqueue_interpretation
 from .capture_provenance import begin_capture, source_time
 from .identity import byte_digest, digest, utc_now
-from .parameter_registry import registry_contract
+from .parameter_registry import registry_contract, MATERIAL_STAGING, MATERIAL_STAGING_SHA
 from .store import EvidenceStore
 
 
 def registry_context() -> dict[str, Any]:
     return {"document_schema_version": 1, "structured_fact_normalization": NORMALIZATION_VERSION,
-            "interpretation_contract": "analysis-staging-v1", "executable_rules": "unapproved",
+            "interpretation_contract": MATERIAL_STAGING, "interpretation_schema_sha256": MATERIAL_STAGING_SHA, "executable_rules": "unapproved",
             "parameter_registry": registry_contract()}
 
 

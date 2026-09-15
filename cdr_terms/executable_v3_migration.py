@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from .identity import canonical_json, timestamp, require_sha
@@ -105,6 +106,31 @@ def _schema_receipt(store, identity):
     return json.loads(raw)
 
 
+def _verify_predecessor_objects(db, upgraded):
+    from .executable_v2_migration import ROOT as PRIOR_ROOT, ADDED
+    ddl=(PRIOR_ROOT/'001_executable_registry_v2.sql').read_bytes()
+    if hashlib.sha256(ddl).hexdigest()!=PREDECESSOR_SHA:raise ValueError('Frozen001 DDL bytes changed')
+    with closing(sqlite3.connect(':memory:')) as expected:
+        expected.row_factory=sqlite3.Row
+        _execute(expected,Path(__file__).with_name('schema.sql').read_bytes())
+        _execute(expected,ddl)
+        for table in ADDED:
+            for operation in ('UPDATE','DELETE'):
+                expected.execute(f'CREATE TRIGGER "immutable_{table}_{operation}" BEFORE {operation} ON "{table}" '
+                    "BEGIN SELECT RAISE(ABORT,'terms evidence is append-only'); END")
+        reference=_expected_objects(expected,ddl)
+        objects=_objects(expected)
+        for table in ADDED:
+            for operation in ('UPDATE','DELETE'):
+                name=f'immutable_{table}_{operation}'
+                reference[name]={k:objects[name][k] for k in ('type','tbl_name','sql')}
+    actual=_objects(db)
+    for name,definition in reference.items():
+        if upgraded and name in ('executable_registry_subjects','executable_registry_reviews'):continue
+        if name not in actual or any(actual[name][key]!=value for key,value in definition.items()):
+            raise ValueError('Frozen001 installed schema differs: '+name)
+
+
 def migrate_monetary_registry(store, *, applied_at):
     ddl = (ROOT/'storage/002_monetary_wire3.sql').read_bytes()
     if hashlib.sha256(ddl).hexdigest()!=DDL_SHA:
@@ -118,6 +144,7 @@ def migrate_monetary_registry(store, *, applied_at):
         if prior is None or prior[0]!=PREDECESSOR_SHA:
             raise ValueError('Frozen001 predecessor required')
         present = db.execute("SELECT 1 FROM sqlite_master WHERE name='executable_registry_migrations_v3' AND type='table'").fetchone()
+        _verify_predecessor_objects(db,bool(present))
         if present:
             row = db.execute('SELECT * FROM executable_registry_migrations_v3 WHERE migration_id=?',(MIGRATION,)).fetchone()
             if row is None or row['ddl_sha256']!=DDL_SHA or row['predecessor_ddl_sha256']!=PREDECESSOR_SHA:

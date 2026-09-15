@@ -93,6 +93,9 @@ def validate_result(result,subject,raw):
     exact_object(raw,('target','inputs','profile'),'savings raw call')
     exact_object(result,('schemaVersion','evaluationKind','adapterVersion','evaluatorVersion','verificationScope','basis','adapterInputs','inputSha256','calculationInputs','receipt'),'savings result')
     if result['schemaVersion']!=1 or result['evaluationKind']!=subject['capability'] or any(result[k]!=subject[k] for k in ('adapterVersion','evaluatorVersion')):raise ValueError('Savings result version differs')
+    if (result['verificationScope']!='Approved structured historical authority and current publication verified on-device; original historical source bytes verified by producer, not downloaded here.'
+        or result['basis']!='Historical holding result before tax. Account rates and facts confirmed by you, not independently verified bank account data.'):
+        raise ValueError('Savings result verification scope or basis differs')
     value=result['adapterInputs'];exact_object(value,('subject','approval','binding','target','inputs','customerAnswers','facts'),'savings adapter input')
     derived,answers=facts(subject,raw['inputs'],raw['profile'])
     if value['subject']!=subject or value['target']!=raw['target'] or value['inputs']!=raw['inputs'] or value['facts']!=derived or value['customerAnswers']!=answers or result['inputSha256']!=digest(value):raise ValueError('Savings raw adapter input propagation differs')
