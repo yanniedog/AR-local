@@ -1,22 +1,39 @@
 """Typed fixture controls for approval storage, not an executed product benchmark."""
 from cdr_terms.executable_benchmarks import TOTALS
 from cdr_terms.identity import byte_digest, canonical_json
+from cdr_terms.executable_inputs import material_contract
+from tests.executable_code_fixture import retained_code_artifacts
+from datetime import date, timedelta
 
 
 def benchmark_control(store, template):
     put = lambda value: store.put_blob(canonical_json(value).encode())
-    codes = {'adapterCodeSha256': store.put_blob(b'protocol adapter identity only'),
-             'evaluatorCodeSha256': store.put_blob(b'protocol evaluator identity only')}
+    codes = retained_code_artifacts(store, template)
     cases, suite_cases = [], []
     for status in ('complete', 'unsupported'):
+        funded = template['effectiveFrom']
+        maturity = (date.fromisoformat(funded) + timedelta(days=template['term']['count'])).isoformat()
+        contract = material_contract(template, '1000.00', funded, maturity)
+        contract['dependencyIds'] = [template['id'], template['sourceObservationId'], template['sourceSha256'],
+                                     *template['documentVersionIds'], *template['termRevisionIds']]
+        contract['review'] = {**{key: 'verified' for key in ('applicability', 'materialTerms', 'feeCoverage', 'rateSchedule')},
+                              'benchmarkSha256': 'b' * 64}
         inputs = {'evaluatorVersion': template['evaluatorVersion'],
-            'contract': {'id': template['id'], 'productId': template['productKey'], 'dependencyIds': [template['id']]},
-            'scenario': {'protocolControl': status}}
+            'contract': contract,
+            'scenario': {'accountId': 'td_' + template['id'], 'productId': template['productKey'],
+                'cohortKey': template['cohortKey'], 'startDate': funded, 'endDateExclusive': contract['applicability']['toExclusive'],
+                'initialOffset': '0', 'events': [], 'assumptions': [], 'facts': {}}}
+        for definition in template['inputDefinitions']:
+            binding = definition['binding']
+            if binding == 'deposit_principal':
+                inputs['scenario']['facts'][definition['key']] = {'type': 'decimal', 'value': '1000.00', 'unit': 'AUD'}
+            elif binding in {'funded_date', 'maturity_date'}:
+                inputs['scenario']['facts'][definition['key']] = {'type': 'date', 'value': funded if binding == 'funded_date' else maturity}
         if template['evaluatorVersion'] == 'product-terms-engine-v8':
             inputs['contract']['initialAnnualRate'] = template['annualRate']
-            inputs['scenario'].update(openingBalance='0.00', tdConfirmation={
+            inputs['scenario'].update(openingBalance='1000.00', tdConfirmation={
                 'source': 'user_supplied_bank_confirmation', 'recordedAt': '2026-01-01T00:00:00Z',
-                'principal': '0.00', 'fundedDate': '2026-01-01', 'maturityDate': '2026-01-02',
+                'principal': '1000.00', 'fundedDate': funded, 'maturityDate': maturity,
                 'noWithholding': True, 'annualRate': template['annualRate']})
         input_sha = put(inputs)
         complete = status == 'complete'

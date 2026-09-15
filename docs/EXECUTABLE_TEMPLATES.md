@@ -123,3 +123,52 @@ execution, including a confirmed-rate mismatch refusal. Both v7 and v8 fixtures
 pass the producer benchmark gate and independent Decimal/calendar expectations.
 Re-executing historical inputs with a newer runner identifies that newer runner;
 it does not claim to reproduce an older execution identity byte for byte.
+
+## Review integrity and retained implementation evidence
+
+Approval snapshots bind the whole current product evidence projection, including
+newly discovered documents and material revisions. Any inventory or coverage
+change requires fresh review. Every disposition identity includes its observed
+predecessor; the additive `executable_review_predecessors` table retains that
+association without changing existing rows. Existing approvals made with the
+older snapshot format fail current approval validation and require fresh review;
+their original evidence remains available for retrospective inspection.
+
+New benchmark admission compares the instantiated contract's rate, term,
+rounding, fees, eligibility, applicability, source evidence and lifecycle with
+the exact template. Complete scenarios also bind actual amount, dates and typed
+scenario-owned facts. Refusal controls may deliberately mismatch amount or rate,
+but cannot substitute a different source contract or arbitrary scenario events.
+
+Code artifacts have exactly these manifest fields: `schemaVersion: 1`,
+`role: adapter|evaluator`, exact `version`, `entrypoints`, `files`, `packageLock`,
+`externalPackages`, and `scope: local_literal_import_closure_with_locked_external_metadata`.
+Each file has exactly `path`, `sha256`, and `bytes`; each external package has
+exactly `name` and `version`. Adapter entrypoint is
+`mobile/src/data/executableContracts/instantiate.ts`; evaluator entrypoint is
+`mobile/src/lib/productTermsEngine/ledger.ts`. Package lock path is
+`mobile/package-lock.json`.
+
+Every normalized relative path is unique; every referenced blob's length and
+SHA-256 are verified. Literal relative imports, reexports and require calls must
+resolve within the retained files. Dynamic expressions, including a quoted
+prefix plus concatenation, are refused. External package names and versions must
+match the retained lock. That metadata does **not** prove external runtime package
+bytes or execution: controller execution records and independent review remain
+trust authorities.
+
+Limits are 256 files and 8 MiB source bytes per code artifact, eight artifacts
+and 32 MiB per operation. Finalized captures allow four receipts and 32 MiB
+combined receipt/contract bytes per operation, with at most 20,000 source members
+each. Caches last only for the current operation. Both source generation and
+contract digests are recomputed before caching. Present non-maturity interest
+cadence is incompatible with this adapter.
+
+The compressed technical code fixture retains the e181 historical local source
+closure: 87 files plus a separate copy of every original bridge-listed artifact
+with its exact recorded hash. Comparison harness files outside the single-deposit
+entrypoint closure are retained as provenance, not claimed as runtime imports.
+The closure includes the dependency lock. Additional files preserve Git blob
+bytes and identify that representation explicitly. Original v7/v8 execution
+fixtures remain unchanged. `legacy_descriptor_replay=True` is solely an explicit
+retrospective benchmark-reader option; new approval never enables it.

@@ -12,9 +12,11 @@ from decimal import Decimal, InvalidOperation
 from .identity import canonical_json, digest
 from .observation_checks import current_observation
 from .reporting import build_product_asset
-from cdr_export_contract import validate_contract
+from cdr_export_contract import validate_contract, contract_digest, source_generation_digest
 
 MAX_CORE_RAW = 32 * 1024 * 1024
+MAX_CAPTURES = 4
+MAX_CAPTURE_BYTES = 32 * 1024 * 1024
 _OPERATION = ContextVar('executable_source_operation', default=None)
 
 
@@ -32,7 +34,7 @@ def source_operation(store):
     if current is not None and current['store'] is store:
         yield
         return
-    token = _OPERATION.set({'store': store, 'cores': {}, 'decoded_bytes': 0})
+    token = _OPERATION.set({'store': store, 'cores': {}, 'captures': {}, 'decoded_bytes': 0})
     try:
         yield
     finally:
@@ -65,19 +67,47 @@ def finalized_capture(store, generation, run_date):
     capture = store.db.execute('SELECT * FROM ingest_captures WHERE ingest_id=?', (generation,)).fetchone()
     if capture is None:
         raise ValueError('Executable template requires finalized source capture')
-    receipt = json.loads(store.read_blob(capture['receipt_sha256']))
+    operation = _OPERATION.get()
+    cache = operation['captures'] if operation is not None and operation['store'] is store else {}
+    key = (generation, run_date, capture['receipt_sha256'], capture['products'])
+    if key in cache:
+        return cache[key]
+    receipt_raw = store.read_blob(capture['receipt_sha256'])
+    used = operation.get('capture_bytes', 0) if operation is not None else 0
+    if len(cache) >= MAX_CAPTURES or len(receipt_raw) + used > MAX_CAPTURE_BYTES:
+        raise ValueError('Executable capture operation bound exceeded')
+    receipt = json.loads(receipt_raw)
     provenance = receipt.get('source_provenance') or {}
     if (receipt.get('schema_version') != 1 or receipt.get('status') != 'CAPTURED_AND_QUEUED'
             or receipt.get('generation_id') != generation or receipt.get('source_run_date') != run_date
             or receipt.get('products') != capture['products'] or receipt.get('products') != len(receipt.get('sources', []))
             or provenance.get('basis') != 'finalized_source_generation'):
         raise ValueError('Executable completed capture receipt mismatch')
-    contract = json.loads(store.read_blob(provenance['contract_sha256']))
+    contract_raw = store.read_blob(provenance['contract_sha256'])
+    size = len(receipt_raw) + len(contract_raw)
+    if size + used > MAX_CAPTURE_BYTES:
+        raise ValueError('Executable capture operation bound exceeded')
+    contract = json.loads(contract_raw)
     validate_contract(contract)
+    if (source_generation_digest(contract) != contract['source_generation_digest']
+            or contract_digest(contract) != contract['contract_digest']):
+        raise ValueError('Executable retained export contract digest mismatch')
     if (contract['generation_id'] != generation or contract['observation_date'] != run_date
             or contract['contract_digest'] != receipt['export_contract_digest']
             or provenance.get('contract_digest') != contract['contract_digest']):
         raise ValueError('Executable retained finalized export contract mismatch')
+    members = {}
+    if not isinstance(receipt['sources'], list) or len(receipt['sources']) > 20000:
+        raise ValueError('Executable capture member bound exceeded')
+    for source in receipt['sources']:
+        member = (source.get('observation_id'), source.get('product_key'), source.get('sha256'))
+        if member in members:
+            raise ValueError('Executable duplicate finalized capture member')
+        members[member] = True
+    receipt['_verified_members'] = members
+    cache[key] = receipt
+    if operation is not None and operation['store'] is store:
+        operation['capture_bytes'] = used + size
     return receipt
 
 
@@ -89,9 +119,7 @@ def selected_row(store, template):
     if descriptor['sha256'] != binding['coreAssetSha256'] or descriptor['bytes'] != compressed_size or manifest.get('enc'):
         raise ValueError('Executable source core descriptor mismatch')
     receipt = finalized_capture(store, template['sourceGenerationId'], template['runDate'])
-    matches = [r for r in receipt['sources'] if r.get('observation_id') == template['sourceObservationId']
-               and r.get('product_key') == template['productKey'] and r.get('sha256') == template['sourceSha256']]
-    if len(matches) != 1:
+    if (template['sourceObservationId'], template['productKey'], template['sourceSha256']) not in receipt['_verified_members']:
         raise ValueError('Executable product missing from finalized capture')
     expected = {'generation_id': template['sourceGenerationId'], 'contract_digest': receipt['export_contract_digest']}
     source = manifest.get('source_observation') or {}
@@ -129,6 +157,8 @@ def validate_row_semantics(template, row):
         raise ValueError('Executable term differs from exact selected variant')
     if row.get('rate_type') != 'FIXED':
         raise ValueError('Executable selected variant is not fixed')
+    if row.get('interest_payment') not in (None, 'at_maturity', 'maturity'):
+        raise ValueError('Executable selected variant does not pay at maturity')
 
 
 def validate_current_sources(store, template):

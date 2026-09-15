@@ -353,3 +353,8 @@ CREATE TABLE IF NOT EXISTS executable_publications (
     payload_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS executable_publications_product ON executable_publications(product_key,sequence DESC);
+
+CREATE TABLE IF NOT EXISTS executable_review_predecessors (
+    review_id TEXT PRIMARY KEY REFERENCES executable_reviews(review_id),
+    previous_review_id TEXT REFERENCES executable_reviews(review_id)
+);
