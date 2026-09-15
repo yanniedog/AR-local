@@ -1,5 +1,5 @@
 {
-  "name": "main — bot gates + Actions bypass",
+  "name": "main — bot gates",
   "target": "branch",
   "source_type": "Repository",
   "enforcement": "active",
@@ -12,13 +12,7 @@
       "exclude": []
     }
   },
-  "bypass_actors": [
-    {
-      "actor_id": 15368,
-      "actor_type": "Integration",
-      "bypass_mode": "always"
-    }
-  ],
+  "bypass_actors": [],
   "rules": [
     {
       "type": "deletion"
@@ -47,10 +41,6 @@
         "required_status_checks": [
           {
             "context": "bot-feedback-gate",
-            "integration_id": 15368
-          },
-          {
-            "context": "bot-presence-gate",
             "integration_id": 15368
           }
         ]

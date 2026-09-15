@@ -7,7 +7,7 @@
  *   node scripts/github-bot-gates-operator.mjs --verify-pr 123
  *   node scripts/github-bot-gates-operator.mjs --dry-run-protection
  *
- * GitHub side: import .github/rulesets/main-bot-gates.json via UI (API bypass 422 on personal repos).
+ * GitHub side: import .github/rulesets/main-bot-gates.json without bypass actors.
  * Repo side: scripts/lib/pr-gate-exempt.mjs skips bot gates for chore + bot-authored PRs.
  */
 import { readFileSync } from 'node:fs';
@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RULESET_JSON = join(repoRoot, '.github', 'rulesets', 'main-bot-gates.json');
-const REQUIRED_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+const REQUIRED_CHECKS = ['bot-feedback-gate'];
 
 function parseArgs(argv) {
   const out = { verifyPr: null, dryRunProtection: false, help: false };
@@ -35,15 +35,17 @@ function printPolicy() {
 === Bot review policy (repo code — NOT in GitHub ruleset) ===
 
 Required on merge (human work PRs):
-  - bot-presence-gate   (waits for gemini on human feat/fix/agent PRs)
   - bot-feedback-gate   (thread closure on human PRs)
+  - applicable product CI under live branch protection
+
+Reviewer presence is advisory. Disposition substantive findings that arrive.
 
 Skipped automatically (scripts/lib/pr-gate-exempt.mjs):
   - PR author is a GitHub bot (login ends with [bot], e.g. github-actions[bot])
   - Title is conventional chore (chore: or chore(scope):)
   - Known automation titles (PR bot matrix)
 
-Human PR example (bots required):  yanniedog + feat/fix/agent/*
+Human PR example (feedback required): yanniedog + feat/fix/agent/*
 Chore example (bots skipped):      chore: update generated reports
 Bot PR example (bots skipped):      github-actions[bot] opens any title
 `);
@@ -61,9 +63,9 @@ Steps:
   2. Select the JSON file above
   3. Confirm:
        Target branches: refs/heads/main, ~DEFAULT_BRANCH
-       Required checks:  bot-presence-gate, bot-feedback-gate (strict)
+       Required checks:  bot-feedback-gate (strict); preserve applicable product CI
        PR rule:          squash only, conversation resolution ON, 0 approvals
-       Bypass list:      do not add or expand bypass for matrix reporting
+       Bypass list:      empty
   4. Save → Enforcement: Active
   5. Preserve existing main branch protection. Matrix reporting needs no bypass.
 
@@ -71,7 +73,7 @@ Matrix reporting:
   - pr-bot-spreadsheet uses read-only permissions and retains Actions artifacts.
   - It never pushes reports to main or requires protection changes.
 
-API note: POST ruleset with bypass_actors often returns 422 on personal repos — use UI import.
+Importing this template does not require removing existing branch protection.
 
 Full doc: docs/GITHUB_RULESET_IMPORT.md
 `);
@@ -88,15 +90,12 @@ function validateRulesetJson() {
   if (missing.length) {
     throw new Error(`ruleset JSON missing checks: ${missing.join(', ')}`);
   }
-  const hasActionsBypass = (ruleset.bypass_actors || []).some(
-    (a) => a.actor_type === 'Integration' && a.actor_id === 15368,
-  );
-  if (!hasActionsBypass) {
-    throw new Error('ruleset JSON missing GitHub Actions bypass (actor_id 15368)');
+  if (!Array.isArray(ruleset.bypass_actors) || ruleset.bypass_actors.length !== 0) {
+    throw new Error('ruleset JSON must declare an empty bypass_actors list');
   }
   console.log('OK ruleset JSON:', RULESET_JSON);
   console.log('   required checks:', checks.join(', '));
-  console.log('   Actions bypass:  actor_id 15368, mode always');
+  console.log('   bypass actors:   none');
 }
 
 function runLocalVerifiers() {
@@ -140,7 +139,7 @@ function verifyPrExemption(prNumber) {
     console.log(`PR #${prNumber}: gate-exempt (${reason}) — bot review NOT required for merge`);
     return;
   }
-  console.log(`PR #${prNumber}: NOT gate-exempt — gemini + thread closure required for merge`);
+  console.log(`PR #${prNumber}: NOT gate-exempt — thread closure required; reviewer presence advisory`);
 }
 
 function dryRunBranchProtection() {
@@ -168,7 +167,7 @@ Exempt PR (expect gate-exempt reason):
 Human PR gates:
   npm run pr:gates:check -- --pr <n>
 
-Direct-to-main workflows (need Actions bypass + no legacy protection):
+Read-only matrix report (Actions summary and downloadable artifacts):
   gh workflow run pr-bot-spreadsheet.yml
   gh run list --workflow=pr-bot-spreadsheet.yml --limit 3
 
