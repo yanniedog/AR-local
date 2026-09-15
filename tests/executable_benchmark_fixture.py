@@ -12,6 +12,12 @@ def benchmark_control(store, template):
         inputs = {'evaluatorVersion': template['evaluatorVersion'],
             'contract': {'id': template['id'], 'productId': template['productKey'], 'dependencyIds': [template['id']]},
             'scenario': {'protocolControl': status}}
+        if template['evaluatorVersion'] == 'product-terms-engine-v8':
+            inputs['contract']['initialAnnualRate'] = template['annualRate']
+            inputs['scenario'].update(openingBalance='0.00', tdConfirmation={
+                'source': 'user_supplied_bank_confirmation', 'recordedAt': '2026-01-01T00:00:00Z',
+                'principal': '0.00', 'fundedDate': '2026-01-01', 'maturityDate': '2026-01-02',
+                'noWithholding': True, 'annualRate': template['annualRate']})
         input_sha = put(inputs)
         complete = status == 'complete'
         receipt = {'schemaVersion': 1, 'evaluatorVersion': template['evaluatorVersion'], 'inputSha256': input_sha,
@@ -21,6 +27,8 @@ def benchmark_control(store, template):
             'eligibility': {'status': 'meets', 'reasons': [], 'trace': {'id': 'protocol', 'status': 'meets', 'evidenceIds': []}} if complete else None,
             'totals': {key: None if key == 'principalRepaid' else '0.00' for key in TOTALS} if complete else None,
             'ledger': [{'date': '2026-01-01', 'id': 'protocol', 'type': 'interest_posting', 'amount': '0.00', 'balance': '0.00', 'evidenceIds': []}] if complete else []}
+        if complete and template['evaluatorVersion'] == 'product-terms-engine-v8':
+            receipt['localTdConfirmation'] = inputs['scenario']['tdConfirmation']
         actual = {'templateId': template['id'], 'inputSha256': input_sha, 'adapterVersion': template['adapterVersion'],
                   'evaluatorVersion': template['evaluatorVersion'], **codes, 'result': receipt}
         expected = {'templateId': template['id'], 'inputSha256': input_sha,

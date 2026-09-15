@@ -26,6 +26,7 @@ def reidentify(value):
 @pytest.fixture
 def protocol(tmp_path):
     template = copy.deepcopy(json.loads(VECTOR.read_bytes())['template'])
+    template['evaluatorVersion'] = 'product-terms-engine-v8'
     quote = 'Protocol contract control'
     raw = canonical_json({'data': {'name': quote, 'brand': 'Protocol only', 'productId': 'protocol'},
                           'links': {'self': 'https://example.invalid/protocol'}}).encode()

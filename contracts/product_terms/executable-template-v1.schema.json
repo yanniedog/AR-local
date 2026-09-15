@@ -45,7 +45,7 @@
       "const": "fixed-aud-td-v1"
     },
     "evaluatorVersion": {
-      "const": "product-terms-engine-v7"
+      "enum": ["product-terms-engine-v7", "product-terms-engine-v8"]
     },
     "id": {
       "type": "string",

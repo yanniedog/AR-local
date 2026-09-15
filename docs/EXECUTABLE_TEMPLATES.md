@@ -7,7 +7,7 @@ an app calculation. The existing terms-v1 evidence contract remains unchanged.
 ## Source and execution scope
 
 `executable-template-v1.schema.json` defines `fixed_aud_td_maturity_v1`, adapter
-`fixed-aud-td-v1`, evaluator `product-terms-engine-v7`. The supported pattern is
+`fixed-aud-td-v1`, evaluator `product-terms-engine-v8` for new approvals. The supported pattern is
 AUD, a fixed rate, ACT/365 fixed, explicit rounding, noncompounding interest paid
 on calendar-day maturity, no business-day adjustment, funded-day inclusion and
 maturity-day exclusion, and independently complete no-fee treatment. Early exit,
@@ -110,3 +110,16 @@ Every `review_template` call supplies `expected_previous_review_id` (null for
 the first review). Approval evidence also contains that exact `previousReviewId`.
 The transaction rejects stale approvals arriving after a rejection or revocation;
 intentional reapproval requires new evidence naming the observed negative review.
+
+New staging and positive approval require evaluator `product-terms-engine-v8`.
+The v8 local benchmark confirmation includes the actual opened `annualRate` as
+an exact decimal fraction, equal to the approved template and instantiated
+contract rate. Complete receipts without it are invalid. The shared schema
+continues to read v7 templates and their original confirmation shape for
+immutable historical replay; no retained template or receipt is upgraded.
+
+The separate `actual-v8-bridge.json` fixture retains real adapter/evaluator v8
+execution, including a confirmed-rate mismatch refusal. Both v7 and v8 fixtures
+pass the producer benchmark gate and independent Decimal/calendar expectations.
+Re-executing historical inputs with a newer runner identifies that newer runner;
+it does not claim to reproduce an older execution identity byte for byte.

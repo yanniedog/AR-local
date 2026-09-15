@@ -21,8 +21,12 @@ def independently_check(record):
     assert digest(inputs) == record['inputCanonicalSha256'] == result['inputSha256']
     assert digest(result) == record['outputCanonicalSha256']
     if record['name'] == 'refusal':
-        assert inputs['contract']['tdLifecycle']['investmentAmount'] != inputs['scenario']['openingBalance']
-        assert result['issues'] == ['td_confirmed_investment_amount_mismatch']
+        if inputs['evaluatorVersion'] == 'product-terms-engine-v8':
+            assert Decimal(inputs['contract']['initialAnnualRate']) != Decimal(inputs['scenario']['tdConfirmation']['annualRate'])
+            assert result['issues'] == ['td_confirmed_rate_mismatch']
+        else:
+            assert inputs['contract']['tdLifecycle']['investmentAmount'] != inputs['scenario']['openingBalance']
+            assert result['issues'] == ['td_confirmed_investment_amount_mismatch']
         assert result['status'] == 'unsupported' and result['totals'] is None and result['ledger'] == []
         return
     local = record['localInput']
@@ -48,8 +52,9 @@ def independently_check(record):
     assert result['localTdConfirmation'] == inputs['scenario']['tdConfirmation']
 
 
-def test_actual_adapter_evaluator_bridge_passes_full_benchmark(tmp_path):
-    bridge = json.loads(BRIDGE.read_bytes())
+@pytest.mark.parametrize('version', [7, 8])
+def test_actual_adapter_evaluator_bridge_passes_full_benchmark(tmp_path, version):
+    bridge = json.loads(BRIDGE.with_name(f'actual-v{version}-bridge.json').read_bytes())
     store = EvidenceStore(tmp_path)
     put = lambda value: store.put_blob(canonical_json(value).encode('utf-8'))
     codes = {key: put([item for item in bridge['code'] if marker in item['file']]) for key, marker in (
