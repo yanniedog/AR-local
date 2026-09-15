@@ -17,7 +17,9 @@ def _canonical_registry_fixture():
     if (len(body), hashlib.sha256(body).hexdigest()) == (
             2644, '44071664c6ab6867cde45821a5f7c87f2e4ce343d42b4203321b5308390eee58'):
         body = body[:-2] + b'\n'
-    if (len(body), hashlib.sha256(body).hexdigest()) != (2643, plan.REGISTRY_SHA):
+    # Independent reviewed fixture identity must not follow production pin drift.
+    if (len(body), hashlib.sha256(body).hexdigest()) != (
+            2643, '78906ab97dbd3cfa6d64cc0835d180015be1538ddfae44fbace9e1b296fbd314'):
         raise ValueError('unreviewed_registry_fixture_bytes')
     return body
 
@@ -119,3 +121,14 @@ def test_fixture_import_does_not_normalize_unknown_transport(tmp_path, monkeypat
     materialize(tmp_path, monkeypatch, REGISTRY_BYTES[:-1] + b'\r\r\n')
     with pytest.raises(ValueError, match='unreviewed_registry_fixture_bytes'):
         runpy.run_path(str(module_path))
+
+
+def test_fixture_rejects_registry_and_production_pin_drifting_together(tmp_path, monkeypatch):
+    import runpy
+
+    changed = REGISTRY_BYTES.replace(b'2026-05-23', b'2026-05-24')
+    assert len(changed) == len(REGISTRY_BYTES) and changed != REGISTRY_BYTES
+    materialize(tmp_path, monkeypatch, changed)
+    monkeypatch.setattr(plan, 'REGISTRY_SHA', hashlib.sha256(changed).hexdigest())
+    with pytest.raises(ValueError, match='unreviewed_registry_fixture_bytes'):
+        runpy.run_path(str(Path(__file__).resolve()))
