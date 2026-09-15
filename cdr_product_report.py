@@ -96,6 +96,12 @@ def inventory_products(core: dict, details: dict) -> tuple[list, list, list]:
                    'detail_fields_reported': '|'.join(sorted(detail or {})),
                    'document_capture': 'not_reported',
                    'executable_terms_coverage': 'not_reported'}
+        # Rate availability is not product membership. Combined transaction and
+        # savings categories remain unknown without an observed rate section.
+        category_family = {'TERM_DEPOSITS': 'TD', 'RESIDENTIAL_MORTGAGES': 'Mortgage'}.get(product['category'], '')
+        product['product_families'] = product['sections'] or category_family
+        product['family_basis'] = ('published_rate_section' if rates else
+                                   'reported_category' if category_family else 'unknown')
         for group in GROUPS:
             product[group + '_entries'] = len((detail or {}).get(group, []))
         product['official_links'] = len((detail or {}).get('links', {}))
