@@ -27,7 +27,14 @@ def retain_benchmark(store,bridge,codes):
         raw=record['rawInput'];raw_sha=put(raw)
         assert digest(raw)==record['rawInputSha256']
         outcome={'result':record['result']} if 'result' in record else {k:record[k] for k in ('refusal','resultReturned')}
-        expected=financial_expectation(subject,raw['inputs']) if 'result' in record else dict(kind='technical_refusal',reason=record['refusal'])
+        if 'result' in record and subject['capability']=='mortgage_calculation':
+            from cdr_terms.mortgage_inputs import facts
+            from cdr_terms.mortgage_projection import projection
+            from cdr_terms.mortgage_financial import expectation
+            derived,_=facts(subject,raw['inputs'],raw['profile'])
+            calculation=projection(subject,raw['inputs'],record['result']['adapterInputs']['binding'],bridge['selection']['approval'],derived)
+            expected=dict(kind='technical_calculation',**expectation(subject,raw['inputs'],calculation))
+        else:expected=financial_expectation(subject,raw['inputs']) if 'result' in record else dict(kind='technical_refusal',reason=record['refusal'])
         common=dict(subjectId=subject['id'],inputSha256=raw_sha,contextSha256=context,executionKind='actual_adapter')
         actual=put(dict(common,adapterCodeSha256=codes['adapter'],evaluatorCodeSha256=codes['evaluator'],outcome=outcome))
         derivation=put(dict(schemaVersion=1,method='independent_fraction_oracle_v1',policySha256=digest(subject['policy']),inputSha256=raw_sha,expected=expected))

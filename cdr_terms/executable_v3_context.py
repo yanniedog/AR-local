@@ -8,6 +8,7 @@ from app_payload_network_budget import validate_payload_network_budget
 
 
 def target_binding(target,subject,core):
+    if subject['capability']=='mortgage_calculation':return mortgage_target_binding(target,subject,core)
     fields=('kind','productKey','productRecordSha256')
     exact_object(target,fields if target.get('kind')=='product' else (*fields,'section','coreRowIndex','rateIndex','rowSha256'),'savings target')
     if target['productKey']!=subject['scope']['productKey'] or target['productRecordSha256']!=subject['routing']['productRecordSha256']:
@@ -20,11 +21,33 @@ def target_binding(target,subject,core):
     if row.get('product_key')!=target['productKey'] or type(row.get('rate_index')) is not type(target['rateIndex']) or row.get('rate_index')!=target['rateIndex'] or digest(row)!=target['rowSha256']:raise ValueError('Savings product publication is not verified')
 
 
+def mortgage_target_binding(target,subject,core):
+    fields=('kind','productKey','productRecordSha256');reason='Mortgage product publication is not verified'
+    exact_object(target,fields if target.get('kind')=='product' else (*fields,'section','coreRowIndex','rateIndex','rowSha256'),'mortgage target')
+    if target['productKey']!=subject['scope']['productKey'] or target['productRecordSha256']!=subject['routing']['productRecordSha256']:raise ValueError(reason)
+    if target['kind']=='product':
+        if subject['target']['kind']!='product':raise ValueError(reason)
+        return
+    if target['kind']!='rate_variant' or target['section']!='Mortgage':raise ValueError(reason)
+    if subject['target']['kind']!='rate_variant':raise ValueError(reason)
+    rows=core.get('sections',{}).get('Mortgage',{}).get('rates',[]);index=target['coreRowIndex']
+    if type(index) is not int or not 0<=index<len(rows):raise ValueError(reason)
+    row=rows[index]
+    if row.get('product_key')!=target['productKey'] or digest(row)!=target['rowSha256'] or digest(row.get('rate_index'))!=digest(target['rateIndex']):raise ValueError(reason)
+    if subject['target']['kind']=='rate_variant' and any(digest(target[k])!=digest(subject['target'][k]) for k in ('section','coreRowIndex','rateIndex','rowSha256')):raise ValueError(reason)
+    from .executable_eligibility import _decimal
+    if _decimal(str(row.get('rate')))!=_decimal(subject['target']['annualRate']) or _decimal(subject['target']['annualRate'])!=_decimal(subject['policy']['annualRate']):raise ValueError(reason)
+
+
 def context_binding(context,subject,operation):
+    capability=subject['capability']
+    if capability=='mortgage_calculation':
+        from .mortgage_contract import schema_validate as validate_schema
+    else:validate_schema=schema_validate
     exact_object(context,('manifest','index','shard','selection'),'savings context')
     manifest=context['manifest'];source=subject['routing'];key=subject['scope']['productKey']
     validate_payload_network_budget(manifest,manifest_bytes=len(canonical_json(manifest).encode('utf8')))
-    route=manifest['executable_v3']['capabilities'][CAPABILITY]
+    route=manifest['executable_v3']['capabilities'][capability]
     executable_asset_url(manifest,route['index'],repo=manifest['repo'])
     if manifest.get('enc') or manifest['run_date']!=source['runDate'] or manifest.get('source_observation',{}).get('generation_id')!=source['sourceGenerationId'] or manifest.get('source_observation',{}).get('contract_digest')!=source['exportContractSha256']:
         raise ValueError('Savings benchmark current routing differs')
@@ -34,8 +57,8 @@ def context_binding(context,subject,operation):
         if raw_size!=descriptor['bytes'] or descriptor.get('enc'):raise ValueError('Savings adopted descriptor differs')
         if kind:
             if decoded_size>512*1024:raise ValueError('Savings namespace body bound exceeded')
-            schema_validate(value,kind,512*1024)
-            if value['run_date']!=source['runDate'] or value['core_asset_sha256']!=source['coreAssetSha256'] or value['details_asset_sha256']!=source['detailsAssetSha256'] or value['capability']!=CAPABILITY:
+            validate_schema(value,kind,512*1024)
+            if value['run_date']!=source['runDate'] or value['core_asset_sha256']!=source['coreAssetSha256'] or value['details_asset_sha256']!=source['detailsAssetSha256'] or value['capability']!=capability:
                 raise ValueError('Savings namespace source association differs')
         return value
     core=document(manifest['files']['core']);details=document(manifest['files']['details'])
@@ -48,7 +71,7 @@ def context_binding(context,subject,operation):
         if set(shard['products'])!={p for p,k in index['products'].items() if k==name}:raise ValueError('Savings shard product inventory differs')
         for product,asset in shard['products'].items():
             validate_asset(asset,product)
-            if asset['capability']!=CAPABILITY:raise ValueError('Savings shard capability differs')
+            if asset['capability']!=capability:raise ValueError('Monetary shard capability differs')
             for entry in asset['subjects']:validate_destination(entry['subject'],core,details,source['coreAssetSha256'],source['detailsAssetSha256'])
         if name==shard_key:
             if shard!=context['shard']:raise ValueError('Savings retained shard differs')

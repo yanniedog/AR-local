@@ -49,3 +49,8 @@ tests/fixtures/monetary-v3/** -text whitespace=cr-at-eol
 tests/fixtures/monetary-v3/blobs/** -diff
 
 contracts/product_terms/drafts/material-fields-v1/** -text whitespace=cr-at-eol
+
+contracts/product_terms/monetary-v3/mortgage/** -text whitespace=cr-at-eol
+contracts/product_terms/drafts/material-fields-v2/** -text whitespace=cr-at-eol
+tests/fixtures/mortgage-v3/** -text whitespace=cr-at-eol
+tests/fixtures/mortgage-v3/blobs/** -diff

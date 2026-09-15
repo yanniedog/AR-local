@@ -53,28 +53,35 @@ def field_value(subject,period,field):
 
 def validate_material_coverage(store,subject,authority,coverage,revisions,operation):
     from .executable_v3_graph import _covers
-    from .parameter_registry import validate_registry_context,VERSION
+    from .parameter_registry import validate_registry_context,VERSION,SAVINGS_VERSION
     from .executable_v3_sources import _json
+    from .monetary_capabilities import periods
+    parameter='monetary.savings_base_field_v1';versions=(VERSION,SAVINGS_VERSION);validate=validate_field_value
+    project=lambda period,field:project_field(subject,period,field)
+    if subject['capability']=='mortgage_calculation':
+        from .mortgage_material_fields import project_field as mortgage_project,validate_field_value as mortgage_validate
+        parameter='monetary.mortgage_field_v1';versions=(VERSION,);validate=mortgage_validate
+        project=lambda period,field:mortgage_project(subject,field)
     scope={k:subject['scope'][k] for k in ('productKey','cohortKey','tierKey','packageKey')}
-    for period in subject['policy']['intervals']:
+    for period in periods(subject):
         if period['authorityId']!=authority['id']:continue
         lower=max(period['from'],coverage['from']);upper=min(period['toExclusive'],coverage['toExclusive'])
         if lower>=upper:continue
-        material=project_field(subject,period,coverage['field'])
+        material=project(period,coverage['field'])
         for clause in coverage['evidenceIds']:
             ranges=[]
             for revision in revisions.values():
                 row=revision['row']
-                if clause not in revision['clauses'] or row['parameter_key']!='monetary.savings_base_field_v1' or row['unit'] is not None:continue
+                if clause not in revision['clauses'] or row['parameter_key']!=parameter or row['unit'] is not None:continue
                 context=_json(operation,row['context_sha256'])
                 validate_registry_context(context)
-                if context.get('parameter_registry',{}).get('version')!=VERSION:continue
+                if context.get('parameter_registry',{}).get('version') not in versions:continue
                 cache=getattr(operation,'material_values',None)
                 if cache is None:cache={};operation.material_values=cache
-                key=(row['term_revision_id'],row['context_sha256'],row['value_json'])
+                key=(parameter,row['term_revision_id'],row['context_sha256'],row['value_json'])
                 if key not in cache:
                     if len(cache)>=256 or len(row['value_json'].encode('utf8'))>256*1024:raise ValueError('Monetary material revision bound exceeded')
-                    value=json.loads(row['value_json']);validate_field_value(value);cache[key]=value
+                    value=json.loads(row['value_json']);validate(value);cache[key]=value
                 value=cache[key]
                 if value['field']==coverage['field'] and value['scope']==scope and value['material']==material:
                     bounds=revision['applicability']

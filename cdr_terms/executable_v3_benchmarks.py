@@ -13,6 +13,13 @@ from .executable_v3_financial import verify_financial
 
 
 def verify_benchmark(store,identity,subject):
+    input_check,result_check,financial_check=check_inputs,validate_result,verify_financial
+    allowed=('Savings product publication is not verified','Account period is outside source-reviewed historical coverage','All opening funds must be confirmed cleared for this policy','Confirmed account rates differ from the reviewed historical schedule')
+    if subject['capability']=='mortgage_calculation':
+        from .mortgage_inputs import check_inputs as input_check
+        from .mortgage_result import validate_result as result_check
+        from .mortgage_financial import verify_financial as financial_check
+        allowed=('Mortgage product publication is not verified','Mortgage account period or confirmations unavailable','Mortgage opening components do not reconcile','Confirmed mortgage rate differs')
     cache={};charged=0
     def artifact(sha):
         nonlocal charged
@@ -34,7 +41,7 @@ def verify_benchmark(store,identity,subject):
     if run['schemaVersion']!=3 or run['subjectId']!=subject['id'] or any(run[k]!=subject[k] for k in ('capability','adapterVersion','evaluatorVersion')):raise ValueError('Savings benchmark subject differs')
     suite=artifact(run['suiteSha256']);context=artifact(run['contextSha256'])
     exact_object(suite,('expectationAuthor','expectationKind','adapterCodeSha256','evaluatorCodeSha256','cases'),'savings suite')
-    if not isinstance(run['executionActor'],str) or not run['executionActor'].strip() or not isinstance(suite['expectationAuthor'],str) or not suite['expectationAuthor'].strip() or suite['expectationAuthor']==run['executionActor'] or suite['expectationKind'] not in ('human','deterministic'):raise ValueError('Savings independent expectation author required')
+    if not isinstance(run['executionActor'],str) or not run['executionActor'].strip() or not isinstance(suite['expectationAuthor'],str) or not suite['expectationAuthor'].strip() or suite['expectationAuthor'].strip()==run['executionActor'].strip() or suite['expectationKind'] not in ('human','deterministic'):raise ValueError('Savings independent expectation author required')
     for role in ('adapter','evaluator'):verify_code_artifact(store,suite[role+'CodeSha256'],role,subject[role+'Version'],capability=subject['capability'])
     cases=run['cases']
     if not isinstance(cases,list) or not 6<=len(cases)<=64 or not isinstance(suite['cases'],list) or len(suite['cases'])!=len(cases):raise ValueError('Savings benchmark case inventory differs')
@@ -57,19 +64,18 @@ def verify_benchmark(store,identity,subject):
             if derivation!=required:raise ValueError('Savings independent derivation association differs')
             outcome=actual['outcome']
             if isinstance(outcome,dict) and set(outcome)=={'result'}:
-                result=outcome['result'];target_binding(raw['target'],subject,core);validate_result(result,subject,raw)
+                result=outcome['result'];target_binding(raw['target'],subject,core);result_check(result,subject,raw)
                 if result['adapterInputs']['binding']!=binding or result['adapterInputs']['approval']!=context['selection']['approval']:raise ValueError('Savings retained publication binding differs')
-                normalized=verify_financial(result,subject,raw['inputs'])
+                normalized=financial_check(result,subject,raw['inputs'])
                 if expected['expected']!=normalized:raise ValueError('Savings retained independent expectation differs')
                 complete+=1;holdouts+=expected_case['phase']=='holdout'
             else:
                 exact_object(outcome,('refusal','resultReturned'),'savings refusal')
                 if outcome['resultReturned'] is not False:raise ValueError('Savings refusal returned a calculation')
                 try:
-                    target_binding(raw['target'],subject,core);check_inputs(subject,raw['inputs'])
+                    target_binding(raw['target'],subject,core);input_check(subject,raw['inputs'])
                 except ValueError as error:
                     reason=str(error)
-                    allowed=('Savings product publication is not verified','Account period is outside source-reviewed historical coverage','All opening funds must be confirmed cleared for this policy','Confirmed account rates differ from the reviewed historical schedule')
                     if reason not in allowed or outcome['refusal']!=reason or expected['expected']!={'kind':'technical_refusal','reason':reason}:raise ValueError('Savings refusal control differs') from error
                     refusals.add(reason)
                 else:raise ValueError('Savings claimed refusal is not independently reproducible')

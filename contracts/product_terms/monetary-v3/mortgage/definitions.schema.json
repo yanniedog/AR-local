@@ -1,0 +1,529 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:monetary-mortgage-draft:definitions",
+  "$comment": "UNFROZEN TECHNICAL DRAFT. No banking authority.",
+  "$defs": {
+    "sha": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/sha"
+    },
+    "key": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/key"
+    },
+    "date": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/date"
+    },
+    "hashes": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/hashes"
+    },
+    "rule": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/rule"
+    },
+    "evidence": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/evidence"
+    },
+    "routing": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/routing"
+    },
+    "snapshot": {
+      "$ref": "urn:ar-local:monetary-wire3-draft:common#/$defs/snapshot"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "family",
+        "cohortKey",
+        "tierKey",
+        "packageKey",
+        "from",
+        "toExclusive",
+        "coverage"
+      ],
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "family": {
+          "const": "Mortgage"
+        },
+        "cohortKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "tierKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "packageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "from": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "toExclusive": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+        },
+        "coverage": {
+          "const": "whole_calculation_horizon"
+        }
+      }
+    },
+    "money": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,2})?$",
+      "maxLength": 15
+    },
+    "componentDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,12})?$",
+      "maxLength": 25
+    },
+    "rate": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]?)(\\.[0-9]{1,12})?$",
+      "maxLength": 15
+    },
+    "rounding": {
+      "enum": [
+        "half_up",
+        "half_even",
+        "toward_zero"
+      ]
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "principal",
+        "postedInterest",
+        "accruedInterest",
+        "capitalizedCharges",
+        "otherDebt"
+      ],
+      "properties": {
+        "principal": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+        },
+        "postedInterest": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+        },
+        "accruedInterest": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/componentDecimal"
+        },
+        "capitalizedCharges": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+        },
+        "otherDebt": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+        }
+      }
+    },
+    "fieldEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rates",
+        "interestBasis",
+        "allocation",
+        "paymentPhase",
+        "paymentRounding",
+        "accruedSettlement",
+        "dayCount",
+        "dailyRateRounding",
+        "dailyAccrualRounding",
+        "postingRounding",
+        "postingResidue",
+        "postingDates",
+        "obligationCalendar",
+        "openingState",
+        "feeInventory",
+        "feeSettlement",
+        "excludedPeriodEffects",
+        "eligibility"
+      ],
+      "properties": {
+        "rates": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "interestBasis": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "allocation": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "paymentPhase": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "paymentRounding": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "accruedSettlement": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "dayCount": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "dailyRateRounding": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "dailyAccrualRounding": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "postingRounding": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "postingResidue": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "postingDates": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "obligationCalendar": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "openingState": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "feeInventory": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "feeSettlement": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "excludedPeriodEffects": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        },
+        "eligibility": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/hashes"
+        }
+      }
+    },
+    "privateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "offerId",
+        "sourceVersion",
+        "snapshotId",
+        "from",
+        "toExclusive",
+        "confirmedAt",
+        "provenance",
+        "confirmedAnnualRate",
+        "openingOutstanding",
+        "openingComponents",
+        "noCarriedArrearsOrDefault",
+        "obligationAmount",
+        "originalAnchor",
+        "executionCoverage",
+        "noExcludedMovements",
+        "externalAccounts",
+        "payments",
+        "feeSettlements",
+        "confirmedOfferFacts",
+        "customerFacts"
+      ],
+      "properties": {
+        "accountId": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+        },
+        "offerId": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+        },
+        "sourceVersion": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+        },
+        "snapshotId": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+        },
+        "from": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+        },
+        "toExclusive": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "provenance": {
+          "const": "user_reported_bank_offer_and_statement"
+        },
+        "confirmedAnnualRate": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/rate"
+        },
+        "openingOutstanding": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/componentDecimal"
+        },
+        "openingComponents": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/components"
+        },
+        "noCarriedArrearsOrDefault": {
+          "enum": [
+            true,
+            false,
+            null
+          ]
+        },
+        "obligationAmount": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+        },
+        "originalAnchor": {
+          "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+        },
+        "executionCoverage": {
+          "enum": [
+            "complete",
+            "unknown"
+          ]
+        },
+        "noExcludedMovements": {
+          "enum": [
+            true,
+            false,
+            null
+          ]
+        },
+        "externalAccounts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "accountId"
+            ],
+            "properties": {
+              "role": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              },
+              "accountId": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              }
+            }
+          }
+        },
+        "payments": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "accountId",
+              "obligationId",
+              "date",
+              "phase",
+              "order",
+              "amount",
+              "status"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              },
+              "accountId": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              },
+              "obligationId": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/sha"
+              },
+              "date": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+              },
+              "phase": {
+                "enum": [
+                  "before_accrual",
+                  "after_accrual"
+                ]
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127
+              },
+              "amount": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+              },
+              "status": {
+                "const": "cleared"
+              }
+            }
+          }
+        },
+        "feeSettlements": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "occurrenceId",
+              "externalAccountId",
+              "amount",
+              "date",
+              "status"
+            ],
+            "properties": {
+              "occurrenceId": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              },
+              "externalAccountId": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              },
+              "amount": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/money"
+              },
+              "date": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+              },
+              "status": {
+                "const": "cleared"
+              }
+            }
+          }
+        },
+        "confirmedOfferFacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "purpose": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+            },
+            "security": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+            },
+            "repaymentType": {
+              "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+            }
+          }
+        },
+        "customerFacts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "state",
+              "value"
+            ],
+            "properties": {
+              "field": {
+                "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+              },
+              "state": {
+                "enum": [
+                  "known",
+                  "unknown",
+                  "unavailable",
+                  "not_applicable"
+                ]
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "type",
+                          "value"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "boolean"
+                          },
+                          "value": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "type",
+                          "value",
+                          "unit"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "decimal"
+                          },
+                          "value": {
+                            "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/componentDecimal"
+                          },
+                          "unit": {
+                            "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "type",
+                          "value"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "date"
+                          },
+                          "value": {
+                            "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/date"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "type",
+                          "value"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "text"
+                          },
+                          "value": {
+                            "$ref": "urn:ar-local:monetary-mortgage-draft:definitions#/$defs/key"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

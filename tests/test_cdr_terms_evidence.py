@@ -69,7 +69,7 @@ def _term(evidence, *, reviewed=True):
     return term
 
 
-def _staged_term(evidence, *, context_change=None, output_change=None, save=True, retained_legacy=False):
+def _staged_term(evidence, *, context_change=None, output_change=None, save=True, retained_legacy=False,retained_registry=False):
     """A human source reader uses the same retained staging contract as a worker."""
     store, observation, key, _, _, body, record = evidence
     extraction, clause = _clause(evidence)
@@ -78,10 +78,10 @@ def _staged_term(evidence, *, context_change=None, output_change=None, save=True
     context = {"product_keys": [key], "source_product_sha256": {key: byte_digest(body)},
                **registry_context(), **(context_change or {})}
     queue = TermsQueue(store)
-    if retained_legacy:
+    if retained_legacy or retained_registry:
         # Explicit retained-row fixture for old revision semantics. Public
         # enqueue never admits a new unregistered interpretation context.
-        context.pop('parameter_registry')
+        if retained_legacy:context.pop('parameter_registry')
         context_sha = digest(context)
         job = digest([extraction, context_sha])
         blob = store.put_blob(canonical_json(context).encode('utf-8'))

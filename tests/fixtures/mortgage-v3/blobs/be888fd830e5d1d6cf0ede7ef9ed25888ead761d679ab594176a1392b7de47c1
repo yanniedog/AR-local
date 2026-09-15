@@ -1,0 +1,78 @@
+import { evaluateEligibility } from '../lib/productTermsEngine/eligibility';
+import type { Facts, Rule } from '../lib/productTermsEngine/types';
+import { type CustomerProfile, type InputDefinition, own, safeId, validDefinition, validFact } from './customerProfile';
+
+/** Supplied only by a separately reviewed executable adapter, never a terms-evidence document. */
+export interface CustomerInputContract {
+  schemaVersion: 1; productKey: string; revisionSha256: string;
+  effectiveFrom: string; effectiveToExclusive: string;
+  inputs: InputDefinition[]; rule: Rule;
+}
+export interface InputRequirements {
+  status: 'pending_contract' | 'needs_inputs' | 'answered';
+  needed: InputDefinition[];
+  deferred: InputDefinition[];
+  reason: string;
+}
+/** A user-selected calendar day, not a UTC conversion or assumed bank assessment convention. */
+export function localCustomerDate(value = new Date()): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+function validateContract(c: CustomerInputContract, productKey: string, date: string): boolean {
+  if (!c || c.schemaVersion !== 1 || c.productKey !== productKey || !/^[a-f0-9]{64}$/.test(c.revisionSha256) ||
+      !validFact({ type: 'date', value: date }) || !validFact({ type: 'date', value: c.effectiveFrom }) ||
+      !validFact({ type: 'date', value: c.effectiveToExclusive }) || date < c.effectiveFrom || date >= c.effectiveToExclusive ||
+      !Array.isArray(c.inputs) || c.inputs.length > 128) return false;
+  const definitions = new Map<string, InputDefinition>();
+  for (const d of c.inputs) { if (!validDefinition(d) || definitions.has(d.id)) return false; definitions.set(d.id, d); }
+  let nodes = 0; const ids = new Set<string>();
+  function visit(r: Rule, depth: number): boolean {
+    if (++nodes > 512 || depth > 16 || !r || !safeId(r.id) || ids.has(r.id)) return false;
+    ids.add(r.id);
+    if (r.op === 'and' || r.op === 'or') return Array.isArray(r.rules) && r.rules.length > 0 && r.rules.length <= 128 && r.rules.every(v => visit(v, depth + 1));
+    if (r.op === 'not') return visit(r.rule, depth + 1);
+    if (r.op !== 'compare' || !validFact(r.expected) || !['eq', 'ne', 'gt', 'gte', 'lt', 'lte'].includes(r.comparison)) return false;
+    if (!['eq', 'ne'].includes(r.comparison) && !['date', 'decimal'].includes(r.expected.type)) return false;
+    const d = definitions.get(r.field);
+    return !!d && d.type === r.expected.type && (r.expected.type !== 'decimal' || d.unit === r.expected.unit);
+  }
+  return visit(c.rule, 0);
+}
+/** Shared question discovery for reviewed rules; preserves decisive compound branches. */
+export function relevantMissingFields(rule: Rule, facts: Facts): Set<string> {
+  const fields = new Set<string>();
+  function collect(r: Rule): void {
+    if (evaluateEligibility(r, facts).status !== 'needs_information') return;
+    if (r.op === 'compare') fields.add(r.field);
+    else if (r.op === 'not') collect(r.rule);
+    else if (r.op === 'and' || r.op === 'or') r.rules.forEach(collect);
+  }
+  collect(rule); return fields;
+}
+/** Decisive AND/OR branches need no more questions. Missing evidence never becomes a guessed prompt. */
+export function customerInputRequirements(
+  contract: CustomerInputContract | null, profile: CustomerProfile, productKey: string, date: string, resolvedFacts?: Facts,
+): InputRequirements {
+  const pending: InputRequirements = { status: 'pending_contract', needed: [], deferred: [], reason: 'Reviewed customer-input rules are not available for this product and date. Eligibility remains unassessed.' };
+  if (!contract || !validateContract(contract, productKey, date)) return pending;
+  const facts: Facts = Object.create(null) as Facts;
+  for (const d of contract.inputs) {
+    if (resolvedFacts) {
+      const fact = own(resolvedFacts, d.id) ? resolvedFacts[d.id] : undefined;
+      if (fact && validFact(fact) && fact.type === d.type && (fact.type !== 'decimal' || fact.unit === d.unit)) facts[d.id] = fact;
+      continue;
+    }
+    const a = own(profile.answers, d.id) ? profile.answers[d.id] : undefined;
+    if (a?.state !== 'known' || a.fact.type !== d.type || (a.fact.type === 'decimal' && a.fact.unit !== d.unit)) continue;
+    const p = a.provenance;
+    if ((p.productKey && p.productKey !== productKey) || (p.effectiveFrom && date < p.effectiveFrom) ||
+        (p.effectiveToExclusive && date >= p.effectiveToExclusive)) continue;
+    facts[d.id] = a.fact;
+  }
+  const fields = relevantMissingFields(contract.rule, facts);
+  const missing = contract.inputs.filter(d => fields.has(d.id));
+  const deferred = missing.filter(d => ['unavailable', 'not_applicable'].includes(profile.answers[d.id]?.state));
+  return { status: missing.length ? 'needs_inputs' : 'answered', needed: missing.filter(d => !deferred.includes(d)), deferred,
+    reason: missing.length ? 'Only inputs relevant to the reviewed rules are shown. Unavailable answers remain unresolved.' : 'No further inputs requested by these rules. This is not product approval or an offer.' };
+}
+

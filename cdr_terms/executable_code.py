@@ -18,7 +18,8 @@ MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
 def verify_code_artifact(store, identity, role, version, *, capability='fixed_td_calculation'):
     entrypoints = {'fixed_td_calculation': ENTRYPOINTS, 'eligibility_only': ELIGIBILITY_ENTRYPOINTS,
-        'savings_calculation': {'adapter':'mobile/src/data/monetaryContracts/adapter.ts','evaluator':'mobile/src/lib/productTermsEngine/ledger.ts'}}.get(capability)
+        'savings_calculation': {'adapter':'mobile/src/data/monetaryContracts/adapter.ts','evaluator':'mobile/src/lib/productTermsEngine/ledger.ts'},
+        'mortgage_calculation': {'adapter':'mobile/src/data/mortgageContracts/adapter.ts','evaluator':'mobile/src/lib/productTermsEngine/ledger.ts'}}.get(capability)
     if entrypoints is None or role not in entrypoints:
         raise ValueError('Executable code capability/role unsupported')
     operation = _OPERATION.get()

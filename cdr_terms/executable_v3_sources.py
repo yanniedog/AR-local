@@ -10,6 +10,7 @@ from .executable_sources import finalized_capture
 from .executable_v3_contract import validate_subject
 from .executable_v3_evidence import evidence_checked,evidence_operation,MAX_MEMBER
 from .revisions import APPLICABILITY_FIELDS
+from .monetary_capabilities import periods
 
 
 def _json(operation,identity,compressed=False):
@@ -49,6 +50,18 @@ def validate_destination(subject,core,details,core_sha,details_sha):
     record=details.get('products',{}).get(key)
     if not isinstance(record,dict) or digest(record)!=route['productRecordSha256']:
         raise ValueError('Monetary current details record differs')
+    if subject['capability']=='mortgage_calculation' and record.get('displayIdentity',{}).get('productCategory')!='RESIDENTIAL_MORTGAGES':
+        raise ValueError('Mortgage current details category unproven')
+    if subject['capability']=='mortgage_calculation' and subject['target']['kind']=='rate_variant':
+        target=subject['target'];rows=core.get('sections',{}).get('Mortgage',{}).get('rates',[])
+        index=target['coreRowIndex']
+        if type(index) is not int or index<0 or index>=len(rows):raise ValueError('Mortgage current row missing')
+        row=rows[index]
+        if row.get('product_key')!=key or digest(row)!=target['rowSha256'] or type(row.get('rate_index')) is not type(target['rateIndex']) or row.get('rate_index')!=target['rateIndex']:
+            raise ValueError('Mortgage current row binding differs')
+        from .executable_eligibility import _decimal
+        if _decimal(str(row.get('rate')))!=_decimal(target['annualRate']) or _decimal(target['annualRate'])!=_decimal(subject['policy']['annualRate']):
+            raise ValueError('Mortgage current row rate differs')
 
 
 def _routing(store,subject,operation):
@@ -62,8 +75,10 @@ def _routing(store,subject,operation):
         raise ValueError('Monetary current routing capture differs')
     source=_json(operation,current['source_sha256'])
     record=source.get('data',source) if isinstance(source,dict) else None
-    if not isinstance(record,dict) or record.get('productCategory')!='TRANS_AND_SAVINGS_ACCOUNTS':
-        raise ValueError('Monetary routing Savings category unproven')
+    category='RESIDENTIAL_MORTGAGES' if subject['capability']=='mortgage_calculation' else 'TRANS_AND_SAVINGS_ACCOUNTS'
+    if not isinstance(record,dict) or record.get('productCategory')!=category:
+        family='Mortgage' if subject['capability']=='mortgage_calculation' else 'Savings'
+        raise ValueError('Monetary routing '+family+' category unproven')
     core=operation.adopted_json(route['coreAssetSha256']);details=operation.adopted_json(route['detailsAssetSha256'])
     validate_destination(subject,core,details,route['coreAssetSha256'],route['detailsAssetSha256'])
     return current
@@ -92,7 +107,7 @@ def _historical_snapshot(store,subject,snapshot,operation):
     product=decoded['details'].get('products',{}).get(row['product_key'])
     if not isinstance(product,dict) or digest(product)!=snapshot['productRecordSha256']:
         raise ValueError('Monetary historical product record differs')
-    rates=decoded['core'].get('sections',{}).get('Savings',{}).get('rates',[])
+    rates=decoded['core'].get('sections',{}).get(subject['scope']['family'],{}).get('rates',[])
     if not isinstance(rates,list) or len(rates)>200000:raise ValueError('Monetary historical rows invalid')
     selected=[]
     for binding in snapshot['rateRows']:
@@ -127,7 +142,7 @@ def _revisions(store,subject,operation):
         for authority in subject['authorityGraph']['authorities']:
             for coverage in authority['fieldCoverage']:
                 if not sources.intersection(coverage['evidenceIds']):continue
-                for period in subject['policy']['intervals']:
+                for period in periods(subject):
                     lower=max(coverage['from'],period['from']);upper=min(coverage['toExclusive'],period['toExclusive'])
                     if period['authorityId']==authority['id'] and lower<upper:used_until.append(upper)
         _historical_changes(store,identity,scope,operation,max(used_until,default=scope['from']))
@@ -216,8 +231,9 @@ def source_snapshot(store,subject):
                 for snapshot in authority['observations']:
                     observation,rows=_historical_snapshot(store,subject,snapshot,operation)
                     history[observation['observation_id']]=observation
-                    for interval in subject['policy']['intervals']:
-                        if interval['authorityId']==authority['id'] and any(not any(Decimal(str(row.get('rate')))==Decimal(tier['annualRate']) for row in rows) for tier in interval['tiers']):
+                    for interval in periods(subject):
+                        rates=[subject['policy']['annualRate']] if subject['capability']=='mortgage_calculation' else [t['annualRate'] for t in interval['tiers']]
+                        if interval['authorityId']==authority['id'] and any(not any(Decimal(str(row.get('rate')))==Decimal(rate) for row in rows) for rate in rates):
                             raise ValueError('Monetary rate not present in exact historical rows')
             else:
                 selected=[clauses[x] for x in authority['datedRateAndPolicyClauseIds']]

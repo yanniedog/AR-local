@@ -20,12 +20,14 @@ STAGING_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_te
 
 
 def staging_schema(context):
-    from .parameter_registry import VERSION,MATERIAL_STAGING_SHA
+    from .parameter_registry import interpretation_contract,SAVINGS_VERSION
     from .identity import byte_digest
     validate_registry_context(context)
-    if context.get('parameter_registry',{}).get('version')==VERSION:
-        raw=(STAGING_SCHEMA.parent/'drafts/material-fields-v1/analysis-staging-material-v1.schema.json').read_bytes()
-        if byte_digest(raw)!=MATERIAL_STAGING_SHA:raise ValueError('Material staging schema bytes differ')
+    version=context.get('parameter_registry',{}).get('version');contract=interpretation_contract(version)
+    if contract:
+        directory='material-fields-v1' if version==SAVINGS_VERSION else 'material-fields-v2'
+        raw=(STAGING_SCHEMA.parent/'drafts'/directory/(contract[0]+'.schema.json')).read_bytes()
+        if byte_digest(raw)!=contract[1]:raise ValueError('Material staging schema bytes differ')
         return json.loads(raw)
     return json.loads(STAGING_SCHEMA.read_bytes())
 _TRANSITIONS = {

@@ -143,6 +143,10 @@ def _policy(subject):
 
 
 def validate_subject(subject):
+    from .monetary_capabilities import validate_tuple
+    if validate_tuple(subject)=='mortgage_calculation':
+        from .mortgage_contract import validate_subject as mortgage_validate
+        return mortgage_validate(subject)
     schema_validate(subject,'subject')
     if subject['id']!=identity(subject) or subject['scopeId']!=digest(['monetary-scope-v3',subject['capability'],subject['scope']]):
         raise ValueError('Monetary subject/scope identity differs')
@@ -155,7 +159,11 @@ def validate_subject(subject):
 
 
 def validate_asset(asset,product_key=None):
-    schema_validate(asset,'asset',512*1024)
+    from .monetary_capabilities import require_capability
+    if require_capability(asset.get('capability'))=='mortgage_calculation':
+        from .mortgage_contract import schema_validate as validate_schema
+    else:validate_schema=schema_validate
+    validate_schema(asset,'asset',512*1024)
     if asset['identitySha256']!=identity(asset,'identitySha256') or (product_key is not None and asset['productKey']!=product_key):
         raise ValueError('Monetary asset identity differs')
     subjects,scopes=set(),set()

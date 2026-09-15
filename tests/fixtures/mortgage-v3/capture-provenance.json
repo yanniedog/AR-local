@@ -1,0 +1,7 @@
+{
+  "originalBridgeSha256": "3ff87423ec86ae00f335bf81a5c48b13a4fc6a458b8784480b7323c15aa1c22b",
+  "retainedSubsetSha256": "7b3433a671be5e16d3ecc3d64484a70b076119b8af3583667249447f6d5adb6a",
+  "sourceHead": "74fa58126237ecf527d8eb71f4d17f66f90364a1",
+  "scope": "Engineering-only actual execution, not bank approval; absolute private harness paths omitted; records/context unchanged",
+  "files": 108
+}
