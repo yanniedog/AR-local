@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:executable-asset:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "productKey",
+    "sourceGenerationId",
+    "runDate",
+    "coreAssetSha256",
+    "approvalPolicy",
+    "templates",
+    "identitySha256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "productKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "sourceGenerationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "runDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "coreAssetSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "approvalPolicy": {
+      "const": "as_of_adopted_edition"
+    },
+    "templates": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template",
+          "approval"
+        ],
+        "properties": {
+          "template": {
+            "$ref": "executable-template-v1.schema.json"
+          },
+          "approval": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reviewId",
+              "reviewEvidenceSha256",
+              "benchmarkResultSha256",
+              "reviewedAt",
+              "review",
+              "templateId"
+            ],
+            "properties": {
+              "reviewId": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "reviewEvidenceSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "benchmarkResultSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "reviewedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "review": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "applicability",
+                  "materialTerms",
+                  "feeCoverage",
+                  "rateSchedule"
+                ],
+                "properties": {
+                  "applicability": {
+                    "const": "verified"
+                  },
+                  "materialTerms": {
+                    "const": "verified"
+                  },
+                  "feeCoverage": {
+                    "const": "verified"
+                  },
+                  "rateSchedule": {
+                    "const": "verified"
+                  }
+                }
+              },
+              "templateId": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "identitySha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

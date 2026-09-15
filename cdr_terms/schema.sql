@@ -303,3 +303,53 @@ CREATE TABLE IF NOT EXISTS acquisition_dispositions (
     evidence_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS acquisition_requests_document ON acquisition_requests(document_id,created_at);
+
+-- Additive executable evidence. Existing v1 rows are never converted or approved.
+-- EvidenceStore installs the same UPDATE/DELETE denial triggers on these tables.
+CREATE TABLE IF NOT EXISTS executable_templates (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id TEXT NOT NULL UNIQUE CHECK(length(template_id)=64),
+    observation_id TEXT NOT NULL REFERENCES observations(observation_id),
+    product_key TEXT NOT NULL,
+    cohort_key TEXT NOT NULL,
+    rate_index INTEGER NOT NULL CHECK(rate_index>0),
+    interpreter TEXT NOT NULL CHECK(length(interpreter)>0),
+    staged_at TEXT NOT NULL,
+    template_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS executable_templates_slot
+    ON executable_templates(product_key,cohort_key,rate_index,sequence DESC);
+CREATE TABLE IF NOT EXISTS executable_template_terms (
+    template_id TEXT NOT NULL REFERENCES executable_templates(template_id),
+    term_revision_id TEXT NOT NULL REFERENCES term_revisions(term_revision_id),
+    PRIMARY KEY(template_id,term_revision_id)
+);
+CREATE TABLE IF NOT EXISTS executable_template_documents (
+    template_id TEXT NOT NULL REFERENCES executable_templates(template_id),
+    document_version_id TEXT NOT NULL REFERENCES document_versions(document_version_id),
+    PRIMARY KEY(template_id,document_version_id)
+);
+CREATE TABLE IF NOT EXISTS executable_reviews (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id TEXT NOT NULL UNIQUE CHECK(length(review_id)=64),
+    template_id TEXT NOT NULL REFERENCES executable_templates(template_id),
+    decision TEXT NOT NULL CHECK(decision IN ('approved','rejected','revoked')),
+    reviewer TEXT NOT NULL CHECK(length(reviewer)>0),
+    reviewer_kind TEXT NOT NULL CHECK(reviewer_kind IN ('human','deterministic')),
+    reviewed_at TEXT NOT NULL,
+    evidence_sha256 TEXT NOT NULL CHECK(length(evidence_sha256)=64),
+    benchmark_sha256 TEXT CHECK(benchmark_sha256 IS NULL OR length(benchmark_sha256)=64),
+    reason TEXT NOT NULL CHECK(length(reason)>0)
+);
+CREATE INDEX IF NOT EXISTS executable_reviews_template ON executable_reviews(template_id,sequence DESC);
+CREATE TABLE IF NOT EXISTS executable_publications (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    publication_id TEXT NOT NULL UNIQUE CHECK(length(publication_id)=64),
+    product_key TEXT NOT NULL,
+    observation_id TEXT NOT NULL REFERENCES observations(observation_id),
+    identity_sha256 TEXT NOT NULL CHECK(length(identity_sha256)=64),
+    previous_identity_sha256 TEXT,
+    published_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS executable_publications_product ON executable_publications(product_key,sequence DESC);

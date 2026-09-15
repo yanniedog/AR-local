@@ -217,6 +217,7 @@ def build_payload(
     contract_coverage: Optional[Mapping[str, Any]] = None,
     source_observation: Optional[Mapping[str, Any]] = None,
     terms_root: Optional[Path] = None,
+    executable_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
     # Only the rolling release ships search-index + history assets (see _package's
@@ -230,6 +231,7 @@ def build_payload(
     if source_observation:
         data['source_observation'] = dict(source_observation)
     _attach_terms(data, terms_root)
+    data['executable_root'] = executable_root
     return _package_payload(data, out_dir, repo=repo, tag=tag)
 
 
@@ -489,6 +491,7 @@ def _package_payload(
         rba_calendar=data.get("rba_calendar"),
         source_observation=data.get("source_observation"),
         terms=data.get('terms'),
+        executable_root=data.get('executable_root'),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -512,6 +515,7 @@ def _package(
     enc_key: Optional[bytes] = None,
     source_observation: Optional[Mapping[str, Any]] = None,
     terms: Optional[Mapping[str, Any]] = None,
+    executable_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -547,6 +551,15 @@ def _package(
         from app_payload_terms import package_terms
         files.update(package_terms(terms, run_date=run_date, write_asset=lambda kind, value:
             _asset(out_dir, kind, run_date, _gzip_bytes(value), release_base)))
+    if executable_root is not None:
+        if enc_key:
+            raise ValueError('Executable templates require an unencrypted verified evidence channel')
+        from app_payload_executable import load_published_executable, package_executable
+        snapshot = load_published_executable(executable_root, source_observation=source_observation,
+            run_date=run_date, core_asset_sha256=files['core']['sha256'], product_keys=details.get('products', {}))
+        files.update(package_executable(snapshot, core=core, core_asset_sha256=files['core']['sha256'],
+            run_date=run_date, write_asset=lambda kind, value:
+                _asset(out_dir, kind, run_date, _gzip_bytes(value), release_base)))
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
@@ -630,6 +643,7 @@ def build_and_publish_dual(
     contract_coverage: Optional[Mapping[str, Any]] = None,
     source_observation: Optional[Mapping[str, Any]] = None,
     terms_root: Optional[Path] = None,
+    executable_root: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -662,6 +676,8 @@ def build_and_publish_dual(
     revisions = revision_mode_enabled()
     if terms_root is not None and not revisions:
         raise ValueError('Terms publication requires immutable revisions and a shipped consumer')
+    if executable_root is not None and not revisions:
+        raise ValueError('Executable publication requires immutable revisions and a shipped consumer')
     if revisions and state_dir is None:
         raise ValueError("revision publication requires persistent state_dir")
     data = _app_payload("_compute_payload")(
@@ -674,6 +690,7 @@ def build_and_publish_dual(
         data["source_observation"] = dict(source_observation)
 
     _attach_terms(data, terms_root)
+    data['executable_root'] = executable_root
 
     if revisions:
         # The caller holds the production lock through archive verification,
