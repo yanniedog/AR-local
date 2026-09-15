@@ -54,3 +54,4 @@ contracts/product_terms/monetary-v3/mortgage/** -text whitespace=cr-at-eol
 contracts/product_terms/drafts/material-fields-v2/** -text whitespace=cr-at-eol
 tests/fixtures/mortgage-v3/** -text whitespace=cr-at-eol
 tests/fixtures/mortgage-v3/blobs/** -diff
+contracts/product_terms/structured-review-v1.json -text whitespace=cr-at-eol
