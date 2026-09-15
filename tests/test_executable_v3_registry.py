@@ -14,6 +14,17 @@ def setup(store,subject):
     stage_subject(store,subject,interpreter='technical-author',staged_at=NOW)
 
 
+@pytest.mark.parametrize('author,reviewer',[('alice','alice '),(' alice ','alice')])
+def test_v3_reviewer_whitespace_does_not_create_independence(monetary_protocol,author,reviewer):
+    store,subject,_=monetary_protocol
+    migrate_executable_registry(store,wire_version=3,applied_at=NOW)
+    stage_subject(store,subject,interpreter=author,staged_at=NOW)
+    with pytest.raises(ValueError,match='separate reviewer'):
+        review_subject(store,subject['id'],decision='approved',reviewer=reviewer,reviewer_kind='human',reviewed_at=NOW,
+            evidence_sha256='0'*64,reason='Technical self-review control',expected_previous_review_id=None)
+    assert store.db.execute('SELECT COUNT(*) FROM executable_reviews_v3').fetchone()[0]==0
+
+
 def test_shared_dispatch_and_same_scope_predecessor(monetary_protocol):
     store,subject,_=monetary_protocol;setup(store,subject)
     assert lookup_subject(store,subject['id'])==subject

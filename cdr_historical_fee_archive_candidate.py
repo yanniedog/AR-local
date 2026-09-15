@@ -61,7 +61,7 @@ def _payloads(loaded, budget):
     return payloads, audit
 
 
-def _admission(loaded, audit, payloads):
+def _admission(loaded, audit, payloads, projection_sources):
     counts = dict(Counter(row['status'] for row in audit['fees'] if row.get('fee_index') is not None))
     arrays = dict(Counter(row['status'] for row in audit['fees'] if 'fee_index' in row and row['fee_index'] is None))
     admission = {
@@ -71,7 +71,7 @@ def _admission(loaded, audit, payloads):
         'container': loaded['container'], 'inputs': loaded['inputs'], 'generation': loaded['generation'],
         'parent_kind': 'original_public_anchor', 'core_bytes_preserved': True,
         'untouched_optional_assets': {key: value for key, value in loaded['manifest']['files'].items() if key not in ('core', 'details')},
-        'projection_source_sha256_lf': PROJECTION_SOURCES,
+        'projection_source_sha256_lf': projection_sources,
         'adapter_source_sha256_lf': {name: sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n')) for name in SOURCES},
         'membership': {'products': len(audit['products']), 'rates': len(audit['rates']), 'fee_dispositions': counts,
                        'array_dispositions': arrays, 'public_fee_objects': sum(row['public_fee_count'] or 0 for row in audit['products']),
@@ -100,7 +100,7 @@ def prepare(archive_dir, anchor_dir, cache, output):
         root, target = Path(root).absolute(), cache
         if root == target or root in target.parents or target in root.parents:
             raise ValueError('cache_must_be_separate_from_immutable_inputs')
-    verify_projection()
+    projection_sources = verify_projection()
     output.mkdir()
     plan = {'status': 'LISTED', 'observation_date': DATE, 'policy_version': POLICY, 'design_sha256': DESIGN_SHA,
             'archive': PINS['observation.tar.zst'], 'source': SOURCE, 'publication': 'NOT_ATTEMPTED'}
@@ -111,7 +111,7 @@ def prepare(archive_dir, anchor_dir, cache, output):
         payloads, audit = _payloads(loaded, budget)
         write_exclusive(output / '03-membership-accounted.json', encode({'status': 'MEMBERSHIP_ACCOUNTED',
                         'products_sha256': canonical_sha(audit['products']), 'products': len(audit['products'])}), budget)
-        admission = _admission(loaded, audit, payloads)
+        admission = _admission(loaded, audit, payloads, projection_sources)
         payloads['admission.json'] = encode(admission)
         for name, body in payloads.items():
             write_exclusive(output / name, body, budget)

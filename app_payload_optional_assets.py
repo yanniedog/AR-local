@@ -24,6 +24,8 @@ def iter_payload_assets(manifest):
     if 'executable_v2' not in manifest and 'executable_v3' not in manifest:
         yield from files.items()
         return
+    if manifest.get('enc') or any(isinstance(entry,dict) and entry.get('enc') for entry in files.values()):
+        raise ValueError('Executable namespaces require unencrypted adopted assets')
     names = set()
     for key, entry in files.items():
         if not isinstance(entry, dict):
