@@ -45,7 +45,7 @@ def inventory_stages(row):
 
 def schema():
     review = obj({**fields('review_id decision reviewed_at'), 'evidence_sha256': HASH})
-    subject = obj({**fields('subject_id capability scope_id'), 'wire_version': NUMBER,
+    subject = obj({**fields('subject_id capability'), 'scope_id': nullable(TEXT), 'wire_version': NUMBER,
                    'recorded_review': nullable(review), 'current_approval_revalidated': FALSE,
                    'unavailable_reason': {'const': 'unsupported registry wire version'}}, ('unavailable_reason',))
     publication = obj({**fields('publication_id observation_id published_at capability'),
@@ -54,11 +54,11 @@ def schema():
                       'subjects': array(subject), 'publications': array(publication)})
     version = obj({**fields('document_version_id observed_at'), 'content_sha256': HASH, 'byte_size': NUMBER})
     extraction = obj(fields('extraction_id extractor_version status text_sha256 coverage_sha256'))
-    document = obj({'document_id': TEXT, 'latest_status': {'enum': ['pending', 'fetched', 'unchanged', 'failed', 'unsupported', 'blocked']},
+    document = obj({'document_id': TEXT, 'latest_status': {'enum': ['pending', 'fetched', 'unchanged', 'failed', 'unsupported', 'blocked', 'deferred']},
                     'latest_check_id': nullable(TEXT), 'retained_version': nullable(version), 'extractions': array(extraction)})
-    interpretation = obj({**fields('term_revision_id parameter_key unit rule_set_id applicability_sha256'),
+    interpretation = obj({**fields('term_revision_id parameter_key applicability_sha256'), 'unit': nullable(TEXT), 'rule_set_id': nullable(TEXT),
                           'review': nullable(obj({**fields('review_id status reviewer_kind'), 'evidence_sha256': HASH})),
-                          'changes': array(obj(fields('term_change_id kind after_revision_id')))})
+                          'changes': array(obj({**fields('term_change_id kind'), 'after_revision_id': nullable(TEXT)}))})
     node = obj({**fields('node_id root_id document_id'), 'parent_node_id': nullable(TEXT),
                 'depth': NUMBER, 'reason': nullable(TEXT)})
     graph = obj({'status': {'enum': ['reported', 'not_reported']}, 'completeness': {'const': 'unknown'},
@@ -81,7 +81,7 @@ def schema():
                      'status': {'const': 'delivered_as_of_selected_edition'}, 'bank_acceptance': {'const': 'unclassified'}})
     common = {'evidence_class': {'enum': ['unclassified', 'technical_fixture']}, 'bank_approved': NULL, 'delivered': array(delivered)}
     reported = obj({**common, 'status': {'const': 'reported'}, **fields('observation_id observed_at'),
-                    'source_sha256': HASH, 'matches_current_observation': {'type': 'boolean'},
+                    'source_sha256': HASH, 'matches_current_observation': nullable({'type': 'boolean'}),
                     'document_references': array(obj(fields('applicability_id document_id relation'))),
                     'documents': array(document), 'graph': graph, 'interpretations': array(interpretation),
                     'executables': executable, 'stages': stages})
@@ -99,6 +99,9 @@ def validate_rows(products):
             if any(row['stages'][key] != value for key, value in inventory_stages(row).items()):
                 raise ValueError('Report stage inventory differs')
 
+            for subject in row['executables']['subjects']:
+                if subject['scope_id'] is None and subject['wire_version'] != 1:
+                    raise ValueError('Only legacy wire 1 has a null scope')
             documents = row['documents']
             ids = [item['document_id'] for item in documents]
             if len(set(ids)) != len(ids) or set(ids) != {r['document_id'] for r in row['document_references']}:

@@ -372,7 +372,7 @@ def _generate(root: Path, output: Path, history_audit: Path | None = None,
             proof = attached['products'][summary['product_key']]
             item['terms_evidence'] = proof
             summary['document_capture'] = proof['status']
-            summary['executable_terms_coverage'] = 'reported_scopes' if proof['delivered'] else 'not_delivered'
+            summary['executable_terms_coverage'] = 'reported_scopes' if any(d['subject_ids'] for d in proof['delivered']) else 'not_delivered'
             summary['evidence_class'] = proof['evidence_class']
     banks = bank_inventory(products, payloads['core'])
     fields = field_inventory(rows, payloads['details'])
@@ -453,7 +453,8 @@ def generate(root: Path, output: Path, history_audit: Path | None = None,
     stage = Path(tempfile.mkdtemp(prefix='.report-terms-', dir=output.parent))
     try:
         report = _generate(root, stage / 'report', history_audit, metrics_doc, metrics_code_base, terms_evidence)
-        os.rename(stage / 'report', output)
+        from cdr_report_admission import admit_new_directory
+        admit_new_directory(stage / 'report', output)
         return report
     finally:
         shutil.rmtree(stage)

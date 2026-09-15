@@ -45,7 +45,16 @@ Admission validates closed nested structures and recomputes inventory counts.
 JSON, CSV and HTML use the same admitted rows; formula escaping applies only to
 CSV rendering, and HTML creates text nodes. Evidence and report output use
 separate temporary directories and rename only after successful admission.
-Existing output directories are refused.
+Existing output directories are refused atomically, including a competing empty
+reservation created during generation: Windows no-replace rename or Linux
+`renameat2(RENAME_NOREPLACE)`. Other platforms fail closed. Admission requires
+canonical JSON so the copied attachment always matches its recorded seal.
+
+Publication records are scoped to the selected observation. Empty revocation
+assets retain their transport evidence but contribute zero reported executable
+scopes. Equal latest observation timestamps yield a null current-match flag,
+not an arbitrary winner. Store-nullable interpretation fields and legacy wire-1
+scope IDs remain null; deferred acquisition is reported separately from success.
 
 ## Resource bounds
 
