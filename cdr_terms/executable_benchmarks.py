@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -86,12 +87,21 @@ def validate_result(result, template, inputs):
         if key == 'principalRepaid' and amount is None:
             continue
         _amount(amount)
+    v8 = template['evaluatorVersion'] == 'product-terms-engine-v8'
+    if v8 and 'localTdConfirmation' not in result:
+        raise ValueError('Executable v8 benchmark requires confirmed annual rate')
     if 'localTdConfirmation' in result:
         confirmation = result['localTdConfirmation']
-        _object(confirmation, ('source', 'recordedAt', 'principal', 'fundedDate', 'maturityDate', 'noWithholding'), 'local confirmation')
+        fields = ('source', 'recordedAt', 'principal', 'fundedDate', 'maturityDate', 'noWithholding')
+        _object(confirmation, (*fields, 'annualRate') if v8 else fields, 'local confirmation')
         if (confirmation != inputs['scenario'].get('tdConfirmation') or confirmation['source'] != 'user_supplied_bank_confirmation'
                 or confirmation['noWithholding'] is not True or confirmation['principal'] != inputs['scenario'].get('openingBalance')):
             raise ValueError('Executable benchmark local confirmation binding mismatch')
+        if v8:
+            rates = (confirmation['annualRate'], template['annualRate'], inputs['contract'].get('initialAnnualRate'))
+            if (any(not isinstance(rate, str) or not re.fullmatch(r'(?:0(?:\.[0-9]{1,12})?|1(?:\.0{1,12})?)', rate) for rate in rates)
+                    or len({Decimal(rate) for rate in rates}) != 1):
+                raise ValueError('Executable benchmark confirmed annual rate mismatch')
         _amount(confirmation['principal'])
         date.fromisoformat(confirmation['fundedDate'])
         date.fromisoformat(confirmation['maturityDate'])

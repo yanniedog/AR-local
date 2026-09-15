@@ -1,0 +1,1207 @@
+{
+  "purpose": "Technical protocol bridge only. No real product or bank approval.",
+  "schemaVersion": 1,
+  "adapterVersion": "fixed-aud-td-v1",
+  "evaluatorVersion": "product-terms-engine-v8",
+  "code": [
+    {
+      "file": "src/data/executableContracts/instantiate.ts",
+      "sha256": "59c4e0d8c8488fc9400d4db79ea9f644b0d0d60770fc123c46e8d66602d65bf5"
+    },
+    {
+      "file": "src/data/executableContracts/validation.ts",
+      "sha256": "95f527138d59f37c93e4704822f99fed7cd8ec8a316539cb1196d018081f3418"
+    },
+    {
+      "file": "src/data/executableContracts/transport.ts",
+      "sha256": "bd0c3360ff9ff5cb4d6a2cc64e2ebf11f04154fca651c45ca118f61a7f09d3f8"
+    },
+    {
+      "file": "src/lib/productTermsEngine/types.ts",
+      "sha256": "e355cd05eb5fc60fa037df7ca86fb9d3d3b6800aa9b5b6d1cbb4fafdbf6a769e"
+    },
+    {
+      "file": "src/lib/productTermsEngine/tdValidation.ts",
+      "sha256": "eebe2596e7a6c3a4c29f78f37b05a83f3c6b10746e74a0d5e503c10dfacf048b"
+    },
+    {
+      "file": "src/lib/productTermsEngine/tdLedger.ts",
+      "sha256": "05ee0df687cf4c943a5c4d84f1ef8d926f3fa806346798ce157f5403bdc24bcc"
+    },
+    {
+      "file": "src/lib/productTermsEngine/ledger.ts",
+      "sha256": "3f3c5be2a3bbc3599711d39f7e4a398b33f66bf4da4e3cd67bc9dd7b82e46b8a"
+    },
+    {
+      "file": "src/lib/productTermsEngine/decimal.ts",
+      "sha256": "9ca602b847b122ed0be9571d758e495734d9acb0dfb9f26c3af07d66ea91596f"
+    },
+    {
+      "file": "src/lib/productTermsEngine/calendar.ts",
+      "sha256": "603d30b36a6acf9e619c78125f42200f6f20471682c80edf3d2e6a74caa616f3"
+    },
+    {
+      "file": "src/data/executableContracts/depositComparison.ts",
+      "sha256": "7cb3e0642bdc65a1931e13a9be8ec557daecff36c6b17936c8d1733388941ede"
+    }
+  ],
+  "records": [
+    {
+      "name": "positive",
+      "template": {
+        "schemaVersion": 1,
+        "kind": "fixed_aud_td_maturity_v1",
+        "adapterVersion": "fixed-aud-td-v1",
+        "evaluatorVersion": "product-terms-engine-v8",
+        "productKey": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "effectiveFrom": "2028-01-01",
+        "effectiveToExclusive": "2029-01-01",
+        "sourceObservationId": "1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "sourceGenerationId": "protocol-only-generation",
+        "runDate": "2026-01-01",
+        "selectedRate": {
+          "sourceManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "coreAssetSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coreRowIndex": 0,
+          "rowSha256": "564fedc08f3f01897c0ac93828a91938d65f2fc6a11c6bc52dfcb92f5577a140",
+          "rateIndex": 1
+        },
+        "documentVersionIds": [
+          "6666666666666666666666666666666666666666666666666666666666666666"
+        ],
+        "termRevisionIds": [
+          "7777777777777777777777777777777777777777777777777777777777777777"
+        ],
+        "annualRate": "0.0365",
+        "term": {
+          "unit": "months",
+          "count": 1,
+          "monthConvention": "clamp"
+        },
+        "interest": {
+          "dayCount": "actual_365_fixed",
+          "dailyAccrualScale": null,
+          "dailyRateRounding": null,
+          "accrualRounding": "half_up",
+          "postingRounding": "half_up"
+        },
+        "policies": {
+          "posting": "calendar_day_maturity",
+          "businessDayAdjustment": "none_source_declared",
+          "compounding": "none",
+          "offset": "none",
+          "feeDisposition": "complete_no_fees",
+          "accrualBoundary": "funded_inclusive_maturity_exclusive"
+        },
+        "inputDefinitions": [
+          {
+            "key": "protocol_amount",
+            "label": "Protocol amount — café",
+            "type": "decimal",
+            "unit": "AUD",
+            "clauseIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "binding": "deposit_principal"
+          },
+          {
+            "key": "protocol_funded",
+            "label": "Protocol date protocol_funded",
+            "type": "date",
+            "unit": null,
+            "clauseIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "binding": "funded_date"
+          },
+          {
+            "key": "protocol_maturity",
+            "label": "Protocol date protocol_maturity",
+            "type": "date",
+            "unit": null,
+            "clauseIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "binding": "maturity_date"
+          }
+        ],
+        "eligibility": {
+          "id": "protocol-rule",
+          "op": "compare",
+          "field": "protocol_amount",
+          "comparison": "gte",
+          "expected": {
+            "type": "decimal",
+            "value": "0.00",
+            "unit": "AUD"
+          },
+          "evidenceIds": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ]
+        },
+        "fieldClauseIds": {
+          "annualRate": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "term": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "dayCount": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "dailyAccrualScale": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "dailyRateRounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "accrualRounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "postingRounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "postingPolicy": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "businessDayAdjustment": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "compounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "offset": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "feeDisposition": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "eligibility": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "effectiveInterval": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "cohort": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "accrualBoundary": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "effectiveScope": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "tier": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "package": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "principalBounds": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "1111111111111111111111111111111111111111111111111111111111111111",
+            "clauseId": "1111111111111111111111111111111111111111111111111111111111111111",
+            "documentVersionId": "6666666666666666666666666666666666666666666666666666666666666666",
+            "documentSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+            "sourceUrl": "https://example.invalid/protocol",
+            "locator": "{\"end\":70,\"start\":0}",
+            "quote": "Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.",
+            "quoteSha256": "40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315"
+          }
+        ],
+        "id": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "currency": "AUD",
+        "effectiveScope": "whole_accrual_horizon",
+        "tierKey": "protocol-tier",
+        "packageKey": "none_source_declared",
+        "principalBounds": {
+          "minimum": {
+            "value": "0.00",
+            "inclusive": true
+          },
+          "maximum": {
+            "unbounded": true
+          }
+        }
+      },
+      "approval": {
+        "templateId": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "reviewId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reviewEvidenceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "benchmarkResultSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reviewedAt": "2028-01-01T00:00:00Z",
+        "review": {
+          "applicability": "verified",
+          "materialTerms": "verified",
+          "feeCoverage": "verified",
+          "rateSchedule": "verified"
+        }
+      },
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.0365",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "instantiatedInput": {
+        "evaluatorVersion": "product-terms-engine-v8",
+        "contract": {
+          "schemaVersion": 1,
+          "evaluatorVersion": "product-terms-engine-v8",
+          "id": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+          "productId": "protocol-only|café|零|😀",
+          "direction": "asset",
+          "currency": "AUD",
+          "review": {
+            "applicability": "verified",
+            "materialTerms": "verified",
+            "feeCoverage": "verified",
+            "rateSchedule": "verified",
+            "benchmarkSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "applicability": {
+            "cohortKey": "protocol-only",
+            "from": "2028-01-31",
+            "toExclusive": "2028-03-01"
+          },
+          "evidence": [
+            {
+              "id": "1111111111111111111111111111111111111111111111111111111111111111",
+              "clauseId": "1111111111111111111111111111111111111111111111111111111111111111",
+              "documentVersionId": "6666666666666666666666666666666666666666666666666666666666666666",
+              "documentSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+              "sourceUrl": "https://example.invalid/protocol",
+              "locator": "{\"end\":70,\"start\":0}",
+              "quote": "Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.",
+              "quoteSha256": "40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315"
+            }
+          ],
+          "dependencyIds": [
+            "cc93e15f5e29ca0091c1aaff5e8dbd57bd5a89c72700313028c21813cf5ced9e",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+            "6666666666666666666666666666666666666666666666666666666666666666",
+            "7777777777777777777777777777777777777777777777777777777777777777",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ],
+          "unsupportedTerms": [],
+          "eligibility": {
+            "id": "protocol-rule",
+            "op": "compare",
+            "field": "protocol_amount",
+            "comparison": "gte",
+            "expected": {
+              "type": "decimal",
+              "value": "0.00",
+              "unit": "AUD"
+            },
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          "initialAnnualRate": "0.0365",
+          "initialRateEvidenceIds": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "interest": {
+            "dayCount": "actual_365_fixed",
+            "dailyAccrualScale": null,
+            "dailyRateRounding": null,
+            "accrualRounding": "half_up",
+            "postingRounding": "half_up",
+            "balanceBasis": "closing_balance_before_posted_interest",
+            "eventOrder": "ordered_events_then_accrual_then_posting",
+            "postingDates": [],
+            "offset": "none",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          "feeSchedule": {
+            "schemaVersion": 1,
+            "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+            "from": "2028-01-31",
+            "toExclusive": "2028-03-01",
+            "inventoryCoverage": "reviewed_complete",
+            "deferredObligations": "none_confirmed",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "ordering": "before_scenario_events",
+            "inventory": [
+              {
+                "categoryId": "all_fees",
+                "state": "none_applicable",
+                "feeIds": [],
+                "evidenceIds": [
+                  "1111111111111111111111111111111111111111111111111111111111111111"
+                ]
+              }
+            ],
+            "fees": []
+          },
+          "tdLifecycle": {
+            "schemaVersion": 1,
+            "mode": "fixed_maturity",
+            "cohortKey": "protocol-only",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "confirmationEvidenceIds": [],
+            "investmentAmount": "1000.00",
+            "fundedDate": "2028-01-31",
+            "accrualStartDate": "2028-01-31",
+            "term": {
+              "unit": "months",
+              "count": 1,
+              "monthConvention": "clamp"
+            },
+            "nominalMaturityDate": "2028-02-29",
+            "calendar": null,
+            "roundingReviewed": true,
+            "taxTreatment": "none_confirmed",
+            "payments": {
+              "cadence": "maturity",
+              "destination": "linked_account",
+              "firstPeriodEnd": null,
+              "monthConvention": "clamp",
+              "periodEnds": [],
+              "evidenceIds": [
+                "1111111111111111111111111111111111111111111111111111111111111111"
+              ]
+            },
+            "closure": {
+              "kind": "maturity",
+              "confirmedDate": "2028-02-29",
+              "acceptedNoticeDate": null,
+              "feeDecision": "waived",
+              "principalRecovery": "unknown",
+              "evidenceIds": [
+                "1111111111111111111111111111111111111111111111111111111111111111"
+              ]
+            }
+          }
+        },
+        "scenario": {
+          "tdConfirmation": {
+            "source": "user_supplied_bank_confirmation",
+            "recordedAt": "2028-01-30T00:00:00Z",
+            "annualRate": "0.0365",
+            "principal": "1000.00",
+            "fundedDate": "2028-01-31",
+            "maturityDate": "2028-02-29",
+            "noWithholding": true
+          },
+          "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+          "productId": "protocol-only|café|零|😀",
+          "cohortKey": "protocol-only",
+          "startDate": "2028-01-31",
+          "endDateExclusive": "2028-03-01",
+          "openingBalance": "1000.00",
+          "initialOffset": "0",
+          "facts": {
+            "protocol_amount": {
+              "type": "decimal",
+              "value": "1000",
+              "unit": "AUD"
+            },
+            "protocol_funded": {
+              "type": "date",
+              "value": "2028-01-31"
+            },
+            "protocol_maturity": {
+              "type": "date",
+              "value": "2028-02-29"
+            }
+          },
+          "events": [],
+          "assumptions": []
+        }
+      },
+      "output": {
+        "schemaVersion": 1,
+        "evaluatorVersion": "product-terms-engine-v8",
+        "inputSha256": "e5f4838ebfaf118bf8bfb94d48e78c04694ca7dae9d3b8fa0e3ed3e4eb2f4e39",
+        "contractId": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "dependencies": [
+          "cc93e15f5e29ca0091c1aaff5e8dbd57bd5a89c72700313028c21813cf5ced9e",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+          "6666666666666666666666666666666666666666666666666666666666666666",
+          "7777777777777777777777777777777777777777777777777777777777777777",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "2222222222222222222222222222222222222222222222222222222222222222"
+        ],
+        "status": "complete",
+        "completeness": "factual_complete",
+        "issueDetails": [],
+        "claimAvailable": true,
+        "issues": [],
+        "assumptions": [],
+        "eligibility": {
+          "status": "meets",
+          "trace": {
+            "id": "protocol-rule",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "status": "meets"
+          },
+          "reasons": []
+        },
+        "totals": {
+          "openingBalance": "1000.00",
+          "externalCashflowNet": "-1002.90",
+          "principalRepaid": null,
+          "externalInflows": "0.00",
+          "externalOutflows": "1002.90",
+          "interestAccrued": "2.900000000000",
+          "interestPosted": "2.90",
+          "interestUnposted": "0.000000000000",
+          "interestRoundingAdjustment": "0.000000000000",
+          "feesCharged": "0.00",
+          "feesDebitedBalance": "0.00",
+          "feesPaidExternal": "0.00",
+          "closingBalance": "0.00"
+        },
+        "ledger": [
+          {
+            "id": "td:accrue:2028-01-31",
+            "date": "2028-01-31",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-01",
+            "date": "2028-02-01",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-02",
+            "date": "2028-02-02",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-03",
+            "date": "2028-02-03",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-04",
+            "date": "2028-02-04",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-05",
+            "date": "2028-02-05",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-06",
+            "date": "2028-02-06",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-07",
+            "date": "2028-02-07",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-08",
+            "date": "2028-02-08",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-09",
+            "date": "2028-02-09",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-10",
+            "date": "2028-02-10",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-11",
+            "date": "2028-02-11",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-12",
+            "date": "2028-02-12",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-13",
+            "date": "2028-02-13",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-14",
+            "date": "2028-02-14",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-15",
+            "date": "2028-02-15",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-16",
+            "date": "2028-02-16",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-17",
+            "date": "2028-02-17",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-18",
+            "date": "2028-02-18",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-19",
+            "date": "2028-02-19",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-20",
+            "date": "2028-02-20",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-21",
+            "date": "2028-02-21",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-22",
+            "date": "2028-02-22",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-23",
+            "date": "2028-02-23",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-24",
+            "date": "2028-02-24",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-25",
+            "date": "2028-02-25",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-26",
+            "date": "2028-02-26",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-27",
+            "date": "2028-02-27",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:accrue:2028-02-28",
+            "date": "2028-02-28",
+            "type": "interest_accrual",
+            "amount": "0.100000000000",
+            "balance": "1000.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:interest:2028-02-29",
+            "date": "2028-02-29",
+            "type": "interest_posting",
+            "amount": "2.90",
+            "balance": "1002.90",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "id": "td:closure",
+            "date": "2028-02-29",
+            "type": "cashflow",
+            "amount": "-1002.90",
+            "balance": "0.00",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "note": "Transferred to the confirmed linked account."
+          }
+        ],
+        "localTdConfirmation": {
+          "source": "user_supplied_bank_confirmation",
+          "recordedAt": "2028-01-30T00:00:00Z",
+          "annualRate": "0.0365",
+          "principal": "1000.00",
+          "fundedDate": "2028-01-31",
+          "maturityDate": "2028-02-29",
+          "noWithholding": true
+        }
+      },
+      "inputCanonicalSha256": "e5f4838ebfaf118bf8bfb94d48e78c04694ca7dae9d3b8fa0e3ed3e4eb2f4e39",
+      "outputCanonicalSha256": "05971f2f8d600d1fb8baf89879466bda446229c6ecafd589b374a1820e94efa5"
+    },
+    {
+      "name": "refusal",
+      "template": {
+        "schemaVersion": 1,
+        "kind": "fixed_aud_td_maturity_v1",
+        "adapterVersion": "fixed-aud-td-v1",
+        "evaluatorVersion": "product-terms-engine-v8",
+        "productKey": "protocol-only|café|零|😀",
+        "cohortKey": "protocol-only",
+        "effectiveFrom": "2028-01-01",
+        "effectiveToExclusive": "2029-01-01",
+        "sourceObservationId": "1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "sourceGenerationId": "protocol-only-generation",
+        "runDate": "2026-01-01",
+        "selectedRate": {
+          "sourceManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "coreAssetSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "coreRowIndex": 0,
+          "rowSha256": "564fedc08f3f01897c0ac93828a91938d65f2fc6a11c6bc52dfcb92f5577a140",
+          "rateIndex": 1
+        },
+        "documentVersionIds": [
+          "6666666666666666666666666666666666666666666666666666666666666666"
+        ],
+        "termRevisionIds": [
+          "7777777777777777777777777777777777777777777777777777777777777777"
+        ],
+        "annualRate": "0.0365",
+        "term": {
+          "unit": "months",
+          "count": 1,
+          "monthConvention": "clamp"
+        },
+        "interest": {
+          "dayCount": "actual_365_fixed",
+          "dailyAccrualScale": null,
+          "dailyRateRounding": null,
+          "accrualRounding": "half_up",
+          "postingRounding": "half_up"
+        },
+        "policies": {
+          "posting": "calendar_day_maturity",
+          "businessDayAdjustment": "none_source_declared",
+          "compounding": "none",
+          "offset": "none",
+          "feeDisposition": "complete_no_fees",
+          "accrualBoundary": "funded_inclusive_maturity_exclusive"
+        },
+        "inputDefinitions": [
+          {
+            "key": "protocol_amount",
+            "label": "Protocol amount — café",
+            "type": "decimal",
+            "unit": "AUD",
+            "clauseIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "binding": "deposit_principal"
+          },
+          {
+            "key": "protocol_funded",
+            "label": "Protocol date protocol_funded",
+            "type": "date",
+            "unit": null,
+            "clauseIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "binding": "funded_date"
+          },
+          {
+            "key": "protocol_maturity",
+            "label": "Protocol date protocol_maturity",
+            "type": "date",
+            "unit": null,
+            "clauseIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "binding": "maturity_date"
+          }
+        ],
+        "eligibility": {
+          "id": "protocol-rule",
+          "op": "compare",
+          "field": "protocol_amount",
+          "comparison": "gte",
+          "expected": {
+            "type": "decimal",
+            "value": "0.00",
+            "unit": "AUD"
+          },
+          "evidenceIds": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ]
+        },
+        "fieldClauseIds": {
+          "annualRate": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "term": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "dayCount": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "dailyAccrualScale": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "dailyRateRounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "accrualRounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "postingRounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "postingPolicy": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "businessDayAdjustment": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "compounding": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "offset": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "feeDisposition": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "eligibility": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "effectiveInterval": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "cohort": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "accrualBoundary": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "effectiveScope": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "tier": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "package": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "principalBounds": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "1111111111111111111111111111111111111111111111111111111111111111",
+            "clauseId": "1111111111111111111111111111111111111111111111111111111111111111",
+            "documentVersionId": "6666666666666666666666666666666666666666666666666666666666666666",
+            "documentSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+            "sourceUrl": "https://example.invalid/protocol",
+            "locator": "{\"end\":70,\"start\":0}",
+            "quote": "Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.",
+            "quoteSha256": "40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315"
+          }
+        ],
+        "id": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "currency": "AUD",
+        "effectiveScope": "whole_accrual_horizon",
+        "tierKey": "protocol-tier",
+        "packageKey": "none_source_declared",
+        "principalBounds": {
+          "minimum": {
+            "value": "0.00",
+            "inclusive": true
+          },
+          "maximum": {
+            "unbounded": true
+          }
+        }
+      },
+      "approval": {
+        "templateId": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "reviewId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reviewEvidenceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "benchmarkResultSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reviewedAt": "2028-01-01T00:00:00Z",
+        "review": {
+          "applicability": "verified",
+          "materialTerms": "verified",
+          "feeCoverage": "verified",
+          "rateSchedule": "verified"
+        }
+      },
+      "localInput": {
+        "principal": "1000",
+        "confirmedAnnualRate": "0.03",
+        "fundedDate": "2028-01-31",
+        "maturityDate": "2028-02-29",
+        "confirmed": true,
+        "confirmedAt": "2028-01-30T00:00:00Z",
+        "noWithholdingConfirmed": true
+      },
+      "instantiatedInput": {
+        "evaluatorVersion": "product-terms-engine-v8",
+        "contract": {
+          "schemaVersion": 1,
+          "evaluatorVersion": "product-terms-engine-v8",
+          "id": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+          "productId": "protocol-only|café|零|😀",
+          "direction": "asset",
+          "currency": "AUD",
+          "review": {
+            "applicability": "verified",
+            "materialTerms": "verified",
+            "feeCoverage": "verified",
+            "rateSchedule": "verified",
+            "benchmarkSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "applicability": {
+            "cohortKey": "protocol-only",
+            "from": "2028-01-31",
+            "toExclusive": "2028-03-01"
+          },
+          "evidence": [
+            {
+              "id": "1111111111111111111111111111111111111111111111111111111111111111",
+              "clauseId": "1111111111111111111111111111111111111111111111111111111111111111",
+              "documentVersionId": "6666666666666666666666666666666666666666666666666666666666666666",
+              "documentSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+              "sourceUrl": "https://example.invalid/protocol",
+              "locator": "{\"end\":70,\"start\":0}",
+              "quote": "Protocol-only identity vector: café, 零, 😀; decimal 0.0500 remains text.",
+              "quoteSha256": "40e242bc3e802e0ff35839e86f431b2f3b61ad1191cec067620a8c05ab7ac315"
+            }
+          ],
+          "dependencyIds": [
+            "cc93e15f5e29ca0091c1aaff5e8dbd57bd5a89c72700313028c21813cf5ced9e",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+            "6666666666666666666666666666666666666666666666666666666666666666",
+            "7777777777777777777777777777777777777777777777777777777777777777",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ],
+          "unsupportedTerms": [],
+          "eligibility": {
+            "id": "protocol-rule",
+            "op": "compare",
+            "field": "protocol_amount",
+            "comparison": "gte",
+            "expected": {
+              "type": "decimal",
+              "value": "0.00",
+              "unit": "AUD"
+            },
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          "initialAnnualRate": "0.0365",
+          "initialRateEvidenceIds": [
+            "1111111111111111111111111111111111111111111111111111111111111111"
+          ],
+          "interest": {
+            "dayCount": "actual_365_fixed",
+            "dailyAccrualScale": null,
+            "dailyRateRounding": null,
+            "accrualRounding": "half_up",
+            "postingRounding": "half_up",
+            "balanceBasis": "closing_balance_before_posted_interest",
+            "eventOrder": "ordered_events_then_accrual_then_posting",
+            "postingDates": [],
+            "offset": "none",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ]
+          },
+          "feeSchedule": {
+            "schemaVersion": 1,
+            "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+            "from": "2028-01-31",
+            "toExclusive": "2028-03-01",
+            "inventoryCoverage": "reviewed_complete",
+            "deferredObligations": "none_confirmed",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "ordering": "before_scenario_events",
+            "inventory": [
+              {
+                "categoryId": "all_fees",
+                "state": "none_applicable",
+                "feeIds": [],
+                "evidenceIds": [
+                  "1111111111111111111111111111111111111111111111111111111111111111"
+                ]
+              }
+            ],
+            "fees": []
+          },
+          "tdLifecycle": {
+            "schemaVersion": 1,
+            "mode": "fixed_maturity",
+            "cohortKey": "protocol-only",
+            "evidenceIds": [
+              "1111111111111111111111111111111111111111111111111111111111111111"
+            ],
+            "confirmationEvidenceIds": [],
+            "investmentAmount": "1000.00",
+            "fundedDate": "2028-01-31",
+            "accrualStartDate": "2028-01-31",
+            "term": {
+              "unit": "months",
+              "count": 1,
+              "monthConvention": "clamp"
+            },
+            "nominalMaturityDate": "2028-02-29",
+            "calendar": null,
+            "roundingReviewed": true,
+            "taxTreatment": "none_confirmed",
+            "payments": {
+              "cadence": "maturity",
+              "destination": "linked_account",
+              "firstPeriodEnd": null,
+              "monthConvention": "clamp",
+              "periodEnds": [],
+              "evidenceIds": [
+                "1111111111111111111111111111111111111111111111111111111111111111"
+              ]
+            },
+            "closure": {
+              "kind": "maturity",
+              "confirmedDate": "2028-02-29",
+              "acceptedNoticeDate": null,
+              "feeDecision": "waived",
+              "principalRecovery": "unknown",
+              "evidenceIds": [
+                "1111111111111111111111111111111111111111111111111111111111111111"
+              ]
+            }
+          }
+        },
+        "scenario": {
+          "tdConfirmation": {
+            "source": "user_supplied_bank_confirmation",
+            "recordedAt": "2028-01-30T00:00:00Z",
+            "annualRate": "0.03",
+            "principal": "1000.00",
+            "fundedDate": "2028-01-31",
+            "maturityDate": "2028-02-29",
+            "noWithholding": true
+          },
+          "accountId": "td_139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+          "productId": "protocol-only|café|零|😀",
+          "cohortKey": "protocol-only",
+          "startDate": "2028-01-31",
+          "endDateExclusive": "2028-03-01",
+          "openingBalance": "1000.00",
+          "initialOffset": "0",
+          "facts": {
+            "protocol_amount": {
+              "type": "decimal",
+              "value": "1000",
+              "unit": "AUD"
+            },
+            "protocol_funded": {
+              "type": "date",
+              "value": "2028-01-31"
+            },
+            "protocol_maturity": {
+              "type": "date",
+              "value": "2028-02-29"
+            }
+          },
+          "events": [],
+          "assumptions": []
+        }
+      },
+      "output": {
+        "schemaVersion": 1,
+        "evaluatorVersion": "product-terms-engine-v8",
+        "inputSha256": "146f760058fcf7a8f02c248200e86d54e04b33be14ba63245974c912e0fe1e1f",
+        "contractId": "139547b3da2c1fa89777ba6b955e4e42199589c3b1bea9acf7e4210c3034486b",
+        "dependencies": [],
+        "status": "unsupported",
+        "completeness": "unsupported",
+        "issueDetails": [],
+        "claimAvailable": false,
+        "issues": [
+          "td_confirmed_rate_mismatch"
+        ],
+        "assumptions": [],
+        "eligibility": null,
+        "totals": null,
+        "ledger": []
+      },
+      "inputCanonicalSha256": "146f760058fcf7a8f02c248200e86d54e04b33be14ba63245974c912e0fe1e1f",
+      "outputCanonicalSha256": "11c3b40b77906e45a2ea6d2e4b508e02be7811d86b96d8f162e0ddaf2acccada"
+    }
+  ]
+}

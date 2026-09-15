@@ -22,6 +22,8 @@ def source_snapshot(store, template):
 @source_checked
 def stage_template(store, template, *, interpreter, staged_at):
     validate_template(template)
+    if template['evaluatorVersion'] != 'product-terms-engine-v8':
+        raise ValueError('New executable staging requires evaluator v8 confirmed rate')
     if not interpreter or len(interpreter) > 256:
         raise ValueError('Executable interpreter identity required')
     with store.db:
@@ -78,6 +80,8 @@ def review_template(store, template_id, *, decision, reviewer, reviewer_kind, re
             raise ValueError('Executable review CAS changed')
         benchmark = None
         if decision == 'approved':
+            if template['evaluatorVersion'] != 'product-terms-engine-v8':
+                raise ValueError('New executable approval requires evaluator v8 confirmed rate')
             benchmark = _approval_evidence(store, template, evidence_sha256, expected_previous_review_id)['benchmarkResultSha256']
         else:
             evidence = json.loads(store.read_blob(evidence_sha256))
