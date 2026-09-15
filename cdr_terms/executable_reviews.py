@@ -7,17 +7,16 @@ from .executable_contract import REVIEW_CHECKS, validate_template
 from .executable_benchmarks import verify_benchmark
 from .executable_sources import validate_current_sources, source_checked
 from .identity import canonical_json, digest, timestamp
-from .reporting import build_product_asset
 
 
 def source_snapshot(store, template):
-    validate_current_sources(store, template)
+    projection = validate_current_sources(store, template)
     reviews = []
     for identity in template['termRevisionIds']:
         row = store.db.execute('SELECT review_id FROM reviews WHERE term_revision_id=? ORDER BY sequence DESC LIMIT 1',
                                (identity,)).fetchone()
         reviews.append(row[0])
-    return digest([template['id'], reviews, build_product_asset(store, template['productKey'])['identity_sha256']])
+    return digest([template['id'], reviews, projection['identity_sha256']])
 
 
 @source_checked
