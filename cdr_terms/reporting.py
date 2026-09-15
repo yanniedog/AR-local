@@ -11,6 +11,7 @@ from .identity import canonical_json, digest, exact_value, timestamp
 from .observation_checks import current_observation, selected_check
 from .revisions import term_source_versions
 from .store import EvidenceStore
+from .structured_contract import evidence_reads
 
 PUBLIC_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_terms" / "terms-v1.schema.json"
 
@@ -60,6 +61,8 @@ def _revisions(store: EvidenceStore, observation: Mapping[str, Any], versions: s
         source_versions = term_source_versions(store, term["term_revision_id"])
         if term["term_revision_id"] in superseded or not source_versions <= versions:
             continue
+        from .structured_admission import validate_term
+        validate_term(store, term['term_revision_id'])
         sources = store.db.execute("SELECT c.*,x.document_version_id FROM term_sources s JOIN clauses c USING(clause_id) "
                                    "JOIN extractions x USING(extraction_id) WHERE term_revision_id=? ORDER BY clause_id",
                                    (term["term_revision_id"],)).fetchall()
@@ -109,6 +112,7 @@ def _coverage(store: EvidenceStore, documents: list[dict[str, Any]], expected: i
     }
 
 
+@evidence_reads
 def build_product_asset(store: EvidenceStore, product_key: str) -> dict[str, Any]:
     observation = current_observation(store, product_key)
     documents, expected, successes, failures, gaps = _documents(store, observation)

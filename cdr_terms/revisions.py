@@ -103,6 +103,10 @@ def review_term(store: EvidenceStore, term_revision_id: str, *, status: str,
     values = (term_revision_id, status, reviewer, reviewer_kind, timestamp(reviewed_at), evidence_sha256, reason)
     identity = digest(values)
     with store.db:
+        store.db.execute('BEGIN IMMEDIATE')
+        if status == 'validated':
+            from .structured_admission import validate_term
+            validate_term(store, term_revision_id)
         store.db.execute("INSERT OR IGNORE INTO reviews "
                          "(review_id,term_revision_id,status,reviewer,reviewer_kind,reviewed_at,evidence_sha256,reason) "
                          "VALUES (?,?,?,?,?,?,?,?)", (identity, *values))

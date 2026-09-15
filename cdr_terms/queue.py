@@ -51,6 +51,8 @@ class TermsQueue:
                 completion_guard: Callable[[], None] | None = None) -> str:
         """Context binds product keys, source snapshots, registry and validator."""
         validate_registry_context(context, new_job=True)
+        from .structured_admission import validate_context
+        validate_context(self.store, extraction_id, context)
         if priority not in (0, 1, 2):
             raise ValueError("Priorities are 0 changed current, 1 current, 2 historical")
         if not isinstance(context.get("product_keys"), list) or not context["product_keys"]:
@@ -71,10 +73,12 @@ class TermsQueue:
         body_sha = self.store.put_blob(canonical_json(context).encode("utf-8"))
         observed = timestamp(now or utc_now())
         with self.store.db:
+            if not self.store.db.in_transaction:
+                self.store.db.execute('BEGIN IMMEDIATE')
+            validate_context(self.store, extraction_id, context)
             if completion_guard:
                 # Context blob I/O is outside the transaction. An orphan blob
                 # is retained evidence, not authority to admit an analysis job.
-                self.store.db.execute("BEGIN IMMEDIATE")
                 completion_guard()
             self._insert_job(identity, extraction_id, context_sha, body_sha, priority, observed)
             if completion_guard:
@@ -96,6 +100,8 @@ class TermsQueue:
         if not self.store.db.in_transaction or not callable(completion_guard) or priority not in (0, 1):
             raise ValueError("Incorporated enqueue requires a live guarded current transaction")
         completion_guard()
+        from .structured_admission import validate_context
+        validate_context(self.store, extraction_id, context)
         validate_target(self.store, extraction_id, context)
         exact_value(context)
         context_sha = digest(context)
@@ -252,6 +258,8 @@ class TermsQueue:
         if digest(context) != job["context_sha256"]:
             raise ValueError("Analysis context integrity mismatch")
         validate_registry_context(context)
+        from .structured_admission import validate_context
+        validate_context(self.store, job['extraction_id'], context)
         self.store.read_blob(job["text_sha256"])
         self.store.read_blob(job["content_sha256"])
         if "historical_target" in context:
@@ -303,6 +311,8 @@ class TermsQueue:
                 raise ValueError("Staged term escaped the input product applicability")
             if any(index >= len(output["clauses"]) for index in term["clause_indexes"]):
                 raise ValueError("Staged term cites an absent source clause")
+        from .structured_admission import validate_output
+        validate_output(self.store, job['extraction_id'], context, output)
 
     def save_staging(self, job_id: str, output: Mapping[str, Any], *, lease_id: str,
                      now: str | None = None) -> str:
