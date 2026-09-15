@@ -25,7 +25,9 @@ VARIABLE_ZERO_RULE = 'variable_zero_placeholder_v3'
 # New literal and normalized corrections both require proven present bounds.
 VARIABLE_ZERO_REVIEW_RULES = frozenset(('variable_zero_placeholder_v1', 'variable_zero_placeholder_v2', VARIABLE_ZERO_RULE))
 PROJECTION_SOURCES = {
-    'app_payload_details.py': '242f508dee9c48947eee73feefc4ed28413ff0cdc0ccf8416e2786ad34f80a47',
+    # Optional rate disclosures changed the module; the fee projection and all
+    # three helpers remain AST-identical to the previously reviewed version.
+    'app_payload_details.py': '6963791b2d12805d74b963124a264c4bb33075dc78a4f283f01c0a27c1650126',
     'app_payload_common.py': 'cce4a7b19b4f86c7b52cde122b8a86d68c47b29dc1eb939fc7673a8225cd942d',
 }
 DIRECT_FIELDS = frozenset(('amount', 'currency', 'additionalValue', 'balanceRate', 'transactionRate',
