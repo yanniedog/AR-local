@@ -28,9 +28,14 @@ def test_v3_reviewer_whitespace_does_not_create_independence(monetary_protocol,a
 def test_shared_dispatch_and_same_scope_predecessor(monetary_protocol):
     store,subject,_=monetary_protocol;setup(store,subject)
     assert lookup_subject(store,subject['id'])==subject
-    changed=copy.deepcopy(subject);changed['policy']['inputDefinitions'][0]['label']='Changed technical prompt';reidentify(changed)
+    # A fresh local interval identity leaves reviewed material values unchanged.
+    # Prompt changes are material and have their own explicit refusal regression.
+    changed=copy.deepcopy(subject);changed['policy']['intervals'][0]['id']='technical-period-revision';reidentify(changed)
+    assert changed['id']!=subject['id'] and changed['scopeId']==subject['scopeId']
     with pytest.raises(ValueError,match='CAS'):stage_subject(store,changed,interpreter='author',staged_at=NOW)
     stage_subject(store,changed,interpreter='author',staged_at=NOW,expected_previous_subject_id=subject['id'])
+    assert lookup_subject(store,changed['id'])==changed
+    assert store.db.execute('SELECT previous_subject_id FROM executable_subjects_v3 WHERE subject_id=?',(changed['id'],)).fetchone()[0]==subject['id']
 
 
 def test_negative_review_preserves_stale_source_and_cas(monetary_protocol):

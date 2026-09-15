@@ -17,6 +17,17 @@ from .parameter_registry import validate_parameter_terms, validate_registry_cont
 from .store import EvidenceStore, validate_clause_locator
 
 STAGING_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_terms" / "analysis-staging-v1.schema.json"
+
+
+def staging_schema(context):
+    from .parameter_registry import VERSION,MATERIAL_STAGING_SHA
+    from .identity import byte_digest
+    validate_registry_context(context)
+    if context.get('parameter_registry',{}).get('version')==VERSION:
+        raw=(STAGING_SCHEMA.parent/'drafts/material-fields-v1/analysis-staging-material-v1.schema.json').read_bytes()
+        if byte_digest(raw)!=MATERIAL_STAGING_SHA:raise ValueError('Material staging schema bytes differ')
+        return json.loads(raw)
+    return json.loads(STAGING_SCHEMA.read_bytes())
 _TRANSITIONS = {
     None: {"queued"}, "queued": {"running", "superseded", "blocked"},
     "running": {"staged", "retry_wait", "blocked", "superseded"},
@@ -258,7 +269,11 @@ class TermsQueue:
             raise StagingValidationError(str(error)) from error
 
     def _validate_staging(self, job_id: str, output: Mapping[str, Any]) -> None:
-        schema = json.loads(STAGING_SCHEMA.read_text(encoding="utf-8"))
+        context = self.validate_input(job_id)
+        schema = staging_schema(context)
+        if context.get('parameter_registry',{}).get('version')=='terms-parameters-v3':
+            from .executable_contract import _bounded
+            _bounded(output,4*1024*1024)
         Draft202012Validator(schema).validate(output)
         exact_value(output)
         job = self.store.db.execute("SELECT j.*,x.text_sha256,x.coverage_json FROM analysis_jobs j "
@@ -266,7 +281,6 @@ class TermsQueue:
         if not job or output["extraction_id"] != job["extraction_id"] or output["context_sha256"] != job["context_sha256"]:
             raise ValueError("Staged output is bound to a different input generation")
         text = self.store.read_blob(job["text_sha256"]).decode("utf-8")
-        context = self.validate_input(job_id)
         validate_parameter_terms(context, output["terms"])
         if "historical_target" in context:
             if output.get("historical_scope") != historical_scope(context["historical_target"]):

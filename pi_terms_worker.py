@@ -22,7 +22,7 @@ from jsonschema.exceptions import ValidationError
 from ar_local_operation_lock import production_lock
 from cdr_atomic import atomic_write_json
 from cdr_terms.identity import byte_digest, canonical_json, timestamp
-from cdr_terms.queue import STAGING_SCHEMA, StagingValidationError, TermsQueue
+from cdr_terms.queue import STAGING_SCHEMA, StagingValidationError, TermsQueue, staging_schema
 from cdr_terms.store import EvidenceStore
 from pi_cdr_quality_resources import Limits, require_receipt, supervise
 from pi_terms_codex import (MAX_INPUT_BYTES, MAX_LOG_BYTES, MAX_RECEIPT_BYTES,
@@ -34,7 +34,7 @@ STATE_NAME = 'interpreter-state.json'
 PUBLIC_CONTEXT_FIELDS = frozenset({
     'product_keys', 'source_product_sha256', 'document_schema_version',
     'structured_fact_normalization', 'interpretation_contract', 'executable_rules',
-    'historical_target', 'incorporated_target', 'parameter_registry',
+    'historical_target', 'incorporated_target', 'parameter_registry', 'interpretation_schema_sha256',
 })
 
 
@@ -126,16 +126,27 @@ def prepare_job(store: EvidenceStore, job: dict, root: Path) -> None:
         raise ValueError('complete_document_chunking_required')
     root.mkdir(parents=True, mode=0o700)
     write_receipt(root / 'input.json', payload)
-    write_receipt(root / 'schema.json', json.loads(STAGING_SCHEMA.read_bytes()))
-    write_receipt(root / 'binding.json', {key: job[key] for key in
-                  ('job_id', 'lease_id', 'extraction_id', 'document_version_id', 'context_sha256')})
+    from cdr_terms.generation_schema import generation_schema
+    write_receipt(root / 'schema.json', generation_schema(context))
+    binding={key: job[key] for key in
+             ('job_id', 'lease_id', 'extraction_id', 'document_version_id', 'context_sha256')}
+    if 'interpretation_schema_sha256' in context:
+        binding['generation_schema_sha256']=byte_digest((root/'schema.json').read_bytes())
+    write_receipt(root / 'binding.json', binding)
 
 
 def complete_job(queue: TermsQueue, job: dict, root: Path, resources: dict) -> dict:
     require_receipt(resources)
     binding = json.loads(read_bounded(root / 'binding.json', MAX_RECEIPT_BYTES))
-    if binding != {key: job[key] for key in
-                   ('job_id', 'lease_id', 'extraction_id', 'document_version_id', 'context_sha256')}:
+    expected={key: job[key] for key in
+              ('job_id', 'lease_id', 'extraction_id', 'document_version_id', 'context_sha256')}
+    context=queue.validate_input(job['job_id'])
+    if 'interpretation_schema_sha256' in context:
+        from cdr_terms.generation_schema import generation_schema
+        raw=read_bounded(root/'schema.json',MAX_RESULT_BYTES)
+        if json.loads(raw)!=generation_schema(context):raise ValueError('generation schema changed')
+        expected['generation_schema_sha256']=byte_digest(raw)
+    if binding != expected:
         raise ValueError('transport binding does not identify the current lease')
     transport = read_transport(root)
     if transport['result'] != 'STAGING_ONLY':

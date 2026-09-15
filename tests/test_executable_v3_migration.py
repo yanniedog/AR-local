@@ -42,6 +42,27 @@ def test002_installed_object_drift_refused(protocol,v2_protocol):
         migrate_monetary_registry(store,applied_at=NOW)
 
 
+@pytest.mark.parametrize('upgraded',[False,True])
+@pytest.mark.parametrize('kind,name',[
+    ('TRIGGER','immutable_executable_subjects_v2_DELETE'),
+    ('INDEX','executable_subjects_v2_slot'),
+])
+def test002_refuses_predecessor_objects_drift(protocol,v2_protocol,kind,name,upgraded):
+    store,_,_=prepared(protocol,v2_protocol)
+    if upgraded:migrate_monetary_registry(store,applied_at=NOW)
+    store.db.execute(f'DROP {kind} {name}')
+    with pytest.raises(ValueError,match='Frozen001 installed schema differs'):
+        migrate_monetary_registry(store,applied_at=NOW)
+
+
+def test002_refuses_predecessor_view_redefinition(protocol,v2_protocol):
+    store,_,_=prepared(protocol,v2_protocol)
+    store.db.execute('DROP VIEW executable_registry_subjects')
+    store.db.execute('CREATE VIEW executable_registry_subjects AS SELECT 1 AS subject_id')
+    with pytest.raises(ValueError,match='Frozen001 installed schema differs'):
+        migrate_monetary_registry(store,applied_at=NOW)
+
+
 def test002_failure_rolls_back_views(protocol,v2_protocol,monkeypatch):
     store,_,_=prepared(protocol,v2_protocol)
     before=_snapshot(store.db)

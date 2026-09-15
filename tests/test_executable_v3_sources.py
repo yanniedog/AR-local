@@ -6,26 +6,57 @@ from cdr_terms.identity import canonical_json
 from cdr_terms.revisions import review_term
 
 
-def _successor(store,subject,lower,kind='changed'):
+def test_successor_work_budget_is_shared_across_roots(monkeypatch):
+    from types import SimpleNamespace
+    import cdr_terms.executable_v3_sources as module
+    operation=SimpleNamespace()
+    monkeypatch.setattr(module,'_historical_changes_one',lambda store,identity,*args:
+        [identity+str(n) for n in range(256)] if identity in ('first','second') else [])
+    module._historical_changes(None,'first',{},operation,'2026-01-01')
+    with pytest.raises(ValueError,match='inventory bound'):
+        module._historical_changes(None,'second',{},operation,'2026-02-01')
+    assert operation.successor_nodes==513
+
+
+def test_successor_cycle_refuses(monkeypatch):
+    from types import SimpleNamespace
+    import cdr_terms.executable_v3_sources as module
+    monkeypatch.setattr(module,'_historical_changes_one',lambda store,identity,*args:['b' if identity=='a' else 'a'])
+    with pytest.raises(ValueError,match='cycle'):
+        module._historical_changes(None,'a',{},SimpleNamespace(),'2026-01-01')
+
+
+def _successor(store,subject,lower,kind='changed',original=None,token='e'):
     """Append independent technical rows; never mutate the retained prior policy."""
     def clone(table,updates):
         row=dict(store.db.execute('SELECT * FROM '+table+' LIMIT 1').fetchone());row.update(updates)
         store.db.execute('INSERT INTO '+table+' ('+','.join(row)+') VALUES ('+','.join('?' for _ in row)+')',tuple(row.values()))
-    original=subject['termRevisionIds'][0];successor='e'*64
-    raw=b'Separately retained later technical policy';sha=store.put_blob(raw)
+    original=original or subject['termRevisionIds'][0];successor=token*64
+    doc=token*63+'1';extraction=token*63+'2';clause=token*63+'3'
+    raw=('Separately retained later technical policy '+token).encode();sha=store.put_blob(raw)
     with store.db:
-        clone('document_versions',dict(document_version_id='d'*64,content_sha256=sha,byte_size=len(raw)))
-        clone('extractions',dict(extraction_id='c'*64,document_version_id='d'*64,text_sha256=sha))
-        clone('clauses',dict(clause_id='b'*64,extraction_id='c'*64,text=raw.decode()))
+        clone('document_versions',dict(document_version_id=doc,content_sha256=sha,byte_size=len(raw)))
+        clone('extractions',dict(extraction_id=extraction,document_version_id=doc,text_sha256=sha))
+        clone('clauses',dict(clause_id=clause,extraction_id=extraction,text=raw.decode()))
         applicability=json.loads(store.db.execute('SELECT applicability_json FROM term_revisions WHERE term_revision_id=?',(original,)).fetchone()[0])
         applicability.update(effective_from=lower,effective_to='2026-03-01')
         clone('term_revisions',dict(term_revision_id=successor,applicability_json=canonical_json(applicability)))
-        store.db.execute('INSERT INTO term_sources VALUES (?,?)',(successor,'b'*64))
+        store.db.execute('INSERT INTO term_sources VALUES (?,?)',(successor,clause))
     from cdr_terms.revisions import REVIEW_CHECKS,record_change
     proof=store.put_blob(canonical_json(dict(term_revision_id=successor,passed=True,checks=sorted(REVIEW_CHECKS))).encode())
     review_term(store,successor,status='validated',reviewer='later-independent',reviewer_kind='human',reviewed_at='2026-02-01T00:00:00Z',evidence_sha256=proof,reason='Separate later technical source')
     proof=store.put_blob(canonical_json(dict(passed=True,kind=kind,before_revision_id=original,after_revision_id=successor)).encode())
     record_change(store,product_key=subject['scope']['productKey'],before_revision_id=original,after_revision_id=successor,kind=kind,observed_at='2026-02-01T00:00:00Z',evidence_sha256=proof)
+
+
+@pytest.mark.parametrize('kind',['changed','extraction_corrected'])
+def test_transitive_successor_validation(monetary_protocol,kind):
+    store,subject,_=monetary_protocol
+    _successor(store,subject,'2026-01-11')
+    _successor(store,subject,'2026-02-01',kind,original='e'*64,token='f')
+    if kind=='changed':source_snapshot(store,subject)
+    else:
+        with pytest.raises(ValueError,match='no longer validated'):source_snapshot(store,subject)
 
 
 def test_source_backed_later_successor_preserves_historical_snapshot(monetary_protocol):
@@ -50,12 +81,12 @@ def test_within_horizon_successor_checks_only_prior_used_field_interval(monetary
     old=subject['authorityGraph']['authorities'][0]
     old['fieldCoverage']=[dict(next(x for x in old['fieldCoverage'] if x['field']=='rates'),toExclusive='2026-01-05')]
     later=copy.deepcopy(old);later['id']='a'*64
-    later['fieldCoverage'][0].update(evidenceIds=['b'*64],**{'from':'2026-01-05','toExclusive':subject['scope']['toExclusive']})
+    later['fieldCoverage'][0].update(evidenceIds=['e'*63+'3'],**{'from':'2026-01-05','toExclusive':subject['scope']['toExclusive']})
     subject['authorityGraph']['authorities'].append(later)
     first=subject['policy']['intervals'][0];second=copy.deepcopy(first)
     first['toExclusive']='2026-01-05';second.update(authorityId=later['id'],**{'from':'2026-01-05'})
     subject['policy']['intervals'].append(second);subject['termRevisionIds'].append('e'*64)
-    assert len(_revisions(store,subject,EvidenceOperation(store)))==2
+    assert set(_revisions(store,subject,EvidenceOperation(store)))==set(subject['termRevisionIds'])
     old['fieldCoverage'][0]['toExclusive']='2026-01-06';first['toExclusive']='2026-01-06'
     with pytest.raises(ValueError,match='no longer validated'):_revisions(store,subject,EvidenceOperation(store))
 

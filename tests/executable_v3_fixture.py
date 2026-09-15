@@ -41,7 +41,7 @@ def monetary_protocol(tmp_path):
     yield from technical_protocol(tmp_path)
 
 
-def technical_protocol(tmp_path,source_description=None,adopted_assets=None):
+def technical_protocol(tmp_path,source_description=None,adopted_assets=None,structured_material=True):
     value=subject();scope=value['scope'];now='2026-01-12T01:00:00Z';run_date='2026-01-12'
     data={'name':'Technical savings only','brand':'Protocol only','productId':'protocol','productCategory':'TRANS_AND_SAVINGS_ACCOUNTS'}
     if source_description:data['description']=source_description
@@ -63,12 +63,21 @@ def technical_protocol(tmp_path,source_description=None,adopted_assets=None):
                 output['clauses']=[dict(page=None,**locator,disposition='parameter',reason='Engineering source declaration')]
                 output['terms'][0].update(parameter_key='product.description',value=source_description)
                 output['unresolved']=['Engineering-only source specification; not bank interpretation']
-        _,_,_,args=_staged_term(fixture,output_change=scoped)
+            if structured_material:
+                from cdr_terms.monetary_material_fields import field_value
+                from cdr_terms.executable_v3_graph import FIELDS
+                base=output['terms'][0]
+                output['terms']=[dict(base,parameter_key='monetary.savings_base_field_v1',value=field_value(value,period,field))
+                    for period in value['policy']['intervals'] for field in sorted(FIELDS)]
+        _,_,output,args=_staged_term(fixture,output_change=scoped)
         args['applicability'].update(cohort=scope['cohortKey'],tier=scope['tierKey'],package=scope['packageKey'],effective_from=scope['from'],effective_to=scope['toExclusive'])
         if source_description:args.update(parameter_key='product.description',value=source_description,clause_ids=description_clause)
-        revision=stage_term(store,**args)
-        proof=store.put_blob(canonical_json({'term_revision_id':revision,'passed':True,'checks':sorted(REVIEW_CHECKS)}).encode())
-        review_term(store,revision,status='validated',reviewer='independent-technical',reviewer_kind='human',reviewed_at=now,evidence_sha256=proof,reason='Isolated technical fixture only')
+        revisions=[]
+        for term in output['terms']:
+            revision=stage_term(store,**dict(args,parameter_key=term['parameter_key'],value=term['value']))
+            revisions.append(revision)
+            proof=store.put_blob(canonical_json({'term_revision_id':revision,'passed':True,'checks':sorted(REVIEW_CHECKS)}).encode())
+            review_term(store,revision,status='validated',reviewer='independent-technical',reviewer_kind='human',reviewed_at=now,evidence_sha256=proof,reason='Isolated technical fixture only')
         clause=store.db.execute('SELECT * FROM clauses WHERE clause_id=?',(args['clause_ids'][0],)).fetchone();ref=clause['clause_id']
         old=value['evidence'][0]['id']
         def replace(node):
@@ -77,7 +86,7 @@ def technical_protocol(tmp_path,source_description=None,adopted_assets=None):
             return ref if node==old else node
         value=replace(value)
         value['evidence']=[dict(id=ref,clauseId=ref,documentVersionId=version,documentSha256=byte_digest(raw),sourceUrl='https://example.invalid/protocol',locator=canonical_json(json.loads(clause['locator_json'])),quote=clause['text'],quoteSha256=byte_digest(clause['text'].encode()))]
-        value['documentVersionIds']=[version];value['termRevisionIds']=[revision]
+        value['documentVersionIds']=[version];value['termRevisionIds']=sorted(revisions)
         graph=value['authorityGraph'];authority=graph['authorities'][0]
         authority['documentVersionIds']=[version];authority['documentSha256s']=[byte_digest(raw)]
         graph['members']=[dict(sha256=byte_digest(raw),bytes=len(raw),decodedBytes=len(raw),encoding='identity',kind='source_document')]

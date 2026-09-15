@@ -136,6 +136,20 @@ def _revisions(store,subject,operation):
 
 
 def _historical_changes(store,identity,scope,operation,used_until):
+    pending=[identity];visited=set()
+    while pending:
+        current=pending.pop()
+        if current in visited:raise ValueError('Monetary successor cycle or repeated revision')
+        visited.add(current)
+        operation.successor_nodes=getattr(operation,'successor_nodes',0)+1
+        if operation.successor_nodes>512:raise ValueError('Monetary revision change inventory bound exceeded')
+        successors=_historical_changes_one(store,current,scope,operation,used_until)
+        operation.successor_edges=getattr(operation,'successor_edges',0)+len(successors)
+        if operation.successor_edges>512:raise ValueError('Monetary revision change inventory bound exceeded')
+        pending.extend(successors)
+
+
+def _historical_changes_one(store,identity,scope,operation,used_until):
     """A reviewed later policy is not a retrospective correction of this horizon."""
     changes=store.db.execute('SELECT * FROM term_changes WHERE before_revision_id=? LIMIT 513',(identity,)).fetchall()
     if len(changes)>512:raise ValueError('Monetary revision change inventory bound exceeded')
@@ -169,6 +183,7 @@ def _historical_changes(store,identity,scope,operation,used_until):
         if {x['content_sha256'] for x in sources}==original:
             raise ValueError('Monetary unchanged sources cannot establish a later policy')
         for source in sources:operation.read_blob(source['content_sha256'])
+    return [change['after_revision_id'] for change in changes]
 
 
 def _clauses(store,subject,revisions,operation):
@@ -209,6 +224,8 @@ def source_snapshot(store,subject):
                 if set(authority['documentVersionIds'])!={x['document_version_id'] for x in selected} or set(authority['documentSha256s'])!={x['content_sha256'] for x in selected}:
                     raise ValueError('Monetary dated-clause document inventory differs')
             for coverage in authority['fieldCoverage']:
+                from .monetary_material_fields import validate_material_coverage
+                validate_material_coverage(store,subject,authority,coverage,revisions,operation)
                 for clause in coverage['evidenceIds']:
                     supporting=[r for r in revisions.values() if clause in r['clauses']]
                     if not any(isinstance(r['applicability']['effective_from'],str) and isinstance(r['applicability']['effective_to'],str)
