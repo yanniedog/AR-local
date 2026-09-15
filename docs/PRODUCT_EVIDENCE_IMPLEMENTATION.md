@@ -369,6 +369,14 @@ effective dates, normalized/executable status, dependencies, repairs and remaini
 gaps. Include retired products, duplicate variants, attempts and excluded rows with
 clear status rather than dropping them from denominators.
 
+For R-002 report fields, `sections` records only observed published rate sections;
+`product_families` uses those sections when rate rows exist. Without rate rows,
+only `TERM_DEPOSITS` maps to `TD` and `RESIDENTIAL_MORTGAGES` to `Mortgage`.
+`family_basis` records `published_rate_section`, `reported_category` or `unknown`.
+Combined transaction/savings categories remain unknown without rate evidence and
+appear under Other / unclassified. These classification fields do not add rate
+rows or alter published counts, values or detail fields.
+
 Inventory existing metrics as well as newly added fields: rates and comparison/
 ongoing/base/bonus components; rate tiers, LVR, balances, term and repayment/purpose;
 fees/features/eligibility/constraints and facts; provider attempts/failures and
