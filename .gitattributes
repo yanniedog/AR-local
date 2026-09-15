@@ -43,3 +43,7 @@ docs/evidence/backup-observation-20260911/** whitespace=cr-at-eol
 # Frozen cross-language schema and migration identities retain reviewed bytes.
 contracts/product_terms/drafts/eligibility-v2/* -text
 contracts/product_terms/drafts/eligibility-v2/* whitespace=cr-at-eol
+
+contracts/product_terms/monetary-v3/** -text whitespace=cr-at-eol
+tests/fixtures/monetary-v3/** -text whitespace=cr-at-eol
+tests/fixtures/monetary-v3/blobs/** -diff

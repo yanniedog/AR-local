@@ -17,7 +17,9 @@ def lookup_subject(store, identity):
             raise ValueError('Executable subject not found')
         value = json.loads(row['subject_json'])
         version = row['wire_version']
-        capability = {1: 'fixed_td_calculation', 2: 'eligibility_only'}.get(version)
+        capability = {1: 'fixed_td_calculation', 2: 'eligibility_only',3:'savings_calculation'}.get(version)
+        if version==3 and (row['kind'],value.get('kind'),value.get('adapterVersion'),value.get('evaluatorVersion'))!=('aud_savings_base_period_v1','aud_savings_base_period_v1','aud-savings-base-v1','product-terms-engine-v8'):
+            raise ValueError('Executable monetary registry tuple mismatch')
         if capability is None or value.get('schemaVersion') != version or row['capability'] != capability:
             raise ValueError('Executable registry wire/capability mismatch')
     else:
@@ -26,7 +28,11 @@ def lookup_subject(store, identity):
             raise ValueError('Executable subject not found')
         value = json.loads(row[0])
         version = 1
-    (validate_subject if version == 2 else validate_template)(value)
+    if version==3:
+        from .executable_v3_contract import validate_subject as validate_v3
+        validate_v3(value)
+    else:
+        (validate_subject if version == 2 else validate_template)(value)
     if value['id'] != identity:
         raise ValueError('Executable registry identity mismatch')
     return value
@@ -38,6 +44,9 @@ def stage_subject(store, subject, *, interpreter, staged_at, expected_previous_s
         if expected_previous_subject_id is not None:
             raise ValueError('Legacy staging does not reinterpret v2 scope predecessors')
         return stage_template(store, subject, interpreter=interpreter, staged_at=staged_at)
+    if subject.get('schemaVersion')==3:
+        from .executable_v3_registry import stage_subject as stage_v3
+        return stage_v3(store,subject,interpreter=interpreter,staged_at=staged_at,expected_previous_subject_id=expected_previous_subject_id)
     validate_subject(subject)
     if not isinstance(interpreter, str) or not interpreter.strip() or len(interpreter) > 256:
         raise ValueError('Executable interpreter identity required')
@@ -84,5 +93,18 @@ def review_subject(store, identity, **decision):
     if subject['schemaVersion'] == 1:
         from .executable_reviews import review_template
         return review_template(store,identity,**decision)
+    if subject['schemaVersion']==3:
+        from .executable_v3_reviews import review_subject as review_v3
+        return review_v3(store,identity,**decision)
     from .executable_v2_reviews import review_subject as review_v2
     return review_v2(store,identity,**decision)
+
+
+def migrate_executable_registry(store,*,wire_version,applied_at):
+    """Explicit controller migration selection; never implicitly activate a capability."""
+    if wire_version not in (2,3):raise ValueError('Unsupported executable migration version')
+    from .executable_v2_migration import migrate_registry
+    migrate_registry(store,applied_at=applied_at)
+    if wire_version==3:
+        from .executable_v3_migration import migrate_monetary_registry
+        migrate_monetary_registry(store,applied_at=applied_at)

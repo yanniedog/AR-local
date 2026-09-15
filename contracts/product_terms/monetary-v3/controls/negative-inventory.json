@@ -1,0 +1,147 @@
+[
+  {
+    "case": "unknown kind",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "carry residue",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "unsupported rounding",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "untyped authority",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "user fee decision",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "future execution",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "cleared_only with unknown or false openingFundsCleared",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "missing month-end due posting",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "extra or duplicated due posting",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "incorrect start/end posting boundary",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "explicit schedule lacking complete source coverage",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "canonical hash mismatch",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "wrong current routing product/core/details",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "missing historical member bytes/hash",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "observation only with uncovered days",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "wrong cohort tier package",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "conflicting overlapping authority",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "missing per-field or posting-event coverage",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "end after source completedThroughExclusive",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "tier gaps/inversion/no unlimited treatment",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "nonzero initial unposted balance",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "confirmed rate schedule mismatch",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "aggregate512member or24MiB decoded excess",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "wrong capability in savings shard",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "unreviewed negative/revoked approval",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "source snapshot substituted by current destination",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "duplicate rule IDs or undeclared scenario role",
+    "gate": "required semantic/admission/adapter validation, NOT implemented by this schema draft",
+    "rejected": null
+  },
+  {
+    "case": "wrong capability descriptor",
+    "gate": "schema",
+    "rejected": true
+  },
+  {
+    "case": "wrong role descriptor",
+    "gate": "schema",
+    "rejected": true
+  }
+]

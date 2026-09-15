@@ -1,0 +1,633 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Separate engineering ledger evidence-union control; not approved adapter transport or bank acceptance",
+  "recordedAt": "2026-09-15T07:35:49.382Z",
+  "sourceHead": "8f1cc0da6e39d5b5ab50ec44bab8c121e0856b3c",
+  "entrypoint": "mobile/src/lib/productTermsEngine/ledger.ts#calculateLedger",
+  "command": "node run.cjs",
+  "sourceManifestSha256": "3fad8f42fa1c3f5f5f46f71f1bcd68af328f6a419c6639adaab461e0c979973f",
+  "harnessSha256": "1d38a7d8599e3aa91d88f13f5b8b0f0323c97f312386977cf84bc59859f5bc0a",
+  "transpilerVersion": "5.9.3",
+  "input": {
+    "contract": {
+      "schemaVersion": 1,
+      "evaluatorVersion": "product-terms-engine-v8",
+      "id": "a519d597e6660c9c0e8e6a2de635c9f1389062fbfa1c2079ba1bd03741cd5cde",
+      "productId": "technical-savings-only",
+      "direction": "asset",
+      "currency": "AUD",
+      "review": {
+        "applicability": "verified",
+        "materialTerms": "verified",
+        "feeCoverage": "verified",
+        "rateSchedule": "verified",
+        "benchmarkSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "applicability": {
+        "cohortKey": "technical-cohort",
+        "from": "2026-01-01",
+        "toExclusive": "2026-01-11"
+      },
+      "evidence": [
+        {
+          "id": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "clauseId": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "documentVersionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "documentSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "sourceUrl": "https://example.invalid/technical-only",
+          "locator": "Engineering schema example",
+          "quote": "Technical example only: base rate 0.0365, actual/365, explicit dates and rounding. Not a bank source.",
+          "quoteSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        },
+        {
+          "id": "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b",
+          "clauseId": "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b",
+          "documentVersionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "documentSha256": "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "sourceUrl": "https://example.invalid/technical-only",
+          "locator": "Engineering schema example",
+          "quote": "Engineering fee and rounding evidence B only; no bank authority.",
+          "quoteSha256": "184b2ad593a691f4a60f1376fc19bdd85945a7851d946c3d3e4b5482375197c2"
+        }
+      ],
+      "dependencyIds": [
+        "2a43e380e74c4727c51f5e5fe5386e52dca5de536ceee9ec1f915292ec32e663",
+        "ab8f328b8dd147c8e8ca00874025689144f01fa69739112b8679a474e15443ed",
+        "c19f8ed8a85bd21ca771f2f2d04ff645ac95a8b3fcaa15dffc36e86c8b28b418",
+        "46c128252f54cafe969df99c45399c7a818be881a33c5c409d1cbd919c89a4bf",
+        "8ea5a7bd9c8a0bf9bf972a4e00e766a0e33b5cd5e923d0601878e12a3810bb44",
+        "3d10bc06b21b5c79aeeeacf75d993b4ea681713d8decef1d8b77ec821c4c39c6",
+        "621a0cd6ebd95b1a9801f1384f63c4c4481b93649b1bbe43d3ff8276e89e85e7",
+        "4ae2640a579ce93fb54ec06406754956d3f1ee5ef8a0d82669b92126b389100c",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "unsupportedTerms": [],
+      "eligibility": {
+        "id": "nonnegative-balance",
+        "op": "compare",
+        "field": "balance",
+        "comparison": "gte",
+        "expected": {
+          "type": "decimal",
+          "value": "0",
+          "unit": "AUD"
+        },
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ]
+      },
+      "initialAnnualRate": "0",
+      "initialRateEvidenceIds": [
+        "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+      ],
+      "interest": {
+        "dayCount": "actual_365_fixed",
+        "balanceBasis": "closing_balance_before_posted_interest",
+        "eventOrder": "ordered_events_then_accrual_then_posting",
+        "dailyAccrualScale": null,
+        "dailyRateRounding": null,
+        "accrualRounding": "half_up",
+        "postingRounding": "half_up",
+        "postingDates": [
+          "2026-01-10"
+        ],
+        "offset": "none",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ]
+      },
+      "savingsSchedule": {
+        "schemaVersion": 1,
+        "dailyAccrualRounding": "aggregate",
+        "intervals": [
+          {
+            "id": "period-1",
+            "from": "2026-01-01",
+            "toExclusive": "2026-01-11",
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ],
+            "components": [
+              {
+                "id": "period-1:base",
+                "kind": "base",
+                "allocation": "marginal",
+                "rateMeaning": "additive",
+                "tiers": [
+                  {
+                    "id": "tier-1",
+                    "upperInclusive": null,
+                    "annualRate": "0.0365",
+                    "evidenceIds": [
+                      "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                    ]
+                  }
+                ],
+                "qualification": null,
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "feeSchedule": {
+        "schemaVersion": 1,
+        "accountId": "local-account-1",
+        "from": "2026-01-01",
+        "toExclusive": "2026-01-11",
+        "inventoryCoverage": "reviewed_complete",
+        "deferredObligations": "none_confirmed",
+        "evidenceIds": [
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "inventory": [
+          {
+            "categoryId": "all_fees",
+            "state": "none_applicable",
+            "feeIds": [],
+            "evidenceIds": [
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ],
+        "ordering": "before_scenario_events",
+        "fees": []
+      }
+    },
+    "scenario": {
+      "accountId": "local-account-1",
+      "productId": "technical-savings-only",
+      "cohortKey": "technical-cohort",
+      "startDate": "2026-01-01",
+      "endDateExclusive": "2026-01-11",
+      "openingBalance": "1000.00",
+      "initialOffset": "0",
+      "facts": {
+        "balance": {
+          "type": "decimal",
+          "value": "1000",
+          "unit": "AUD"
+        },
+        "start": {
+          "type": "date",
+          "value": "2026-01-01"
+        },
+        "end": {
+          "type": "date",
+          "value": "2026-01-11"
+        }
+      },
+      "events": [],
+      "assumptions": []
+    }
+  },
+  "inputSha256": "7a8a9a393abd64578d649b637688906b29a86fa10ba7b726b0c7149a0e5da804",
+  "result": {
+    "schemaVersion": 1,
+    "evaluatorVersion": "product-terms-engine-v8",
+    "inputSha256": "c4a61e28b8eee3f1021432da52bb30dad0c7a3aaabf346cddf9ac4b87139a076",
+    "contractId": "a519d597e6660c9c0e8e6a2de635c9f1389062fbfa1c2079ba1bd03741cd5cde",
+    "dependencies": [
+      "2a43e380e74c4727c51f5e5fe5386e52dca5de536ceee9ec1f915292ec32e663",
+      "ab8f328b8dd147c8e8ca00874025689144f01fa69739112b8679a474e15443ed",
+      "c19f8ed8a85bd21ca771f2f2d04ff645ac95a8b3fcaa15dffc36e86c8b28b418",
+      "46c128252f54cafe969df99c45399c7a818be881a33c5c409d1cbd919c89a4bf",
+      "8ea5a7bd9c8a0bf9bf972a4e00e766a0e33b5cd5e923d0601878e12a3810bb44",
+      "3d10bc06b21b5c79aeeeacf75d993b4ea681713d8decef1d8b77ec821c4c39c6",
+      "621a0cd6ebd95b1a9801f1384f63c4c4481b93649b1bbe43d3ff8276e89e85e7",
+      "4ae2640a579ce93fb54ec06406754956d3f1ee5ef8a0d82669b92126b389100c",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "status": "complete",
+    "completeness": "factual_complete",
+    "issueDetails": [],
+    "claimAvailable": true,
+    "issues": [],
+    "assumptions": [],
+    "eligibility": {
+      "status": "meets",
+      "trace": {
+        "id": "nonnegative-balance",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+        ],
+        "status": "meets"
+      },
+      "reasons": []
+    },
+    "totals": {
+      "openingBalance": "1000.00",
+      "externalCashflowNet": "0.00",
+      "principalRepaid": null,
+      "externalInflows": "0.00",
+      "externalOutflows": "0.00",
+      "interestAccrued": "1.000000000000",
+      "interestPosted": "1.00",
+      "interestUnposted": "0.000000000000",
+      "feesCharged": "0.00",
+      "closingBalance": "1001.00",
+      "feesDebitedBalance": "0.00",
+      "feesPaidExternal": "0.00",
+      "interestRoundingAdjustment": "0.000000000000"
+    },
+    "ledger": [
+      {
+        "date": "2026-01-01",
+        "id": "accrue:2026-01-01",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-02",
+        "id": "accrue:2026-01-02",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-03",
+        "id": "accrue:2026-01-03",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-04",
+        "id": "accrue:2026-01-04",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-05",
+        "id": "accrue:2026-01-05",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-06",
+        "id": "accrue:2026-01-06",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-07",
+        "id": "accrue:2026-01-07",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-08",
+        "id": "accrue:2026-01-08",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-09",
+        "id": "accrue:2026-01-09",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-10",
+        "id": "accrue:2026-01-10",
+        "type": "interest_accrual",
+        "amount": "0.100000000000",
+        "balance": "1000.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ],
+        "savingsContributions": [
+          {
+            "intervalId": "period-1",
+            "componentId": "period-1:base",
+            "kind": "base",
+            "allocation": "marginal",
+            "status": "applied",
+            "assessmentId": null,
+            "qualification": null,
+            "tiers": [
+              {
+                "id": "tier-1",
+                "basis": "1000.00",
+                "annualRate": "0.0365",
+                "accrual": "0.100000000000",
+                "evidenceIds": [
+                  "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866"
+                ]
+              }
+            ],
+            "evidenceIds": [
+              "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+              "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-01-10",
+        "id": "post:2026-01-10",
+        "type": "interest_posting",
+        "amount": "1.00",
+        "balance": "1001.00",
+        "evidenceIds": [
+          "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+          "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+        ]
+      }
+    ]
+  },
+  "resultSha256": "89afc9636d08f9a7966ac2e5659471f9f348fe58b3697ae4325812c55c6dc3f1",
+  "expected": {
+    "closingBalance": "1001.00",
+    "accrualEvidenceIds": [
+      "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+      "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+    ],
+    "contributionEvidenceIds": [
+      "f7d4bf8e6edda8039fa9040eaf62a9b36e12fff80187af98a45542969e576866",
+      "00d9e022bdcd3a740cf67db89501f8e994cca32c28af6259928470f1f3df028b"
+    ]
+  }
+}

@@ -19,9 +19,9 @@ def iter_payload_assets(manifest):
     files = manifest.get('files')
     if not isinstance(files, dict):
         raise ValueError('Payload files must be an object')
-    if any(str(key).startswith('executable_v2_') for key in files):
+    if any(str(key).startswith(('executable_v2_','monetary_v3_','executable_v3_')) for key in files):
         raise ValueError('Executable v2 descriptors must be outside legacy files')
-    if 'executable_v2' not in manifest:
+    if 'executable_v2' not in manifest and 'executable_v3' not in manifest:
         yield from files.items()
         return
     names = set()
@@ -33,11 +33,18 @@ def iter_payload_assets(manifest):
             raise ValueError('Payload asset names must be unique')
         names.add(name)
         yield key, entry
-    namespace = manifest.get('executable_v2')
-    if namespace is None:
-        raise ValueError('Executable namespace cannot be null')
-    Draft202012Validator(json.loads(SCHEMA.read_bytes())).validate(namespace)
-    entries = [('executable_v2_index', namespace['index']), *namespace['shards'].items()]
+    entries=[]
+    if 'executable_v2' in manifest:
+        namespace=manifest['executable_v2']
+        if namespace is None:raise ValueError('Executable namespace cannot be null')
+        Draft202012Validator(json.loads(SCHEMA.read_bytes())).validate(namespace)
+        entries.extend([('executable_v2_index',namespace['index']),*namespace['shards'].items()])
+    if 'executable_v3' in manifest:
+        namespace=manifest['executable_v3']
+        from cdr_terms.executable_v3_contract import schema_validate
+        schema_validate(namespace,'namespace',64*1024)
+        for capability,route in namespace['capabilities'].items():
+            entries.extend([(f'monetary_v3_{capability}_index',route['index']),*route['shards'].items()])
     for key, entry in entries:
         expected = f"{key}-{manifest.get('run_date')}-{entry['sha256'][:12]}.json.gz"
         if entry['name'] != expected or entry['name'] in names:
@@ -61,7 +68,7 @@ def executable_asset_url(manifest, entry, *, repo):
     if (revision.get('schema_version') != 1 or revision.get('bundle_sha256') != identity
             or revision.get('generation_id') != 'sha256-' + identity):
         raise ValueError('Executable immutable bundle identity differs')
-    candidates = [value for key, value in iter_payload_assets(manifest) if key.startswith('executable_v2_')]
+    candidates = [value for key, value in iter_payload_assets(manifest) if key.startswith(('executable_v2_','monetary_v3_'))]
     if entry not in candidates:
         raise ValueError('Executable descriptor is outside adopted namespace')
     return f"https://github.com/{repo}/releases/download/{tag}/{entry['name']}"

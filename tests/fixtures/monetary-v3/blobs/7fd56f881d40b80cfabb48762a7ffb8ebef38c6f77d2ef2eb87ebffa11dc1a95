@@ -1,0 +1,47 @@
+import { utf8ToBytes } from '@noble/hashes/utils';
+import { canonical, hashText, nonNegative } from '../../lib/productTermsEngine/validation';
+import { Decimal } from '../../lib/productTermsEngine/decimal';
+import { dayNumber } from '../../lib/productTermsEngine/calendar';
+import { calculateLedger } from '../../lib/productTermsEngine/ledger';
+import { EVALUATOR_VERSION, type LedgerContract, type LedgerScenario } from '../../lib/productTermsEngine/types';
+import { safeId, type CustomerProfile } from '../customerProfile';
+import { assertSavingsSelection, type SavingsSelection, type SavingsContext, type SavingsTarget } from './transport';
+import { savingsFacts, type SavingsPeriodInputs } from './facts';
+import { SAVINGS_ADAPTER } from './types';
+/** Source policy is producer reviewed; raw historical archives are not verified on-device. */
+export function instantiateSavingsPeriod(selection: SavingsSelection, context: SavingsContext, target: SavingsTarget, inputs: SavingsPeriodInputs, profile: CustomerProfile) {
+  const binding = assertSavingsSelection(selection, context, target), s = selection.subject, p = s.policy;
+  if (inputs && ![true, false, null].includes(inputs.openingFundsCleared)) throw new Error('Opening funds must be confirmed cleared or explicitly marked unknown');
+  const allowed = ['accountId','startDate','endDateExclusive','openingBalance','confirmedAnnualRates','confirmedAt','openingAccrualZero','openingFundsCleared','noMovements','noWithholding'];
+  if (!inputs || Object.keys(inputs).some(k => !allowed.includes(k)) || !safeId(inputs.accountId) || !inputs.confirmedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(inputs.confirmedAt) || !Number.isFinite(Date.parse(inputs.confirmedAt)) || inputs.openingAccrualZero !== true || inputs.noMovements !== true || inputs.noWithholding !== true || ![true,false,null].includes(inputs.openingFundsCleared)) throw new Error('Confirm the complete local account period and withholding treatment');
+  dayNumber(inputs.confirmedAt.slice(0,10)); const start = dayNumber(inputs.startDate), end = dayNumber(inputs.endDateExclusive);
+  if (end <= start || end - start > p.maxHorizonDays || inputs.startDate < s.scope.from || inputs.endDateExclusive > s.scope.toExclusive || inputs.endDateExclusive > s.authorityGraph.completedPeriod.completedThroughExclusive) throw new Error('Account period is outside source-reviewed historical coverage');
+  const opening = nonNegative(inputs.openingBalance), intervals = p.intervals.filter(i => i.from < inputs.endDateExclusive && i.toExclusive > inputs.startDate);
+  if (intervals.some(i => i.interest.depositSettlementBasis === 'cleared_only') && inputs.openingFundsCleared !== true) throw new Error('All opening funds must be confirmed cleared for this policy');
+  const requiredRates = intervals.flatMap(i => i.tiers.map(t => ({ intervalId: i.id, tierId: t.id, annualRate: t.annualRate })));
+  if (!Array.isArray(inputs.confirmedAnnualRates) || inputs.confirmedAnnualRates.length !== requiredRates.length) throw new Error('Confirm every applicable account rate tier');
+  const keys = new Set<string>(); for (const rate of inputs.confirmedAnnualRates) {
+    if (!rate || Object.keys(rate).sort().join(',') !== 'annualRate,intervalId,tierId' || typeof rate.annualRate !== 'string' || !/^\d+(\.\d{1,12})?$/.test(rate.annualRate)) throw new Error('Account rate confirmation invalid');
+    const key = canonical([rate.intervalId, rate.tierId]), expected = requiredRates.find(r => r.intervalId === rate.intervalId && r.tierId === rate.tierId);
+    if (keys.has(key) || !expected || Decimal.parse(rate.annualRate).compare(Decimal.parse(expected.annualRate)) !== 0) throw new Error('Confirmed account rates differ from the reviewed historical schedule'); keys.add(key);
+  }
+  const { facts, customerAnswers } = savingsFacts(s, inputs, profile), allRefs = [...new Set(s.evidence.map(e => e.id))];
+  const contract: LedgerContract = {
+    schemaVersion: 1, evaluatorVersion: EVALUATOR_VERSION, id: s.id, productId: s.scope.productKey, direction: 'asset', currency: 'AUD',
+    review: { applicability: 'verified', materialTerms: 'verified', feeCoverage: 'verified', rateSchedule: 'verified', benchmarkSha256: selection.approval.benchmarkResultSha256 },
+    applicability: { cohortKey: s.scope.cohortKey, from: inputs.startDate, toExclusive: inputs.endDateExclusive }, evidence: s.evidence, dependencyIds: [...new Set([...Object.values(binding), ...s.documentVersionIds, ...s.termRevisionIds])], unsupportedTerms: [], eligibility: p.eligibility, initialAnnualRate: '0', initialRateEvidenceIds: intervals[0].fieldEvidenceIds.rates,
+    interest: { dayCount: 'actual_365_fixed', balanceBasis: 'closing_balance_before_posted_interest', eventOrder: 'ordered_events_then_accrual_then_posting', dailyAccrualScale: intervals[0].interest.dailyAccrualScale, dailyRateRounding: intervals[0].interest.dailyRateRounding, accrualRounding: intervals[0].interest.accrualRounding, postingRounding: intervals[0].interest.postingRounding, postingDates: p.postingInventory.dueDates.filter(d => d >= inputs.startDate && d < inputs.endDateExclusive), offset: 'none', evidenceIds: allRefs },
+    savingsSchedule: { schemaVersion: 1, dailyAccrualRounding: intervals[0].interest.dailyAccrualRounding, intervals: intervals.map(i => ({ id: i.id, from: i.from < inputs.startDate ? inputs.startDate : i.from, toExclusive: i.toExclusive > inputs.endDateExclusive ? inputs.endDateExclusive : i.toExclusive, evidenceIds: [...new Set(Object.values(i.fieldEvidenceIds).flat())], components: [{ id: `${i.id}:base`, kind: 'base', allocation: i.allocation, rateMeaning: 'additive', tiers: i.tiers, qualification: null, evidenceIds: i.fieldEvidenceIds.rates }] })) },
+    feeSchedule: { schemaVersion: 1, accountId: inputs.accountId, from: inputs.startDate, toExclusive: inputs.endDateExclusive, inventoryCoverage: 'reviewed_complete', deferredObligations: 'none_confirmed', evidenceIds: p.fees.evidenceIds, inventory: p.fees.inventory.map(f => ({ categoryId: f.categoryId, state: 'none_applicable', feeIds: [], evidenceIds: f.evidenceIds })), ordering: 'before_scenario_events', fees: [] },
+  };
+  const scenario: LedgerScenario = { accountId: inputs.accountId, productId: s.scope.productKey, cohortKey: s.scope.cohortKey, startDate: inputs.startDate, endDateExclusive: inputs.endDateExclusive, openingBalance: opening.fixed(), initialOffset: '0', facts, events: [], assumptions: [] };
+  const requestedTarget = target.kind === 'product' ? { kind: target.kind, productKey: target.productKey, productRecordSha256: s.routing.productRecordSha256 } : { kind: target.kind, productKey: target.productKey, productRecordSha256: s.routing.productRecordSha256, section: target.section, coreRowIndex: context.core!.sections[target.section].rates.indexOf(target.row), rateIndex: target.row.rate_index, rowSha256: hashText(canonical(target.row)) };
+  const adapterInputs = JSON.parse(canonical({ subject: s, approval: selection.approval, binding, target: requestedTarget, inputs, customerAnswers, facts }));
+  if (utf8ToBytes(canonical(adapterInputs)).length > 512 * 1024) throw new Error('Savings adapter input limit');
+  return { adapterInputs, contract, scenario };
+}
+export function calculateSavingsPeriod(selection: SavingsSelection, context: SavingsContext, target: SavingsTarget, inputs: SavingsPeriodInputs, profile: CustomerProfile) {
+  const { adapterInputs, contract, scenario } = instantiateSavingsPeriod(selection, context, target, inputs, profile);
+  const result = { schemaVersion: 1, evaluationKind: 'savings_calculation', adapterVersion: SAVINGS_ADAPTER, evaluatorVersion: EVALUATOR_VERSION, verificationScope: 'Approved structured historical authority and current publication verified on-device; original historical source bytes verified by producer, not downloaded here.', basis: 'Historical holding result before tax. Account rates and facts confirmed by you, not independently verified bank account data.', adapterInputs, inputSha256: hashText(canonical(adapterInputs)), calculationInputs: { contract, scenario }, receipt: calculateLedger(contract, scenario) };
+  if (utf8ToBytes(canonical(result)).length > 4 * 1024 * 1024) throw new Error('Savings receipt limit'); return result;
+}
