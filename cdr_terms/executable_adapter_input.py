@@ -14,7 +14,7 @@ def validate_adapter_input(local, inputs, template, result, execution_kind):
         raise ValueError('Executable raw adapter input shape mismatch')
     if (local['confirmed'] is not True or local['noWithholdingConfirmed'] is not True
             or not isinstance(local['principal'], str)
-            or not re.fullmatch(r'[0-9]{1,32}(?:\.[0-9]{1,2})?', local['principal'])
+            or not re.fullmatch(r'(?:0|[1-9][0-9]{0,31})(?:\.[0-9]{1,2})?', local['principal'])
             or Decimal(local['principal']) <= 0):
         raise ValueError('Executable raw adapter confirmation/amount invalid')
     rate = local['confirmedAnnualRate']
@@ -25,6 +25,7 @@ def validate_adapter_input(local, inputs, template, result, execution_kind):
             raise ValueError('Executable raw adapter date malformed')
         date.fromisoformat(local[key])
     if (not isinstance(local['confirmedAt'], str)
+            or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])', local['confirmedAt'])
             or datetime.fromisoformat(local['confirmedAt'].replace('Z', '+00:00')).tzinfo is None):
         raise ValueError('Executable raw adapter confirmation time invalid')
     scenario = inputs['scenario']
@@ -48,6 +49,18 @@ def validate_adapter_input(local, inputs, template, result, execution_kind):
             or Decimal(confirmation['annualRate']) != Decimal(rate)):
         raise ValueError('Executable raw adapter input propagation mismatch')
     contract = inputs['contract']
+    whole, _, fraction = local['principal'].partition('.')
+    canonical_principal = whole + '.' + fraction.ljust(2, '0')
+    if any(value != canonical_principal for value in (
+            confirmation['principal'], scenario['openingBalance'], contract['tdLifecycle']['investmentAmount'])):
+        raise ValueError('Executable raw adapter principal differs from lifecycle')
+    raw_facts = {'deposit_principal': local['principal'], 'funded_date': local['fundedDate'],
+                 'maturity_date': local['maturityDate']}
+    for definition in template['inputDefinitions']:
+        if definition['binding'] in raw_facts:
+            fact = scenario['facts'].get(definition['key'])
+            if not isinstance(fact, dict) or fact.get('value') != raw_facts[definition['binding']]:
+                raise ValueError('Executable raw scenario-owned fact propagation mismatch')
     if confirmation['maturityDate'] != contract['tdLifecycle']['nominalMaturityDate']:
         raise ValueError('Executable raw adapter maturity propagation mismatch')
     return (result['status'] == 'unsupported' and execution_kind == 'evaluator_fault_injection'

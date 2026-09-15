@@ -204,3 +204,16 @@ strings. The retained unsupported v7 fault-injection scenario retains its origin
 engine-valid amount spelling; all complete cases and v8 cases require canonical
 adapter spelling. Source snapshots reuse the already validated product projection
 within that operation, with no persistent authorization cache.
+
+The v8 rate-refusal control relaxes only the opened annual-rate equality.
+Raw principal is converted losslessly to the adapter's two-decimal projection;
+scenario, confirmation and lifecycle amounts must all match it. Scenario-owned
+principal and date facts remain bound even for refusal cases. Confirmation source,
+withholding, funding/maturity dates and supported zoned ISO timestamps must satisfy
+the checks that precede the retained evaluator's rate error. Timestamp transport
+accepts a T separator, seconds, optional 1-3 fractional digits, and Z or HH:MM
+offset; Python-only timestamp spellings cannot certify JavaScript execution.
+Actual immutable v8 tdValidation vectors record the earlier confirmation error
+for conflicting amounts/dates/metadata. They are validation-order evidence with
+a no-op evidence-reference callback, not a new financial acceptance benchmark.
+Unknown customer eligibility is not promoted into a pre-rate refusal condition.
