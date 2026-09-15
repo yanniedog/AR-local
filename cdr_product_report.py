@@ -348,8 +348,9 @@ def _prepare_history_exports(output, source, summary, raw, exports, historical_b
     return row_counts
 
 
-def generate(root: Path, output: Path, history_audit: Path | None = None,
-             metrics_doc: Path | None = None, metrics_code_base: str | None = None):
+def _generate(root: Path, output: Path, history_audit: Path | None = None,
+              metrics_doc: Path | None = None, metrics_code_base: str | None = None,
+              terms_evidence: Path | None = None):
     root, output = root.resolve(), output.resolve()
     if root == output or root in output.parents or output in root.parents:
         raise ValueError('report output must be separate from all input evidence')
@@ -361,6 +362,18 @@ def generate(root: Path, output: Path, history_audit: Path | None = None,
             raise ValueError('report output must be separate from historical audit')
     manifest, payloads, evidence = read_bundle(root)
     products, rows, full = inventory_products(payloads['core'], payloads['details'])
+    attached = seal = None
+    if terms_evidence is not None:
+        from cdr_report_terms import admit_evidence, bundle_binding
+        binding, keys = bundle_binding(manifest, payloads, evidence)
+        attached, seal = admit_evidence(terms_evidence, binding, keys)
+        for item in full:
+            summary = item['summary']
+            proof = attached['products'][summary['product_key']]
+            item['terms_evidence'] = proof
+            summary['document_capture'] = proof['status']
+            summary['executable_terms_coverage'] = 'reported_scopes' if proof['delivered'] else 'not_delivered'
+            summary['evidence_class'] = proof['evidence_class']
     banks = bank_inventory(products, payloads['core'])
     fields = field_inventory(rows, payloads['details'])
     report = {'schema_version': 1, 'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -392,6 +405,17 @@ def generate(root: Path, output: Path, history_audit: Path | None = None,
         'product-parameters.csv': write_csv(output / 'product-parameters.csv', detail_rows(full)),
         'historical-metrics.csv': write_csv(output / 'historical-metrics.csv', historical_rows(payloads)),
     }
+    if attached is not None:
+        from cdr_report_terms import encoded
+        (output / 'terms-evidence.json').write_bytes(encoded(attached))
+        report['terms_evidence'] = {'seal': seal, 'binding': attached['binding'],
+                                  'bank_approved_products': None, 'product_denominator': len(products)}
+        report['limitations'][1] = 'Complete document and material-field inventories remain unknown; attached records describe observed evidence only.'
+        report['limitations'].append('Attached evidence is selected-observation inventory; private review is not delivery or bank acceptance.')
+        report['export_row_counts']['terms-evidence.csv'] = write_csv(output / 'terms-evidence.csv',
+            ({'product_key': key, 'status': row['status'], 'evidence_class': row['evidence_class'],
+              'bank_approved': None, 'evidence_json': json.dumps(row, ensure_ascii=False, sort_keys=True)}
+             for key, row in attached['products'].items()))
     if history_audit:
         attach_history(report, history_audit, output)
     if metrics_doc:
@@ -411,15 +435,40 @@ def generate(root: Path, output: Path, history_audit: Path | None = None,
     return report
 
 
+def generate(root: Path, output: Path, history_audit: Path | None = None,
+             metrics_doc: Path | None = None, metrics_code_base: str | None = None,
+             terms_evidence: Path | None = None):
+    if terms_evidence is None:
+        return _generate(root, output, history_audit, metrics_doc, metrics_code_base)
+    import shutil
+    output = output.resolve()
+    for source in (root, terms_evidence, history_audit):
+        if source is not None:
+            source = source.resolve()
+            if output == source or output in source.parents or source in output.parents:
+                raise ValueError('Report output must be separate from evidence')
+    if output.exists():
+        raise ValueError('use a new immutable report directory')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.report-terms-', dir=output.parent))
+    try:
+        report = _generate(root, stage / 'report', history_audit, metrics_doc, metrics_code_base, terms_evidence)
+        os.rename(stage / 'report', output)
+        return report
+    finally:
+        shutil.rmtree(stage)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bundle', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--history-audit', type=Path)
     parser.add_argument('--metrics-doc', type=Path)
+    parser.add_argument('--terms-evidence', type=Path, help='Sealed read-only selected-observation evidence export.')
     parser.add_argument('--metrics-code-base', help='Exact GitHub commit URL for portable dictionary code links.')
     args = parser.parse_args()
-    report = generate(args.bundle, args.output, args.history_audit, args.metrics_doc, args.metrics_code_base)
+    report = generate(args.bundle, args.output, args.history_audit, args.metrics_doc, args.metrics_code_base, args.terms_evidence)
     print(json.dumps({'result': 'BASELINE_INVENTORY', 'published_counts': report['published_counts'],
                       'exports': report['export_row_counts'], 'output': str(args.output.resolve())}))
 
