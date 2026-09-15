@@ -11,6 +11,7 @@ from .executable_v3_contract import validate_subject
 from .executable_v3_evidence import evidence_checked,evidence_operation,MAX_MEMBER
 from .revisions import APPLICABILITY_FIELDS
 from .monetary_capabilities import periods
+from .structured_contract import evidence_reads
 
 
 def _json(operation,identity,compressed=False):
@@ -123,6 +124,8 @@ def _historical_snapshot(store,subject,snapshot,operation):
 def _revisions(store,subject,operation):
     result={};scope=subject['scope']
     for identity in subject['termRevisionIds']:
+        from .structured_admission import validate_term
+        validate_term(store, identity, current=False)
         row=store.db.execute('SELECT t.*,o.product_key FROM term_revisions t JOIN observations o USING(observation_id) WHERE term_revision_id=?',(identity,)).fetchone()
         review=store.db.execute('SELECT * FROM reviews WHERE term_revision_id=? ORDER BY sequence DESC LIMIT 1',(identity,)).fetchone()
         if row is None or review is None or review['status']!='validated' or row['product_key']!=scope['productKey']:
@@ -219,6 +222,7 @@ def _clauses(store,subject,revisions,operation):
 
 
 @evidence_checked
+@evidence_reads
 def source_snapshot(store,subject):
     validate_subject(subject)
     with evidence_operation(store) as operation:

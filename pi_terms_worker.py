@@ -35,6 +35,7 @@ PUBLIC_CONTEXT_FIELDS = frozenset({
     'product_keys', 'source_product_sha256', 'document_schema_version',
     'structured_fact_normalization', 'interpretation_contract', 'executable_rules',
     'historical_target', 'incorporated_target', 'parameter_registry', 'interpretation_schema_sha256',
+    'structure_review',
 })
 
 
@@ -116,6 +117,10 @@ def prepare_job(store: EvidenceStore, job: dict, root: Path) -> None:
     payload = {'extraction_id': job['extraction_id'], 'context_sha256': job['context_sha256'],
                'context': context,
                'source_text': store.read_blob(job['text_sha256']).decode('utf-8')}
+    from cdr_terms.structured_admission import validate_context
+    structure = validate_context(store, job['extraction_id'], context)
+    if structure is not None:
+        payload['reviewed_structure'] = structure
     if 'historical_target' in context:
         from cdr_terms.historical import historical_scope
         payload['expected_historical_scope'] = historical_scope(context['historical_target'])
