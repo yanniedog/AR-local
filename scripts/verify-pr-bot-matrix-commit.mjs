@@ -77,3 +77,28 @@ for (const unsafe of ['DELETE legacy branch protection', 'commits reports/* dire
   if (operator.includes(unsafe)) throw new Error('Operator still requests matrix protection bypass');
 }
 console.log('PASS summary removes artifact-relative footer; operator preserves protection');
+
+// Unsafe imported templates must refuse before local verifier commands or GitHub access.
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+const { tmpdir } = await import('node:os');
+const { join, resolve } = await import('node:path');
+const ruleset = JSON.parse(readFileSync(new URL('../.github/rulesets/main-bot-gates.json', import.meta.url), 'utf8'));
+if (!Array.isArray(ruleset.bypass_actors) || ruleset.bypass_actors.length) throw new Error('Imported template permits protection bypass');
+const fixture = mkdtempSync(join(tmpdir(), 'ar-ruleset-refusal-'));
+try {
+  mkdirSync(join(fixture, 'scripts'));
+  mkdirSync(join(fixture, '.github', 'rulesets'), { recursive: true });
+  writeFileSync(join(fixture, 'scripts', 'github-bot-gates-operator.mjs'), operator);
+  for (const actors of [[{ actor_id: 15368, actor_type: 'Integration', bypass_mode: 'always' }], [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' }], null]) {
+    writeFileSync(join(fixture, '.github', 'rulesets', 'main-bot-gates.json'), JSON.stringify({ ...ruleset, bypass_actors: actors }));
+    const result = spawnSync(process.execPath, [join(fixture, 'scripts', 'github-bot-gates-operator.mjs')], { encoding: 'utf8' });
+    if (result.status !== 1 || !result.stderr.includes('must declare an empty bypass_actors list') || result.stdout.includes('Local policy self-tests')) {
+      throw new Error('Unsafe ruleset did not refuse before operator verification');
+    }
+  }
+} finally {
+  const target = resolve(fixture);
+  if (!target.startsWith(resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/')) || !target.includes('ar-ruleset-refusal-')) throw new Error('Unexpected temporary fixture path');
+  rmSync(target, { recursive: true, force: true });
+}
+console.log('PASS operator rejects Actions, role and malformed bypass lists');
