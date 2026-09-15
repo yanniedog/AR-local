@@ -1,6 +1,6 @@
 # PR bot feedback matrix
 
-Automated in-repo matrix tracking how each review bot responded to merged PRs. The workflow commits GitHub-rendered markdown (primary), colored HTML, and machine-readable JSON — no Google Sheets or external secrets.
+Read-only report of review bot feedback on merged PRs. Each workflow run publishes a Markdown job summary and downloadable Markdown, HTML and JSON files. It creates no commits or pull requests.
 
 | Dimension | Content |
 |-----------|---------|
@@ -10,15 +10,9 @@ Automated in-repo matrix tracking how each review bot responded to merged PRs. T
 
 ## Viewing the matrix on GitHub
 
-| Artifact | Path | How to view |
-|----------|------|-------------|
-| **Markdown (primary)** | [`reports/pr-bot-matrix.md`](../reports/pr-bot-matrix.md) | Renders as a scannable table on GitHub with **PASS** / **FAIL** / **LIMIT** labels. |
-| **Colored table** | [`reports/pr-bot-matrix.html`](../reports/pr-bot-matrix.html) | Open the file on GitHub, click **Raw**, or paste the raw URL in a browser — the HTML renders with cell background colors. |
-| **JSON** | [`reports/pr-bot-matrix.json`](../reports/pr-bot-matrix.json) | Browse on GitHub or consume in scripts/CI. |
+Open the latest successful [pr-bot-spreadsheet Actions run](https://github.com/yanniedog/AR-local/actions/workflows/pr-bot-spreadsheet.yml). Read its job summary or download `pr-bot-matrix-RUN_ID-ATTEMPT`; artifacts remain available for 30 days. HTML and JSON are included in the download.
 
-Raw URL pattern (replace `OWNER/REPO` and branch):
-
-`https://github.com/OWNER/REPO/blob/main/reports/pr-bot-matrix.md`
+The tracked `reports/pr-bot-matrix.{md,html,json}` files are retained historical snapshots, not the current automated report.
 
 ## Cell colors
 
@@ -54,43 +48,9 @@ Triggers:
 - **On PR merge** (`pull_request` closed + merged)
 - **Manual** `workflow_dispatch` (optional `--limit`, single `--pr`)
 
-After sync, the job commits matrix artifacts **directly to `main`** via `npm run pr:bot-matrix:commit` (no PR loop). `pi-deploy-on-main` ignores `reports/**` pushes.
+Each run generates into a fresh temporary directory, adds Markdown to the job summary, and uploads all three files. A manual single-PR run contains that PR only; it never incorporates the tracked historical report. `limit` accepts 1–100 and `pr_number` accepts a positive integer of at most nine digits. Inputs are validated as data before invoking the generator.
 
-### Direct commit to main (one-time GitHub setup)
-
-Protected `main` requires `bot-presence-gate` and `bot-feedback-gate`. A workflow push does not run those checks first, so GitHub rejects the push unless **GitHub Actions** is on the ruleset bypass list.
-
-**API limitation:** `gh api` cannot add a GitHub Actions ruleset bypass on this personal repo (`yanniedog/AR-local` returns HTTP **422** when POSTing `bypass_actors` with `actor_id` 15368). Use the GitHub UI — import [`.github/rulesets/main-bot-gates.json`](../.github/rulesets/main-bot-gates.json) per [`docs/GITHUB_RULESET_IMPORT.md`](GITHUB_RULESET_IMPORT.md).
-
-**Legacy → ruleset migration** (repo still has legacy branch protection on `main`):
-
-1. **Import** the ruleset JSON (Settings → Rules → Rulesets → Import) — mirrors legacy protection: required checks `bot-feedback-gate` + `bot-presence-gate`, strict up-to-date, required conversation resolution (do not add repository administrators to the bypass list — rulesets have no `enforce_admins` toggle; omitting admins from bypass mirrors legacy behavior).
-2. Confirm **Bypass list → GitHub Actions** (mode: **Always**, included in the import file). Optionally scope it to `.github/workflows/pr-bot-spreadsheet.yml` when path scoping is available.
-3. **Save**, verify with the commands below, then **remove duplicate legacy branch protection** on `main` (Settings → Branches → `main` → Delete rule). Keeping both layers blocks workflow pushes even when the ruleset bypass is correct.
-
-**Verify** (after bypass + legacy rule removed):
-
-```sh
-# Local self-tests (no GitHub push)
-npm run pr:bot-matrix-commit:verify
-npm run pr:bot-matrix:verify
-
-# End-to-end: Actions → pr-bot-spreadsheet → Run workflow (workflow_dispatch)
-# Expect: job completes and commits reports/pr-bot-matrix.{md,html,json} to main
-gh run list --workflow=pr-bot-spreadsheet.yml --limit 3
-```
-
-If push fails with `protected branch hook declined`, the workflow logs `MATRIX_PUSH_BYPASS_HINT` from `scripts/lib/pr-bot-matrix-commit.mjs`.
-
-Legacy matrix PR `bot/pr-bot-matrix-sync` is obsolete after this change — close any open bot matrix PR once direct push is verified.
-
-Uses `GITHUB_TOKEN` with `contents: write` only (no `pull-requests: write`).
-
-### Optional secret
-
-| Secret | Required | Purpose |
-|--------|----------|---------|
-| `BOT_GATE_TOKEN` | No | PAT with `repo` read if `GITHUB_TOKEN` is insufficient for `gh` API |
+The workflow uses `contents: read` and `pull-requests: read`; checkout does not persist credentials. It does not push to protected main, create bot PRs or require a ruleset bypass. Existing local generator and legacy commit commands remain unchanged, but the workflow never invokes the commit command.
 
 ## Local commands
 
@@ -122,6 +82,6 @@ npm run pr:bot-spreadsheet:sync -- --limit 30
 | `scripts/lib/pr-bot-cell-status.mjs` | Green/yellow/grey/red logic |
 | `scripts/lib/bot-noise.mjs` | Quota/limit patterns (shared) |
 | `scripts/lib/gh-pr-review-threads.mjs` | Thread address detection (shared) |
-| `reports/pr-bot-matrix.md` | Generated markdown matrix (committed, primary view) |
-| `reports/pr-bot-matrix.html` | Generated colored matrix (committed) |
-| `reports/pr-bot-matrix.json` | Generated machine-readable matrix (committed) |
+| `reports/pr-bot-matrix.md` | Historical markdown snapshot |
+| `reports/pr-bot-matrix.html` | Historical colored snapshot |
+| `reports/pr-bot-matrix.json` | Historical machine-readable snapshot |

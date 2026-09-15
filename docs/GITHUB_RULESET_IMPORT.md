@@ -1,6 +1,8 @@
+> Historical operator documentation: the matrix workflow requires no bypass or protection changes.
+
 # Import GitHub ruleset for `main` (bot gates + Actions bypass)
 
-One-time operator setup so workflow jobs can push directly to `main` (PR bot matrix sync, mobile auto-release) while keeping bot merge gates for **human** PRs only.
+One-time operator setup so workflow jobs can push directly to `main` (legacy direct-write automation) while keeping bot merge gates for **human** PRs only.
 
 **Operator script (prints policy + import steps + local verify):**
 
@@ -43,16 +45,16 @@ npm run pr:bot-matrix-commit:verify
 npm run pr:bot-matrix:verify
 ```
 
-Then run **Actions → pr-bot-spreadsheet → Run workflow** (`workflow_dispatch`). Expect the job to commit `reports/pr-bot-matrix.{md,html,json}` to `main`.
+The PR bot matrix no longer uses direct writes or this bypass. Its workflow publishes an Actions job summary and downloadable artifacts using read-only permissions. See [PR_BOT_MATRIX.md](PR_BOT_MATRIX.md). Do not change branch protection to enable matrix reporting.
 
 ```sh
 gh run list --workflow=pr-bot-spreadsheet.yml --limit 3
 ```
 
-If push fails with `protected branch hook declined`, the workflow logs `MATRIX_PUSH_BYPASS_HINT` from `scripts/lib/pr-bot-matrix-commit.mjs`.
+The legacy local matrix commit command is outside the automated report workflow. A protected-branch rejection from that command is not a matrix workflow setup requirement.
 
 ## Related docs
 
-- [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md) — matrix workflow and bypass rationale
+- [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md) — artifact-only matrix workflow
 - [`scripts/apply-branch-protection.mjs`](../scripts/apply-branch-protection.mjs) — legacy API protection (no Actions bypass)
 - [`.github/MERGE_POLICY.md`](../.github/MERGE_POLICY.md) — squash auto-merge for PRs
