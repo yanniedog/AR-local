@@ -12,7 +12,17 @@ import cdr_historical_fee_plan as plan
 from cdr_historical_fee_ledger_io import control_work
 from cdr_historical_fee_plan_budget import ControlBudget
 
-REGISTRY_BYTES = (Path(plan.__file__).parent / plan.REGISTRY).read_bytes()
+def _canonical_registry_fixture():
+    body = (Path(plan.__file__).parent / plan.REGISTRY).read_bytes()
+    if (len(body), hashlib.sha256(body).hexdigest()) == (
+            2644, '44071664c6ab6867cde45821a5f7c87f2e4ce343d42b4203321b5308390eee58'):
+        body = body[:-2] + b'\n'
+    if (len(body), hashlib.sha256(body).hexdigest()) != (2643, plan.REGISTRY_SHA):
+        raise ValueError('unreviewed_registry_fixture_bytes')
+    return body
+
+
+REGISTRY_BYTES = _canonical_registry_fixture()
 
 
 def meter():
@@ -89,3 +99,23 @@ def test_other_transport_or_content_bytes_still_refuse(tmp_path, monkeypatch, mu
     materialize(tmp_path, monkeypatch, changed)
     with pytest.raises(ValueError, match='reviewed_registry_changed'):
         plan.registry(meter())
+
+@pytest.mark.parametrize('ending', [b'\n', b'\r\n'])
+def test_fixture_import_uses_canonical_bytes_in_either_checkout(tmp_path, monkeypatch, ending):
+    import runpy
+
+    module_path = Path(__file__).resolve()
+    body = REGISTRY_BYTES[:-1] + ending
+    materialize(tmp_path, monkeypatch, body)
+    loaded = runpy.run_path(str(module_path))
+    assert loaded['REGISTRY_BYTES'] == REGISTRY_BYTES
+    assert hashlib.sha256(loaded['REGISTRY_BYTES']).hexdigest() == plan.REGISTRY_SHA
+
+
+def test_fixture_import_does_not_normalize_unknown_transport(tmp_path, monkeypatch):
+    import runpy
+
+    module_path = Path(__file__).resolve()
+    materialize(tmp_path, monkeypatch, REGISTRY_BYTES[:-1] + b'\r\r\n')
+    with pytest.raises(ValueError, match='unreviewed_registry_fixture_bytes'):
+        runpy.run_path(str(module_path))
