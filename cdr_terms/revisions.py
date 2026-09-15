@@ -54,7 +54,8 @@ def stage_term(store: EvidenceStore, *, observation_id: str, parameter_key: str,
                observed_at: str, rule_set_id: str | None = None) -> str:
     exact_value(value)
     require_sha(context_sha256)
-    if not re.fullmatch(r"[a-z][a-z0-9_.]*", parameter_key) or not interpreter:
+    if (not re.fullmatch(r"[a-z][a-z0-9_.]*", parameter_key)
+            or not isinstance(interpreter, str) or not interpreter.strip()):
         raise ValueError("A canonical parameter key and interpreter identity are required")
     observation = store.db.execute("SELECT * FROM observations WHERE observation_id=?", (observation_id,)).fetchone()
     if not observation or not clause_ids or len(set(clause_ids)) != len(clause_ids):
@@ -84,7 +85,10 @@ def review_term(store: EvidenceStore, term_revision_id: str, *, status: str,
                 reviewer: str, reviewer_kind: str, reviewed_at: str,
                 evidence_sha256: str, reason: str) -> str:
     term = store.db.execute("SELECT * FROM term_revisions WHERE term_revision_id=?", (term_revision_id,)).fetchone()
-    if not term or not reviewer or reviewer == term["interpreter"]:
+    # Compare normalized identities without rewriting append-only actor history.
+    if (not term or not isinstance(reviewer, str) or not reviewer.strip()
+            or not isinstance(term["interpreter"], str) or not term["interpreter"].strip()
+            or reviewer.strip() == term["interpreter"].strip()):
         raise ValueError("A separate reviewer must assess staged interpretation")
     if reviewer_kind not in {"human", "deterministic"} or status not in {"validated", "rejected"}:
         raise ValueError("A model's second pass is not independent validation")
