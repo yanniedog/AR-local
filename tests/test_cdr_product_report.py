@@ -6,9 +6,39 @@ from pathlib import Path
 
 import pytest
 
-from cdr_product_report import digest, generate, leaves, present, read_bundle, write_csv
+from cdr_product_report import digest, generate, inventory_products, leaves, present, read_bundle, write_csv
 from cdr_product_report_html import write_html
 from cdr_public_history_audit import decode
+
+
+def test_retained_detail_only_term_deposit_is_in_family_without_inventing_rates():
+    # Current-006 published key and terms link; this product has no rate rows.
+    key = 'Macquarie Bank Limited|BB001MBLTDA001|TERM_DEPOSITS|Macquarie Business Banking Term Deposit'
+    detail = {'links': {'terms': 'https://www.macquarie.com.au/digital-banking/term-deposit-account-terms-and-conditions.html'}}
+    products, rates, full = inventory_products({'sections': {'TD': {'rates': []}}}, {'products': {key: detail}})
+    assert products[0]['product_families'] == 'TD'
+    assert products[0]['family_basis'] == 'reported_category'
+    assert products[0]['sections'] == ''
+    assert products[0]['published_rate_rows'] == 0
+    assert rates == [] and full[0]['detail'] == detail
+
+
+@pytest.mark.parametrize('category,family', [('RESIDENTIAL_MORTGAGES', 'Mortgage'),
+                                          ('TRANS_AND_SAVINGS_ACCOUNTS', ''), ('UNKNOWN', '')])
+def test_detail_category_does_not_guess_savings_or_unknown_families(category, family):
+    key = f'Protocol bank|protocol-id|{category}|Protocol product'
+    products, _, _ = inventory_products({'sections': {}}, {'products': {key: {}}})
+    assert products[0]['product_families'] == family
+    assert products[0]['family_basis'] == ('reported_category' if family else 'unknown')
+
+
+def test_reported_rate_family_is_preserved_for_combined_account_category():
+    key = 'Protocol bank|protocol-id|TRANS_AND_SAVINGS_ACCOUNTS|Protocol product'
+    row = {'product_key': key, 'category': 'TRANS_AND_SAVINGS_ACCOUNTS'}
+    products, rates, _ = inventory_products({'sections': {'Savings': {'rates': [row]}}}, {'products': {}})
+    assert products[0]['product_families'] == products[0]['sections'] == 'Savings'
+    assert products[0]['family_basis'] == 'published_rate_section'
+    assert len(rates) == 1
 
 
 def test_zero_false_and_explicit_empty_values_remain_distinct():
