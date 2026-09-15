@@ -7,6 +7,7 @@ from .executable_contract import REVIEW_CHECKS, validate_template
 from .executable_benchmarks import verify_benchmark
 from .executable_sources import validate_current_sources, source_checked
 from .identity import canonical_json, digest, timestamp
+from .reporting import build_product_asset
 
 
 def source_snapshot(store, template):
@@ -16,7 +17,7 @@ def source_snapshot(store, template):
         row = store.db.execute('SELECT review_id FROM reviews WHERE term_revision_id=? ORDER BY sequence DESC LIMIT 1',
                                (identity,)).fetchone()
         reviews.append(row[0])
-    return digest([template['id'], reviews])
+    return digest([template['id'], reviews, build_product_asset(store, template['productKey'])['identity_sha256']])
 
 
 @source_checked
@@ -91,8 +92,10 @@ def review_template(store, template_id, *, decision, reviewer, reviewer_kind, re
         if reviewed < row['staged_at']:
             raise ValueError('Executable review predates staging')
         fields = (template_id, decision, reviewer, reviewer_kind, reviewed, evidence_sha256, benchmark, reason)
-        identity = digest(fields)
+        identity = digest([expected_previous_review_id, fields])
         store.db.execute('INSERT OR IGNORE INTO executable_reviews (review_id,template_id,decision,reviewer,reviewer_kind,reviewed_at,evidence_sha256,benchmark_sha256,reason) VALUES (?,?,?,?,?,?,?,?,?)', (identity, *fields))
+        store.db.execute('INSERT OR IGNORE INTO executable_review_predecessors VALUES (?,?)',
+                         (identity, expected_previous_review_id))
     return identity
 
 

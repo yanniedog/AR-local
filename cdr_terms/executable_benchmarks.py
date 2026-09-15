@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 
 from .executable_contract import _bounded, MAX_TEMPLATE_BYTES
 from .identity import byte_digest, canonical_json
+from .executable_inputs import validate_instantiated_input
+from .executable_code import verify_code_artifact
 
 TOTALS = frozenset(('openingBalance', 'externalCashflowNet', 'principalRepaid', 'externalInflows',
                    'externalOutflows', 'interestAccrued', 'interestPosted', 'interestUnposted',
@@ -124,7 +126,7 @@ def validate_result(result, template, inputs):
         _amount(entry['balance'])
 
 
-def verify_benchmark(store, identity, template):
+def verify_benchmark(store, identity, template, *, legacy_descriptor_replay=False):
     result = _json(store, identity)
     _object(result, ('schemaVersion', 'templateId', 'adapterVersion', 'evaluatorVersion', 'executionActor', 'suiteSha256', 'cases'), 'run')
     if result['schemaVersion'] != 1 or any(result[k] != template[t] for k, t in (
@@ -135,9 +137,13 @@ def verify_benchmark(store, identity, template):
     if (not result['executionActor'] or not suite['expectationAuthor'] or suite['expectationAuthor'] == result['executionActor']
             or suite['expectationKind'] not in {'human', 'deterministic'}):
         raise ValueError('Executable benchmark expectations require independent derivation')
-    for key in ('adapterCodeSha256', 'evaluatorCodeSha256'):
-        if not store.read_blob(suite[key]):
-            raise ValueError('Executable benchmark code identity is empty')
+    for key, role, version in (('adapterCodeSha256', 'adapter', template['adapterVersion']),
+                               ('evaluatorCodeSha256', 'evaluator', template['evaluatorVersion'])):
+        if legacy_descriptor_replay:
+            if not store.read_blob(suite[key]):
+                raise ValueError('Executable benchmark code identity is empty')
+        else:
+            verify_code_artifact(store, suite[key], role, version)
     cases = result['cases']
     if not isinstance(cases, list) or not 2 <= len(cases) <= 256 or len(suite['cases']) != len(cases):
         raise ValueError('Executable benchmark case inventory mismatch')
@@ -163,6 +169,7 @@ def verify_benchmark(store, identity, template):
         _object(expected, ('templateId', 'inputSha256', 'derivationSha256', 'result'), 'independent expectation')
         if expected['templateId'] != template['id'] or expected['inputSha256'] != case['inputSha256'] or not store.read_blob(expected['derivationSha256']):
             raise ValueError('Executable benchmark independent derivation missing')
+        validate_instantiated_input(template, inputs, complete=actual['result'].get('status') == 'complete')
         validate_result(actual['result'], template, inputs)
         validate_result(expected['result'], template, inputs)
         if actual['result'] != expected['result']:

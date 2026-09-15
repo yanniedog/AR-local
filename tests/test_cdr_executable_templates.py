@@ -132,7 +132,7 @@ def test_additive_schema_preserves_exact_existing_rows_and_blobs(protocol):
     from cdr_terms.store import EvidenceStore
     store, *_ = protocol
     # Reconstruct the prior database shape, before any executable rows exist.
-    for table in ('executable_publications', 'executable_reviews', 'executable_template_documents',
+    for table in ('executable_review_predecessors', 'executable_publications', 'executable_reviews', 'executable_template_documents',
                   'executable_template_terms', 'executable_templates'):
         store.db.execute('DROP TABLE ' + table)
     store.db.commit()

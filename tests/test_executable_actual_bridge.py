@@ -11,6 +11,7 @@ from cdr_terms.executable_benchmarks import validate_result, verify_benchmark
 from cdr_terms.executable_contract import validate_template
 from cdr_terms.identity import canonical_json, digest
 from cdr_terms.store import EvidenceStore
+from tests.executable_code_fixture import retained_code_artifacts
 
 BRIDGE = Path(__file__).parent / 'fixtures/executable-templates/actual-v7-bridge.json'
 
@@ -59,6 +60,8 @@ def test_actual_adapter_evaluator_bridge_passes_full_benchmark(tmp_path, version
     put = lambda value: store.put_blob(canonical_json(value).encode('utf-8'))
     codes = {key: put([item for item in bridge['code'] if marker in item['file']]) for key, marker in (
         ('adapterCodeSha256', 'executableContracts/'), ('evaluatorCodeSha256', 'productTermsEngine/'))}
+    if version == 8:
+        codes = retained_code_artifacts(store, bridge['records'][0]['template'])
     cases, expectations = [], []
     for record in bridge['records']:
         template = record['template']
@@ -78,7 +81,7 @@ def test_actual_adapter_evaluator_bridge_passes_full_benchmark(tmp_path, version
     run = dict(schemaVersion=1, templateId=template['id'], adapterVersion=bridge['adapterVersion'],
         evaluatorVersion=bridge['evaluatorVersion'], executionActor='retained-jest-real-adapter-engine',
         suiteSha256=put(suite), cases=cases)
-    verify_benchmark(store, put(run), template)
+    verify_benchmark(store, put(run), template, legacy_descriptor_replay=version == 7)
     store.db.close()
 
 
