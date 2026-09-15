@@ -4,6 +4,7 @@ from cdr_terms.identity import byte_digest, canonical_json
 from cdr_terms.executable_inputs import material_contract
 from tests.executable_code_fixture import retained_code_artifacts
 from datetime import date, timedelta
+from decimal import Decimal
 
 
 def benchmark_control(store, template):
@@ -35,23 +36,30 @@ def benchmark_control(store, template):
                 'source': 'user_supplied_bank_confirmation', 'recordedAt': '2026-01-01T00:00:00Z',
                 'principal': '1000.00', 'fundedDate': funded, 'maturityDate': maturity,
                 'noWithholding': True, 'annualRate': template['annualRate']})
-        input_sha = put(inputs)
         complete = status == 'complete'
+        opened_rate = template['annualRate'] if complete else ('0' if Decimal(template['annualRate']) else '0.01')
+        inputs['scenario']['tdConfirmation']['annualRate'] = opened_rate
+        local = {'principal': '1000.00', 'confirmedAnnualRate': opened_rate, 'fundedDate': funded,
+                 'maturityDate': maturity, 'confirmed': True, 'confirmedAt': '2026-01-01T00:00:00Z',
+                 'noWithholdingConfirmed': True}
+        raw_binding = {'adapterInputSha256': put(local),
+                       'executionKind': 'adapter_and_evaluator' if complete else 'evaluator_fault_injection'}
+        input_sha = put(inputs)
         receipt = {'schemaVersion': 1, 'evaluatorVersion': template['evaluatorVersion'], 'inputSha256': input_sha,
             'contractId': template['id'], 'dependencies': [template['id']], 'status': status,
             'completeness': 'factual_complete' if complete else 'unsupported', 'issueDetails': [],
-            'claimAvailable': complete, 'issues': [] if complete else ['protocol-refusal'], 'assumptions': [],
+            'claimAvailable': complete, 'issues': [] if complete else ['td_confirmed_rate_mismatch'], 'assumptions': [],
             'eligibility': {'status': 'meets', 'reasons': [], 'trace': {'id': 'protocol', 'status': 'meets', 'evidenceIds': []}} if complete else None,
             'totals': {key: None if key == 'principalRepaid' else '0.00' for key in TOTALS} if complete else None,
             'ledger': [{'date': '2026-01-01', 'id': 'protocol', 'type': 'interest_posting', 'amount': '0.00', 'balance': '0.00', 'evidenceIds': []}] if complete else []}
         if complete and template['evaluatorVersion'] == 'product-terms-engine-v8':
             receipt['localTdConfirmation'] = inputs['scenario']['tdConfirmation']
         actual = {'templateId': template['id'], 'inputSha256': input_sha, 'adapterVersion': template['adapterVersion'],
-                  'evaluatorVersion': template['evaluatorVersion'], **codes, 'result': receipt}
+                  'evaluatorVersion': template['evaluatorVersion'], **codes, **raw_binding, 'result': receipt}
         expected = {'templateId': template['id'], 'inputSha256': input_sha,
-                    'derivationSha256': store.put_blob(b'Protocol fixture expected state, not banking acceptance'), 'result': receipt}
-        cases.append({'id': status, 'inputSha256': input_sha, 'actualSha256': put(actual)})
-        suite_cases.append({'id': status, 'inputSha256': input_sha, 'expectationSha256': put(expected)})
+                    'derivationSha256': store.put_blob(b'Protocol fixture expected state, not banking acceptance'), **raw_binding, 'result': receipt}
+        cases.append({'id': status, 'inputSha256': input_sha, 'actualSha256': put(actual), **raw_binding})
+        suite_cases.append({'id': status, 'inputSha256': input_sha, 'expectationSha256': put(expected), **raw_binding})
     suite = {'expectationAuthor': 'protocol-expectation-author', 'expectationKind': 'human', **codes, 'cases': suite_cases}
     return {'schemaVersion': 1, 'templateId': template['id'], 'adapterVersion': template['adapterVersion'],
         'evaluatorVersion': template['evaluatorVersion'], 'executionActor': 'protocol-execution-capture',

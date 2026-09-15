@@ -172,3 +172,18 @@ The closure includes the dependency lock. Additional files preserve Git blob
 bytes and identify that representation explicitly. Original v7/v8 execution
 fixtures remain unchanged. `legacy_descriptor_replay=True` is solely an explicit
 retrospective benchmark-reader option; new approval never enables it.
+
+V8 benchmark cases additionally bind `adapterInputSha256` and `executionKind`
+across the run case, expected-case inventory, actual receipt and independent
+expectation. The retained raw local input has exactly `principal`,
+`confirmedAnnualRate`, `fundedDate`, `maturityDate`, `confirmed`, `confirmedAt`
+and `noWithholdingConfirmed`. Its amount, opened rate, dates and confirmation
+metadata must propagate into the private instantiated scenario.
+
+Every v8 suite requires a matched-rate complete case and an explicit numeric
+rate-mismatch refusal with issue `td_confirmed_rate_mismatch`. An unrelated
+unsupported case cannot satisfy that control. `adapter_and_evaluator` identifies
+the positive execution; `evaluator_fault_injection` identifies the negative
+engine scenario. The latter does not claim that the adapter returned a scenario
+for the mismatched raw input: the adapter rejects it before instantiation.
+Existing actual bridge bytes and v7 retrospective case formats are unchanged.

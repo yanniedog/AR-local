@@ -10,6 +10,7 @@ from .executable_contract import _bounded, MAX_TEMPLATE_BYTES
 from .identity import byte_digest, canonical_json
 from .executable_inputs import validate_instantiated_input
 from .executable_code import verify_code_artifact
+from .executable_adapter_input import validate_adapter_input
 
 TOTALS = frozenset(('openingBalance', 'externalCashflowNet', 'principalRepaid', 'externalInflows',
                    'externalOutflows', 'interestAccrued', 'interestPosted', 'interestUnposted',
@@ -148,10 +149,13 @@ def verify_benchmark(store, identity, template, *, legacy_descriptor_replay=Fals
     if not isinstance(cases, list) or not 2 <= len(cases) <= 256 or len(suite['cases']) != len(cases):
         raise ValueError('Executable benchmark case inventory mismatch')
     seen, statuses = set(), set()
+    v8 = template['evaluatorVersion'] == 'product-terms-engine-v8'
+    extra = ('adapterInputSha256', 'executionKind') if v8 else ()
+    rate_refusal = False
     for case, expected_case in zip(cases, suite['cases']):
-        _object(case, ('id', 'inputSha256', 'actualSha256'), 'case')
-        _object(expected_case, ('id', 'inputSha256', 'expectationSha256'), 'expected case')
-        if not case['id'] or case['id'] in seen or any(case[k] != expected_case[k] for k in ('id', 'inputSha256')):
+        _object(case, ('id', 'inputSha256', 'actualSha256') + extra, 'case')
+        _object(expected_case, ('id', 'inputSha256', 'expectationSha256') + extra, 'expected case')
+        if not case['id'] or case['id'] in seen or any(case[k] != expected_case[k] for k in ('id', 'inputSha256') + extra):
             raise ValueError('Executable benchmark case identity mismatch')
         seen.add(case['id'])
         inputs = _json(store, case['inputSha256'])
@@ -160,13 +164,16 @@ def verify_benchmark(store, identity, template, *, legacy_descriptor_replay=Fals
                 or template['id'] not in inputs['contract'].get('dependencyIds', [])):
             raise ValueError('Executable benchmark instantiated input template mismatch')
         actual = _json(store, case['actualSha256'])
-        _object(actual, ('templateId', 'inputSha256', 'adapterVersion', 'evaluatorVersion', 'adapterCodeSha256', 'evaluatorCodeSha256', 'result'), 'actual receipt')
+        _object(actual, ('templateId', 'inputSha256', 'adapterVersion', 'evaluatorVersion', 'adapterCodeSha256', 'evaluatorCodeSha256', 'result') + extra, 'actual receipt')
         if (actual['templateId'] != template['id'] or actual['inputSha256'] != case['inputSha256']
                 or any(actual[k] != template[k] for k in ('adapterVersion', 'evaluatorVersion'))
-                or any(actual[k] != suite[k] for k in ('adapterCodeSha256', 'evaluatorCodeSha256'))):
+                or any(actual[k] != suite[k] for k in ('adapterCodeSha256', 'evaluatorCodeSha256'))
+                or any(actual[k] != case[k] for k in extra)):
             raise ValueError('Executable benchmark execution/code binding mismatch')
         expected = _json(store, expected_case['expectationSha256'])
-        _object(expected, ('templateId', 'inputSha256', 'derivationSha256', 'result'), 'independent expectation')
+        _object(expected, ('templateId', 'inputSha256', 'derivationSha256', 'result') + extra, 'independent expectation')
+        if any(expected[k] != case[k] for k in extra):
+            raise ValueError('Executable expected raw adapter input identity mismatch')
         if expected['templateId'] != template['id'] or expected['inputSha256'] != case['inputSha256'] or not store.read_blob(expected['derivationSha256']):
             raise ValueError('Executable benchmark independent derivation missing')
         validate_instantiated_input(template, inputs, complete=actual['result'].get('status') == 'complete')
@@ -174,6 +181,10 @@ def verify_benchmark(store, identity, template, *, legacy_descriptor_replay=Fals
         validate_result(expected['result'], template, inputs)
         if actual['result'] != expected['result']:
             raise ValueError('Executable benchmark output differs from independent expectation')
+        if v8:
+            rate_refusal |= validate_adapter_input(_json(store, case['adapterInputSha256']), inputs, template, actual['result'], case['executionKind'])
         statuses.add(actual['result']['status'])
     if statuses != {'complete', 'unsupported'}:
         raise ValueError('Executable benchmark needs a positive case and refusal control')
+    if v8 and not rate_refusal:
+        raise ValueError('Executable v8 benchmark requires an opened-rate mismatch refusal control')
