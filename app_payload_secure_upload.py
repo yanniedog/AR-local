@@ -69,7 +69,7 @@ def decode_public_bytes(raw: bytes, limit: int, *, require_encrypted: bool = Fal
     """Legacy reads support migration; new publication readback requires ARE2."""
     if raw.startswith(MAGIC):
         return decrypt_transport(raw, resolve_release_key, limit=limit)
-    if require_encrypted or raw.startswith(b"ARE2") or len(raw) > limit:
+    if require_encrypted or raw.startswith((b"ARE2", b"ARE1")) or len(raw) > limit:
         raise TransportError("encrypted publication readback missing or oversized")
     return raw
 

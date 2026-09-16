@@ -36,8 +36,8 @@ def encrypt_transport(plain: bytes, key: bytes) -> bytes:
     """Encrypt exact domain bytes; callers retain the original contract identity."""
     if len(plain) > MAX_ENCODED_BYTES:
         raise TransportError("encoded asset exceeds transport limit")
-    if plain.startswith(MAGIC):
-        raise TransportError("nested release transport is forbidden")
+    if plain.startswith((MAGIC, b"ARE1")):
+        raise TransportError("nested or legacy release transport is forbidden")
     header = MAGIC + transport_key_id(key).encode("ascii") + len(plain).to_bytes(8, "big")
     nonce = os.urandom(NONCE_BYTES)
     return header + nonce + _aesgcm_cls()(key).encrypt(nonce, plain, header)
@@ -69,7 +69,10 @@ def decrypt_transport(
         if transport_key_id(key) != key_id:
             raise TransportError("transport key ID mismatch")
         nonce = blob[HEADER_BYTES:HEADER_BYTES + NONCE_BYTES]
-        return _aesgcm_cls()(key).decrypt(nonce, blob[HEADER_BYTES + NONCE_BYTES:], blob[:HEADER_BYTES])
+        plain = _aesgcm_cls()(key).decrypt(nonce, blob[HEADER_BYTES + NONCE_BYTES:], blob[:HEADER_BYTES])
     except Exception:
         # Resolver/native crypto errors can include private paths or key material.
         raise TransportError("encrypted release authentication failed") from None
+    if plain.startswith((MAGIC, b"ARE1")):
+        raise TransportError("nested or legacy release transport is forbidden")
+    return plain
