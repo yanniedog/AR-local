@@ -4,11 +4,23 @@ from types import SimpleNamespace
 import pytest
 
 from app_payload_secure_upload import (
-    decode_public_bytes, publication_key, secure_upload, resolve_release_key,
+    classify_asset, decode_public_bytes, publication_key, secure_upload, resolve_release_key,
 )
 from release_transport import MAGIC, TransportError, encrypt_transport, transport_key_id
 
 KEY = bytes(range(32))
+
+
+@pytest.mark.parametrize("kind", ["index", "shard_000"])
+def test_savings_activity_v4_is_classified_and_encrypted(tmp_path, key_file, kind):
+    path = tmp_path / f"monetary_v4_savings_activity_calculation_{kind}-2026-09-16-abcdef012345.json.gz"
+    path.write_bytes(b"technical-domain-vector")
+    assert classify_asset(path.name) == "cdr_domain"
+    def runner(args, **kwargs):
+        wire = Path(args[4]).read_bytes()
+        assert wire.startswith(MAGIC)
+        assert decode_public_bytes(wire, 1024, require_encrypted=True) == path.read_bytes()
+    secure_upload(["gh", "release", "upload", "technical", str(path)], runner=runner)
 
 
 @pytest.fixture
