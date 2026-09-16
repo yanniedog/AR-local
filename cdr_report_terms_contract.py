@@ -76,7 +76,8 @@ def schema():
         stages['properties'][key] = obj({'observed': NUMBER, 'expected': nullable(NUMBER),
                                         'basis': {'const': basis}, 'status': {'enum': ['unknown_denominator', 'inventory_reported']}})
         stages['required'].append(key)
-    delivered = obj({'capability': {'enum': ['fixed_td_calculation', 'eligibility_only', 'savings_calculation', 'mortgage_calculation']},
+    delivered = obj({'capability': {'enum': ['fixed_td_calculation', 'eligibility_only', 'savings_calculation',
+                                           'mortgage_calculation', 'savings_activity_calculation']},
                      'asset_sha256': HASH, 'subject_ids': array(TEXT),
                      'status': {'const': 'delivered_as_of_selected_edition'}, 'bank_acceptance': {'const': 'unclassified'}})
     common = {'evidence_class': {'enum': ['unclassified', 'technical_fixture']}, 'bank_approved': NULL, 'delivered': array(delivered)}

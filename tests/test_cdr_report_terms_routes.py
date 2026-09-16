@@ -39,9 +39,10 @@ def test_populated_td_selected_row_keeps_index_inventory(protocol, tmp_path):
     assert result[key][0]['subject_ids'] == [template['id']]
 
 
-@pytest.mark.parametrize('family', ['monetary-v3', 'mortgage-v3'])
+@pytest.mark.parametrize('family', ['monetary-v3', 'mortgage-v3', 'activity-v4'])
 def test_actual_retained_monetary_namespaces_use_capability_dispatch(family, tmp_path):
-    bridge = json.loads((ROOT / family / 'actual-bridge.json').read_bytes())
+    path = ROOT / family / ('actual-bridge.json.gz' if family == 'activity-v4' else 'actual-bridge.json')
+    bridge = json.loads(gzip.decompress(path.read_bytes()) if path.suffix == '.gz' else path.read_bytes())
     for descriptor in bridge['assets']:
         raw = (ROOT / family / 'blobs' / descriptor['sha256']).read_bytes()
         assert sha(raw) == descriptor['sha256']

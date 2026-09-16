@@ -84,6 +84,7 @@ def delivered(root, manifest, payloads):
     from cdr_terms.executable_contract import validate_asset as v1
     from cdr_terms.executable_v2_contract import validate_asset as v2
     from cdr_terms.executable_v3_contract import validate_asset as v3
+    from cdr_terms.executable_v4_contract import CAPABILITY, schema_validate as schema_v4, validate_asset as v4
     read = asset_reader(root)
     routes = []
     if 'executable_index' in manifest['files']:
@@ -97,13 +98,21 @@ def delivered(root, manifest, payloads):
             if capability not in ('savings_calculation', 'mortgage_calculation'):
                 raise ValueError('Unsupported report capability')
             routes.append((capability, n['index'], n['shards'], v3))
+    if manifest.get('executable_v4'):
+        schema_v4(manifest['executable_v4'], 'namespace', MAX_BYTES)
+        for capability, n in manifest['executable_v4']['capabilities'].items():
+            if capability != CAPABILITY:
+                raise ValueError('Unsupported report capability')
+            routes.append((capability, n['index'], n['shards'], v4))
     result = {}
     for capability, descriptor, shards, validate in routes:
         index = read(descriptor)
+        if capability == CAPABILITY:
+            schema_v4(index, 'index', MAX_BYTES)
         def header(value):
             if (value['run_date'] != manifest['run_date'] or value['core_asset_sha256'] != manifest['files']['core']['sha256']
                     or (capability != 'fixed_td_calculation' and value['details_asset_sha256'] != manifest['files']['details']['sha256'])
-                    or (capability in ('savings_calculation', 'mortgage_calculation') and value['capability'] != capability)):
+                    or (capability in ('savings_calculation', 'mortgage_calculation', CAPABILITY) and value['capability'] != capability)):
                 raise ValueError('Report delivered route binding differs')
         header(index)
         if set(index['products'].values()) != set(shards):
@@ -111,12 +120,14 @@ def delivered(root, manifest, payloads):
         observed = {}
         for name, shard in sorted(shards.items()):
             value = read(shard)
+            if capability == CAPABILITY:
+                schema_v4(value, 'shard', MAX_BYTES)
             header(value)
             for key, asset in value['products'].items():
                 if key in observed or index['products'].get(key) != name:
                     raise ValueError('Report delivered product association differs')
                 validate(asset)
-                if capability in ('savings_calculation', 'mortgage_calculation') and asset['capability'] != capability:
+                if capability in ('savings_calculation', 'mortgage_calculation', CAPABILITY) and asset['capability'] != capability:
                     raise ValueError('Report delivered asset capability differs')
                 if asset['productKey'] != key:
                     raise ValueError('Report delivered asset product differs')
@@ -135,6 +146,10 @@ def delivered(root, manifest, payloads):
                                 or rows[row_index].get('product_key') != key or digest(rows[row_index]) != selected['rowSha256']
                                 or rows[row_index].get('rate_index') != selected['rateIndex']):
                             raise ValueError('Report delivered TD row differs')
+                    elif capability == CAPABILITY:
+                        from cdr_terms.executable_v4_sources import validate_destination
+                        validate_destination(subject, payloads['core'], payloads['details'],
+                                             manifest['files']['core']['sha256'], manifest['files']['details']['sha256'])
                     elif capability in ('savings_calculation', 'mortgage_calculation'):
                         from cdr_terms.executable_v3_sources import validate_destination
                         validate_destination(subject, payloads['core'], payloads['details'],
