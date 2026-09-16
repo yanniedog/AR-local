@@ -372,7 +372,7 @@ def publish_payload(
     if revision_mode_enabled() and not manifest.get("payload_revision"):
         raise RuntimeError("revision mode refuses an unversioned alias publish")
     for key, entry in iter_payload_assets(manifest):
-        if key.startswith(('executable_v2_','monetary_v3_')):
+        if key.startswith(('executable_v2_','monetary_v3_','monetary_v4_')):
             executable_asset_url(manifest,entry,repo=repo)
     names = [entry["name"] for _, entry in iter_payload_assets(manifest)]
     # Upload the data assets first and the manifest LAST, so the rolling manifest is

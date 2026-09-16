@@ -1,0 +1,294 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "accountId",
+    "startDate",
+    "endDateExclusive",
+    "openingBalance",
+    "confirmedAnnualRates",
+    "confirmedBonusAnnualRates",
+    "confirmedAt",
+    "openingAccrualZero",
+    "openingFundsCleared",
+    "noMovements",
+    "noWithholding",
+    "activity"
+  ],
+  "properties": {
+    "accountId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "startDate": {
+      "$ref": "#/$defs/shared1"
+    },
+    "endDateExclusive": {
+      "$ref": "#/$defs/shared1"
+    },
+    "openingBalance": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]{0,11})(?:\\.[0-9]{1,2}0{0,10})?$"
+    },
+    "confirmedAnnualRates": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "intervalId",
+          "tierId",
+          "annualRate"
+        ],
+        "properties": {
+          "intervalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "tierId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "annualRate": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,12})?$"
+          }
+        }
+      },
+      "uniqueItems": true
+    },
+    "confirmedBonusAnnualRates": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "componentId",
+          "tierId",
+          "annualRate"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "tierId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "annualRate": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,12})?$"
+          }
+        }
+      },
+      "uniqueItems": true
+    },
+    "confirmedAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "openingAccrualZero": {
+      "type": "boolean"
+    },
+    "openingFundsCleared": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "noMovements": {
+      "type": "boolean"
+    },
+    "noWithholding": {
+      "type": "boolean"
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events",
+        "coverage"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "accountId",
+              "date",
+              "dateBasis",
+              "status",
+              "kind",
+              "amount",
+              "classification"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+                "not": {
+                  "enum": [
+                    "constructor",
+                    "prototype"
+                  ]
+                }
+              },
+              "accountId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "date": {
+                "$ref": "#/$defs/shared1"
+              },
+              "dateBasis": {
+                "enum": [
+                  "processed",
+                  "transaction"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "settled",
+                  "pending",
+                  "unknown"
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "deposit",
+                  "withdrawal",
+                  "unknown"
+                ]
+              },
+              "amount": {
+                "type": "string",
+                "pattern": "^(?:0|[1-9][0-9]{0,11})(?:\\.[0-9]{1,2}0{0,10})?$",
+                "not": {
+                  "pattern": "^0(?:\\.0+)?$"
+                }
+              },
+              "classification": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "coverage": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "accountId",
+              "from",
+              "toExclusive",
+              "status"
+            ],
+            "properties": {
+              "accountId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "from": {
+                "$ref": "#/$defs/shared1"
+              },
+              "toExclusive": {
+                "$ref": "#/$defs/shared1"
+              },
+              "status": {
+                "enum": [
+                  "complete",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:savings-activity-wire4-draft:private-input",
+  "$comment": "DRAFT ONLY; root byte freeze pending; technical contract, no bank approval.",
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "activity": {
+              "properties": {
+                "events": {
+                  "items": {
+                    "properties": {
+                      "dateBasis": {
+                        "const": "processed"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "activity": {
+              "properties": {
+                "events": {
+                  "items": {
+                    "properties": {
+                      "dateBasis": {
+                        "const": "transaction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "shared1": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "format": "date",
+      "maxLength": 10
+    }
+  }
+}

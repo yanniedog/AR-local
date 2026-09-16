@@ -1,0 +1,65 @@
+import { utf8ToBytes } from '@noble/hashes/utils';
+import { canonical, hashText } from '../../lib/productTermsEngine/validation';
+import { Decimal } from '../../lib/productTermsEngine/decimal';
+import type { Rule } from '../../lib/productTermsEngine/types';
+import { safeId, validFact } from '../customerProfile';
+import { assertMonetaryWire } from './schemaValidation';
+import { monetaryIdentity, validateAuthorityGraph, assertFieldCoverage } from './authority';
+import { exactList, includesInterval, interval, postingDates, stableInterest, supersessionUnion } from './coverage';
+import type { SavingsSubject, SavingsPolicy, MonetaryAsset } from './types';
+export type SavingsStructure = Omit<SavingsSubject, 'schemaVersion' | 'capability' | 'kind' | 'adapterVersion' | 'evaluatorVersion' | 'policy'> & { policy: Omit<SavingsPolicy, 'kind' | 'bonus'> };
+export function operationBudget(subjects: SavingsStructure[]) {
+  const members = new Map<string, string>(), authorities = new Set<string>(), observations = new Map<string, string>(), documents = new Set<string>();
+  let raw = 0, decoded = 0, periods = 0, postings = 0, supersessions = 0, nodes = 0;
+  const count = (r: Rule) => { if (++nodes > 512) throw new Error('Savings rule operation limit'); if (r.op === 'and' || r.op === 'or') r.rules.forEach(count); else if (r.op === 'not') count(r.rule); };
+  for (const s of subjects) {
+    for (const m of s.authorityGraph.members) { const value = canonical(m), old = members.get(m.sha256); if (old && old !== value) throw new Error('Conflicting historical member'); if (!old) { raw += m.bytes; decoded += m.decodedBytes; members.set(m.sha256, value); } }
+    for (const a of s.authorityGraph.authorities) { authorities.add(a.id); if (a.kind === 'retained_observation') for (const o of a.observations) { const value = canonical(o), old = observations.get(o.observationId); if (old && old !== value) throw new Error('Conflicting historical observation'); observations.set(o.observationId, value); } }
+    s.documentVersionIds.forEach(d => documents.add(d)); periods += s.policy.intervals.length; postings += s.policy.postingInventory.dueDates.length; supersessions += s.authorityGraph.supersessions.length; count(s.policy.eligibility);
+  }
+  if (members.size > 512 || authorities.size > 64 || observations.size > 366 || documents.size > 256 || periods > 128 || postings > 366 || supersessions > 64 || raw > 32 * 1024 * 1024 || decoded > 24 * 1024 * 1024) throw new Error('Savings authority operation limit');
+}
+export function validateSavingsSubject(raw: unknown): SavingsSubject {
+  if (utf8ToBytes(JSON.stringify(raw)).length > 256 * 1024) throw new Error('Savings subject exceeds limit'); assertMonetaryWire(raw, 'subject'); const s = raw as SavingsSubject; operationBudget([s]);
+  if (monetaryIdentity(s, 'id') !== s.id || hashText(canonical(['monetary-scope-v3', s.capability, s.scope])) !== s.scopeId || s.routing.productKey !== s.scope.productKey) throw new Error('Savings identity mismatch');
+  validateSavingsStructure(s); return s;
+}
+/** Shared source-policy checks; no synthetic no-bonus declaration. */
+export function validateSavingsStructure(s: SavingsStructure, unionSupersessions = false) {
+  interval(s.scope.from, s.scope.toExclusive); if (interval(s.scope.from, s.scope.toExclusive) > s.policy.maxHorizonDays) throw new Error('Savings horizon exceeds policy');
+  exactList(s.documentVersionIds, [...new Set(s.evidence.map(e => e.documentVersionId))].sort(), 'Savings document inventory mismatch'); exactList(s.termRevisionIds, [...new Set(s.termRevisionIds)].sort(), 'Savings revision inventory mismatch');
+  const evidence = new Set<string>();
+  for (const e of s.evidence) { const url = new URL(e.sourceUrl); if (e.id !== e.clauseId || evidence.has(e.id) || hashText(e.quote) !== e.quoteSha256 || url.protocol !== 'https:' || url.username || url.password) throw new Error('Savings evidence invalid'); evidence.add(e.id); }
+  function refs(ids: string[]) { if (!ids.length || ids.some(id => !evidence.has(id))) throw new Error('Savings evidence association missing'); }
+  const authorities = validateAuthorityGraph(s, refs), due = postingDates(s), policy = s.policy;
+  refs(policy.postingInventory.evidenceIds); refs(policy.postingInventory.rule.kind === 'calendar_month_end' ? policy.postingInventory.rule.evidenceIds : policy.postingInventory.rule.completenessEvidenceIds); refs(policy.fees.evidenceIds); policy.fees.inventory.forEach(item => refs(item.evidenceIds));
+  if (new Set(policy.fees.inventory.map(f => f.categoryId)).size !== policy.fees.inventory.length) throw new Error('Duplicate savings fee category');
+  let previous = s.scope.from; const ids = new Set<string>(), emittedDates: string[] = [];
+  for (const p of policy.intervals) {
+    interval(p.from, p.toExclusive); if (p.from !== previous || p.toExclusive > s.scope.toExclusive || ids.has(p.id)) throw new Error('Savings intervals overlap or leave gap'); ids.add(p.id); previous = p.toExclusive;
+    const a = authorities.get(p.authorityId); if (!a || !includesInterval(a.from, a.toExclusive, p.from, p.toExclusive)) throw new Error('Savings interval authority unavailable');
+    for (const other of authorities.values()) if (other.id !== a.id && other.from < p.toExclusive && other.toExclusive > p.from && !(unionSupersessions ? supersessionUnion(s.authorityGraph,a.id,other.id,p.from > other.from ? p.from : other.from,p.toExclusive < other.toExclusive ? p.toExclusive : other.toExclusive) : s.authorityGraph.supersessions.some(r => r.selectedAuthorityId === a.id && r.supersededAuthorityId === other.id && includesInterval(r.from, r.toExclusive, p.from > other.from ? p.from : other.from, p.toExclusive < other.toExclusive ? p.toExclusive : other.toExclusive)))) throw new Error('Historical authority conflict unresolved');
+    exactList(stableInterest(p.interest), stableInterest(policy.intervals[0].interest), 'Changing savings interest policy is unsupported');
+    const dates = due.filter(d => d >= p.from && d < p.toExclusive); exactList(p.interest.postingDates, dates, 'Savings posting event missing or extra'); emittedDates.push(...dates);
+    refs(p.interest.evidenceIds); for (const [field, values] of Object.entries(p.fieldEvidenceIds)) { refs(values); assertFieldCoverage(a, field, p.from, p.toExclusive, field.startsWith('posting') || field === 'balanceBasis' ? dates : [], values); }
+    let upper = Decimal.parse('0'); const tierIds = new Set<string>();
+    p.tiers.forEach((tier, i) => { refs(tier.evidenceIds); if (tier.evidenceIds.some(id => !p.fieldEvidenceIds.rates.includes(id))) throw new Error('Tier rate evidence differs from interval coverage'); if (tierIds.has(tier.id)) throw new Error('Savings tier invalid'); tierIds.add(tier.id); if (tier.upperInclusive === null) { if (i !== p.tiers.length - 1) throw new Error('Unlimited savings tier must be final'); } else { const next = Decimal.parse(tier.upperInclusive); if (next.compare(upper) <= 0) throw new Error('Savings tiers inverted'); upper = next; } });
+    if (p.tiers.at(-1)?.upperInclusive !== null) throw new Error('Savings above-cap treatment missing');
+  }
+  if (previous !== s.scope.toExclusive) throw new Error('Savings final coverage missing'); exactList(emittedDates, due, 'Savings posting coverage incomplete');
+  const definitions = new Map(policy.inputDefinitions.map(d => [d.key, d])), roles = new Set<string>(), used = new Set<string>(), ruleIds = new Set<string>();
+  if (definitions.size !== policy.inputDefinitions.length) throw new Error('Duplicate savings input');
+  for (const d of policy.inputDefinitions) { refs(d.evidenceIds); if (!safeId(d.key) || !d.label.trim() || (d.type === 'decimal' ? !d.unit?.trim() : d.unit !== null)) throw new Error('Savings input invalid'); if (d.binding !== 'customer_fact') { if (roles.has(d.binding) || (d.binding === 'opening_balance' ? d.type !== 'decimal' || d.unit !== 'AUD' : d.type !== 'date')) throw new Error('Savings role invalid'); roles.add(d.binding); } }
+  if (roles.size !== 3) throw new Error('Savings scenario roles missing');
+  function visit(r: Rule, depth: number) { if (depth > 16 || ruleIds.has(r.id) || !safeId(r.id)) throw new Error('Savings rule invalid'); ruleIds.add(r.id); if (r.op === 'and' || r.op === 'or') r.rules.forEach(child => visit(child, depth + 1)); else if (r.op === 'not') visit(r.rule, depth + 1); else if (r.op === 'compare') { const d = definitions.get(r.field); refs(r.evidenceIds!); used.add(r.field); if (!d || !validFact(r.expected) || d.type !== r.expected.type || r.expected.type === 'decimal' && d.unit !== r.expected.unit || !['eq','ne'].includes(r.comparison) && !['decimal','date'].includes(d.type)) throw new Error('Savings rule input mismatch'); } else throw new Error('Unsupported savings rule'); }
+  visit(policy.eligibility, 0); if (policy.inputDefinitions.some(d => d.binding === 'customer_fact' && !used.has(d.key))) throw new Error('Unused customer input');
+  for (const p of policy.intervals) assertFieldCoverage(authorities.get(p.authorityId)!, 'eligibility', p.from, p.toExclusive, [], policy.inputDefinitions.flatMap(d => d.evidenceIds));
+  return s;
+}
+export function validateMonetaryAsset(raw: unknown): MonetaryAsset {
+  if (utf8ToBytes(JSON.stringify(raw)).length > 512 * 1024) throw new Error('Savings asset exceeds limit'); assertMonetaryWire(raw, 'asset'); const asset = raw as MonetaryAsset;
+  if (monetaryIdentity(asset, 'identitySha256') !== asset.identitySha256) throw new Error('Savings asset identity mismatch'); operationBudget(asset.subjects.map(e => e.subject));
+  const ids = new Set<string>(), scopes = new Set<string>();
+  for (const e of asset.subjects) { const s = validateSavingsSubject(e.subject); if (ids.has(s.id) || scopes.has(s.scopeId) || e.approval.subjectId !== s.id || e.approval.authorityGraphSha256 !== s.authorityGraph.identitySha256 || s.scope.productKey !== asset.productKey || canonical(s.routing) !== canonical(asset.routing)) throw new Error('Savings approval association mismatch'); ids.add(s.id); scopes.add(s.scopeId); }
+  return asset;
+}

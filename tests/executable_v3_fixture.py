@@ -13,8 +13,11 @@ def reidentify(subject):
     for interval in subject['policy'].get('intervals',[]):
         interval['authorityId']=mapping.get(interval['authorityId'],interval['authorityId'])
     if 'authorityIds' in subject['policy']:subject['policy']['authorityIds']=sorted(mapping.get(x,x) for x in subject['policy']['authorityIds'])
+    if subject.get('schemaVersion') == 4:
+        assessment=subject['policy']['bonus']['assessment']
+        assessment['authorityId']=mapping.get(assessment['authorityId'],assessment['authorityId'])
     subject['authorityGraph']['identitySha256']=identity(subject['authorityGraph'],'identitySha256')
-    subject['scopeId']=digest(['monetary-scope-v3',subject['capability'],subject['scope']])
+    subject['scopeId']=digest(['monetary-scope-v4' if subject.get('schemaVersion')==4 else 'monetary-scope-v3',subject['capability'],subject['scope']])
     subject['id']=identity(subject)
     return subject
 
@@ -46,6 +49,7 @@ def technical_protocol(tmp_path,source_description=None,adopted_assets=None,stru
     import copy
     value=copy.deepcopy(template) if template is not None else subject();scope=value['scope'];now='2026-01-12T01:00:00Z';run_date='2026-01-12'
     mortgage=value['capability']=='mortgage_calculation';label='Technical mortgage only' if mortgage else 'Technical savings only'
+    activity=value.get('schemaVersion')==4
     data={'name':label,'brand':'Protocol only','productId':'protocol','productCategory':'RESIDENTIAL_MORTGAGES' if mortgage else 'TRANS_AND_SAVINGS_ACCOUNTS'}
     if source_description:data['description']=source_description
     raw=canonical_json({'data':data,'links':{'self':'https://example.invalid/protocol'}}).encode()
@@ -70,7 +74,13 @@ def technical_protocol(tmp_path,source_description=None,adopted_assets=None,stru
                 from cdr_terms.monetary_material_fields import field_value
                 from cdr_terms.executable_v3_graph import FIELDS
                 base=output['terms'][0]
-                if mortgage:
+                if activity:
+                    from cdr_terms.executable_v4_material import field_value as activity_value
+                    from cdr_terms.executable_v4_graph import periods
+                    output['terms']=[dict(base,parameter_key='monetary.savings_activity_field_v1',
+                        effective_from=period['from'],effective_to=period['toExclusive'],value=activity_value(value,period,field))
+                        for period in periods(value) for field in sorted(period['requiredFields'])]
+                elif mortgage:
                     from cdr_terms.mortgage_material_fields import GROUPS,field_value as mortgage_value
                     output['terms']=[dict(base,parameter_key='monetary.mortgage_field_v1',value=mortgage_value(value,field)) for field in sorted(GROUPS)]
                 else:
@@ -79,14 +89,18 @@ def technical_protocol(tmp_path,source_description=None,adopted_assets=None,stru
         saved_context={}
         if not mortgage:
             from cdr_terms.parameter_registry import registry_contract,interpretation_contract
-            contract,schema=interpretation_contract('terms-parameters-v3')
-            saved_context=dict(parameter_registry=registry_contract('terms-parameters-v3'),interpretation_contract=contract,interpretation_schema_sha256=schema)
+            registry_version='terms-parameters-v5' if activity else 'terms-parameters-v3'
+            contract,schema=interpretation_contract(registry_version)
+            saved_context=dict(parameter_registry=registry_contract(registry_version),interpretation_contract=contract,interpretation_schema_sha256=schema)
         _,_,output,args=_staged_term(fixture,output_change=scoped,context_change=saved_context,retained_registry=not mortgage)
         args['applicability'].update(cohort=scope['cohortKey'],tier=scope['tierKey'],package=scope['packageKey'],effective_from=scope['from'],effective_to=scope['toExclusive'])
         if source_description:args.update(parameter_key='product.description',value=source_description,clause_ids=description_clause)
         revisions=[]
         for term in output['terms']:
-            revision=stage_term(store,**dict(args,parameter_key=term['parameter_key'],value=term['value']))
+            term_args=dict(args,parameter_key=term['parameter_key'],value=term['value'])
+            if activity:
+                term_args['applicability']=dict(args['applicability'],effective_from=term['effective_from'],effective_to=term['effective_to'])
+            revision=stage_term(store,**term_args)
             revisions.append(revision)
             proof=store.put_blob(canonical_json({'term_revision_id':revision,'passed':True,'checks':sorted(REVIEW_CHECKS)}).encode())
             review_term(store,revision,status='validated',reviewer='independent-technical',reviewer_kind='human',reviewed_at=now,evidence_sha256=proof,reason='Isolated technical fixture only')
@@ -105,9 +119,9 @@ def technical_protocol(tmp_path,source_description=None,adopted_assets=None,stru
         graph['completedPeriod']['sourceSnapshotSha256']=byte_digest(raw)
         core={'run_date':run_date,'sections':{scope['family']:{'rates':[]}}}
         details={'run_date':run_date,'products':{scope['productKey']:{'name':label,'features':[]}}}
-        if mortgage:
+        if mortgage or activity:
             from app_payload_details import build_details
-            details['products']=build_details([dict(product_key=scope['productKey'],dataset='Mortgage',details_json=canonical_json(data))])
+            details['products']=build_details([dict(product_key=scope['productKey'],dataset='Mortgage' if mortgage else 'Savings',details_json=canonical_json(data))])
         def asset_bytes(kind,decoded):
             if adopted_assets is None:return _gzip_bytes(decoded)
             import gzip

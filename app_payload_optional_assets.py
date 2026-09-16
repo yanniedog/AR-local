@@ -19,9 +19,9 @@ def iter_payload_assets(manifest):
     files = manifest.get('files')
     if not isinstance(files, dict):
         raise ValueError('Payload files must be an object')
-    if any(str(key).startswith(('executable_v2_','monetary_v3_','executable_v3_')) for key in files):
+    if any(str(key).startswith(('executable_v2_','monetary_v3_','executable_v3_','monetary_v4_','executable_v4_')) for key in files):
         raise ValueError('Executable v2 descriptors must be outside legacy files')
-    if 'executable_v2' not in manifest and 'executable_v3' not in manifest:
+    if 'executable_v2' not in manifest and 'executable_v3' not in manifest and 'executable_v4' not in manifest:
         yield from files.items()
         return
     if manifest.get('enc') or any(isinstance(entry,dict) and entry.get('enc') for entry in files.values()):
@@ -47,6 +47,12 @@ def iter_payload_assets(manifest):
         schema_validate(namespace,'namespace',64*1024)
         for capability,route in namespace['capabilities'].items():
             entries.extend([(f'monetary_v3_{capability}_index',route['index']),*route['shards'].items()])
+    if 'executable_v4' in manifest:
+        from cdr_terms.executable_v4_contract import schema_validate as validate_activity
+        namespace=manifest['executable_v4']
+        validate_activity(namespace,'namespace',64*1024)
+        for capability,route in namespace['capabilities'].items():
+            entries.extend([(f'monetary_v4_{capability}_index',route['index']),*route['shards'].items()])
     for key, entry in entries:
         expected = f"{key}-{manifest.get('run_date')}-{entry['sha256'][:12]}.json.gz"
         if entry['name'] != expected or entry['name'] in names:
@@ -70,7 +76,7 @@ def executable_asset_url(manifest, entry, *, repo):
     if (revision.get('schema_version') != 1 or revision.get('bundle_sha256') != identity
             or revision.get('generation_id') != 'sha256-' + identity):
         raise ValueError('Executable immutable bundle identity differs')
-    candidates = [value for key, value in iter_payload_assets(manifest) if key.startswith(('executable_v2_','monetary_v3_'))]
+    candidates = [value for key, value in iter_payload_assets(manifest) if key.startswith(('executable_v2_','monetary_v3_','monetary_v4_'))]
     if entry not in candidates:
         raise ValueError('Executable descriptor is outside adopted namespace')
     return f"https://github.com/{repo}/releases/download/{tag}/{entry['name']}"

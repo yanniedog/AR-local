@@ -1,0 +1,443 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:savings-activity-wire4-draft:common",
+  "$comment": "DRAFT ONLY; root byte freeze pending; technical contract, no bank approval.",
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "format": "date",
+      "maxLength": 10
+    },
+    "hashes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha"
+      }
+    },
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rules"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/shared2"
+            },
+            "op": {
+              "enum": [
+                "and",
+                "or"
+              ]
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/rule"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "rule"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/shared2"
+            },
+            "op": {
+              "const": "not"
+            },
+            "rule": {
+              "$ref": "#/$defs/rule"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "op",
+            "field",
+            "comparison",
+            "expected",
+            "evidenceIds"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/shared2"
+            },
+            "op": {
+              "const": "compare"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "comparison": {
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "expected": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value",
+                    "unit"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "decimal"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,24})?$",
+                      "maxLength": 72
+                    },
+                    "unit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "date",
+                        "text"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "boolean"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              ]
+            },
+            "evidenceIds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "clauseId",
+          "documentVersionId",
+          "documentSha256",
+          "sourceUrl",
+          "locator",
+          "quote",
+          "quoteSha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "clauseId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "documentSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "locator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "quoteSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "family",
+        "cohortKey",
+        "tierKey",
+        "packageKey",
+        "from",
+        "toExclusive",
+        "coverage"
+      ],
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "family": {
+          "const": "Savings"
+        },
+        "cohortKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "tierKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "packageKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "from": {
+          "$ref": "#/$defs/shared1"
+        },
+        "toExclusive": {
+          "$ref": "#/$defs/shared1"
+        },
+        "coverage": {
+          "const": "whole_calculation_horizon"
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "sourceGenerationId",
+        "exportContractSha256",
+        "runDate",
+        "coreAssetSha256",
+        "detailsAssetSha256",
+        "productRecordSha256"
+      ],
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "sourceGenerationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "exportContractSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "runDate": {
+          "$ref": "#/$defs/shared1"
+        },
+        "coreAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "detailsAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "productRecordSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationId",
+        "generationId",
+        "exportContractSha256",
+        "manifestSha256",
+        "coreAssetSha256",
+        "detailsAssetSha256",
+        "rawSourceSha256",
+        "productRecordSha256",
+        "observedAt",
+        "rateRows"
+      ],
+      "properties": {
+        "observationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "generationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "exportContractSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "manifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "coreAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "detailsAssetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "rawSourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "productRecordSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "rateRows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "coreRowIndex",
+              "rateIndex",
+              "rowSha256"
+            ],
+            "properties": {
+              "coreRowIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 200000
+              },
+              "rateIndex": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200000
+              },
+              "rowSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "shared1": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+    },
+    "shared2": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$",
+      "maxLength": 180,
+      "not": {
+        "enum": [
+          "constructor",
+          "prototype"
+        ]
+      }
+    }
+  }
+}

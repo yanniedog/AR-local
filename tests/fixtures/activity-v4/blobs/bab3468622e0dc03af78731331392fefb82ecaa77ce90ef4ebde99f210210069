@@ -1,0 +1,161 @@
+import { descriptiveValue } from './descriptiveValue';
+import type { ProductDetail } from '../types';
+import { productFactsSearchText } from './productFacts';
+
+export interface SearchIndexPayload {
+  schema_version: number;
+  run_date: string;
+  products: Record<string, string>;
+}
+
+type DetailIndex = Map<string, string>;
+let runtimeCache: { ref: Record<string, ProductDetail> | null | undefined; index: DetailIndex } | null = null;
+const queryMemo = new Map<string, Set<string>>();
+let lastMemoScope: string | null = null;
+let lastMemoIndex: SearchIndexPayload | null = null;
+export const DETAIL_SEARCH_MEMO_LIMIT = 32;
+
+function indexMemoScope(index: SearchIndexPayload, contentSha?: string | null): string {
+  return contentSha ?? `${index.schema_version}:${index.run_date}`;
+}
+
+function normalizeBlob(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function detailItemsText(items: ProductDetail['fees']): string[] {
+  if (!items?.length) return [];
+  const parts: string[] = [];
+  for (const item of items) {
+    if (item.label) parts.push(String(item.label));
+    if (item.name) parts.push(String(item.name));
+    const value = descriptiveValue(item.value);
+    if (value !== null) parts.push(value);
+    if (item.info) parts.push(String(item.info));
+  }
+  return parts;
+}
+
+export function productDetailSearchText(detail: ProductDetail | null | undefined): string {
+  if (!detail) return '';
+  const chunks: string[] = [];
+  if (detail.description) chunks.push(detail.description);
+  chunks.push(...detailItemsText(detail.fees));
+  chunks.push(...detailItemsText(detail.features));
+  chunks.push(...detailItemsText(detail.eligibility));
+  chunks.push(...detailItemsText(detail.constraints));
+  chunks.push(...productFactsSearchText(detail));
+  return normalizeBlob(chunks.join(' '));
+}
+
+export function detailSearchIndex(detailsProducts?: Record<string, ProductDetail> | null): DetailIndex {
+  if (runtimeCache && runtimeCache.ref === detailsProducts) return runtimeCache.index;
+  const index: DetailIndex = new Map();
+  if (detailsProducts) {
+    for (const [key, detail] of Object.entries(detailsProducts)) {
+      const text = productDetailSearchText(detail);
+      if (text) index.set(key, text);
+    }
+  }
+  runtimeCache = { ref: detailsProducts, index };
+  return index;
+}
+
+export function resetDetailSearchIndexCache(): void {
+  runtimeCache = null;
+  queryMemo.clear();
+  lastMemoScope = null;
+  lastMemoIndex = null;
+}
+
+/** Test/diagnostic hook: the production cache remains encapsulated. */
+export function detailSearchMemoSize(): number {
+  return queryMemo.size;
+}
+
+function memoGet(key: string): Set<string> | undefined {
+  const hit = queryMemo.get(key);
+  if (!hit) return undefined;
+  // Map insertion order is our LRU order. Touch a hit so active queries remain.
+  queryMemo.delete(key);
+  queryMemo.set(key, hit);
+  return hit;
+}
+
+function memoSet(key: string, hits: Set<string>): void {
+  queryMemo.set(key, hits);
+  while (queryMemo.size > DETAIL_SEARCH_MEMO_LIMIT) {
+    const oldest = queryMemo.keys().next().value as string | undefined;
+    if (!oldest) break;
+    queryMemo.delete(oldest);
+  }
+}
+
+function longestCachedPrefix(scope: string, query: string): Set<string> | null {
+  const prefix = `${scope}:`;
+  let bestLength = -1;
+  let best: Set<string> | null = null;
+  for (const [key, hits] of queryMemo) {
+    if (!key.startsWith(prefix)) continue;
+    const cachedQuery = key.slice(prefix.length);
+    if (cachedQuery.length > bestLength && query.startsWith(cachedQuery)) {
+      bestLength = cachedQuery.length;
+      best = hits;
+    }
+  }
+  return best;
+}
+
+export function productKeysMatchingIndex(
+  index: SearchIndexPayload | null | undefined,
+  query: string,
+  contentSha?: string | null,
+): Set<string> | null {
+  const q = query.trim().toLowerCase();
+  if (!q || !index?.products) return null;
+  const scope = indexMemoScope(index, contentSha);
+  // A corrected asset can legitimately retain its schema version and run date.
+  // Store refresh replaces the parsed object, so identity is the safe fallback
+  // revision key when a caller has no manifest content SHA available.
+  if (lastMemoScope !== scope || lastMemoIndex !== index) {
+    queryMemo.clear();
+    lastMemoScope = scope;
+    lastMemoIndex = index;
+  }
+  const memo = `${scope}:${q}`;
+  const cached = memoGet(memo);
+  if (cached) return new Set(cached);
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const hits = new Set<string>();
+  const prefixHits = longestCachedPrefix(scope, q);
+  if (prefixHits) {
+    // Adding characters/tokens can only narrow substring matches, so avoid a
+    // second full-index walk while the user continues typing the same query.
+    for (const key of prefixHits) {
+      const blob = index.products[key];
+      if (blob && tokens.every((t) => blob.includes(t))) hits.add(key);
+    }
+  } else {
+    for (const [key, blob] of Object.entries(index.products)) {
+      if (tokens.every((t) => blob.includes(t))) hits.add(key);
+    }
+  }
+  memoSet(memo, new Set(hits));
+  return new Set(hits);
+}
+
+export function rowMatchesSearchQuery(
+  row: { provider: string; product_name: string; product_key: string },
+  query: string,
+  payloadIndex?: SearchIndexPayload | null,
+  runtimeDetailText?: string,
+  searchIndexSha?: string | null,
+): boolean {
+  const q = query.trim();
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  const hits = productKeysMatchingIndex(payloadIndex ?? null, q, searchIndexSha);
+  if (hits) return hits.has(row.product_key);
+  if (row.provider.toLowerCase().includes(needle) || row.product_name.toLowerCase().includes(needle)) return true;
+  return runtimeDetailText ? runtimeDetailText.includes(needle) : false;
+}

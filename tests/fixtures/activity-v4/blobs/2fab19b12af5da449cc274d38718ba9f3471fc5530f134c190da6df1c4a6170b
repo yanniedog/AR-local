@@ -1,0 +1,57 @@
+import { dayNumber } from './calendar';
+import { Decimal } from './decimal';
+import { PRECEDING_ACTIVITY_EVALUATOR_VERSION, type LedgerContract, type LedgerScenario, type Rule } from './types';
+
+/** Admission only; never creates portfolio authority or proves source approval. */
+export function validatePrecedingActivity(c: LedgerContract, s: LedgerScenario): void {
+  const reject = (reason: string): never => { throw new Error(`preceding_activity_${reason}`); };
+  if (c.evaluatorVersion !== PRECEDING_ACTIVITY_EVALUATOR_VERSION) reject('version_unsupported');
+  if (c.direction !== 'asset' || c.currency !== 'AUD' || c.tdLifecycle || c.loanContract || s.loan || s.tdConfirmation || s.executionAssumption ||
+      c.interest.offset !== 'none' || Decimal.parse(s.initialOffset).compare(Decimal.parse('0')) !== 0 || s.events.length || s.feeFacts?.length) reject('effects_unsupported');
+  const f = c.feeSchedule;
+  if (!f || f.accountId !== s.accountId || f.inventoryCoverage !== 'reviewed_complete' || f.deferredObligations !== 'none_confirmed' ||
+      !Array.isArray(f.fees) || f.fees.length || !Array.isArray(f.inventory) || !f.inventory.length ||
+      f.inventory.some(i => i.state !== 'none_applicable' || i.feeIds.length || i.lifecycleOccurrenceId !== undefined) ||
+      f.from > s.startDate || f.toExclusive < s.endDateExclusive) reject('no_fees_required');
+  const assessments = s.savingsAssessments;
+  if (!assessments || assessments.length !== 1) reject('assessment_required');
+  const a = assessments![0], data = a.activity;
+  if (a.accountId !== s.accountId || !data || dayNumber(a.from) >= dayNumber(a.toExclusive) || a.toExclusive > s.startDate ||
+      a.appliesFrom !== s.startDate || a.appliesToExclusive !== s.endDateExclusive) reject('window_mismatch');
+  if (!data || data.balances.length || data.coverage.length !== 1 || data.coverage[0].accountId !== s.accountId ||
+      data.coverage[0].from !== a.from || data.coverage[0].toExclusive !== a.toExclusive) reject('coverage_scope');
+  const intervals = c.savingsSchedule?.intervals;
+  if (!intervals?.length) reject('schedule_required');
+  let bonusId: string | undefined, commonMetrics: string | undefined;
+  for (const interval of intervals!) {
+    const base = interval.components.filter(x => x.kind === 'base'), bonus = interval.components.filter(x => x.kind === 'bonus');
+    if (interval.components.length !== 2 || base.length !== 1 || base[0].qualification || bonus.length !== 1 || !bonus[0].qualification) reject('components_unsupported');
+    const b = bonus[0], q = b.qualification!, metrics = q.activityMetrics;
+    if ((bonusId !== undefined && bonusId !== b.id) || q.accountId !== s.accountId || q.assessmentKey !== a.assessmentKey || q.windows.length !== 1) reject('qualification_scope');
+    bonusId = b.id;
+    const w = q.windows[0];
+    if (w.from !== a.from || w.toExclusive !== a.toExclusive || w.appliesFrom !== a.appliesFrom || w.appliesToExclusive !== a.appliesToExclusive) reject('qualification_scope');
+    if (!metrics?.length || metrics.length > 2 || new Set(metrics.map(m => m.kind)).size !== metrics.length) reject('metrics_unsupported');
+    const basis = metrics![0].dateBasis, role = metrics![0].accountRole;
+    for (const m of metrics!) {
+      if (!['deposit_total', 'withdrawal_count'].includes(m.kind) || m.accountIds.length !== 1 || m.accountIds[0] !== s.accountId ||
+          m.settlement !== 'settled_only' || m.dateBasis !== basis || m.accountRole !== role || m.refundPolicy !== null || m.growthAdjustments !== null) reject('metrics_unsupported');
+    }
+    const identity = JSON.stringify(metrics);
+    if (commonMetrics !== undefined && commonMetrics !== identity) reject('metrics_changed');
+    commonMetrics = identity;
+    const fields = new Set(metrics!.map(m => m.field));
+    const rule = (r: Rule, depth = 0): void => {
+      if (depth > 16) reject('rule_unsupported');
+      if (r.op === 'compare') { if (!fields.has(r.field)) reject('rule_field_unbound'); }
+      else if (r.op === 'and' || r.op === 'or') r.rules.forEach(child => rule(child, depth + 1));
+      else reject('rule_unsupported');
+    };
+    rule(q.rule);
+    for (const e of data!.events) {
+      if (e.accountId !== s.accountId || e.date < a.from || e.date >= a.toExclusive || e.dateBasis !== basis) reject('event_scope');
+      // Unknown is genuine missing information; known unsupported effects are refused.
+      if (!['deposit', 'withdrawal', 'unknown'].includes(e.kind) || e.originalPurchaseId !== undefined) reject('event_kind_unsupported');
+    }
+  }
+}

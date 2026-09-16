@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:savings-activity-wire4-draft:material-projections-3",
+  "$comment": "Closed per-field source material projection draft.",
+  "$defs": {
+    "metricThresholds": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "metricThresholds"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rule"
+            ],
+            "properties": {
+              "rule": {
+                "oneOf": [
+                  {
+                    "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared1"
+                  },
+                  {
+                    "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared2"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "op",
+                      "rules"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                      },
+                      "op": {
+                        "enum": [
+                          "and",
+                          "or"
+                        ]
+                      },
+                      "rules": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": {
+                          "oneOf": [
+                            {
+                              "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared1"
+                            },
+                            {
+                              "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared2"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "bonusApplication": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "bonusApplication"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "assessmentKey",
+              "from",
+              "toExclusive",
+              "appliesFrom",
+              "appliesToExclusive"
+            ],
+            "properties": {
+              "assessmentKey": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "from": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared5"
+              },
+              "toExclusive": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared5"
+              },
+              "appliesFrom": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared5"
+              },
+              "appliesToExclusive": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/shared5"
+              }
+            }
+          }
+        }
+      }
+    },
+    "bonusRates": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "bonusRates"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "componentId",
+              "allocation",
+              "tiers"
+            ],
+            "properties": {
+              "componentId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "allocation": {
+                "enum": [
+                  "marginal",
+                  "whole_balance"
+                ]
+              },
+              "tiers": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "upperInclusive",
+                    "annualRate"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "upperInclusive": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,2})?$"
+                        },
+                        {
+                          "const": null
+                        }
+                      ]
+                    },
+                    "annualRate": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,12})?$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rateComponents": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "rateComponents"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "base",
+              "bonus"
+            ],
+            "properties": {
+              "base": {
+                "const": "additive"
+              },
+              "bonus": {
+                "const": "activity_additive"
+              }
+            }
+          }
+        }
+      }
+    },
+    "activityExclusions": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "activityExclusions"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intro",
+              "otherBonusComponents"
+            ],
+            "properties": {
+              "intro": {
+                "const": "none_source_declared"
+              },
+              "otherBonusComponents": {
+                "const": "none_source_declared"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

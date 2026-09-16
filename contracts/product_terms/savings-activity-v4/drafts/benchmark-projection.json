@@ -1,0 +1,132 @@
+{
+  "status": "DRAFT_PROJECTION_REQUIRES_APP_AGREEMENT",
+  "receiptKind": "aud_savings_activity_benchmark_v1",
+  "schemaVersion": 1,
+  "subjectSchemaVersion": 4,
+  "subjectTuple": [
+    "savings_activity_calculation",
+    "aud_savings_activity_period_v1",
+    "aud-savings-activity-v1",
+    "product-terms-engine-v9"
+  ],
+  "privateInput": {
+    "rawEnvelope": [
+      "target",
+      "inputs",
+      "profile"
+    ],
+    "inputsSchema": "private-input.schema.json",
+    "hash": "exact canonical complete raw envelope; no dropped unknown or confirmation values"
+  },
+  "contextBindings": [
+    "subjectId",
+    "sourceSnapshotSha256",
+    "authorityGraphSha256",
+    "manifestSha256",
+    "coreSha256",
+    "detailsSha256",
+    "indexSha256",
+    "shardSha256",
+    "selectedApprovalIdentity",
+    "adapterGitClosureSha256",
+    "evaluatorGitClosureSha256"
+  ],
+  "actualResultShape": [
+    "schemaVersion",
+    "evaluationKind",
+    "adapterVersion",
+    "evaluatorVersion",
+    "verificationScope",
+    "basis",
+    "adapterInputs",
+    "inputSha256",
+    "calculationInputs",
+    "receipt"
+  ],
+  "actualResultShapeStatus": "Agreed base-style envelope; raw capture retains target,inputs,profile",
+  "mustCompare": {
+    "metricResults": [
+      "metricId",
+      "field",
+      "status",
+      "fact.type",
+      "fact.value",
+      "fact.unit",
+      "reason",
+      "evidenceIds"
+    ],
+    "assessment": [
+      "accountId",
+      "from",
+      "toExclusive",
+      "appliesFrom",
+      "appliesToExclusive",
+      "coverage",
+      "qualification.status",
+      "qualification.trace"
+    ],
+    "receipt": [
+      "status",
+      "completeness",
+      "claimAvailable",
+      "eligibility",
+      "issueDetails",
+      "totals",
+      "ledger"
+    ],
+    "eachAccrual": [
+      "date",
+      "amount",
+      "balance",
+      "evidenceIds",
+      "savingsContributions.intervalId",
+      "savingsContributions.componentId",
+      "savingsContributions.kind",
+      "savingsContributions.allocation",
+      "savingsContributions.status",
+      "savingsContributions.assessmentId",
+      "savingsContributions.qualification",
+      "savingsContributions.activityResults",
+      "savingsContributions.tiers.id",
+      "savingsContributions.tiers.basis",
+      "savingsContributions.tiers.annualRate",
+      "savingsContributions.tiers.accrual",
+      "savingsContributions.tiers.evidenceIds"
+    ],
+    "eachPosting": [
+      "date",
+      "id",
+      "type",
+      "amount",
+      "balance",
+      "evidenceIds"
+    ]
+  },
+  "outcomes": [
+    "complete_bonus_applied",
+    "complete_base_only_does_not_meet",
+    "incomplete_unknown_activity_unranked",
+    "intended_contract_refusal"
+  ],
+  "expectedDerivation": "Independent Fraction classification/status/date filtering, exact threshold evaluation, additive base+bonus daily tiers and existing frozen rate/accrual/posting rounding; no app-result-derived expected values",
+  "refusalProof": "input and context identity plus specific intended validation reason; unrelated exception fails the benchmark",
+  "holdouts": [
+    "uneven deposit amounts",
+    "threshold equality",
+    "zero withdrawals",
+    "failed bonus",
+    "pending exclusion",
+    "unknown classification and coverage",
+    "tier boundary",
+    "base plus bonus not headline double-count",
+    "assessment/application boundary",
+    "stale completion authority",
+    "mixed date bases",
+    "missing and repeated bonus confirmation key"
+  ],
+  "limits": "Actual assessment is retained in scenario.savingsAssessments; no synthetic result field. Engine unchanged. No bank approval.",
+  "assessmentPath": "calculationInputs.scenario.savingsAssessments",
+  "activityResultPath": "receipt.ledger[*].savingsContributions[*].activityResults",
+  "evaluatorEntrypoint": "calculateSavingsActivityLedger",
+  "evaluatorProofStatus": "PENDING_ACTUAL_V9_FOCUSED_PROOF_AND_ROOT_REVIEW"
+}

@@ -1,0 +1,39 @@
+import { utf8ToBytes } from '@noble/hashes/utils';
+import { canonical, hashText } from '../../lib/productTermsEngine/validation';
+import { Decimal } from '../../lib/productTermsEngine/decimal';
+import { interval, includesInterval, supersessionUnion } from '../monetaryContracts/coverage';
+import { monetaryIdentity, assertFieldCoverage } from '../monetaryContracts/authority';
+import { validateSavingsStructure, operationBudget } from '../monetaryContracts/validation';
+import { assertActivityWire } from './schemaValidation';
+import type { ActivitySubject, ActivityAsset } from './types';
+export function validateActivitySubject(raw:unknown):ActivitySubject {
+  if(utf8ToBytes(JSON.stringify(raw)).length>256*1024)throw new Error('Activity subject limit');assertActivityWire(raw,'subject');const s=raw as ActivitySubject;
+  if(monetaryIdentity(s,'id')!==s.id||hashText(canonical(['monetary-scope-v4',s.capability,s.scope]))!==s.scopeId||s.routing.productKey!==s.scope.productKey)throw new Error('Activity identity mismatch');
+  operationBudget([s]);validateSavingsStructure(s,true);
+  const b=s.policy.bonus,a=b.assessment,g=s.authorityGraph,evidence=new Set(s.evidence.map(e=>e.id));
+  const refs=(ids:string[])=>{if(!ids.length||ids.some(id=>!evidence.has(id)))throw new Error('Activity evidence missing');};
+  if(interval(a.from,s.scope.toExclusive)>366||interval(a.from,a.toExclusive)<1||a.toExclusive>s.scope.from||a.appliesFrom!==s.scope.from||a.appliesToExclusive!==s.scope.toExclusive)throw new Error('Activity windows unsupported');
+  const authority=g.authorities.find(x=>x.id===a.authorityId);if(!authority||!includesInterval(authority.from,authority.toExclusive,a.from,a.toExclusive))throw new Error('Activity assessment authority missing');
+  for(const other of g.authorities)if(other.id!==authority.id&&other.from<a.toExclusive&&other.toExclusive>a.from&&!supersessionUnion(g,authority.id,other.id,a.from>other.from?a.from:other.from,a.toExclusive<other.toExclusive?a.toExclusive:other.toExclusive))throw new Error('Activity authority conflict unresolved');
+  for(const [field,ids]of Object.entries(a.fieldEvidenceIds)){refs(ids);assertFieldCoverage(authority,field,a.from,a.toExclusive,[],ids);}
+  assertFieldCoverage(authority,'activityExclusions',a.from,a.toExclusive,[],b.fieldEvidenceIds.activityExclusions);
+  for(const p of s.policy.intervals){const owner=g.authorities.find(x=>x.id===p.authorityId)!;
+    for(const [field,ids]of Object.entries(b.fieldEvidenceIds)){refs(ids);assertFieldCoverage(owner,field,p.from,p.toExclusive,[],ids);}
+    assertFieldCoverage(owner,'bonusApplication',p.from,p.toExclusive,[],a.fieldEvidenceIds.bonusApplication);
+  }
+  refs(b.evidenceIds);let edge=Decimal.parse('0');const tiers=new Set<string>();
+  for(const [i,t]of b.tiers.entries()){refs(t.evidenceIds);if(tiers.has(t.id)||t.evidenceIds.some(id=>!b.fieldEvidenceIds.bonusRates.includes(id)))throw new Error('Activity bonus tier evidence mismatch');tiers.add(t.id);
+    if(t.upperInclusive===null){if(i!==b.tiers.length-1)throw new Error('Activity unlimited tier must be final');}else{const next=Decimal.parse(t.upperInclusive);if(next.compare(edge)<=0)throw new Error('Activity tier inverted');edge=next;}}
+  if(b.tiers.at(-1)?.upperInclusive!==null)throw new Error('Activity above-cap treatment missing');
+  if(new Set(a.metrics.map(m=>m.id)).size!==a.metrics.length||new Set(a.metrics.map(m=>m.kind)).size!==a.metrics.length||new Set(a.metrics.map(m=>m.field)).size!==a.metrics.length)throw new Error('Activity metric inventory mismatch');
+  for(const m of a.metrics){refs(m.evidenceIds);if(m.field!==`activity_${m.kind}`||m.includedClassifications.some(x=>m.excludedClassifications.includes(x)))throw new Error('Activity metric classification mismatch');}
+  const leaves=a.rule.op==='compare'?[a.rule]:a.rule.op==='and'||a.rule.op==='or'?a.rule.rules:[];
+  if(leaves.length!==a.metrics.length||a.metrics.length===1&&a.rule.op!=='compare'||new Set(leaves.map(r=>r.id)).size!==leaves.length||leaves.some(r=>r!==a.rule&&r.id===a.rule.id))throw new Error('Activity rule inventory mismatch');
+  const fields=new Set<string>();for(const r of leaves){if(r.op!=='compare')throw new Error('Activity rule shape unsupported');refs(r.evidenceIds!);const m=a.metrics.find(m=>m.field===r.field);if(!m||fields.has(r.field)||r.expected.type!=='decimal'||r.expected.unit!==(m.kind==='deposit_total'?'AUD':'count')||m.kind==='withdrawal_count'&&!/^\d+$/.test(r.expected.value))throw new Error('Activity rule field mismatch');fields.add(r.field);}
+  return s;
+}
+export function validateActivityAsset(raw:unknown):ActivityAsset {
+  if(utf8ToBytes(JSON.stringify(raw)).length>512*1024)throw new Error('Activity asset limit');assertActivityWire(raw,'asset');const asset=raw as ActivityAsset;
+  if(monetaryIdentity(asset,'identitySha256')!==asset.identitySha256)throw new Error('Activity asset identity mismatch');operationBudget(asset.subjects.map(e=>e.subject));
+  const ids=new Set<string>(),scopes=new Set<string>();for(const e of asset.subjects){const s=validateActivitySubject(e.subject);if(ids.has(s.id)||scopes.has(s.scopeId)||e.approval.subjectId!==s.id||e.approval.authorityGraphSha256!==s.authorityGraph.identitySha256||s.scope.productKey!==asset.productKey||canonical(s.routing)!==canonical(asset.routing))throw new Error('Activity approval association mismatch');ids.add(s.id);scopes.add(s.scopeId);}return asset;
+}

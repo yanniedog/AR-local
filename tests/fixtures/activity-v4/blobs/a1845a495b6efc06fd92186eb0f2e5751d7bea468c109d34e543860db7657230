@@ -1,0 +1,15 @@
+import type { SavingsPolicy, SavingsSubject, SavingsApproval, MonetaryRouting, MonetaryDescriptor } from '../monetaryContracts/types';
+import type { SavingsPeriodInputs } from '../monetaryContracts/facts';
+import type { SavingsTier, SavingsAssessmentWindow } from '../../lib/productTermsEngine/savingsTypes';
+import type { SavingsActivityData, SavingsActivityMetric } from '../../lib/productTermsEngine/savingsActivityTypes';
+import type { Rule } from '../../lib/productTermsEngine/types';
+export const ACTIVITY_ADAPTER = 'aud-savings-activity-v1' as const;
+export type ActivityMetric = Pick<SavingsActivityMetric, 'id'|'kind'|'field'|'includedClassifications'|'excludedClassifications'|'evidenceIds'>;
+export interface ActivityAssessment extends Omit<SavingsAssessmentWindow, 'evidenceIds'> { assessmentKey:string; authorityId:string; accountRole:string; dateBasis:'processed'|'transaction'; settlement:'settled_only'; metrics:ActivityMetric[]; rule:Rule; fieldEvidenceIds:Record<string,string[]> }
+export interface ActivityBonus { componentId:string; allocation:'marginal'|'whole_balance'; kind:'activity_additive'; fieldEvidenceIds:Record<string,string[]>; tiers:SavingsTier[]; assessment:ActivityAssessment; evidenceIds:string[] }
+export type ActivityPolicy = Omit<SavingsPolicy,'kind'|'bonus'> & {kind:'aud_savings_activity_period_v1';bonus:ActivityBonus};
+export type ActivitySubject = Omit<SavingsSubject,'schemaVersion'|'capability'|'kind'|'adapterVersion'|'evaluatorVersion'|'policy'> & {schemaVersion:4;capability:'savings_activity_calculation';kind:ActivityPolicy['kind'];adapterVersion:typeof ACTIVITY_ADAPTER;evaluatorVersion:'product-terms-engine-v9';policy:ActivityPolicy};
+export type ActivityApproval = Omit<SavingsApproval,'capability'> & {capability:'savings_activity_calculation'};
+export interface ActivityAsset {schemaVersion:4;capability:'savings_activity_calculation';productKey:string;routing:MonetaryRouting;approvalPolicy:'as_of_adopted_edition';identitySha256:string;subjects:{subject:ActivitySubject;approval:ActivityApproval}[]}
+export interface ActivityNamespace {schema_version:4;capabilities:{savings_activity_calculation:{index:MonetaryDescriptor;shards:Record<string,MonetaryDescriptor>}}}
+export interface ActivityInputs extends SavingsPeriodInputs {confirmedBonusAnnualRates:{componentId:string;tierId:string;annualRate:string}[];activity:Omit<SavingsActivityData,'balances'>}
