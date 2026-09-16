@@ -1,14 +1,13 @@
 """Compare exposed actual activity financial fields against independent Fractions."""
 from fractions import Fraction
 from .executable_v4_oracle import evaluate
+from .executable_v4_trace import check_receipt, check_row, check_components
 
 
 def verify_financial(result,subject,inputs):
     expected=evaluate(subject,inputs);receipt=result['receipt'];met=expected['qualified']
     if receipt['evaluatorVersion']!='product-terms-engine-v9':raise ValueError('Activity evaluator differs')
-    status='incomplete' if met is None else 'complete'
-    if receipt['status']!=status or receipt['claimAvailable'] is not (met is not None):
-        raise ValueError('Activity completeness or claim differs')
+    check_receipt(result,subject,expected)
     totals=dict(expected['totals'],principalRepaid=None,externalInflows='0.00',externalOutflows='0.00',feesDebitedBalance='0.00',feesPaidExternal='0.00')
     if receipt['totals']!=totals:raise ValueError('Activity totals differ from independent arithmetic')
     ledger=receipt['ledger']
@@ -17,11 +16,13 @@ def verify_financial(result,subject,inputs):
     periods={x['id']:x for x in subject['policy']['intervals']};bonus=subject['policy']['bonus']
     for row,financial in zip(ledger,expected['ledger']):
         if {k:row.get(k) for k in financial}!=financial:raise ValueError('Activity ledger arithmetic differs')
+        check_row(row,result,subject)
         if row['type']!='interest_accrual':continue
         day=days[row['date']];period=periods[day['intervalId']]
         contributions=row['savingsContributions']
         if len(contributions)!=2:raise ValueError('Activity component inventory differs')
         base,extra=contributions
+        check_components(base,extra,period,bonus,expected,inputs)
         qualification='needs_information' if met is None else 'meets' if met else 'does_not_meet'
         if (base['kind']!='base' or base['componentId']!=period['id']+':base' or base['status']!='applied'
             or extra['kind']!='bonus' or extra['componentId']!=bonus['componentId']

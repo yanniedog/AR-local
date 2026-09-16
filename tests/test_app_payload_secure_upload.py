@@ -12,15 +12,24 @@ KEY = bytes(range(32))
 
 
 @pytest.mark.parametrize("kind", ["index", "shard_000"])
-def test_savings_activity_v4_is_classified_and_encrypted(tmp_path, key_file, kind):
+def test_savings_activity_v4_is_classified_but_unfrozen_publication_refused(tmp_path, key_file, kind):
     path = tmp_path / f"monetary_v4_savings_activity_calculation_{kind}-2026-09-16-abcdef012345.json.gz"
     path.write_bytes(b"technical-domain-vector")
     assert classify_asset(path.name) == "cdr_domain"
     def runner(args, **kwargs):
-        wire = Path(args[4]).read_bytes()
-        assert wire.startswith(MAGIC)
-        assert decode_public_bytes(wire, 1024, require_encrypted=True) == path.read_bytes()
-    secure_upload(["gh", "release", "upload", "technical", str(path)], runner=runner)
+        pytest.fail('unfrozen activity asset reached publication')
+    with pytest.raises(ValueError, match='approved publication freeze'):
+        secure_upload(["gh", "release", "upload", "technical", str(path)], runner=runner)
+
+
+@pytest.mark.parametrize('encrypted', [False, True])
+def test_unfrozen_manifest_refused_even_when_transport_authenticated(tmp_path, key_file, encrypted):
+    path = tmp_path / 'manifest.json'
+    raw = b'{"files":{},"executable_v4":{}}'
+    path.write_bytes(encrypt_transport(raw, KEY) if encrypted else raw)
+    with pytest.raises(ValueError, match='approved publication freeze'):
+        secure_upload(['gh', 'release', 'upload', 'technical', str(path)],
+                      runner=lambda *args, **kwargs: pytest.fail('unfrozen manifest published'))
 
 
 @pytest.fixture
@@ -30,6 +39,14 @@ def key_file(tmp_path, monkeypatch):
     monkeypatch.setenv("AR_LOCAL_PAYLOAD_KEY_FILE", str(path))
     monkeypatch.setenv("AR_LOCAL_PAYLOAD_ENC", "0")  # no plaintext opt-out
     return path
+
+
+def test_malformed_manifest_is_refused_before_upload(tmp_path, key_file):
+    path = tmp_path / 'manifest.json'
+    path.write_bytes(b'not a JSON manifest')
+    with pytest.raises(ValueError):
+        secure_upload(['gh', 'release', 'upload', 'technical', str(path)],
+                      runner=lambda *args, **kwargs: pytest.fail('malformed manifest published'))
 
 
 def test_upload_encrypts_manifest_and_preserves_local_domain_bytes(tmp_path, key_file):

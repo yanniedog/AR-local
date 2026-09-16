@@ -1,7 +1,7 @@
 """Default-off monetary route packaging from independently approved publications."""
 import json
 from app_payload_terms import MAX_PRODUCTS,MAX_SHARD_RAW,MAX_SNAPSHOT_RAW,_json,_ReadView
-from cdr_terms.executable_v4_contract import validate_asset,CAPABILITY
+from cdr_terms.executable_v4_contract import validate_asset,CAPABILITY,require_publication_ready
 from cdr_terms.executable_v4_sources import validate_destination
 from cdr_terms.identity import digest
 from cdr_terms.executable_v4_publication import build_asset
@@ -11,6 +11,7 @@ TUPLES = {CAPABILITY}
 
 
 def load_published_executable_v4(root,*,source_observation,run_date,core_asset_sha256,details_asset_sha256,product_keys):
+    require_publication_ready()
     keys=set(product_keys)
     if len(keys)>MAX_PRODUCTS:raise ValueError('Monetary product inventory exceeds bound')
     view=_ReadView(root)
@@ -46,6 +47,7 @@ def load_published_executable_v4(root,*,source_observation,run_date,core_asset_s
 
 
 def package_executable_v4(snapshot,*,core,details,core_asset_sha256,details_asset_sha256,run_date,write_asset):
+    require_publication_ready()
     if set(snapshot)-set(TUPLES):raise ValueError('Monetary unsupported producer route')
     routes={};total=0;public_total=len(_json(core))+len(_json(details))
     if any(snapshot.values()) and public_total>MAX_SNAPSHOT_RAW:raise ValueError('Monetary adopted public snapshot bound exceeded')

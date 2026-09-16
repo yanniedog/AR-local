@@ -29,6 +29,9 @@ def check_inputs(subject, inputs):
             raise ValueError('Confirmed bonus rates differ from source')
         seen.add(key)
     assessment, data = bonus['assessment'], inputs['activity']
+    event_ids = [event['id'] for event in data['events']]
+    if len(set(event_ids)) != len(event_ids):
+        raise ValueError('Activity duplicate event identity')
     coverage = data['coverage']
     if (len(coverage) != 1 or coverage[0]['accountId'] != inputs['accountId']
             or coverage[0]['from'] != assessment['from']
