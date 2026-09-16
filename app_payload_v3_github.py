@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from cdr_domain.serialize import canonical_json_bytes
+from app_payload_secure_upload import secure_upload, publication_key, decode_public_bytes
+from release_transport import encrypt_transport, OVERHEAD
 
 from app_payload_v3_state import (
     CANONICAL_REPO,
@@ -176,7 +178,7 @@ def public_fetch(url: str, max_bytes: int, timeout: float = 30.0) -> bytes:
         or parsed.query
         or parsed.fragment
         or max_bytes < 0
-        or max_bytes > MAX_PUBLIC_BYTES
+        or max_bytes > MAX_PUBLIC_BYTES + OVERHEAD
     ):
         raise PromotionError("public verification URL or byte limit is invalid")
     request = urllib.request.Request(
@@ -232,7 +234,11 @@ class GitHubPromotionBackend(GitHubReleaseMixin):
         self, args: Sequence[str], *, input_text: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         try:
-            return self._runner(
+            run = self._runner
+            if list(args)[1:3] == ["release", "upload"]:
+                return secure_upload(list(args), runner=run, input=input_text,
+                                     capture_output=True, text=True, shell=False, timeout=60, check=False)
+            return run(
                 list(args), input=input_text, capture_output=True, text=True,
                 shell=False, timeout=60, check=False,
             )
@@ -316,6 +322,19 @@ class GitHubPromotionBackend(GitHubReleaseMixin):
         files: Mapping[str, bytes],
         message: str,
     ) -> str:
+        if branch == CONTROL_BRANCH:
+            if not files or set(files) - {POINTER_FILENAME, DATES_INDEX_FILENAME}:
+                raise PromotionError("unknown control asset classification")
+            limits = {POINTER_FILENAME: V3_POINTER_LIMIT_BYTES,
+                      DATES_INDEX_FILENAME: V3_DATES_INDEX_LIMIT_BYTES}
+            if any(len(raw) > limits[name] for name, raw in files.items()):
+                raise PromotionError("control document exceeds its byte limit")
+            key = publication_key()
+            files = {name: encrypt_transport(raw, key) for name, raw in files.items()}
+        elif branch != LOCK_BRANCH or set(files) != {LOCK_FILENAME}:
+            raise PromotionError("unknown publication branch classification")
+        else:
+            _validate_lock(_strict_object(files[LOCK_FILENAME], "promotion lock"))
         tree_entries = []
         for path, payload in sorted(files.items()):
             blob = self._api(
@@ -508,10 +527,14 @@ class GitHubPromotionBackend(GitHubReleaseMixin):
         )
 
     def fetch_url(self, url: str, max_bytes: int) -> bytes:
+        if type(max_bytes) is not int or not 0 <= max_bytes <= MAX_PUBLIC_BYTES:
+            raise PromotionError("invalid public domain byte limit")
         last_error: PromotionError | None = None
         for attempt in range(4):
             try:
-                return self._fetcher(url, max_bytes)
+                raw = self._fetcher(url, max_bytes + OVERHEAD)
+                operational = urllib.parse.urlsplit(url).path.endswith("/" + LOCK_FILENAME)
+                return decode_public_bytes(raw, max_bytes, require_encrypted=not operational)
             except PromotionError as error:
                 last_error = error
                 if attempt < 3:

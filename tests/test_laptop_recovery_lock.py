@@ -15,21 +15,23 @@ def test_killed_reader_releases_both_names_for_installed_writer(tmp_path):
     locations = (tmp_path, tmp_path / "user-session-lock")
     for location in locations:
         (location / "catalog").mkdir(parents=True)
-    code = """import sys
+    code = """import os, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from laptop_recovery_lock import process_writer_lock
 root = Path(sys.argv[2])
 with process_writer_lock(root / 'user-session-lock'), process_writer_lock(root):
-    print('ready', flush=True)
+    print(f'ready:{os.getpid()}', flush=True)
     sys.stdin.read()
 """
     child = subprocess.Popen(
-        [sys.executable, "-I", "-S", "-B", "-c", code,
+        # A Windows venv python.exe can be a redirector with a different PID
+        # from the lock owner. Kill the actual interpreter, not its launcher.
+        [getattr(sys, "_base_executable", sys.executable), "-I", "-S", "-B", "-c", code,
          str(Path(__file__).parents[1]), str(tmp_path)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        assert child.stdout.readline().strip() == "ready"
+        assert child.stdout.readline().strip() == f"ready:{child.pid}"
         for location in locations:
             assert (location / "catalog/.receiver.lock").exists()
             with pytest.raises(FileExistsError):
