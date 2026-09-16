@@ -1,6 +1,9 @@
 """GitHub release publish helpers for the mobile-app payload."""
 from __future__ import annotations
 
+from app_payload_secure_upload import secure_upload, publication_key, validate_upload_paths, decode_public_bytes
+from release_transport import OVERHEAD
+
 import json
 import os
 import re
@@ -118,6 +121,8 @@ def _upload_dates_index(
     """Upload ``dates-index.json`` to the rolling release (clobber)."""
     if not index_path.is_file():
         return False
+    validate_upload_paths([index_path])
+    publication_key()
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     view = _app_payload("subprocess").run(
         [gh, "release", "view", tag, "--repo", repo],
@@ -127,10 +132,14 @@ def _upload_dates_index(
         print(f"[app_payload] dates-index upload skipped: release {tag!r} missing")
         return False
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    _app_payload("subprocess").run(
-        [gh, "release", "upload", tag, str(index_path), "--repo", repo, "--clobber"],
+    secure_upload(
+        [gh, "release", "upload", tag, str(index_path), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
         check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
     )
+    from app_payload_revisions_github import GitHubRevisionStore
+    from app_payload_revisions_state import RevisionError
+    if GitHubRevisionStore(repo, gh=gh).read(tag, "dates-index.json", require_encrypted=True) != index_path.read_bytes():
+        raise RevisionError("dates index failed encrypted readback")
     return True
 
 
@@ -241,36 +250,8 @@ def _gh_authed(gh: str) -> bool:
 
 
 def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) -> int:
-    """Delete obsolete content-addressed data assets, keeping the current manifest's
-    assets plus the KEEP_RECENT_ASSETS newest. Best-effort; returns count deleted."""
-    if not is_rolling_tag(tag):
-        return 0
-    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    listed = _app_payload("subprocess").run(
-        [gh, "release", "view", tag, "--repo", repo, "--json", "assets",
-         "-q", '.assets[] | "\\(.name)\\t\\(.createdAt)"'],
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
-    )
-    if listed.returncode != 0:
-        return 0
-    data: List[Tuple[str, str]] = []
-    for line in listed.stdout.splitlines():
-        name, _, created = line.partition("\t")
-        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-", "bank-spread-history-", "rba-calendar-")) and name.endswith((".json.gz", ".json.gz.enc")):
-            data.append((name, created))
-    data.sort(key=lambda x: x[1], reverse=True)  # newest first
-    deleted = 0
-    for idx, (name, _created) in enumerate(data):
-        if name in keep_names or idx < KEEP_RECENT_ASSETS:
-            continue
-        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-        res = _app_payload("subprocess").run(
-            [gh, "release", "delete-asset", tag, name, "--repo", repo, "-y"],
-            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
-        )
-        if res.returncode == 0:
-            deleted += 1
-    return deleted
+    """Removal belongs to a separately verified preserve/migrate/remove operation."""
+    return 0
 
 
 def _manifest_should_replace(
@@ -284,6 +265,12 @@ def _manifest_should_replace(
     our_revision: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     """Decide whether to replace the live manifest on ``tag`` (rolling vs dated rules)."""
+    # Force cannot bypass unknown live state or move the rolling head backward.
+    if status == "error":
+        return False, "live_manifest_verify_error"
+    if (is_rolling_tag(tag) and status == "present"
+            and str((live or {}).get("run_date") or "") > our_run_date):
+        return False, "live_newer"
     live_revision = (live or {}).get("payload_revision")
     if live_revision and not our_revision:
         return False, "revision_protocol_downgrade"
@@ -337,7 +324,8 @@ def _live_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[str, 
     url = fresh_document_url(f"https://github.com/{repo}/releases/download/{tag}/manifest.json")
     try:
         with urllib.request.urlopen(url, timeout=SUBPROCESS_TIMEOUT_SEC) as resp:  # nosec B310 - https URL
-            return "present", json.loads(resp.read().decode("utf-8"))
+            raw = resp.read(4 * 1024 * 1024 + OVERHEAD + 1)
+            return "present", json.loads(decode_public_bytes(raw, 4 * 1024 * 1024).decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return ("missing", None) if exc.code == 404 else ("error", None)
     except Exception:
@@ -357,7 +345,7 @@ def publish_payload(
 
     Token-gated: with no gh/auth it prints a message and returns False (a no-op),
     unless ``require_token`` is set, in which case it raises. ``force`` overrides the
-    "don't overwrite a newer live manifest" guard (operator-confirmed downgrade).
+    same-day generation-time guard only; it cannot roll the rolling day or revision backward.
     """
     manifest_path = payload_dir / "manifest.json"
     if not manifest_path.exists():
@@ -382,6 +370,8 @@ def publish_payload(
     missing = [str(a) for a in assets if not a.exists()]
     if missing:
         raise FileNotFoundError(f"missing payload assets: {missing}")
+    validate_upload_paths(assets)
+    publication_key()
 
     gh = _app_payload("_gh_available")()
     if not gh or not _app_payload("_gh_authed")(gh):
@@ -433,8 +423,8 @@ def publish_payload(
             check=True, timeout=SUBPROCESS_TIMEOUT_SEC,
         )
 
-    # Data assets are content-addressed, so a same-name asset already on the release is
-    # byte-identical. Upload only the MISSING ones, WITHOUT --clobber — never delete an
+    # Upload missing names without clobber; existing names still require encrypted
+    # byte verification below. Never delete an
     # asset the current manifest still references (an interrupted clobber could lose it).
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     listed = _app_payload("subprocess").run(
@@ -445,10 +435,18 @@ def publish_payload(
     to_upload = [a for a in data_assets if a.name not in existing]
     if to_upload:
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-        _app_payload("subprocess").run(
-            [gh, "release", "upload", tag, *[str(a) for a in to_upload], "--repo", repo],
+        secure_upload(
+            [gh, "release", "upload", tag, *[str(a) for a in to_upload], "--repo", repo], runner=_app_payload("subprocess").run,
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
+    from app_payload_revisions_github import GitHubRevisionStore
+    from app_payload_revisions_state import RevisionError
+    store = GitHubRevisionStore(repo, gh=gh)
+    for asset in data_assets:
+        # A content-addressed name does not prove encryption. Legacy plaintext
+        # requires separately verified migration before ordinary publication.
+        if store.read(tag, asset.name, max(asset.stat().st_size, 1), require_encrypted=True) != asset.read_bytes():
+            raise RevisionError("public asset failed encrypted byte verification")
     # ...then replace manifest.json last, so it only ever points at assets already live.
     # First check the live manifest, distinguishing present / missing / transient-error.
     status, live = _app_payload("_live_manifest_status")(repo, tag)
@@ -496,8 +494,8 @@ def publish_payload(
 
     try:
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-        _app_payload("subprocess").run(
-            [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
+        secure_upload(
+            [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     except subprocess.SubprocessError:
@@ -514,8 +512,8 @@ def publish_payload(
             if safe_to_restore:
                 try:
                     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-                    _app_payload("subprocess").run(
-                        [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"],
+                    secure_upload(
+                        [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
                         check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
                     )
                     print("[app_payload] restored previous manifest after a failed replacement upload")
@@ -524,12 +522,8 @@ def publish_payload(
             else:
                 print(f"[app_payload] not restoring backup (live recheck={recheck}); avoiding a clobber")
         raise
-    if manifest.get("payload_revision"):
-        from app_payload_revisions_github import GitHubRevisionStore
-        from app_payload_revisions_state import RevisionError
-
-        if GitHubRevisionStore(repo, gh=gh).read(tag, "manifest.json") != manifest_path.read_bytes():
-            raise RevisionError("compatibility alias failed exact public manifest verification")
+    if store.read(tag, "manifest.json", require_encrypted=True) != manifest_path.read_bytes():
+        raise RevisionError("compatibility alias failed encrypted manifest verification")
     print(
         f"[app_payload] publish succeeded run_date={our_run_date} tag={tag} repo={repo} "
         f"manifest_replaced=true new_data_assets={len(to_upload)} exit=0"

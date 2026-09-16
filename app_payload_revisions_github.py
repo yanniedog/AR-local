@@ -9,6 +9,9 @@ backend directly.
 """
 from __future__ import annotations
 
+from app_payload_secure_upload import secure_upload, publication_key, validate_upload_paths, decode_public_bytes
+from release_transport import OVERHEAD
+
 import json
 import os
 import re
@@ -75,17 +78,23 @@ class GitHubRevisionStore:
 
     def _run(self, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
         # nosemgrep: dangerous-subprocess-use-audit - fixed argv, no shell.
-        result = subprocess.run([self.gh, *args], shell=False, capture_output=True,
-                                text=True, timeout=300)
+        command = [self.gh, *args]
+        if args[:2] == ["release", "upload"]:
+            result = secure_upload(command, runner=subprocess.run, shell=False,
+                                   capture_output=True, text=True, timeout=300)
+        else:
+            result = subprocess.run(command, shell=False, capture_output=True, text=True, timeout=300)
         if check and result.returncode:
             # CLI diagnostics may contain account-specific information; keep bounded.
             raise RevisionError(f"GitHub {args[0]} failed (exit={result.returncode})")
         return result
 
-    def read(self, tag: str, name: str, limit: int = MAX_DOCUMENT_BYTES) -> bytes | None:
-        return self.read_url(self.url(tag, name), limit)
+    def read(self, tag: str, name: str, limit: int = MAX_DOCUMENT_BYTES,
+             *, require_encrypted: bool = False) -> bytes | None:
+        return self.read_url(self.url(tag, name), limit, require_encrypted=require_encrypted)
 
-    def read_url(self, url: str, limit: int = MAX_ASSET_BYTES) -> bytes | None:
+    def read_url(self, url: str, limit: int = MAX_ASSET_BYTES,
+                 *, require_encrypted: bool = False) -> bytes | None:
         parsed = urllib.parse.urlsplit(url)
         expected = f"/{self.repo}/releases/download/"
         if (parsed.scheme != "https" or parsed.netloc != "github.com"
@@ -101,16 +110,14 @@ class GitHubRevisionStore:
             opener = urllib.request.build_opener(_GitHubRedirect())
             with opener.open(request, timeout=60) as response:
                 declared = response.headers.get("Content-Length")
-                if declared is not None and int(declared) > limit:
+                if declared is not None and int(declared) > limit + OVERHEAD:
                     raise RevisionError("public response exceeds byte budget")
-                raw = response.read(limit + 1)
+                raw = response.read(limit + OVERHEAD + 1)
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 return None
             raise RevisionError(f"public download failed with HTTP {exc.code}") from exc
-        if len(raw) > limit:
-            raise RevisionError("public response exceeds byte budget")
-        return raw
+        return decode_public_bytes(raw, limit, require_encrypted=require_encrypted)
 
     def tags(self) -> list[str]:
         result = self._run(["api", "--paginate", f"repos/{self.repo}/releases?per_page=100",
@@ -118,6 +125,7 @@ class GitHubRevisionStore:
         return result.stdout.splitlines()
 
     def ensure_release(self, tag: str) -> None:
+        publication_key()
         result = self._run(["api", f"repos/{self.repo}/releases/tags/{tag}"], check=False)
         if result.returncode == 0:
             return
@@ -128,10 +136,12 @@ class GitHubRevisionStore:
                    "--latest=false"])
 
     def archive(self, tag: str, paths: list[Path]) -> None:
+        validate_upload_paths(paths)
+        publication_key()
         self.ensure_release(tag)
         for path in paths:
             local = path.read_bytes()
-            remote = self.read(tag, path.name, max(len(local), 1))
+            remote = self.read(tag, path.name, max(len(local), 1), require_encrypted=True)
             if remote is not None:
                 if remote != local:
                     raise RevisionError(f"immutable release collision: {tag}/{path.name}")
@@ -141,10 +151,10 @@ class GitHubRevisionStore:
             except (RevisionError, subprocess.SubprocessError):
                 # A timed-out upload may have completed. Never clobber immutable
                 # bytes; accept only independently downloaded byte equality.
-                if self.read(tag, path.name, max(len(local), 1)) == local:
+                if self.read(tag, path.name, max(len(local), 1), require_encrypted=True) == local:
                     continue
                 raise
-            verified = self.read(tag, path.name, max(len(local), 1))
+            verified = self.read(tag, path.name, max(len(local), 1), require_encrypted=True)
             if verified != local:
                 raise RevisionError(f"public archive verification failed: {tag}/{path.name}")
 
@@ -158,7 +168,7 @@ class GitHubRevisionStore:
             self._run(["release", "upload", tag, str(path), "--repo", self.repo, "--clobber"])
         except (RevisionError, subprocess.SubprocessError):
             # An uncertain successful upload is success only after exact readback.
-            observed = self.read(tag, "dates-index.json")
+            observed = self.read(tag, "dates-index.json", require_encrypted=True)
             if observed == path.read_bytes():
                 return
             if observed is None and expected is not None:
@@ -166,13 +176,13 @@ class GitHubRevisionStore:
                 write_once(recovery, expected)
                 self._run(["release", "upload", tag, str(recovery), "--repo", self.repo])
             raise
-        if self.read(tag, "dates-index.json") != path.read_bytes():
+        if self.read(tag, "dates-index.json", require_encrypted=True) != path.read_bytes():
             raise RevisionError("selected revision index failed public byte verification")
 
     def restore_missing_index(self, tag: str, path: Path) -> None:
         """Restore an interrupted replacement without overwriting another writer."""
         expected = path.read_bytes()
-        observed = self.read(tag, "dates-index.json")
+        observed = self.read(tag, "dates-index.json", require_encrypted=True)
         if observed == expected:
             return
         if observed is not None:
@@ -180,10 +190,10 @@ class GitHubRevisionStore:
         try:
             self._run(["release", "upload", tag, str(path), "--repo", self.repo])
         except (RevisionError, subprocess.SubprocessError):
-            if self.read(tag, "dates-index.json") == expected:
+            if self.read(tag, "dates-index.json", require_encrypted=True) == expected:
                 return
             raise
-        if self.read(tag, "dates-index.json") != expected:
+        if self.read(tag, "dates-index.json", require_encrypted=True) != expected:
             raise RevisionError("restored revision index failed public byte verification")
 
 

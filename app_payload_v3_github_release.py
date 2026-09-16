@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -11,12 +12,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from app_payload_secure_upload import classify_asset, publication_key, decode_public_bytes
+from release_transport import OVERHEAD
 from app_payload_v3_state import (
     CANDIDATE_TAG_PREFIX,
     CandidateReleaseRecord,
     PromotionError,
     release_url,
     validate_candidate_draft_assets,
+    release_asset_records,
     validate_candidate_release_identity,
 )
 
@@ -71,7 +75,37 @@ class GitHubReleaseMixin:
                 release, tag, title, notes, target_commit, assets
             )
             return None
-        return validate_candidate_draft_assets(release, assets)
+        records = release_asset_records(release)
+        if not set(records).issubset(assets):
+            raise PromotionError("candidate draft contains unexpected assets")
+        normalized = []
+        for name, record in records.items():
+            plain = assets[name]
+            size = record.get("size")
+            digest = record.get("digest")
+            if (type(size) is not int or size != len(plain) + OVERHEAD
+                    or not isinstance(digest, str)
+                    or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest)):
+                raise PromotionError("candidate draft encrypted asset metadata differs")
+            raw = self._download_draft_asset(tag, name, size)
+            if len(raw) != size or "sha256:" + hashlib.sha256(raw).hexdigest() != digest:
+                raise PromotionError("candidate draft ciphertext identity differs")
+            decoded = decode_public_bytes(raw, len(plain), require_encrypted=True)
+            if decoded != plain:
+                raise PromotionError("candidate draft encrypted domain bytes differ")
+            normalized.append({**record, "size": len(decoded), "digest": "sha256:" + hashlib.sha256(decoded).hexdigest()})
+        return validate_candidate_draft_assets({**release, "assets": normalized}, assets)
+
+    def _download_draft_asset(self, tag: str, name: str, size: int) -> bytes:
+        # The authenticated CLI can read draft bytes unavailable at the public URL.
+        # Inventory size is checked before transfer; no model or paid API is used.
+        with tempfile.TemporaryDirectory(prefix="ar-v3-readback-") as temporary:
+            result = self._run(["gh", "release", "download", tag, "--repo", self.repo,
+                                "--pattern", name, "--dir", temporary])
+            path = Path(temporary) / name
+            if result.returncode or not path.is_file() or path.is_symlink() or path.stat().st_size != size:
+                raise PromotionError("candidate draft ciphertext download failed")
+            return path.read_bytes()
 
     def publish_candidate_release(
         self,
@@ -85,6 +119,12 @@ class GitHubReleaseMixin:
     ) -> None:
         if not assets or any(Path(name).name != name for name in assets):
             raise PromotionError("candidate release asset inventory is invalid")
+        publication_key()
+        for name, raw in assets.items():
+            classify_asset(name)
+            # Match the backend public-reader ceiling before any external write.
+            if len(raw) > 33_554_432:
+                raise PromotionError("candidate exceeds encrypted transport limit")
         release = self._release(tag)
         if release is None:
             self.renew_lock(owner_token)

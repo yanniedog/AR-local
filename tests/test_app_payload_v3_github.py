@@ -34,6 +34,7 @@ from app_payload_v3_promotion import (
     load_pointer,
 )
 from app_payload_v3_state import LOCK_FILENAME
+from release_transport import OVERHEAD
 from cdr_domain.contract_validation import contract_sha256
 from cdr_domain.serialize import canonical_json_bytes
 
@@ -98,7 +99,7 @@ def test_public_fetch_accepts_exact_largest_declared_cap_and_rejects_larger(
     with pytest.raises(PromotionError, match="byte limit"):
         public_fetch(
             "https://github.com/yanniedog/AR-local/releases/download/tag/asset",
-            MAX_PUBLIC_BYTES + 1,
+            MAX_PUBLIC_BYTES + OVERHEAD + 1,
         )
 
 
@@ -209,10 +210,11 @@ def test_candidate_draft_ambiguous_writes_reconcile_exact_state(
     tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
     payload = b"exact manifest bytes"
     release = None
+    uploaded = None
     stages: list[str] = []
 
     def runner(args, **_kwargs):
-        nonlocal release
+        nonlocal release, uploaded
         stage = args[2]
         stages.append(stage)
         if stage == "create":
@@ -233,6 +235,7 @@ def test_candidate_draft_ambiguous_writes_reconcile_exact_state(
     monkeypatch.setattr(backend, "_tag_target", lambda _tag, **_kwargs: PRODUCER_COMMIT)
     monkeypatch.setattr(backend, "renew_lock", lambda _owner: "renewed")
     monkeypatch.setattr(backend, "fetch_url", lambda *_args: payload)
+    monkeypatch.setattr(backend, "_download_draft_asset", lambda *_args: uploaded)
     backend.publish_candidate_release(
         tag, title="title", notes="notes", target_commit=PRODUCER_COMMIT,
         assets={"manifest.json": payload}, owner_token="a" * 32,
@@ -247,10 +250,11 @@ def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
     payload = b"exact manifest bytes"
     release = None
     fail_upload = True
+    uploaded = None
     stages: list[str] = []
 
     def runner(args, **_kwargs):
-        nonlocal release
+        nonlocal release, uploaded
         stage = args[2]
         stages.append(stage)
         if stage == "create":
@@ -258,8 +262,9 @@ def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
                        "draft": True, "prerelease": False,
                        "target_commitish": PRODUCER_COMMIT, "assets": []}
         elif stage == "upload" and not fail_upload:
-            release["assets"] = [{"name": "manifest.json", "size": len(payload),
-                                  "digest": f"sha256:{hashlib.sha256(payload).hexdigest()}"}]
+            uploaded = Path(args[4]).read_bytes()
+            release["assets"] = [{"name": "manifest.json", "size": len(uploaded),
+                                  "digest": f"sha256:{hashlib.sha256(uploaded).hexdigest()}"}]
         elif stage == "edit":
             release["draft"] = False
         failed = stage == "upload" and fail_upload
@@ -270,6 +275,7 @@ def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
     monkeypatch.setattr(backend, "_tag_target", lambda _tag, **_kwargs: PRODUCER_COMMIT)
     monkeypatch.setattr(backend, "renew_lock", lambda _owner: "renewed")
     monkeypatch.setattr(backend, "fetch_url", lambda *_args: payload)
+    monkeypatch.setattr(backend, "_download_draft_asset", lambda *_args: uploaded)
     arguments = dict(title="title", notes="notes", target_commit=PRODUCER_COMMIT,
                      assets={"manifest.json": payload}, owner_token="a" * 32)
 
@@ -287,7 +293,7 @@ def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
 
 def test_external_publish_between_assets_blocks_every_later_mutation(monkeypatch):
     tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
-    assets = {"first.json": b"first", "second.json": b"second"}
+    assets = {"manifest.json": b"first", "source-manifest.json": b"second"}
     release = {
         "tag_name": tag, "name": "title", "body": "notes", "draft": True,
         "prerelease": False, "target_commitish": PRODUCER_COMMIT, "assets": [],
@@ -323,7 +329,7 @@ def test_external_publish_between_assets_blocks_every_later_mutation(monkeypatch
 
     assert stages == [("upload", True)]
     assert release["draft"] is False
-    assert [asset["name"] for asset in release["assets"]] == ["first.json"]
+    assert [asset["name"] for asset in release["assets"]] == ["manifest.json"]
 
 
 def test_candidate_draft_with_moved_existing_tag_fails_before_mutation(monkeypatch):
@@ -726,3 +732,9 @@ def test_candidate_run_provenance_rejects_forged_run_workflow_and_head(
 
     with pytest.raises(PromotionError, match=message):
         validate_candidate_run_metadata(run, branch, comparison)
+
+@pytest.fixture(autouse=True)
+def private_publication_key(tmp_path, monkeypatch):
+    key = tmp_path / 'technical-test.key'
+    key.write_text(bytes(range(32)).hex())
+    monkeypatch.setenv('AR_LOCAL_PAYLOAD_KEY_FILE', str(key))

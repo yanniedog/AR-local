@@ -837,11 +837,11 @@ def test_package_payload_same_data_packages_both_tags(tmp_path):
 
 def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys):
     names = [
-        "core.json.gz",
-        "details.json.gz",
-        "search-index.json.gz",
-        "history-banks.json.gz",
-        "bank-history.json.gz",
+        "core-2026-06-10-0123456789ab.json.gz",
+        "details-2026-06-10-0123456789ab.json.gz",
+        "search-index-2026-06-10-0123456789ab.json.gz",
+        "history-banks-2026-06-10-0123456789ab.json.gz",
+        "bank-history-2026-06-10-0123456789ab.json.gz",
     ]
     for name in names:
         (tmp_path / name).write_bytes(b"asset")
@@ -867,9 +867,9 @@ def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys)
     assert app_payload.publish_payload(tmp_path, dry_run=True) is False
 
     output = capsys.readouterr().out
-    assert "search-index.json.gz" in output
-    assert "history-banks.json.gz" in output
-    assert "bank-history.json.gz" in output
+    assert "search-index-2026-06-10-0123456789ab.json.gz" in output
+    assert "history-banks-2026-06-10-0123456789ab.json.gz" in output
+    assert "bank-history-2026-06-10-0123456789ab.json.gz" in output
 
 
 def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
@@ -877,11 +877,11 @@ def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
     # pre-v1 preservation path is exercised by test_app_payload_v2_archive.
     monkeypatch.setattr("app_payload_v2_archive.preserve_current_v2", lambda *_a, **_k: None)
     names = [
-        "core.json.gz",
-        "details.json.gz",
-        "search-index.json.gz",
-        "history-banks.json.gz",
-        "bank-history.json.gz",
+        "core-2026-06-10-0123456789ab.json.gz",
+        "details-2026-06-10-0123456789ab.json.gz",
+        "search-index-2026-06-10-0123456789ab.json.gz",
+        "history-banks-2026-06-10-0123456789ab.json.gz",
+        "bank-history-2026-06-10-0123456789ab.json.gz",
     ]
     for name in names:
         (tmp_path / name).write_bytes(b"asset")
@@ -913,16 +913,26 @@ def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
         lambda _gh, _repo, _tag, keep: protected.update(keep=keep) or 0,
     )
 
+    from app_payload_secure_upload import decode_public_bytes
+    from app_payload_revisions_github import GitHubRevisionStore
+    public = {}
     def fake_run(args, **_kwargs):
         uploads.append(args)
+        if args[1:3] == ['release', 'upload']:
+            for name in args[4:args.index('--repo')]:
+                path = Path(name)
+                public[path.name] = path.read_bytes()
         return SimpleNamespace(returncode=0, stdout="", stderr="")
+    def read(_self, _tag, name, limit=8*1024*1024, *, require_encrypted=False):
+        return decode_public_bytes(public[name], limit, require_encrypted=require_encrypted)
+    monkeypatch.setattr(GitHubRevisionStore, 'read', read)
 
     monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
 
     assert app_payload.publish_payload(tmp_path) is True
     assert protected["keep"] == set(names)
-    assert any("history-banks.json.gz" in " ".join(command) for command in uploads)
-    assert any("bank-history.json.gz" in " ".join(command) for command in uploads)
+    assert any("history-banks-2026-06-10-0123456789ab.json.gz" in " ".join(command) for command in uploads)
+    assert any("bank-history-2026-06-10-0123456789ab.json.gz" in " ".join(command) for command in uploads)
 
 
 def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
@@ -944,7 +954,8 @@ def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
 
     deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
 
-    assert deleted == 1
+    assert deleted == 0
+    assert deletes == []
 
 
 def test_prune_release_assets_covers_rba_calendar_prefix(monkeypatch):
@@ -966,8 +977,8 @@ def test_prune_release_assets_covers_rba_calendar_prefix(monkeypatch):
 
     deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
 
-    assert deleted == 1
-    assert any(rows[0][0] in command for command in deletes), "oldest bank-history asset pruned"
+    assert deleted == 0
+    assert deletes == []
 
 
 @pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")
@@ -1214,3 +1225,10 @@ def test_collapsed_history_window_is_reported(tmp_path, capsys):
     assert bank_history["events"] == []
     # A one-day window silently produces "no rate changes" in the app; say so.
     assert "history window collapsed" in capsys.readouterr().err
+
+@pytest.fixture(autouse=True)
+def private_publication_key(tmp_path, monkeypatch):
+    # Deterministic technical key, never an operational credential.
+    key = tmp_path / 'technical-test.key'
+    key.write_text(bytes(range(32)).hex())
+    monkeypatch.setenv('AR_LOCAL_PAYLOAD_KEY_FILE', str(key))

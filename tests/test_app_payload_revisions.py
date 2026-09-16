@@ -483,24 +483,24 @@ def test_invalid_asset_fails_before_network(tmp_path, mutation):
 
 def test_backend_rejects_corrupt_download_after_successful_upload(tmp_path, monkeypatch):
     store = GitHubRevisionStore(REPO, gh="gh")
-    asset = tmp_path / "core.json.gz"
+    asset = tmp_path / "core-2026-06-10-0123456789ab.json.gz"
     asset.write_bytes(b"compressed test transport bytes")
     monkeypatch.setattr(store, "ensure_release", lambda _: None)
     monkeypatch.setattr(store, "_run", lambda _: SimpleNamespace(returncode=0))
     reads = iter([None, b"corrupted"])
-    monkeypatch.setattr(store, "read", lambda *args: next(reads))
+    monkeypatch.setattr(store, "read", lambda *args, **kwargs: next(reads))
     with pytest.raises(RevisionError, match="verification"):
         store.archive("revision-test", [asset])
 
 
 def test_backend_uncertain_upload_accepts_only_exact_public_bytes(tmp_path, monkeypatch):
     store = GitHubRevisionStore(REPO, gh="gh")
-    asset = tmp_path / "transport.json.gz"
+    asset = tmp_path / "core-2026-06-10-0123456789ab.json.gz"
     asset.write_bytes(b"protocol transport fixture")
     monkeypatch.setattr(store, "ensure_release", lambda _: None)
     monkeypatch.setattr(store, "_run", lambda _: (_ for _ in ()).throw(RevisionError("timeout")))
     reads = iter([None, asset.read_bytes()])
-    monkeypatch.setattr(store, "read", lambda *args: next(reads))
+    monkeypatch.setattr(store, "read", lambda *args, **kwargs: next(reads))
     store.archive("revision-test", [asset])
 
 
@@ -509,7 +509,7 @@ def test_backend_restores_exact_index_after_interrupted_clobber(tmp_path, monkey
     path = tmp_path / "dates-index.json"
     path.write_bytes(b"new")
     reads = iter([b"original exact bytes", None])
-    monkeypatch.setattr(store, "read", lambda *args: next(reads))
+    monkeypatch.setattr(store, "read", lambda *args, **kwargs: next(reads))
     calls = []
 
     def run(args):
@@ -647,3 +647,10 @@ def test_index_validation_preserves_explicit_alternate_repository(tmp_path):
     assert result["revision_heads"][DAY] == first.head
     with pytest.raises(RevisionError, match="manifest URL"):
         validate_index(index, repo="other/repository")
+
+@pytest.fixture(autouse=True)
+def private_publication_key(tmp_path, monkeypatch):
+    # Deterministic technical key, never an operational credential.
+    key = tmp_path / 'technical-test.key'
+    key.write_text(bytes(range(32)).hex())
+    monkeypatch.setenv('AR_LOCAL_PAYLOAD_KEY_FILE', str(key))
