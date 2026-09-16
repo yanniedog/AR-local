@@ -7,6 +7,7 @@ transport. Unknown asset names have no plaintext or encryption fallback.
 from __future__ import annotations
 
 import os
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -83,6 +84,14 @@ def validate_upload_paths(paths: list[Path]) -> None:
             raise TransportError("unsafe or oversized release asset")
 
 
+def validate_publication_contract(name: str, raw: bytes) -> None:
+    """Keep private integration admission separate from public release egress."""
+    if name.startswith('monetary_v4_') or (name in DOCUMENTS and 'manifest' in name
+            and isinstance(value := json.loads(raw), dict) and 'executable_v4' in value):
+        from cdr_terms.executable_v4_contract import require_publication_ready
+        require_publication_ready()
+
+
 def secure_upload(args: list[str], *, runner, **kwargs):
     """Only this exact CLI upload shape is accepted; caller options are retained."""
     if len(args) < 5 or args[1:3] != ["release", "upload"]:
@@ -111,11 +120,13 @@ def secure_upload(args: list[str], *, runner, **kwargs):
                 raise TransportError("asset changed beyond transport byte limit")
             # Retrying a prepared ciphertext is allowed only after authentication.
             if raw.startswith(MAGIC):
-                decrypt_transport(raw, resolve_release_key)
+                domain = decrypt_transport(raw, resolve_release_key)
+                validate_publication_contract(path.name, domain)
                 wire = raw
             else:
                 if raw.startswith(b"ARE1"):
                     raise TransportError("rebuild legacy encrypted assets before transport publication")
+                validate_publication_contract(path.name, raw)
                 wire = encrypt_transport(raw, key)
             target = Path(temporary) / path.name
             target.write_bytes(wire)

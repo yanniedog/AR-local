@@ -223,6 +223,9 @@ def build_payload(
     executable_v4_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
+    if executable_v4_root is not None:
+        from cdr_terms.executable_v4_contract import require_publication_ready
+        require_publication_ready()
     # Only the rolling release ships search-index + history assets (see _package's
     # is_rolling_tag gate), so a dated build needn't compute them at all.
     data = _compute_payload(
@@ -695,6 +698,9 @@ def build_and_publish_dual(
     ``run_date`` is not older than the live rolling manifest (unless ``--force`` on
     the latest publish path — not exposed here; backfill handles end-of-run refresh).
     """
+    if executable_v4_root is not None:
+        from cdr_terms.executable_v4_contract import require_publication_ready
+        require_publication_ready()
     # Decide whether the rolling latest will actually be (re)published BEFORE the
     # expensive compute (one live-manifest check, reused below): if a newer release
     # is already live (e.g. a backfill), the rolling build is skipped — and so is

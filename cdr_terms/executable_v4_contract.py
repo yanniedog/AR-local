@@ -15,6 +15,17 @@ CAPABILITY = 'savings_activity_calculation'
 TUPLE = ('aud_savings_activity_period_v1', 'aud-savings-activity-v1', 'product-terms-engine-v9')
 
 
+def require_publication_ready():
+    """Technical integration fixtures are not a public contract approval."""
+    raw = (ROOT / 'integration-baseline.json').read_bytes()
+    if byte_digest(raw) != INVENTORY_SHA:
+        raise ValueError('Activity integration inventory identity differs')
+    if json.loads(raw).get('status') != 'PUBLICATION_FREEZE':
+        raise ValueError('Activity v4 publication requires an approved publication freeze')
+    # Deliberate second gate: a future freeze alone cannot enable unreported assets.
+    raise ValueError('Activity v4 publication requires product-evidence report support')
+
+
 def validate_tuple(subject):
     if (subject.get('schemaVersion') != 4 or subject.get('capability') != CAPABILITY
         or tuple(subject.get(k) for k in ('kind', 'adapterVersion', 'evaluatorVersion')) != TUPLE):

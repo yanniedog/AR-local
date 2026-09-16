@@ -1,4 +1,4 @@
-"""No-stub connected technical controller cycle using retained actual app execution."""
+"""Private integration mechanics using retained execution; public packaging stays blocked."""
 import json
 import gzip
 import pytest
@@ -52,17 +52,17 @@ def test_actual_same_subject_source_benchmark_review_publication_revocation(tmp_
         route=subject['routing'];key=subject['scope']['productKey']
         publication=publish_asset(store,key,routing=route,expected_previous_publication_id=None,expected_observation_id=observation,published_at=NOW)
         args=dict(source_observation=dict(generation_id=route['sourceGenerationId'],contract_digest=route['exportContractSha256']),run_date=route['runDate'],core_asset_sha256=route['coreAssetSha256'],details_asset_sha256=route['detailsAssetSha256'],product_keys=[key])
-        snapshot=load_published_executable_v4(store.root,**args);written=[]
-        def write(kind,value):
-            raw=_gzip_bytes(value);sha=byte_digest(raw);written.append(kind)
-            return dict(name=kind+'-'+route['runDate']+'-'+sha[:12]+'.json.gz',sha256=sha,bytes=len(raw))
-        namespace=package_executable_v4(snapshot,core=bridge['context']['core'],details=bridge['context']['details'],core_asset_sha256=route['coreAssetSha256'],details_asset_sha256=route['detailsAssetSha256'],run_date=route['runDate'],write_asset=write)
-        assert namespace and len(written)==2
+        with pytest.raises(ValueError, match='approved publication freeze'):
+            load_published_executable_v4(store.root,**args)
+        snapshot={subject['capability']:{key:build_asset(store,key,routing=route)}}
+        with pytest.raises(ValueError, match='approved publication freeze'):
+            package_executable_v4(snapshot,core=bridge['context']['core'],details=bridge['context']['details'],core_asset_sha256=route['coreAssetSha256'],details_asset_sha256=route['detailsAssetSha256'],run_date=route['runDate'],write_asset=lambda *args:pytest.fail('public asset written'))
         reason='Technical revocation control';proof=put(dict(schemaVersion=4,subjectId=subject['id'],decision='revoked',previousReviewId=review,reason=reason))
         review_subject(store,subject['id'],decision='revoked',reviewer='independent technical fixture reviewer',reviewer_kind='deterministic',reviewed_at=NOW,evidence_sha256=proof,reason=reason,expected_previous_review_id=review)
         assert build_asset(store,key,routing=route) is None
         removed=publish_asset(store,key,routing=route,expected_previous_publication_id=publication,expected_observation_id=observation,published_at=NOW)
         assert tuple(store.db.execute('SELECT state,payload_json FROM executable_publications_v4 WHERE publication_id=?',(removed,)).fetchone())==('removed',None)
-        assert load_published_executable_v4(store.root,**args)=={}
+        with pytest.raises(ValueError, match='approved publication freeze'):
+            load_published_executable_v4(store.root,**args)
     finally:
         generator.close()
