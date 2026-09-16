@@ -1,0 +1,25 @@
+{
+  "status": "INTEGRATION_BASELINE_NOT_PUBLICATION_FREEZE",
+  "evaluator": "product-terms-engine-v9",
+  "engineCommit": "c25af3852dff39ffdc5b085fcd15fe84b16ba7ab",
+  "adapterClosure": "pending actual adapter implementation/capture",
+  "schemaIds": "retained exact draft URNs intentionally; no URI rewrite",
+  "files": {
+    "asset.schema.json": "9c7945dbe3d486cf65b4c31944b40a4deaa7496cf89106e029185cfd103e29e4",
+    "authority-graph.schema.json": "308089dc5494d97a39ac5279373e9b1fa4ce6feab97352f474a7a531438eb857",
+    "common.schema.json": "a4580e7c77d1097495bc3f2f353ffda334fbefbfb9df8c50233cf412f0f33882",
+    "index.schema.json": "459b574661c070fd780f89e2022e14822f119de4b428159483be51939c043acd",
+    "material-field-primitives-1.schema.json": "0e4b2d2e6a47e55e6466faadefc2d495ea815ea469c52d9bbf6cef45e1be8946",
+    "material-field.schema.json": "ddbd667a70e0f17e57e411a63db5201bb6639f9160037deffb58c384b3cb2328",
+    "material-projections-1.schema.json": "4446f7a5719611af67272e55d348747c977d76c9d95e24399d5c78dae2e8682e",
+    "material-projections-2.schema.json": "f9bc963b3c4e4b1769bbe8639184d52e258f704dff3060d8720b1ac7c9d68674",
+    "material-projections-3.schema.json": "2bb61e292d0fb012b5af79c9ef29404eece278112a855bd1f165c1536acc3285",
+    "namespace.schema.json": "e56f3534993251ec568853b36c0ba3cb8ae088b00f3bcaba9f7ecee141217584",
+    "private-input.schema.json": "13fd32b8903764de09b4860995c997a75938f47e903ab6dd33cc98c2962fd97c",
+    "savings-policy-primitives-1.schema.json": "89215552bf960c5a7dbbd894514639ea86389a246036322f21d56b9d44d7c460",
+    "savings-policy.schema.json": "88145d02b2c09c80007917dc8216ace313ff5a5eef2c897d5902eac2aa20cf9a",
+    "shard.schema.json": "c7b57af3dc20556fd62f5bee0bc27191f5ebbfc4359e8a7fc66fe461824d7e88",
+    "subject.schema.json": "a2207863dfa1851af857cece95b15501290fa97309da9a627005149e4bf5b171"
+  },
+  "materialCorrection": "Material-only recursive linkage exclusion; public policy evidence references remain required"
+}

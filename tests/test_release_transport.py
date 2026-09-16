@@ -58,3 +58,17 @@ def test_nested_transport_and_bad_limits_fail():
     for limit in [-1, True, MAX_ENCODED_BYTES + 1]:
         with pytest.raises(TransportError, match="invalid"):
             decrypt_transport(wire, lambda _: KEY, limit=limit)
+
+
+@pytest.mark.parametrize("inner", [b"ARE1" + bytes(80), b"ARE2" + bytes(80)])
+def test_authenticated_nested_or_legacy_domain_refused(inner):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from release_transport import MAGIC
+    # Construct a valid adversarial envelope independently of the guarded encoder.
+    header = MAGIC + transport_key_id(KEY).encode("ascii") + len(inner).to_bytes(8, "big")
+    nonce = bytes(range(12))
+    wire = header + nonce + AESGCM(KEY).encrypt(nonce, inner, header)
+    with pytest.raises(TransportError, match="nested or legacy"):
+        decrypt_transport(wire, lambda _: KEY)
+    with pytest.raises(TransportError, match="nested or legacy"):
+        encrypt_transport(inner, KEY)

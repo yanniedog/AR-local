@@ -18,6 +18,10 @@ def lookup_subject(store, identity):
         value = json.loads(row['subject_json'])
         version = row['wire_version']
         capability = {1: 'fixed_td_calculation', 2: 'eligibility_only'}.get(version)
+        if version==4:
+            from .executable_v4_contract import validate_tuple as activity_tuple, CAPABILITY
+            activity_tuple(value);capability=CAPABILITY
+            if row['kind']!=value['kind'] or row['capability']!=capability:raise ValueError('Executable activity tuple differs')
         if version==3:
             from .monetary_capabilities import validate_tuple
             capability=validate_tuple(value)
@@ -30,7 +34,10 @@ def lookup_subject(store, identity):
             raise ValueError('Executable subject not found')
         value = json.loads(row[0])
         version = 1
-    if version==3:
+    if version==4:
+        from .executable_v4_contract import validate_subject as validate_v4
+        validate_v4(value)
+    elif version==3:
         from .executable_v3_contract import validate_subject as validate_v3
         validate_v3(value)
     else:
@@ -42,6 +49,9 @@ def lookup_subject(store, identity):
 
 @source_checked
 def stage_subject(store, subject, *, interpreter, staged_at, expected_previous_subject_id=None):
+    if subject.get('schemaVersion')==4:
+        from .executable_v4_registry import stage_subject as stage_v4
+        return stage_v4(store,subject,interpreter=interpreter,staged_at=staged_at,expected_previous_subject_id=expected_previous_subject_id)
     if subject.get('schemaVersion') == 1:
         if expected_previous_subject_id is not None:
             raise ValueError('Legacy staging does not reinterpret v2 scope predecessors')
@@ -95,6 +105,9 @@ def review_subject(store, identity, **decision):
     if subject['schemaVersion'] == 1:
         from .executable_reviews import review_template
         return review_template(store,identity,**decision)
+    if subject['schemaVersion']==4:
+        from .executable_v4_reviews import review_subject as review_v4
+        return review_v4(store,identity,**decision)
     if subject['schemaVersion']==3:
         from .executable_v3_reviews import review_subject as review_v3
         return review_v3(store,identity,**decision)
@@ -104,6 +117,9 @@ def review_subject(store, identity, **decision):
 
 def migrate_executable_registry(store,*,wire_version,applied_at):
     """Explicit controller migration selection; never implicitly activate a capability."""
+    if wire_version == 4:
+        from .executable_v4_migration import migrate_activity_registry
+        return migrate_activity_registry(store,applied_at=applied_at)
     if wire_version not in (2,3):raise ValueError('Unsupported executable migration version')
     from .executable_v2_migration import migrate_registry
     migrate_registry(store,applied_at=applied_at)

@@ -1,0 +1,3 @@
+import { activitySchemas } from '../monetaryContracts/runtimeSchemas';
+import { assertMonetarySchema } from '../monetaryContracts/schemaValidation';
+export function assertActivityWire(value:unknown,kind:keyof typeof activitySchemas) { assertMonetarySchema(value,activitySchemas[kind]); }

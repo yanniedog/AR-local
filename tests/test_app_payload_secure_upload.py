@@ -92,3 +92,23 @@ def test_key_errors_do_not_disclose_private_path(tmp_path, monkeypatch):
     monkeypatch.setenv('AR_LOCAL_PAYLOAD_KEY_FILE',str(tmp_path/'secret-path'))
     with pytest.raises(TransportError,match='^publication requires a valid private encryption key$'):
         publication_key()
+
+
+def test_migration_reader_never_returns_legacy_ciphertext_as_domain():
+    with pytest.raises(TransportError):
+        decode_public_bytes(b"ARE1" + bytes(80), 1024)
+
+
+@pytest.mark.parametrize("inner", [b"ARE1" + bytes(80), b"ARE2" + bytes(80)])
+def test_prepared_nested_ciphertext_never_reaches_publication(tmp_path, key_file, inner):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    header = MAGIC + transport_key_id(KEY).encode("ascii") + len(inner).to_bytes(8, "big")
+    nonce = bytes(range(12))
+    wire = header + nonce + AESGCM(KEY).encrypt(nonce, inner, header)
+    source = tmp_path / "manifest.json"
+    source.write_bytes(wire)
+    with pytest.raises(TransportError, match="nested or legacy"):
+        secure_upload(["gh", "release", "upload", "test", str(source)],
+                      runner=lambda *a, **k: pytest.fail("CLI must not execute"))
+    with pytest.raises(TransportError, match="nested or legacy"):
+        decode_public_bytes(wire, 1024, require_encrypted=True)

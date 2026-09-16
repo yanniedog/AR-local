@@ -8,6 +8,9 @@ from typing import Any, Mapping, Sequence
 from .identity import digest
 
 VERSION = "terms-parameters-v4"
+ACTIVITY_VERSION = "terms-parameters-v5"
+ACTIVITY_STAGING = 'analysis-staging-material-v3'
+ACTIVITY_STAGING_SHA = 'cd81ce5794c896eb16d78290fc543a44744aa8fcccea13164cc2714ccc407cf5'
 SAVINGS_VERSION = "terms-parameters-v3"
 PREVIOUS_VERSION = "terms-parameters-v2"
 MATERIAL_STAGING='analysis-staging-material-v1'
@@ -31,7 +34,7 @@ _TEXT = (
 
 def registry_contract(version: str = VERSION) -> dict[str, Any]:
     """Return fresh JSON values so callers cannot mutate the process registry."""
-    if version not in (VERSION, SAVINGS_VERSION, PREVIOUS_VERSION, LEGACY_VERSION):
+    if version not in (ACTIVITY_VERSION, VERSION, SAVINGS_VERSION, PREVIOUS_VERSION, LEGACY_VERSION):
         raise ValueError("Unsupported parameter registry version")
     parameters = [{"key": key, "aliases": list(aliases), "type": "text", "unit": None}
                   for key, aliases in _TEXT]
@@ -46,13 +49,17 @@ def registry_contract(version: str = VERSION) -> dict[str, Any]:
             # and nested product attributes are not root product attributes.
             row['aliases'] = []
         row.update(applicability="source_scoped_only", supported_rule_patterns=[])
-    if version in (VERSION,SAVINGS_VERSION):
+    if version in (ACTIVITY_VERSION,VERSION,SAVINGS_VERSION):
         parameters.append(dict(key='monetary.savings_base_field_v1',aliases=[],type='structured_material',unit=None,
             applicability='source_scoped_only',supported_rule_patterns=[],
             value_schema_sha256='ca1dc03ba73dffc5430f249a4e7968ea288adb053bfdb8d85b66a2d444286953'))
-    if version==VERSION:
+    if version in (ACTIVITY_VERSION,VERSION):
         parameters.append(dict(key='monetary.mortgage_field_v1',aliases=[],type='structured_material',unit=None,
             applicability='source_scoped_only',supported_rule_patterns=[],value_schema_sha256=MORTGAGE_FIELD_SHA))
+    if version == ACTIVITY_VERSION:
+        from .executable_v4_contract import INVENTORY_SHA
+        parameters.append(dict(key='monetary.savings_activity_field_v1',aliases=[],type='structured_material',unit=None,
+            applicability='source_scoped_only',supported_rule_patterns=[],value_schema_inventory_sha256=INVENTORY_SHA))
     body = {"version": version, "parameters": sorted(parameters, key=lambda row: row["key"]),
             "unknown_policy": "Retain unmatched wording as unresolved clauses with a reason; do not invent canonical keys.",
             "qualification_policy": "Preserve source product/tier/package/cohort, conditions, exceptions and dates; recognition is not semantic or executable approval."}
@@ -66,7 +73,7 @@ def validate_registry_context(context: Mapping[str, Any], *, new_job: bool = Fal
         return  # Immutable legacy jobs keep their existing interpretation contract.
     supplied = context["parameter_registry"]
     version = supplied.get('version') if isinstance(supplied, dict) else None
-    supported = (VERSION,) if new_job else (VERSION,SAVINGS_VERSION, PREVIOUS_VERSION, LEGACY_VERSION)
+    supported = (VERSION,ACTIVITY_VERSION) if new_job else (ACTIVITY_VERSION,VERSION,SAVINGS_VERSION, PREVIOUS_VERSION, LEGACY_VERSION)
     if version not in supported or supplied != registry_contract(version):
         raise ValueError("Unsupported or altered parameter registry context")
     contract=interpretation_contract(version)
@@ -75,7 +82,7 @@ def validate_registry_context(context: Mapping[str, Any], *, new_job: bool = Fal
 
 
 def interpretation_contract(version=VERSION):
-    return {SAVINGS_VERSION:(MATERIAL_STAGING,MATERIAL_STAGING_SHA),
+    return {ACTIVITY_VERSION:(ACTIVITY_STAGING,ACTIVITY_STAGING_SHA),SAVINGS_VERSION:(MATERIAL_STAGING,MATERIAL_STAGING_SHA),
             VERSION:(MORTGAGE_STAGING,MORTGAGE_STAGING_SHA)}.get(version)
 
 
@@ -101,7 +108,9 @@ def validate_parameter_terms(context: Mapping[str, Any], terms: Sequence[Mapping
         value = term["value"]
         kind = definition["type"]
         if kind == 'structured_material':
-            if term['parameter_key']=='monetary.mortgage_field_v1':
+            if term['parameter_key']=='monetary.savings_activity_field_v1':
+                from .executable_v4_material import validate_field_value
+            elif term['parameter_key']=='monetary.mortgage_field_v1':
                 from .mortgage_material_fields import validate_field_value
             else:
                 from .monetary_material_fields import validate_field_value

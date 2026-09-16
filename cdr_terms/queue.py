@@ -20,11 +20,15 @@ STAGING_SCHEMA = Path(__file__).resolve().parents[1] / "contracts" / "product_te
 
 
 def staging_schema(context):
-    from .parameter_registry import interpretation_contract,SAVINGS_VERSION
+    from .parameter_registry import interpretation_contract,SAVINGS_VERSION,ACTIVITY_VERSION
     from .identity import byte_digest
     validate_registry_context(context)
     version=context.get('parameter_registry',{}).get('version');contract=interpretation_contract(version)
     if contract:
+        if version == ACTIVITY_VERSION:
+            raw=(STAGING_SCHEMA.parent/'savings-activity-v4'/(contract[0]+'.schema.json')).read_bytes()
+            if byte_digest(raw)!=contract[1]:raise ValueError('Activity staging schema bytes differ')
+            return json.loads(raw)
         directory='material-fields-v1' if version==SAVINGS_VERSION else 'material-fields-v2'
         raw=(STAGING_SCHEMA.parent/'drafts'/directory/(contract[0]+'.schema.json')).read_bytes()
         if byte_digest(raw)!=contract[1]:raise ValueError('Material staging schema bytes differ')

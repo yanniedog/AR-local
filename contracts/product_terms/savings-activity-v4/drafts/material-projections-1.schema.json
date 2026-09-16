@@ -1,0 +1,507 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:savings-activity-wire4-draft:material-projections-1",
+  "$comment": "Closed per-field source material projection draft.",
+  "$defs": {
+    "allocation": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "allocation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "allocation",
+              "amountUnit",
+              "tiers"
+            ],
+            "properties": {
+              "allocation": {
+                "enum": [
+                  "marginal",
+                  "whole_balance"
+                ]
+              },
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "tiers": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "upperInclusive"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "upperInclusive": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,2})?$"
+                        },
+                        {
+                          "const": null
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "balanceBasis": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "balanceBasis"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "currency",
+              "balanceBasis",
+              "externalMovements",
+              "withholding",
+              "initialUnpostedAccrual",
+              "calculationMode",
+              "maxHorizonDays"
+            ],
+            "properties": {
+              "currency": {
+                "const": "AUD"
+              },
+              "balanceBasis": {
+                "const": "closing_balance_before_posted_interest"
+              },
+              "externalMovements": {
+                "const": "none_user_confirmed"
+              },
+              "withholding": {
+                "const": "none_user_confirmed_before_tax"
+              },
+              "initialUnpostedAccrual": {
+                "const": "zero_user_confirmed"
+              },
+              "calculationMode": {
+                "const": "historical_holding_period"
+              },
+              "maxHorizonDays": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 366
+              }
+            }
+          }
+        }
+      }
+    },
+    "dailyAccrualRounding": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "dailyAccrualRounding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "amountUnit",
+              "dailyAccrualScale",
+              "accrualRounding",
+              "dailyAccrualRounding"
+            ],
+            "properties": {
+              "amountUnit": {
+                "const": "AUD"
+              },
+              "dailyAccrualScale": {
+                "oneOf": [
+                  {
+                    "const": null
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 12
+                  }
+                ]
+              },
+              "accrualRounding": {
+                "enum": [
+                  "half_up",
+                  "half_even",
+                  "toward_zero"
+                ]
+              },
+              "dailyAccrualRounding": {
+                "enum": [
+                  "aggregate",
+                  "per_tier"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "dailyRateRounding": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "dailyRateRounding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rateUnit",
+              "dailyRateRounding"
+            ],
+            "properties": {
+              "rateUnit": {
+                "const": "fraction_per_year"
+              },
+              "dailyRateRounding": {
+                "oneOf": [
+                  {
+                    "const": null
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "scale",
+                      "unit",
+                      "mode"
+                    ],
+                    "properties": {
+                      "scale": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 12
+                      },
+                      "unit": {
+                        "enum": [
+                          "fraction",
+                          "percent"
+                        ]
+                      },
+                      "mode": {
+                        "enum": [
+                          "half_up",
+                          "half_even",
+                          "toward_zero"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "dayCount": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "dayCount"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dayCount"
+            ],
+            "properties": {
+              "dayCount": {
+                "const": "actual_365_fixed"
+              }
+            }
+          }
+        }
+      }
+    },
+    "depositSettlementBasis": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "depositSettlementBasis"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "depositSettlementBasis",
+              "openingClearedFunds"
+            ],
+            "properties": {
+              "depositSettlementBasis": {
+                "enum": [
+                  "cleared_only",
+                  "cleared_and_uncleared"
+                ]
+              },
+              "openingClearedFunds": {
+                "const": "confirm_all_cleared_when_any_interval_uses_cleared_only"
+              }
+            }
+          }
+        }
+      }
+    },
+    "eligibility": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "eligibility"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "eligibility",
+              "inputDefinitions"
+            ],
+            "properties": {
+              "eligibility": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/rule"
+              },
+              "inputDefinitions": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key",
+                    "label",
+                    "type",
+                    "unit",
+                    "binding"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,179}$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    "type": {
+                      "enum": [
+                        "decimal",
+                        "date",
+                        "text",
+                        "boolean"
+                      ]
+                    },
+                    "unit": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        {
+                          "const": null
+                        }
+                      ]
+                    },
+                    "binding": {
+                      "enum": [
+                        "customer_fact",
+                        "opening_balance",
+                        "calculation_start_date",
+                        "calculation_end_date"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "eventOrder": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "eventOrder"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "eventOrder"
+            ],
+            "properties": {
+              "eventOrder": {
+                "const": "ordered_events_then_accrual_then_posting"
+              }
+            }
+          }
+        }
+      }
+    },
+    "feeCoverage": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "feeCoverage"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "currency",
+              "coverage",
+              "inventory"
+            ],
+            "properties": {
+              "currency": {
+                "const": "AUD"
+              },
+              "coverage": {
+                "const": "reviewed_complete_no_fees"
+              },
+              "inventory": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "categoryId",
+                    "state"
+                  ],
+                  "properties": {
+                    "categoryId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "state": {
+                      "const": "none_applicable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "noDeferredObligations": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "noDeferredObligations"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "deferredObligations"
+            ],
+            "properties": {
+              "deferredObligations": {
+                "const": "none_source_declared"
+              }
+            }
+          }
+        }
+      }
+    },
+    "noOffsetLinkedAccounts": {
+      "if": {
+        "properties": {
+          "field": {
+            "const": "noOffsetLinkedAccounts"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "offset",
+              "linkedAccounts"
+            ],
+            "properties": {
+              "offset": {
+                "const": "none_source_declared"
+              },
+              "linkedAccounts": {
+                "const": "none_source_declared"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "capability": "savings_activity_calculation",
+  "fields": [
+    "allocation",
+    "balanceBasis",
+    "dailyAccrualRounding",
+    "dailyRateRounding",
+    "dayCount",
+    "depositSettlementBasis",
+    "eligibility",
+    "eventOrder",
+    "feeCoverage",
+    "noDeferredObligations",
+    "noOffsetLinkedAccounts",
+    "postingDates",
+    "postingDestination",
+    "postingResidue",
+    "postingRounding",
+    "rates",
+    "assessmentWindow",
+    "activityAccountRole",
+    "activityDateBasis",
+    "settlementPolicy",
+    "classificationInventory",
+    "metricThresholds",
+    "bonusApplication",
+    "bonusRates",
+    "rateComponents",
+    "activityExclusions"
+  ],
+  "new_projections": {
+    "assessmentWindow": [
+      "from",
+      "toExclusive"
+    ],
+    "activityAccountRole": [
+      "accountRole"
+    ],
+    "activityDateBasis": [
+      "dateBasis"
+    ],
+    "settlementPolicy": [
+      "settlement"
+    ],
+    "classificationInventory": [
+      "metrics"
+    ],
+    "metricThresholds": [
+      "rule"
+    ],
+    "bonusApplication": [
+      "assessmentKey",
+      "from",
+      "toExclusive",
+      "appliesFrom",
+      "appliesToExclusive"
+    ],
+    "bonusRates": [
+      "componentId",
+      "allocation",
+      "tiers"
+    ],
+    "rateComponents": [
+      "base",
+      "bonus"
+    ],
+    "activityExclusions": [
+      "intro",
+      "otherBonusComponents"
+    ]
+  },
+  "public_private_boundary": "No public accountId/events/customer confirmations; source accountRole only. No aggregate override."
+}

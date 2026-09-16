@@ -18,6 +18,11 @@ def validate_tuple(subject):
 
 
 def periods(subject):
+    if subject.get('schemaVersion') == 4:
+        from .executable_v4_contract import validate_tuple as activity_tuple
+        from .executable_v4_graph import periods as activity_periods
+        activity_tuple(subject)
+        return activity_periods(subject)
     if validate_tuple(subject)=='mortgage_calculation':
         from .mortgage_contract import periods as mortgage_periods
         return mortgage_periods(subject)

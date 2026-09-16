@@ -53,11 +53,17 @@ def field_value(subject,period,field):
 
 def validate_material_coverage(store,subject,authority,coverage,revisions,operation):
     from .executable_v3_graph import _covers
-    from .parameter_registry import validate_registry_context,VERSION,SAVINGS_VERSION
+    from .parameter_registry import validate_registry_context,VERSION,SAVINGS_VERSION,ACTIVITY_VERSION
     from .executable_v3_sources import _json
     from .monetary_capabilities import periods
     parameter='monetary.savings_base_field_v1';versions=(VERSION,SAVINGS_VERSION);validate=validate_field_value
     project=lambda period,field:project_field(subject,period,field)
+    if subject.get('schemaVersion') == 4:
+        from .executable_v4_material import project_field as activity_project,validate_field_value as activity_validate
+        from .executable_v4_contract import validate_tuple
+        validate_tuple(subject)
+        parameter='monetary.savings_activity_field_v1';versions=(ACTIVITY_VERSION,);validate=activity_validate
+        project=lambda period,field:activity_project(subject,period,field)
     if subject['capability']=='mortgage_calculation':
         from .mortgage_material_fields import project_field as mortgage_project,validate_field_value as mortgage_validate
         parameter='monetary.mortgage_field_v1';versions=(VERSION,);validate=mortgage_validate
@@ -65,6 +71,7 @@ def validate_material_coverage(store,subject,authority,coverage,revisions,operat
     scope={k:subject['scope'][k] for k in ('productKey','cohortKey','tierKey','packageKey')}
     for period in periods(subject):
         if period['authorityId']!=authority['id']:continue
+        if 'requiredFields' in period and coverage['field'] not in period['requiredFields']:continue
         lower=max(period['from'],coverage['from']);upper=min(period['toExclusive'],coverage['toExclusive'])
         if lower>=upper:continue
         material=project(period,coverage['field'])

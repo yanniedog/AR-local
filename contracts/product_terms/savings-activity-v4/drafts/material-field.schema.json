@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:savings-activity-wire4-draft:material-field",
+  "$comment": "DRAFT ONLY; root byte freeze pending; technical contract, no bank approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "field",
+    "scope",
+    "from",
+    "toExclusive",
+    "material"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "field": {
+      "enum": [
+        "allocation",
+        "balanceBasis",
+        "dailyAccrualRounding",
+        "dailyRateRounding",
+        "dayCount",
+        "depositSettlementBasis",
+        "eligibility",
+        "eventOrder",
+        "feeCoverage",
+        "noDeferredObligations",
+        "noOffsetLinkedAccounts",
+        "postingDates",
+        "postingDestination",
+        "postingResidue",
+        "postingRounding",
+        "rates",
+        "assessmentWindow",
+        "activityAccountRole",
+        "activityDateBasis",
+        "settlementPolicy",
+        "classificationInventory",
+        "metricThresholds",
+        "bonusApplication",
+        "bonusRates",
+        "rateComponents",
+        "activityExclusions"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productKey",
+        "cohortKey",
+        "tierKey",
+        "packageKey"
+      ],
+      "properties": {
+        "productKey": {
+          "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/key"
+        },
+        "cohortKey": {
+          "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/key"
+        },
+        "tierKey": {
+          "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/key"
+        },
+        "packageKey": {
+          "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/key"
+        }
+      }
+    },
+    "from": {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/date"
+    },
+    "toExclusive": {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-field-primitives-1#/$defs/date"
+    },
+    "material": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/allocation"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/balanceBasis"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/dailyAccrualRounding"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/dailyRateRounding"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/dayCount"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/depositSettlementBasis"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/eligibility"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/eventOrder"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/feeCoverage"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/noDeferredObligations"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-1#/$defs/noOffsetLinkedAccounts"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/postingDates"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/postingDestination"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/postingResidue"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/postingRounding"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/rates"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/assessmentWindow"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/activityAccountRole"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/activityDateBasis"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/settlementPolicy"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-2#/$defs/classificationInventory"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-3#/$defs/metricThresholds"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-3#/$defs/bonusApplication"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-3#/$defs/bonusRates"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-3#/$defs/rateComponents"
+    },
+    {
+      "$ref": "urn:ar-local:savings-activity-wire4-draft:material-projections-3#/$defs/activityExclusions"
+    }
+  ]
+}

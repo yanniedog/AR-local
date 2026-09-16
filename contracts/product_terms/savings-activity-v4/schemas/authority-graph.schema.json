@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ar-local:savings-activity-wire4-draft:authority-graph",
+  "$comment": "DRAFT ONLY; root byte freeze pending; technical contract, no bank approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identitySha256",
+    "members",
+    "authorities",
+    "supersessions",
+    "completedPeriod"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "identitySha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sha256",
+          "bytes",
+          "decodedBytes",
+          "encoding",
+          "kind"
+        ],
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2097152
+          },
+          "decodedBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2097152
+          },
+          "encoding": {
+            "enum": [
+              "identity",
+              "gzip"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "source_document",
+              "observation_manifest",
+              "core",
+              "details",
+              "raw_source",
+              "coverage_proof"
+            ]
+          }
+        }
+      }
+    },
+    "authorities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "scope",
+              "from",
+              "toExclusive",
+              "evidenceIds",
+              "fieldCoverage",
+              "kind",
+              "observations",
+              "coverageProof"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:common#/$defs/scope"
+              },
+              "from": {
+                "$ref": "#/$defs/shared2"
+              },
+              "toExclusive": {
+                "$ref": "#/$defs/shared2"
+              },
+              "evidenceIds": {
+                "$ref": "#/$defs/shared5"
+              },
+              "fieldCoverage": {
+                "$ref": "#/$defs/shared3"
+              },
+              "kind": {
+                "const": "retained_observation"
+              },
+              "observations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 366,
+                "items": {
+                  "$ref": "urn:ar-local:savings-activity-wire4-draft:common#/$defs/snapshot"
+                }
+              },
+              "coverageProof": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "basis",
+                  "from",
+                  "toExclusive",
+                  "evidenceIds"
+                ],
+                "properties": {
+                  "basis": {
+                    "enum": [
+                      "dated_source_policy",
+                      "complete_daily_observations"
+                    ]
+                  },
+                  "from": {
+                    "$ref": "#/$defs/shared2"
+                  },
+                  "toExclusive": {
+                    "$ref": "#/$defs/shared2"
+                  },
+                  "evidenceIds": {
+                    "$ref": "#/$defs/shared5"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "scope",
+              "from",
+              "toExclusive",
+              "evidenceIds",
+              "fieldCoverage",
+              "kind",
+              "documentVersionIds",
+              "documentSha256s",
+              "datedRateAndPolicyClauseIds",
+              "observedRateRows"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope": {
+                "$ref": "urn:ar-local:savings-activity-wire4-draft:common#/$defs/scope"
+              },
+              "from": {
+                "$ref": "#/$defs/shared2"
+              },
+              "toExclusive": {
+                "$ref": "#/$defs/shared2"
+              },
+              "evidenceIds": {
+                "$ref": "#/$defs/shared5"
+              },
+              "fieldCoverage": {
+                "$ref": "#/$defs/shared3"
+              },
+              "kind": {
+                "const": "dated_official_clause"
+              },
+              "documentVersionIds": {
+                "$ref": "#/$defs/shared5"
+              },
+              "documentSha256s": {
+                "$ref": "#/$defs/shared5"
+              },
+              "datedRateAndPolicyClauseIds": {
+                "$ref": "#/$defs/shared5"
+              },
+              "observedRateRows": {
+                "const": false
+              }
+            }
+          }
+        ]
+      }
+    },
+    "supersessions": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "supersededAuthorityId",
+          "selectedAuthorityId",
+          "from",
+          "toExclusive",
+          "evidenceIds"
+        ],
+        "properties": {
+          "supersededAuthorityId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "selectedAuthorityId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "from": {
+            "$ref": "#/$defs/shared2"
+          },
+          "toExclusive": {
+            "$ref": "#/$defs/shared2"
+          },
+          "evidenceIds": {
+            "$ref": "#/$defs/shared5"
+          }
+        }
+      }
+    },
+    "completedPeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asOf",
+        "completedThroughExclusive",
+        "timezone",
+        "basis",
+        "sourceSnapshotSha256",
+        "evidenceIds"
+      ],
+      "properties": {
+        "asOf": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "completedThroughExclusive": {
+          "$ref": "#/$defs/shared2"
+        },
+        "timezone": {
+          "enum": [
+            "Australia/Sydney",
+            "Australia/Hobart"
+          ]
+        },
+        "basis": {
+          "const": "reviewed_data_completeness"
+        },
+        "sourceSnapshotSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "evidenceIds": {
+          "$ref": "#/$defs/shared5"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "shared1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "from",
+        "toExclusive",
+        "postingEventDates",
+        "evidenceIds"
+      ],
+      "properties": {
+        "field": {
+          "enum": [
+            "rates",
+            "allocation",
+            "dayCount",
+            "balanceBasis",
+            "eventOrder",
+            "dailyRateRounding",
+            "dailyAccrualRounding",
+            "postingRounding",
+            "postingResidue",
+            "postingDates",
+            "postingDestination",
+            "depositSettlementBasis",
+            "noOffsetLinkedAccounts",
+            "feeCoverage",
+            "noDeferredObligations",
+            "eligibility",
+            "assessmentWindow",
+            "activityAccountRole",
+            "activityDateBasis",
+            "settlementPolicy",
+            "classificationInventory",
+            "metricThresholds",
+            "bonusApplication",
+            "bonusRates",
+            "rateComponents",
+            "activityExclusions"
+          ]
+        },
+        "from": {
+          "$ref": "#/$defs/shared2"
+        },
+        "toExclusive": {
+          "$ref": "#/$defs/shared2"
+        },
+        "postingEventDates": {
+          "$ref": "#/$defs/shared4"
+        },
+        "evidenceIds": {
+          "$ref": "#/$defs/shared5"
+        }
+      }
+    },
+    "shared2": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^(19[0-9]{2}|20[0-9]{2}|21[0-9]{2}|2200)-[0-9]{2}-[0-9]{2}$"
+    },
+    "shared3": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/shared1"
+      }
+    },
+    "shared4": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 366,
+      "items": {
+        "$ref": "#/$defs/shared2"
+      },
+      "uniqueItems": true
+    },
+    "shared5": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

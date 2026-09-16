@@ -90,6 +90,10 @@ class EvidenceOperation:
         self.postings.update((subject['id'],x) for x in subject['policy']['postingInventory']['dueDates'])
         self.supersessions.update(json.dumps(x,sort_keys=True) for x in graph['supersessions'])
         pending=[subject['policy']['eligibility']]
+        if subject.get('schemaVersion') == 4:
+            from .executable_v4_contract import validate_tuple
+            validate_tuple(subject)
+            pending.append(subject['policy']['bonus']['assessment']['rule'])
         while pending:
             rule=pending.pop();self.rules.add((subject['id'],rule['id']));pending.extend(rule.get('rules',[]))
             if 'rule' in rule:pending.append(rule['rule'])

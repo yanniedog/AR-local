@@ -220,6 +220,7 @@ def build_payload(
     executable_root: Optional[Path] = None,
     executable_v2_root: Optional[Path] = None,
     executable_v3_root: Optional[Path] = None,
+    executable_v4_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
     # Only the rolling release ships search-index + history assets (see _package's
@@ -236,6 +237,7 @@ def build_payload(
     data['executable_root'] = executable_root
     data['executable_v2_root'] = executable_v2_root
     data['executable_v3_root'] = executable_v3_root
+    data['executable_v4_root'] = executable_v4_root
     return _package_payload(data, out_dir, repo=repo, tag=tag)
 
 
@@ -498,6 +500,7 @@ def _package_payload(
         executable_root=data.get('executable_root'),
         executable_v2_root=data.get('executable_v2_root'),
         executable_v3_root=data.get('executable_v3_root'),
+        executable_v4_root=data.get('executable_v4_root'),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -524,6 +527,7 @@ def _package(
     executable_root: Optional[Path] = None,
     executable_v2_root: Optional[Path] = None,
     executable_v3_root: Optional[Path] = None,
+    executable_v4_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -600,6 +604,15 @@ def _package(
             details_asset_sha256=files['details']['sha256'],run_date=run_date,
             write_asset=lambda kind,value:_asset(out_dir,kind,run_date,_gzip_bytes(value),release_base))
         if namespace is not None:manifest['executable_v3']=namespace
+    if executable_v4_root is not None:
+        if enc_key:raise ValueError('Activity v4 requires an unencrypted verified channel')
+        from app_payload_executable_v4 import load_published_executable_v4,package_executable_v4
+        snapshot=load_published_executable_v4(executable_v4_root,source_observation=source_observation,
+            run_date=run_date,core_asset_sha256=files['core']['sha256'],details_asset_sha256=files['details']['sha256'],product_keys=details.get('products',{}))
+        namespace=package_executable_v4(snapshot,core=core,details=details,core_asset_sha256=files['core']['sha256'],
+            details_asset_sha256=files['details']['sha256'],run_date=run_date,
+            write_asset=lambda kind,value:_asset(out_dir,kind,run_date,_gzip_bytes(value),release_base))
+        if namespace is not None:manifest['executable_v4']=namespace
     if enc_key:
         manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
@@ -673,6 +686,7 @@ def build_and_publish_dual(
     executable_root: Optional[Path] = None,
     executable_v2_root: Optional[Path] = None,
     executable_v3_root: Optional[Path] = None,
+    executable_v4_root: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -705,7 +719,7 @@ def build_and_publish_dual(
     revisions = revision_mode_enabled()
     if terms_root is not None and not revisions:
         raise ValueError('Terms publication requires immutable revisions and a shipped consumer')
-    if (executable_root is not None or executable_v2_root is not None or executable_v3_root is not None) and not revisions:
+    if (executable_root is not None or executable_v2_root is not None or executable_v3_root is not None or executable_v4_root is not None) and not revisions:
         raise ValueError('Executable publication requires immutable revisions and a shipped consumer')
     if revisions and state_dir is None:
         raise ValueError("revision publication requires persistent state_dir")
@@ -722,6 +736,7 @@ def build_and_publish_dual(
     data['executable_root'] = executable_root
     data['executable_v2_root'] = executable_v2_root
     data['executable_v3_root'] = executable_v3_root
+    data['executable_v4_root'] = executable_v4_root
 
     if revisions:
         # The caller holds the production lock through archive verification,
