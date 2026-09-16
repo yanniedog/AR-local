@@ -127,6 +127,13 @@ def delivered(root, manifest, payloads):
                 if key in observed or index['products'].get(key) != name:
                     raise ValueError('Report delivered product association differs')
                 validate(asset)
+                if capability == CAPABILITY:
+                    source = manifest.get('source_observation') or {}
+                    route = asset['routing']
+                    if (route['runDate'] != manifest['run_date']
+                            or route['sourceGenerationId'] != source.get('generation_id')
+                            or route['exportContractSha256'] != source.get('contract_digest')):
+                        raise ValueError('Report delivered activity source binding differs')
                 if capability in ('savings_calculation', 'mortgage_calculation', CAPABILITY) and asset['capability'] != capability:
                     raise ValueError('Report delivered asset capability differs')
                 if asset['productKey'] != key:

@@ -24,7 +24,8 @@ def bridge_at(root):
 
 
 @pytest.mark.parametrize('fault', ['unknown_capability', 'namespace_version', 'index_capability',
-                                  'shard_version', 'details_identity', 'category'])
+                                  'shard_version', 'details_identity', 'source_generation',
+                                  'source_contract', 'source_missing', 'category'])
 def test_activity_report_rejects_wrong_route_or_destination(tmp_path, fault):
     bridge, manifest = bridge_at(tmp_path)
     routes = manifest['executable_v4']['capabilities']
@@ -44,6 +45,12 @@ def test_activity_report_rejects_wrong_route_or_destination(tmp_path, fault):
         route['shards'][name] = write(tmp_path, descriptor['name'], shard)
     elif fault == 'details_identity':
         manifest['files']['details']['sha256'] = '0' * 64
+    elif fault == 'source_generation':
+        manifest['source_observation']['generation_id'] = 'other-capture'
+    elif fault == 'source_contract':
+        manifest['source_observation']['contract_digest'] = '0' * 64
+    elif fault == 'source_missing':
+        manifest.pop('source_observation')
     else:
         key = bridge['selection']['subject']['scope']['productKey']
         bridge['context']['details']['products'][key]['displayIdentity']['productCategory'] = 'TERM_DEPOSITS'
