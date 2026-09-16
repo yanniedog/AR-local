@@ -41,6 +41,14 @@ def key_file(tmp_path, monkeypatch):
     return path
 
 
+def test_malformed_manifest_is_refused_before_upload(tmp_path, key_file):
+    path = tmp_path / 'manifest.json'
+    path.write_bytes(b'not a JSON manifest')
+    with pytest.raises(ValueError):
+        secure_upload(['gh', 'release', 'upload', 'technical', str(path)],
+                      runner=lambda *args, **kwargs: pytest.fail('malformed manifest published'))
+
+
 def test_upload_encrypts_manifest_and_preserves_local_domain_bytes(tmp_path, key_file):
     source = tmp_path / "manifest.json"
     original = b'{"technical_transport_fixture":true}'

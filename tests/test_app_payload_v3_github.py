@@ -208,7 +208,7 @@ def test_candidate_draft_ambiguous_writes_reconcile_exact_state(
     monkeypatch, ambiguous_stage
 ):
     tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
-    payload = b"exact manifest bytes"
+    payload = b'{"technical_transport_fixture":"exact manifest bytes"}'
     release = None
     uploaded = None
     stages: list[str] = []
@@ -247,7 +247,7 @@ def test_candidate_draft_ambiguous_writes_reconcile_exact_state(
 
 def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
     tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
-    payload = b"exact manifest bytes"
+    payload = b'{"technical_transport_fixture":"exact manifest bytes"}'
     release = None
     fail_upload = True
     uploaded = None
@@ -293,7 +293,8 @@ def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
 
 def test_external_publish_between_assets_blocks_every_later_mutation(monkeypatch):
     tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
-    assets = {"manifest.json": b"first", "source-manifest.json": b"second"}
+    assets = {"manifest.json": b'{"technical_transport_fixture":"first"}',
+              "source-manifest.json": b'{"technical_transport_fixture":"second"}'}
     release = {
         "tag_name": tag, "name": "title", "body": "notes", "draft": True,
         "prerelease": False, "target_commitish": PRODUCER_COMMIT, "assets": [],
