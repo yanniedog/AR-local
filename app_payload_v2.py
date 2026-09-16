@@ -6,6 +6,9 @@ is live, so an insight build can fail without delaying rates publication.
 """
 from __future__ import annotations
 
+from app_payload_secure_upload import secure_upload, publication_key, validate_upload_paths, decode_public_bytes
+from release_transport import OVERHEAD
+
 import gzip
 import hashlib
 import json
@@ -456,7 +459,8 @@ def _live_v2_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[st
     url = fresh_document_url(f"https://github.com/{repo}/releases/download/{tag}/{V2_MANIFEST_FILENAME}")
     try:
         with urllib.request.urlopen(url, timeout=SUBPROCESS_TIMEOUT_SEC) as response:  # nosec B310
-            return "present", json.loads(response.read().decode("utf-8"))
+            raw = response.read(MAX_V2_MANIFEST_BYTES + OVERHEAD + 1)
+            return "present", json.loads(decode_public_bytes(raw, MAX_V2_MANIFEST_BYTES).decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return ("missing", None) if exc.code == 404 else ("error", None)
     except Exception:
@@ -464,34 +468,8 @@ def _live_v2_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[st
 
 
 def _prune_v2_assets(gh: str, repo: str, tag: str, keep_names: set[str]) -> int:
-    if is_archive_tag(tag):
-        return 0
-    listed = subprocess.run(  # nosec B603
-        [
-            gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q",
-            '.assets[] | "\\(.name)\\t\\(.createdAt)"',
-        ],
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC, check=False,
-    )
-    if listed.returncode != 0:
-        return 0
-    deleted = 0
-    for prefix in (V2_PRODUCT_HISTORY_PREFIX, V2_ECONOMIC_OUTLOOK_PREFIX):
-        assets = [
-            tuple(line.partition("\t")[::2])
-            for line in listed.stdout.splitlines()
-            if line.startswith(prefix)
-        ]
-        assets.sort(key=lambda item: item[1], reverse=True)
-        for index, (name, _created) in enumerate(assets):
-            if name in keep_names or index < V2_RETAIN_GENERATIONS:
-                continue
-            result = subprocess.run(  # nosec B603
-                [gh, "release", "delete-asset", tag, name, "--repo", repo, "-y"],
-                capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC, check=False,
-            )
-            deleted += result.returncode == 0
-    return deleted
+    """Removal belongs to a separately verified preserve/migrate/remove operation."""
+    return 0
 
 
 def _replace_v2_manifest(
@@ -510,26 +488,26 @@ def _replace_v2_manifest(
         backup = manifest_path.parent / "v2-preservation" / "predecessors" / digest(predecessor) / V2_MANIFEST_FILENAME
         write_once(backup, predecessor)
     try:
-        subprocess.run(  # nosec B603
-            [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
+        secure_upload(  # nosec B603
+            [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"], runner=subprocess.run,
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     except subprocess.SubprocessError:
-        current = store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES)
+        current = store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES, require_encrypted=True)
         if current == incoming:
             return  # An uncertain upload succeeded, proved by exact public bytes.
         if backup is not None and current is None:
             # Never replace an independently appearing selector during recovery.
             # Both bundles are already immutable; retain the failed attempt.
             try:
-                subprocess.run(  # nosec B603
-                    [gh, "release", "upload", tag, str(backup), "--repo", repo],
+                secure_upload(  # nosec B603
+                    [gh, "release", "upload", tag, str(backup), "--repo", repo], runner=subprocess.run,
                     check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
                 )
             except subprocess.SubprocessError:
                 pass
         raise
-    if store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES) != incoming:
+    if store.read(tag, V2_MANIFEST_FILENAME, MAX_V2_MANIFEST_BYTES, require_encrypted=True) != incoming:
         raise RevisionError("v2 selector failed exact public readback")
 
 
@@ -555,6 +533,8 @@ def publish_v2_sidecar(
     missing = [str(path) for path in [*data_assets, manifest_path] if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"missing v2 payload assets: {missing}")
+    validate_upload_paths([*data_assets, manifest_path])
+    publication_key()
     gh = _gh_available()
     if not gh or not _gh_authed(gh):
         if require_token:
@@ -590,8 +570,8 @@ def publish_v2_sidecar(
     existing = set(listed.stdout.split()) if listed.returncode == 0 else set()
     uploads = [path for path in data_assets if path.name not in existing]
     if uploads:
-        subprocess.run(  # nosec B603
-            [gh, "release", "upload", tag, *map(str, uploads), "--repo", repo],
+        secure_upload(  # nosec B603
+            [gh, "release", "upload", tag, *map(str, uploads), "--repo", repo], runner=subprocess.run,
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     live = json.loads(predecessor) if predecessor is not None else None
@@ -610,7 +590,7 @@ def publish_v2_sidecar(
     # A content-addressed name is not evidence by itself: verify every published
     # insight before allowing its mutable selector to point at it.
     for entry in manifest["files"].values():
-        public = store.read(tag, entry["name"], entry["bytes"])
+        public = store.read(tag, entry["name"], entry["bytes"], require_encrypted=True)
         if public is None or len(public) != entry["bytes"] or digest(public) != entry["sha256"]:
             raise RevisionError("v2 public insight failed hash/size readback")
     preserved_manifest = payload_dir / "v2-preservation" / incoming_tag / V2_MANIFEST_FILENAME

@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+from app_payload_secure_upload import decode_public_bytes
 import app_payload_v2 as v2
 import app_payload_v2_archive as archive
 from app_payload_revisions_github import GitHubRevisionStore
@@ -23,7 +24,7 @@ class Store(GitHubRevisionStore):
         self.objects, self.actions = {}, []
         self.fail_name = self.fail_alias = None
 
-    def read(self, tag, name, limit=8 * 1024 * 1024):
+    def read(self, tag, name, limit=8 * 1024 * 1024, *, require_encrypted=False):
         raw = self.objects.get((tag, name))
         if raw is not None and len(raw) > limit:
             raise RevisionError('read budget exceeded')
@@ -52,11 +53,11 @@ class Store(GitHubRevisionStore):
                 if behavior == 'deleted':
                     self.objects.pop(key, None)
                 if behavior == 'completed':
-                    self.objects[key] = path.read_bytes()
+                    self.objects[key] = decode_public_bytes(path.read_bytes(), 8*1024*1024)
                 raise subprocess.TimeoutExpired('gh', 1)
             if key in self.objects and '--clobber' not in args:
                 raise RevisionError('existing object cannot be clobbered')
-            self.objects[key] = path.read_bytes()
+            self.objects[key] = decode_public_bytes(path.read_bytes(), 8*1024*1024)
             self.actions.append(('upload', tag, path.name))
         return subprocess.CompletedProcess(args, 0, '', '')
 
@@ -65,7 +66,7 @@ def base(store, marker='first'):
     files = {}
     for kind in ('core', 'details'):
         raw = gzip.compress(canonical({'transport_marker': marker, 'kind': kind}), mtime=0)
-        name = f'{kind}-{digest(raw)[:12]}.json.gz'
+        name = f'{kind}-{DAY}-{digest(raw)[:12]}.json.gz'
         files[kind] = {'name': name, 'bytes': len(raw), 'sha256': digest(raw), 'url': store.url(TAG, name)}
         store.objects[TAG, name] = raw
     value = {'schema_version': 1, 'run_date': DAY, 'generated_at': DAY + 'T01:00:00Z', 'files': files}
@@ -222,6 +223,7 @@ def transport(monkeypatch, store, before_alias=None):
     monkeypatch.setattr(v2.subprocess, 'run', run)
     monkeypatch.setattr(v2, '_gh_available', lambda: 'gh')
     monkeypatch.setattr(v2, '_gh_authed', lambda _: True)
+    monkeypatch.setattr('app_payload_revisions_github.GitHubRevisionStore', lambda *_a, **_k: store)
     monkeypatch.setattr(v2, 'GitHubRevisionStore', lambda *_a, **_k: store)
     monkeypatch.setattr(archive, 'GitHubRevisionStore', lambda *_a, **_k: store)
     monkeypatch.setattr(v2, '_live_manifest_status', lambda *_: ('present', json.loads(store.read(TAG, 'manifest.json'))))
@@ -321,3 +323,10 @@ def test_incoming_archive_failure_never_replaces_a_preserved_predecessor(tmp_pat
     assert store.read(archive.archive_tag(new), archive.RECEIPT) is None
     monkeypatch.setattr(v2, '_prune_v2_assets', lambda *_: 0)
     assert v2.publish_v2_sidecar(tmp_path, repo=store.repo) is True
+
+@pytest.fixture(autouse=True)
+def private_publication_key(tmp_path, monkeypatch):
+    # Deterministic technical key, never an operational credential.
+    key = tmp_path / 'technical-test.key'
+    key.write_text(bytes(range(32)).hex())
+    monkeypatch.setenv('AR_LOCAL_PAYLOAD_KEY_FILE', str(key))
