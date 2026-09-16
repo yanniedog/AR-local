@@ -308,3 +308,16 @@ CREATE VIEW executable_registry_reviews AS
 -- is computed by controller. Packager omits removed products and empty routes.
 -- It never emits an empty public asset or falls back to an older approval.
 -- Controller inserts002 marker after bounded before/after raw-row and schema verification.
+-- v3/v4 review and publication collision guards.
+CREATE TRIGGER executable_reviews_v4_no_executable_reviews_v3_collision BEFORE INSERT ON executable_reviews_v4
+WHEN EXISTS(SELECT 1 FROM executable_reviews_v3 WHERE review_id=NEW.review_id)
+BEGIN SELECT RAISE(ABORT,'cross-version executable review identity collision'); END;
+CREATE TRIGGER executable_reviews_v3_no_executable_reviews_v4_collision BEFORE INSERT ON executable_reviews_v3
+WHEN EXISTS(SELECT 1 FROM executable_reviews_v4 WHERE review_id=NEW.review_id)
+BEGIN SELECT RAISE(ABORT,'cross-version executable review identity collision'); END;
+CREATE TRIGGER executable_publications_v4_no_executable_publications_v3_collision BEFORE INSERT ON executable_publications_v4
+WHEN EXISTS(SELECT 1 FROM executable_publications_v3 WHERE publication_id=NEW.publication_id)
+BEGIN SELECT RAISE(ABORT,'cross-version executable publication identity collision'); END;
+CREATE TRIGGER executable_publications_v3_no_executable_publications_v4_collision BEFORE INSERT ON executable_publications_v3
+WHEN EXISTS(SELECT 1 FROM executable_publications_v4 WHERE publication_id=NEW.publication_id)
+BEGIN SELECT RAISE(ABORT,'cross-version executable publication identity collision'); END;

@@ -29,13 +29,17 @@ def test003_refuses_without002(tmp_path):
         assert store.db.execute("SELECT 1 FROM sqlite_master WHERE name='executable_subjects_v4'").fetchone() is None
 
 
-def test003_never_relabels_an_installed_earlier_draft(tmp_path, monkeypatch):
+@pytest.mark.parametrize('earlier_kind', ['wrong_wire', 'missing_collision_guards'])
+def test003_never_relabels_an_installed_earlier_draft(tmp_path, monkeypatch, earlier_kind):
     import hashlib
     import cdr_terms.executable_v4_migration as migration
     original_root, original_sha = migration.ROOT, migration.DDL_SHA
-    earlier = (original_root / 'storage/003_savings_activity_v4.sql').read_bytes().replace(
-        b"json_extract(payload_json,'$.schemaVersion') IS 4",
-        b"json_extract(payload_json,'$.schemaVersion') IS 3")
+    current = (original_root / 'storage/003_savings_activity_v4.sql').read_bytes()
+    earlier = current.replace(b"json_extract(payload_json,'$.schemaVersion') IS 4",
+                              b"json_extract(payload_json,'$.schemaVersion') IS 3")
+    if earlier_kind == 'missing_collision_guards':
+        earlier = current.split(b'-- v3/v4 review and publication collision guards.')[0]
+        assert hashlib.sha256(earlier).hexdigest() == '070efdabe942b0b3f6d0abffd4507ed0fda47972e554d0be3315c22b6a6956b1'
     earlier_root = tmp_path / 'earlier-draft'
     (earlier_root / 'storage').mkdir(parents=True)
     (earlier_root / 'storage/003_savings_activity_v4.sql').write_bytes(earlier)

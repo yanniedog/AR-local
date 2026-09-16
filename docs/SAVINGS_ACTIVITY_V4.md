@@ -20,7 +20,7 @@ it never emits an empty approved product asset.
 The additive 003 migration preserves populated predecessor rows, columns and
 objects, with immutable preservation/schema receipts. Its unpublished draft
 contained a v3-only publication constraint. The corrected draft DDL hash is
-`070efdabe942b0b3f6d0abffd4507ed0fda47972e554d0be3315c22b6a6956b1`.
+`e0984c3aa8c8ff7e81f0d03fe80b454ec3c95d67c7a1e130aaeb6b590ece2e7f`.
 The former draft hash `45f8d24b81a17e326c6b49468658ebcd642eca845fedffb7331da98ce885abae`
 is not silently adopted: existing stores with that marker fail closed and need
 a separately reviewed migration. No live store was migrated during this work.
@@ -31,3 +31,5 @@ acquisition, real-account accuracy or runtime acceptance. Unsupported activity,
 fees, missing historical observations and unavailable source evidence remain
 explicit completion blockers. ARE2 classification must include v4 assets before
 activation; this optional path is not permission to publish plaintext.
+
+The pre-merge DDL revision `070efdabe942b0b3f6d0abffd4507ed0fda47972e554d0be3315c22b6a6956b1` omitted mutual v3/v4 review and publication collision guards. It is also refused as an installed predecessor; no existing store is silently relabeled. The revised additive migration enforces both directions while preserving v1-v3 schema and evidence.

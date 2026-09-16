@@ -11,7 +11,7 @@ from .executable_v3_migration import (_execute, _snapshot, _objects, _expected_o
                                     ROOT as V3_ROOT, DDL_SHA as V3_SHA)
 
 MIGRATION = '003_savings_activity_v4'
-DDL_SHA = '070efdabe942b0b3f6d0abffd4507ed0fda47972e554d0be3315c22b6a6956b1'
+DDL_SHA = 'e0984c3aa8c8ff7e81f0d03fe80b454ec3c95d67c7a1e130aaeb6b590ece2e7f'
 VIEWS = {'executable_registry_subjects', 'executable_registry_reviews'}
 
 
