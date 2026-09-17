@@ -287,7 +287,8 @@
     if (state.bankHistory && state.bankHistorySection === state.section && !state.bankHistory.current_only) return;
     const sectionName = state.section;
     const section = encodeURIComponent(sectionName);
-    const data = await getJson(`/api/banks/history/section?date=${state.manifest.run_date}&section=${section}`);
+    const encoded = await getJson(`/api/banks/history/section/series?date=${state.manifest.run_date}&section=${section}`);
+    const data = window.LocalCdrHistoryTransport.decode(encoded, sectionName);
     // History rows already carry run_date from the server (it's the time axis),
     // so we only need to put dataset/rate_family back.
     hydrateSectionRows(data.rates, sectionName);

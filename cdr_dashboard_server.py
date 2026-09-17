@@ -33,6 +33,7 @@ from cdr_dashboard_bank_sql import (
     select_bank_history_rows,
 )
 from cdr_dashboard_history_coverage import history_inventory, read_selected_history, compact_contribution_coverage
+from cdr_dashboard_history_transport import encode as encode_history_transport
 from cdr_economic_local import (
     economic_catalog_payload,
     economic_health_payload,
@@ -843,26 +844,29 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         body = build_local_rba_history_rows()
         return body, maybe_gzip(body, "application/json")
 
-    def bank_history_payload(max_run_date: str, section: str = "") -> Tuple[bytes, bytes | None]:
+    def bank_history_payload(max_run_date: str, section: str = "", *, dictionary: bool = False) -> Tuple[bytes, bytes | None]:
         inventory = bank_history_inventory(max_run_date)
-        cache_key = (max_run_date, section, inventory.signature)
+        cache_key = (max_run_date, section, inventory.signature, dictionary)
         with history_cache_lock:
             cached = history_cache.get(cache_key)
             if cached is not None:
                 return cached
         rows, run_dates, coverage = read_selected_history(inventory, read_bank_history_db, max_run_date, section)
         filled_rows, carry_forward_count = fill_history_gaps(rows, run_dates)
-        body = json.dumps(
-            {
-                "run_dates": run_dates,
-                "section": section,
-                "rates": filled_rows,
-                "carry_forward_count": carry_forward_count,
-                "history_coverage": coverage,
-            },
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
+        payload = {
+            "run_dates": run_dates,
+            "section": section,
+            "rates": filled_rows,
+            "carry_forward_count": carry_forward_count,
+            "history_coverage": coverage,
+        }
+        if dictionary:
+            try:
+                body = encode_history_transport(payload)
+            except ValueError as exc:
+                raise BadRequestError(str(exc)) from exc
+        else:
+            body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         entry = (body, maybe_gzip(body, "application/json"))
         with history_cache_lock:
             if len(history_cache) >= MAX_HISTORY_CACHE_ENTRIES:
@@ -1145,11 +1149,11 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 body, gz = bank_history_payload(date)
                 return body, "application/json", gz
-            if path == "/api/banks/history/section":
+            if path in ("/api/banks/history/section", "/api/banks/history/section/series"):
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 section = parse_bank_section_param(query.get("section", [""])[0])
-                body, gz = bank_history_payload(date, section)
+                body, gz = bank_history_payload(date, section, dictionary=path.endswith("/series"))
                 return body, "application/json; charset=utf-8", gz
             if path == "/api/banks/history/section/compact":
                 raw_date = str(query.get("date", [""])[0] or "").strip()

@@ -22,6 +22,7 @@ _DEFAULT_LOCAL = "http://127.0.0.1:8808/"
 
 from ar_local_pi_runtime import manifest_banks_rate_count
 from verify_local_compact import read_json, validate as validate_compact
+from cdr_dashboard_history_transport import validate as validate_history_series
 
 
 def http_get(url: str, timeout: float = 30.0) -> int:
@@ -64,8 +65,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--history-timeout-seconds", type=history_timeout, default=30.0,
                         help="Timeout for the three history/section requests only (default: 30; maximum: 90).")
-    parser.add_argument("--history-mode", choices=("raw", "compact"), default="raw",
-                        help="History response to verify. Routine restart checks use compact; full acceptance defaults to raw.")
+    parser.add_argument("--history-mode", choices=("raw", "compact", "series"), default="raw",
+                        help="History response: raw checks legacy HTTP status; compact checks aggregates; series validates complete lossless rows.")
     parser.add_argument("--progress", action="store_true", help="Print each request and result immediately.")
     args = parser.parse_args(argv)
     base = args.base_url.strip().rstrip("/") + "/"
@@ -111,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
         "api/home-loan-rates/rba/history",
     ]
     failures: list[tuple[str, int]] = []
+    if args.history_mode == "series":
+        paths.append("assets/history-transport.js")
     for path in paths:
         url = base + path
         code = request(path)
@@ -134,8 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         print("verify_local: /api/latest must be a JSON object", file=sys.stderr)
         return 1
     run_date = latest_payload.get("run_date")
-    if args.history_mode == "compact" and not run_date:
-        print("verify_local: compact smoke requires /api/latest run_date", file=sys.stderr)
+    if args.history_mode in ("compact", "series") and not run_date:
+        print(f"verify_local: {args.history_mode} smoke requires /api/latest run_date", file=sys.stderr)
         return 1
     if args.expect_run_date and run_date != args.expect_run_date:
         print(
@@ -148,6 +151,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.history_mode == "compact":
             history_endpoint += "/compact"
         for section in ("Mortgage", "Savings", "TD"):
+            if args.history_mode == "series":
+                try:
+                    current = request_json(f"api/banks/section?date={run_date}&section={section}")
+                    history = request_json(f"{history_endpoint}/series?date={run_date}&section={section}")
+                    validate_history_series(history, section, run_date)
+                    if current.get("rates") and (history["row_count"] == 0 or run_date not in history["run_dates"]):
+                        raise ValueError("Current section has rates but history omits its observation")
+                except Exception as exc:
+                    print(f"verify_local: failed {base + history_endpoint}/series section={section}: {exc}", file=sys.stderr)
+                    return 1
+                continue
             if args.history_mode == "compact":
                 try:
                     ribbon = request_json(f"api/banks/ribbon?date={run_date}&section={section}")
