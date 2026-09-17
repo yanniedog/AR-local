@@ -1061,6 +1061,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
                 "/assets/history-coverage.js",
+                "/assets/history-transport.js",
                 "/assets/cdr-ribbon-map.js",
                 "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
