@@ -16,6 +16,8 @@ def series(http_transport, monkeypatch):
 
     def responses(section, **kwargs):
         result = original(section, **kwargs)
+        result['section']['rates'].append({**result['section']['rates'][0], 'product_key': 'fixture-2'})
+        result['section']['counts']['rates'] = len(result['section']['rates'])
         result['series'] = json.loads(encode({
             'run_dates': [fixtures.DAY], 'section': section, 'carry_forward_count': 0,
             'rates': [{**row, 'run_date': fixtures.DAY} for row in result['section']['rates']]}))
@@ -45,3 +47,23 @@ def test_http200_incomplete_or_mismatched_series_is_fatal(series, mutation, caps
     series['changes']['series'] = mutation
     assert smoke(series) == 1
     assert '/series' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('kind', ['omit', 'duplicate', 'changed_value'])
+def test_self_consistent_series_must_match_every_current_row(series, kind):
+    def mutate(payload):
+        if kind == 'omit':
+            payload['observations'].pop()
+            payload['row_count'] -= 1
+        elif kind == 'duplicate':
+            payload['observations'][1] = payload['observations'][0].copy()
+        else:
+            payload['values'][payload['values'].index('fixture-2')] = 'wrong-product'
+        return payload
+    series['changes']['series'] = mutate
+    assert smoke(series) == 1
+
+
+def test_wrong_current_envelope_cannot_prove_history(series):
+    series['changes']['section'] = lambda p: {**p, 'section': 'wrong'}
+    assert smoke(series) == 1

@@ -22,3 +22,7 @@ complete bounded response for each banking section, with a 90-second whole-reque
 deadline for each history section and a check for the decoder asset. Routine restart checks retain
 the compact aggregate mode. The explicit legacy `raw` mode checks HTTP status
 only and does not establish successful parsing or drilldown behavior.
+
+Current-day history must match the complete current section field-for-field,
+including duplicate multiplicity. A self-consistent truncated or substituted
+history response cannot pass by declaring the expected date and a positive count.
