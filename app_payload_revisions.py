@@ -190,12 +190,19 @@ def _publish_locked(
     head = index.get("revision_heads", {}).get(run_date)
     previous_root, previous = _load_selected(store, head, run_date, root) if head else (None, None)
     from app_payload_revision_transport import encrypted_selection
-    if (head and head["bundle_sha256"] == bundle_sha256(manifest)
-            and (not migrate_encryption or encrypted_selection(store, previous, previous_root, prior_raw))):
+    same_bundle = bool(head and head["bundle_sha256"] == bundle_sha256(manifest))
+    if (same_bundle
+            and (not migrate_encryption or encrypted_selection(
+                store, previous, previous_root, prior_raw,
+                root / 'revisions' / run_date / f"r{head['revision']:06d}"))):
         write_once(previous_root / f"verified-{digest(prior_raw)}.json", canonical({
             "schema_version": 1, "head": head, "index_sha256": digest(prior_raw),
         }))
         return RevisionPublication(previous_root, previous, head, False)
+    if same_bundle and migrate_encryption:
+        # Migrate the exact verified selected bytes, including its metadata.
+        # An older retained copy of identical facts is not a stale publication.
+        payload_dir, manifest = previous_root, previous
     if previous and _timestamp(manifest) < _timestamp(previous):
         raise RevisionError("stale publisher: candidate predates the selected manifest")
     parent_revision = head["revision"] if head else None

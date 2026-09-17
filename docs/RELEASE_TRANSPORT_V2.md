@@ -62,6 +62,12 @@ separate ARE2 preservation namespace. Default publication behavior is unchanged.
 Hold the outer production lock throughout revision publication and alias updates;
 historical alias updates must never replace a newer rolling head. This option
 does not waive private preservation, compatible-consumer or activation gates.
+An older candidate with the same domain identity migrates the verified selected
+manifest and assets, retaining the selected generation time. Encrypted completion
+also validates control schemas, delta date and provenance bundle identity, then
+compares both controls to the original private publication staging bytes. Keep
+that persistent revision state with the preservation receipts; missing or changed
+control evidence cannot certify an idempotent completed migration.
 
 This code does not authorize activation or removal. Complete a private,
 hash-verified inventory (including nested archives and APK contents), preserve
