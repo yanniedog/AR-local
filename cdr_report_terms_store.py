@@ -230,7 +230,8 @@ class Snapshot:
             version = row['wire_version']
             # All SQL identifiers are fixed by this closed dispatch, never input text.
             table, column = {1: ('executable_reviews', 'template_id'), 2: ('executable_reviews_v2', 'subject_id'),
-                             3: ('executable_reviews_v3', 'subject_id')}.get(version, (None, None))
+                             3: ('executable_reviews_v3', 'subject_id'),
+                             4: ('executable_reviews_v4', 'subject_id')}.get(version, (None, None))
             if table is None:
                 subjects.append({**dict(row), 'recorded_review': None, 'current_approval_revalidated': False,
                                  'unavailable_reason': 'unsupported registry wire version'})
@@ -244,7 +245,7 @@ class Snapshot:
         publications = []
         for table, capability in [('executable_publications', 'fixed_td_calculation'),
                                   ('executable_publications_v2', 'eligibility_only'),
-                                  ('executable_publications_v3', None)]:
+                                  ('executable_publications_v3', None), ('executable_publications_v4', None)]:
             if table not in self.tables:
                 continue
             columns = 'publication_id,observation_id,identity_sha256,published_at'
