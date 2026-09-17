@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from datetime import date
 
 FORMAT = "ar-dashboard-history-dictionary-v1"
@@ -94,3 +95,30 @@ def validate(payload: dict, section: str, run_date: str) -> None:
         carried += row[2] != -1 and values[row[2]] == "1"
     if type(payload.get("carry_forward_count")) is not int or payload["carry_forward_count"] != carried:
         raise ValueError("Invalid dashboard history carry-forward count")
+
+
+def validate_current(payload: dict, current: dict, section: str, run_date: str) -> None:
+    """Compare shared wire fields and duplicate counts across the two projections."""
+    rows = current.get("rates")
+    if (current.get("run_date") != run_date or current.get("section") != section
+            or not isinstance(rows, list) or len(rows) > MAX_ROWS
+            or current.get("counts", {}).get("rates") != len(rows)
+            or any(not isinstance(row, dict) for row in rows)):
+        raise ValueError("Invalid current section for history reconciliation")
+    def token(row):
+        return json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    # Current-only rate_index is absent from the legacy history projection.
+    expected = Counter(token({k: v for k, v in row.items() if k != "rate_index"}) for row in rows)
+    actual = Counter()
+    columns, values, templates = payload["columns"], payload["values"], payload["templates"]
+    for template_id, day_id, carried_id in payload["observations"]:
+        if values[day_id] != run_date or carried_id != -1 and values[carried_id] == "1":
+            continue
+        template = templates[template_id]
+        # The current section deliberately omits comparison_rate; history carries
+        # it for fee-inclusive aggregates. All shared fields stay exact.
+        row = {key: values[index] for key, index in zip(columns, template)
+               if index != -1 and key != "comparison_rate"}
+        actual[token(row)] += 1
+    if actual != expected:
+        raise ValueError("History current rows differ from complete current section")
