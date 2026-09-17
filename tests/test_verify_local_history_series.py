@@ -18,9 +18,13 @@ def series(http_transport, monkeypatch):
         result = original(section, **kwargs)
         result['section']['rates'].append({**result['section']['rates'][0], 'product_key': 'fixture-2'})
         result['section']['counts']['rates'] = len(result['section']['rates'])
+        for index, row in enumerate(result['section']['rates']):
+            row['rate_index'] = index
         result['series'] = json.loads(encode({
             'run_dates': [fixtures.DAY], 'section': section, 'carry_forward_count': 0,
-            'rates': [{**row, 'run_date': fixtures.DAY} for row in result['section']['rates']]}))
+            'rates': [{**{k:v for k,v in row.items() if k != 'rate_index'},
+                       'run_date': fixtures.DAY, 'comparison_rate': '0.0301'}
+                      for row in result['section']['rates']]}))
         return result
 
     monkeypatch.setattr(fixtures, 'responses', responses)
@@ -67,3 +71,10 @@ def test_self_consistent_series_must_match_every_current_row(series, kind):
 def test_wrong_current_envelope_cannot_prove_history(series):
     series['changes']['section'] = lambda p: {**p, 'section': 'wrong'}
     assert smoke(series) == 1
+
+
+def test_history_only_field_projection_matches_actual_server_contract():
+    from cdr_dashboard_server import BANK_SECTION_COLUMNS, BANK_HISTORY_COLUMNS
+    assert set(BANK_HISTORY_COLUMNS) - set(BANK_SECTION_COLUMNS) == {
+        'run_date', 'dataset', 'rate_family', 'comparison_rate'}
+    assert set(BANK_SECTION_COLUMNS) - set(BANK_HISTORY_COLUMNS) == {'rate_index'}
