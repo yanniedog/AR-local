@@ -92,7 +92,7 @@ def _load_selected(
 
 
 def _preserve_alias(
-    store: Any, alias: str, root: Path,
+    store: Any, alias: str, root: Path, *, encrypted_namespace: bool = False,
 ) -> tuple[Path, dict[str, Any]] | None:
     raw = store.read(alias, "manifest.json")
     if raw is None:
@@ -101,7 +101,10 @@ def _preserve_alias(
     validate_manifest(original)
     # Even a revision-aware alias is captured byte-for-byte. This protects an
     # interrupted migration where its source archive was never committed.
-    archive_id = digest(alias.encode("utf-8") + b"\n" + raw)
+    # A prior plaintext preservation archive is immutable. Explicit migration
+    # uses a separate deterministic namespace instead of overwriting it.
+    namespace = b"ARE2-preservation-v1\n" if encrypted_namespace else b""
+    archive_id = digest(namespace + alias.encode("utf-8") + b"\n" + raw)
     tag = f"app-payload-{original['run_date']}-legacy-{archive_id}"
     destination = root / "legacy" / tag
     write_once(destination / "source-manifest.json", raw)
@@ -150,6 +153,7 @@ def _prepare_archive(
 def publish_revision_bundle(
     payload_dir: Path, *, state_dir: Path, repo: str = DEFAULT_REPO,
     consumer_commit: str | None = None, enabled: bool = False, store: Any = None,
+    migrate_encryption: bool = False,
 ) -> RevisionPublication:
     """Archive, independently verify, then advance one date's selected head.
 
@@ -160,6 +164,8 @@ transaction has already preserved all prior dates and revision heads.
     """
     if not enabled:
         raise RevisionError("revision publication is disabled until consumer rollout")
+    if type(migrate_encryption) is not bool:
+        raise RevisionError("encryption migration requires an explicit boolean")
     consumer = _consumer_commit(consumer_commit)
     manifest = decode_document((payload_dir / "manifest.json").read_bytes())
     validate_manifest(manifest, payload_dir)
@@ -167,11 +173,13 @@ transaction has already preserved all prior dates and revision heads.
     state_dir = state_dir.expanduser().resolve()
     backend = store or GitHubRevisionStore(repo)
     with production_lock(state_dir / ".revision-publication.lock", "payload-revisions"):
-        return _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo)
+        return _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo,
+                               migrate_encryption=migrate_encryption)
 
 
 def _publish_locked(
     payload_dir: Path, manifest: dict[str, Any], root: Path, store: Any, consumer: str, repo: str,
+    *, migrate_encryption: bool = False,
 ) -> RevisionPublication:
     run_date = manifest["run_date"]
     prior_raw = store.read(DEFAULT_TAG, "dates-index.json")
@@ -181,7 +189,9 @@ def _publish_locked(
     validate_index(index, repo=repo)
     head = index.get("revision_heads", {}).get(run_date)
     previous_root, previous = _load_selected(store, head, run_date, root) if head else (None, None)
-    if head and head["bundle_sha256"] == bundle_sha256(manifest):
+    from app_payload_revision_transport import encrypted_selection
+    if (head and head["bundle_sha256"] == bundle_sha256(manifest)
+            and (not migrate_encryption or encrypted_selection(store, previous, previous_root, prior_raw))):
         write_once(previous_root / f"verified-{digest(prior_raw)}.json", canonical({
             "schema_version": 1, "head": head, "index_sha256": digest(prior_raw),
         }))
@@ -202,8 +212,10 @@ def _publish_locked(
     if reservation["parent_revision"] != parent_revision:
         raise RevisionError("stale publisher: reserved revision has a superseded parent")
     if head is None:
-        dated_previous = _preserve_alias(store, f"app-payload-{run_date}", root)
-        rolling_previous = _preserve_alias(store, DEFAULT_TAG, root)
+        dated_previous = _preserve_alias(store, f"app-payload-{run_date}", root,
+                                         encrypted_namespace=migrate_encryption)
+        rolling_previous = _preserve_alias(store, DEFAULT_TAG, root,
+                                           encrypted_namespace=migrate_encryption)
         for preserved in (dated_previous, rolling_previous):
             if preserved and preserved[1]["run_date"] == run_date:
                 previous_root, previous = preserved

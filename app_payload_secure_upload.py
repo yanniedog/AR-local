@@ -14,7 +14,7 @@ from pathlib import Path
 
 from payload_crypto import DEFAULT_KEY_FILE, ENV_KEY_FILE, load_key
 from release_transport import (
-    MAGIC, MAX_ENCODED_BYTES, TransportError, decrypt_transport, encrypt_transport,
+    MAGIC, MAX_ENCODED_BYTES, TransportError, PlaintextTransportError, decrypt_transport, encrypt_transport,
     transport_key_id,
 )
 
@@ -79,8 +79,10 @@ def decode_public_bytes(raw: bytes, limit: int, *, require_encrypted: bool = Fal
     """Legacy reads support migration; new publication readback requires ARE2."""
     if raw.startswith(MAGIC):
         return decrypt_transport(raw, resolve_release_key, limit=limit)
-    if require_encrypted or raw.startswith((b"ARE2", b"ARE1")) or len(raw) > limit:
+    if raw.startswith((b"ARE2", b"ARE1")) or len(raw) > limit:
         raise TransportError("encrypted publication readback missing or oversized")
+    if require_encrypted:
+        raise PlaintextTransportError("encrypted publication readback missing or oversized")
     return raw
 
 
