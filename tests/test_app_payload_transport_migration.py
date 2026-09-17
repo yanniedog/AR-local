@@ -1,5 +1,6 @@
 """Transport state controls around the existing retained-real-source fixtures."""
 import pytest
+import json
 
 from app_payload_common import DEFAULT_TAG
 from app_payload_revisions import publish_revision_bundle, _preserve_alias
@@ -153,3 +154,60 @@ def test_existing_plaintext_legacy_preservation_is_not_overwritten(tmp_path):
     assert len(encrypted_tags) == 1
     assert store.read(encrypted_tags[0], 'source-manifest.json') == canonical(original)
     assert migrate(tmp_path, store).head == migrated.head
+
+
+@pytest.mark.parametrize('name,change', [
+    ('revision-delta.json', lambda v: {}),
+    ('revision-delta.json', lambda v: {**v, 'run_date': '2026-05-20'}),
+    ('revision-delta.json', lambda v: {**v, 'rate_rows': {'added': {'a'*64: True}, 'removed': {}}}),
+    ('revision-delta.json', lambda v: {**v, 'products': {}}),
+    ('publication-provenance.json', lambda v: {}),
+    ('publication-provenance.json', lambda v: {**v, 'bundle_sha256': 'a'*64}),
+    ('publication-provenance.json', lambda v: {**v, 'consumer_commit': ''}),
+    ('publication-provenance.json', lambda v: {**v, 'candidate_manifest_sha256': 'bad'}),
+])
+def test_authenticated_invalid_controls_never_count_as_complete(tmp_path, name, change):
+    store, _, _ = initial(tmp_path)
+    result = migrate(tmp_path, store)
+    key = (result.manifest['tag'], name)
+    store.objects[key] = canonical(change(json.loads(store.objects[key])))
+    before = dict(store.objects)
+    with pytest.raises(RevisionError, match='identity or schema'):
+        migrate(tmp_path, store)
+    assert store.objects == before and store.promotions == 2
+
+
+def test_older_identical_candidate_migrates_verified_selected_metadata(tmp_path):
+    store = TransportStore()
+    newer = build_payload(tmp_path/'payload', generated_at='2026-05-19T06:00:00Z')
+    first = publish(tmp_path, store)
+    older = build_payload(tmp_path/'payload', generated_at='2026-05-19T04:00:00Z')
+    assert bundle_sha256(newer) == bundle_sha256(older)
+    store.encrypt_uploads = True
+    result = migrate(tmp_path, store)
+    assert result.head['revision'] == 2 and result.head['bundle_sha256'] == first.head['bundle_sha256']
+    assert result.manifest['generated_at'] == newer['generated_at']
+    assert migrate(tmp_path, store).head == result.head
+
+
+@pytest.mark.parametrize('name', ['revision-delta.json', 'publication-provenance.json'])
+def test_well_formed_but_changed_controls_fail_retained_byte_comparison(tmp_path, name):
+    store, _, _ = initial(tmp_path)
+    result = migrate(tmp_path, store)
+    key = (result.manifest['tag'], name)
+    value = json.loads(store.objects[key])
+    value.update({'assets_changed': ['core']} if name == 'revision-delta.json'
+                 else {'candidate_manifest_sha256': 'a'*64})
+    store.objects[key] = canonical(value)
+    with pytest.raises(RevisionError, match='retained publication evidence'):
+        migrate(tmp_path, store)
+    assert store.promotions == 2
+
+
+def test_missing_retained_controls_cannot_certify_completion(tmp_path):
+    store, _, _ = initial(tmp_path)
+    result = migrate(tmp_path, store)
+    (result.archive_dir/'publication-provenance.json').unlink()
+    with pytest.raises(RevisionError, match='retained publication controls required'):
+        migrate(tmp_path, store)
+    assert store.promotions == 2
