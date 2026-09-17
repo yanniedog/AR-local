@@ -23,6 +23,7 @@ _DEFAULT_LOCAL = "http://127.0.0.1:8808/"
 from ar_local_pi_runtime import manifest_banks_rate_count
 from verify_local_compact import read_json, validate as validate_compact
 from cdr_dashboard_history_transport import validate as validate_history_series
+from cdr_dashboard_history_transport import validate_current as validate_history_current
 
 
 def http_get(url: str, timeout: float = 30.0) -> int:
@@ -156,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
                     current = request_json(f"api/banks/section?date={run_date}&section={section}")
                     history = request_json(f"{history_endpoint}/series?date={run_date}&section={section}")
                     validate_history_series(history, section, run_date)
+                    validate_history_current(history, current, section, run_date)
                     if current.get("rates") and (history["row_count"] == 0 or run_date not in history["run_dates"]):
                         raise ValueError("Current section has rates but history omits its observation")
                 except Exception as exc:
