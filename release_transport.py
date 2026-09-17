@@ -26,6 +26,10 @@ class TransportError(ValueError):
     """A bounded, non-secret transport failure."""
 
 
+class PlaintextTransportError(TransportError):
+    """A bounded legacy plaintext object, distinct from failed authentication."""
+
+
 def transport_key_id(key: bytes) -> str:
     if len(key) != KEY_LEN:
         raise TransportError("invalid transport key length")

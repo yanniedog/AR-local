@@ -50,6 +50,19 @@ only unencrypted control document.
 
 ## Cutover gate
 
+For a privately preserved and verified historical bundle, the revision publisher
+accepts explicit `migrate_encryption=True`. An unchanged selected domain bundle
+is reused only when its manifest, every registered asset and the dates index
+authenticate as ARE2 and decode to the already validated exact bytes. Legacy
+plaintext triggers a higher immutable revision; missing assets, authentication
+failures, mismatched bytes and oversized transport remain fatal. Retrying a
+completed migration does not create another revision. Existing plaintext legacy
+preservation archives remain untouched; migration archives use a deterministic,
+separate ARE2 preservation namespace. Default publication behavior is unchanged.
+Hold the outer production lock throughout revision publication and alias updates;
+historical alias updates must never replace a newer rolling head. This option
+does not waive private preservation, compatible-consumer or activation gates.
+
 This code does not authorize activation or removal. Complete a private,
 hash-verified inventory (including nested archives and APK contents), preserve
 release metadata outside Drive, and verify the compatible signed/released APK
