@@ -23,6 +23,15 @@ DOCUMENTS = frozenset({
     "base-manifest.json", "preservation.json", "publication-provenance.json",
     "revision-delta.json",
 })
+# Retained releases also contain these inventoried CDR-bearing artifacts. Treat
+# the whole archive/log as opaque domain bytes; never publish its members or
+# infer that a changelog is operational metadata. Unknown names still fail closed.
+LEGACY_CDR_ARTIFACTS = frozenset({
+    "changelog-summary.json", "execution.jsonl",
+    "september6-evidence-addendum-20260906T140341Z.zip",
+    "september6-finalization-closeout-20260906T135034Z.zip",
+    "september6-recovery-evidence.zip",
+})
 ASSET = re.compile(
     r"(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|"
     r"v2-product-history|v2-economic-outlook|terms-index|terms_shard_\d{3}|"
@@ -33,7 +42,7 @@ ASSET = re.compile(
 
 
 def classify_asset(name: str) -> str:
-    if (name in DOCUMENTS or ASSET.fullmatch(name)
+    if (name in DOCUMENTS or name in LEGACY_CDR_ARTIFACTS or ASSET.fullmatch(name)
             or re.fullmatch(r"[a-f0-9]{64}\.json(?:\.gz)?", name)):
         return "cdr_domain"
     raise TransportError("unknown release asset classification")
