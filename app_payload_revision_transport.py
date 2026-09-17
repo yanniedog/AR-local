@@ -67,8 +67,10 @@ def validate_control(name: str, value: dict, manifest: dict) -> None:
         valid = valid and set(value) == {
             'schema_version', 'consumer_commit', 'candidate_manifest_sha256', 'bundle_sha256'}
         valid = (valid and value['bundle_sha256'] == bundle_sha256(manifest)
-                 and re.fullmatch('[0-9a-f]{40}', str(value['consumer_commit'])) is not None
-                 and re.fullmatch('[0-9a-f]{64}', str(value['candidate_manifest_sha256'])) is not None)
+                 and isinstance(value['consumer_commit'], str)
+                 and isinstance(value['candidate_manifest_sha256'], str)
+                 and re.fullmatch('[0-9a-f]{40}', value['consumer_commit']) is not None
+                 and re.fullmatch('[0-9a-f]{64}', value['candidate_manifest_sha256']) is not None)
     else:
         valid = valid and set(value) == {
             'schema_version', 'run_date', 'comparison', 'products', 'rate_rows', 'assets_changed'}

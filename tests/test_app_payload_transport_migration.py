@@ -211,3 +211,13 @@ def test_missing_retained_controls_cannot_certify_completion(tmp_path):
     with pytest.raises(RevisionError, match='retained publication controls required'):
         migrate(tmp_path, store)
     assert store.promotions == 2
+
+
+@pytest.mark.parametrize('field,length', [('consumer_commit',40),('candidate_manifest_sha256',64)])
+def test_provenance_schema_rejects_numeric_identifier_even_before_byte_comparison(tmp_path, field, length):
+    from app_payload_revision_transport import validate_control
+    store, _, first = initial(tmp_path)
+    value = json.loads(store.objects[(first.manifest['tag'], 'publication-provenance.json')])
+    value[field] = int('1'*length)
+    with pytest.raises(RevisionError, match='identity or schema'):
+        validate_control('publication-provenance.json', value, first.manifest)
