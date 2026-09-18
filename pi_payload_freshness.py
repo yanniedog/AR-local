@@ -40,12 +40,16 @@ def configured_publication_urls() -> tuple[str, str]:
 
 
 def fetch_document(url: str, timeout: int = 15) -> dict:
+    from app_payload_secure_upload import decode_public_bytes
+    from release_transport import MAGIC, OVERHEAD
+
     request = urllib.request.Request(fresh_document_url(url), headers={"Cache-Control": "no-cache"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read(MAX_DOCUMENT_BYTES + 1)
-    if len(raw) > MAX_DOCUMENT_BYTES:
+        raw = response.read(MAX_DOCUMENT_BYTES + OVERHEAD + 1)
+    if (len(raw) > MAX_DOCUMENT_BYTES + OVERHEAD
+            or (not raw.startswith(MAGIC) and len(raw) > MAX_DOCUMENT_BYTES)):
         raise ValueError("publication_document_too_large")
-    result = json.loads(raw)
+    result = json.loads(decode_public_bytes(raw, MAX_DOCUMENT_BYTES))
     if not isinstance(result, dict):
         raise ValueError("publication_document_not_object")
     return result
