@@ -42,6 +42,8 @@ ASSET = re.compile(
 
 
 def classify_asset(name: str) -> str:
+    if name == 'publication-status.json':
+        return 'operational_receipt'
     if (name in DOCUMENTS or name in LEGACY_CDR_ARTIFACTS or ASSET.fullmatch(name)
             or re.fullmatch(r"[a-f0-9]{64}\.json(?:\.gz)?", name)):
         return "cdr_domain"
@@ -129,8 +131,14 @@ def secure_upload(args: list[str], *, runner, **kwargs):
             raw = path.read_bytes()
             if len(raw) > MAX_ENCODED_BYTES:
                 raise TransportError("asset changed beyond transport byte limit")
+            if path.name == 'publication-status.json':
+                from publication_status import validate
+                if args[3] != 'app-payload-latest':
+                    raise TransportError('operational receipt requires rolling publication')
+                validate(raw)
+                wire = raw
             # Retrying a prepared ciphertext is allowed only after authentication.
-            if raw.startswith(MAGIC):
+            elif raw.startswith(MAGIC):
                 domain = decrypt_transport(raw, resolve_release_key)
                 validate_publication_contract(path.name, domain)
                 wire = raw

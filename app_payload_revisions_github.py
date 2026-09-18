@@ -95,6 +95,11 @@ class GitHubRevisionStore:
 
     def read_url(self, url: str, limit: int = MAX_ASSET_BYTES,
                  *, require_encrypted: bool = False) -> bytes | None:
+        raw = self.read_wire_url(url, limit)
+        return None if raw is None else decode_public_bytes(raw, limit, require_encrypted=require_encrypted)
+
+    def read_wire_url(self, url: str, limit: int = MAX_ASSET_BYTES) -> bytes | None:
+        """Bounded exact transport bytes, also used by keyless operational checks."""
         parsed = urllib.parse.urlsplit(url)
         expected = f"/{self.repo}/releases/download/"
         if (parsed.scheme != "https" or parsed.netloc != "github.com"
@@ -117,7 +122,9 @@ class GitHubRevisionStore:
             if exc.code == 404:
                 return None
             raise RevisionError(f"public download failed with HTTP {exc.code}") from exc
-        return decode_public_bytes(raw, limit, require_encrypted=require_encrypted)
+        if len(raw) > limit + OVERHEAD:
+            raise RevisionError("public response exceeds byte budget")
+        return raw
 
     def tags(self) -> list[str]:
         result = self._run(["api", "--paginate", f"repos/{self.repo}/releases?per_page=100",

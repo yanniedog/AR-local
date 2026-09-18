@@ -44,6 +44,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--manifest-url", default=configured_publication_urls()[0])
     parser.add_argument("--dates-index-url", default=None)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument('--public-receipt', action='store_true',
+                        help='Check operational ciphertext receipt without private decryption keys.')
     parser.add_argument("--alert", action="store_true", help="Send SMTP email when stale (Pi-side).")
     return parser.parse_args(argv)
 
@@ -79,11 +81,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             "schedule_local_hour": DAILY_INGEST_LOCAL_HOUR,
             "schedule_timezone": DAILY_INGEST_TZ_KEY,
         }
-    publication = check_publication(
-        expected, manifest_url=args.manifest_url,
-        index_url=args.dates_index_url or args.manifest_url.rsplit("/", 1)[0] + "/dates-index.json",
-        fetch=fetch_manifest,
-    )
+    if args.public_receipt:
+        from publication_status import check as check_public_status
+        publication = check_public_status(expected)
+    else:
+        publication = check_publication(
+            expected, manifest_url=args.manifest_url,
+            index_url=args.dates_index_url or args.manifest_url.rsplit("/", 1)[0] + "/dates-index.json",
+            fetch=fetch_manifest,
+        )
     stale = check_due and not publication["publication_current"]
     payload.update(publication)
     payload["stale"] = stale
