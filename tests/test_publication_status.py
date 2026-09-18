@@ -1,5 +1,8 @@
 import copy
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -108,3 +111,58 @@ def test_duplicate_receipt_fields_and_wrong_release_refused(publication, tmp_pat
     with pytest.raises(ValueError, match='rolling'):
         secure_upload(['gh', 'release', 'upload', 'wrong-tag', str(path)],
                       runner=lambda *a, **kw: pytest.fail('wrong release accepted'))
+
+
+def test_configured_rolling_tag_binds_reads_writes_and_keyless_check(publication, monkeypatch, tmp_path):
+    store, manifest = publication
+    original = status.TAG
+    monkeypatch.setattr(status, 'TAG', 'configured-app-feed')
+    for name in ('manifest.json', 'dates-index.json'):
+        store.objects[store.url(status.TAG, name)] = store.objects.pop(store.url(original, name))
+    receipt = status.publish(store, manifest)
+    assert store.url(status.TAG, status.NAME) in store.objects
+    assert store.url(original, status.NAME) not in store.objects
+    monkeypatch.setattr('app_payload_revisions_github.GitHubRevisionStore', lambda *a, **kw: store)
+    assert status.check(DAY)['publication_current']
+    path = tmp_path / status.NAME;path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match='rolling'):
+        secure_upload(['gh', 'release', 'upload', original, str(path)],
+                      runner=lambda *a, **kw: pytest.fail('unconfigured release accepted'))
+
+
+@pytest.mark.parametrize('fault', ['upload', 'readback'])
+def test_same_revision_retries_receipt_after_transient_failure(publication, monkeypatch, fault):
+    from app_payload_publish import _manifest_should_replace
+    store, manifest = publication;live = json.loads(manifest)
+    original_run, original_read = store._run, store.read_wire_url
+    if fault == 'upload':
+        monkeypatch.setattr(store, '_run', lambda *a, **kw: (_ for _ in ()).throw(OSError('interrupted upload')))
+    else:
+        monkeypatch.setattr(store, 'read_wire_url', lambda url, limit=status.LIMIT:
+                            None if url.endswith('/' + status.NAME) else original_read(url, limit))
+    with pytest.raises((OSError, ValueError)):
+        status.publish(store, manifest)
+    assert _manifest_should_replace('present', live, our_run_date=live['run_date'],
+                                   our_gen=live['generated_at'], tag=status.TAG, force=False,
+                                   our_revision=live['payload_revision']) == (True, 'revision')
+    monkeypatch.setattr(store, '_run', original_run)
+    monkeypatch.setattr(store, 'read_wire_url', original_read)
+    status.verify(store, status.publish(store, manifest))
+
+
+def test_receipt_cli_honors_configured_repository_and_rejects_conflicting_urls():
+    code = '''
+from publication_status import check, TAG
+from scripts.pi_ingest_manifest_check import parse_args
+assert check.__defaults__ == ('example/private-feed',)
+assert TAG == 'custom-feed'
+assert parse_args(['--public-receipt']).manifest_url == 'https://github.com/example/private-feed/releases/download/custom-feed/manifest.json'
+for flag in ('--manifest-url', '--dates-index-url'):
+    try:parse_args(['--public-receipt', flag, 'https://github.com/other/repo/releases/download/other/manifest.json'])
+    except SystemExit as error:assert error.code == 2
+    else:raise AssertionError('conflicting target accepted')
+'''
+    result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=30,
+                            env={**os.environ, 'AR_LOCAL_REPO': 'example/private-feed',
+                                 'AR_LOCAL_APP_PAYLOAD_TAG': 'custom-feed'})
+    assert result.returncode == 0, result.stderr

@@ -47,7 +47,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument('--public-receipt', action='store_true',
                         help='Check operational ciphertext receipt without private decryption keys.')
     parser.add_argument("--alert", action="store_true", help="Send SMTP email when stale (Pi-side).")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.public_receipt:
+        manifest_url, index_url = configured_publication_urls()
+        if (args.manifest_url != manifest_url
+                or args.dates_index_url not in (None, index_url)):
+            parser.error('receipt mode requires the configured AR_LOCAL_REPO and AR_LOCAL_APP_PAYLOAD_TAG URLs')
+    return args
 
 
 def main(argv: Optional[list[str]] = None) -> int:

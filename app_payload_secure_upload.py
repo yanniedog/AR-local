@@ -132,8 +132,8 @@ def secure_upload(args: list[str], *, runner, **kwargs):
             if len(raw) > MAX_ENCODED_BYTES:
                 raise TransportError("asset changed beyond transport byte limit")
             if path.name == 'publication-status.json':
-                from publication_status import validate
-                if args[3] != 'app-payload-latest':
+                from publication_status import TAG, validate
+                if args[3] != TAG:
                     raise TransportError('operational receipt requires rolling publication')
                 validate(raw)
                 wire = raw

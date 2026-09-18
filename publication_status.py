@@ -12,8 +12,10 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from app_payload_common import DEFAULT_REPO, DEFAULT_TAG
+
 NAME = 'publication-status.json'
-TAG = 'app-payload-latest'
+TAG = DEFAULT_TAG
 LIMIT = 8 * 1024 * 1024
 ASSETS = frozenset({'manifest', 'index', 'selected'})
 
@@ -106,7 +108,7 @@ def verify(store, value: dict) -> None:
             raise ValueError('publication ciphertext changed after receipt')
 
 
-def check(expected_date: str, repo: str = 'yanniedog/AR-local') -> dict:
+def check(expected_date: str, repo: str = DEFAULT_REPO) -> dict:
     from app_payload_revisions_github import GitHubRevisionStore
     result = {'manifest_run_date': '', 'dates_index_latest_date': '', 'generated_at': '',
               'manifest_error': None, 'dates_index_error': None, 'publication_issues': [],
