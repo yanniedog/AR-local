@@ -17,6 +17,7 @@ from pathlib import Path
 from ar_local_backup_policy import fsync_directory
 from cdr_terms.identity import canonical_json, timestamp
 from pi_terms_process import LogLimitError, UnsupportedPlatformError, run_bounded
+from pi_terms_source_spans import prompt_source
 
 MAX_INPUT_BYTES = 600_000
 MAX_RESULT_BYTES = 4 * 1024**2
@@ -111,6 +112,13 @@ def prompt(job: dict) -> str:
         'The output is staging for independent review, never approved rules. '
         'Inventory every clause: parameter, non_contractual with a reason, or unresolved. '
         'Offsets are Python Unicode code point offsets into source_text, end exclusive. '
+        'source_spans supplies deterministic start/end offsets and the original text '
+        'exactly once: source_text is the concatenation of all span text in order. '
+        'Use these supplied boundaries for locators; adjacent spans may be combined '
+        'by taking the first start and last end. You do not need tools or arithmetic '
+        'to verify these supplied boundaries. Spans are mechanical text fragments, '
+        'not assertions of legal clauses, applicability, page numbers or completeness. '
+        'Classify their content from evidence and keep uncertainty explicit. '
         'Retain definitions, exceptions, linked accounts, fees, units, exact operators '
         'and product/tier/customer cohort applicability. Never infer missing facts, '
         'effective dates, zero costs, eligibility, completeness or clause removal. '
@@ -134,7 +142,7 @@ def prompt(job: dict) -> str:
         'unreviewed. Retain possible terms and unresolved scope without asserting '
         'that a linked clause applies to any product, customer or historical date. '
         'Source data begins as a JSON object below.\n'
-        + json.dumps(job, ensure_ascii=False, separators=(',', ':'))
+        + json.dumps(prompt_source(job), ensure_ascii=False, separators=(',', ':'))
     )
 
 
