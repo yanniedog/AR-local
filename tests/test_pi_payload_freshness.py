@@ -80,6 +80,41 @@ def test_public_documents_have_a_read_bound(monkeypatch):
         freshness.fetch_document(freshness.MANIFEST_URL)
 
 
+@pytest.mark.parametrize("failure", [None, "missing_key", "wrong_key", "tamper", "oversized"])
+def test_encrypted_publication_monitor_authenticates_both_documents(monkeypatch, failure):
+    import app_payload_secure_upload as transport
+    from release_transport import TransportError, encrypt_transport
+
+    key = bytes(range(32))
+    calls = []
+
+    def resolve(_key_id):
+        if failure == "missing_key":
+            raise TransportError("private key unavailable")
+        return bytes(reversed(key)) if failure == "wrong_key" else key
+
+    def download(request, **kwargs):
+        calls.append(request.full_url)
+        value = json.dumps(documents()(request.full_url)).encode()
+        if failure == "oversized":
+            value += b" " * freshness.MAX_DOCUMENT_BYTES
+        wire = bytearray(encrypt_transport(value, key))
+        if failure == "tamper":
+            wire[-1] ^= 1
+        return io.BytesIO(wire)
+
+    monkeypatch.setattr(transport, "resolve_release_key", resolve)
+    monkeypatch.setattr(freshness.urllib.request, "urlopen", download)
+    result = freshness.check_publication(DATE)
+    assert len(calls) == 2
+    assert result["publication_current"] is (failure is None)
+    if failure:
+        assert result["manifest_error"] and result["dates_index_error"]
+        assert "private key" not in json.dumps(result)
+    else:
+        assert result["manifest_run_date"] == result["dates_index_latest_date"] == DATE
+
+
 def stage_watchdog(monkeypatch, *, active=False, enabled=True):
     monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1" if enabled else "0")
     monkeypatch.setattr(watchdog, "ensure_runtime_data_writable", lambda _: None)
