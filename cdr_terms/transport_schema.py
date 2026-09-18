@@ -1,7 +1,7 @@
 """Hoist definitions for the subscription provider without changing validation."""
 import copy
 
-from .generation_schema import generation_schema
+from .generation_schema import _reachable_definitions, generation_schema
 
 
 def transport_generation_schema(context):
@@ -49,4 +49,6 @@ def transport_generation_schema(context):
 
     result = rewrite(schema)
     result['$defs'] = {name: rewrite(value) for name, value in names.items()}
-    return result
+    # Hoisted resource containers can become comment-only schemas. Providers
+    # validate even unused definitions, so retain only the applied graph.
+    return _reachable_definitions(result)

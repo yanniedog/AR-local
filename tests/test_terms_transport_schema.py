@@ -42,6 +42,33 @@ def test_provider_can_resolve_every_reference_without_nested_definitions(version
     assert generation_schema(ctx) == original
 
 
+@pytest.mark.parametrize('version', ['terms-parameters-v3', 'terms-parameters-v4'])
+def test_hoisting_discards_unreferenced_resource_containers(version):
+    result = transport_generation_schema(context(version))
+    assert result['type'] == 'object'
+    assert 'mortgageCommon' not in result['$defs']
+    assert 'mortgageDefinitions' not in result['$defs']
+    assert all(any(key in schema for key in ('type', 'anyOf', '$ref'))
+               for schema in result['$defs'].values())
+
+
+def test_pruning_retains_transitive_constraints_and_drops_unused_only(monkeypatch):
+    import cdr_terms.transport_schema as transport
+    schema = {'type': 'object', 'properties': {'value': {'$ref': '#/$defs/outer'}},
+              'required': ['value'], 'additionalProperties': False,
+              '$defs': {'outer': {'type': 'array', 'items': {'$ref': '#/$defs/inner'}},
+                        'inner': {'type': 'integer', 'minimum': 1},
+                        'unused': {'$comment': 'Resource container after hoisting'}}}
+    original = copy.deepcopy(schema)
+    monkeypatch.setattr(transport, 'generation_schema', lambda _: copy.deepcopy(schema))
+    result = transport.transport_generation_schema({})
+    assert set(result['$defs']) == {'outer', 'inner'}
+    assert schema == original
+    for candidate in ({'value': [1]}, {'value': [0]}, {'value': ['1']},
+                      {'value': [1], 'extra': True}, {}):
+        assert Draft202012Validator(schema).is_valid(candidate) == Draft202012Validator(result).is_valid(candidate)
+
+
 def test_hoisting_preserves_mortgage_values_and_rejections():
     subject = json.loads((Path(__file__).parent / 'fixtures/mortgage-v3/subject.json').read_bytes())
     ctx = context('terms-parameters-v4')
