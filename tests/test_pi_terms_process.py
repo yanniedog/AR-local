@@ -9,6 +9,8 @@ import pytest
 
 from pi_terms_process import LogLimitError, run_bounded
 
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='Pi POSIX execution controls')
+
 
 def execute(tmp_path, script, *, limit=128, timeout=5, payload=b'input'):
     with (tmp_path/'events').open('wb') as out, (tmp_path/'errors').open('wb') as err:
