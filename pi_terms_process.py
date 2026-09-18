@@ -11,6 +11,10 @@ class LogLimitError(ValueError):
     """One transport stream exceeded its byte allowance."""
 
 
+class UnsupportedPlatformError(ValueError):
+    """The Pi transport requires POSIX process-group containment."""
+
+
 async def _copy(stream, target, limit):
     written = 0
     while chunk := await stream.read(65536):
@@ -42,18 +46,6 @@ async def _stop(process):
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-    elif process.returncode is None:
-        killer = await asyncio.create_subprocess_exec(
-            'taskkill.exe', '/PID', str(process.pid), '/T', '/F',
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW)
-        try:
-            await asyncio.wait_for(killer.wait(), 5)
-        except asyncio.TimeoutError:
-            killer.kill()
-            await killer.wait()
-        if process.returncode is None:
-            process.kill()
     async def drain(stream):
         while await stream.read(65536):
             pass
@@ -64,11 +56,11 @@ async def _stop(process):
 
 
 async def _run(argv, payload, stdout, stderr, env, cwd, timeout, limit):
-    options = {'start_new_session': True} if os.name == 'posix' else {
-        'creationflags': subprocess.CREATE_NO_WINDOW}
+    if os.name != 'posix':
+        raise UnsupportedPlatformError('Pi transport requires POSIX process groups')
     process = await asyncio.create_subprocess_exec(
         *argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=env, cwd=cwd, limit=65536, **options)
+        env=env, cwd=cwd, limit=65536, start_new_session=True)
     tasks = [asyncio.create_task(coro) for coro in (
         _feed(process.stdin, payload), _copy(process.stdout, stdout, limit),
         _copy(process.stderr, stderr, limit), process.wait())]

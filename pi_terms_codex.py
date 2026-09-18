@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ar_local_backup_policy import fsync_directory
 from cdr_terms.identity import canonical_json, timestamp
-from pi_terms_process import LogLimitError, run_bounded
+from pi_terms_process import LogLimitError, UnsupportedPlatformError, run_bounded
 
 MAX_INPUT_BYTES = 600_000
 MAX_RESULT_BYTES = 4 * 1024**2
@@ -192,6 +192,8 @@ def execute(executable: Path, auth_home: Path, root: Path) -> dict:
             completed = run_bounded(command(executable, root), input=prompt(json.loads(body)).encode(),
                                     stdout=events, stderr=errors, env=env, cwd=root,
                                     timeout=600, limit=MAX_LOG_BYTES)
+        except UnsupportedPlatformError:
+            return {'result': 'DEFERRED', 'reason': 'unsupported_platform', 'codex_called': False}
         except LogLimitError:
             return {'result': 'DEFERRED', 'reason': 'log_limit', 'codex_called': True}
         except subprocess.TimeoutExpired:
