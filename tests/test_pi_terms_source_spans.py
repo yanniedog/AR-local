@@ -48,3 +48,23 @@ def test_prompt_preserves_binding_context_and_untrusted_text_without_mutation():
 def test_non_text_is_rejected():
     with pytest.raises(ValueError):
         source_spans(None)
+
+
+def test_reviewed_regions_keep_exact_locators_without_mechanical_chunks(monkeypatch):
+    import pi_terms_source_spans as module
+    structure = {'clauses': {
+        'first': {'locator': {'start':0,'end':5,'page':1,'section':'first'}, 'text':'alpha'},
+        'second': {'locator': {'start':6,'end':10,'page':1,'section':'second'}, 'text':'beta'},
+    }, 'tables':[{'headers':['first'],'cells':['second']}], 'links':[]}
+    job = {'source_text':'alpha\nbeta','context':{'structure_review':'retained'},
+           'reviewed_structure':structure, 'extraction_id':'bound', 'context_sha256':'bound'}
+    original = copy.deepcopy(job)
+    def forbidden(*_):
+        pytest.fail('reviewed regions must not be replaced by mechanical spans')
+    monkeypatch.setattr(module,'source_spans',forbidden)
+    rendered = prompt(job)
+    data = json.loads(rendered.split('Source data begins as a JSON object below.\n',1)[1])
+    assert data == original == job
+    assert 'source_spans' not in data
+    assert 'use only its exact clause locators' in rendered
+    assert 'retain required table headers, units and footnote associations' in rendered

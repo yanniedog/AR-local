@@ -26,6 +26,8 @@ def source_spans(text: str) -> list[dict]:
 def prompt_source(job: dict) -> dict:
     """Keep the persisted input/binding unchanged; render its text only once."""
     value = dict(job)
+    if 'reviewed_structure' in value:
+        return value  # Reviewed page/section locators outrank mechanical chunks.
     text = value.pop('source_text')
     value['source_spans'] = source_spans(text)
     return value
