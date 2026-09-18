@@ -93,7 +93,8 @@ def test_worker_receives_context_selected_closed_schema(monetary_protocol,tmp_pa
     context=json.loads((root/'input.json').read_bytes())['context']
     assert context['interpretation_contract']=='analysis-staging-material-v1'
     from cdr_terms.generation_schema import generation_schema
-    assert output==generation_schema(context)
+    from cdr_terms.transport_schema import transport_generation_schema
+    assert output==transport_generation_schema(context)
     def dialect(node):
         if isinstance(node,list):
             for child in node:dialect(child)

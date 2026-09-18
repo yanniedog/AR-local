@@ -131,8 +131,8 @@ def prepare_job(store: EvidenceStore, job: dict, root: Path) -> None:
         raise ValueError('complete_document_chunking_required')
     root.mkdir(parents=True, mode=0o700)
     write_receipt(root / 'input.json', payload)
-    from cdr_terms.generation_schema import generation_schema
-    write_receipt(root / 'schema.json', generation_schema(context))
+    from cdr_terms.transport_schema import transport_generation_schema
+    write_receipt(root / 'schema.json', transport_generation_schema(context))
     binding={key: job[key] for key in
              ('job_id', 'lease_id', 'extraction_id', 'document_version_id', 'context_sha256')}
     if 'interpretation_schema_sha256' in context:
@@ -147,9 +147,9 @@ def complete_job(queue: TermsQueue, job: dict, root: Path, resources: dict) -> d
               ('job_id', 'lease_id', 'extraction_id', 'document_version_id', 'context_sha256')}
     context=queue.validate_input(job['job_id'])
     if 'interpretation_schema_sha256' in context:
-        from cdr_terms.generation_schema import generation_schema
+        from cdr_terms.transport_schema import transport_generation_schema
         raw=read_bounded(root/'schema.json',MAX_RESULT_BYTES)
-        if json.loads(raw)!=generation_schema(context):raise ValueError('generation schema changed')
+        if json.loads(raw)!=transport_generation_schema(context):raise ValueError('generation schema changed')
         expected['generation_schema_sha256']=byte_digest(raw)
     if binding != expected:
         raise ValueError('transport binding does not identify the current lease')
