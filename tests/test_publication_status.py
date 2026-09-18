@@ -1,5 +1,8 @@
 import copy
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -145,3 +148,21 @@ def test_same_revision_retries_receipt_after_transient_failure(publication, monk
     monkeypatch.setattr(store, '_run', original_run)
     monkeypatch.setattr(store, 'read_wire_url', original_read)
     status.verify(store, status.publish(store, manifest))
+
+
+def test_receipt_cli_honors_configured_repository_and_rejects_conflicting_urls():
+    code = '''
+from publication_status import check, TAG
+from scripts.pi_ingest_manifest_check import parse_args
+assert check.__defaults__ == ('example/private-feed',)
+assert TAG == 'custom-feed'
+assert parse_args(['--public-receipt']).manifest_url == 'https://github.com/example/private-feed/releases/download/custom-feed/manifest.json'
+for flag in ('--manifest-url', '--dates-index-url'):
+    try:parse_args(['--public-receipt', flag, 'https://github.com/other/repo/releases/download/other/manifest.json'])
+    except SystemExit as error:assert error.code == 2
+    else:raise AssertionError('conflicting target accepted')
+'''
+    result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=30,
+                            env={**os.environ, 'AR_LOCAL_REPO': 'example/private-feed',
+                                 'AR_LOCAL_APP_PAYLOAD_TAG': 'custom-feed'})
+    assert result.returncode == 0, result.stderr
