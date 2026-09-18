@@ -14,6 +14,7 @@ from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit
 
 from .discovery import document_url
+from .acquisition_throttle import HOST_THROTTLE, HostThrottleFailure
 from .identity import digest, utc_now
 from .observation_checks import bind_manual_check
 from .store import EvidenceStore
@@ -128,6 +129,21 @@ def _connection(url: str, policy: FetchPolicy, remaining: float) -> http.client.
     return connection
 
 
+def _throttle_request(url: str, policy: FetchPolicy, deadline: float) -> None:
+    def check_guard() -> None:
+        if policy.request_guard:
+            try:
+                reason = policy.request_guard()
+            except Exception:
+                reason = "operational_guard_unavailable"
+            if reason:
+                raise OperationalDeferral(reason)
+    try:
+        HOST_THROTTLE.wait(urlsplit(url).hostname, deadline, check_guard)
+    except HostThrottleFailure as exc:
+        raise FetchFailure(str(exc)) from exc
+
+
 def _body(response: http.client.HTTPResponse, connection: http.client.HTTPConnection,
           limit: int, deadline: float) -> bytes:
     raw_length = response.getheader("Content-Length")
@@ -190,6 +206,9 @@ def fetch_document(url: str, *, policy: FetchPolicy,
         timer.daemon = True
         timer.start()
         try:
+            # Charge spacing after DNS/TLS so slow connection setup cannot bunch
+            # requests together. The original timer covers this wait as well.
+            _throttle_request(current, policy, deadline)
             parsed = urlsplit(current)
             headers = {"Accept": "application/pdf,text/html,text/plain,application/json;q=0.8,*/*;q=0.1",
                        "Accept-Encoding": "identity", "User-Agent": "AR-local-document-evidence/1"}
