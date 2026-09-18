@@ -12,8 +12,10 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from app_payload_common import DEFAULT_TAG
+
 NAME = 'publication-status.json'
-TAG = 'app-payload-latest'
+TAG = DEFAULT_TAG
 LIMIT = 8 * 1024 * 1024
 ASSETS = frozenset({'manifest', 'index', 'selected'})
 
