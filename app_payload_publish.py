@@ -524,6 +524,9 @@ def publish_payload(
         raise
     if store.read(tag, "manifest.json", require_encrypted=True) != manifest_path.read_bytes():
         raise RevisionError("compatibility alias failed encrypted manifest verification")
+    if tag == DEFAULT_TAG and manifest.get('payload_revision'):
+        from publication_status import publish as publish_status
+        publish_status(store, manifest_path.read_bytes())
     print(
         f"[app_payload] publish succeeded run_date={our_run_date} tag={tag} repo={repo} "
         f"manifest_replaced=true new_data_assets={len(to_upload)} exit=0"
