@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ar_local_backup_policy import fsync_directory
 from cdr_terms.identity import canonical_json, timestamp
+from pi_terms_process import LogLimitError, run_bounded
 
 MAX_INPUT_BYTES = 600_000
 MAX_RESULT_BYTES = 4 * 1024**2
@@ -186,14 +187,13 @@ def execute(executable: Path, auth_home: Path, root: Path) -> dict:
     body = read_bounded(root / 'input.json', MAX_INPUT_BYTES)
     env = subscription_environment(auth_home, root)
     (root / 'tmp').mkdir(mode=0o700)
-    if os.name == 'posix':
-        import resource
-        resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_LOG_BYTES, MAX_LOG_BYTES))
     with (root / 'events.jsonl').open('xb') as events, (root / 'stderr.log').open('xb') as errors:
         try:
-            completed = subprocess.run(command(executable, root), input=prompt(json.loads(body)).encode(),
-                                       stdout=events, stderr=errors, env=env, cwd=root,
-                                       shell=False, timeout=600)
+            completed = run_bounded(command(executable, root), input=prompt(json.loads(body)).encode(),
+                                    stdout=events, stderr=errors, env=env, cwd=root,
+                                    timeout=600, limit=MAX_LOG_BYTES)
+        except LogLimitError:
+            return {'result': 'DEFERRED', 'reason': 'log_limit', 'codex_called': True}
         except subprocess.TimeoutExpired:
             return {'result': 'DEFERRED', 'reason': 'timeout', 'codex_called': True}
     if completed.returncode:
