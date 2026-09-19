@@ -37,7 +37,7 @@ def test_mm_teardown_requires_kernel_exit_proof_before_omission(accounting, monk
         return True
     monkeypatch.setattr(resources, "pidfd_exited", exited)
     assert resources.aggregate(group, proc=proc) == {"rss_bytes": 0, "swap_bytes": 0, "processes": 0}
-    assert events == [(1101, 5)] and closed == [1101]
+    assert events == [(1101, 250)] and closed == [1101]
 
 
 @pytest.mark.parametrize("state", ["R", "S", "Z"])
@@ -169,3 +169,29 @@ def test_real_linux_live_handle_with_unreadable_accounting_fails(monkeypatch):
     finally:
         child.stdin.close()
         child.wait(timeout=2)
+
+
+@pytest.mark.skipif(sys.platform != "linux" or not hasattr(os, "pidfd_open"), reason="real Linux pidfd lifecycle")
+def test_mm_teardown_longer_than_one_tick_requires_actual_delayed_exit(monkeypatch):
+    # Reproduce ESRCH during mm teardown while the actual kernel exit handle
+    # remains live longer than the former 5ms limit. No process is skipped until
+    # its real exit is proven; the still-live negative control above also runs.
+    child = subprocess.Popen([sys.executable, "-c",
+        "import sys,time; print('ready',flush=True); sys.stdin.buffer.read(1); time.sleep(.05)"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    proof = os.pidfd_open(child.pid, 0)
+    try:
+        assert child.stdout.readline() == b"ready\n"
+        def teardown(_):
+            child.stdin.write(b"x")
+            child.stdin.flush()
+            raise ProcessLookupError(errno.ESRCH, "mm torn down before final kernel exit")
+        monkeypatch.setattr(resources, "numeric_fields", teardown)
+        monkeypatch.setattr(resources, "members", lambda _: set() if resources.pidfd_exited(proof) else {child.pid})
+        assert resources.process_memory(child.pid, Path("unused"), Path("/proc")) is None
+        assert child.wait(timeout=2) == 0
+    finally:
+        child.stdin.close()
+        child.stdout.close()
+        child.wait(timeout=2)
+        os.close(proof)

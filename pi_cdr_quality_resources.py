@@ -183,9 +183,10 @@ def process_memory(pid: int, cgroup: Path, proc: Path) -> dict | None:
             # afterward. Exit cannot erase observed RSS or workload swap.
             return {"Rss": values["Rss"], "Swap": values["Swap"]}
         except (FileNotFoundError, ProcessLookupError) as error:
-            # At most 5ms for mm teardown to finish, inside the unchanged sample
+            # Large address-space teardown can outlast a 5ms scheduling slice.
+            # Wait at most 250ms for kernel exit proof, inside the unchanged sample
             # gap/runtime guards. A still-live handle with no accounting fails.
-            if descriptor is not None and not pidfd_exited(descriptor, 5):
+            if descriptor is not None and not pidfd_exited(descriptor, 250):
                 raise MemoryAccountingError(pid, proc, error) from error
         except (OSError, KeyError, ValueError) as error:
             raise MemoryAccountingError(pid, proc, error) from error
