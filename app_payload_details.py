@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List
 
 from app_payload_common import compact
+from app_payload_feature_facts import feature_facts
 from cdr_clean_export import official_product_links
 from cdr_savings_conditions import winner_rate_disclosures
 from cdr_rate_conditions import MAX_ENVELOPE_BYTES, validate_rate_conditions
@@ -184,6 +185,7 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
                 "features": _detail_items(record, "features", "featureType") + (
                     winner_rate_disclosures(record) if product.get("dataset") == "Savings" else []
                 ),
+                "facts": feature_facts(record, key),
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "rateConditions": _rate_conditions(product),
