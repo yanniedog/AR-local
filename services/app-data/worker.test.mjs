@@ -37,10 +37,21 @@ test('current and historical aliases are accepted; cache-busting is normalized',
     assert.equal(value.upstream, `https://github.com/yanniedog/AR-local/releases/download/${tag}/manifest.json`);
   }
 });
+test('historical encrypted suffix and every approved producer payload family route', () => {
+  for (const stem of ['core', 'details', 'bank-history', 'bank-spread-history', 'history-banks',
+    'rba-calendar', 'search-index', 'v2-economic-outlook', 'v2-product-history']) {
+    for (const suffix of ['.json.gz', '.json.gz.enc']) {
+      assert.equal(releaseRoute(request(url.replace('core.json.gz', `${stem}-2026-09-19-123456789abc${suffix}`))).asset,
+        `${stem}-2026-09-19-123456789abc${suffix}`);
+    }
+  }
+});
 for (const path of ['/v1/release/app-payload-latest/../key.json', '/v1/release/other/key.json',
   '/v1/release/app-payload-latest/source.zip', '/v1/release/app-payload-latest/a%2Fb.json',
   '/v1/release/app-payload-latest/..secret.json', '/v1/release/app-payload-latest/a.json?url=http://localhost',
-  '/v1/release/app-payload-latest/a.json?legacy_sha256=no']) {
+  '/v1/release/app-payload-latest/a.json?legacy_sha256=no',
+  '/v1/release/app-payload-latest/key.json', '/v1/release/app-payload-latest/preservation.json',
+  '/v1/release/app-payload-latest/publication-provenance.json', '/v1/release/app-payload-latest/core-secret.json.gz']) {
   test(`rejects unsafe request ${path}`, async () => {
     let calls = 0;
     assert.equal((await handleRequest(request('https://service.example' + path), env, context, async () => { calls++; }, null)).status, 400);
