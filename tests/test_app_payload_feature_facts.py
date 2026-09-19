@@ -63,6 +63,17 @@ def test_feature_projection_does_not_add_numeric_or_executable_terms():
     assert {f['kind'] for f in feature_facts(record, 'p')} == {'feature'}
 
 
+@pytest.mark.parametrize('description', [None, 'A home loan.'])
+def test_summary_condition_vetoes_structured_feature_even_with_other_detail_text(description):
+    record = {'features': [{'featureType': 'OFFSET'}], 'description': description}
+    product = {'product_key': 'p', 'details_json': record,
+               'description': 'Offsets apply to variable loans only.'}
+    saved = copy.deepcopy(product)
+    detail = build_details([product])['p']
+    assert not supports(detail['facts'], 'OFFSET')
+    assert product == saved
+
+
 @pytest.mark.parametrize('references', ['text', {}, [None], [{}],
     [{'url': 1, 'sourcePath': '/features/0', 'relation': 'supporting'}],
     [{'url': 'javascript:alert(1)', 'sourcePath': '/features/0', 'relation': 'supporting'}],

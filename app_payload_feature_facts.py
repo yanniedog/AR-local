@@ -36,7 +36,8 @@ def source_documents(record: Mapping[str, Any]) -> list[dict] | None:
     return references
 
 
-def feature_facts(record: Mapping[str, Any], product_key: str) -> list[dict]:
+def feature_facts(record: Mapping[str, Any], product_key: str,
+                  summary_description: Any = None) -> list[dict]:
     """Publish presence only for unqualified structured feature declarations.
 
     Free-text conditions, extra values and effective-date boundaries need an
@@ -69,6 +70,8 @@ def feature_facts(record: Mapping[str, Any], product_key: str) -> list[dict]:
                 collect(child)
 
     collect(record)
+    if isinstance(summary_description, str) and summary_description not in text:
+        text.append(summary_description)
     narrative = "\n".join(text).lower()
     for item in features:
         words = item["featureType"].lower().split("_")

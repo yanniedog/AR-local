@@ -185,7 +185,7 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
                 "features": _detail_items(record, "features", "featureType") + (
                     winner_rate_disclosures(record) if product.get("dataset") == "Savings" else []
                 ),
-                "facts": feature_facts(record, key),
+                "facts": feature_facts(record, key, product.get("description")),
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "rateConditions": _rate_conditions(product),
