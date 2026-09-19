@@ -5,7 +5,7 @@ import json
 from typing import Any, Dict, List
 
 from app_payload_common import compact
-from app_payload_feature_facts import feature_facts
+from app_payload_feature_facts import feature_facts, source_documents
 from cdr_clean_export import official_product_links
 from cdr_savings_conditions import winner_rate_disclosures
 from cdr_rate_conditions import MAX_ENVELOPE_BYTES, validate_rate_conditions
@@ -192,7 +192,7 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
                 "links": _detail_links(record),
                 # Preserve scoped citations; the existing packaging budget
                 # rejects oversized payloads instead of truncating evidence.
-                "sourceDocuments": record.get("sourceDocuments") if include_source_documents else None,
+                "sourceDocuments": source_documents(record) if include_source_documents else None,
             }
         )
         details[key] = entry

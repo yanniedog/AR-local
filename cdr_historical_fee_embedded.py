@@ -45,7 +45,7 @@ SOURCE_LABEL_PROJECTION_SOURCES = {
 # This accepts reviewed code bytes, never a replay or replacement of old inputs.
 FEATURE_EVIDENCE_PROJECTION_SOURCES = {
     **SOURCE_LABEL_PROJECTION_SOURCES,
-    'app_payload_details.py': '70be35e1a172430f8301f3500bd84b73db4eb340ee085b7f4e422345252d38f7',
+    'app_payload_details.py': 'd4b61a1f32279164491259ff33759741f48d0fe669b6a68d3812e3121df5e92a',
 }
 DIRECT_FIELDS = frozenset(('amount', 'currency', 'additionalValue', 'balanceRate', 'transactionRate',
                           'accruedRate', 'accrualFrequency', 'feeCap', 'feeCapPeriod', 'feeMethodUType',

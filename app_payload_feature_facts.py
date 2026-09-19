@@ -7,12 +7,33 @@ import re
 from typing import Any, Mapping
 
 from cdr_product_facts import compact_facts
+from cdr_terms.discovery import document_url
 
 _CODE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _NARRATIVE_NAMES = {
     "OFFSET": r"\boffsets?\b", "REDRAW": r"\bredraws?\b",
     "EXTRA_REPAYMENTS": r"\bextra[\s_-]+repayments?\b",
 }
+
+
+def source_documents(record: Mapping[str, Any]) -> list[dict] | None:
+    """Reject malformed generated references before they reach mobile renderers."""
+    references = record.get("sourceDocuments")
+    if references is None:
+        return None
+    if not isinstance(references, list):
+        raise ValueError("invalid_source_documents")
+    for reference in references:
+        if (not isinstance(reference, dict)
+                or any(not isinstance(reference.get(key), str) or not reference[key].strip()
+                       for key in ("url", "sourcePath", "relation"))
+                or any(key in reference and not isinstance(reference[key], str)
+                       for key in ("sourceUrl", "label"))
+                or document_url(reference["url"]) != reference["url"]
+                or ("sourceUrl" in reference
+                    and document_url(reference["sourceUrl"]) != reference["url"])):
+            raise ValueError("invalid_source_document_reference")
+    return references
 
 
 def feature_facts(record: Mapping[str, Any], product_key: str) -> list[dict]:

@@ -61,3 +61,13 @@ def test_feature_projection_does_not_add_numeric_or_executable_terms():
               'lendingRates': [{'lendingRateType': 'VARIABLE', 'rate': '0.0599'}],
               'fees': [{'feeType': 'PERIODIC', 'amount': '10.00'}]}
     assert {f['kind'] for f in feature_facts(record, 'p')} == {'feature'}
+
+
+@pytest.mark.parametrize('references', ['text', {}, [None], [{}],
+    [{'url': 1, 'sourcePath': '/features/0', 'relation': 'supporting'}],
+    [{'url': 'javascript:alert(1)', 'sourcePath': '/features/0', 'relation': 'supporting'}],
+    [{'url': 'https://example.com/', 'sourceUrl': 'https://other.example.com/', 'sourcePath': '/features/0', 'relation': 'supporting'}],
+    [{'url': 'https://example.com', 'sourcePath': '/features/0', 'relation': 'supporting', 'label': {}}]])
+def test_malformed_references_refuse_packaging_instead_of_crashing_mobile(references):
+    with pytest.raises(ValueError, match='invalid_source_document'):
+        build_details([{'product_key': 'p', 'details_json': {'sourceDocuments': references}}])
