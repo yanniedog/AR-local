@@ -36,7 +36,7 @@ def test_dashboard_referenced_scripts_are_served_exactly(tmp_path):
         else:
             target = server.DASHBOARD_ROOT / path.removeprefix('/assets/')
         body, content_type, _ = instance.route(path, {})
-        assert content_type.startswith("application/javascript"), path
+        assert content_type.partition(';')[0] in ('application/javascript', 'text/javascript'), path
         assert body == target.read_bytes(), path
         assert body, path
 
