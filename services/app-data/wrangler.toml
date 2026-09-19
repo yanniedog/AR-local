@@ -1,0 +1,13 @@
+name = "ar-app-data"
+main = "worker.mjs"
+compatibility_date = "2026-09-19"
+workers_dev = true
+preview_urls = false
+
+# RELEASE_KEYS is a secret JSON map of transport key IDs to AES-256 keys.
+# Never place its value in this file, artifacts, logs or a client bundle.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "20440919"
+simple = { limit = 120, period = 60 }
