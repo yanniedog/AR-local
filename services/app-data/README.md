@@ -14,8 +14,14 @@ Retain historical keys. Pass secret values through stdin/private files, never CL
 arguments or logs. No package dependencies are required by the service itself.
 
 The public endpoint is `/v1/release/<app-payload-tag>/<approved-asset>`.
-Only named app manifests and documented producer payload families (.json.gz or .json.gz.enc) are served. Preservation records, provenance and arbitrary JSON are excluded. Only GitHub release-asset redirect hosts are accepted. Time, redirect, stream-size,
-per-isolate concurrency and per-IP rate limits are enforced. Current asset inventory
+Only named app manifests and all producer-approved payload families with exact dates
+and 12-character hashes (.json.gz or .json.gz.enc) are served. Preservation records,
+provenance and arbitrary JSON are excluded. Only GitHub release-asset redirect hosts
+are accepted. Time, redirect, stream-size, per-isolate concurrency and per-IP rate
+limits are enforced. The service naming expression is checked against the publisher
+contract in CI. Mutable upstream requests carry a freshness nonce, and both legacy
+representations vary by digest header; internal cache namespace 2 avoids older cached
+responses. Current asset inventory
 is below the 8MiB encoded-content cap; oversized future assets fail explicitly.
 Content-Encoding is intentionally absent: frozen gzip bytes and hashes must survive
 HTTP delivery unchanged. Mutable aliases cache for30seconds, revision tags for1year.

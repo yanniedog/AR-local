@@ -6,7 +6,7 @@ const hex = bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padSt
 let active = 0;
 const DOCUMENTS = new Set(['manifest.json', 'manifest-v2.json', 'dates-index.json',
   'revision-delta.json', 'base-manifest.json', 'source-manifest.json']);
-const PAYLOAD = /^(?:core|details|bank-history|bank-spread-history|history-banks|rba-calendar|search-index|v2-economic-outlook|v2-product-history)(?:-\d{4}-\d{2}-\d{2}(?:-[a-f0-9]{8,64})?)?\.json\.gz(?:\.enc)?$/;
+export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_\d{3}|executable-index|executable_shard_\d{3}|executable_v2_(?:index|shard_\d{3})|monetary_v[34]_[a-z_]+_(?:index|shard_\d{3}))-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
 
 function headers() {
   return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -125,21 +125,26 @@ export async function handleRequest(request, env, ctx, fetcher = fetch, cache = 
   try { route = releaseRoute(request); } catch { return failure(400); }
   try {
     if (!env.RATE_LIMITER || !(await env.RATE_LIMITER.limit({ key: request.headers.get('cf-connecting-ip') || 'unknown' })).success) return failure(429);
-    const cached = await cache?.match(route.canonical);
+    const cacheKey = new URL(route.canonical);
+    cacheKey.searchParams.set('__delivery', '2'); // Do not reuse pre-Vary responses.
+    const cached = await cache?.match(cacheKey.toString());
     if (cached) return cached;
     if (active >= 2) return failure(503);
     active++;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
-      const bytes = await fetchSource(route.upstream, fetcher, controller.signal);
+      const immutable = /-r\d{6}$/.test(route.tag);
+      const upstream = immutable ? route.upstream : `${route.upstream}?_=${Date.now()}`;
+      const bytes = await fetchSource(upstream, fetcher, controller.signal);
       const plain = await decodeRelease(bytes, env.RELEASE_KEYS, route.legacySha);
       const digest = hex(await crypto.subtle.digest('SHA-256', plain));
       const response = new Response(plain, { headers: { ...headers(),
         'Content-Type': 'application/octet-stream', 'Content-Length': String(plain.length),
-        'ETag': `"${digest}"`, 'Cache-Control': /-r\d{6}$/.test(route.tag) ? 'public, max-age=31536000, immutable' : 'public, max-age=30',
+        'Vary': 'X-AR-Legacy-SHA256',
+        'ETag': `"${digest}"`, 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=30',
         ...(route.legacySha ? { 'X-AR-Source-SHA256': route.legacySha } : {}) } });
-      if (cache) ctx.waitUntil(cache.put(route.canonical, response.clone()).catch(() => {}));
+      if (cache) ctx.waitUntil(cache.put(cacheKey.toString(), response.clone()).catch(() => {}));
       return response;
     } finally { clearTimeout(timeout); active--; }
   } catch { return failure(502); }

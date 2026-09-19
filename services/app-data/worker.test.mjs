@@ -1,6 +1,7 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { MAX_BYTES, decodeRelease, handleRequest, releaseRoute } from './worker.mjs';
+import { MAX_BYTES, PAYLOAD, decodeRelease, handleRequest, releaseRoute } from './worker.mjs';
 
 const keyBytes = new Uint8Array(32).fill(31);
 const hex = b => Buffer.from(b).toString('hex');
@@ -16,11 +17,50 @@ async function envelope(plain = content, legacy = false) {
   return new Uint8Array(Buffer.concat([head, nonce, Buffer.from(body)]));
 }
 const wire = await envelope();
-const url = 'https://service.example/v1/release/app-payload-2026-09-19-r000003/core.json.gz';
+const url = 'https://service.example/v1/release/app-payload-2026-09-19-r000003/core-2026-09-19-123456789abc.json.gz';
 const env = { RELEASE_KEYS: secret, RATE_LIMITER: { limit: async () => ({ success: true }) } };
 const context = { waitUntil: promise => promise };
 const request = (target = url, method = 'GET') => new Request(target, { method });
 const fetcher = async () => new Response(wire);
+
+test('asset allowlist matches the producer encryption classification contract', () => {
+  const source = readFileSync(new URL('../../app_payload_secure_upload.py', import.meta.url), 'utf8');
+  const block = source.split('ASSET = re.compile(')[1].split(/\r?\n\)/)[0];
+  const pattern = [...block.matchAll(/r"([^"]*)"/g)].map(match => match[1]).join('');
+  assert.ok(pattern.length > 100);
+  assert.equal(PAYLOAD.source, new RegExp(`^${pattern}$`).source);
+});
+
+test('mutable aliases bypass stale upstream redirects while revisions remain stable', async () => {
+  const seen = [];
+  const origin = async target => { seen.push(new URL(target)); return new Response(wire); };
+  for (const tag of ['app-payload-latest', 'app-payload-2026-09-19', 'app-payload-2026-09-19-r000003']) {
+    assert.equal((await handleRequest(request(url.replace('app-payload-2026-09-19-r000003', tag)), env, context, origin, null)).status, 200);
+  }
+  assert.match(seen[0].searchParams.get('_'), /^\d+$/);
+  assert.match(seen[1].searchParams.get('_'), /^\d+$/);
+  assert.equal(seen[2].search, '');
+});
+
+test('legacy decode has distinct cache identities and downstream Vary in both directions', async () => {
+  const legacy = await envelope(content, true);
+  const wrapped = await envelope(legacy);
+  const digest = hex(await crypto.subtle.digest('SHA-256', legacy));
+  const entries = new Map();
+  let calls = 0;
+  const cache = { match: async key => entries.get(key)?.clone(), put: async (key, value) => { entries.set(key, value); } };
+  const origin = async () => { calls++; return new Response(wrapped); };
+  for (const decode of [false, true, false, true]) {
+    const req = new Request(url, { headers: decode ? { 'X-AR-Legacy-SHA256': digest } : {} });
+    const response = await handleRequest(req, env, context, origin, cache);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('vary'), 'X-AR-Legacy-SHA256');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), decode ? content : Buffer.from(legacy));
+  }
+  assert.equal(calls, 2);
+  assert.equal(entries.size, 2);
+  for (const key of entries.keys()) assert.equal(new URL(key).searchParams.get('__delivery'), '2');
+});
 
 test('authenticates source and emits exact domain bytes without key material', async () => {
   const response = await handleRequest(request(), env, context, fetcher, null);
@@ -39,9 +79,9 @@ test('current and historical aliases are accepted; cache-busting is normalized',
 });
 test('historical encrypted suffix and every approved producer payload family route', () => {
   for (const stem of ['core', 'details', 'bank-history', 'bank-spread-history', 'history-banks',
-    'rba-calendar', 'search-index', 'v2-economic-outlook', 'v2-product-history']) {
+    'rba-calendar', 'search-index', 'v2-economic-outlook', 'v2-product-history', 'terms-index', 'terms_shard_001', 'executable-index', 'executable_shard_001', 'executable_v2_index', 'executable_v2_shard_000', 'monetary_v3_mortgage_index', 'monetary_v4_savings_activity_shard_000']) {
     for (const suffix of ['.json.gz', '.json.gz.enc']) {
-      assert.equal(releaseRoute(request(url.replace('core.json.gz', `${stem}-2026-09-19-123456789abc${suffix}`))).asset,
+      assert.equal(releaseRoute(request(url.replace('core-2026-09-19-123456789abc.json.gz', `${stem}-2026-09-19-123456789abc${suffix}`))).asset,
         `${stem}-2026-09-19-123456789abc${suffix}`);
     }
   }
@@ -51,7 +91,9 @@ for (const path of ['/v1/release/app-payload-latest/../key.json', '/v1/release/o
   '/v1/release/app-payload-latest/..secret.json', '/v1/release/app-payload-latest/a.json?url=http://localhost',
   '/v1/release/app-payload-latest/a.json?legacy_sha256=no',
   '/v1/release/app-payload-latest/key.json', '/v1/release/app-payload-latest/preservation.json',
-  '/v1/release/app-payload-latest/publication-provenance.json', '/v1/release/app-payload-latest/core-secret.json.gz']) {
+  '/v1/release/app-payload-latest/publication-provenance.json', '/v1/release/app-payload-latest/core-secret.json.gz',
+  ...['core.json.gz', 'core-2026-09-19.json.gz', 'core-2026-09-19-12345678.json.gz',
+    `core-2026-09-19-${'a'.repeat(64)}.json.gz`].map(name => `/v1/release/app-payload-latest/${name}`)]) {
   test(`rejects unsafe request ${path}`, async () => {
     let calls = 0;
     assert.equal((await handleRequest(request('https://service.example' + path), env, context, async () => { calls++; }, null)).status, 400);
