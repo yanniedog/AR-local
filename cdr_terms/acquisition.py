@@ -129,7 +129,7 @@ def _connection(url: str, policy: FetchPolicy, remaining: float) -> http.client.
     return connection
 
 
-def _throttle_request(url: str, policy: FetchPolicy, deadline: float) -> None:
+def _throttle_request(url: str, policy: FetchPolicy, deadline: float, send=None) -> None:
     def check_guard() -> None:
         if policy.request_guard:
             try:
@@ -139,7 +139,7 @@ def _throttle_request(url: str, policy: FetchPolicy, deadline: float) -> None:
             if reason:
                 raise OperationalDeferral(reason)
     try:
-        HOST_THROTTLE.wait(urlsplit(url).hostname, deadline, check_guard)
+        HOST_THROTTLE.wait(urlsplit(url).hostname, deadline, check_guard, send=send)
     except HostThrottleFailure as exc:
         raise FetchFailure(str(exc)) from exc
 
@@ -208,14 +208,14 @@ def fetch_document(url: str, *, policy: FetchPolicy,
         try:
             # Charge spacing after DNS/TLS so slow connection setup cannot bunch
             # requests together. The original timer covers this wait as well.
-            _throttle_request(current, policy, deadline)
             parsed = urlsplit(current)
             headers = {"Accept": "application/pdf,text/html,text/plain,application/json;q=0.8,*/*;q=0.1",
                        "Accept-Encoding": "identity", "User-Agent": "AR-local-document-evidence/1"}
             if current == validator_url:
                 headers.update(conditional or {})
             target = parsed.path + (("?" + parsed.query) if parsed.query else "")
-            connection.request("GET", target, headers=headers)
+            _throttle_request(current, policy, deadline,
+                              lambda: connection.request("GET", target, headers=headers))
             response = connection.getresponse()
             if response.status in (301, 302, 303, 307, 308):
                 next_url = document_url(urljoin(current, response.getheader("Location") or ""))

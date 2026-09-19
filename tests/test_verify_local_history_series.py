@@ -7,7 +7,7 @@ import pytest
 import verify_local
 import tests.test_verify_local_compact_response as fixtures
 from tests.test_verify_local_compact_response import transport as http_transport
-from cdr_dashboard_history_transport import encode
+from cdr_dashboard_history_transport import encode, validate
 
 
 @pytest.fixture
@@ -42,6 +42,21 @@ def test_three_complete_series_bodies_pass(series, capsys):
     assert 'history=series' in capsys.readouterr().out
     package=json.loads((Path(__file__).resolve().parents[1]/'package.json').read_bytes())
     assert '--history-mode=series' in package['scripts']['verify:pi']
+
+
+def test_extra_carried_current_row_is_fatal_even_with_consistent_counts(series):
+    def mutate(payload):
+        if '1' not in payload['values']:
+            payload['values'].append('1')
+        carried_id = payload['values'].index('1')
+        template_id, day_id, _ = payload['observations'][0]
+        payload['observations'].append([template_id, day_id, carried_id])
+        payload['row_count'] += 1
+        payload['carry_forward_count'] += 1
+        validate(payload, payload['section'], fixtures.DAY)
+        return payload
+    series['changes']['series'] = mutate
+    assert smoke(series) == 1
 
 
 @pytest.mark.parametrize('mutation', [lambda p:b'{', lambda p:{},
