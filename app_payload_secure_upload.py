@@ -34,10 +34,10 @@ LEGACY_CDR_ARTIFACTS = frozenset({
 })
 ASSET = re.compile(
     r"(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|"
-    r"v2-product-history|v2-economic-outlook|terms-index|terms_shard_\d{3}|"
-    r"executable-index|executable_shard_\d{3}|executable_v2_(?:index|shard_\d{3})|"
-    r"monetary_v[34]_[a-z_]+_(?:index|shard_\d{3}))"
-    r"-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?"
+    r"v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|"
+    r"executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|"
+    r"monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))"
+    r"-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?"
 )
 
 

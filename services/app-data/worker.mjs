@@ -6,7 +6,7 @@ const hex = bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padSt
 let active = 0;
 const DOCUMENTS = new Set(['manifest.json', 'manifest-v2.json', 'dates-index.json',
   'revision-delta.json', 'base-manifest.json', 'source-manifest.json']);
-export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_\d{3}|executable-index|executable_shard_\d{3}|executable_v2_(?:index|shard_\d{3})|monetary_v[34]_[a-z_]+_(?:index|shard_\d{3}))-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
+export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
 
 function headers() {
   return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -19,7 +19,7 @@ function failure(status) {
 }
 export function releaseRoute(request) {
   const url = new URL(request.url);
-  const match = /^\/v1\/release\/(app-payload-(?:latest|\d{4}-\d{2}-\d{2}(?:-r\d{6})?))\/([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(url.pathname);
+  const match = /^\/v1\/release\/(app-payload-(?:latest|[0-9]{4}-[0-9]{2}-[0-9]{2}(?:-r\d{6})?))\/([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(url.pathname);
   if (!match || !(DOCUMENTS.has(match[2]) || PAYLOAD.test(match[2]))) throw new Error('Invalid route');
   for (const name of url.searchParams.keys()) if (!['_', 'legacy_sha256'].includes(name)) throw new Error('Invalid query');
   const legacySha = url.searchParams.get('legacy_sha256') ?? request.headers.get('X-AR-Legacy-SHA256');

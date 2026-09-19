@@ -35,9 +35,12 @@ class HostThrottle:
                 now = self.clock()
                 if now >= deadline:
                     raise HostThrottleFailure('request_deadline')
-                while (self.starts and next(iter(self.starts)) not in self.sending
-                       and next(iter(self.starts.values())) + 1 <= now):
-                    self.starts.popitem(last=False)
+                # A long-running sender must not hide expired unrelated hosts.
+                # The map is capped at 4096; collect before deleting while held.
+                expired = [name for name, started in self.starts.items()
+                           if name not in self.sending and started + 1 <= now]
+                for name in expired:
+                    del self.starts[name]
                 delay = 0.1 if host in self.sending else max(0.0, self.starts.get(host, now - 1) + 1 - now)
                 if delay == 0:
                     if host not in self.starts and len(self.starts) >= 4096:

@@ -11,6 +11,15 @@ from release_transport import MAGIC, TransportError, encrypt_transport, transpor
 KEY = bytes(range(32))
 
 
+@pytest.mark.parametrize('name', [
+    'core-\u0662\u0660\u0662\u0666-09-19-abcdef012345.json.gz',
+    'terms_shard_\u0660\u0660\u0661-2026-09-19-abcdef012345.json.gz',
+])
+def test_non_ascii_digits_cannot_enter_the_published_filename_contract(name):
+    with pytest.raises(TransportError, match='unknown release asset classification'):
+        classify_asset(name)
+
+
 @pytest.mark.parametrize("kind", ["index", "shard_000"])
 def test_savings_activity_v4_is_classified_but_unfrozen_publication_refused(tmp_path, key_file, kind):
     path = tmp_path / f"monetary_v4_savings_activity_calculation_{kind}-2026-09-16-abcdef012345.json.gz"
