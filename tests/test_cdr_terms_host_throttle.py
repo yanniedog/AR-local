@@ -140,3 +140,61 @@ def test_concurrent_fetchers_cannot_claim_same_host_together():
     with ThreadPoolExecutor(max_workers=3) as pool:
         times = sorted(pool.map(enter, range(3)))
     assert all(right - left >= 0.99 for left, right in zip(times, times[1:]))
+
+
+def test_delayed_sender_holds_host_until_actual_send_without_blocking_other_hosts(limited):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    clock, limiter = limited
+    reserved, release, waiting = threading.Event(), threading.Event(), threading.Event()
+    sends = []
+    def first():
+        def send():
+            reserved.set()
+            assert release.wait(2)
+            clock.now += 2  # Descheduled after reservation, before actual send.
+            sends.append(clock.now)
+        limiter.wait('bank.example', 110, lambda: None, send=send)
+    def second():
+        def check():
+            waiting.set()
+        limiter.wait('bank.example', 110, check, send=lambda: sends.append(clock.now))
+    # Avoid advancing the simulated clock from the blocked competing sender.
+    def sleep(seconds):
+        if limiter.sending:
+            assert release.wait(2)
+        else:
+            clock.sleep(seconds)
+    limiter.sleep = sleep
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(first); assert reserved.wait(2)
+        b = pool.submit(second); assert waiting.wait(2)
+        other = []
+        limiter.wait('other.example', 110, lambda: None, send=lambda: other.append(clock.now))
+        assert other == [100] and sends == []
+        release.set(); a.result(timeout=3); b.result(timeout=3)
+    assert sends == [102, pytest.approx(103)] and not limiter.sending
+
+
+def test_send_exception_releases_host_and_reserves_spacing(limited):
+    clock, limiter = limited
+    def fail():
+        clock.now += 2
+        raise OSError('send failed')
+    with pytest.raises(OSError, match='send failed'):
+        limiter.wait('bank.example', 110, lambda: None, send=fail)
+    sends = []
+    limiter.wait('bank.example', 110, lambda: None, send=lambda: sends.append(clock.now))
+    assert sends == [pytest.approx(103)] and not limiter.sending
+
+
+def test_guard_change_after_reservation_releases_host_without_send(limited):
+    _, limiter = limited
+    checks = []
+    def check():
+        checks.append(True)
+        if len(checks) == 2:
+            raise http.OperationalDeferral('ingest_active')
+    with pytest.raises(http.OperationalDeferral, match='ingest_active'):
+        limiter.wait('bank.example', 110, check, send=lambda: pytest.fail('sent after ingest began'))
+    assert not limiter.sending

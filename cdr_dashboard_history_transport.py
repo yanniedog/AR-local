@@ -112,8 +112,10 @@ def validate_current(payload: dict, current: dict, section: str, run_date: str) 
     actual = Counter()
     columns, values, templates = payload["columns"], payload["values"], payload["templates"]
     for template_id, day_id, carried_id in payload["observations"]:
-        if values[day_id] != run_date or carried_id != -1 and values[carried_id] == "1":
+        if values[day_id] != run_date:
             continue
+        if carried_id != -1 and values[carried_id] == "1":
+            raise ValueError("Current history date cannot contain carried observations")
         template = templates[template_id]
         # The current section deliberately omits comparison_rate; history carries
         # it for fee-inclusive aggregates. All shared fields stay exact.
