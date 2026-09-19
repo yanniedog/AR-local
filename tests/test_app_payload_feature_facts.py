@@ -37,9 +37,10 @@ def test_unqualified_structured_feature_reaches_details_without_changing_source(
     {'features': [{'featureType': 'OFFSET'}], 'lendingRates': [{'additionalInfo': 'No offset facility'}]},
     {'features': [{'featureType': 'OFFSET'}], 'description': 'Offset is available for variable loans only.'},
     {'features': [{'featureType': 'OFFSET'}], 'sourceDocuments': [{'sourcePath': '/features/0/additionalInfoUri', 'url': 'https://example.com/terms'}]},
+    {'features': [{'featureType': 'OFFSET'}], 'description': 'Offsets apply to variable loans only.'},
 ], ids=['missing', 'null', 'object', 'malformed-items', 'bad-code', 'text-only',
         'conditional', 'parameterized', 'unknown-scope', 'future', 'expired',
-        'contradiction', 'mixed-scope', 'nested-contradiction', 'narrative-scope', 'linked-scope'])
+        'contradiction', 'mixed-scope', 'nested-contradiction', 'narrative-scope', 'linked-scope', 'plural-scope'])
 def test_unknown_negative_or_conditional_evidence_cannot_grant_match(record):
     assert not supports(feature_facts(record, 'p'), 'OFFSET')
 

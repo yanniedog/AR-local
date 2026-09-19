@@ -9,6 +9,10 @@ from typing import Any, Mapping
 from cdr_product_facts import compact_facts
 
 _CODE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_NARRATIVE_NAMES = {
+    "OFFSET": r"\boffsets?\b", "REDRAW": r"\bredraws?\b",
+    "EXTRA_REPAYMENTS": r"\bextra[\s_-]+repayments?\b",
+}
 
 
 def feature_facts(record: Mapping[str, Any], product_key: str) -> list[dict]:
@@ -47,7 +51,9 @@ def feature_facts(record: Mapping[str, Any], product_key: str) -> list[dict]:
     narrative = "\n".join(text).lower()
     for item in features:
         words = item["featureType"].lower().split("_")
-        if re.search(r"\b" + r"[\s_-]+".join(map(re.escape, words)) + r"\b", narrative):
+        pattern = _NARRATIVE_NAMES.get(item["featureType"],
+                                      r"\b" + r"[\s_-]+".join(map(re.escape, words)) + r"\b")
+        if re.search(pattern, narrative):
             restricted.add(item["featureType"])
     # The display cleaner removes URI fields. Discovery retains their original
     # pointers; any feature-scoped reference needs independent applicability.
