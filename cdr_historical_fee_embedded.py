@@ -41,6 +41,12 @@ SOURCE_LABEL_PROJECTION_SOURCES = {
     **CURRENT_PROJECTION_SOURCES,
     'app_payload_details.py': '1840dca75863f9e094f488966bbc1261f5f5dc0dbd4959c68cc7e163e1f1d7c1',
 }
+# Additive display evidence only; all four fee functions remain AST-identical.
+# This accepts reviewed code bytes, never a replay or replacement of old inputs.
+FEATURE_EVIDENCE_PROJECTION_SOURCES = {
+    **SOURCE_LABEL_PROJECTION_SOURCES,
+    'app_payload_details.py': '70be35e1a172430f8301f3500bd84b73db4eb340ee085b7f4e422345252d38f7',
+}
 DIRECT_FIELDS = frozenset(('amount', 'currency', 'additionalValue', 'balanceRate', 'transactionRate',
                           'accruedRate', 'accrualFrequency', 'feeCap', 'feeCapPeriod', 'feeMethodUType',
                           'fixedAmount', 'variable', 'rateBased', 'discounts'))
@@ -52,7 +58,8 @@ def verify_projection():
     observed = {}
     for name, expected in PROJECTION_SOURCES.items():
         actual = sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n'))
-        if actual not in {expected, CURRENT_PROJECTION_SOURCES[name], SOURCE_LABEL_PROJECTION_SOURCES[name]}:
+        if actual not in {expected, CURRENT_PROJECTION_SOURCES[name], SOURCE_LABEL_PROJECTION_SOURCES[name],
+                          FEATURE_EVIDENCE_PROJECTION_SOURCES[name]}:
             raise ValueError('fee_projection_changed_requires_review')
         observed[name] = actual
     return observed

@@ -163,7 +163,7 @@ def _display_identity(product, record):
     return result or None
 
 
-def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = False) -> Dict[str, Dict[str, Any]]:
+def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = True) -> Dict[str, Dict[str, Any]]:
     details: Dict[str, Dict[str, Any]] = {}
     for product in products:
         key = product.get("product_key")
@@ -190,8 +190,8 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "rateConditions": _rate_conditions(product),
                 "links": _detail_links(record),
-                # Full scoped references belong in lazy per-product evidence
-                # assets; duplicating them in v1 can exceed its 4 MiB budget.
+                # Preserve scoped citations; the existing packaging budget
+                # rejects oversized payloads instead of truncating evidence.
                 "sourceDocuments": record.get("sourceDocuments") if include_source_documents else None,
             }
         )
