@@ -13,6 +13,7 @@ from .pdf_extraction import extract_pdf
 from .store import EvidenceStore
 
 EXTRACTOR_VERSION = "document-text-3"
+EMPTY_EXTRACTOR_VERSION = "document-text-4"
 MAX_HTML_LINKS = 256
 
 
@@ -88,8 +89,10 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
             parser.close()
         except (ValueError, AssertionError):
             return "", "failed", {"reason": "html_parse_failed"}
-        return "".join(parser.fragments), "partial", {
-            "reason": "html_layout_dynamic_content_and_incorporated_links_unreviewed",
+        text = "".join(parser.fragments)
+        return text, "partial" if text.strip() else "failed", {
+            "reason": ("html_layout_dynamic_content_and_incorporated_links_unreviewed"
+                       if text.strip() else "empty_extracted_text"),
             "candidate_links": parser.links,
             "candidate_links_total": parser.link_count,
             "candidate_links_omitted": parser.link_count - len(parser.links),
@@ -102,7 +105,9 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
                 json.loads(text)
         except (UnicodeDecodeError, ValueError):
             return "", "failed", {"reason": "invalid_text_encoding_or_json"}
-        return text, "complete" if text else "failed", {"characters": len(text)}
+        if not text.strip():
+            return text, "failed", {"characters": len(text), "reason": "empty_extracted_text"}
+        return text, "complete", {"characters": len(text)}
     return "", "failed", {"reason": "unsupported_document_type"}
 
 
@@ -123,5 +128,8 @@ def extract_version(store: EvidenceStore, version_id: str, *, check_id: str | No
                                               row["media_type"], final_url or row["source_url"])
     coverage["resolution_base_url"] = final_url or row["source_url"]
     coverage["resolution_base_verified"] = final_url is not None
-    return store.register_extraction(document_version_id=version_id, extractor_version=EXTRACTOR_VERSION,
+    # Preserve identities for unchanged nonempty extractions and frozen source
+    # bindings. Only the corrected empty-text outcome uses the new version.
+    extractor = EMPTY_EXTRACTOR_VERSION if coverage.get('reason') == 'empty_extracted_text' else EXTRACTOR_VERSION
+    return store.register_extraction(document_version_id=version_id, extractor_version=extractor,
                                      text=text, observed_at=utc_now(), status=status, coverage=coverage)
