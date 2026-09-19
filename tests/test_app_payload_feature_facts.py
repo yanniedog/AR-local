@@ -5,6 +5,7 @@ import pytest
 
 from app_payload_details import build_details
 from app_payload_feature_facts import feature_facts
+from cdr_clean_export import detail_json
 
 
 def supports(facts, code):
@@ -87,10 +88,12 @@ def test_malformed_references_refuse_packaging_instead_of_crashing_mobile(refere
 @pytest.mark.parametrize('code,description', [
     ('NPP_PAYID', 'PayID is available only to eligible accounts'),
     ('NPP_PAYID', 'Osko requires an eligible account'),
+    ('NPP_PAYID', 'PayIDs are available only to eligible customers'),
     ('CASHBACK_OFFER', 'Cashback is available only to refinancers'),
     ('UNLIMITED_TXNS', 'Unlimited transactions apply only to package customers'),
     ('FREE_TXNS', 'Free transactions apply only to package customers'),
     ('CARD_ACCESS', 'Debit card available to adults only'),
+    ('CARD_ACCESS', 'Withdrawals at ATMs are subject to fees'),
     ('BILL_PAYMENT', 'BPAY available to Australian residents only'),
     ('DIGITAL_BANKING', 'Online banking requires registration'),
     ('NOTIFICATIONS', 'Alerts require an Australian mobile number'),
@@ -103,16 +106,31 @@ def test_natural_language_alias_cannot_grant_unassessed_feature(code, descriptio
     assert not supports(feature_facts(record, 'p', description), code)
 
 
-def test_feature_reference_restricts_original_index_not_unrelated_feature():
+def test_feature_reference_without_original_mapping_cannot_grant_any_feature():
     record = {'features': [None, {'featureType': 'OFFSET'}, {'featureType': 'DIGITAL_BANKING'}],
               'sourceDocuments': [{'sourcePath': '/features/1/additionalInfoUri'}]}
     facts = feature_facts(record, 'p')
     assert not supports(facts, 'OFFSET')
-    assert supports(facts, 'DIGITAL_BANKING')
+    assert not supports(facts, 'DIGITAL_BANKING')
 
 
-@pytest.mark.parametrize('pointer', ['/features', '/features/x/url', '/features/100/url'])
+@pytest.mark.parametrize('pointer', ['/features', '/features/x/url', '/features/100/url',
+                                      '/features/' + '9' * 5000 + '/url'])
 def test_ambiguous_feature_reference_stays_conservative(pointer):
     record = {'features': [{'featureType': 'OFFSET'}],
               'sourceDocuments': [{'sourcePath': pointer}]}
     assert not supports(feature_facts(record, 'p'), 'OFFSET')
+
+
+@pytest.mark.parametrize('removed', [None, {}, '', {'additionalInfoUri': 'https://example.com/other'}])
+def test_actual_cleaner_compaction_does_not_reassign_linked_applicability(removed):
+    raw = {'features': [removed, {'featureType': 'OFFSET',
+                                 'additionalInfoUri': 'https://example.com/offset'},
+                        {'featureType': 'DIGITAL_BANKING'}]}
+    cleaned = detail_json(raw)
+    assert len(json.loads(cleaned)['features']) == 2
+    detail = build_details([{'product_key': 'p', 'details_json': cleaned}])['p']
+    assert not supports(detail['facts'], 'OFFSET')
+    assert not supports(detail['facts'], 'DIGITAL_BANKING')
+    assert any(ref['sourcePath'] == '/features/1/additionalInfoUri' for ref in detail['sourceDocuments'])
+    assert detail['features'] == [{'label': 'OFFSET'}, {'label': 'DIGITAL_BANKING'}]

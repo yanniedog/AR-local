@@ -13,11 +13,11 @@ _CODE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _NARRATIVE_NAMES = {
     "OFFSET": r"\boffsets?\b", "REDRAW": r"\bredraws?\b",
     "EXTRA_REPAYMENTS": r"\bextra[\s_-]+repayments?\b",
-    "NPP_PAYID": r"\b(?:pay[\s_-]?id|npp|osko)\b",
+    "NPP_PAYID": r"\b(?:pay[\s_-]?ids?|npp|osko)\b",
     "CASHBACK_OFFER": r"\bcash[\s_-]?back\b",
     "UNLIMITED_TXNS": r"\bunlimited[\s_-]+(?:transactions?|txns?)\b",
     "FREE_TXNS": r"\bfree[\s_-]+(?:transactions?|txns?)\b",
-    "CARD_ACCESS": r"\b(?:cards?|atm)\b",
+    "CARD_ACCESS": r"\b(?:cards?|atms?)\b",
     "BILL_PAYMENT": r"\b(?:bpay|bill[\s_-]+payments?)\b",
     "DIGITAL_BANKING": r"\b(?:(?:digital|online|internet|mobile)[\s_-]+banking|banking[\s_-]+app)\b",
     "NOTIFICATIONS": r"\b(?:notifications?|alerts?)\b",
@@ -89,20 +89,15 @@ def feature_facts(record: Mapping[str, Any], product_key: str,
                                       r"\b" + r"[\s_-]+".join(map(re.escape, words)) + r"\b")
         if re.search(pattern, narrative):
             restricted.add(item["featureType"])
-    # The display cleaner removes URI fields. Discovery retains their original
-    # pointers; any feature-scoped reference needs independent applicability.
+    # Discovery retains raw pointers, but cleaning compacts empty list entries.
+    # No original-to-cleaned index mapping is available in this frozen record.
+    # Never guess which declaration a feature-scoped reference qualifies.
     references = record.get("sourceDocuments")
     for ref in references if isinstance(references, list) else []:
         pointer = str(ref.get("sourcePath", "")) if isinstance(ref, Mapping) else ""
         if not re.search(r"/features(?:/|$)", pointer):
             continue
-        match = re.search(r"/features/(\d+)(?:/|$)", pointer)
-        index = int(match[1]) if match else -1
-        linked = source[index] if isinstance(source, list) and 0 <= index < len(source) else None
-        if isinstance(linked, Mapping) and linked in features:
-            restricted.add(linked["featureType"])
-        else:
-            restricted.update(item["featureType"] for item in features)
+        restricted.update(item["featureType"] for item in features)
     # A delimiter prevents words in different source fields forming one clause.
     evidence = {"features": features, "description": "; ".join(text)}
     dated = any(record.get(key) not in (None, "") for key in ("effectiveFrom", "effectiveTo"))
