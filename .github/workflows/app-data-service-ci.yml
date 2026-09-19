@@ -1,10 +1,10 @@
 name: app-data-service-ci
 on:
   pull_request:
-    paths: ['services/app-data/**', '.github/workflows/app-data-service-ci.yml']
+    paths: ['services/app-data/**', 'app_payload_secure_upload.py', '.github/workflows/app-data-service-ci.yml']
   push:
     branches: [main]
-    paths: ['services/app-data/**', '.github/workflows/app-data-service-ci.yml']
+    paths: ['services/app-data/**', 'app_payload_secure_upload.py', '.github/workflows/app-data-service-ci.yml']
 permissions:
   contents: read
 jobs:
