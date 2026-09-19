@@ -12,7 +12,8 @@ from .identity import utc_now
 from .pdf_extraction import extract_pdf
 from .store import EvidenceStore
 
-EXTRACTOR_VERSION = "document-text-4"
+EXTRACTOR_VERSION = "document-text-3"
+EMPTY_EXTRACTOR_VERSION = "document-text-4"
 MAX_HTML_LINKS = 256
 
 
@@ -127,5 +128,8 @@ def extract_version(store: EvidenceStore, version_id: str, *, check_id: str | No
                                               row["media_type"], final_url or row["source_url"])
     coverage["resolution_base_url"] = final_url or row["source_url"]
     coverage["resolution_base_verified"] = final_url is not None
-    return store.register_extraction(document_version_id=version_id, extractor_version=EXTRACTOR_VERSION,
+    # Preserve identities for unchanged nonempty extractions and frozen source
+    # bindings. Only the corrected empty-text outcome uses the new version.
+    extractor = EMPTY_EXTRACTOR_VERSION if coverage.get('reason') == 'empty_extracted_text' else EXTRACTOR_VERSION
+    return store.register_extraction(document_version_id=version_id, extractor_version=extractor,
                                      text=text, observed_at=utc_now(), status=status, coverage=coverage)
