@@ -12,7 +12,7 @@ from .identity import utc_now
 from .pdf_extraction import extract_pdf
 from .store import EvidenceStore
 
-EXTRACTOR_VERSION = "document-text-3"
+EXTRACTOR_VERSION = "document-text-4"
 MAX_HTML_LINKS = 256
 
 
@@ -88,8 +88,10 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
             parser.close()
         except (ValueError, AssertionError):
             return "", "failed", {"reason": "html_parse_failed"}
-        return "".join(parser.fragments), "partial", {
-            "reason": "html_layout_dynamic_content_and_incorporated_links_unreviewed",
+        text = "".join(parser.fragments)
+        return text, "partial" if text.strip() else "failed", {
+            "reason": ("html_layout_dynamic_content_and_incorporated_links_unreviewed"
+                       if text.strip() else "empty_extracted_text"),
             "candidate_links": parser.links,
             "candidate_links_total": parser.link_count,
             "candidate_links_omitted": parser.link_count - len(parser.links),
@@ -102,7 +104,9 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
                 json.loads(text)
         except (UnicodeDecodeError, ValueError):
             return "", "failed", {"reason": "invalid_text_encoding_or_json"}
-        return text, "complete" if text else "failed", {"characters": len(text)}
+        if not text.strip():
+            return text, "failed", {"characters": len(text), "reason": "empty_extracted_text"}
+        return text, "complete", {"characters": len(text)}
     return "", "failed", {"reason": "unsupported_document_type"}
 
 

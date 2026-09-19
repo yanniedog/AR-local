@@ -46,6 +46,16 @@ class StagingValidationError(ValueError):
     """Deterministic staged-output rejection; retrying transport cannot repair it."""
 
 
+class EmptyAnalysisText(ValueError):
+    """Retain empty evidence without spending an interpreter invocation."""
+
+
+def require_analysis_text(store, text_sha256):
+    # Only test content; do not change retained bytes or source span offsets.
+    if not store.read_blob(text_sha256).decode('utf-8').strip():
+        raise EmptyAnalysisText('empty_extracted_text')
+
+
 class TermsQueue:
     def __init__(self, store: EvidenceStore):
         self.store = store
@@ -92,6 +102,11 @@ class TermsQueue:
         return identity
 
     def _insert_job(self, identity, extraction_id, context_sha, body_sha, priority, observed):
+        extraction = self.store.db.execute('SELECT text_sha256 FROM extractions WHERE extraction_id=?',
+                                           (extraction_id,)).fetchone()
+        if not extraction:
+            raise ValueError('Analysis job has no retained extraction')
+        require_analysis_text(self.store, extraction['text_sha256'])
         self.store.db.execute("INSERT OR IGNORE INTO analysis_jobs VALUES (?,?,?,?,?,?)",
                               (identity, extraction_id, context_sha, body_sha, priority, observed))
         if not self.store.db.execute("SELECT 1 FROM job_events WHERE job_id=?", (identity,)).fetchone():
@@ -217,6 +232,10 @@ class TermsQueue:
             while job:
                 try:
                     current = self._source_current(job["job_id"])
+                except EmptyAnalysisText:
+                    self._event(job["job_id"], "blocked", observed, None, "empty_extracted_text", None)
+                    job = self.next_due(observed)
+                    continue
                 except (ValueError, OSError):
                     self._event(job["job_id"], "blocked", observed, None, "source_integrity_invalid", None)
                     job = self.next_due(observed)
@@ -264,7 +283,7 @@ class TermsQueue:
         validate_registry_context(context)
         from .structured_admission import validate_context
         validate_context(self.store, job['extraction_id'], context)
-        self.store.read_blob(job["text_sha256"])
+        require_analysis_text(self.store, job["text_sha256"])
         self.store.read_blob(job["content_sha256"])
         if "historical_target" in context:
             if job["priority"] != 2:
