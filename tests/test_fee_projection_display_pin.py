@@ -22,14 +22,19 @@ def test_unreviewed_module_identity_still_refused(monkeypatch):
 
 
 def test_feature_evidence_keeps_reviewed_fee_functions_unchanged():
-    # Independent AST identities from reviewed source-label projection 1840dca7.
+    # Exact source from reviewed projection 1840dca7, normalized to LF. AST dump
+    # serialization changes across Python versions (including empty fields).
     expected = {
-        '_present': '9a54f870f7c20f14a0bcc086753d0fb19f340aa6761ea2b9b3422cc57507344c',
-        '_fee_amount_status': 'e826ce7754c74e12153383a257ed2ed31adf8ea21c58b30535909fb1fb4406c4',
-        '_legacy_fee_value': 'a4b713020b920616feeac3fe0e3411092c50bca72bb0c3ba67f68f8db3e882cd',
-        '_fee_items': 'eb45f944637613765e2f473bb88c0353c6a1b192ff520bd18971b8014f63640e',
+        '_present': 'd0122400a68a1dd09b120ca7c63465a2bab67cd4a1c0be1041bfa0646e11fa87',
+        '_fee_amount_status': '875a3c590812096ed7bc308f459edbb1706ec947c289d25977f12804068a8f4c',
+        '_legacy_fee_value': '7688b747dfe7dc6b8cda25c1318b8658225ccb959be01eb1bfa0d937241e8138',
+        '_fee_items': '2d821a1be1dc774ea5cf9a7545753738b248e282bfae27e8a5d66d4cc25cbc4b',
     }
-    tree = ast.parse(Path(projection.__file__).with_name('app_payload_details.py').read_bytes())
-    actual = {node.name: hashlib.sha256(ast.dump(node, include_attributes=False).encode()).hexdigest()
-              for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in expected}
+    source = Path(projection.__file__).with_name('app_payload_details.py').read_text(encoding='utf-8')
+    functions = [node for node in ast.parse(source).body
+                 if isinstance(node, ast.FunctionDef) and node.name in expected]
+    assert len(functions) == len(expected)
+    assert all(not node.decorator_list for node in functions)
+    actual = {node.name: hashlib.sha256(ast.get_source_segment(source, node).encode()).hexdigest()
+              for node in functions}
     assert actual == expected
