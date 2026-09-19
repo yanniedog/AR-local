@@ -120,7 +120,7 @@ def _job(evidence, priority=1, **context):
     return queue, job, output
 
 
-def test_real_nested_reference_paths_survive_cleaning_without_eager_payload_growth(evidence):
+def test_real_nested_reference_paths_reach_payload_without_losing_scopes(evidence):
     _, _, key, _, _, _, record = evidence
     references = discover_references(record)
     assert len(references) == 15
@@ -130,8 +130,8 @@ def test_real_nested_reference_paths_survive_cleaning_without_eager_payload_grow
     assert cleaned["sourceDocuments"] == [ref.as_dict() for ref in references]
     assert "additionalInfoUri" not in cleaned["lendingRates"][0]
     products = [{"product_key": key, "details_json": cleaned}]
-    assert "sourceDocuments" not in build_details(products)[key]
-    assert build_details(products, include_source_documents=True)[key]["sourceDocuments"] == cleaned["sourceDocuments"]
+    assert build_details(products)[key]["sourceDocuments"] == cleaned["sourceDocuments"]
+    assert "sourceDocuments" not in build_details(products, include_source_documents=False)[key]
 
 
 def test_reference_helper_preserves_supplementary_paths_anchors_and_nested_scopes():

@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List
 
 from app_payload_common import compact
+from app_payload_feature_facts import feature_facts, source_documents
 from cdr_clean_export import official_product_links
 from cdr_savings_conditions import winner_rate_disclosures
 from cdr_rate_conditions import MAX_ENVELOPE_BYTES, validate_rate_conditions
@@ -162,7 +163,7 @@ def _display_identity(product, record):
     return result or None
 
 
-def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = False) -> Dict[str, Dict[str, Any]]:
+def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = True) -> Dict[str, Dict[str, Any]]:
     details: Dict[str, Dict[str, Any]] = {}
     for product in products:
         key = product.get("product_key")
@@ -184,13 +185,14 @@ def build_details(products: List[Dict[str, Any]], *, include_source_documents: b
                 "features": _detail_items(record, "features", "featureType") + (
                     winner_rate_disclosures(record) if product.get("dataset") == "Savings" else []
                 ),
+                "facts": feature_facts(record, key, product.get("description")),
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "rateConditions": _rate_conditions(product),
                 "links": _detail_links(record),
-                # Full scoped references belong in lazy per-product evidence
-                # assets; duplicating them in v1 can exceed its 4 MiB budget.
-                "sourceDocuments": record.get("sourceDocuments") if include_source_documents else None,
+                # Preserve scoped citations; the existing packaging budget
+                # rejects oversized payloads instead of truncating evidence.
+                "sourceDocuments": source_documents(record) if include_source_documents else None,
             }
         )
         details[key] = entry
