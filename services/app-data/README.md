@@ -13,8 +13,8 @@ as a secret JSON object mapping 32-character transport IDs to 64-character AES k
 Retain historical keys. Pass secret values through stdin/private files, never CLI
 arguments or logs. No package dependencies are required by the service itself.
 
-The public endpoint is `/v1/release/<app-payload-tag>/<asset.json[.gz]>`.
-Only GitHub release-asset redirect hosts are accepted. Time, redirect, stream-size,
+The public endpoint is `/v1/release/<app-payload-tag>/<approved-asset>`.
+Only named app manifests and documented producer payload families (.json.gz or .json.gz.enc) are served. Preservation records, provenance and arbitrary JSON are excluded. Only GitHub release-asset redirect hosts are accepted. Time, redirect, stream-size,
 per-isolate concurrency and per-IP rate limits are enforced. Current asset inventory
 is below the 8MiB encoded-content cap; oversized future assets fail explicitly.
 Content-Encoding is intentionally absent: frozen gzip bytes and hashes must survive

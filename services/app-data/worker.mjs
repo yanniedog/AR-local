@@ -4,6 +4,9 @@ const MAGIC = new TextEncoder().encode('ARE2');
 const encoder = new TextEncoder();
 const hex = bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
 let active = 0;
+const DOCUMENTS = new Set(['manifest.json', 'manifest-v2.json', 'dates-index.json',
+  'revision-delta.json', 'base-manifest.json', 'source-manifest.json']);
+const PAYLOAD = /^(?:core|details|bank-history|bank-spread-history|history-banks|rba-calendar|search-index|v2-economic-outlook|v2-product-history)(?:-\d{4}-\d{2}-\d{2}(?:-[a-f0-9]{8,64})?)?\.json\.gz(?:\.enc)?$/;
 
 function headers() {
   return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -16,8 +19,8 @@ function failure(status) {
 }
 export function releaseRoute(request) {
   const url = new URL(request.url);
-  const match = /^\/v1\/release\/(app-payload-(?:latest|\d{4}-\d{2}-\d{2}(?:-r\d{6})?))\/([A-Za-z0-9][A-Za-z0-9_.-]*\.json(?:\.gz)?)$/.exec(url.pathname);
-  if (!match || match[2].includes('..')) throw new Error('Invalid route');
+  const match = /^\/v1\/release\/(app-payload-(?:latest|\d{4}-\d{2}-\d{2}(?:-r\d{6})?))\/([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(url.pathname);
+  if (!match || !(DOCUMENTS.has(match[2]) || PAYLOAD.test(match[2]))) throw new Error('Invalid route');
   for (const name of url.searchParams.keys()) if (!['_', 'legacy_sha256'].includes(name)) throw new Error('Invalid query');
   const legacySha = url.searchParams.get('legacy_sha256') ?? request.headers.get('X-AR-Legacy-SHA256');
   if (legacySha !== null && !/^[a-f0-9]{64}$/.test(legacySha)) throw new Error('Invalid digest');
