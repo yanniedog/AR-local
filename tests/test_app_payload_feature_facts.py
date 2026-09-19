@@ -82,3 +82,37 @@ def test_summary_condition_vetoes_structured_feature_even_with_other_detail_text
 def test_malformed_references_refuse_packaging_instead_of_crashing_mobile(references):
     with pytest.raises(ValueError, match='invalid_source_document'):
         build_details([{'product_key': 'p', 'details_json': {'sourceDocuments': references}}])
+
+
+@pytest.mark.parametrize('code,description', [
+    ('NPP_PAYID', 'PayID is available only to eligible accounts'),
+    ('NPP_PAYID', 'Osko requires an eligible account'),
+    ('CASHBACK_OFFER', 'Cashback is available only to refinancers'),
+    ('UNLIMITED_TXNS', 'Unlimited transactions apply only to package customers'),
+    ('FREE_TXNS', 'Free transactions apply only to package customers'),
+    ('CARD_ACCESS', 'Debit card available to adults only'),
+    ('BILL_PAYMENT', 'BPAY available to Australian residents only'),
+    ('DIGITAL_BANKING', 'Online banking requires registration'),
+    ('NOTIFICATIONS', 'Alerts require an Australian mobile number'),
+    ('GUARANTOR', 'Guarantors must own Australian property'),
+    ('OVERDRAFT', 'Overdrafts are subject to approval'),
+])
+def test_natural_language_alias_cannot_grant_unassessed_feature(code, description):
+    record = {'features': [{'featureType': code}]}
+    assert supports(feature_facts(record, 'p'), code)
+    assert not supports(feature_facts(record, 'p', description), code)
+
+
+def test_feature_reference_restricts_original_index_not_unrelated_feature():
+    record = {'features': [None, {'featureType': 'OFFSET'}, {'featureType': 'DIGITAL_BANKING'}],
+              'sourceDocuments': [{'sourcePath': '/features/1/additionalInfoUri'}]}
+    facts = feature_facts(record, 'p')
+    assert not supports(facts, 'OFFSET')
+    assert supports(facts, 'DIGITAL_BANKING')
+
+
+@pytest.mark.parametrize('pointer', ['/features', '/features/x/url', '/features/100/url'])
+def test_ambiguous_feature_reference_stays_conservative(pointer):
+    record = {'features': [{'featureType': 'OFFSET'}],
+              'sourceDocuments': [{'sourcePath': pointer}]}
+    assert not supports(feature_facts(record, 'p'), 'OFFSET')
