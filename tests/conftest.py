@@ -1,7 +1,27 @@
 """Keep Drive unit-test controls independent of the operator's real host hold."""
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_backup_unit_capacity(request, monkeypatch):
+    modules = {
+        'test_laptop_backup_runtime_ancestry.py',
+        'test_laptop_backup_transition_flow.py',
+        'test_laptop_backup_transition_recovery.py',
+        'test_laptop_backup_transition_quiescence.py',
+    }
+    if Path(str(request.node.path)).name not in modules:
+        return
+    import shutil
+
+    # These tests use FakeOps and temporary evidence, not real backups. Give
+    # them a controlled healthy capacity; explicit low-disk cases override it.
+    # Production thresholds and the contract's capacity-boundary tests remain.
+    monkeypatch.setattr(shutil, 'disk_usage', lambda _: SimpleNamespace(
+        total=200 * 1024**3, used=100 * 1024**3, free=100 * 1024**3))
 
 
 @pytest.fixture(autouse=True)

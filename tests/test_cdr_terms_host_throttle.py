@@ -73,6 +73,33 @@ def test_expired_caller_cannot_connect(limited):
     assert not limiter.starts
 
 
+def test_inflight_oldest_host_does_not_hide_expired_capacity(limited):
+    clock, limiter = limited
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    entered, release = threading.Event(), threading.Event()
+    def send():
+        entered.set()
+        assert release.wait(3)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(limiter.wait, 'inflight', 110, lambda: None, send)
+        assert entered.wait(2)
+        try:
+            for index in range(4095):
+                limiter.wait(str(index), 110, lambda: None)
+            clock.now = 102
+            sent = []
+            limiter.wait('new', 110, lambda: None, lambda: sent.append(clock.now))
+            assert sent == [102]
+            assert set(limiter.starts) == {'inflight', 'new'}
+            assert limiter.sending == {'inflight'}
+        finally:
+            release.set()
+        pending.result(timeout=2)
+    assert not limiter.sending
+    assert limiter.starts['inflight'] == 102
+
+
 def test_http_admission_shares_budget_and_rechecks_guard(monkeypatch, limited):
     clock, limiter = limited
     monkeypatch.setattr(http, 'HOST_THROTTLE', limiter)
