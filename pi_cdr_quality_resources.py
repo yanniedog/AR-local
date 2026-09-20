@@ -170,10 +170,12 @@ class MemoryAccountingError(RuntimeError):
         super().__init__("live workload process has no readable memory accounting: " + json.dumps(details, sort_keys=True))
 
 
-def process_memory(pid: int, cgroup: Path, proc: Path) -> dict | None:
+def process_memory(pid: int, cgroup: Path, proc: Path, *, exit_deadline: float | None = None) -> dict | None:
     # cgroup.procs and smaps are not one atomic snapshot. In particular, mm
     # teardown can precede final exit/removal. Only kernel pidfd readiness proves
     # that identity has exited; State:Z or a second membership read alone cannot.
+    if exit_deadline is None:
+        exit_deadline = time.monotonic() + 0.250
     for _ in range(2):
         descriptor = None
         try:
@@ -184,9 +186,11 @@ def process_memory(pid: int, cgroup: Path, proc: Path) -> dict | None:
             return {"Rss": values["Rss"], "Swap": values["Swap"]}
         except (FileNotFoundError, ProcessLookupError) as error:
             # Large address-space teardown can outlast a 5ms scheduling slice.
-            # Wait at most 250ms for kernel exit proof, inside the unchanged sample
-            # gap/runtime guards. A still-live handle with no accounting fails.
-            if descriptor is not None and not pidfd_exited(descriptor, 250):
+            # All identities in one sample share the same 250ms exit deadline.
+            # After it expires, poll without waiting: omission still requires
+            # kernel exit proof; unreadable accounting on a live handle fails.
+            wait_ms = max(0, min(250, int((exit_deadline - time.monotonic()) * 1000)))
+            if descriptor is not None and not pidfd_exited(descriptor, wait_ms):
                 raise MemoryAccountingError(pid, proc, error) from error
         except (OSError, KeyError, ValueError) as error:
             raise MemoryAccountingError(pid, proc, error) from error
@@ -202,8 +206,9 @@ def process_memory(pid: int, cgroup: Path, proc: Path) -> dict | None:
 
 def aggregate(cgroup: Path, *, proc: Path = Path("/proc")) -> dict:
     rss = swap = count = 0
+    exit_deadline = time.monotonic() + 0.250
     for pid in members(cgroup):
-        values = process_memory(pid, cgroup, proc)
+        values = process_memory(pid, cgroup, proc, exit_deadline=exit_deadline)
         if values is not None:
             rss += values["Rss"]
             swap += values["Swap"]

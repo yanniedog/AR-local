@@ -37,7 +37,8 @@ def test_mm_teardown_requires_kernel_exit_proof_before_omission(accounting, monk
         return True
     monkeypatch.setattr(resources, "pidfd_exited", exited)
     assert resources.aggregate(group, proc=proc) == {"rss_bytes": 0, "swap_bytes": 0, "processes": 0}
-    assert events == [(1101, 250)] and closed == [1101]
+    assert len(events) == 1 and events[0][0] == 1101 and 0 <= events[0][1] <= 250
+    assert closed == [1101]
 
 
 @pytest.mark.parametrize("state", ["R", "S", "Z"])
@@ -195,3 +196,36 @@ def test_mm_teardown_longer_than_one_tick_requires_actual_delayed_exit(monkeypat
         child.stdout.close()
         child.wait(timeout=2)
         os.close(proof)
+
+@pytest.mark.parametrize('count', [8, 256])
+@pytest.mark.parametrize('last_live', [False, True])
+def test_exit_waits_share_one_deadline_for_entire_sample(tmp_path, monkeypatch, count, last_live):
+    remaining = set(range(1000, 1000 + count))
+    now, waits, closed = [0.0], [], []
+    monkeypatch.setattr(resources.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(resources, 'members', lambda _: set(remaining))
+    monkeypatch.setattr(resources.os, 'pidfd_open', lambda pid, _: pid, raising=False)
+    monkeypatch.setattr(resources.os, 'close', closed.append)
+
+    def exited(pid, wait_ms):
+        waits.append(wait_ms)
+        # Every task becomes readable only at its allowed deadline. Old code
+        # waited count * 250ms; subsequent tasks must now receive zero waits.
+        now[0] += wait_ms / 1000
+        if last_live and len(remaining) == 1:
+            return False
+        remaining.remove(pid)
+        return True
+
+    monkeypatch.setattr(resources, 'pidfd_exited', exited)
+    if last_live:
+        with pytest.raises(resources.MemoryAccountingError):
+            resources.aggregate(tmp_path, proc=tmp_path)
+        assert len(remaining) == 1
+    else:
+        assert resources.aggregate(tmp_path, proc=tmp_path) == {
+            'rss_bytes': 0, 'swap_bytes': 0, 'processes': 0}
+        assert not remaining
+    assert len(waits) == len(closed) == count
+    assert sum(waits) <= 250 and now[0] <= 0.250
+    assert waits[0] == 250 and all(value == 0 for value in waits[1:])
