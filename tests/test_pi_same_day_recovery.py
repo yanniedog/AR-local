@@ -141,6 +141,7 @@ def test_dead_pid_lock_does_not_disable_all_later_recovery(monkeypatch, tmp_path
 
 def test_guarded_restore_rechecks_foreign_activity_inside_shared_lock(monkeypatch, tmp_path):
     monkeypatch.setattr(recovery, "datetime", FixedDatetime)
+    monkeypatch.setattr(recovery.subprocess, "check_output", Mock(return_value="inactive\n"))
     monkeypatch.setattr(recovery, "data_state_root", lambda _: tmp_path)
     monkeypatch.setattr(recovery, "recovery_block_reason", Mock(side_effect=["", "backup_source_active"]))
     entered = []
