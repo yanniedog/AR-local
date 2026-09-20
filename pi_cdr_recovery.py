@@ -155,6 +155,20 @@ def restore_dashboard_if_idle(repo_root: Path) -> dict:
     reason = recovery_block_reason(repo_root)
     if reason:
         return {"status": "deferred", "reason": reason}
+    # ExecStopPost also runs after a successful no-work watchdog tick. Do not
+    # take the ingest lease just to start an already-running dashboard: terms
+    # analysis must yield whenever that lease appears, even for a brief noop.
+    try:
+        dashboard_state = subprocess.check_output(
+            ["systemctl", "show", "ar-local-dashboard.service", "--property=ActiveState", "--value"],
+            text=True, stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=10,
+        ).strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"status": "restoration_failed", "failure_category": type(error).__name__}
+    if dashboard_state in {"active", "reloading"}:
+        return {"status": "already_running"}
+    if dashboard_state not in {"inactive", "failed"}:
+        return {"status": "deferred", "reason": "dashboard_state_unsettled"}
     # Lazy import avoids a cycle: the wrapper imports only our preflight helper.
     from pi_daily_sync import DailyIngestLock
 
