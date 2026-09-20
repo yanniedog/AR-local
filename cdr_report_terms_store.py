@@ -41,7 +41,7 @@ class Cursor:
 
 
 class Snapshot:
-    def __init__(self, root):
+    def __init__(self, root, *, reuse_verified=False):
         self.view = _ReadView(root)
         self.row_bytes = 0
         self.view.db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 1024 * 1024)
@@ -54,6 +54,8 @@ class Snapshot:
         self.processed_io_bytes = 0
         self.max_read_request = 0
         self.max_materialized_blob = 0
+        self.reuse_verified = reuse_verified
+        self.verified = {}
 
     def progress(self):
         self.steps += 1000
@@ -75,7 +77,14 @@ class Snapshot:
         path = self.view.root / 'blobs' / identity[:2] / identity
         if path.is_symlink() or path.resolve() != path or not path.is_file():
             raise ValueError('Missing or unsafe retained terms blob')
-        size = path.stat().st_size
+        stat = path.stat()
+        size = stat.st_size
+        signature = (stat.st_dev, stat.st_ino, size, stat.st_mtime_ns, stat.st_ctime_ns)
+        if not materialize and self.reuse_verified and identity in self.verified:
+            if self.verified[identity] != signature:
+                raise ValueError('Retained terms blob changed during export')
+            self.blobs[identity] = size
+            return size
         if size > MAX_BLOB or self.processed_io_bytes + size > MAX_BLOB_WORK:
             raise ValueError('Report processed blob byte budget exceeded')
         checksum, seen = hashlib.sha256(), 0
@@ -96,6 +105,13 @@ class Snapshot:
                     buffer.write(chunk)
         if seen != size or checksum.hexdigest() != identity:
             raise ValueError('Retained terms blob identity changed')
+        after = path.stat()
+        if signature != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError('Retained terms blob changed during export')
+        if self.reuse_verified:
+            if identity not in self.verified and len(self.verified) >= 20000:
+                raise ValueError('Report verified blob inventory budget exceeded')
+            self.verified[identity] = signature
         self.blobs[identity] = size
         if buffer is None:
             return size

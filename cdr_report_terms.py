@@ -192,26 +192,31 @@ def export_evidence(bundle, store, output, *, technical=False):
         raise ValueError('Report delivered unknown product')
     view = Snapshot(store)
     try:
-        members = view.capture(binding)
-        products, total = {}, 0
-        for key in keys:
-            row = view.product(key, binding, members)
-            row.update(evidence_class='technical_fixture' if technical else 'unclassified',
-                       delivered=adopted.get(key, []), bank_approved=None)
-            if row['status'] == 'reported':
-                from cdr_report_terms_contract import inventory_stages
-                row['stages'].update(inventory_stages(row))
-            total += len(encoded(row)) + len(key.encode('utf-8'))
-            if total > MAX_BYTES:
-                raise ValueError('Report evidence output budget exceeded')
-            products[key] = row
-        value = {'schema_version': 1, 'contract': VERSION, 'binding': binding, 'products': products,
-                 'generated_at': datetime.now(timezone.utc).isoformat(), 'snapshot': view.receipt(),
-                 'exporter_code_sha256s': {name: sha(Path(__file__).with_name(name).read_bytes()) for name in
-                    ('cdr_report_terms.py', 'cdr_report_terms_store.py', 'cdr_report_terms_contract.py')},
-                 'bank_acceptance_policy': 'unclassified_unless_independently_verified; no upgrade supported in v1'}
+        return _export_selected(view, binding, keys, adopted, output, technical=technical)
     finally:
         view.close()
+
+
+def _export_selected(view, binding, keys, adopted, output, *, technical=False):
+    """Write one bounded part from an already pinned read transaction."""
+    members = view.capture(binding)
+    products, total = {}, 0
+    for key in keys:
+        row = view.product(key, binding, members)
+        row.update(evidence_class='technical_fixture' if technical else 'unclassified',
+                   delivered=adopted.get(key, []), bank_approved=None)
+        if row['status'] == 'reported':
+            from cdr_report_terms_contract import inventory_stages
+            row['stages'].update(inventory_stages(row))
+        total += len(encoded(row)) + len(key.encode('utf-8'))
+        if total > MAX_BYTES:
+            raise ValueError('Report evidence output budget exceeded')
+        products[key] = row
+    value = {'schema_version': 1, 'contract': VERSION, 'binding': binding, 'products': products,
+             'generated_at': datetime.now(timezone.utc).isoformat(), 'snapshot': view.receipt(),
+             'exporter_code_sha256s': {name: sha(Path(__file__).with_name(name).read_bytes()) for name in
+                ('cdr_report_terms.py', 'cdr_report_terms_store.py', 'cdr_report_terms_contract.py')},
+             'bank_acceptance_policy': 'unclassified_unless_independently_verified; no upgrade supported in v1'}
     from cdr_report_terms_contract import validate_rows
     validate_rows(products)
     body = encoded(value)
