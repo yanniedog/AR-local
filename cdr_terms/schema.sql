@@ -220,6 +220,10 @@ CREATE TABLE IF NOT EXISTS document_graph_scopes (
     applicability_id TEXT NOT NULL REFERENCES applicability(applicability_id),
     PRIMARY KEY(root_id,applicability_id)
 );
+-- Selected-observation reports traverse applicability -> roots, the reverse
+-- direction of the primary key. Avoid scanning every scope for each product.
+CREATE INDEX IF NOT EXISTS document_graph_scope_applicability
+    ON document_graph_scopes(applicability_id,root_id);
 CREATE TABLE IF NOT EXISTS document_graph_nodes (
     node_id TEXT PRIMARY KEY,
     root_id TEXT NOT NULL REFERENCES document_graph_roots(root_id),
