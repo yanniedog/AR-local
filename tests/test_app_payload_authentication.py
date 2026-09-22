@@ -243,6 +243,7 @@ def test_daily_and_backfill_publish_from_the_same_verified_auth_contract(tmp_pat
     }))
     (exports / "ingest-status.json").write_text(json.dumps({
         "total": 1200, "incomplete": True, "failure_provenance_complete": True,
+        "by_status": {"403": 1200},
         "register_provenance_complete": True,
         "register_attempts": [{"ok": True, "sha256": "a" * 64}],
         "providers_registered": 118, "providers_attempted": 118,

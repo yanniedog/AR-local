@@ -1,4 +1,4 @@
-"""Bind reconciled partial admission to the exact finalized source bytes."""
+"""Bind partial admission to the exact selected, finalized source bytes."""
 from __future__ import annotations
 
 import hashlib
@@ -9,11 +9,37 @@ from app_payload_partial_accounting import CLASSIFIED_FAILURES
 from cdr_compatibility import classify_fetch_failure
 from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
+from cdr_observation_selection import load_pointer_observation
+
+
+def publication_source(state: Path, run_date: str, fallback: Path) -> tuple[dict | None, Path]:
+    """Select the retained observation before verification or building.
+
+    A later failed attempt must not displace the selected same-day revision.
+    Older days without a current pointer use their contract-bound source.
+    Malformed present pointers and unsafe source paths fail closed.
+    """
+    from app_payload_observation_gate import contract_for_run_date
+
+    state = state.absolute()
+    pointer_path = state / 'observation-pointers-v2/latest-observation.json'
+    if pointer_path.exists():
+        pointer = json.loads(pointer_path.read_bytes())
+        if not isinstance(pointer, dict) or not pointer.get('observation_date'):
+            raise ValueError('Invalid selected observation pointer')
+        if pointer['observation_date'] == run_date:
+            observation = load_pointer_observation(state, pointer)
+            contract = observation['contract']
+            return contract, _within(state.parent, contract['source_path'])
+    contract = contract_for_run_date(state, run_date)
+    if contract and contract.get('source_path'):
+        return contract, _within(state.parent, contract['source_path'])
+    return contract, fallback
 
 
 def _within(root: Path, relative: str) -> Path:
     part = Path(relative)
-    if not relative or part.is_absolute() or '..' in part.parts:
+    if not relative or part.is_absolute() or '..' in part.parts or '\\' in relative:
         raise ValueError('Invalid finalized source path')
     path = root / part
     if path.resolve() != path.absolute():

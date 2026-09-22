@@ -185,6 +185,7 @@ def test_verified_bounded_partial_reaches_v1_builder(
         json.dumps(
             {
                 "total": 1,
+                "by_status": {"503": 1},
                 "corrupt_records": 0,
                 "unattributed_records": 0,
                 "failure_provenance_complete": True,
