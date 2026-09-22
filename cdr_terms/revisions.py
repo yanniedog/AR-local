@@ -134,6 +134,22 @@ def record_change(store: EvidenceStore, *, product_key: str, before_revision_id:
         raise ValueError("Change requires an independent reviewed disposition")
     if evidence.get("before_revision_id") != before_revision_id or evidence.get("after_revision_id") != after_revision_id:
         raise ValueError("Change evidence refers to another revision pair")
+    observed = timestamp(observed_at)
+    if store.db.in_transaction:
+        raise ValueError("Change admission requires its own transaction")
+    with store.db:
+        store.db.execute("BEGIN IMMEDIATE")
+        _validate_change_sources(store, product_key, revisions, before_revision_id, after_revision_id,
+                                 kind, evidence, observed)
+        values = (product_key, before_revision_id, after_revision_id, kind,
+                  observed, canonical_json({"evidence_sha256": evidence_sha256}))
+        identity = digest(values)
+        store.db.execute("INSERT OR IGNORE INTO term_changes VALUES (?,?,?,?,?,?,?)", (identity, *values))
+    return identity
+
+
+def _validate_change_sources(store, product_key, revisions, before_revision_id, after_revision_id,
+                             kind, evidence, observed):
     for identity in revisions:
         term = store.db.execute("SELECT o.product_key,r.status FROM term_revisions t JOIN observations o USING(observation_id) "
                                 "JOIN reviews r ON r.sequence=(SELECT MAX(sequence) FROM reviews WHERE term_revision_id=t.term_revision_id) "
@@ -141,27 +157,10 @@ def record_change(store: EvidenceStore, *, product_key: str, before_revision_id:
         if not term or term["product_key"] != product_key or term["status"] != "validated":
             raise ValueError("Changes require validated revisions belonging to this product")
     if kind == "removed":
-        _require_replacement(store, product_key, evidence)
+        from .removal_admission import require_replacement
+        require_replacement(store, product_key, before_revision_id, evidence, observed)
         if evidence["replacement_document_version_id"] in term_source_versions(store, before_revision_id):
             raise ValueError("Unchanged source bytes cannot establish a bank's term removal")
     if before_revision_id and after_revision_id and kind == "changed":
         if term_source_versions(store, before_revision_id) == term_source_versions(store, after_revision_id):
             raise ValueError("Unchanged source bytes require extraction_corrected disposition")
-    values = (product_key, before_revision_id, after_revision_id, kind,
-              timestamp(observed_at), canonical_json({"evidence_sha256": evidence_sha256}))
-    identity = digest(values)
-    with store.db:
-        store.db.execute("INSERT OR IGNORE INTO term_changes VALUES (?,?,?,?,?,?,?)", (identity, *values))
-    return identity
-
-
-def _require_replacement(store: EvidenceStore, product_key: str, evidence: Mapping[str, Any]) -> None:
-    if evidence.get("full_replacement_validated") is not True:
-        raise ValueError("Disappearance/fetch failure cannot prove term removal")
-    version_id = evidence.get("replacement_document_version_id")
-    replacement = store.db.execute(
-        "SELECT 1 FROM document_versions v JOIN extractions x USING(document_version_id) "
-        "JOIN applicability a USING(document_id) JOIN observations o USING(observation_id) "
-        "WHERE v.document_version_id=? AND o.product_key=? AND x.status='complete'", (version_id, product_key)).fetchone()
-    if not replacement:
-        raise ValueError("Removal needs a retained, completely extracted replacement applicable to the product")
