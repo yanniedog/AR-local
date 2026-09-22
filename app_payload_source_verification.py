@@ -19,7 +19,7 @@ def publication_source(state: Path, run_date: str, fallback: Path) -> tuple[dict
     Older days without a current pointer use their contract-bound source.
     Malformed present pointers and unsafe source paths fail closed.
     """
-    from app_payload_observation_gate import contract_for_run_date
+    from app_payload_historical_source import historical_contract
 
     state = state.absolute()
     pointer_path = state / 'observation-pointers-v2/latest-observation.json'
@@ -31,7 +31,7 @@ def publication_source(state: Path, run_date: str, fallback: Path) -> tuple[dict
             observation = load_pointer_observation(state, pointer)
             contract = observation['contract']
             return contract, _within(state.parent, contract['source_path'])
-    contract = contract_for_run_date(state, run_date)
+    contract = historical_contract(state, run_date)
     if contract and contract.get('source_path'):
         return contract, _within(state.parent, contract['source_path'])
     return contract, fallback
@@ -87,6 +87,7 @@ def verify_reconciled_source(state: Path, exports: Path, run_date: str, contract
         stored = load_contract(_within(state, marker['export_contract_path']))
         if stored != contract or not verify_completion_marker(marker, state, run_date):
             return False
-        return reconciled_failure_statuses(exports, contract)
+        return (contract.get('observation_state') == 'complete'
+                or reconciled_failure_statuses(exports, contract))
     except (KeyError, OSError, ValueError, TypeError):
         return False

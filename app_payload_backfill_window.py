@@ -1,6 +1,7 @@
 """Require OS-enforced containment before a backfill owns the production lock."""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from datetime import datetime, timedelta
@@ -72,7 +73,12 @@ def validate_containment(properties: dict[str, str], now: datetime) -> None:
 def require_backfill_window(runs_root: Path, repo_root: Path) -> None:
     # Private copies do not hold the scheduled Pi's lock. Resolve aliases and also
     # protect the canonical Pi root when a caller changes its runtime environment.
-    targets = {data_runs_root(repo_root).resolve(), (PI_DATA_ROOT / 'runs').resolve()}
+    configured = data_runs_root(repo_root).resolve()
+    targets = {(PI_DATA_ROOT / 'runs').resolve()}
+    if (configured != (repo_root / 'runs').resolve()
+            or os.environ.get('AR_LOCAL_DATA_ROOT', '').strip()
+            or os.environ.get('AR_LOCAL_PORTABLE_ROOT', '').strip()):
+        targets.add(configured)
     locks = {(root.parent / 'state/daily-ingest.lock').resolve() for root in targets}
     if (runs_root.resolve() not in targets
             and (runs_root.parent / 'state/daily-ingest.lock').resolve() not in locks):

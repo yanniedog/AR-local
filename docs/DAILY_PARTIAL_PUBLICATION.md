@@ -23,7 +23,7 @@ complete. No observations, bytes or dates are replaced or relabelled.
 
 This predicate does not authorize arbitrary input files. The scheduled wrapper
 still verifies the completion marker, finalized ledger event and original
-artifact hashes under the ingest/publication lock. All admitted partial backfills verify
+artifact hashes under the ingest/publication lock. All contract-backed backfills verify
 the exact export path, marker, contract, finalized ledger and artifacts under
 that same lock, including rolling refresh. `--force` cannot override a failed
 partial-source check, including legacy bounded admission. Both paths also verify the original status histogram:
@@ -35,7 +35,12 @@ be manufactured merely to fill a calendar date.
 Backfills resolve the selected observation before checking or building, so dated
 and rolling payloads use its repaired revision exports. A later failed recovery
 cannot replace a retained same-day selection. Historical days without the
-current selection pointer use their contract-bound source path. A malformed
+current selection pointer reconstruct selection from the immutable per-date
+decision receipts and their bound ledger events. Multiple generations without
+complete, unambiguous decision history are withheld; filename order never
+substitutes for selection. A single generation uses its contract-bound source.
+Complete observations still require exact artifact verification, while their
+empty failure histogram does not undergo the partial-only failure check. A malformed
 present pointer or unsafe path is withheld even with `--force`.
 
 For an already withheld observation, retain the original refusal and create a
@@ -58,7 +63,9 @@ remaining configured lifetime plus shutdown and safety margin must finish before
 before taking the lock; launch through the reviewed bounded operator service.
 If systemd stops an unfinished operation, the existing lock recovery checks its
 dead owner before the next ingest; never delete an unknown lock manually.
-Independent private copies do not share the scheduled production lock.
+Independent private copies do not share the scheduled production lock. A normal
+developer repository without a configured runtime root needs no systemd service;
+explicit runtime roots, canonical Pi paths and shared-lock aliases remain guarded.
 
 Local protocol tests use retained September22 accounting in freshly sealed test
 contracts. They are not source captures. Exact production-contract, artifact,
