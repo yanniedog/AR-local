@@ -119,6 +119,13 @@ def term_source_versions(store: EvidenceStore, term_id: str) -> set[str]:
         "JOIN extractions x USING(extraction_id) WHERE term_revision_id=?", (term_id,))}
 
 
+def _term_source_hashes(store: EvidenceStore, term_id: str) -> set[str]:
+    return {row[0] for row in store.db.execute(
+        "SELECT DISTINCT v.content_sha256 FROM term_sources s JOIN clauses c USING(clause_id) "
+        "JOIN extractions x USING(extraction_id) JOIN document_versions v USING(document_version_id) "
+        "WHERE term_revision_id=?", (term_id,))}
+
+
 def record_change(store: EvidenceStore, *, product_key: str, before_revision_id: str | None,
                   after_revision_id: str | None, kind: str, observed_at: str,
                   evidence_sha256: str) -> str:
@@ -164,8 +171,11 @@ def _validate_change_sources(store, product_key, revisions, before_revision_id, 
     if kind == "removed":
         from .removal_admission import require_replacement
         require_replacement(store, product_key, before_revision_id, evidence, observed)
-        if evidence["replacement_document_version_id"] in term_source_versions(store, before_revision_id):
+        replacement = store.db.execute(
+            "SELECT content_sha256 FROM document_versions WHERE document_version_id=?",
+            (evidence["replacement_document_version_id"],)).fetchone()[0]
+        if replacement in _term_source_hashes(store, before_revision_id):
             raise ValueError("Unchanged source bytes cannot establish a bank's term removal")
     if before_revision_id and after_revision_id and kind == "changed":
-        if term_source_versions(store, before_revision_id) == term_source_versions(store, after_revision_id):
+        if _term_source_hashes(store, before_revision_id) == _term_source_hashes(store, after_revision_id):
             raise ValueError("Unchanged source bytes require extraction_corrected disposition")
