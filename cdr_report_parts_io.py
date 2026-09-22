@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 
+from app_payload_optional_assets import iter_payload_assets
 from cdr_report_terms import encoded, sha
 
 MAX_FILE = 24 * 1024**2
@@ -31,13 +32,13 @@ def read_file(path, limit):
 def read_bundle(root):
     raw = read_file(root / 'manifest.json', 1024**2)
     manifest = json.loads(raw)
-    files = manifest['files']
-    if not isinstance(files, dict) or not 2 <= len(files) <= 128:
+    files = list(iter_payload_assets(manifest))
+    if not 2 <= len(files) <= 128 or len({kind for kind, _ in files}) != len(files):
         raise ValueError('Report asset inventory invalid')
     payloads, names = {}, set()
     compressed = plain_total = 0
     evidence = {'manifest_sha256': sha(raw), 'assets': {}}
-    for kind, descriptor in files.items():
+    for kind, descriptor in files:
         name = descriptor['name']
         if (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name) or Path(name).name != name
                 or '/' in name or '\\' in name or name in names):
@@ -67,7 +68,7 @@ def read_bundle(root):
         raise ValueError('Report core and details required')
     evidence['input_bytes'] = compressed
     evidence['expanded_input_bytes'] = plain_total
-    return manifest, payloads, evidence
+    return manifest, payloads, evidence, raw
 
 
 def csv_bytes(rows, fields, *, json_fields=()):
@@ -96,6 +97,7 @@ def csv_bytes(rows, fields, *, json_fields=()):
 class Writer:
     def __init__(self, root):
         self.root, self.files, self.total, self.expanded = root, [], 0, 0
+        self.detail_rows = 0
 
     def write(self, name, body, *, compress=False, rows=None):
         if len(body) > MAX_FILE:

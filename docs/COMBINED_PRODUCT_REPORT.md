@@ -19,7 +19,9 @@ so null, empty, false and numeric types remain distinguishable. Formula-like
 CSV text is escaped; JSON retains the exact original value.
 
 The index also links every supplied metadata/auxiliary-asset leaf, with its
-original JSON pointer and typed value. Rate and product records already present
+original JSON pointer and typed value, including optional executable v2/v3/v4
+index and shard assets. Explicit empty rate sections remain in metadata.
+Rate and product records already present
 in product parts are not duplicated in these metadata files. Bank and field
 inventories retain their measured denominators. Definitions distinguish
 published values, derived counts and unavailable financial conclusions.
@@ -28,14 +30,18 @@ One selected edition binds all inputs and parts. The exporter rejects missing,
 corrupt, differently bound or incomplete evidence, unsafe paths, and an existing
 output directory. It checks all emitted hashes and product/rate inventory before
 atomic admission. The manifest records code hashes, source hashes, counts and
-resource totals. Interrupted or rejected output is never admitted as complete.
+resource totals. `source-manifest.json` preserves the exact input bytes, so its
+hash matches the bound source identity even for noncanonical JSON formatting.
+Interrupted or rejected output is never admitted as complete.
 
 Limits: 128 input assets, 16 MiB per compressed input, 128 MiB aggregate compressed
 input, 96 MiB per decoded input and 256 MiB aggregate decoded input. Outputs are
 limited to 24 MiB per expanded file, 256 MiB aggregate stored bytes, 1 GiB aggregate
 expanded bytes and 5,000 files. Metadata chunks have at most 5,000 rows and target
 2 MiB; nesting is limited to 64 and metadata/detail inventories to two million
-leaves. Oversized individual records fail explicitly rather than being truncated.
+leaves each across the complete report. Optional assets share all input limits;
+detail counts do not reset at part boundaries. Oversized individual records fail
+explicitly rather than being truncated.
 
 This report verifies the supplied inventory. It does not infer unavailable
 history, legal completeness, bank approval, customer fees or financial totals.

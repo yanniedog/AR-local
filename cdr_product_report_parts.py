@@ -53,7 +53,7 @@ def metadata_rows(payloads):
     for kind, payload in payloads.items():
         for pointer, value in leaves(payload):
             tokens = pointer.split('/')
-            if kind == 'core' and len(tokens) >= 4 and tokens[1] == 'sections' and tokens[3] == 'rates':
+            if kind == 'core' and len(tokens) > 4 and tokens[1] == 'sections' and tokens[3] == 'rates':
                 continue
             if kind == 'details' and len(tokens) >= 2 and tokens[1] == 'products':
                 continue
@@ -113,8 +113,9 @@ def write_product_part(writer, name, value):
     parameters = []
     for key, row in rows.items():
         for pointer, scalar in leaves(row['detail']):
-            if len(parameters) >= MAX_LEAVES:
+            if writer.detail_rows >= MAX_LEAVES:
                 raise ValueError('Report detail row budget exceeded')
+            writer.detail_rows += 1
             parameters.append({'product_key': key, 'source_pointer': pointer, 'value_json': encoded(scalar).decode()})
     writer.write(name + '/parameters.csv.gz', csv_bytes(parameters, ['product_key', 'source_pointer', 'value_json'], json_fields=('value_json',)),
                  compress=True, rows=len(parameters))
@@ -124,7 +125,7 @@ def write_product_part(writer, name, value):
 
 
 def _render(stage, bundle, terms):
-    manifest, payloads, evidence = read_bundle(bundle)
+    manifest, payloads, evidence, manifest_raw = read_bundle(bundle)
     binding, keys = bundle_binding(manifest, payloads, evidence)
     index = verify_parts(terms, binding, keys)
     products, rates, full = inventory_products(payloads['core'], payloads['details'])
@@ -146,23 +147,23 @@ def _render(stage, bundle, terms):
                           'href': part['name'] + '/report.html#p' + str(position)})
     if seen != keys or rate_count != len(rates):
         raise ValueError('Report complete product/rate inventory differs')
-    return _finish(writer, manifest, payloads, evidence, binding, index, links, products, rates)
+    return _finish(writer, manifest, payloads, evidence, binding, index, links, products, rates, manifest_raw)
 
 
-def _finish(writer, manifest, payloads, evidence, binding, index, links, products, rates):
+def _finish(writer, manifest, payloads, evidence, binding, index, links, products, rates, manifest_raw):
     metadata, metadata_counts = write_metadata(writer, payloads)
     writer.write('products.csv', csv_bytes(links, ['product_key', 'provider', 'product_name', 'rate_rows', 'href']), rows=len(links))
     banks, fields = bank_inventory(products, payloads['core']), field_inventory(rates, payloads['details'])
     for name, rows in [('banks', banks), ('fields', fields)]:
         writer.write(name + '.json.gz', encoded(rows), compress=True, rows=len(rows))
         writer.write(name + '.csv', csv_bytes(rows, sorted({k for row in rows for k in row})), rows=len(rows))
-    writer.write('source-manifest.json', encoded(manifest))
+    writer.write('source-manifest.json', manifest_raw)
     writer.write('definitions.md', DEFINITIONS.encode())
     writer.write('index.html', index_html({'binding': binding, 'run_date': manifest['run_date'],
                  'products': links, 'rate_rows': len(rates), 'parts': len(index['parts']), 'metadata': metadata}))
     receipt = {'contract': VERSION, 'binding': binding, 'generated_at': datetime.now(timezone.utc).isoformat(),
                'products': len(links), 'rate_rows': len(rates), 'parts': len(index['parts']),
-               'metadata_leaf_counts': metadata_counts, 'source_evidence': evidence,
+               'metadata_leaf_counts': metadata_counts, 'detail_leaf_count': writer.detail_rows, 'source_evidence': evidence,
                'source_terms_index_sha256': sha(encoded(index)), 'files': list(writer.files),
                'total_asset_bytes': writer.total, 'expanded_asset_bytes': writer.expanded,
                'financial_acceptance': 'unverified', 'bank_approval': None,
