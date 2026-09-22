@@ -365,10 +365,12 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                     "reason=outside_bounded_v1_policy"
                 )
                 return PUBLISH_WITHHELD
+            policy = gate.publication_allowed(contract)[1]
+            qualifier = "reconciled" if policy == "reconciled_partial" else "bounded"
             print(
-                "[pi_daily_sync] app_payload partial v1 promotion "
+                f"[pi_daily_sync] app_payload {qualifier} partial v1 promotion "
                 f"run_date={observation_date} "
-                f"policy={gate.publication_allowed(contract)[1]} "
+                f"policy={policy} "
                 f"nonblocking_authentication_failures={gate.authentication_exclusions(contract)['failure_records']}"
             )
         elif (
