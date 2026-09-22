@@ -33,7 +33,7 @@ def _unit_properties() -> dict[str, str]:
             raise ValueError('invalid containing unit')
         fields = ('Type,ActiveState,KillMode,SendSIGKILL,FinalKillSignal,TimeoutStopFailureMode,'
                   'ExecStop,ExecStopPost,Restart,RuntimeMaxUSec,TimeoutStopUSec,RuntimeRandomizedExtraUSec')
-        result = subprocess.run(['systemctl', 'show', unit, '--no-pager', '--property=' + fields],
+        result = subprocess.run(['systemctl', 'show', unit, '--no-pager', '--all', '--property=' + fields],
             check=True, capture_output=True, text=True, timeout=5)
         return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
