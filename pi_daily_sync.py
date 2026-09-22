@@ -273,7 +273,7 @@ def _exports_from_pointer(state_dir: Path, pointer: dict) -> Optional[Path]:
 
 def _bounded_partial_v1_allowed(contract: dict) -> bool:
     """Allow a current v1 payload without mislabelling the observation complete."""
-    return gate.bounded_partial_v1_allowed(contract)
+    return contract.get("observation_state") == "partial" and gate.publication_allowed(contract)[0]
 
 
 def current_publication_pointer(repo_root: Path) -> dict:
@@ -366,8 +366,9 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                 )
                 return PUBLISH_WITHHELD
             print(
-                "[pi_daily_sync] app_payload bounded partial v1 promotion "
+                "[pi_daily_sync] app_payload partial v1 promotion "
                 f"run_date={observation_date} "
+                f"policy={gate.publication_allowed(contract)[1]} "
                 f"nonblocking_authentication_failures={gate.authentication_exclusions(contract)['failure_records']}"
             )
         elif (

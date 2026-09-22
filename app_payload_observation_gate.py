@@ -6,9 +6,10 @@ gated at all).  That is how the broken 2026-08-15 observation — 1,195 failure
 records against 1,856 products — became a public dated release while the daily
 path was correctly refusing it.  Both callers now share the predicates here.
 
-The gate reads the export-contract v2 written by ``cdr_finalization``: the
-audited, ledger-bound account of the run.  It is deliberately the *only*
-accounting allowed to authorise a publication.
+The gate reads the export-contract v2 written by ``cdr_finalization``. Legacy
+bounded admission remains compatible; sealed, fully classified and reconciled
+partial observations can also publish their valid products without a numeric
+failure quota. Callers still verify the ledger and original artifacts.
 """
 from __future__ import annotations
 
@@ -17,8 +18,9 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 
 from app_payload_authentication import authentication_exclusions
+from app_payload_partial_accounting import reconciled_partial_v1_allowed
 
-# Compatibility v1 is allowed to advance from a fully-audited partial
+# Legacy compatibility v1 is allowed to advance from a fully-audited partial
 # observation inside these bounds for failures other than attributable bank
 # authentication rejections. Auth failures remain in the published coverage.
 # The append-only
@@ -28,8 +30,8 @@ from app_payload_authentication import authentication_exclusions
 # 7 of 118 providers partial; a broken run the day before recorded 1,195 records
 # with 34 of 118 partial. The absolute floor exists only to stop a tiny catalogue
 # slipping through on ratio alone — for a catalogue this size the 1% ratio is the
-# real gate, and a genuinely broken day misses every bound by an order of
-# magnitude.
+# legacy gate. A larger failure count alone does not establish broken data:
+# the separate sealed-contract path requires explicit complete reconciliation.
 PARTIAL_V1_MAX_FAILURE_RECORDS = 50
 PARTIAL_V1_MAX_FAILURE_RATIO = 0.01
 PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO = 0.15
@@ -89,6 +91,8 @@ def publication_allowed(contract: Optional[Mapping[str, Any]]) -> Tuple[bool, st
             if authentication_exclusions(contract)["failure_records"]:
                 return True, "bounded_partial_with_nonblocking_authentication"
             return True, "bounded_partial"
+        if reconciled_partial_v1_allowed(contract):
+            return True, "reconciled_partial"
         return False, "outside_bounded_v1_policy"
     return False, f"observation_state={state}"
 
@@ -104,6 +108,11 @@ def contract_coverage(contract: Optional[Mapping[str, Any]]) -> Optional[dict]:
     auth = authentication_exclusions(contract)
     if auth["failure_records"]:
         result["nonblocking_authentication"] = auth
+    if not bounded_partial_v1_allowed(contract) and reconciled_partial_v1_allowed(contract):
+        result["publication_policy"] = {
+            "id": "reconciled-partial-v1", "observation_state": "partial",
+            "severity": "severe", "reason": "outside_legacy_failure_budget",
+        }
     return result
 
 
