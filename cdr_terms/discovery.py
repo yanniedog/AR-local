@@ -28,6 +28,7 @@ class SourceReference:
     label: str | None = None
     # Retain anchors for locating clauses; fetch identity excludes the fragment.
     sourceUrl: str | None = None
+    sourceNormalization: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {key: value for key, value in asdict(self).items() if value is not None}
@@ -65,6 +66,19 @@ def _relation(path: str) -> str:
     return "supporting"
 
 
+def _declared_reference(raw: str, path: str, relation: str, label=None) -> SourceReference | None:
+    if len(raw) > 8192:
+        return None
+    # Some bank-declared URI fields encode a leading space before the scheme.
+    # Decode no URL component; preserve the exact source and named correction.
+    candidate, count = re.subn(r"^(?:%20)+(?=https?://)", "", raw.strip(), flags=re.I)
+    url = document_url(candidate)
+    if not url:
+        return None
+    return SourceReference(url, path, relation, str(label) if label else None, raw,
+                           "leading-encoded-space-v1" if count else None)
+
+
 def _walk(value: Any, path: str = "", reference_context: bool = False
           ) -> Iterator[SourceReference]:
     if isinstance(value, Mapping):
@@ -77,10 +91,9 @@ def _walk(value: Any, path: str = "", reference_context: bool = False
             uri_field = lowered.endswith(("uri", "uris"))
             contextual_uri = reference_context and lowered in {"url", "href"}
             if isinstance(child, str) and (uri_field or contextual_uri):
-                url = document_url(child)
-                if url:
-                    yield SourceReference(url, key_path, _relation(key_path),
-                                          str(label) if label else None, child)
+                reference = _declared_reference(child, key_path, _relation(key_path), label)
+                if reference:
+                    yield reference
             elif isinstance(child, str) and lowered in {"additionalinfo", "description"}:
                 for match in _URL.finditer(child):
                     raw = match.group().rstrip(".,;)")
@@ -94,9 +107,9 @@ def _walk(value: Any, path: str = "", reference_context: bool = False
         for index, child in enumerate(value):
             child_path = _pointer(path, index)
             if reference_context and isinstance(child, str):
-                url = document_url(child)
-                if url:
-                    yield SourceReference(url, child_path, _relation(path), sourceUrl=child)
+                reference = _declared_reference(child, child_path, _relation(path))
+                if reference:
+                    yield reference
             else:
                 yield from _walk(child, child_path, reference_context)
 
