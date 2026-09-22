@@ -28,4 +28,6 @@ universal scope. Incomplete old-format receipts fail closed until supplemented.
 Change validation and insertion share one immediate transaction, preventing an
 intervening source or review write. The controller refuses an existing caller
 transaction without committing or rolling it back. Repeating the same admitted
-receipt is idempotent. This operation does not publish, deploy or delete evidence.
+receipt returns its original change even after ingest advances. The evidence
+blob and exact recorded identity must still match; a new receipt undergoes all
+current-state checks. This operation does not publish, deploy or delete evidence.

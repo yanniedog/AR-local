@@ -78,6 +78,33 @@ def test_explicit_matching_replacement_is_idempotent_and_preserves_original(evid
     assert store.db.execute('SELECT count(*) FROM term_changes').fetchone()[0] == 1
 
 
+@pytest.mark.parametrize('advance', ['new_observation', 'failed_check', 'new_version'])
+def test_admitted_removal_replay_survives_ingest_advancement(evidence, advance):
+    store, observation, _, doc, _, body, _ = evidence
+    term, proof = replacement(evidence)
+    first = remove(evidence, term, proof)
+    original = tuple(store.db.execute('SELECT * FROM term_changes').fetchone())
+    if advance == 'new_observation':
+        source = json.loads(body)
+        store.observe(provider=source['data']['brand'], product_key=evidence[2], record=source,
+                      source_bytes=body, observed_at='2026-09-14T02:00:00Z', ingest_id='replay-control')
+    else:
+        store.record_check(document_id=doc, check_id='advanced', checked_at=LATER,
+            status='failed' if advance == 'failed_check' else 'fetched',
+            **({'error_code': 'technical_timeout'} if advance == 'failed_check' else
+               {'body': body + b'\n\n', 'media_type': 'application/json'}))
+        bind_manual_check(store, observation, 'advanced')
+    assert remove(evidence, term, proof) == first
+    assert tuple(store.db.execute('SELECT * FROM term_changes').fetchone()) == original
+    assert store.db.execute('SELECT count(*) FROM term_changes').fetchone()[0] == 1
+    # A different evidence receipt is a new admission, never a historical replay.
+    proof['review_note'] = 'new independent request'
+    with pytest.raises(ValueError, match='[Rr]eplacement'):
+        remove(evidence, term, proof)
+    assert not store.db.in_transaction
+    assert store.db.execute('SELECT count(*) FROM term_changes').fetchone()[0] == 1
+
+
 def test_removal_does_not_commit_or_rollback_callers_transaction(evidence):
     store = evidence[0]
     term, proof = replacement(evidence)
