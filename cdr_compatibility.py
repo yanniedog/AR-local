@@ -127,6 +127,9 @@ def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:
     body = str(text or "")[:65536].lower()
     if isinstance(status, str) and status.isdigit():
         status = int(status)
+    if not ((type(status) is int and 200 <= status <= 599)
+            or (isinstance(status, str) and status in {"circuit_open", "recovery_budget_exhausted"})):
+        return FetchFailure("unknown_internal", False, False)
     if status == "circuit_open":
         return FetchFailure("transient_upstream", True, False)
     if status == "recovery_budget_exhausted":

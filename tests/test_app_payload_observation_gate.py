@@ -239,7 +239,7 @@ def test_backfill_refuses_an_ungated_date_unless_forced(tmp_path: Path) -> None:
     assert allowed and reason == "forced_over_missing_export_contract"
 
 
-def test_backfill_admits_a_contract_the_daily_path_would_publish(tmp_path: Path) -> None:
+def test_backfill_refuses_an_unsealed_bounded_partial_contract(tmp_path: Path) -> None:
     backfill = _load_backfill()
     directory = tmp_path / gate.CONTRACT_DIRNAME / "2026-08-17"
     directory.mkdir(parents=True)
@@ -247,7 +247,7 @@ def test_backfill_admits_a_contract_the_daily_path_would_publish(tmp_path: Path)
     allowed, reason, contract = backfill.observation_gate(
         tmp_path, "2026-08-17", force=False
     )
-    assert (allowed, reason) == (True, "bounded_partial")
+    assert (allowed, reason) == (False, "unverified_reconciled_source")
     assert gate.contract_coverage(contract)["providers_failed"] == 0
 
 

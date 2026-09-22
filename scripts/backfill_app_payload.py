@@ -32,6 +32,9 @@ if str(ROOT) not in sys.path:
 
 import app_payload  # noqa: E402
 import app_payload_observation_gate as gate  # noqa: E402
+from app_payload_source_verification import publication_source, verify_reconciled_source  # noqa: E402
+from app_payload_backfill_window import require_backfill_window  # noqa: E402
+from ar_local_operation_lock import production_lock  # noqa: E402
 from ar_local_pi_runtime import data_runs_root  # noqa: E402
 
 DEFAULT_FROM = app_payload.HISTORY_MIN_DATE
@@ -46,21 +49,27 @@ def resolve_state_root(runs_root: Path) -> Path:
 
 
 def observation_gate(
-    state_root: Path, run_date: str, *, force: bool
+    state_root: Path, run_date: str, *, force: bool, exports: Path | None = None
 ) -> Tuple[bool, str, Optional[dict]]:
-    """Apply the daily path's publication policy to a backfill candidate.
+    """Apply daily policy; force cannot waive source or raw failure checks."""
+    return publication_candidate(state_root, run_date, force=force, exports=exports)[:3]
 
-    This script used to publish any date with parseable dashboard data, with no
-    reference to the observation's contract at all — which is how the broken
-    2026-08-15 run (1,195 failure records against 1,856 products) became a public
-    dated release while ``pi_daily_sync`` was correctly refusing it. ``--force``
-    still overrides, so an operator can deliberately republish a known-bad day.
-    """
-    contract = gate.contract_for_run_date(state_root, run_date)
+
+def publication_candidate(state_root: Path, run_date: str, *, force: bool,
+                          exports: Path | None = None) -> tuple:
+    """Return admission, contract and the exact source to build under the lock."""
+    exports = exports or state_root.parent / 'runs' / run_date / '_exports'
+    try:
+        contract, exports = publication_source(state_root, run_date, exports)
+    except (KeyError, OSError, ValueError, TypeError):
+        return False, 'unverified_selected_source', None, exports
     allowed, reason = gate.publication_allowed(contract)
+    if contract and contract.get('observation_state') == 'partial' and (allowed or force):
+        if not verify_reconciled_source(state_root, exports, run_date, contract):
+            return False, 'unverified_reconciled_source', contract, exports
     if not allowed and force:
-        return True, f"forced_over_{reason}", contract
-    return allowed, reason, contract
+        return True, f"forced_over_{reason}", contract, exports
+    return allowed, reason, contract, exports
 
 
 def dated_release_already_published(repo: str, run_date: str) -> bool:
@@ -72,7 +81,13 @@ def dated_release_already_published(repo: str, run_date: str) -> bool:
     return str(live.get("run_date") or "") == run_date
 
 
-def refresh_rolling_latest(
+def refresh_rolling_latest(runs_root: Path, **kwargs) -> bool:
+    require_backfill_window(runs_root, ROOT)
+    with production_lock(resolve_state_root(runs_root) / 'daily-ingest.lock', 'payload-backfill'):
+        return _refresh_rolling_latest_locked(runs_root, **kwargs)
+
+
+def _refresh_rolling_latest_locked(
     runs_root: Path,
     *,
     repo: str = app_payload.DEFAULT_REPO,
@@ -85,8 +100,8 @@ def refresh_rolling_latest(
         print("[backfill_app_payload] rolling latest skipped: no valid exports")
         return False
     run_date, exports = dates[-1]
-    allowed, gate_reason, contract = observation_gate(
-        resolve_state_root(runs_root), run_date, force=force
+    allowed, gate_reason, contract, exports = publication_candidate(
+        resolve_state_root(runs_root), run_date, force=force, exports=exports
     )
     print(
         f"[backfill_app_payload] rolling latest refresh run_date={run_date} "
@@ -135,7 +150,13 @@ def refresh_rolling_latest(
     return False
 
 
-def backfill(
+def backfill(runs_root: Path, **kwargs) -> Tuple[List[dict], Optional[bool]]:
+    require_backfill_window(runs_root, ROOT)
+    with production_lock(resolve_state_root(runs_root) / 'daily-ingest.lock', 'payload-backfill'):
+        return _backfill_locked(runs_root, **kwargs)
+
+
+def _backfill_locked(
     runs_root: Path,
     *,
     from_date: str = "",
@@ -166,9 +187,11 @@ def backfill(
             "error": None,
         }
         try:
-            allowed, gate_reason, contract = observation_gate(
-                state_root, run_date, force=force
+            allowed, gate_reason, contract, exports = publication_candidate(
+                state_root, run_date, force=force, exports=exports
             )
+            row['exports'] = str(exports)
+            out_dir = exports / 'app-payload'
             row["gate"] = gate_reason
             if not allowed:
                 row["skipped"] = True
@@ -239,7 +262,7 @@ def backfill(
     )
     rolling_ok: Optional[bool] = None
     if not skip_latest:
-        rolling_ok = refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
+        rolling_ok = _refresh_rolling_latest_locked(runs_root, repo=repo, dry_run=dry_run, force=force)
     if not dry_run and (published or rolling_ok):
         try:
             app_payload.refresh_dates_index(runs_root, repo=repo, min_date=from_date or DEFAULT_FROM)
