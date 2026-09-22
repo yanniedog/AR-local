@@ -14,7 +14,7 @@ from cdr_report_terms_parts import export_parts
 from tests.test_cdr_report_terms import evidence, bundle
 
 
-def prepared(tmp_path, evidence):
+def prepared(tmp_path, evidence, *, null_detail=False):
     source = bundle(tmp_path, evidence)
     manifest = json.loads((source / 'manifest.json').read_bytes())
     key = evidence[2]
@@ -24,7 +24,7 @@ def prepared(tmp_path, evidence):
              'rate': 0, 'unknown': None, 'false': False, 'empty': '', 'tier': {'minimum': 0}}]}},
              'coverage': {'provider_failures': []}},
         'details': {'run_date': manifest['run_date'], 'products': {key: {'fees': [], 'empty': {}, 'zero': 0,
-                    'unknown': None, 'false': False, 'negative': -0.5}, 'unreported-product': {}}},
+                    'unknown': None, 'false': False, 'negative': -0.5}, 'unreported-product': None if null_detail else {}}},
         'bank_history': {'run_date': manifest['run_date'], 'values': [0, None, False, -1.25], 'empty': []}}
     for kind, value in changes.items():
         name = kind + '.json.gz'
@@ -169,3 +169,19 @@ def test_metadata_splits_without_omitting_values(tmp_path, monkeypatch):
             rows.extend(json.loads(gzip.decompress((tmp_path / item['file']).read_bytes())))
     assert counts == {'history': 6}
     assert [r['value'] for r in rows] == [0, False, None, '', [], {}]
+
+
+def test_explicit_null_detail_preserves_presence_and_inventory_denominator(tmp_path, evidence):
+    source, terms, _ = prepared(tmp_path, evidence, null_detail=True)
+    output = tmp_path / 'report'
+    receipt = report.generate(source, terms, output)
+    assert receipt['products'] == 2
+    part = json.loads(gzip.decompress((output / 'part-0001/product-data.json.gz').read_bytes()))
+    product = part['products']['unreported-product']
+    assert product['published_detail_present'] is True and product['detail'] is None
+    parameters = [row for row in read_csv(output / 'part-0001/parameters.csv.gz')
+                  if row['product_key'] == 'unreported-product']
+    assert parameters == [{'product_key': 'unreported-product', 'source_pointer': '', 'value_json': 'null'}]
+    fields = json.loads(gzip.decompress((output / 'fields.json.gz').read_bytes()))
+    details = [row for row in fields if row['record_type'] == 'product_detail']
+    assert details and all(row['denominator'] == 2 and row['present_records'] == 1 for row in details)
