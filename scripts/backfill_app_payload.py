@@ -64,7 +64,7 @@ def publication_candidate(state_root: Path, run_date: str, *, force: bool,
     except (KeyError, OSError, ValueError, TypeError):
         return False, 'unverified_selected_source', None, exports
     allowed, reason = gate.publication_allowed(contract)
-    if contract and contract.get('observation_state') == 'partial' and (allowed or force):
+    if contract and (allowed or force):
         if not verify_reconciled_source(state_root, exports, run_date, contract):
             return False, 'unverified_reconciled_source', contract, exports
     if not allowed and force:
