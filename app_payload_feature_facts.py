@@ -33,19 +33,31 @@ def source_documents(record: Mapping[str, Any]) -> list[dict] | None:
         return None
     if not isinstance(references, list):
         raise ValueError("invalid_source_documents")
+    packaged = []
     for reference in references:
         if (not isinstance(reference, dict)
                 or any(not isinstance(reference.get(key), str) or not reference[key].strip()
                        for key in ("url", "sourcePath", "relation"))
                 or any(key in reference and not isinstance(reference[key], str)
-                       for key in ("sourceUrl", "label", "sourceNormalization"))
+                       for key in ("sourceUrl", "originalSourceUrl", "label", "sourceNormalization"))
                 or ("sourceNormalization" in reference and "sourceUrl" not in reference)
+                or ("originalSourceUrl" in reference and "sourceNormalization" not in reference)
                 or document_url(reference["url"]) != reference["url"]
                 or ("sourceUrl" in reference
-                    and reference_source_url(reference["sourceUrl"],
+                    and reference_source_url(reference.get("originalSourceUrl", reference["sourceUrl"]),
                         reference.get("sourceNormalization")) != reference["url"])):
             raise ValueError("invalid_source_document_reference")
-    return references
+        if 'sourceNormalization' in reference:
+            original = reference.get('originalSourceUrl', reference['sourceUrl'])
+            fragment = original.strip().partition('#')[2]
+            navigable = reference['url'] + ('#' + fragment if fragment else '')
+            if 'originalSourceUrl' in reference and reference['sourceUrl'] != navigable:
+                raise ValueError('invalid_source_document_reference')
+            # Existing consumers open sourceUrl. Keep the raw URI separately so
+            # normalization provenance never becomes an unusable external link.
+            reference = {**reference, 'originalSourceUrl': original, 'sourceUrl': navigable}
+        packaged.append(reference)
+    return packaged
 
 
 def feature_facts(record: Mapping[str, Any], product_key: str,
