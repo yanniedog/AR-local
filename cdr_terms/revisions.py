@@ -139,11 +139,16 @@ def record_change(store: EvidenceStore, *, product_key: str, before_revision_id:
         raise ValueError("Change admission requires its own transaction")
     with store.db:
         store.db.execute("BEGIN IMMEDIATE")
-        _validate_change_sources(store, product_key, revisions, before_revision_id, after_revision_id,
-                                 kind, evidence, observed)
         values = (product_key, before_revision_id, after_revision_id, kind,
                   observed, canonical_json({"evidence_sha256": evidence_sha256}))
         identity = digest(values)
+        existing = store.db.execute("SELECT * FROM term_changes WHERE term_change_id=?", (identity,)).fetchone()
+        if existing:
+            if tuple(existing) != (identity, *values):
+                raise ValueError("Existing change identity does not match its recorded values")
+            return identity
+        _validate_change_sources(store, product_key, revisions, before_revision_id, after_revision_id,
+                                 kind, evidence, observed)
         store.db.execute("INSERT OR IGNORE INTO term_changes VALUES (?,?,?,?,?,?,?)", (identity, *values))
     return identity
 
