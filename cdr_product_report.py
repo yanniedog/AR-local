@@ -141,6 +141,8 @@ def field_inventory(rows, details):
             if present(value):
                 counts[('rate', field)] += 1
     for detail in details['products'].values():
+        if detail is None:
+            continue
         for field, value in detail.items():
             if present(value):
                 counts[('product_detail', field)] += 1
