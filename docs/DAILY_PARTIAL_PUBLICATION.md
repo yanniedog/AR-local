@@ -22,8 +22,13 @@ complete. No observations, bytes or dates are replaced or relabelled.
 
 This predicate does not authorize arbitrary input files. The scheduled wrapper
 still verifies the completion marker, finalized ledger event and original
-artifact hashes under the ingest/publication lock. The backfill path retains
-its contract and artifact verification. A missing or untrustworthy source cannot
+artifact hashes under the ingest/publication lock. Reconciled backfills verify
+the exact export path, marker, contract, finalized ledger and artifacts under
+that same lock, including rolling refresh. `--force` cannot override a failed
+reconciled-source check. Both paths also verify the original status histogram:
+old contracts can label internal worker crashes as upstream rejections, so
+provider categories alone are insufficient. New unknown/internal statuses have
+their own refused classification. A missing or untrustworthy source cannot
 be manufactured merely to fill a calendar date.
 
 For an already withheld observation, retain the original refusal and create a

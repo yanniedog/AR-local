@@ -366,6 +366,11 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                 )
                 return PUBLISH_WITHHELD
             policy = gate.publication_allowed(contract)[1]
+            if policy == "reconciled_partial":
+                from app_payload_source_verification import verify_reconciled_source
+                if not verify_reconciled_source(runtime_state, exports, observation_date, contract):
+                    print("[pi_daily_sync] app_payload promotion withheld reason=unverified_reconciled_source")
+                    return PUBLISH_WITHHELD
             qualifier = "reconciled" if policy == "reconciled_partial" else "bounded"
             print(
                 f"[pi_daily_sync] app_payload {qualifier} partial v1 promotion "
