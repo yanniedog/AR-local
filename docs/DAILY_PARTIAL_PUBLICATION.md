@@ -38,6 +38,21 @@ Keep a failed request pending and require encrypted dated, immutable, rolling,
 index and consumer readback before declaring the date published. Preserve the
 Drive hold, quiet window, original archives and unknown lock owners.
 
+Production backfills and rolling-only refreshes now require an active bounded
+systemd service before acquiring the ingest lock. Starts are limited to
+03:30-22:00 Hobart. Use `Type=exec`, `RuntimeMaxSec=3600` or less,
+`TimeoutStopSec=30` or less, `KillMode=control-group`, `SendSIGKILL=yes` and
+`Restart=no`; randomized extra runtime is refused. The guard checks final
+SIGKILL, standard stop-failure behavior and empty stop hooks, preventing custom
+shutdown commands from extending the lock lifetime. It reads the containing
+service rather than trusting a caller's claimed deadline. Its whole
+remaining configured lifetime plus shutdown and safety margin must finish before
+00:30. Unsupervised production invocations (including the shell wrapper) fail
+before taking the lock; launch through the reviewed bounded operator service.
+If systemd stops an unfinished operation, the existing lock recovery checks its
+dead owner before the next ingest; never delete an unknown lock manually.
+Independent private copies do not share the scheduled production lock.
+
 Local protocol tests use retained September22 accounting in freshly sealed test
 contracts. They are not source captures. Exact production-contract, artifact,
 payload and installed-runtime verification remain separate execution receipts.

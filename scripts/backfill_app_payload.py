@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 import app_payload  # noqa: E402
 import app_payload_observation_gate as gate  # noqa: E402
 from app_payload_source_verification import verify_reconciled_source  # noqa: E402
+from app_payload_backfill_window import require_backfill_window  # noqa: E402
 from ar_local_operation_lock import production_lock  # noqa: E402
 from ar_local_pi_runtime import data_runs_root  # noqa: E402
 
@@ -79,6 +80,7 @@ def dated_release_already_published(repo: str, run_date: str) -> bool:
 
 
 def refresh_rolling_latest(runs_root: Path, **kwargs) -> bool:
+    require_backfill_window(runs_root, ROOT)
     with production_lock(resolve_state_root(runs_root) / 'daily-ingest.lock', 'payload-backfill'):
         return _refresh_rolling_latest_locked(runs_root, **kwargs)
 
@@ -147,6 +149,7 @@ def _refresh_rolling_latest_locked(
 
 
 def backfill(runs_root: Path, **kwargs) -> Tuple[List[dict], Optional[bool]]:
+    require_backfill_window(runs_root, ROOT)
     with production_lock(resolve_state_root(runs_root) / 'daily-ingest.lock', 'payload-backfill'):
         return _backfill_locked(runs_root, **kwargs)
 
