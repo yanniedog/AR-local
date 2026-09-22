@@ -12,6 +12,7 @@ from typing import Any, Iterator, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 _URL = re.compile(r"https?://[^\s<>\"']+", re.I)
+_LEADING_ENCODED_SPACE = re.compile(r"^(?:%20)+(?=https?://)", re.I)
 _SKIP = {"links", "meta", "cardArt"}
 _NON_DOCUMENT = {"applicationuri", "imageuri", "logouri", "websiteuri"}
 _RELATIONS = {
@@ -58,6 +59,17 @@ def _pointer(path: str, key: Any) -> str:
     return path + "/" + str(key).replace("~", "~0").replace("/", "~1")
 
 
+def reference_source_url(value: Any, normalization: str | None = None) -> str | None:
+    """Verify a named correction without decoding path, query or credentials."""
+    if normalization is None:
+        return document_url(value)
+    if (normalization != 'leading-encoded-space-v1'
+            or not isinstance(value, str) or len(value) > 8192):
+        return None
+    candidate, count = _LEADING_ENCODED_SPACE.subn('', value.strip())
+    return document_url(candidate) if count else None
+
+
 def _relation(path: str) -> str:
     lowered = path.lower()
     for token, relation in _RELATIONS.items():
@@ -71,7 +83,7 @@ def _declared_reference(raw: str, path: str, relation: str, label=None) -> Sourc
         return None
     # Some bank-declared URI fields encode a leading space before the scheme.
     # Decode no URL component; preserve the exact source and named correction.
-    candidate, count = re.subn(r"^(?:%20)+(?=https?://)", "", raw.strip(), flags=re.I)
+    candidate, count = _LEADING_ENCODED_SPACE.subn('', raw.strip())
     url = document_url(candidate)
     if not url:
         return None

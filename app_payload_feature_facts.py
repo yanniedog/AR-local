@@ -7,7 +7,7 @@ import re
 from typing import Any, Mapping
 
 from cdr_product_facts import compact_facts
-from cdr_terms.discovery import document_url
+from cdr_terms.discovery import document_url, reference_source_url
 
 _CODE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _NARRATIVE_NAMES = {
@@ -38,10 +38,12 @@ def source_documents(record: Mapping[str, Any]) -> list[dict] | None:
                 or any(not isinstance(reference.get(key), str) or not reference[key].strip()
                        for key in ("url", "sourcePath", "relation"))
                 or any(key in reference and not isinstance(reference[key], str)
-                       for key in ("sourceUrl", "label"))
+                       for key in ("sourceUrl", "label", "sourceNormalization"))
+                or ("sourceNormalization" in reference and "sourceUrl" not in reference)
                 or document_url(reference["url"]) != reference["url"]
                 or ("sourceUrl" in reference
-                    and document_url(reference["sourceUrl"]) != reference["url"])):
+                    and reference_source_url(reference["sourceUrl"],
+                        reference.get("sourceNormalization")) != reference["url"])):
             raise ValueError("invalid_source_document_reference")
     return references
 
