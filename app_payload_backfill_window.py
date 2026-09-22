@@ -35,7 +35,12 @@ def _unit_properties() -> dict[str, str]:
                   'ExecStop,ExecStopPost,Restart,RuntimeMaxUSec,TimeoutStopUSec,RuntimeRandomizedExtraUSec')
         result = subprocess.run(['systemctl', 'show', unit, '--no-pager', '--all', '--property=' + fields],
             check=True, capture_output=True, text=True, timeout=5)
-        return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        properties = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        # systemctl's structured Exec* formatter omits empty command arrays even
+        # with --all. Nonempty commands are printed and must remain disallowed.
+        for name in ('ExecStop', 'ExecStopPost'):
+            properties.setdefault(name, '')
+        return properties
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         raise RuntimeError('production backfill requires a bounded systemd service') from exc
 

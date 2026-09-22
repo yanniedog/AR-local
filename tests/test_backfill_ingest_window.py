@@ -100,6 +100,6 @@ def test_systemd_query_reads_only_containment_properties(monkeypatch):
         assert '--all' in argv  # Preserve explicitly empty stop hooks.
         assert argv[-1].startswith('--property=Type,') and 'Environment' not in argv[-1]
         assert kwargs['timeout'] == 5
-        return SimpleNamespace(stdout='\n'.join(k+'='+v for k,v in properties().items()))
+        return SimpleNamespace(stdout='\n'.join(k+'='+v for k,v in properties().items() if v))
     monkeypatch.setattr(guard.subprocess, 'run', show)
     assert guard._unit_properties() == properties()
