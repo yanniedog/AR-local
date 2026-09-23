@@ -1,8 +1,8 @@
 # Embedded bank-rate history
 
 The normal core download now carries all retained bank-rate observations in
-`bank_rate_history` (schema 1). Each current rate row has a section-local
-`bank_rate_tier` ID. A section contains one array of spans per tier ID; each span
+`bank_rate_history` (schema 1). The row_tiers map supplies section-local
+tier IDs without changing catalogue rows. A section contains one array of spans per tier ID; each span
 is `[first_date_index, observed_date_count, rates_in_percent]`. Equal consecutive
 observations share a span. Missing dates have no span and are never filled.
 
@@ -21,5 +21,5 @@ catalogues. Deploy/publish the producer and release the matching AR-app reader.
 
 Measured against 131 verified published daily cores through 2026-09-22: 16,314
 current rows; 133 calendar dates including gaps; compressed core grew from
-348,306 to 453,080 bytes. Inputs were verified against the selected immutable
+348,306 to 445,564 bytes. Inputs were verified against the selected immutable
 manifest and core hashes. Private benchmark data is not committed.

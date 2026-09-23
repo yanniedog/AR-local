@@ -20,7 +20,8 @@ def test_exact_tiers_rle_zero_missing_dates_and_duplicates():
                 ('2026-09-20', {'Mortgage': [row('0'), row('0.02')]}),
                 ('2026-09-22', {'Mortgage': [row('0.06'), row('0.07')]})]
     attach_history(current, observed, ['2026-09-19', '2026-09-20', '2026-09-21', '2026-09-22'])
-    assert [r['bank_rate_tier'] for r in current['sections']['Mortgage']['rates']] == [0, 0]
+    assert current['bank_rate_history']['row_tiers']['Mortgage'] == [0, 0]
+    assert all('bank_rate_tier' not in r for r in current['sections']['Mortgage']['rates'])
     assert current['bank_rate_history']['sections']['Mortgage'] == [[[0, 2, [0.0, 2.0]], [3, 1, [6.0, 7.000000000000001]]]]
 
 

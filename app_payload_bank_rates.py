@@ -1,7 +1,7 @@
 """Compact, exact-tier history embedded in the normal verified core download.
 
 Consecutive identical observations use run-length encoding. Missing observations
-are never filled. Current rows carry section-local tier IDs so consumers can
+are never filled. A separate row map supplies section-local tier IDs so consumers can
 apply their ordinary eligibility/profile filters before aggregating history.
 """
 from __future__ import annotations
@@ -38,15 +38,15 @@ def rate_percent(value):
 
 def attach_history(core, observations, dates):
     """One pass, bounded memory: keep encoded tier series, never daily catalogues."""
-    ids, sections = {}, {}
+    ids, sections, row_tiers = {}, {}, {}
     for section in VALID_SECTIONS:
-        ids[section], sections[section] = {}, []
+        ids[section], sections[section], row_tiers[section] = {}, [], []
         for row in core["sections"][section]["rates"]:
             key = tier_signature(row)
             if key not in ids[section]:
                 ids[section][key] = len(sections[section])
                 sections[section].append([])
-            row["bank_rate_tier"] = ids[section][key]
+            row_tiers[section].append(ids[section][key])
     date_index = {day: index for index, day in enumerate(dates)}
     seen = set()
     for day, rows_by_section in observations:
@@ -68,7 +68,8 @@ def attach_history(core, observations, dates):
                     spans[-1][1] += 1
                 else:
                     spans.append([index, 1, values])
-    core["bank_rate_history"] = {"schema_version": 1, "run_dates": dates, "sections": sections}
+    core["bank_rate_history"] = {"schema_version": 1, "run_dates": dates,
+                                 "row_tiers": row_tiers, "sections": sections}
 
 
 def embed_bank_rate_history(core, exports_dir):
