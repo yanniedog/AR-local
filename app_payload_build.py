@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
+import app_payload_bank_rates
 import app_payload_bank_spread
 import cdr_brand_logos
 import payload_crypto
@@ -435,6 +436,7 @@ def _compute_payload(
     bank_history = None
     bank_spread_history = None
     if include_history:
+        app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
             all_core_rows.extend(core["sections"][section]["rates"])
