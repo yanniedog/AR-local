@@ -38,6 +38,24 @@ def test_rejects_payload_growth_past_compressed_byte_budget(key: str, size: int,
         validate_payload_network_budget(manifest, manifest_bytes=3_000)
 
 
+def test_complete_real_history_core_fits_with_existing_companion_assets() -> None:
+    # Measured Sept26 core with all 134 published dates, both history schemas.
+    # Companion sizes come from the same selected immutable public manifest.
+    sizes = {"core": 2_718_749, "details": 2_821_488, "search_index": 671_293,
+             "history_banks": 6_504, "bank_history": 20_594,
+             "bank_spread_history": 17_169, "rba_calendar": 343}
+    from release_transport import OVERHEAD
+    manifest = {"files": {key: {"bytes": size + OVERHEAD} for key, size in sizes.items()}}
+    report = validate_payload_network_budget(manifest, manifest_bytes=4_000)
+    assert report["journeys"]["critical_core"]["bytes"] == sizes["core"] + OVERHEAD
+    assert report["journeys"]["all_declared_assets"]["bytes"] == sum(sizes.values()) + len(sizes) * OVERHEAD
+
+
+def test_total_budget_still_rejects_growth_even_when_each_asset_fits() -> None:
+    with pytest.raises(ValueError, match="total bytes"):
+        validate_payload_network_budget(_manifest(CORE_MAX_BYTES, DETAILS_MAX_BYTES), manifest_bytes=3_000)
+
+
 def test_requires_declared_bytes_to_match_local_release_assets(tmp_path: Path) -> None:
     manifest = _manifest(core=4, details=5)
     (tmp_path / "core.gz").write_bytes(b"core")

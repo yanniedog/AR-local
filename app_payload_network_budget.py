@@ -15,7 +15,9 @@ KIB = 1024
 MIB = 1024 * KIB
 
 MANIFEST_MAX_BYTES = 64 * KIB
-CORE_MAX_BYTES = 512 * KIB
+# The complete 134-observation schema1+schema2 core is 2,718,749 gzip bytes.
+# Keep bounded growth room for prepacked history; the 8 MiB total is unchanged.
+CORE_MAX_BYTES = 4 * MIB
 DETAILS_MAX_BYTES = 4 * MIB
 SEARCH_INDEX_MAX_BYTES = 2 * MIB
 OTHER_ASSET_MAX_BYTES = 1 * MIB

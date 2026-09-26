@@ -236,6 +236,27 @@ def test_current_payload_rejects_an_unselected_export_before_building(tmp_path, 
         _compute_payload(original)
 
 
+@pytest.mark.parametrize("canonical_exists", [False, True])
+def test_current_payload_rejects_noncanonical_legacy_export_layout(tmp_path, banks, canonical_exists):
+    import shutil
+    from app_payload_build import _compute_payload
+    canonical = save_export(tmp_path, banks, finalize=False)
+    staging = canonical.parent / "staging" / "_exports"
+    if canonical_exists:
+        shutil.copytree(canonical, staging)
+    else:
+        staging.parent.mkdir()
+        canonical.rename(staging)
+    with pytest.raises(ValueError, match="sole retained legacy observation"):
+        _compute_payload(staging)
+
+
+def test_current_payload_accepts_the_sole_legacy_export(tmp_path, banks):
+    from app_payload_bank_rate_source import require_selected_current_export
+    canonical = save_export(tmp_path, banks, finalize=False)
+    require_selected_current_export(canonical, DAY)
+
+
 def test_unknown_observation_breaks_aggregate_rate_move_chain(tmp_path, monkeypatch):
     import app_payload_mobile as mobile
     from cdr_ribbon_normalize import normalized_rate_value

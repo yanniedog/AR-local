@@ -1,0 +1,117 @@
+{
+  "status": "PASS",
+  "publication_verified": false,
+  "source_manifest_sha256": "39d0ce894cb8433c399183f4832de02a5da90ceb8410c6735b75bc6206fc905d",
+  "catalogue_dates": 134,
+  "catalogue_tiers": 44044,
+  "core_decoded_bytes": 55482003,
+  "packages": {
+    "rolling": {
+      "core_sha256": "0685560c3627360c756ac9577c9ab27d367866001b8a688fcbe3dfc2b9d4410c",
+      "core_bytes": 2718749,
+      "assets": 7,
+      "wire_budget": {
+        "schema_version": 1,
+        "asset_bytes": {
+          "core": 2718821,
+          "details": 2821560,
+          "search_index": 671365,
+          "history_banks": 6576,
+          "bank_history": 20666,
+          "bank_spread_history": 17241,
+          "rba_calendar": 415
+        },
+        "journeys": {
+          "critical_core": {
+            "bytes": 2718821,
+            "seconds": {
+              "0.5_mbps": 43.501,
+              "1_mbps": 21.751,
+              "5_mbps": 4.35,
+              "20_mbps": 1.088
+            }
+          },
+          "current_standard_home": {
+            "bytes": 5540381,
+            "seconds": {
+              "0.5_mbps": 88.646,
+              "1_mbps": 44.323,
+              "5_mbps": 8.865,
+              "20_mbps": 2.216
+            }
+          },
+          "deep_search": {
+            "bytes": 6211746,
+            "seconds": {
+              "0.5_mbps": 99.388,
+              "1_mbps": 49.694,
+              "5_mbps": 9.939,
+              "20_mbps": 2.485
+            }
+          },
+          "all_declared_assets": {
+            "bytes": 6256644,
+            "seconds": {
+              "0.5_mbps": 100.106,
+              "1_mbps": 50.053,
+              "5_mbps": 10.011,
+              "20_mbps": 2.503
+            }
+          }
+        }
+      }
+    },
+    "dated": {
+      "core_sha256": "0685560c3627360c756ac9577c9ab27d367866001b8a688fcbe3dfc2b9d4410c",
+      "core_bytes": 2718749,
+      "assets": 2,
+      "wire_budget": {
+        "schema_version": 1,
+        "asset_bytes": {
+          "core": 2718821,
+          "details": 2821560
+        },
+        "journeys": {
+          "critical_core": {
+            "bytes": 2718821,
+            "seconds": {
+              "0.5_mbps": 43.501,
+              "1_mbps": 21.751,
+              "5_mbps": 4.35,
+              "20_mbps": 1.088
+            }
+          },
+          "current_standard_home": {
+            "bytes": 5540381,
+            "seconds": {
+              "0.5_mbps": 88.646,
+              "1_mbps": 44.323,
+              "5_mbps": 8.865,
+              "20_mbps": 2.216
+            }
+          },
+          "deep_search": {
+            "bytes": 5540381,
+            "seconds": {
+              "0.5_mbps": 88.646,
+              "1_mbps": 44.323,
+              "5_mbps": 8.865,
+              "20_mbps": 2.216
+            }
+          },
+          "all_declared_assets": {
+            "bytes": 5540381,
+            "seconds": {
+              "0.5_mbps": 88.646,
+              "1_mbps": 44.323,
+              "5_mbps": 8.865,
+              "20_mbps": 2.216
+            }
+          }
+        }
+      }
+    }
+  },
+  "method": "Canonical app_payload_build._package, with verified September26 revision3 domain assets, complete schema1 and schema2 history; ARE2 overhead added using release_transport.OVERHEAD. No publication.",
+  "source_manifest_url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-26-r000003/manifest.json"
+}

@@ -62,3 +62,15 @@ Private prepacking from public artifacts uses `dates-index.json`,
 `manifests/YYYY-MM-DD.json`, `cores/<sha256>.gz`, and `details/<sha256>.gz`.
 This local-only path does not publish, reserve revisions or alter source files.
 Production publication still belongs to the guarded Pi revision coordinator.
+
+The Sept26 proof with all 134 public observations, both history schemas and
+current rows is 55,482,003 decoded bytes and 2,718,749 gzip bytes. The core has a
+4 MiB compressed transfer cap; details, search and other per-asset caps and the
+8 MiB total remain enforced. Filters and bank selection reuse local packed data
+after acquisition. Budget reports continue to disclose slow-network transfer
+times instead of describing the initial download as instantaneous.
+
+Private output must be a new directory and never an existing acquired-input
+directory. It may be a new child of the same private cache workspace: acquisition
+reads only the explicitly indexed manifest/core/details paths, never discovers
+derived files recursively, and verifies source hashes before reading them.
