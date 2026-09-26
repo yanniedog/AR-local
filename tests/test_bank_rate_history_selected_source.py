@@ -272,3 +272,13 @@ def test_retained_evidence_does_not_borrow_identity_or_later_details(banks):
     assert retained_evidence([{**product, "details_json": "{}"}])[key] == {"status": "unknown"}
     corrupt = {**product, "provider": "identity mismatch control"}
     assert key not in retained_evidence([product, corrupt])
+
+
+@pytest.mark.parametrize("invalid_key", [[], ["invalid"], {}, {"invalid": True}, 1, True, None, "", "  "])
+def test_retained_evidence_ignores_malformed_optional_product_keys(banks, invalid_key):
+    from app_payload_bank_catalogue import retained_evidence
+    product = banks["products"][0]
+    expected = retained_evidence([product])
+    malformed = {**product, "product_key": invalid_key}
+    assert retained_evidence([malformed]) == {}
+    assert retained_evidence([malformed, product]) == expected
