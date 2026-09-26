@@ -11,7 +11,9 @@ from cdr_export_contract import load_contract
 from cdr_ledger_v2 import verify_event
 from cdr_observation_selection import safe_child
 
-MAX_BANKS_BYTES = 64 * 1024 * 1024
+# Retained production banks.json reaches 76,221,900 bytes (26 Sep inventory).
+# This bounds source allocation without rejecting the existing real catalogue.
+MAX_BANKS_BYTES = 128 * 1024 * 1024
 _UNRESOLVED_SELECTION = {
     "Historical selection history incomplete",
     "Historical selection history ambiguous",
