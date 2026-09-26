@@ -10,8 +10,9 @@ import json
 import math
 from datetime import date, timedelta
 
-from app_payload_common import CORE_RATE_FIELDS, VALID_SECTIONS, compact, section_filter, _load_json
-from app_payload_mobile import _banks, _history_dates
+from app_payload_common import CORE_RATE_FIELDS, VALID_SECTIONS, compact, section_filter
+from app_payload_mobile import _history_dates
+from app_payload_bank_rate_source import historical_banks
 
 OBSERVATION_FIELDS = frozenset({
     "rate", "comparison_rate", "ongoing_rate", "last_updated", "rate_index",
@@ -82,15 +83,16 @@ def embed_bank_rate_history(core, exports_dir):
         raise ValueError("Bank-rate history date range exceeds budget")
     dates = [(start + timedelta(days=i)).isoformat() for i in range(count)]
 
+    unavailable = {}
+
     def observations():
         for day in observed:
-            path = _banks(exports_dir, day)
-            if path is None:
-                continue
-            rows = _load_json(path).get("rates") or []
+            rows = historical_banks(exports_dir, day, unavailable).get("rates") or []
             yield day, {section: [compact({k: row.get(k) for k in CORE_RATE_FIELDS})
                                  for row in rows if isinstance(row, dict)
                                  and row.get("dataset") == section and section_filter(section, row)]
                         for section in VALID_SECTIONS}
 
     attach_history(core, observations(), dates)
+    if unavailable:
+        core["bank_rate_history"]["unavailable_dates"] = unavailable
