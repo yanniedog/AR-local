@@ -20,6 +20,25 @@ _UNRESOLVED_SELECTION = {
 }
 
 
+def require_selected_current_export(exports_dir: Path, day: str) -> None:
+    """A current core and its last history point must describe one observation."""
+    root = _runs_root(exports_dir)
+    if root is None:
+        return
+    state = root.parent / "state"
+    contract, selected = publication_source(state, day, root / day / "_exports")
+    if contract is not None:
+        if selected.resolve() != exports_dir.resolve():
+            raise ValueError("Current payload export is not the selected observation")
+        return
+    if any((state / "export-contracts-v2" / day).glob("*.json")):
+        raise ValueError("Current payload has an invalid retained contract")
+    candidates = list((root / day).glob("_exports/dashboard-cache/" + day + "/banks.json"))
+    candidates += list((root / day).glob("_revisions/*/_exports/dashboard-cache/" + day + "/banks.json"))
+    if len(candidates) > 1:
+        raise ValueError("Current payload has unresolved competing exports")
+
+
 def _verified_contract(state: Path, day: str, selected: dict) -> dict:
     generation = selected["generation_id"]
     contract = load_contract(safe_child(state, f"export-contracts-v2/{day}/{generation}.json"))
@@ -30,7 +49,7 @@ def _verified_contract(state: Path, day: str, selected: dict) -> dict:
     return contract
 
 
-def historical_banks(exports_dir: Path, day: str, unavailable: dict) -> dict:
+def historical_banks(exports_dir: Path, day: str, unavailable: dict, sources: dict | None = None) -> dict:
     """Missing selection evidence is a disclosed gap; corrupt evidence is an error.
 
     Legacy days with just one export need no new selection receipt. A day with
@@ -82,4 +101,9 @@ def historical_banks(exports_dir: Path, day: str, unavailable: dict) -> dict:
         raise ValueError("Bank-rate history source has a different observation date")
     if not isinstance(banks.get("rates"), list) or any(not isinstance(row, dict) for row in banks["rates"]):
         raise ValueError("Bank-rate history source has invalid rates schema")
+    if sources is not None:
+        sources[day] = {"kind": "selected_contract" if contract else "retained_legacy_export",
+                        "banks_sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+        if contract is not None:
+            sources[day].update(generation_id=contract["generation_id"], contract_digest=contract["contract_digest"])
     return banks

@@ -288,6 +288,9 @@ def build_history_assets(
                 prev_best[section] = {
                     provider: bucket["best_by_product"] for provider, bucket in providers.items()
                 }
+        else:
+            # An unresolved observation cannot establish a rate-move endpoint.
+            prev_best = {section: {} for section in VALID_SECTIONS}
         day_stats.append(stats_for_day)
 
     if len(day_stats) != len(dates):

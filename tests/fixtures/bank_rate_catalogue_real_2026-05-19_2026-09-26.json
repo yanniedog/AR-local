@@ -1,0 +1,2568 @@
+{
+  "provenance": "Exact core row and normalized ProductDetail slices from independently verified immutable public releases; operational test envelopes are constructed separately.",
+  "observations": [
+    {
+      "date": "2026-05-19",
+      "source": {
+        "kind": "published_core",
+        "manifest_sha256": "312b05b799d49be5c39562eb352911c997df65262947de8eb01034450364f376",
+        "core_sha256": "78ebee997a5b2f4e0be36ecd5a743886734c78d02ce263b0b8802e286abf211d",
+        "details_sha256": "89a62db02202c89f598c4e9e18c93e20dcda7d1b4037d317c4a136b43d5a6b04"
+      },
+      "sections": {
+        "Mortgage": [
+          {
+            "provider": "Credit Union SA",
+            "product_id": "CREDITUNIONSA_HL_448V",
+            "product_key": "Credit Union SA|CREDITUNIONSA_HL_448V|RESIDENTIAL_MORTGAGES|Special Variable Home Loan Package <60% LVR",
+            "product_name": "Special Variable Home Loan Package <60% LVR",
+            "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.0567",
+            "comparison_rate": "0.0605",
+            "rate_type": "VARIABLE",
+            "repayment_type": "PRINCIPAL_AND_INTEREST",
+            "loan_purpose": "OWNER_OCCUPIED",
+            "term": "LVR<=60%Loan amount >= $150,000",
+            "lvr_tier": "lvr_=60%",
+            "ribbon_normalized": true,
+            "security_purpose": "owner_occupied",
+            "ribbon_repayment_type": "principal_and_interest",
+            "ribbon_rate_structure": "variable",
+            "feature_set": "premium",
+            "rate_index": 1,
+            "last_updated": "2023-06-15T00:00:00.000+10:00",
+            "taxonomy_path": "HOME_LOAN.OO.PI.VARIABLE.LVR_LE60"
+          },
+          {
+            "provider": "Credit Union SA",
+            "product_id": "CREDITUNIONSA_HL_442V",
+            "product_key": "Credit Union SA|CREDITUNIONSA_HL_442V|RESIDENTIAL_MORTGAGES|Variable Home Loan Package Principal and Interest",
+            "product_name": "Variable Home Loan Package Principal and Interest",
+            "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.0654",
+            "comparison_rate": "0.069",
+            "rate_type": "VARIABLE",
+            "repayment_type": "PRINCIPAL_AND_INTEREST",
+            "loan_purpose": "INVESTMENT",
+            "lvr_tier": "lvr_90-95%",
+            "ribbon_normalized": true,
+            "security_purpose": "investment",
+            "ribbon_repayment_type": "principal_and_interest",
+            "ribbon_rate_structure": "variable",
+            "feature_set": "premium",
+            "rate_index": 1,
+            "last_updated": "2026-05-14T00:00:00.000+10:00",
+            "taxonomy_path": "HOME_LOAN.INV.PI.VARIABLE.LVR_90_95"
+          }
+        ],
+        "Savings": [
+          {
+            "provider": "AMP - My AMP",
+            "product_id": "AMP_BUSINESS_SAVER",
+            "product_key": "AMP - My AMP|AMP_BUSINESS_SAVER|TRANS_AND_SAVINGS_ACCOUNTS|AMP Business Saver Account",
+            "product_name": "AMP Business Saver Account",
+            "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "rate": "0.0225",
+            "rate_type": "VARIABLE",
+            "ribbon_normalized": true,
+            "account_type": "savings",
+            "ribbon_deposit_kind": "base",
+            "feature_set": "basic",
+            "rate_index": 1,
+            "last_updated": "2026-03-12T00:00:00.000Z",
+            "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.FLAT"
+          },
+          {
+            "provider": "AMP - My AMP",
+            "product_id": "AMP_SAVER",
+            "product_key": "AMP - My AMP|AMP_SAVER|TRANS_AND_SAVINGS_ACCOUNTS|AMP Saver Account",
+            "product_name": "AMP Saver Account",
+            "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "rate": "0.0025",
+            "rate_type": "VARIABLE",
+            "ribbon_normalized": true,
+            "account_type": "savings",
+            "ribbon_deposit_kind": "base",
+            "feature_set": "basic",
+            "rate_index": 1,
+            "last_updated": "2026-04-01T00:00:00.000Z",
+            "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.FLAT"
+          }
+        ],
+        "TD": [
+          {
+            "provider": "AMP - My AMP",
+            "product_id": "TERM_DEPOSIT",
+            "product_key": "AMP - My AMP|TERM_DEPOSIT|TERM_DEPOSITS|AMP Bank Term Deposit",
+            "product_name": "AMP Bank Term Deposit",
+            "category": "TERM_DEPOSITS",
+            "rate": "0.001",
+            "rate_type": "FIXED",
+            "term": "P1M",
+            "term_months": "1",
+            "ribbon_normalized": true,
+            "ribbon_rate_structure": "base",
+            "ribbon_deposit_kind": "base",
+            "balance_min": "25000",
+            "balance_max": "10000000",
+            "interest_payment": "at_maturity",
+            "feature_set": "basic",
+            "rate_index": 1,
+            "last_updated": "2026-04-29T00:00:00.000Z",
+            "taxonomy_path": "TERM_DEPOSIT.1M.AT_MATURITY.TIERED"
+          },
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "01f5dac2-ce59-410e-b331-b806d231cacc",
+            "product_key": "AMP Bank GO|01f5dac2-ce59-410e-b331-b806d231cacc|TERM_DEPOSITS|AMP Bank GO 12 Month Business Term Deposit",
+            "product_name": "AMP Bank GO 12 Month Business Term Deposit",
+            "category": "TERM_DEPOSITS",
+            "rate": "0.054",
+            "rate_type": "FIXED",
+            "term": "P12M",
+            "term_months": "12",
+            "ribbon_normalized": true,
+            "ribbon_rate_structure": "base",
+            "ribbon_deposit_kind": "base",
+            "interest_payment": "at_maturity",
+            "feature_set": "basic",
+            "rate_index": 1,
+            "last_updated": "2026-04-28T10:47:32.378Z",
+            "taxonomy_path": "TERM_DEPOSIT.12M.AT_MATURITY.FLAT"
+          }
+        ]
+      },
+      "details": {
+        "Credit Union SA|CREDITUNIONSA_HL_448V|RESIDENTIAL_MORTGAGES|Special Variable Home Loan Package <60% LVR": {
+          "description": "Our Special Variable Home Loan Package <60% LVR is a great choice for those who have a larger deposit, or have paid down their home loan and would like a competitive interest rate . You pay an annual fee of $395 and in return you’ll save an absolute bundle.",
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "18"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Australian citizen or permanent resident"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_LIMIT",
+              "value": "150000.0",
+              "info": "Minimum loan amount"
+            },
+            {
+              "label": "MAX_LIMIT",
+              "value": "No Limit",
+              "info": "Maximum loan amount"
+            }
+          ]
+        },
+        "Credit Union SA|CREDITUNIONSA_HL_442V|RESIDENTIAL_MORTGAGES|Variable Home Loan Package Principal and Interest": {
+          "description": "Our Variable Home Loan Package is ideal for those seeking significant flexibility. The Credit Union SA Variable Home Loan Package offers a fantastic collection of benefits across our Home Loans, Visa Credit Card, Personal Loans, Term Deposits and more. You pay an annual fee of $395 and in return you’ll save an absolute bundle. Home Loan Offset Accounts are available with selected Credit Union SA Variable Rate Home Loans.",
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "18"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Australian citizen or permanent resident"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "OPENING_BALANCE",
+              "value": "150000.00"
+            },
+            {
+              "label": "MAX_LVR",
+              "value": "0.97"
+            }
+          ]
+        },
+        "AMP - My AMP|AMP_BUSINESS_SAVER|TRANS_AND_SAVINGS_ACCOUNTS|AMP Business Saver Account": {
+          "description": "Benefit from a competitive, ongoing standard variable rate available on all credit balances.",
+          "eligibility": [
+            {
+              "label": "BUSINESS",
+              "value": "Only business may apply for the account"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "0",
+              "info": "You don't need to maintain a specific minimum balance"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "5000000",
+              "info": "Balances over $5,000,000 are available at our discretion. Introductory bonus interest rate is only paid on balances up to $5,000,000"
+            }
+          ]
+        },
+        "AMP - My AMP|AMP_SAVER|TRANS_AND_SAVINGS_ACCOUNTS|AMP Saver Account": {
+          "description": "Grow your account by $250 or more (excluding interest) by the end of each month to unlock AMP Saver’s highest variable interest rate on balances up to $500,000",
+          "eligibility": [
+            {
+              "label": "NATURAL_PERSON",
+              "value": "The customer must be a natural person rather than another legal entity"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "0",
+              "info": "You don't need to maintain a specific minimum balance"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "5000000",
+              "info": "Balances over $5,000,000 are available at our discretion. Bonus interest rate is only paid on balances up to $500,000"
+            }
+          ]
+        },
+        "AMP - My AMP|TERM_DEPOSIT|TERM_DEPOSITS|AMP Bank Term Deposit": {
+          "description": "Lock in a great rate and know what you'll earn with deposits starting at $5,000, plus pay no monthly fees.",
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "5000",
+              "info": "Minimum Term Deposit is $5000 for terms of 3 months and more"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "10000000",
+              "info": "Balances over $10,000,000 are available at our discretion."
+            },
+            {
+              "label": "MIN_BALANCE",
+              "value": "25000",
+              "info": "Minimum Term Deposit is $25000 for terms <3 months"
+            }
+          ]
+        },
+        "AMP Bank GO|01f5dac2-ce59-410e-b331-b806d231cacc|TERM_DEPOSITS|AMP Bank GO 12 Month Business Term Deposit": {
+          "description": "12 Month Business Term Deposit via the AMP Bank GO app",
+          "eligibility": [
+            {
+              "label": "BUSINESS"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Business Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Business Account in order to open an AMP Bank GO Business Term Deposit"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "5000.00"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "10000000.00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "date": "2026-09-25",
+      "source": {
+        "kind": "published_core",
+        "manifest_sha256": "1d4722228fc15b8d1d37c4fc04edc6d840a3b3814dc25f0937296d575f97d7f7",
+        "core_sha256": "50b713e33e895bce2ad9192b21646e0951072ad60272c77246b358912ba62ba8",
+        "details_sha256": "a9fae9e61629110d6b417dface10817e14966c4d165888fef7817bf84aa5024f"
+      },
+      "sections": {
+        "Mortgage": [
+          {
+            "provider": "Bank of Melbourne",
+            "product_id": "BOMHLBasic",
+            "product_key": "Bank of Melbourne|BOMHLBasic|RESIDENTIAL_MORTGAGES|Basic Variable Home Loan",
+            "product_name": "Basic Variable Home Loan",
+            "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.0629",
+            "comparison_rate": "0.063",
+            "rate_type": "VARIABLE",
+            "repayment_type": "PRINCIPAL_AND_INTEREST",
+            "loan_purpose": "OWNER_OCCUPIED",
+            "lvr_tier": "lvr_60-70%",
+            "ribbon_normalized": true,
+            "security_purpose": "owner_occupied",
+            "ribbon_repayment_type": "principal_and_interest",
+            "ribbon_rate_structure": "variable",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-08-13T08:39:30Z",
+            "taxonomy_path": "HOME_LOAN.OO.PI.VARIABLE.LVR_60_70"
+          },
+          {
+            "provider": "Bank of Melbourne",
+            "product_id": "BOMHLFixedRate",
+            "product_key": "Bank of Melbourne|BOMHLFixedRate|RESIDENTIAL_MORTGAGES|Fixed Rate Home Loan",
+            "product_name": "Fixed Rate Home Loan",
+            "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.0694",
+            "comparison_rate": "0.0863",
+            "rate_type": "FIXED",
+            "repayment_type": "PRINCIPAL_AND_INTEREST",
+            "loan_purpose": "OWNER_OCCUPIED",
+            "term": "P1Y",
+            "lvr_tier": "lvr_60-70%",
+            "ribbon_normalized": true,
+            "security_purpose": "owner_occupied",
+            "ribbon_repayment_type": "principal_and_interest",
+            "ribbon_rate_structure": "fixed",
+            "ribbon_fixed_term": "1",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-09-18T00:13:24Z",
+            "taxonomy_path": "HOME_LOAN.OO.PI.FIXED.12M.LVR_60_70"
+          }
+        ],
+        "Savings": [
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "38f4aa26-6ef6-49c9-975d-8f41e2a0dfa9",
+            "product_key": "AMP Bank GO|38f4aa26-6ef6-49c9-975d-8f41e2a0dfa9|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Business Save",
+            "product_name": "AMP Bank GO Business Save",
+            "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "rate": "0.0475",
+            "rate_type": "VARIABLE",
+            "ribbon_normalized": true,
+            "account_type": "savings",
+            "ribbon_deposit_kind": "base",
+            "balance_min": "0",
+            "balance_max": "500000",
+            "feature_set": "basic",
+            "account_class": "non_standard",
+            "rate_index": 1,
+            "last_updated": "2026-05-10T23:17:44.384Z",
+            "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+          },
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "7c034be5-b76d-4b26-959a-29ef8e045b7f",
+            "product_key": "AMP Bank GO|7c034be5-b76d-4b26-959a-29ef8e045b7f|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Save",
+            "product_name": "AMP Bank GO Save",
+            "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "rate": "0.0525",
+            "rate_type": "VARIABLE",
+            "ribbon_normalized": true,
+            "account_type": "savings",
+            "ribbon_deposit_kind": "base",
+            "balance_min": "0",
+            "balance_max": "50000",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-08-20T23:21:28.620Z",
+            "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+          }
+        ],
+        "TD": [
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "10f2d091-ae31-4eea-ba32-490a88f08a23",
+            "product_key": "AMP Bank GO|10f2d091-ae31-4eea-ba32-490a88f08a23|TERM_DEPOSITS|AMP Bank GO 12 Month Business Term Deposit",
+            "product_name": "AMP Bank GO 12 Month Business Term Deposit",
+            "category": "TERM_DEPOSITS",
+            "rate": "0.053",
+            "rate_type": "FIXED",
+            "term": "P12M",
+            "term_months": "12",
+            "ribbon_normalized": true,
+            "ribbon_rate_structure": "base",
+            "ribbon_deposit_kind": "base",
+            "interest_payment": "at_maturity",
+            "feature_set": "basic",
+            "account_class": "non_standard",
+            "rate_index": 1,
+            "last_updated": "2026-07-31T04:22:07.510Z",
+            "taxonomy_path": "TERM_DEPOSIT.12M.AT_MATURITY.FLAT"
+          },
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "10f39a51-6d9f-4911-a171-8a0681f2a9e0",
+            "product_key": "AMP Bank GO|10f39a51-6d9f-4911-a171-8a0681f2a9e0|TERM_DEPOSITS|AMP Bank GO 12 Month Term Deposit",
+            "product_name": "AMP Bank GO 12 Month Term Deposit",
+            "category": "TERM_DEPOSITS",
+            "rate": "0.053",
+            "rate_type": "FIXED",
+            "term": "P12M",
+            "term_months": "12",
+            "ribbon_normalized": true,
+            "ribbon_rate_structure": "base",
+            "ribbon_deposit_kind": "base",
+            "interest_payment": "at_maturity",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-07-31T04:31:24.912Z",
+            "taxonomy_path": "TERM_DEPOSIT.12M.AT_MATURITY.FLAT"
+          }
+        ]
+      },
+      "details": {
+        "Bank of Melbourne|BOMHLBasic|RESIDENTIAL_MORTGAGES|Basic Variable Home Loan": {
+          "displayIdentity": {
+            "name": "Basic Variable Home Loan",
+            "provider": "Bank of Melbourne",
+            "productCategory": "RESIDENTIAL_MORTGAGES"
+          },
+          "description": "Our no-frills variable home loan rate, with redraw and no establishment or ongoing monthly fees.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "3c4c3c8e882f6033",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "a8bef4b796c8b8791ebc"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.extra_repayments",
+              "label": "Extra Repayments",
+              "groupId": "939079432b662e4f",
+              "sourceType": "EXTRA_REPAYMENTS",
+              "unit": "boolean",
+              "condition": "Subject to terms and conditions, this product includes extra repayment features.",
+              "searchTerms": [
+                "Extra Repayments",
+                "extra repayments",
+                "feature"
+              ],
+              "id": "3ecea3811e4c8bb5dac3"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "7bbccf8f3783ceff",
+              "sourceType": "FRAUD_PROTECTION",
+              "unit": "boolean",
+              "condition": "The product includes fraud protection features.",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "80825fb8b43e243a508a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.guarantor",
+              "label": "Guarantor",
+              "groupId": "e8fcf25ed39e84d5",
+              "sourceType": "GUARANTOR",
+              "unit": "boolean",
+              "condition": "Subject to terms and conditions, this product includes guarantor features.",
+              "searchTerms": [
+                "Guarantor",
+                "feature",
+                "guarantor"
+              ],
+              "id": "21c00b100d95d88e807f"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Flexible repayments : Choose to make your repayments weekly, fortnightly or monthly",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "908091e284ee25539e45"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Limitless extra repayments: With no extra repayment fee or limits, you?re free to pay off your loan as fast as you like.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "6fe2981c30bd1b55704a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Loan Payment Method - Direct Credit, Direct Debit (preferred), Branch Payment, Internet or Phone Banking",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "cf38f27c03c52fc41833"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "No application fee: A no-frills home loan with $0 lending establishment fee.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "2c70dd7d9099ba5c5c09"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "No ongoing monthly fees: $0 monthly account-keeping fee. Other fees may apply",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "d26857cd20d306003822"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Option to Loan Split/Subsequent Loan Sequence",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "9b527ae014ab5ceb4c34"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Statements of account : We will send you a statement of your loan account at least every six months or more frequently if you request",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "d3ea90aea125a824fca1"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Substituting a security : You may ask us to accept a new mortgage over other land as a substitute for any mortgage which is security for your loan. We may agree to this if you satisfy any reasonable requirements that we have, such as repaying part of the loan amount. We will require the new mortgage to be provided at the same time that the existing mortgage is discharged. We charge a fee for substituting a mortgage or other security.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "ac749da7f4004415df32"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes Switching (from another product) feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "382b4282b41b7d5a826a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a Relocation Loan End Debt feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "a7471226e42f39e7c7ff"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a combination loan feature.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "7c934266a6b75b6969f3"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product provides options which includes reduced repayment, repayment holiday, portability and loan increase (top up) features",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "10c15a9cb2083bdaddb2"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.redraw",
+              "label": "Redraw",
+              "groupId": "82641ab4e365b21e",
+              "sourceType": "REDRAW",
+              "unit": "boolean",
+              "condition": "Flexibility: Fee-free options include unlimited redraw, Interest Only and reducing repayments if rates fall.",
+              "searchTerms": [
+                "Redraw",
+                "feature",
+                "redraw"
+              ],
+              "id": "a0db9eb87314ad9a3aeb"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.relationship_management",
+              "label": "Relationship Management",
+              "groupId": "68ed3c21bd8152f1",
+              "sourceType": "RELATIONSHIP_MANAGEMENT",
+              "unit": "boolean",
+              "condition": "Relationship management is available for eligible customers.",
+              "searchTerms": [
+                "Relationship Management",
+                "feature",
+                "relationship management"
+              ],
+              "id": "1d50fc228e3f3def685c"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "18",
+              "info": "Applicant should be 18 years or over"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Should be an Australian or New Zealand citizen(s) or permanent resident(s)"
+            },
+            {
+              "label": "OTHER",
+              "info": "Individuals Only"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_LVR",
+              "value": "0.00"
+            },
+            {
+              "label": "MAX_LVR",
+              "value": "0.95"
+            },
+            {
+              "label": "MIN_LIMIT",
+              "value": "30000.00",
+              "info": "The minimum amount financed is $30,000"
+            },
+            {
+              "label": "MAX_LIMIT",
+              "value": "5000000.00",
+              "info": "The maximum amount financed is $5,000,000.00"
+            },
+            {
+              "label": "OTHER",
+              "info": "Maximum repayment term 30 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Owner occupier - Loan maximum interest only period 5 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Investment - Loan maximum interest only period 10 years"
+            }
+          ]
+        },
+        "Bank of Melbourne|BOMHLFixedRate|RESIDENTIAL_MORTGAGES|Fixed Rate Home Loan": {
+          "displayIdentity": {
+            "name": "Fixed Rate Home Loan",
+            "provider": "Bank of Melbourne",
+            "productCategory": "RESIDENTIAL_MORTGAGES"
+          },
+          "description": "Lock in a little certainty with a fixed interest rate for 1-5 years.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.complementary_product_discounts",
+              "label": "Complementary Product Discounts",
+              "groupId": "e8358bb1a0e13145",
+              "sourceType": "COMPLEMENTARY_PRODUCT_DISCOUNTS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Complementary Product Discounts",
+                "complementary product discounts",
+                "feature"
+              ],
+              "id": "6888cab7e3af893b4b27"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "7366e1c3acc1b9f3",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "8298db00bb8dbd8162e5"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.extra_repayments",
+              "label": "Extra Repayments",
+              "groupId": "efe4518e47a99d48",
+              "sourceType": "EXTRA_REPAYMENTS",
+              "unit": "boolean",
+              "condition": "Prepayment Thresholds apply. For loans originated prior to 18 Aug 2019 - $10,000 in each 12 month period (starting from the date the relevant fixed rate period started). For loans originated after 18 Aug 2019 - $30,000 for the entire fixed rate period.",
+              "searchTerms": [
+                "Extra Repayments",
+                "extra repayments",
+                "feature"
+              ],
+              "id": "9d5487ce595666364c2b"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "469216201a48ab65",
+              "sourceType": "FRAUD_PROTECTION",
+              "unit": "boolean",
+              "condition": "The product includes fraud protection features.",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "ab1657961ed379b0a510"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.guarantor",
+              "label": "Guarantor",
+              "groupId": "872081b61f7c18c3",
+              "sourceType": "GUARANTOR",
+              "unit": "boolean",
+              "condition": "Subject to terms and conditions, this product includes guarantor features.",
+              "searchTerms": [
+                "Guarantor",
+                "feature",
+                "guarantor"
+              ],
+              "id": "84f0ab1b1515ccdd9a91"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "At the end of your fixed rate period, choose to re-fix your interest rate for another fixed rate period or let it revert automatically to our standard variable interest rate",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "8c8ac9ecca3dec76bd7f"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Cancellation of the package : A package owner may cancel the package at any time by giving us 14 days advance notice in writing.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "c0c39a2091eefc0e128a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Complete your refinance loan application with FASTRefi. A faster and easier refinancing process compared to the standard way - so you could access your new Bank of Melbourne home loan in days, as opposed to weeks. Eligibility applies.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "7c7300f62f86e692bc21"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Family Pledge : Use the equity in a family member's home to help you on your home buying journey and maximise the amount you can borrow.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "2d785261b0e8ed3aa8d2"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Flexible repayments : Choose to make your repayments weekly, fortnightly or monthly",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "29c1280f319473cfcc79"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Interest in advance : Choose to pay interest in advance on investment loans and get 0.2% p.a. off the fixed interest rate for the interest in advance period.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "47c971e2cb215d41c9e6"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Loan Payment Method - Direct Credit, Direct Debit (preferred), Branch Payment, Internet or Phone Banking",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "7ae4e73a91ddd19f80d5"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Lock in a fixed rate - Lock in your fixed rate when you apply, so if rates rise before you settle, you won?t be affected (fees apply).",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "ecdc72aa6d85cc3ae342"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Option to Loan Split/Subsequent Loan Sequence",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "52f868eee4b631626834"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Statements of account : We will send you a statement of your loan account at least every six months or more frequently if you request",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "385f62b3272df1a148aa"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Substituting a security : You may ask us to accept a new mortgage over other land as a substitute for any mortgage which is security for your loan. We may agree to this if you satisfy any reasonable requirements that we have, such as repaying part of the loan amount. We will require the new mortgage to be provided at the same time that the existing mortgage is discharged. We charge a fee for substituting a mortgage or other security.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "f02387254c12daa1e9ec"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes Switching (from another product) feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "df1e5c8372cadc97cc2c"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a Relocation Loan End Debt feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "2c48d9d11359b9b691c3"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a combination loan feature.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "650376646303518df46b"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product provides options which includes reduced repayment, repayment holiday and portability features",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "cea2b3ee05bafeca8e7c"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.redraw",
+              "label": "Redraw",
+              "groupId": "0c0fa65340793f73",
+              "sourceType": "REDRAW",
+              "unit": "boolean",
+              "condition": "For loans fixed from 17 May 2020: During a fixed rate period, customers can only redraw available funds that have been paid into the loan during the fixed rate period, up to the prepayment threshold. The prepayment threshold is $30,000.For loans fixed before 17 May 2020: During the fixed rate period, customers can only redraw up to $10,000 in each 12-month period (anniversary year)",
+              "searchTerms": [
+                "Redraw",
+                "feature",
+                "redraw"
+              ],
+              "id": "465540195b53064a8307"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.relationship_management",
+              "label": "Relationship Management",
+              "groupId": "9419149ded529a78",
+              "sourceType": "RELATIONSHIP_MANAGEMENT",
+              "unit": "boolean",
+              "condition": "Relationship management is available for eligible customers.",
+              "searchTerms": [
+                "Relationship Management",
+                "feature",
+                "relationship management"
+              ],
+              "id": "922daf300afe7560e003"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "18",
+              "info": "Applicant should be 18 years or over"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Should be an Australian or New Zealand citizen(s) or permanent resident(s)"
+            },
+            {
+              "label": "OTHER",
+              "info": "Individuals, Trusts (individual and company trustees), Company, Partnership"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_LVR",
+              "value": "0.00"
+            },
+            {
+              "label": "MAX_LVR",
+              "value": "0.95"
+            },
+            {
+              "label": "MIN_LIMIT",
+              "value": "10000.00",
+              "info": "The minimum amount financed is $10,000"
+            },
+            {
+              "label": "MAX_LIMIT",
+              "value": "2000000.00",
+              "info": "The maximum amount financed is $2,000,000.00"
+            },
+            {
+              "label": "OTHER",
+              "info": "Maximum repayment term 30 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Owner occupier - Loan maximum interest only period 5 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Investment - Loan maximum interest only period 10 years"
+            }
+          ]
+        },
+        "AMP Bank GO|38f4aa26-6ef6-49c9-975d-8f41e2a0dfa9|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Business Save": {
+          "displayIdentity": {
+            "name": "AMP Bank GO Business Save",
+            "provider": "AMP Bank GO",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS"
+          },
+          "description": "Our new Business Save account makes earning interest easy. Simple savings with none of the regular catches; just interest adding up, day after day.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "75bbf5b7681745e8",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "ceb61078000021b2b650"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "2a338baea2a621f8",
+              "sourceType": "FRAUD_PROTECTION",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "c9d1f9227189afa8f9ce"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "bfaf4ac193d45791",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "44202a61dd3ea1728906"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "585af01aca232847",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Set and track your savings goals with Savings Spaces",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "8323dbd3a0b9b391833b"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "BUSINESS"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Business Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Business Account in order to open an AMP Bank GO Business Save account"
+            }
+          ]
+        },
+        "AMP Bank GO|7c034be5-b76d-4b26-959a-29ef8e045b7f|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Save": {
+          "displayIdentity": {
+            "name": "AMP Bank GO Save",
+            "provider": "AMP Bank GO",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS"
+          },
+          "description": "Our new simple savings account with none of the regular catches; just interest adding up, day after day.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "aad5812b30cdfbac",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "645c81965754ca7b4f25"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "2bd57145337c5d99",
+              "sourceType": "FRAUD_PROTECTION",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "5ae238fc39f7f6e887b5"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "9f5ef68014691a81",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "610332cdd4529696c773"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "76ec7a9171a40db9",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Set and track your savings goals with Savings Spaces",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "1d644a6f84bf6ef9b1cf"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "15"
+            },
+            {
+              "label": "NATURAL_PERSON"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Must be an Australian resident"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Account in order to open an AMP Bank GO Save account"
+            }
+          ]
+        },
+        "AMP Bank GO|10f2d091-ae31-4eea-ba32-490a88f08a23|TERM_DEPOSITS|AMP Bank GO 12 Month Business Term Deposit": {
+          "displayIdentity": {
+            "name": "AMP Bank GO 12 Month Business Term Deposit",
+            "provider": "AMP Bank GO",
+            "productCategory": "TERM_DEPOSITS"
+          },
+          "description": "12 Month Business Term Deposit via the AMP Bank GO app",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "306743771c382cfc",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "38ca53a883aea0123597"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "ba3fa92b3c88c666",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "7a62c5b95c397993837a"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "BUSINESS"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Business Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Business Account in order to open an AMP Bank GO Business Term Deposit"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "5000.00"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "10000000.00"
+            }
+          ]
+        },
+        "AMP Bank GO|10f39a51-6d9f-4911-a171-8a0681f2a9e0|TERM_DEPOSITS|AMP Bank GO 12 Month Term Deposit": {
+          "displayIdentity": {
+            "name": "AMP Bank GO 12 Month Term Deposit",
+            "provider": "AMP Bank GO",
+            "productCategory": "TERM_DEPOSITS"
+          },
+          "description": "12 Month Term Deposit via the AMP Bank GO app",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "fada4f938c063ccd",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "c21cffb1db1db4fbc359"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "d3b7888b1d0ab7ed",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "8d1f9357a6d1c5d1ccca"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "15"
+            },
+            {
+              "label": "NATURAL_PERSON"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Must be an Australian resident"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Account in order to open an AMP Bank GO Personal Term Deposit"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "5000.00"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "10000000.00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "date": "2026-09-26",
+      "source": {
+        "kind": "published_core",
+        "manifest_sha256": "39d0ce894cb8433c399183f4832de02a5da90ceb8410c6735b75bc6206fc905d",
+        "core_sha256": "f9d08e5cd5288c1d2506600a2d007d3dda5ad01b10b5f48b4b31bc6a601a8d09",
+        "details_sha256": "e5dea6e027f62e391efeb4ddf9f18cc2ca6c3cc5a37b3cd04d3d95250372623c"
+      },
+      "sections": {
+        "Mortgage": [
+          {
+            "provider": "Bank of Melbourne",
+            "product_id": "BOMHLBasic",
+            "product_key": "Bank of Melbourne|BOMHLBasic|RESIDENTIAL_MORTGAGES|Basic Variable Home Loan",
+            "product_name": "Basic Variable Home Loan",
+            "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.0629",
+            "comparison_rate": "0.063",
+            "rate_type": "VARIABLE",
+            "repayment_type": "PRINCIPAL_AND_INTEREST",
+            "loan_purpose": "OWNER_OCCUPIED",
+            "lvr_tier": "lvr_60-70%",
+            "ribbon_normalized": true,
+            "security_purpose": "owner_occupied",
+            "ribbon_repayment_type": "principal_and_interest",
+            "ribbon_rate_structure": "variable",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-08-13T08:39:30Z",
+            "taxonomy_path": "HOME_LOAN.OO.PI.VARIABLE.LVR_60_70"
+          },
+          {
+            "provider": "Bank of Melbourne",
+            "product_id": "BOMHLFixedRate",
+            "product_key": "Bank of Melbourne|BOMHLFixedRate|RESIDENTIAL_MORTGAGES|Fixed Rate Home Loan",
+            "product_name": "Fixed Rate Home Loan",
+            "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.0694",
+            "comparison_rate": "0.0863",
+            "rate_type": "FIXED",
+            "repayment_type": "PRINCIPAL_AND_INTEREST",
+            "loan_purpose": "OWNER_OCCUPIED",
+            "term": "P1Y",
+            "lvr_tier": "lvr_60-70%",
+            "ribbon_normalized": true,
+            "security_purpose": "owner_occupied",
+            "ribbon_repayment_type": "principal_and_interest",
+            "ribbon_rate_structure": "fixed",
+            "ribbon_fixed_term": "1",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-09-18T00:13:24Z",
+            "taxonomy_path": "HOME_LOAN.OO.PI.FIXED.12M.LVR_60_70"
+          }
+        ],
+        "Savings": [
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "38f4aa26-6ef6-49c9-975d-8f41e2a0dfa9",
+            "product_key": "AMP Bank GO|38f4aa26-6ef6-49c9-975d-8f41e2a0dfa9|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Business Save",
+            "product_name": "AMP Bank GO Business Save",
+            "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "rate": "0.0475",
+            "rate_type": "VARIABLE",
+            "ribbon_normalized": true,
+            "account_type": "savings",
+            "ribbon_deposit_kind": "base",
+            "balance_min": "0",
+            "balance_max": "500000",
+            "feature_set": "basic",
+            "account_class": "non_standard",
+            "rate_index": 1,
+            "last_updated": "2026-05-10T23:17:44.384Z",
+            "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+          },
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "7c034be5-b76d-4b26-959a-29ef8e045b7f",
+            "product_key": "AMP Bank GO|7c034be5-b76d-4b26-959a-29ef8e045b7f|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Save",
+            "product_name": "AMP Bank GO Save",
+            "category": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "rate": "0.0525",
+            "rate_type": "VARIABLE",
+            "ribbon_normalized": true,
+            "account_type": "savings",
+            "ribbon_deposit_kind": "base",
+            "balance_min": "0",
+            "balance_max": "50000",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-08-20T23:21:28.620Z",
+            "taxonomy_path": "SAVINGS.SAVINGS_ACCT.BASE.TIERED"
+          }
+        ],
+        "TD": [
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "10f2d091-ae31-4eea-ba32-490a88f08a23",
+            "product_key": "AMP Bank GO|10f2d091-ae31-4eea-ba32-490a88f08a23|TERM_DEPOSITS|AMP Bank GO 12 Month Business Term Deposit",
+            "product_name": "AMP Bank GO 12 Month Business Term Deposit",
+            "category": "TERM_DEPOSITS",
+            "rate": "0.053",
+            "rate_type": "FIXED",
+            "term": "P12M",
+            "term_months": "12",
+            "ribbon_normalized": true,
+            "ribbon_rate_structure": "base",
+            "ribbon_deposit_kind": "base",
+            "interest_payment": "at_maturity",
+            "feature_set": "basic",
+            "account_class": "non_standard",
+            "rate_index": 1,
+            "last_updated": "2026-07-31T04:22:07.510Z",
+            "taxonomy_path": "TERM_DEPOSIT.12M.AT_MATURITY.FLAT"
+          },
+          {
+            "provider": "AMP Bank GO",
+            "product_id": "10f39a51-6d9f-4911-a171-8a0681f2a9e0",
+            "product_key": "AMP Bank GO|10f39a51-6d9f-4911-a171-8a0681f2a9e0|TERM_DEPOSITS|AMP Bank GO 12 Month Term Deposit",
+            "product_name": "AMP Bank GO 12 Month Term Deposit",
+            "category": "TERM_DEPOSITS",
+            "rate": "0.053",
+            "rate_type": "FIXED",
+            "term": "P12M",
+            "term_months": "12",
+            "ribbon_normalized": true,
+            "ribbon_rate_structure": "base",
+            "ribbon_deposit_kind": "base",
+            "interest_payment": "at_maturity",
+            "feature_set": "basic",
+            "account_class": "standard",
+            "rate_index": 1,
+            "last_updated": "2026-07-31T04:31:24.912Z",
+            "taxonomy_path": "TERM_DEPOSIT.12M.AT_MATURITY.FLAT"
+          }
+        ]
+      },
+      "details": {
+        "Bank of Melbourne|BOMHLBasic|RESIDENTIAL_MORTGAGES|Basic Variable Home Loan": {
+          "displayIdentity": {
+            "name": "Basic Variable Home Loan",
+            "provider": "Bank of Melbourne",
+            "productCategory": "RESIDENTIAL_MORTGAGES"
+          },
+          "description": "Our no-frills variable home loan rate, with redraw and no establishment or ongoing monthly fees.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "3c4c3c8e882f6033",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "a8bef4b796c8b8791ebc"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.extra_repayments",
+              "label": "Extra Repayments",
+              "groupId": "939079432b662e4f",
+              "sourceType": "EXTRA_REPAYMENTS",
+              "unit": "boolean",
+              "condition": "Subject to terms and conditions, this product includes extra repayment features.",
+              "searchTerms": [
+                "Extra Repayments",
+                "extra repayments",
+                "feature"
+              ],
+              "id": "3ecea3811e4c8bb5dac3"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "7bbccf8f3783ceff",
+              "sourceType": "FRAUD_PROTECTION",
+              "unit": "boolean",
+              "condition": "The product includes fraud protection features.",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "80825fb8b43e243a508a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.guarantor",
+              "label": "Guarantor",
+              "groupId": "e8fcf25ed39e84d5",
+              "sourceType": "GUARANTOR",
+              "unit": "boolean",
+              "condition": "Subject to terms and conditions, this product includes guarantor features.",
+              "searchTerms": [
+                "Guarantor",
+                "feature",
+                "guarantor"
+              ],
+              "id": "21c00b100d95d88e807f"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Flexible repayments : Choose to make your repayments weekly, fortnightly or monthly",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "908091e284ee25539e45"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Limitless extra repayments: With no extra repayment fee or limits, you?re free to pay off your loan as fast as you like.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "6fe2981c30bd1b55704a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Loan Payment Method - Direct Credit, Direct Debit (preferred), Branch Payment, Internet or Phone Banking",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "cf38f27c03c52fc41833"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "No application fee: A no-frills home loan with $0 lending establishment fee.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "2c70dd7d9099ba5c5c09"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "No ongoing monthly fees: $0 monthly account-keeping fee. Other fees may apply",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "d26857cd20d306003822"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Option to Loan Split/Subsequent Loan Sequence",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "9b527ae014ab5ceb4c34"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Statements of account : We will send you a statement of your loan account at least every six months or more frequently if you request",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "d3ea90aea125a824fca1"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Substituting a security : You may ask us to accept a new mortgage over other land as a substitute for any mortgage which is security for your loan. We may agree to this if you satisfy any reasonable requirements that we have, such as repaying part of the loan amount. We will require the new mortgage to be provided at the same time that the existing mortgage is discharged. We charge a fee for substituting a mortgage or other security.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "ac749da7f4004415df32"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes Switching (from another product) feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "382b4282b41b7d5a826a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a Relocation Loan End Debt feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "a7471226e42f39e7c7ff"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a combination loan feature.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "7c934266a6b75b6969f3"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "7fa66b953b1089dd",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product provides options which includes reduced repayment, repayment holiday, portability and loan increase (top up) features",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "10c15a9cb2083bdaddb2"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.redraw",
+              "label": "Redraw",
+              "groupId": "82641ab4e365b21e",
+              "sourceType": "REDRAW",
+              "unit": "boolean",
+              "condition": "Flexibility: Fee-free options include unlimited redraw, Interest Only and reducing repayments if rates fall.",
+              "searchTerms": [
+                "Redraw",
+                "feature",
+                "redraw"
+              ],
+              "id": "a0db9eb87314ad9a3aeb"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.relationship_management",
+              "label": "Relationship Management",
+              "groupId": "68ed3c21bd8152f1",
+              "sourceType": "RELATIONSHIP_MANAGEMENT",
+              "unit": "boolean",
+              "condition": "Relationship management is available for eligible customers.",
+              "searchTerms": [
+                "Relationship Management",
+                "feature",
+                "relationship management"
+              ],
+              "id": "1d50fc228e3f3def685c"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "18",
+              "info": "Applicant should be 18 years or over"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Should be an Australian or New Zealand citizen(s) or permanent resident(s)"
+            },
+            {
+              "label": "OTHER",
+              "info": "Individuals Only"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_LVR",
+              "value": "0.00"
+            },
+            {
+              "label": "MAX_LVR",
+              "value": "0.95"
+            },
+            {
+              "label": "MIN_LIMIT",
+              "value": "30000.00",
+              "info": "The minimum amount financed is $30,000"
+            },
+            {
+              "label": "MAX_LIMIT",
+              "value": "5000000.00",
+              "info": "The maximum amount financed is $5,000,000.00"
+            },
+            {
+              "label": "OTHER",
+              "info": "Maximum repayment term 30 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Owner occupier - Loan maximum interest only period 5 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Investment - Loan maximum interest only period 10 years"
+            }
+          ]
+        },
+        "Bank of Melbourne|BOMHLFixedRate|RESIDENTIAL_MORTGAGES|Fixed Rate Home Loan": {
+          "displayIdentity": {
+            "name": "Fixed Rate Home Loan",
+            "provider": "Bank of Melbourne",
+            "productCategory": "RESIDENTIAL_MORTGAGES"
+          },
+          "description": "Lock in a little certainty with a fixed interest rate for 1-5 years.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.complementary_product_discounts",
+              "label": "Complementary Product Discounts",
+              "groupId": "e8358bb1a0e13145",
+              "sourceType": "COMPLEMENTARY_PRODUCT_DISCOUNTS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Complementary Product Discounts",
+                "complementary product discounts",
+                "feature"
+              ],
+              "id": "6888cab7e3af893b4b27"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "7366e1c3acc1b9f3",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "8298db00bb8dbd8162e5"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.extra_repayments",
+              "label": "Extra Repayments",
+              "groupId": "efe4518e47a99d48",
+              "sourceType": "EXTRA_REPAYMENTS",
+              "unit": "boolean",
+              "condition": "Prepayment Thresholds apply. For loans originated prior to 18 Aug 2019 - $10,000 in each 12 month period (starting from the date the relevant fixed rate period started). For loans originated after 18 Aug 2019 - $30,000 for the entire fixed rate period.",
+              "searchTerms": [
+                "Extra Repayments",
+                "extra repayments",
+                "feature"
+              ],
+              "id": "9d5487ce595666364c2b"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "469216201a48ab65",
+              "sourceType": "FRAUD_PROTECTION",
+              "unit": "boolean",
+              "condition": "The product includes fraud protection features.",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "ab1657961ed379b0a510"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.guarantor",
+              "label": "Guarantor",
+              "groupId": "872081b61f7c18c3",
+              "sourceType": "GUARANTOR",
+              "unit": "boolean",
+              "condition": "Subject to terms and conditions, this product includes guarantor features.",
+              "searchTerms": [
+                "Guarantor",
+                "feature",
+                "guarantor"
+              ],
+              "id": "84f0ab1b1515ccdd9a91"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "At the end of your fixed rate period, choose to re-fix your interest rate for another fixed rate period or let it revert automatically to our standard variable interest rate",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "8c8ac9ecca3dec76bd7f"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Cancellation of the package : A package owner may cancel the package at any time by giving us 14 days advance notice in writing.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "c0c39a2091eefc0e128a"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Complete your refinance loan application with FASTRefi. A faster and easier refinancing process compared to the standard way - so you could access your new Bank of Melbourne home loan in days, as opposed to weeks. Eligibility applies.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "7c7300f62f86e692bc21"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Family Pledge : Use the equity in a family member's home to help you on your home buying journey and maximise the amount you can borrow.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "2d785261b0e8ed3aa8d2"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Flexible repayments : Choose to make your repayments weekly, fortnightly or monthly",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "29c1280f319473cfcc79"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Interest in advance : Choose to pay interest in advance on investment loans and get 0.2% p.a. off the fixed interest rate for the interest in advance period.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "47c971e2cb215d41c9e6"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Loan Payment Method - Direct Credit, Direct Debit (preferred), Branch Payment, Internet or Phone Banking",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "7ae4e73a91ddd19f80d5"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Lock in a fixed rate - Lock in your fixed rate when you apply, so if rates rise before you settle, you won?t be affected (fees apply).",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "ecdc72aa6d85cc3ae342"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Option to Loan Split/Subsequent Loan Sequence",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "52f868eee4b631626834"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Statements of account : We will send you a statement of your loan account at least every six months or more frequently if you request",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "385f62b3272df1a148aa"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Substituting a security : You may ask us to accept a new mortgage over other land as a substitute for any mortgage which is security for your loan. We may agree to this if you satisfy any reasonable requirements that we have, such as repaying part of the loan amount. We will require the new mortgage to be provided at the same time that the existing mortgage is discharged. We charge a fee for substituting a mortgage or other security.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "f02387254c12daa1e9ec"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes Switching (from another product) feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "df1e5c8372cadc97cc2c"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a Relocation Loan End Debt feature",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "2c48d9d11359b9b691c3"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product includes a combination loan feature.",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "650376646303518df46b"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "f7a923a4316a388f",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "The product provides options which includes reduced repayment, repayment holiday and portability features",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "cea2b3ee05bafeca8e7c"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.redraw",
+              "label": "Redraw",
+              "groupId": "0c0fa65340793f73",
+              "sourceType": "REDRAW",
+              "unit": "boolean",
+              "condition": "For loans fixed from 17 May 2020: During a fixed rate period, customers can only redraw available funds that have been paid into the loan during the fixed rate period, up to the prepayment threshold. The prepayment threshold is $30,000.For loans fixed before 17 May 2020: During the fixed rate period, customers can only redraw up to $10,000 in each 12-month period (anniversary year)",
+              "searchTerms": [
+                "Redraw",
+                "feature",
+                "redraw"
+              ],
+              "id": "465540195b53064a8307"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.relationship_management",
+              "label": "Relationship Management",
+              "groupId": "9419149ded529a78",
+              "sourceType": "RELATIONSHIP_MANAGEMENT",
+              "unit": "boolean",
+              "condition": "Relationship management is available for eligible customers.",
+              "searchTerms": [
+                "Relationship Management",
+                "feature",
+                "relationship management"
+              ],
+              "id": "922daf300afe7560e003"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "18",
+              "info": "Applicant should be 18 years or over"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Should be an Australian or New Zealand citizen(s) or permanent resident(s)"
+            },
+            {
+              "label": "OTHER",
+              "info": "Individuals, Trusts (individual and company trustees), Company, Partnership"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_LVR",
+              "value": "0.00"
+            },
+            {
+              "label": "MAX_LVR",
+              "value": "0.95"
+            },
+            {
+              "label": "MIN_LIMIT",
+              "value": "10000.00",
+              "info": "The minimum amount financed is $10,000"
+            },
+            {
+              "label": "MAX_LIMIT",
+              "value": "2000000.00",
+              "info": "The maximum amount financed is $2,000,000.00"
+            },
+            {
+              "label": "OTHER",
+              "info": "Maximum repayment term 30 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Owner occupier - Loan maximum interest only period 5 years"
+            },
+            {
+              "label": "OTHER",
+              "info": "Investment - Loan maximum interest only period 10 years"
+            }
+          ]
+        },
+        "AMP Bank GO|38f4aa26-6ef6-49c9-975d-8f41e2a0dfa9|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Business Save": {
+          "displayIdentity": {
+            "name": "AMP Bank GO Business Save",
+            "provider": "AMP Bank GO",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS"
+          },
+          "description": "Our new Business Save account makes earning interest easy. Simple savings with none of the regular catches; just interest adding up, day after day.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "75bbf5b7681745e8",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "ceb61078000021b2b650"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "2a338baea2a621f8",
+              "sourceType": "FRAUD_PROTECTION",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "c9d1f9227189afa8f9ce"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "bfaf4ac193d45791",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "44202a61dd3ea1728906"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "585af01aca232847",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Set and track your savings goals with Savings Spaces",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "8323dbd3a0b9b391833b"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "BUSINESS"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Business Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Business Account in order to open an AMP Bank GO Business Save account"
+            }
+          ]
+        },
+        "AMP Bank GO|7c034be5-b76d-4b26-959a-29ef8e045b7f|TRANS_AND_SAVINGS_ACCOUNTS|AMP Bank GO Save": {
+          "displayIdentity": {
+            "name": "AMP Bank GO Save",
+            "provider": "AMP Bank GO",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS"
+          },
+          "description": "Our new simple savings account with none of the regular catches; just interest adding up, day after day.",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "aad5812b30cdfbac",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "645c81965754ca7b4f25"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.fraud_protection",
+              "label": "Fraud Protection",
+              "groupId": "2bd57145337c5d99",
+              "sourceType": "FRAUD_PROTECTION",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Fraud Protection",
+                "feature",
+                "fraud protection"
+              ],
+              "id": "5ae238fc39f7f6e887b5"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "9f5ef68014691a81",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "610332cdd4529696c773"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.other",
+              "label": "Other",
+              "groupId": "76ec7a9171a40db9",
+              "sourceType": "OTHER",
+              "unit": "boolean",
+              "condition": "Set and track your savings goals with Savings Spaces",
+              "searchTerms": [
+                "Other",
+                "feature",
+                "other"
+              ],
+              "id": "1d644a6f84bf6ef9b1cf"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "15"
+            },
+            {
+              "label": "NATURAL_PERSON"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Must be an Australian resident"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Account in order to open an AMP Bank GO Save account"
+            }
+          ]
+        },
+        "AMP Bank GO|10f2d091-ae31-4eea-ba32-490a88f08a23|TERM_DEPOSITS|AMP Bank GO 12 Month Business Term Deposit": {
+          "displayIdentity": {
+            "name": "AMP Bank GO 12 Month Business Term Deposit",
+            "provider": "AMP Bank GO",
+            "productCategory": "TERM_DEPOSITS"
+          },
+          "description": "12 Month Business Term Deposit via the AMP Bank GO app",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "306743771c382cfc",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "38ca53a883aea0123597"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "ba3fa92b3c88c666",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "7a62c5b95c397993837a"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "BUSINESS"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Business Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Business Account in order to open an AMP Bank GO Business Term Deposit"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "5000.00"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "10000000.00"
+            }
+          ]
+        },
+        "AMP Bank GO|10f39a51-6d9f-4911-a171-8a0681f2a9e0|TERM_DEPOSITS|AMP Bank GO 12 Month Term Deposit": {
+          "displayIdentity": {
+            "name": "AMP Bank GO 12 Month Term Deposit",
+            "provider": "AMP Bank GO",
+            "productCategory": "TERM_DEPOSITS"
+          },
+          "description": "12 Month Term Deposit via the AMP Bank GO app",
+          "facts": [
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.digital_banking",
+              "label": "Digital Banking",
+              "groupId": "fada4f938c063ccd",
+              "sourceType": "DIGITAL_BANKING",
+              "value": true,
+              "unit": "boolean",
+              "searchTerms": [
+                "Digital Banking",
+                "digital banking",
+                "feature"
+              ],
+              "id": "c21cffb1db1db4fbc359"
+            },
+            {
+              "kind": "feature",
+              "canonicalKey": "feature.notifications",
+              "label": "Notifications",
+              "groupId": "d3b7888b1d0ab7ed",
+              "sourceType": "NOTIFICATIONS",
+              "unit": "boolean",
+              "searchTerms": [
+                "Notifications",
+                "feature",
+                "notifications"
+              ],
+              "id": "8d1f9357a6d1c5d1ccca"
+            }
+          ],
+          "eligibility": [
+            {
+              "label": "MIN_AGE",
+              "value": "15"
+            },
+            {
+              "label": "NATURAL_PERSON"
+            },
+            {
+              "label": "RESIDENCY_STATUS",
+              "value": "Must be an Australian resident"
+            },
+            {
+              "label": "OTHER",
+              "value": "Linked Transaction Account",
+              "info": "Customers must have an active AMP Bank GO Everyday Account in order to open an AMP Bank GO Personal Term Deposit"
+            }
+          ],
+          "constraints": [
+            {
+              "label": "MIN_BALANCE",
+              "value": "5000.00"
+            },
+            {
+              "label": "MAX_BALANCE",
+              "value": "10000000.00"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

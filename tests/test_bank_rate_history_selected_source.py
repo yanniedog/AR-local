@@ -69,6 +69,7 @@ def test_selected_revision_wins_over_original_and_newer_unselected_export(tmp_pa
     expected = deepcopy(actual)
     attach_history(expected, [(DAY, {section: data["rates"] for section, data in actual["sections"].items()})], [DAY])
     embed_bank_rate_history(actual, original)
+    assert actual.pop("bank_rate_history_catalogue")["schema_version"] == 2
     assert actual == expected
     assert all(path.read_bytes() == raw for path, raw in before.items())
 
@@ -225,3 +226,49 @@ def test_rolling_tiers_reuse_aggregate_read_pass(tmp_path, banks, monkeypatch):
     builder._compute_payload(exports)
     # Current catalogue, combined tier/aggregate pass, and existing spread pass.
     assert len(reads) == 3
+
+
+def test_current_payload_rejects_an_unselected_export_before_building(tmp_path, banks):
+    from app_payload_build import _compute_payload
+    original = save_export(tmp_path, {**banks, "rates": banks["rates"][:-1]})
+    save_export(tmp_path, banks, "corrected")
+    with pytest.raises(ValueError, match="not the selected observation"):
+        _compute_payload(original)
+
+
+def test_unknown_observation_breaks_aggregate_rate_move_chain(tmp_path, monkeypatch):
+    import app_payload_mobile as mobile
+    from cdr_ribbon_normalize import normalized_rate_value
+    fixture = json.loads(FIXTURE.read_bytes())["observations"]
+    stream = []
+    for observation in fixture[-3:]:
+        day = observation["date"]
+        rows = observation["queries"]["bank_rates"]["rows"]
+        folder = tmp_path / "dashboard-cache" / day
+        folder.mkdir(parents=True)
+        (folder / "banks.json").write_text(json.dumps({"run_date": day, "rates": rows}), encoding="utf-8")
+        # Missing selected source is an explicit storage/evidence fault control.
+        stream.append((day, [] if day == "2026-09-12" else rows))
+    seen = []
+    original = mobile._provider_events
+
+    def events(day, section, previous, providers):
+        seen.append((day, section, deepcopy(previous)))
+        return original(day, section, previous, providers)
+
+    monkeypatch.setattr(mobile, "_provider_events", events)
+    mobile.build_history_assets(tmp_path, run_date=DAY, load_json=lambda path: json.loads(path.read_bytes()),
+                                section_filter=section_filter, normalized_rate_value=normalized_rate_value,
+                                observations=iter(stream), rba_calendar=[])
+    assert any(day == DAY and section == "Savings" for day, section, _ in seen)
+    assert all(not previous for day, _, previous in seen if day == DAY)
+
+
+def test_retained_evidence_does_not_borrow_identity_or_later_details(banks):
+    from app_payload_bank_catalogue import retained_evidence
+    product = banks["products"][0]
+    key = product["product_key"]
+    assert retained_evidence([product])[key]["status"] == "known"
+    assert retained_evidence([{**product, "details_json": "{}"}])[key] == {"status": "unknown"}
+    corrupt = {**product, "provider": "identity mismatch control"}
+    assert key not in retained_evidence([product, corrupt])

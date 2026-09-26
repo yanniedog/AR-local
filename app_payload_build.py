@@ -342,6 +342,8 @@ def _compute_payload(
     run_date = str(latest.get("run_date") or "")
     if not run_date:
         raise ValueError("latest.json has no run_date")
+    from app_payload_bank_rate_source import require_selected_current_export
+    require_selected_current_export(exports_dir, run_date)
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []

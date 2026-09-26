@@ -91,6 +91,7 @@ def attach_history(core, observations, dates):
 
 def bank_rate_history_rows(core, exports_dir):
     """Encode tiers while yielding each selected day's rows to other reducers."""
+    from app_payload_bank_catalogue import HistoricalCatalogue, UNKNOWN, retained_evidence
     observed = _history_dates(exports_dir, core["run_date"])
     if not observed:
         return
@@ -100,16 +101,23 @@ def bank_rate_history_rows(core, exports_dir):
         raise ValueError("Bank-rate history date range exceeds budget")
     dates = [(start + timedelta(days=i)).isoformat() for i in range(count)]
     history = _History(core, dates)
-    unavailable = {}
+    catalogue = HistoricalCatalogue(dates)
+    unavailable, sources = {}, {}
     for day in observed:
-        rows = [row for row in (historical_banks(exports_dir, day, unavailable).get("rates") or [])
+        banks = historical_banks(exports_dir, day, unavailable, sources)
+        rows = [row for row in (banks.get("rates") or [])
                 if isinstance(row, dict)]
-        history.observe(day, {section: [compact({k: row.get(k) for k in CORE_RATE_FIELDS})
+        sections = {section: [compact({k: row.get(k) for k in CORE_RATE_FIELDS})
                                        for row in rows if row.get("dataset") == section
                                        and section_filter(section, row)]
-                              for section in VALID_SECTIONS})
+                              for section in VALID_SECTIONS}
+        history.observe(day, sections)
+        evidence = retained_evidence(banks.get("products"))
+        catalogue.observe(day, sections, lambda row, section: evidence.get(row.get("product_key"), UNKNOWN),
+                          sources.get(day))
         yield day, rows
     history.finish(unavailable)
+    core["bank_rate_history_catalogue"] = catalogue.finish(unavailable)
 
 
 def embed_bank_rate_history(core, exports_dir):
