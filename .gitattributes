@@ -9,6 +9,7 @@ tests/fixtures/cdr-canary-2026-09-07/*.json -text
 tests/fixtures/rate_conditions/*.json -text
 tests/fixtures/bankwest_easy_saver_real_2026-09-13.json -text
 tests/fixtures/bankwest_history_real_2026-09-06_to_13.json -text
+tests/fixtures/bank_rate_catalogue_real_2026-05-19_2026-09-26.json -text whitespace=cr-at-eol
 
 # Receipt-binding execution evidence retains its recorded bytes on both hosts.
 docs/evidence/recovery-receipt-binding-20260908/* -text
