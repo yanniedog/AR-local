@@ -104,8 +104,9 @@ def retained_evidence(products):
     if not isinstance(products, list):
         return {}
     for product in products:
-        if isinstance(product, dict) and product.get("product_key"):
-            groups.setdefault(product["product_key"], []).append(product)
+        key = product.get("product_key") if isinstance(product, dict) else None
+        if isinstance(key, str) and key.strip():
+            groups.setdefault(key, []).append(product)
     result = {}
     for key, group in groups.items():
         candidates = []
