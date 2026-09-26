@@ -151,6 +151,45 @@ def test_corrupt_single_contract_is_not_treated_as_uncontracted_legacy(tmp_path,
         historical_banks(original, DAY, {})
 
 
+@pytest.mark.parametrize("rates", [None, "corrupt", {}, [None], ["corrupt"]])
+def test_malformed_legacy_rates_are_rejected_instead_of_blank_history(tmp_path, banks, rates):
+    exports = save_export(tmp_path, banks, finalize=False)
+    path = exports / "dashboard-cache" / DAY / "banks.json"
+    # Invalid container shapes are storage fault controls, never financial rows.
+    path.write_text(json.dumps({**banks, "rates": rates}), encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid rates schema"):
+        historical_banks(exports, DAY, {})
+
+
+def test_shared_observed_axis_preserves_calendar_gap_with_real_bankwest_rows(tmp_path, banks):
+    from app_payload_bank_rates import bank_rate_history_rows
+    from app_payload_mobile import build_history_assets
+    from cdr_ribbon_normalize import normalized_rate_value
+
+    observations = json.loads(FIXTURE.read_bytes())["observations"]
+    days = ["2026-09-06", DAY]
+    for day in days:
+        observation = next(row for row in observations if row["date"] == day)
+        products = observation["queries"]["bank_products"]["rows"]
+        rows = [{"category": products[0]["category"], **row}
+                for row in observation["queries"]["bank_rates"]["rows"]]
+        folder = tmp_path / "dashboard-cache" / day
+        folder.mkdir(parents=True)
+        (folder / "banks.json").write_text(json.dumps({"run_date": day, "rates": rows}), encoding="utf-8")
+    core = current_core(banks)
+    _, aggregate = build_history_assets(
+        tmp_path, run_date=DAY, load_json=lambda path: json.loads(path.read_bytes()),
+        section_filter=section_filter, normalized_rate_value=normalized_rate_value,
+        observations=bank_rate_history_rows(core, tmp_path), rba_calendar=[])
+    assert aggregate["run_dates"] == days
+    history = core["bank_rate_history"]
+    assert len(history["run_dates"]) == 8
+    assert history["run_dates"][0] == days[0] and history["run_dates"][-1] == days[-1]
+    savings_spans = [span for series in history["sections"]["Savings"] for span in series]
+    assert savings_spans
+    assert all(start in (0, 7) and length == 1 for start, length, _ in savings_spans)
+
+
 def test_standalone_dated_and_rolling_cores_have_identical_complete_history(tmp_path, banks, monkeypatch):
     import app_payload_build as builder
     exports = save_export(tmp_path, banks)
