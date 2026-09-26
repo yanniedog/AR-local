@@ -84,6 +84,23 @@ def test_historical_selection_still_wins_after_global_pointer_advances(tmp_path,
     assert selected != original
 
 
+def test_historical_refusal_then_acceptance_of_same_generation_keeps_accepted_source(tmp_path, banks):
+    from cdr_atomic import canonical_json_bytes
+    original = save_export(tmp_path, {**banks, "rates": banks["rates"][:-1]})
+    save_export(tmp_path, banks, "corrected")
+    (tmp_path / "state/observation-pointers-v2/latest-observation.json").unlink()
+    folder = tmp_path / "state/observation-selections-v1" / DAY
+    accepted = json.loads(next(folder.glob("*.json")).read_bytes())
+    assert accepted["selected"] is True
+    # Operational receipt replay mirrors the real Sep13 refusal/reconsideration;
+    # the immutable candidate, events and financial source rows are unchanged.
+    refused = {**accepted, "selected": False,
+               "reason": "previously_captured_products_missing_without_fresh_withdrawal"}
+    raw = canonical_json_bytes(refused)
+    (folder / (hashlib.sha256(raw).hexdigest() + ".json")).write_bytes(raw)
+    assert historical_banks(original, DAY, {}) == banks
+
+
 @pytest.mark.parametrize("fault", ["bytes", "missing", "symlink"])
 def test_selected_source_corruption_never_falls_back_to_original(tmp_path, banks, fault):
     original = save_export(tmp_path, {**banks, "rates": banks["rates"][:-1]})
