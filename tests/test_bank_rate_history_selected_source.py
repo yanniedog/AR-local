@@ -148,3 +148,24 @@ def test_standalone_dated_and_rolling_cores_have_identical_complete_history(tmp_
         assert any(core["bank_rate_history"]["sections"]["Savings"])
         results.append(manifest["files"]["core"]["sha256"])
     assert results[0] == results[1]
+
+
+def test_rolling_tiers_reuse_aggregate_read_pass(tmp_path, banks, monkeypatch):
+    import app_payload_build as builder
+    exports = save_export(tmp_path, banks)
+    monkeypatch.setattr(builder.cdr_brand_logos, "fetch_register_logos", lambda **_: {})
+    monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
+    target = exports / "dashboard-cache" / DAY / "banks.json"
+    reads = []
+    for method in ("read_bytes", "read_text"):
+        original = getattr(Path, method)
+
+        def read(path, *args, _read=original, **kwargs):
+            if path == target:
+                reads.append(path)
+            return _read(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, method, read)
+    builder._compute_payload(exports)
+    # Current catalogue, combined tier/aggregate pass, and existing spread pass.
+    assert len(reads) == 3

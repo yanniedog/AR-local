@@ -434,7 +434,6 @@ def _compute_payload(
     history_banks = None
     bank_history = None
     bank_spread_history = None
-    app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
     if include_history:
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
@@ -450,6 +449,7 @@ def _compute_payload(
             normalized_rate_value=_normalized_rate_value,
             schema_version=SCHEMA_VERSION,
             rba_calendar=rba_decision_models,
+            observations=app_payload_bank_rates.bank_rate_history_rows(core, exports_dir),
         )
         bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
             exports_dir,
@@ -459,6 +459,8 @@ def _compute_payload(
             load_json=_load_json,
             schema_version=SCHEMA_VERSION,
         )
+    else:
+        app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
         "core": core,

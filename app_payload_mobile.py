@@ -227,6 +227,7 @@ def build_history_assets(
     normalized_rate_value,
     schema_version=1,
     rba_calendar=None,
+    observations=None,
 ):
     """Single pass over the daily banks.json snapshots producing BOTH mobile history assets:
 
@@ -253,11 +254,17 @@ def build_history_assets(
     events: List[Dict[str, Any]] = []
     prev_best: Dict[str, Dict[str, Dict[str, float]]] = {section: {} for section in VALID_SECTIONS}
 
-    for date in dates:
+    def default_observations():
+        for day in dates:
+            path = _banks(exports_dir, day)
+            yield day, [] if path is None else [
+                row for row in (load_json(path).get("rates") or []) if isinstance(row, dict)]
+
+    for index, (date, rates) in enumerate(default_observations() if observations is None else observations):
+        if index >= len(dates) or date != dates[index]:
+            raise ValueError("History observations differ from the declared dates")
         stats_for_day: Dict[str, Dict[str, Tuple[float, float, int]]] = {}
-        path = _banks(exports_dir, date)
-        if path:
-            rates = [row for row in (load_json(path).get("rates") or []) if isinstance(row, dict)]
+        if rates:
             for section in VALID_SECTIONS:
                 rows = [
                     row
@@ -282,6 +289,9 @@ def build_history_assets(
                     provider: bucket["best_by_product"] for provider, bucket in providers.items()
                 }
         day_stats.append(stats_for_day)
+
+    if len(day_stats) != len(dates):
+        raise ValueError("History observations are incomplete")
 
     sections = {
         section: {"points": points}

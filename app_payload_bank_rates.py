@@ -37,43 +37,60 @@ def rate_percent(value):
     return number if number > 1 else number * 100
 
 
-def attach_history(core, observations, dates):
-    """One pass, bounded memory: keep encoded tier series, never daily catalogues."""
-    ids, sections, row_tiers = {}, {}, {}
-    for section in VALID_SECTIONS:
-        ids[section], sections[section], row_tiers[section] = {}, [], []
-        for row in core["sections"][section]["rates"]:
-            key = tier_signature(row)
-            if key not in ids[section]:
-                ids[section][key] = len(sections[section])
-                sections[section].append([])
-            row_tiers[section].append(ids[section][key])
-    date_index = {day: index for index, day in enumerate(dates)}
-    seen = set()
-    for day, rows_by_section in observations:
-        if day not in date_index or day in seen:
+class _History:
+    """One pass, bounded memory: encoded tier series, never daily catalogues."""
+
+    def __init__(self, core, dates):
+        self.core, self.dates = core, dates
+        self.ids, self.sections, self.row_tiers = {}, {}, {}
+        self.date_index = {day: index for index, day in enumerate(dates)}
+        self.seen = set()
+        for section in VALID_SECTIONS:
+            self.ids[section], self.sections[section], self.row_tiers[section] = {}, [], []
+            for row in core["sections"][section]["rates"]:
+                key = tier_signature(row)
+                if key not in self.ids[section]:
+                    self.ids[section][key] = len(self.sections[section])
+                    self.sections[section].append([])
+                self.row_tiers[section].append(self.ids[section][key])
+
+    def observe(self, day, rows_by_section):
+        if day not in self.date_index or day in self.seen:
             raise ValueError("Unknown or duplicate bank-rate observation date")
-        seen.add(day)
-        index = date_index[day]
+        self.seen.add(day)
+        index = self.date_index[day]
         for section in VALID_SECTIONS:
             buckets = {}
             for row in rows_by_section.get(section, []):
-                tier = ids[section].get(tier_signature(row))
+                tier = self.ids[section].get(tier_signature(row))
                 value = rate_percent(row.get("rate"))
                 if tier is not None and value is not None:
                     buckets.setdefault(tier, []).append(value)
             for tier, values in buckets.items():
                 values.sort()
-                spans = sections[section][tier]
+                spans = self.sections[section][tier]
                 if spans and spans[-1][0] + spans[-1][1] == index and spans[-1][2] == values:
                     spans[-1][1] += 1
                 else:
                     spans.append([index, 1, values])
-    core["bank_rate_history"] = {"schema_version": 1, "run_dates": dates,
-                                 "row_tiers": row_tiers, "sections": sections}
+    def finish(self, unavailable=None):
+        self.core["bank_rate_history"] = {
+            "schema_version": 1, "run_dates": self.dates,
+            "row_tiers": self.row_tiers, "sections": self.sections,
+        }
+        if unavailable:
+            self.core["bank_rate_history"]["unavailable_dates"] = unavailable
 
 
-def embed_bank_rate_history(core, exports_dir):
+def attach_history(core, observations, dates):
+    history = _History(core, dates)
+    for day, rows in observations:
+        history.observe(day, rows)
+    history.finish()
+
+
+def bank_rate_history_rows(core, exports_dir):
+    """Encode tiers while yielding each selected day's rows to other reducers."""
     observed = _history_dates(exports_dir, core["run_date"])
     if not observed:
         return
@@ -82,17 +99,19 @@ def embed_bank_rate_history(core, exports_dir):
     if not 0 < count <= 5000:
         raise ValueError("Bank-rate history date range exceeds budget")
     dates = [(start + timedelta(days=i)).isoformat() for i in range(count)]
-
+    history = _History(core, dates)
     unavailable = {}
+    for day in observed:
+        rows = [row for row in (historical_banks(exports_dir, day, unavailable).get("rates") or [])
+                if isinstance(row, dict)]
+        history.observe(day, {section: [compact({k: row.get(k) for k in CORE_RATE_FIELDS})
+                                       for row in rows if row.get("dataset") == section
+                                       and section_filter(section, row)]
+                              for section in VALID_SECTIONS})
+        yield day, rows
+    history.finish(unavailable)
 
-    def observations():
-        for day in observed:
-            rows = historical_banks(exports_dir, day, unavailable).get("rates") or []
-            yield day, {section: [compact({k: row.get(k) for k in CORE_RATE_FIELDS})
-                                 for row in rows if isinstance(row, dict)
-                                 and row.get("dataset") == section and section_filter(section, row)]
-                        for section in VALID_SECTIONS}
 
-    attach_history(core, observations(), dates)
-    if unavailable:
-        core["bank_rate_history"]["unavailable_dates"] = unavailable
+def embed_bank_rate_history(core, exports_dir):
+    for _ in bank_rate_history_rows(core, exports_dir):
+        pass
