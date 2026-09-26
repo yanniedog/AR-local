@@ -37,6 +37,8 @@ def require_selected_current_export(exports_dir: Path, day: str) -> None:
     candidates += list((root / day).glob("_revisions/*/_exports/dashboard-cache/" + day + "/banks.json"))
     if len(candidates) > 1:
         raise ValueError("Current payload has unresolved competing exports")
+    if len(candidates) != 1 or candidates[0].parents[2].resolve() != exports_dir.resolve():
+        raise ValueError("Current payload export is not the sole retained legacy observation")
 
 
 def _verified_contract(state: Path, day: str, selected: dict) -> dict:

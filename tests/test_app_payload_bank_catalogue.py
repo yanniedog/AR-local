@@ -103,10 +103,11 @@ def public_cache(tmp_path, observations):
     return root, hashlib.sha256(raw).hexdigest()
 
 
-def test_private_prepack_verifies_complete_sources_without_changing_input(tmp_path, observations):
+@pytest.mark.parametrize("nested", [False, True])
+def test_private_prepack_verifies_complete_sources_without_changing_input(tmp_path, observations, nested):
     root, index_sha = public_cache(tmp_path, observations)
     before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in root.rglob("*") if path.is_file()}
-    output = tmp_path / "derived"
+    output = (root if nested else tmp_path) / "derived"
     report = prepack(root, output, index_sha256=index_sha)
     core = json.loads((output / "core.json").read_bytes())
     assert core["bank_rate_history_catalogue"]["sections"] == packed(observations)["sections"]
