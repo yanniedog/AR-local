@@ -31,7 +31,7 @@ def historical_contract(state: Path, run_date: str) -> dict | None:
         if event['contract_digest'] != contract['contract_digest']:
             raise ValueError('Historical event/contract mismatch')
         contracts[generation], events[generation] = contract, event['event_digest']
-    decisions = {}
+    decisions, decision_states = {}, {}
     for path in (state / 'observation-selections-v1' / run_date).glob('*.json'):
         decision = json.loads(safe_child(state, path.relative_to(state).as_posix()).read_bytes())
         if (not isinstance(decision, dict)
@@ -40,11 +40,23 @@ def historical_contract(state: Path, run_date: str) -> dict | None:
                 or type(decision.get('selected')) is not bool):
             raise ValueError('Invalid historical selection receipt')
         candidate, previous = decision['candidate_generation_id'], decision['previous_generation_id']
-        if (candidate == previous or candidate in decisions or candidate not in events
+        if (candidate == previous or candidate not in events
                 or previous not in events or decision['candidate_event_digest'] != events[candidate]
                 or decision['previous_event_digest'] != events[previous]):
             raise ValueError('Historical selection binding differs')
-        decisions[candidate] = decision
+        prior = decisions.get(candidate)
+        if prior is not None:
+            # A refusal can be reconsidered after explicit scope evidence is
+            # reconciled (the retained 13 Sep repair has both receipts). An
+            # accepted immutable selection wins over its same-pair refusal;
+            # duplicate decisions or a different predecessor stay ambiguous.
+            if (prior['previous_generation_id'] != previous
+                    or decision['selected'] in decision_states[candidate]):
+                raise ValueError('Historical selection binding differs')
+            decisions[candidate] = decision if decision['selected'] else prior
+        else:
+            decisions[candidate] = decision
+        decision_states.setdefault(candidate, set()).add(decision['selected'])
     initial = set(contracts) - set(decisions)
     if len(initial) != 1 or len(decisions) != len(contracts) - 1:
         raise ValueError('Historical selection history incomplete')

@@ -227,8 +227,8 @@ def build_payload(
     if executable_v4_root is not None:
         from cdr_terms.executable_v4_contract import require_publication_ready
         require_publication_ready()
-    # Only the rolling release ships search-index + history assets (see _package's
-    # is_rolling_tag gate), so a dated build needn't compute them at all.
+    # Only the rolling release ships separate search/aggregate history assets.
+    # Every core, including a standalone dated core, embeds exact-tier history.
     data = _compute_payload(
         exports_dir,
         dashboard_dir=dashboard_dir,
@@ -335,9 +335,8 @@ def _compute_payload(
     """Parse the run's exports into the (tag-independent) payload data.
 
     Parsing the multi-MB current banks.json is always needed (core/details). The
-    search index and history scan — the most expensive part, and rolling-only — are
-    computed only when ``include_history`` is set, so the dated build and the
-    skip-rolling backfill path don't pay for assets no release will ship.
+    Exact-tier history belongs to every core. The separate search index and
+    aggregate history assets are computed only when ``include_history`` is set.
     """
     latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
     run_date = str(latest.get("run_date") or "")
@@ -436,7 +435,6 @@ def _compute_payload(
     bank_history = None
     bank_spread_history = None
     if include_history:
-        app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
             all_core_rows.extend(core["sections"][section]["rates"])
@@ -451,6 +449,7 @@ def _compute_payload(
             normalized_rate_value=_normalized_rate_value,
             schema_version=SCHEMA_VERSION,
             rba_calendar=rba_decision_models,
+            observations=app_payload_bank_rates.bank_rate_history_rows(core, exports_dir),
         )
         bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
             exports_dir,
@@ -460,6 +459,8 @@ def _compute_payload(
             load_json=_load_json,
             schema_version=SCHEMA_VERSION,
         )
+    else:
+        app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
         "core": core,
