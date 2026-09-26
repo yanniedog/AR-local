@@ -80,4 +80,6 @@ def historical_banks(exports_dir: Path, day: str, unavailable: dict) -> dict:
     banks = json.loads(raw)
     if not isinstance(banks, dict) or banks.get("run_date", day) != day:
         raise ValueError("Bank-rate history source has a different observation date")
+    if not isinstance(banks.get("rates"), list) or any(not isinstance(row, dict) for row in banks["rates"]):
+        raise ValueError("Bank-rate history source has invalid rates schema")
     return banks
