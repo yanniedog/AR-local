@@ -6,7 +6,7 @@ const hex = bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padSt
 let active = 0;
 const DOCUMENTS = new Set(['manifest.json', 'manifest-v2.json', 'dates-index.json',
   'revision-delta.json', 'base-manifest.json', 'source-manifest.json']);
-export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
+export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-rate-history-catalogue|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
 
 function headers() {
   return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS',
