@@ -102,6 +102,45 @@ def test_misplaced_namespace_cannot_be_eagerly_loaded(tmp_path):
         list(iter_payload_assets(manifest))
 
 
+def test_publication_rejects_valid_file_hash_bound_to_the_wrong_core(tmp_path):
+    from app_payload_build import _asset
+    manifest, _, _ = real_bundle(tmp_path / "payload")
+    entry = manifest[NAMESPACE]["file"]
+    raw = json.loads(gzip.decompress((tmp_path / "payload" / entry["name"]).read_bytes()))
+    raw["core_sha256"] = "0" * 64
+    manifest[NAMESPACE]["file"] = _asset(tmp_path / "payload", "bank-rate-history-catalogue",
+        manifest["run_date"], gzip.compress(canonical(raw), mtime=0),
+        f"https://github.com/{REPO}/releases/download/{DEFAULT_TAG}")
+    (tmp_path / "payload" / "manifest.json").write_bytes(canonical(manifest))
+    store = MemoryStore()
+    with pytest.raises(ValueError, match="selected core"):
+        publish(tmp_path, store)
+    assert store.objects == {} and not (tmp_path / "state").exists()
+
+
+def test_candidate_app_proof_must_verify_lazy_history(tmp_path):
+    from tests.test_cdr_quality_activate import app_proof, save
+    from pi_cdr_quality_activate_checks import app_checks
+    manifest, _, _ = real_bundle(tmp_path / "payload")
+    candidate = save(tmp_path / "payload" / "manifest.json", manifest)
+    value = app_proof(tmp_path, manifest, candidate)
+    proof = json.loads(Path(value["path"]).read_bytes())
+    canary = {"candidate_manifest": candidate, "run_date": manifest["run_date"]}
+    # A previously sufficient old-client audit omits the optional namespace.
+    with pytest.raises(ValueError, match="inventory differs"):
+        app_checks(proof, canary)
+    audit_path = Path(proof["headless_audit"]["path"])
+    audit = json.loads(audit_path.read_bytes())
+    entry = manifest[NAMESPACE]["file"]
+    audit["assets"][NAMESPACE] = {"status": "PASS", "sha256": entry["sha256"], "bytes": entry["bytes"]}
+    proof["headless_audit"] = save(audit_path, audit)
+    app_checks(proof, canary)
+    audit["assets"][NAMESPACE]["sha256"] = "0" * 64
+    proof["headless_audit"] = save(audit_path, audit)
+    with pytest.raises(ValueError, match="every candidate asset"):
+        app_checks(proof, canary)
+
+
 def test_interrupted_publication_never_selects_missing_history_and_resumes_exact_bytes(tmp_path):
     manifest, catalogue, _ = real_bundle(tmp_path / "payload")
     entry = manifest[NAMESPACE]["file"]
