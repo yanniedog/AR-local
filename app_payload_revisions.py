@@ -25,6 +25,7 @@ from app_payload_revisions_state import (
 )
 from ar_local_operation_lock import production_lock
 from app_payload_optional_assets import iter_payload_assets
+from app_payload_bank_history_asset import retag_namespace
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ def _load_selected(
             or bundle_sha256(manifest) != head["bundle_sha256"]):
         raise RevisionError("selected manifest identity differs from its index head")
     if any(entry["url"] != store.url(tag, entry["name"])
-           for entry in manifest["files"].values()):
+           for _, entry in iter_payload_assets(manifest) if "url" in entry):
         raise RevisionError("selected asset URL leaves its immutable revision")
     destination = root / "selected" / tag
     write_once(destination / "manifest.json", raw)
@@ -113,6 +114,7 @@ def _preserve_alias(
         key: {**entry, "url": store.url(tag, entry["name"])}
         for key, entry in original["files"].items()
     }}
+    retag_namespace(archived, url=lambda name: store.url(tag, name))
     write_once(destination / "manifest.json", canonical(archived))
     write_once(destination / "preservation.json", canonical({
         "schema_version": 1, "source_manifest_sha256": digest(raw),
@@ -137,6 +139,7 @@ def _prepare_archive(
         key: {**entry, "url": store.url(tag, entry["name"])}
         for key, entry in manifest["files"].items()
     }}
+    retag_namespace(archived, url=lambda name: store.url(tag, name))
     # Identical rebuilds may have a later generated_at. Keep the original exact
     # staged manifest bytes for the reserved bundle after any interruption.
     existing = destination / "manifest.json"

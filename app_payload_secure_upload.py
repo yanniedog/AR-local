@@ -33,7 +33,7 @@ LEGACY_CDR_ARTIFACTS = frozenset({
     "september6-recovery-evidence.zip",
 })
 ASSET = re.compile(
-    r"(?:core|details|search-index|history-banks|bank-history|bank-spread-history|rba-calendar|"
+    r"(?:core|details|search-index|history-banks|bank-history|bank-rate-history-catalogue|bank-spread-history|rba-calendar|"
     r"v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|"
     r"executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|"
     r"monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))"

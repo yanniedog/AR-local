@@ -102,9 +102,11 @@ def app_checks(value: dict, canary: dict) -> None:
             or audit.get("manifest_url") is not None or audit.get("dates_index_sha256") is not None
             or not audit.get("checks") or any(row.get("status") not in {"pass", "warn"} for row in audit["checks"])):
         raise ValueError("app audit does not prove the exact private canary payload")
-    if set(audit.get("assets", {})) != set(manifest["files"]):
+    from app_payload_optional_assets import iter_payload_assets
+    assets = dict(iter_payload_assets(manifest))
+    if set(audit.get("assets", {})) != set(assets):
         raise ValueError("app audit asset inventory differs from the candidate")
-    for name, descriptor in manifest["files"].items():
+    for name, descriptor in assets.items():
         observed = audit["assets"][name]
         if observed.get("status") != "PASS" or any(observed.get(k) != descriptor[k] for k in ("sha256", "bytes")):
             raise ValueError("app audit did not verify every candidate asset")

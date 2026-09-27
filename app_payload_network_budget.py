@@ -15,9 +15,8 @@ KIB = 1024
 MIB = 1024 * KIB
 
 MANIFEST_MAX_BYTES = 64 * KIB
-# The complete 134-observation schema1+schema2 core is 2,718,749 gzip bytes.
-# Keep bounded growth room for prepacked history; the 8 MiB total is unchanged.
-CORE_MAX_BYTES = 4 * MIB
+# Historical catalogues are a deferred optional capability, never critical core.
+CORE_MAX_BYTES = 512 * KIB
 DETAILS_MAX_BYTES = 4 * MIB
 SEARCH_INDEX_MAX_BYTES = 2 * MIB
 OTHER_ASSET_MAX_BYTES = 1 * MIB
@@ -52,6 +51,9 @@ def _asset_cap(key: str) -> int:
         return DETAILS_MAX_BYTES
     if key == "search_index":
         return SEARCH_INDEX_MAX_BYTES
+    if key == "bank_rate_history_catalogue":
+        from app_payload_bank_history_asset import OUTER_GZIP_MAX_BYTES
+        return OUTER_GZIP_MAX_BYTES
     return OTHER_ASSET_MAX_BYTES
 
 
@@ -93,6 +95,7 @@ def validate_payload_network_budget(
         "critical_core": critical,
         "current_standard_home": current_home,
         "deep_search": deep_search,
+        "deferred_bank_history": sizes.get("bank_rate_history_catalogue", 0),
         "all_declared_assets": total,
     }
     return {

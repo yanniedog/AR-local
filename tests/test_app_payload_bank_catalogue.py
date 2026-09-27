@@ -110,7 +110,11 @@ def test_private_prepack_verifies_complete_sources_without_changing_input(tmp_pa
     output = (root if nested else tmp_path) / "derived"
     report = prepack(root, output, index_sha256=index_sha)
     core = json.loads((output / "core.json").read_bytes())
-    assert core["bank_rate_history_catalogue"]["sections"] == packed(observations)["sections"]
+    assert "bank_rate_history_catalogue" not in core and "bank_rate_history" not in core
+    from app_payload_bank_history_asset import decode_envelope
+    catalogue = decode_envelope((output / "bank_rate_history_catalogue.json.gz").read_bytes(),
+                                run_date=report["run_date"], core_sha256=report["core_sha256"])
+    assert catalogue["sections"] == packed(observations)["sections"]
     assert report["status"] == "PASS" and report["publication_verified"] is False
     assert report["observed_dates"] == 3 and report["source_count"] == 3
     assert all(hashlib.sha256(path.read_bytes()).hexdigest() == value for path, value in before.items())

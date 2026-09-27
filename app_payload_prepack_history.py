@@ -15,6 +15,7 @@ from pathlib import Path
 from app_payload_bank_catalogue import HistoricalCatalogue, published_evidence
 from app_payload_common import VALID_SECTIONS
 from app_payload_revisions_state import bundle_sha256, validate_index, validate_manifest
+from app_payload_bank_history_asset import canonical, critical_core, encode_envelope
 
 MAX_JSON_BYTES = 64 * 1024 * 1024
 
@@ -95,25 +96,30 @@ def prepack(root: Path, output: Path, *, index_sha256: str):
         current, details, source = selected_day(root, index, day)
         catalogue.observe(day, {section: current["sections"][section]["rates"] for section in VALID_SECTIONS},
                           lambda row, section: published_evidence(row, section, details), source)
-    current["bank_rate_history_catalogue"] = catalogue.finish()
+    packed_catalogue = canonical(catalogue.finish())
+    current = critical_core(current)
     encoded = json.dumps(current, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(encoded) > MAX_JSON_BYTES:
         raise ValueError("Prepacked core exceeds the app JSON byte budget")
     compressed = gzip.compress(encoded, mtime=0)
-    packed_catalogue = json.dumps(current["bank_rate_history_catalogue"], ensure_ascii=False,
-                                  separators=(",", ":")).encode("utf-8")
+    from app_payload_network_budget import CORE_MAX_BYTES
+    if len(compressed) > CORE_MAX_BYTES:
+        raise ValueError("Prepacked critical core exceeds its compressed byte budget")
+    envelope = encode_envelope(json.loads(packed_catalogue), run_date=observed[-1], core_sha256=digest(compressed))
     report = {"status": "PASS", "acquisition": "verified_public_inputs", "publication_verified": False,
               "index_sha256": index_sha256, "observed_dates": len(observed), "calendar_dates": len(dates),
               "run_date": observed[-1], "first_date": observed[0],
               "core_sha256": digest(compressed), "core_bytes": len(compressed),
               "core_json_bytes": len(encoded), "catalogue_json_bytes": len(packed_catalogue),
               "catalogue_gzip_bytes": len(gzip.compress(packed_catalogue, mtime=0)),
+              "history_asset_sha256": digest(envelope), "history_asset_bytes": len(envelope),
               "tiers": {section: len(catalogue.sections[section]) for section in VALID_SECTIONS},
               "evidence_count": len(catalogue.evidence), "source_count": len(catalogue.sources)}
     output.mkdir(parents=True)
     (output / "core.json").write_bytes(encoded)
     (output / "core.json.gz").write_bytes(compressed)
     (output / "catalogue.json").write_bytes(packed_catalogue)
+    (output / "bank_rate_history_catalogue.json.gz").write_bytes(envelope)
     (output / "verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 

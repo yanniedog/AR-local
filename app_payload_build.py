@@ -542,6 +542,9 @@ def _package(
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
+    from app_payload_bank_history_asset import ASSET_KIND, NAMESPACE, critical_core, encode_envelope
+    catalogue = core.get(NAMESPACE)
+    core = critical_core(core)
     files: Dict[str, Any] = {
         "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base, enc_key),
         "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base, enc_key),
@@ -593,6 +596,10 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
+    if catalogue is not None:
+        history_wire = encode_envelope(catalogue, run_date=run_date, core_sha256=files['core']['sha256'])
+        manifest[NAMESPACE] = {"schema_version": 1, "file": _asset(
+            out_dir, ASSET_KIND, run_date, history_wire, release_base, enc_key)}
     if source_observation:
         manifest["source_observation"] = dict(source_observation)
     if executable_v2_root is not None:

@@ -20,6 +20,7 @@ from typing import Any
 from ar_local_backup_policy import atomic_create_json
 from app_payload_common import DEFAULT_REPO
 from app_payload_optional_assets import iter_payload_assets
+from app_payload_bank_history_asset import NAMESPACE
 
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_ASSET_BYTES = 64 * 1024 * 1024
@@ -101,6 +102,9 @@ def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> Non
                 raise RevisionError("asset path escapes the payload directory")
             if path.stat().st_size != size or digest(path.read_bytes()) != entry["sha256"]:
                 raise RevisionError(f"asset does not match its descriptor: {name}")
+    if root is not None and NAMESPACE in manifest:
+        from app_payload_bank_history_asset import validate_local_asset
+        validate_local_asset(manifest, root)
 
 
 def bundle_sha256(manifest: dict[str, Any]) -> str:
@@ -109,6 +113,10 @@ def bundle_sha256(manifest: dict[str, Any]) -> str:
              if key not in {"generated_at", "tag", "payload_revision", "files"}}
     value["files"] = {key: {k: v for k, v in entry.items() if k != "url"}
                       for key, entry in manifest["files"].items()}
+    if NAMESPACE in value:
+        namespace = value[NAMESPACE]
+        value[NAMESPACE] = {**namespace, "file": {
+            key: val for key, val in namespace["file"].items() if key != "url"}}
     return digest(canonical(value))
 
 

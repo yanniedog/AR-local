@@ -191,8 +191,9 @@ def test_shared_observed_axis_preserves_calendar_gap_with_real_bankwest_rows(tmp
     assert all(start in (0, 7) and length == 1 for start, length, _ in savings_spans)
 
 
-def test_standalone_dated_and_rolling_cores_have_identical_complete_history(tmp_path, banks, monkeypatch):
+def test_standalone_dated_and_rolling_payloads_have_identical_lazy_history(tmp_path, banks, monkeypatch):
     import app_payload_build as builder
+    from app_payload_bank_history_asset import decode_envelope
     exports = save_export(tmp_path, banks)
     monkeypatch.setattr(builder.cdr_brand_logos, "fetch_register_logos", lambda **_: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
@@ -201,9 +202,12 @@ def test_standalone_dated_and_rolling_cores_have_identical_complete_history(tmp_
         folder = tmp_path / tag
         manifest = builder.build_payload(exports, folder, tag=tag)
         core = json.loads(gzip.decompress((folder / manifest["files"]["core"]["name"]).read_bytes()))
-        assert core["bank_rate_history"]["run_dates"] == [DAY]
-        assert any(core["bank_rate_history"]["sections"]["Savings"])
-        results.append(manifest["files"]["core"]["sha256"])
+        assert "bank_rate_history" not in core and "bank_rate_history_catalogue" not in core
+        descriptor = manifest["bank_rate_history_catalogue"]["file"]
+        catalogue = decode_envelope((folder / descriptor["name"]).read_bytes(),
+            run_date=DAY, core_sha256=manifest["files"]["core"]["sha256"])
+        assert catalogue["run_dates"] == [DAY] and catalogue["sections"]["Savings"]
+        results.append((manifest["files"]["core"]["sha256"], descriptor["sha256"]))
     assert results[0] == results[1]
 
 
