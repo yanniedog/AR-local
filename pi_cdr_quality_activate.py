@@ -16,6 +16,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ar_local_operation_lock import production_lock
+from ar_local_backup_policy import atomic_create_json
 from pi_cdr_quality_activate_evidence import (
     CANARY_SCHEMA, SCHEMA, app_binding, checked, ci_binding, junit_result, read,
     record, relative, sha, source_acceptance, validate_manifest,
@@ -230,8 +231,8 @@ def canary(args) -> dict:
     args.operation.mkdir(parents=True, exist_ok=False)
     (args.operation / "tmp").mkdir()
     (args.operation / "home").mkdir()
-    command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect",
-               f"--unit=ar-local-quality-canary-{uuid.uuid4().hex[:12]}"]
+    unit = f"ar-local-quality-canary-{uuid.uuid4().hex[:12]}.service"
+    command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect", f"--unit={unit}"]
     current = datetime.now(TZ)
     closing = current.replace(hour=22, minute=0, second=0, microsecond=0)
     runtime = min(5400, int((closing - current).total_seconds()) - 45)
@@ -267,6 +268,12 @@ def canary(args) -> dict:
         command += ["--dispositions", args.dispositions]
     if cache_options:
         command += ["--verified-cache", args.verified_cache, "--verified-cache-sha256", args.verified_cache_sha256]
+    # A controller must prove exact child ownership even if the launch log is
+    # empty or truncated. Persist before systemd can create the child unit.
+    atomic_create_json(args.operation / "canary-unit.json", {
+        "schema_version": 1, "unit": unit, "source": str(args.source),
+        "operation": str(args.operation), "expected_commit": args.expected_commit,
+    })
     run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
     from pi_cdr_quality_resources import require_receipt
     require_receipt(read(args.operation / "resources.json"))
