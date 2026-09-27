@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+from app_payload_bank_history_asset import NAMESPACE, descriptor
 
 SCHEMA = Path(__file__).parent / 'contracts/product_terms/drafts/eligibility-v2/executable-namespace-v2.schema.json'
 
@@ -21,10 +22,13 @@ def iter_payload_assets(manifest):
         raise ValueError('Payload files must be an object')
     if any(str(key).startswith(('executable_v2_','monetary_v3_','executable_v3_','monetary_v4_','executable_v4_')) for key in files):
         raise ValueError('Executable v2 descriptors must be outside legacy files')
-    if 'executable_v2' not in manifest and 'executable_v3' not in manifest and 'executable_v4' not in manifest:
+    if NAMESPACE in files:
+        raise ValueError('Historical catalogue must be outside legacy files')
+    executable = any(key in manifest for key in ('executable_v2', 'executable_v3', 'executable_v4'))
+    if not executable and NAMESPACE not in manifest:
         yield from files.items()
         return
-    if manifest.get('enc') or any(isinstance(entry,dict) and entry.get('enc') for entry in files.values()):
+    if executable and (manifest.get('enc') or any(isinstance(entry,dict) and entry.get('enc') for entry in files.values())):
         raise ValueError('Executable namespaces require unencrypted adopted assets')
     names = set()
     for key, entry in files.items():
@@ -35,6 +39,12 @@ def iter_payload_assets(manifest):
             raise ValueError('Payload asset names must be unique')
         names.add(name)
         yield key, entry
+    if NAMESPACE in manifest:
+        entry = descriptor(manifest)
+        if entry['name'] in names:
+            raise ValueError('Payload asset names must be unique')
+        names.add(entry['name'])
+        yield NAMESPACE, entry
     entries=[]
     if 'executable_v2' in manifest:
         namespace=manifest['executable_v2']

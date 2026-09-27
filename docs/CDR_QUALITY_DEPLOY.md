@@ -154,7 +154,15 @@ previously audited inputs cannot be waived as historical findings. The helper
 does not change the original report status. A changed source, ledger or pointer
 requires a new canary; a new disposition requires another fresh operation.
 
-Retain `canary.json`, `pytest.xml`, `pytest.txt`, `source-audit/`, `payload/` and
+Before launching systemd, the parent durably creates `canary-unit.json` with
+schema_version 1, the exact `.service` unit name, canonical `source` and `operation`
+paths, and `expected_commit`. A write failure prevents launch; launch failure
+retains this ownership receipt. Cleanup controllers must verify its complete
+identity before stopping a child. An empty or truncated transcript cannot prove
+that no child exists, and this receipt alone never proves terminal cleanup or a
+passing canary.
+
+Retain `canary-unit.json`, `canary.json`, `pytest.xml`, `pytest.txt`, `source-audit/`, `payload/` and
 the systemd transcript. `canary-worker` is an internal stage and rejects writable
 source/production/data mounts; invoke the parent `canary` stage.
 

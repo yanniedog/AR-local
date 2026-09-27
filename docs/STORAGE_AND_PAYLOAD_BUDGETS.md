@@ -32,6 +32,8 @@ adding a v1 consumer capability.
 | Critical core | 512 KiB |
 | Details (on demand) | 4 MiB |
 | Search index (on demand) | 2 MiB |
+| Bank rate catalogue envelope (deferred optional asset) | 8 MiB compressed / 24 MiB decoded |
+| Inner bank rate catalogue archive | 16 MiB compressed / 128 MiB decoded |
 | Other individual asset | 1 MiB |
 | All rolling assets | 8 MiB |
 | Product history sidecar (on demand) | 8 MiB |
@@ -52,7 +54,18 @@ Times exclude DNS/TLS/GitHub redirect latency, retries, decryption, inflation, J
 1. Keep core-first startup and cached stale-while-refresh behavior.
 2. Publish a small, hash-bound suitability capability so standard Home no longer needs the 3.2 MiB details asset on a cold start.
 3. Keep details and search user-triggered, cached by content hash, resumable, and independently replaceable.
-4. Keep history date-indexed and fetch only requested windows; never sync the full historical corpus to a phone.
+4. Keep the raw historical corpus off the phone. Publish the compiled bank rate
+   catalogue as the optional `manifest.bank_rate_history_catalogue` capability,
+   outside legacy `files`. Fetch and decode it after first paint, using the app's
+   native archive codec and content-bound cache. Its date-scoped rows and evidence
+   support bank/filter changes locally without downloading every daily core.
 5. Add the same compressed-byte/time report to every future capability before activation.
 
 The suitability capability is a cross-repository contract change and must not be activated until producer and app validators, fixtures, cache behavior, and cold-start tests converge on the same bytes.
+
+The critical core cap remains 512 KiB. Neither raw `bank_rate_history` nor raw
+`bank_rate_history_catalogue` may be embedded in that core: a small gzip archive
+can still expand into tens of MiB and block legacy clients before first paint.
+The deferred catalogue is included in the existing 8 MiB total release budget;
+its individual cap does not raise that total. See `MOBILE_APP.md` for both byte
+domains, core binding, immutable revision routing, and activation acceptance.

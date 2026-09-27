@@ -78,13 +78,22 @@ test('current and historical aliases are accepted; cache-busting is normalized',
   }
 });
 test('historical encrypted suffix and every approved producer payload family route', () => {
-  for (const stem of ['core', 'details', 'bank-history', 'bank-spread-history', 'history-banks',
+  for (const stem of ['core', 'details', 'bank-history', 'bank-rate-history-catalogue', 'bank-spread-history', 'history-banks',
     'rba-calendar', 'search-index', 'v2-economic-outlook', 'v2-product-history', 'terms-index', 'terms_shard_001', 'executable-index', 'executable_shard_001', 'executable_v2_index', 'executable_v2_shard_000', 'monetary_v3_mortgage_index', 'monetary_v4_savings_activity_shard_000']) {
     for (const suffix of ['.json.gz', '.json.gz.enc']) {
       assert.equal(releaseRoute(request(url.replace('core-2026-09-19-123456789abc.json.gz', `${stem}-2026-09-19-123456789abc${suffix}`))).asset,
         `${stem}-2026-09-19-123456789abc${suffix}`);
     }
   }
+});
+test('lazy bank history route authenticates and preserves exact envelope bytes', async () => {
+  const target = url.replace('core-2026-09-19-123456789abc.json.gz',
+    'bank-rate-history-catalogue-2026-09-19-123456789abc.json.gz');
+  const response = await handleRequest(request(target), env, context, fetcher, null);
+  assert.equal(response.status, 200);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), content);
+  assert.equal((await handleRequest(request(target), env, context,
+    async () => new Response(content), null)).status, 502);
 });
 for (const path of ['/v1/release/app-payload-latest/../key.json', '/v1/release/other/key.json',
   '/v1/release/app-payload-latest/source.zip', '/v1/release/app-payload-latest/a%2Fb.json',

@@ -167,13 +167,34 @@ def test_full_log_scan_caches_and_detects_deletion_and_truncated_json(tmp_path):
         index.close()
 
 
-def test_public_audit_detects_real_out_of_section_rows(public):
-    core, manifest = public
+@pytest.mark.parametrize("optional", [False, True])
+def test_public_audit_detects_real_out_of_section_rows(public, tmp_path, optional):
+    core, original = public
+    manifest = copy.deepcopy(original)
+    history = None
+    if optional:
+        from app_payload_bank_catalogue import HistoricalCatalogue, UNKNOWN
+        from app_payload_bank_history_asset import encode_envelope
+        from app_payload_build import _asset
+        catalogue = HistoricalCatalogue([core["run_date"]])
+        catalogue.observe(core["run_date"], {key: value["rates"] for key, value in core["sections"].items()},
+            lambda row, section: UNKNOWN, {"kind": "published_core",
+                "manifest_sha256": hashlib.sha256((EVIDENCE / "manifest.json").read_bytes()).hexdigest(),
+                "core_sha256": manifest["files"]["core"]["sha256"],
+                "details_sha256": manifest["files"]["details"]["sha256"]})
+        history = encode_envelope(catalogue.finish(), run_date=core["run_date"],
+                                  core_sha256=manifest["files"]["core"]["sha256"])
+        manifest["bank_rate_history_catalogue"] = {"schema_version": 1, "file": _asset(tmp_path,
+            "bank-rate-history-catalogue", core["run_date"], history,
+            f"https://github.com/{manifest['repo']}/releases/download/{manifest['tag']}")}
     class Store:
         def read(self, tag, name):
+            if name == "manifest.json": return json.dumps(manifest).encode()
             return (EVIDENCE / name).read_bytes()
 
         def read_url(self, url, limit=None):
+            if optional and url == manifest["bank_rate_history_catalogue"]["file"]["url"]:
+                return history
             key = next(k for k, v in manifest["files"].items() if v["url"] == url)
             return (EVIDENCE / f"v1-{key}.json.gz").read_bytes()
 
@@ -182,7 +203,11 @@ def test_public_audit_detects_real_out_of_section_rows(public):
     report = audit_public(current, store=Store())
     assert report["status"] == "FAIL"
     assert {i["section"] for i in report["issues"]} == {"Mortgage", "TD"}
-    assert len(report["assets_verified"]) == 7
+    assert len(report["assets_verified"]) == (8 if optional else 7)
+    if optional:
+        expected = manifest["bank_rate_history_catalogue"]["file"]
+        assert report["assets_verified"]["bank_rate_history_catalogue"] == {
+            key: expected[key] for key in ("sha256", "bytes")}
 
 
 def test_quality_recapture_requires_force_and_cannot_reuse_source():
