@@ -141,6 +141,32 @@ def test_candidate_app_proof_must_verify_lazy_history(tmp_path):
         app_checks(proof, canary)
 
 
+def test_staging_prune_preserves_optional_assets_and_refuses_invalid_namespace(tmp_path):
+    from pi_daily_sync import prune_payload_staging
+    manifest, _, _ = real_bundle(tmp_path)
+    stale = tmp_path / "bank-rate-history-catalogue-stale.json.gz"
+    stale.write_bytes(b"stale operational control")
+    assert prune_payload_staging(tmp_path, "manifest.json") == 1
+    assert not stale.exists()
+    assert all((tmp_path / entry["name"]).is_file() for _, entry in iter_payload_assets(manifest))
+    stale.write_bytes(b"stale operational control")
+    manifest[NAMESPACE] = None
+    (tmp_path / "manifest.json").write_bytes(canonical(manifest))
+    assert prune_payload_staging(tmp_path, "manifest.json") == 0
+    assert stale.is_file()
+
+
+def test_legacy_publication_confirmation_requires_the_same_optional_history(tmp_path):
+    from pi_daily_sync import _same_payload_revision
+    manifest, _, _ = real_bundle(tmp_path)
+    assert _same_payload_revision(manifest, copy.deepcopy(manifest))
+    changed = copy.deepcopy(manifest)
+    changed[NAMESPACE]["file"]["bytes"] += 1
+    assert not _same_payload_revision(manifest, changed)
+    changed.pop(NAMESPACE)
+    assert not _same_payload_revision(manifest, changed)
+
+
 def test_interrupted_publication_never_selects_missing_history_and_resumes_exact_bytes(tmp_path):
     manifest, catalogue, _ = real_bundle(tmp_path / "payload")
     entry = manifest[NAMESPACE]["file"]

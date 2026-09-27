@@ -122,11 +122,11 @@ def prune_payload_staging(out_dir: Path, manifest_name: str) -> int:
         return 0
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        files = manifest.get("files") or {}
+        from app_payload_optional_assets import iter_payload_assets
         keep = {manifest_name}
         keep.update(
             str(entry.get("name"))
-            for entry in files.values()
+            for _, entry in iter_payload_assets(manifest)
             if isinstance(entry, dict) and entry.get("name")
         )
     except (OSError, ValueError, TypeError):
@@ -163,6 +163,15 @@ def _app_payload_enabled() -> bool:
 def _same_payload_revision(left: dict, right: dict) -> bool:
     if str(left.get("run_date") or "") != str(right.get("run_date") or ""):
         return False
+    namespace = "bank_rate_history_catalogue"
+    if namespace in left or namespace in right:
+        from app_payload_optional_assets import iter_payload_assets
+        try:
+            a, b = (dict(iter_payload_assets(value)).get(namespace) for value in (left, right))
+        except (ValueError, TypeError):
+            return False
+        if a is None or b is None or any(a.get(key) != b.get(key) for key in ("sha256", "bytes", "enc")):
+            return False
     left_files = left.get("files") or {}
     right_files = right.get("files") or {}
     if left.get("payload_revision") or right.get("payload_revision"):

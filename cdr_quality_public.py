@@ -10,6 +10,7 @@ from pathlib import Path
 from app_payload_common import DEFAULT_REPO, DEFAULT_TAG
 from app_payload_revisions_github import GitHubRevisionStore, download_manifest_assets
 from app_payload_revisions_state import decode_document, digest, validate_index, validate_manifest
+from app_payload_optional_assets import iter_payload_assets
 from cdr_quality_accounting import SECTIONS, rate_rows_digest, reconcile_public_core
 
 
@@ -55,5 +56,5 @@ def audit_public(current: dict, *, repo: str = DEFAULT_REPO, store=None) -> dict
             issues.append({"code": "PUBLIC_OBSERVATION_IDENTITY_MISMATCH"})
     return {"status": "FAIL" if issues else "PASS", "run_date": manifest["run_date"],
             "manifest_sha256": digest(raw), "index_sha256": digest(index_raw), "revision": head,
-            "assets_verified": {key: {"sha256": row["sha256"], "bytes": row["bytes"]} for key, row in manifest["files"].items()},
+            "assets_verified": {key: {"sha256": row["sha256"], "bytes": row["bytes"]} for key, row in iter_payload_assets(manifest)},
             "issues": issues}
