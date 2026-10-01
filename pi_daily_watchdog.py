@@ -21,8 +21,15 @@ from ar_local_pi_runtime import (
 )
 from cdr_daily import marker_is_trustworthy, marker_path
 from cdr_finalization import verified_pointer_marker_for_date
-from pi_daily_sync import _app_payload_enabled, payload_publication_pending
+from pi_daily_sync import (
+    _app_payload_enabled, payload_publication_pending, read_payload_publication_pending,
+)
+from pi_payload_retry_policy import (
+    CLEANUP_SECONDS, PAYLOAD_TIMEOUT_SECONDS, finish_retry, publication_retry_candidates,
+    publication_source_key, retry_admission,
+)
 from pi_payload_freshness import check_publication
+from pi_process_group import run_process_group
 from pi_cdr_recovery import (
     EXPECTED_GENERATION_ENV, HOBART, restore_dashboard_if_idle, run_same_day_recovery,
 )
@@ -32,8 +39,9 @@ GRACE_MINUTES = 30
 SERVICE_NAME = "ar-local-daily.service"
 SUBPROCESS_STATUS_TIMEOUT_SEC = 10
 SUBPROCESS_INGEST_TIMEOUT_SEC = 6 * 60 * 60
-SUBPROCESS_PAYLOAD_TIMEOUT_SEC = 30 * 60
+SUBPROCESS_PAYLOAD_TIMEOUT_SEC = PAYLOAD_TIMEOUT_SECONDS
 SUBPROCESS_TERMINATE_GRACE_SEC = 30
+SUBPROCESS_KILL_WAIT_SEC = 10
 PROCESS_GROUPS_SUPPORTED = os.name != "nt"
 FORCE_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
@@ -75,45 +83,21 @@ def service_active() -> bool:
 def run_ingest_process_group(cmd: list[str], *, timeout_seconds: Optional[float] = None,
                              env: Optional[dict[str, str]] = None) -> None:
     """Fence and reap the entire catch-up tree if its long timeout expires."""
-    grouped = PROCESS_GROUPS_SUPPORTED
-    process = subprocess.Popen(
-        cmd,
-        cwd=REPO_ROOT,
-        shell=False,
-        start_new_session=grouped,
-        **({"env": env} if env is not None else {}),
+    run_process_group(
+        cmd, cwd=REPO_ROOT,
+        timeout_seconds=SUBPROCESS_INGEST_TIMEOUT_SEC if timeout_seconds is None else timeout_seconds,
+        env=env, process_groups_supported=PROCESS_GROUPS_SUPPORTED,
+        terminate_grace_seconds=SUBPROCESS_TERMINATE_GRACE_SEC,
+        kill_wait_seconds=SUBPROCESS_KILL_WAIT_SEC,
     )
-    try:
-        return_code = process.wait(timeout=SUBPROCESS_INGEST_TIMEOUT_SEC if timeout_seconds is None else timeout_seconds)
-    except subprocess.TimeoutExpired:
-        try:
-            if grouped:
-                os.killpg(process.pid, signal.SIGTERM)
-            else:
-                process.terminate()
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=SUBPROCESS_TERMINATE_GRACE_SEC)
-        except subprocess.TimeoutExpired:
-            try:
-                if grouped:
-                    os.killpg(process.pid, FORCE_KILL_SIGNAL)
-                else:
-                    process.kill()
-            except ProcessLookupError:
-                pass
-            process.wait()
-        else:
-            if grouped:
-                try:
-                    os.killpg(process.pid, 0)
-                    os.killpg(process.pid, FORCE_KILL_SIGNAL)
-                except ProcessLookupError:
-                    pass
-        raise
-    if return_code != 0:
-        raise subprocess.CalledProcessError(return_code, cmd)
+
+
+def catch_up_timeout(now_utc: datetime) -> float:
+    """Do not let an evening catch-up hold the lease across the next natural run."""
+    local = now_utc.astimezone(HOBART)
+    closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    return max(0.0, min(SUBPROCESS_INGEST_TIMEOUT_SEC,
+                        (closing - local).total_seconds() - CLEANUP_SECONDS))
 
 
 def run_daily_ingest(date_text: str, dry_run: bool, *, resume_same_day: bool = False,
@@ -134,7 +118,7 @@ def run_daily_ingest(date_text: str, dry_run: bool, *, resume_same_day: bool = F
         print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
     if not resume_same_day:
-        run_ingest_process_group(cmd)
+        run_ingest_process_group(cmd, timeout_seconds=timeout_seconds)
         return
     environment = dict(os.environ)
     if expected_generation:
@@ -157,23 +141,41 @@ def run_recovery_ingest(date_text: str, timeout_seconds: float, generation: str)
                      timeout_seconds=timeout_seconds, expected_generation=generation)
 
 
-def run_payload_retry(dry_run: bool) -> None:
+def run_payload_retry(dry_run: bool) -> dict:
+    if not _app_payload_enabled():
+        return {"status": "deferred", "reason": "publication_disabled"}
+    admission = {"status": "deferred", "reason": "no_pending_marker"}
+    for candidate in publication_retry_candidates(read_payload_publication_pending(REPO_ROOT)):
+        admission = retry_admission(REPO_ROOT, candidate, reserve=not dry_run)
+        if admission["status"] == "ready":
+            break
+    if admission["status"] != "ready":
+        return admission
     cmd = [
         sys.executable,
         str(REPO_ROOT / "pi_daily_sync.py"),
         "--skip-git-sync",
         "--publish-existing-payload",
+        "--publication-source-key",
+        admission["source_key"],
     ]
     if dry_run:
         print(f"DRY RUN: would run {shlex.join(cmd)}")
-        return
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        shell=False,
-        timeout=SUBPROCESS_PAYLOAD_TIMEOUT_SEC,
-    )
+        return {"status": "dry_run"}
+    try:
+        run_ingest_process_group(cmd, timeout_seconds=SUBPROCESS_PAYLOAD_TIMEOUT_SEC)
+    except (OSError, subprocess.SubprocessError) as error:
+        finish_retry(REPO_ROOT, admission, succeeded=False, reason=type(error).__name__)
+        raise
+    pending = payload_publication_pending(REPO_ROOT)
+    next_source = read_payload_publication_pending(REPO_ROOT) if pending else {}
+    outstanding = {publication_source_key(item) for item in publication_retry_candidates(next_source)}
+    same_source = pending and (not next_source or admission["source_key"] in outstanding)
+    finish_retry(REPO_ROOT, admission, succeeded=not same_source,
+                 reason="publication_still_pending" if same_source else "")
+    return {"status": "failed" if same_source else "published",
+            "reason": "publication_still_pending" if same_source else "",
+            "more_pending": bool(pending)}
 
 
 def send_missed_ingest_alert(run_date: str, details: str) -> None:
@@ -225,11 +227,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     complete = run_complete(run_date)
     active = service_active()
     current_day_due = run_date == local_today
-    should_start = not writable_error and now_utc >= ready_at and not complete and not active
+    capture_budget = catch_up_timeout(now_utc)
+    should_start = (not writable_error and current_day_due and capture_budget >= 60
+                    and now_utc >= ready_at and not complete and not active)
     payload_pending = not writable_error and payload_publication_pending(REPO_ROOT)
     should_retry_payload = payload_pending and complete and not active
     catch_up_failed = False
     payload_retry_failed = False
+    payload_retry_attempted = False
+    payload_retry = {"status": "not_due"}
     recovery = {"status": "not_due", "capture_attempted": False}
     if (not writable_error and complete and not active and current_day_due
             and now_utc >= ready_at):
@@ -243,10 +249,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         should_retry_payload = True
     if should_start:
         if args.dry_run:
-            run_daily_ingest(run_date, args.dry_run)
+            run_daily_ingest(run_date, args.dry_run, timeout_seconds=capture_budget)
         else:
             try:
-                run_daily_ingest(run_date, args.dry_run)
+                run_daily_ingest(run_date, args.dry_run, timeout_seconds=capture_budget)
             except subprocess.SubprocessError as exc:
                 catch_up_failed = True
                 if isinstance(exc, subprocess.TimeoutExpired):
@@ -260,8 +266,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 send_missed_ingest_alert(run_date, detail)
     elif should_retry_payload:
         try:
-            run_payload_retry(args.dry_run)
-        except subprocess.SubprocessError as exc:
+            payload_retry = run_payload_retry(args.dry_run)
+            payload_retry_attempted = not args.dry_run and payload_retry.get("status") != "deferred"
+            payload_retry_failed = payload_retry.get("status") == "failed"
+        except (OSError, subprocess.SubprocessError) as exc:
+            payload_retry_attempted = not args.dry_run
             payload_retry_failed = True
             if isinstance(exc, subprocess.TimeoutExpired):
                 detail = f"payload retry timed out after {exc.timeout}s"
@@ -269,6 +278,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 detail = f"payload retry failed exit={exc.returncode}"
             else:
                 detail = f"payload retry failed: {exc}"
+            payload_retry = {"status": "failed", "reason": detail}
             if not args.json:
                 print(f"pi_daily_watchdog: {detail}", file=sys.stderr)
     elif (
@@ -298,13 +308,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         **publication,
         "service_active": active,
         "current_day_due": current_day_due,
+        "catch_up_timeout_seconds": capture_budget,
         "runtime_writable": not bool(writable_error),
         "runtime_writable_error": writable_error,
         "started": should_start and not args.dry_run and not catch_up_failed,
         "catch_up_failed": catch_up_failed,
         "payload_pending": payload_pending,
-        "payload_retry_attempted": should_retry_payload and not args.dry_run,
+        "payload_retry_attempted": payload_retry_attempted,
         "payload_retry_failed": payload_retry_failed,
+        "payload_retry": payload_retry,
         "same_day_recovery": recovery,
         "dry_run": bool(args.dry_run),
     }

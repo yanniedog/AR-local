@@ -31,6 +31,7 @@ INGEST_PROCESS_TEMPLATES = SERVICE_TEMPLATES[:3]
 
 @pytest.fixture(autouse=True)
 def isolate_scheduled_macro_transport(monkeypatch):
+    monkeypatch.setattr(pi_daily_sync, 'payload_retry_window_reason', lambda: '')
     # Scheduled CDR/payload tests do not contact official macro sources or
     # create the real macro store. The refresh contract has dedicated tests.
     monkeypatch.setattr(pi_daily_sync, "refresh_macro_store", lambda *a, **k: {"status": "test-isolated"})
@@ -381,6 +382,7 @@ def test_watchdog_timeout_terminates_the_catch_up_process_group(
     process.wait.side_effect = [
         subprocess.TimeoutExpired(command, pi_daily_watchdog.SUBPROCESS_INGEST_TIMEOUT_SEC),
         0,
+        0,
     ]
     monkeypatch.setattr(pi_daily_watchdog, "PROCESS_GROUPS_SUPPORTED", True)
     popen = mock.Mock(return_value=process)
@@ -399,12 +401,12 @@ def test_watchdog_timeout_terminates_the_catch_up_process_group(
     )
     assert killpg.call_args_list == [
         mock.call(4321, pi_daily_watchdog.signal.SIGTERM),
-        mock.call(4321, 0),
         mock.call(4321, pi_daily_watchdog.FORCE_KILL_SIGNAL),
     ]
     assert process.wait.call_args_list == [
         mock.call(timeout=pi_daily_watchdog.SUBPROCESS_INGEST_TIMEOUT_SEC),
         mock.call(timeout=pi_daily_watchdog.SUBPROCESS_TERMINATE_GRACE_SEC),
+        mock.call(timeout=pi_daily_watchdog.SUBPROCESS_KILL_WAIT_SEC),
     ]
 
 
@@ -613,7 +615,7 @@ def test_daily_watchdog_retries_payload_without_reingesting(
     monkeypatch.setattr(
         pi_daily_watchdog, "payload_publication_pending", lambda _repo: True
     )
-    with mock.patch.object(pi_daily_watchdog, "run_payload_retry") as retry:
+    with mock.patch.object(pi_daily_watchdog, "run_payload_retry", return_value={"status": "published"}) as retry:
         with mock.patch.object(pi_daily_watchdog, "run_daily_ingest") as ingest:
             assert pi_daily_watchdog.main([]) == 0
     retry.assert_called_once_with(False)

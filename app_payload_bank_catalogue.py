@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import re
+from collections import OrderedDict
+from copy import deepcopy
 
 from app_payload_bank_rates import OBSERVATION_FIELDS, rate_percent
 from app_payload_common import VALID_SECTIONS
@@ -98,7 +101,57 @@ def published_evidence(row, section, details):
     return {"status": "known", "identity": bound, "detail": detail}
 
 
-def retained_evidence(products):
+def _retained_product_evidence(product):
+    bound = identity(product)
+    raw = product.get("details_json")
+    try:
+        record = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError):
+        record = None
+    if (bound is None or not isinstance(record, dict)
+            or record.get("productId") != bound["product_id"]
+            or any(field in record and (not isinstance(record[field], list)
+                   or any(not isinstance(item, dict) for item in record[field]))
+                   for field in ("features", "eligibility", "constraints"))):
+        return UNKNOWN
+    description = product.get("description") or record.get("description")
+    detail = detail_projection({
+        **({"description": description} if description is not None else {}),
+        "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
+        "constraints": _detail_items(record, "constraints", "constraintType"),
+        "facts": feature_facts(record, product["product_key"], product.get("description")),
+    })
+    return {"status": "known", "identity": bound, "detail": detail} if detail is not None else UNKNOWN
+
+
+class RetainedEvidenceCache:
+    """Bounded to one history pass; source identity and all consumed facts bind keys."""
+
+    def __init__(self, *, max_entries=8192, max_bytes=16 * 1024 * 1024):
+        self.entries, self.bytes = OrderedDict(), 0
+        self.max_entries, self.max_bytes = max_entries, max_bytes
+
+    def __call__(self, product):
+        source = [identity(product), product.get("details_json"), product.get("description")]
+        # A retained object may expose field order to narrative/fact traversal.
+        # Preserve that order as well as every source value in the cache key.
+        encoded = json.dumps(source, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        key = hashlib.sha256(encoded).digest()
+        if key in self.entries:
+            self.entries.move_to_end(key)
+            return deepcopy(self.entries[key][0])
+        evidence = _retained_product_evidence(product)
+        size = len(canonical(evidence).encode("utf-8"))
+        if self.max_entries > 0 and size <= self.max_bytes:
+            while self.entries and (len(self.entries) >= self.max_entries or self.bytes + size > self.max_bytes):
+                _, (_, removed) = self.entries.popitem(last=False)
+                self.bytes -= removed
+            self.entries[key] = (deepcopy(evidence), size)
+            self.bytes += size
+        return evidence
+
+
+def retained_evidence(products, *, cache=None):
     """Conflicting copies cannot donate another product's eligibility evidence."""
     groups = {}
     if not isinstance(products, list):
@@ -109,30 +162,8 @@ def retained_evidence(products):
             groups.setdefault(key, []).append(product)
     result = {}
     for key, group in groups.items():
-        candidates = []
-        for product in group:
-            bound = identity(product)
-            raw = product.get("details_json")
-            try:
-                record = json.loads(raw) if isinstance(raw, str) else raw
-            except (ValueError, TypeError):
-                record = None
-            if (bound is None or not isinstance(record, dict)
-                    or record.get("productId") != bound["product_id"]
-                    or any(field in record and (not isinstance(record[field], list)
-                           or any(not isinstance(item, dict) for item in record[field]))
-                           for field in ("features", "eligibility", "constraints"))):
-                candidates.append(UNKNOWN)
-                continue
-            description = product.get("description") or record.get("description")
-            detail = detail_projection({
-                **({"description": description} if description is not None else {}),
-                "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
-                "constraints": _detail_items(record, "constraints", "constraintType"),
-                "facts": feature_facts(record, key, product.get("description")),
-            })
-            candidates.append({"status": "known", "identity": bound, "detail": detail}
-                              if detail is not None else UNKNOWN)
+        project = cache if cache is not None else _retained_product_evidence
+        candidates = [project(product) for product in group]
         if len({canonical(item) for item in candidates}) == 1:
             result[key] = candidates[0]
     return result

@@ -35,6 +35,23 @@ remain quiet; meaningful improvements, failures and required action are reported
 Capture, finalization, publication, consumer verification, and backup each have
 their own result. PASS means the corresponding evidence actually exists.
 
+Publication retries run only from 03:30 to 22:00 Hobart, with their full
+30-minute execution and 45-second cleanup budget fitting before closing. They
+never occupy the natural ingest window. A failed source backs off for one,
+two, four, then six hours; the reservation is durable before starting, so an
+interrupted watchdog cannot reset that budget. Other queued observations remain
+eligible independently. The child rechecks the exact admitted source under the
+production lock. A timeout terminates and reaps the publication process group.
+
+Every captured observation is queued before publication starts. Successful
+publication removes only its own pending item, preserving older failures and
+newer captures. Scheduled capture and its inline publication retain their
+existing systemd/process-group lifetime; publication retries do not recapture.
+History builds reuse schema validation and product evidence only for matching
+content within that build, with bounded caches. Changed source details and
+artifact bytes still undergo their usual integrity checks. Progress is logged
+after each ten historical dates so a slow build is observable.
+
 During activation, each transaction retains live readiness and verifier output
 under `activation-<id>/smoke/`, separately for pre-switch, post-switch and rollback
 checks. Timestamped phase receipts bind those logs by hash; the final activation

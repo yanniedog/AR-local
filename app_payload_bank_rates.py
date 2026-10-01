@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import date, timedelta
+from time import monotonic
 
 from app_payload_common import CORE_RATE_FIELDS, VALID_SECTIONS, compact, section_filter
 from app_payload_mobile import _history_dates
@@ -91,7 +92,7 @@ def attach_history(core, observations, dates):
 
 def bank_rate_history_rows(core, exports_dir):
     """Encode tiers while yielding each selected day's rows to other reducers."""
-    from app_payload_bank_catalogue import HistoricalCatalogue, UNKNOWN, retained_evidence
+    from app_payload_bank_catalogue import HistoricalCatalogue, RetainedEvidenceCache, UNKNOWN, retained_evidence
     observed = _history_dates(exports_dir, core["run_date"])
     if not observed:
         return
@@ -102,8 +103,11 @@ def bank_rate_history_rows(core, exports_dir):
     dates = [(start + timedelta(days=i)).isoformat() for i in range(count)]
     history = _History(core, dates)
     catalogue = HistoricalCatalogue(dates)
+    evidence_cache = RetainedEvidenceCache()
     unavailable, sources = {}, {}
-    for day in observed:
+    started = monotonic()
+    print(f"[app_payload] bank-rate history starting dates={len(observed)} run_date={core['run_date']}", flush=True)
+    for position, day in enumerate(observed, 1):
         banks = historical_banks(exports_dir, day, unavailable, sources)
         rows = [row for row in (banks.get("rates") or [])
                 if isinstance(row, dict)]
@@ -112,10 +116,13 @@ def bank_rate_history_rows(core, exports_dir):
                                        and section_filter(section, row)]
                               for section in VALID_SECTIONS}
         history.observe(day, sections)
-        evidence = retained_evidence(banks.get("products"))
+        evidence = retained_evidence(banks.get("products"), cache=evidence_cache)
         catalogue.observe(day, sections, lambda row, section: evidence.get(row.get("product_key"), UNKNOWN),
                           sources.get(day))
         yield day, rows
+        if position % 10 == 0 or position == len(observed):
+            print(f"[app_payload] bank-rate history completed={position}/{len(observed)} "
+                  f"date={day} elapsed_seconds={monotonic() - started:.1f}", flush=True)
     history.finish(unavailable)
     core["bank_rate_history_catalogue"] = catalogue.finish(unavailable)
 
