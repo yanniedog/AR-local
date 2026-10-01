@@ -22,6 +22,7 @@ import rba_decisions
 import rba_official
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
 from cdr_clean_export import app_coverage_aliases, coverage_summary
+from cdr_export_contract import contract_validation_cache
 
 from app_payload_contracts import validate_coverage
 
@@ -324,6 +325,7 @@ def _stable_payload_coverage(
     return coverage
 
 
+@contract_validation_cache()
 def _compute_payload(
     exports_dir: Path,
     *,

@@ -134,7 +134,7 @@ def staged_watchdog(monkeypatch, report):
     monkeypatch.setattr(watchdog, "payload_publication_pending", lambda _: False)
     monkeypatch.setattr(watchdog, "run_same_day_recovery", lambda *a, **k: report)
     monkeypatch.setattr(watchdog, "run_daily_ingest", Mock(side_effect=AssertionError("must not ingest")))
-    publish = Mock()
+    publish = Mock(return_value={"status": "published"})
     monkeypatch.setattr(watchdog, "run_payload_retry", publish)
     return publish
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from ar_local_backup_policy import utc_now
+from ar_local_backup_policy import atomic_replace_json, fsync_directory, utc_now
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
 from ar_local_operation_lock import production_lock
 from ar_local_pi_runtime import (
@@ -25,11 +25,13 @@ from ar_local_pi_runtime import (
 )
 from ar_local_subprocess import run_checked
 import app_payload_observation_gate as gate
-from cdr_export_contract import load_contract
+from cdr_export_contract import contract_validation_cache, load_contract
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 from cdr_macro_refresh import refresh_macro_store
 from pi_ingest_terminal import record_failure
+from pi_payload_retry_policy import (payload_retry_window_reason, publication_retry_candidates,
+                                     publication_source_key)
 
 REPO_ROOT = Path(__file__).resolve().parent
 PENDING_PAYLOAD_FILENAME = "app-payload-publication-pending.json"
@@ -222,6 +224,7 @@ def mark_payload_publication_pending(
     """
     path = payload_publication_pending_path(repo_root)
     path.parent.mkdir(parents=True, exist_ok=True)
+    previous = read_payload_publication_pending(repo_root)
     record = {
         "reason": str(reason),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -229,12 +232,12 @@ def mark_payload_publication_pending(
     if isinstance(pointer, dict) and pointer:
         record["run_date"] = str(pointer.get("observation_date") or "")
         record["pointer"] = pointer
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(record, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
+    if previous.get("pointer"):
+        queued = list(previous.get("queued_pointers") or [])
+        if pointer and pointer != previous["pointer"] and pointer not in queued:
+            queued.append(pointer)
+        record = {**previous, "queued_pointers": queued}
+    atomic_replace_json(path, record)
 
 
 def read_payload_publication_pending(repo_root: Path) -> dict:
@@ -254,8 +257,23 @@ def pending_publication_pointer(repo_root: Path) -> Optional[dict]:
     return pointer if isinstance(pointer, dict) and pointer else None
 
 
-def clear_payload_publication_pending(repo_root: Path) -> None:
-    payload_publication_pending_path(repo_root).unlink(missing_ok=True)
+def clear_payload_publication_pending(repo_root: Path, pointer: Optional[dict] = None) -> None:
+    """A successful upload settles only that observation, never other queued work."""
+    path = payload_publication_pending_path(repo_root)
+    record = read_payload_publication_pending(repo_root)
+    queued = list(record.get("queued_pointers") or [])
+    if pointer and record.get("pointer") and record["pointer"] != pointer:
+        record["queued_pointers"] = [item for item in queued if item != pointer]
+        atomic_replace_json(path, record)
+        return
+    if queued:
+        next_pointer = queued.pop(0)
+        atomic_replace_json(path, {**record, "pointer": next_pointer,
+                                  "run_date": next_pointer["observation_date"],
+                                  "queued_pointers": queued})
+    else:
+        path.unlink(missing_ok=True)
+        fsync_directory(path.parent)
 
 
 def _read_observation_pointer(state_dir: Path, name: str) -> dict:
@@ -308,6 +326,7 @@ def _contract_from_completion(runtime_state: Path, completion: dict) -> dict:
         return {}
 
 
+@contract_validation_cache()
 def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -> str:
     """Build + publish the mobile-app payload after a successful ingest.
 
@@ -543,7 +562,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Retry a pending app-payload publication from existing exports without ingesting.",
     )
+    parser.add_argument("--publication-source-key", help="Bind a watchdog retry to its admitted queued observation.")
     args = parser.parse_args(argv)
+    if args.publication_source_key and (
+        not args.publish_existing_payload or len(args.publication_source_key) != 64
+        or any(c not in "0123456789abcdef" for c in args.publication_source_key)
+    ):
+        parser.error("--publication-source-key requires a SHA-256 and --publish-existing-payload")
     if args.resume_same_day and not args.force:
         parser.error("--resume-same-day requires --force")
     if args.quality_recapture and (not args.force or args.resume_same_day):
@@ -558,6 +583,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(effective_argv)
     exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     ensure_runtime_data_writable(REPO_ROOT)
+    if args.publish_existing_payload and (reason := payload_retry_window_reason()):
+        print(f"[pi_daily_sync] app_payload retry deferred reason={reason}", flush=True)
+        return 0
     lock_path = data_state_root(REPO_ROOT) / "daily-ingest.lock"
     try:
         lock_context = DailyIngestLock(lock_path)
@@ -576,6 +604,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if args.date and args.date != today:
                     raise RuntimeError("quality recapture can only capture the actual current day")
             if args.publish_existing_payload:
+                if reason := payload_retry_window_reason():
+                    print(f"[pi_daily_sync] app_payload retry deferred reason={reason}", flush=True)
+                    return 0
                 if not payload_publication_pending(REPO_ROOT):
                     print("[pi_daily_sync] app_payload retry skipped reason=no_pending_marker")
                 elif not _app_payload_enabled():
@@ -589,9 +620,22 @@ def main(argv: Optional[list[str]] = None) -> int:
                     # names one; only an unrecorded (pre-upgrade) marker falls back
                     # to whatever is current.
                     pending_pointer = pending_publication_pointer(REPO_ROOT)
+                    if args.publication_source_key:
+                        candidates = publication_retry_candidates(read_payload_publication_pending(REPO_ROOT))
+                        selected = next((item for item in candidates if
+                                         publication_source_key(item) == args.publication_source_key), None)
+                        if selected is None:
+                            print("[pi_daily_sync] retry deferred reason=source_no_longer_pending", flush=True)
+                            return 0
+                        pending_pointer = selected.get("pointer")
                     outcome = maybe_publish_app_payload(REPO_ROOT, pending_pointer)
                     if outcome == PUBLISH_PUBLISHED:
-                        clear_payload_publication_pending(REPO_ROOT)
+                        clear_payload_publication_pending(REPO_ROOT, pending_pointer)
+                        # A killed older publisher must not strand a newer finalized
+                        # capture whose wrapper never reached publication intent.
+                        current = current_publication_pointer(REPO_ROOT)
+                        if current and current != pending_pointer:
+                            mark_payload_publication_pending(REPO_ROOT, "newer_capture", current)
                         queue_drive_backup("repair-publication")
                         print("[pi_daily_sync] app_payload retry completed")
                     else:
@@ -650,9 +694,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 refresh_economic_data(REPO_ROOT)
             if _app_payload_enabled():
                 pointer = current_publication_pointer(REPO_ROOT)
+                # Commit retry intent BEFORE expensive work; SIGKILL/timeout cannot
+                # otherwise execute the exception path that used to create it.
+                mark_payload_publication_pending(REPO_ROOT, "publication_started", pointer)
                 outcome = maybe_publish_app_payload(REPO_ROOT, pointer or None)
                 if outcome == PUBLISH_PUBLISHED:
-                    clear_payload_publication_pending(REPO_ROOT)
+                    clear_payload_publication_pending(REPO_ROOT, pointer)
                 elif outcome == PUBLISH_FAILED:
                     mark_payload_publication_pending(
                         REPO_ROOT, "publish_failed", pointer

@@ -20,6 +20,7 @@ import pi_daily_sync  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def isolate_scheduled_macro_transport(monkeypatch):
+    monkeypatch.setattr(pi_daily_sync, 'payload_retry_window_reason', lambda: '')
     # Scheduled CDR/payload tests do not contact official macro sources or
     # create the real macro store. The refresh contract has dedicated tests.
     monkeypatch.setattr(pi_daily_sync, "refresh_macro_store", lambda *a, **k: {"status": "test-isolated"})

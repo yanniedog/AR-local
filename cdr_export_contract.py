@@ -6,6 +6,9 @@ import hashlib
 import json
 import math
 import re
+from collections import OrderedDict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -32,6 +35,28 @@ _GENERATION_FIELDS = (
     "quarantines",
     "artifacts",
 )
+_VALIDATED_CONTRACTS: ContextVar[OrderedDict[str, None] | None] = ContextVar(
+    "validated_export_contracts", default=None
+)
+_MAX_VALIDATED_CONTRACTS = 256
+
+
+@contextmanager
+def contract_validation_cache():
+    """Reuse validation of identical content within one payload build only.
+
+    Every load still reads the contract from disk and hashes its full content.
+    Cache entries retain only digests, never mutable contracts or file metadata.
+    Artifact, event and selection checks run normally on every caller's read.
+    """
+    if _VALIDATED_CONTRACTS.get() is not None:
+        yield
+        return
+    token = _VALIDATED_CONTRACTS.set(OrderedDict())
+    try:
+        yield
+    finally:
+        _VALIDATED_CONTRACTS.reset(token)
 
 
 @lru_cache(maxsize=1)
@@ -312,6 +337,12 @@ def write_contract(state_dir: Path, contract: Mapping[str, Any]) -> Path:
 
 def load_contract(path: Path, *, budget: ReadBudget | None = None) -> dict[str, Any]:
     contract = read_json(path, budget=budget)
+    # Budgeted verification retains its complete accounting and schema reads.
+    cache = _VALIDATED_CONTRACTS.get() if budget is None else None
+    content_digest = hashlib.sha256(canonical_json_bytes(contract)).hexdigest() if cache is not None else None
+    if cache is not None and content_digest in cache:
+        cache.move_to_end(content_digest)
+        return contract
     validate_contract(contract, budget=budget)
     if source_generation_digest(contract) != contract.get("source_generation_digest"):
         raise ValueError("export contract source generation digest mismatch")
@@ -319,4 +350,8 @@ def load_contract(path: Path, *, budget: ReadBudget | None = None) -> dict[str, 
         raise ValueError("export contract digest mismatch")
     if budget is not None:
         budget()
+    if cache is not None:
+        cache[content_digest] = None
+        if len(cache) > _MAX_VALIDATED_CONTRACTS:
+            cache.popitem(last=False)
     return contract
