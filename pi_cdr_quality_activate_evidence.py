@@ -1,13 +1,13 @@
 """Small, strict evidence contract for the operator-approved D-027 activation."""
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-import stat
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+from pi_cdr_quality_digest import read_digest
 
 SCHEMA = "ar-local-quality-activation-v1"
 CANARY_SCHEMA = "ar-local-quality-canary-v1"
@@ -16,14 +16,7 @@ COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def sha(path: Path) -> str:
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or path.resolve() != path:
-        raise ValueError("evidence must be a canonical, unique regular file")
-    value = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(4 * 1024 * 1024), b""):
-            value.update(block)
-    return value.hexdigest()
+    return read_digest(path)[0].sha256
 
 
 def read(path: Path) -> dict:

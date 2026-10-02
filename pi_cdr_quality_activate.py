@@ -104,24 +104,40 @@ def main_commit(repo: Path) -> str:
 def protected_files(data: Path) -> dict:
     from cdr_export_contract import load_contract
     from cdr_quality_sources import source_files as audit_files
+    from pi_cdr_quality_digest import DigestSnapshot
+    snapshot = DigestSnapshot(data)
     pointer = data / "state/observation-pointers-v2/latest-observation.json"
-    selected = read(pointer)
+    selected = snapshot.read(pointer)
     marker = relative(data / "state", selected["marker_path"])
-    completion = read(marker)
+    completion = snapshot.read(marker)
     exports = relative(data, selected["export_path"])
     contract_path = relative(data / "state", completion["export_contract_path"])
+    snapshot.digest(contract_path)
     contract = load_contract(contract_path)
+    snapshot.digest(contract_path)
     if relative(data, contract["source_path"]) != exports or contract["generation_id"] != selected["generation_id"]:
         raise ValueError("selected source differs from its export contract")
     source = {"root": exports, "contract": contract, "run_date": contract["observation_date"]}
-    paths = {pointer, data / "state/ledger-v2/head.json", marker, contract_path}
-    paths.update((data / "state/ledger-v2/events").glob("*/*.json"))
-    for path, descriptor in audit_files(source):
-        digest = sha(path)
-        if descriptor and (digest != descriptor["sha256"] or path.stat().st_size != descriptor["bytes"]):
-            raise ValueError("current source artifact differs from its immutable contract")
-        paths.add(path)
-    return {p.relative_to(data).as_posix(): sha(p) for p in sorted(paths)}
+    def inventory():
+        events = data / "state/ledger-v2/events"
+        snapshot.directory(exports)
+        snapshot.directory(events)
+        directories = tuple(sorted(p for p in events.iterdir() if p.is_dir() or p.is_symlink()))
+        for directory in directories:
+            snapshot.directory(directory)
+        return (tuple(sorted(events.glob("*/*.json"))), audit_files(source), directories)
+
+    before = inventory()
+    for path in (data / "state/ledger-v2/head.json", *before[0]):
+        snapshot.digest(path)
+    for path, descriptor in before[1]:
+        snapshot.digest(path, descriptor)
+    if inventory() != before:
+        raise ValueError("protected evidence inventory changed during snapshot")
+    snapshot.finish()
+    if inventory() != before:
+        raise ValueError("protected evidence inventory changed during snapshot")
+    return snapshot.finish()
 
 
 def guard(data: Path, production: Path) -> None:
