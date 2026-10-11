@@ -243,3 +243,101 @@ def test_pending_respects_publication_grace():
     pi = pi_state(now=now)
     pi["value"]["publication_pending"] = pending_summary({"pointer": {"observation_date": DAY}})
     assert snapshot.summarize(now, pi, public())["status"] == "GRACE"
+
+
+def count_status():
+    return {"total": 4, "failure_provenance_complete": True, "unresolved_requests_complete": True,
+            "unresolved_request_sample_count": 4, "by_provider": {"a": 2, "b": 1, "c": 1},
+            "unresolved_requests": [
+                {"provider_dir": "a", "provider_uid": "pa", "phase": "product_detail", "product_id": "p1"},
+                {"provider_dir": "a", "provider_uid": "pa", "phase": "classification_detail", "product_id": "p1"},
+                {"provider_dir": "b", "provider_uid": "pb", "phase": "product_detail", "product_id": "p1"},
+                {"provider_dir": "c", "provider_uid": "pc", "phase": "products_index", "product_id": ""}]}
+
+
+def test_count_distinct_provider_product_pairs_and_unknown_index_population():
+    assert snapshot._count_failures(count_status()) == {
+        "failed_request_records": 4, "known_failed_products": 2, "failed_providers": 3,
+        "providers_with_unknown_product_population": 1, "product_count_is_lower_bound": True}
+
+
+@pytest.mark.parametrize("change", [
+    lambda s: s.update(unresolved_requests_complete=False),
+    lambda s: s.update(failure_provenance_complete=False),
+    lambda s: s.update(unresolved_request_sample_count=3),
+    lambda s: s.update(total=6),
+    lambda s: s["unresolved_requests"][0].update(product_id=""),
+    lambda s: s["unresolved_requests"][1].update(provider_uid="different"),
+    lambda s: s["unresolved_requests"][3].update(product_id="unknown-index-product"),
+])
+def test_unverified_count_is_never_converted_to_zero(change):
+    status = count_status()
+    change(status)
+    with pytest.raises(ValueError):
+        snapshot._count_failures(status)
+
+
+def test_verified_zero_has_explicit_complete_evidence():
+    status = {"total": 0, "failure_provenance_complete": True, "unresolved_requests_complete": True,
+              "unresolved_request_sample_count": 0, "by_provider": {}, "unresolved_requests": []}
+    counts = snapshot._count_failures(status)
+    assert counts["known_failed_products"] == 0 and counts["failed_providers"] == 0
+    assert counts["product_count_is_lower_bound"] is False
+
+
+def count_source(tmp_path, monkeypatch):
+    import hashlib
+    import cdr_export_contract as contracts
+    import cdr_ledger_v2 as ledger
+    root = tmp_path / "state"
+    root.mkdir()
+    relative = "runs/" + DAY + "/_exports"
+    export = tmp_path / relative
+    export.mkdir(parents=True)
+    raw = json.dumps(count_status()).encode()
+    path = export / "ingest-status.json"
+    path.write_bytes(raw)
+    generation = "obs-" + DAY + "-" + "a" * 16
+    pointer = {"observation_date": DAY, "generation_id": generation, "observation_state": "partial",
+               "marker_path": DAY + ".done.json", "export_path": relative, "ledger_event_digest": "event"}
+    marker = {"generation_id": generation, "observation_state": "partial", "run_date": DAY,
+              "ledger_state": "finalized", "finalization_schema_version": 2, "export_contract_digest": "contract",
+              "export_contract_path": "contract.json", "ledger_event_digest": "event"}
+    contract = {"generation_id": generation, "observation_date": DAY, "observation_state": "partial",
+                "contract_digest": "contract", "source_generation_digest": "source", "source_path": relative,
+                "completion_marker_path": pointer["marker_path"], "artifacts": [{"path": "ingest-status.json",
+                "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}]}
+    event = {"generation_id": generation, "observation_date": DAY, "observation_state": "partial",
+             "ledger_state": "finalized", "contract_digest": "contract", "event_digest": "event", "contract_path": "contract.json"}
+    values = {"observation-pointers-v2/latest-observation.json": pointer,
+              pointer["marker_path"]: marker, "contract.json": contract,
+              f"ledger-v2/events/{DAY}/{generation}.json": event}
+    class Watch:
+        @staticmethod
+        def read_json(root, relative, *, maximum=1048576):
+            assert maximum <= 8 * 1024 * 1024
+            return values[relative]
+    monkeypatch.setattr(contracts, "validate_contract", lambda value: None)
+    monkeypatch.setattr(contracts, "contract_digest", lambda value: "contract")
+    monkeypatch.setattr(contracts, "source_generation_digest", lambda value: "source")
+    monkeypatch.setattr(ledger, "event_digest", lambda value: "event")
+    return Watch, root, path, values
+
+
+def test_remote_count_binds_hash_and_selected_generation(tmp_path, monkeypatch):
+    watch, root, path, values = count_source(tmp_path, monkeypatch)
+    result = snapshot._remote_failure_counts(watch, root, DAY)
+    assert result["available"] and result["known_failed_products"] == 2
+    assert result["generation_id"] == values["contract.json"]["generation_id"]
+    assert result["source_sha256"] == values["contract.json"]["artifacts"][0]["sha256"]
+    path.write_bytes(path.read_bytes() + b" ")
+    unknown = snapshot._remote_failure_counts(watch, root, DAY)
+    assert not unknown["available"] and unknown["unverified"]
+    assert "known_failed_products" not in unknown
+
+
+def test_remote_count_rejects_marker_generation_mismatch(tmp_path, monkeypatch):
+    watch, root, path, values = count_source(tmp_path, monkeypatch)
+    values[DAY + ".done.json"]["generation_id"] = "different-generation"
+    result = snapshot._remote_failure_counts(watch, root, DAY)
+    assert not result["available"] and "known_failed_products" not in result

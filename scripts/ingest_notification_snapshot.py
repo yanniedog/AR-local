@@ -73,6 +73,99 @@ def _remote_pending(watch, root):
         return {"exists": True, "unverified": True}
 
 
+def _count_failures(status):
+    """Count identities, never equate a request or unknown index with a product."""
+    if not isinstance(status, dict):
+        raise ValueError("invalid failure status")
+    requests = status.get("unresolved_requests")
+    providers = status.get("by_provider")
+    total = status.get("total")
+    if (status.get("failure_provenance_complete") is not True
+            or status.get("unresolved_requests_complete") is not True
+            or type(total) is not int or total < 0
+            or not isinstance(requests, list) or len(requests) > 8192
+            or status.get("unresolved_request_sample_count") != len(requests)
+            or not isinstance(providers, dict)
+            or any(not isinstance(k, str) or not k or type(v) is not int or v < 0 for k, v in providers.items())
+            or sum(providers.values()) != total):
+        raise ValueError("failure counts lack complete provenance")
+    products, failed_providers, unknown_populations, directories = set(), set(), set(), set()
+    identities, request_counts = {}, {}
+    for row in requests:
+        if not isinstance(row, dict):
+            raise ValueError("invalid failed request")
+        directory, phase, product = row.get("provider_dir"), row.get("phase"), row.get("product_id")
+        identity = row.get("provider_uid") or directory
+        if (not isinstance(directory, str) or not directory or not isinstance(identity, str) or not identity
+                or directory not in providers or not isinstance(product, str)
+                or phase not in {"products_index", "product_detail", "classification_detail"}
+                or (phase == "products_index" and product) or (phase != "products_index" and not product)):
+            raise ValueError("failed request identity is incomplete")
+        if identities.setdefault(directory, identity) != identity:
+            raise ValueError("provider identity changed inside failure metadata")
+        request_counts[directory] = request_counts.get(directory, 0) + 1
+        directories.add(directory)
+        failed_providers.add(identity)
+        if phase == "products_index":
+            unknown_populations.add(identity)
+        else:
+            products.add((identity, product))
+    if directories != {k for k, v in providers.items() if v} or any(request_counts[k] > providers[k] for k in directories):
+        raise ValueError("failed request providers do not reconcile")
+    return {"failed_request_records": total, "known_failed_products": len(products),
+            "failed_providers": len(failed_providers),
+            "providers_with_unknown_product_population": len(unknown_populations),
+            "product_count_is_lower_bound": bool(unknown_populations)}
+
+
+def _remote_failure_counts(watch, root, run_date):
+    """Bind one small status file to selected metadata; never open SQLite."""
+    import hashlib
+    import json
+    from cdr_export_contract import validate_contract, contract_digest, source_generation_digest
+    from cdr_ledger_v2 import event_digest
+    try:
+        pointer = watch.read_json(root, "observation-pointers-v2/latest-observation.json")
+        if pointer.get("observation_date") != run_date:
+            raise ValueError("no current selected observation")
+        marker = watch.read_json(root, pointer.get("marker_path"))
+        contract_path = marker.get("export_contract_path")
+        contract = watch.read_json(root, contract_path, maximum=8 * 1024 * 1024)
+        validate_contract(contract)
+        generation = contract["generation_id"]
+        event = watch.read_json(root, f"ledger-v2/events/{run_date}/{generation}.json")
+        if not (pointer.get("generation_id") == marker.get("generation_id") == event.get("generation_id") == generation
+                and marker.get("run_date") == event.get("observation_date") == contract["observation_date"] == run_date
+                and pointer.get("observation_state") == marker.get("observation_state") == event.get("observation_state") == contract["observation_state"]
+                and marker.get("ledger_state") == event.get("ledger_state") == "finalized"
+                and marker.get("finalization_schema_version") == 2
+                and contract_digest(contract) == contract["contract_digest"] == marker.get("export_contract_digest") == event.get("contract_digest")
+                and source_generation_digest(contract) == contract["source_generation_digest"]
+                and event_digest(event) == event.get("event_digest") == pointer.get("ledger_event_digest") == marker.get("ledger_event_digest")
+                and event.get("contract_path") == contract_path
+                and pointer.get("marker_path") == contract["completion_marker_path"]
+                and pointer.get("export_path") == contract["source_path"]):
+            raise ValueError("selected failure-count metadata does not reconcile")
+        relative = pointer["export_path"] + "/ingest-status.json"
+        path = root.parent / relative
+        if path.resolve() != path or root.parent not in path.parents or path.is_symlink():
+            raise ValueError("unsafe failure-count source")
+        with path.open("rb") as stream:
+            raw = stream.read(4 * 1024 * 1024 + 1)
+        records = [row for row in contract["artifacts"] if row["path"] == "ingest-status.json"]
+        digest = hashlib.sha256(raw).hexdigest()
+        if (len(raw) > 4 * 1024 * 1024 or len(records) != 1 or records[0]["bytes"] != len(raw)
+                or records[0]["sha256"] != digest
+                or watch.read_json(root, "observation-pointers-v2/latest-observation.json") != pointer):
+            raise ValueError("failure-count source changed after finalization")
+        counts = _count_failures(json.loads(raw))
+        return {"available": True, **counts, "run_date": run_date, "generation_id": generation,
+                "observation_state": contract["observation_state"], "source_path": relative, "source_sha256": digest,
+                "count_scope": "complete terminal-request identities in selected hash-bound ingest-status metadata"}
+    except (OSError, ValueError, TypeError, KeyError):
+        return {"available": False, "unverified": True, "reason": "bounded_failure_count_evidence_unavailable"}
+
+
 def remote_snapshot():
     """Executed by python -B over stdin; imports no write-capable entrypoint."""
     from datetime import datetime, timezone
@@ -116,7 +209,8 @@ def remote_snapshot():
     return {"schema_version": 1, "read_only": True, "checked_at": now.isoformat(),
             "ingest": {key: ingest.get(key) for key in ("status", "date")},
             "units": safe_units, "health_facets": facets,
-            "recovery": _remote_recovery(watch, root), "publication_pending": _remote_pending(watch, root)}
+            "recovery": _remote_recovery(watch, root), "publication_pending": _remote_pending(watch, root),
+            "failure_counts": _remote_failure_counts(watch, root, now.astimezone(watch.DAILY_INGEST_TZ).date().isoformat())}
 
 
 def _worker(command, *, input_text=None):
@@ -139,6 +233,7 @@ def _worker(command, *, input_text=None):
 def collect_pi():
     # Only trusted local source goes to the interpreter. Remote JSON is parsed as data.
     source = (inspect.getsource(_remote_recovery) + "\n" + inspect.getsource(_remote_pending)
+              + "\n" + inspect.getsource(_count_failures) + "\n" + inspect.getsource(_remote_failure_counts)
               + "\n" + inspect.getsource(remote_snapshot)
               + "\nimport json\nprint(json.dumps(remote_snapshot()))\n")
     return _worker(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
