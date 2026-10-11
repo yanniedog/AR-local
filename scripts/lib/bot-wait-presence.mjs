@@ -93,7 +93,8 @@ export function collectBotEvents(prPayload, knownBots, anchorIso, fallbackIso) {
 export function checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys, anchorIso, repoRoot } = {}) {
   const state = readBotWaitState(prNumber, repoRoot);
   const keys =
-    requiredKeys?.length ? requiredKeys : state?.requiredKeys?.length ? state.requiredKeys : resolveRequiredKeys();
+    Array.isArray(requiredKeys) ? requiredKeys : resolveRequiredKeys();
+  if (!keys.length) return { requiredKeys: [], anchor: anchorIso || state?.anchor || null, missing: [], botsSeen: [], ok: true, detail: 'Reviewers are advisory' };
   const knownBots = allKnownBotLogins(keys);
   const data = ghGraphql(owner, name, prNumber);
   const pr = data?.data?.repository?.pullRequest;

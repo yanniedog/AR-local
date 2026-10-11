@@ -2,6 +2,7 @@
  * Shared helpers for npm run pr:gates:check (merge-blocking PR gate audit).
  */
 import { spawnSync } from 'node:child_process';
+import { resolveRequiredKeys } from './bot-wait-config.mjs';
 import { readCheckResult, selectLatestChecks, selectNamedCheckHistory } from './pr-check-history.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +15,7 @@ import { gateExemptReason } from './pr-gate-exempt.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, '../..');
 
-export const BOT_GATE_CHECK_NAMES = ['bot-presence-gate', 'bot-feedback-gate'];
+export const BOT_GATE_CHECK_NAMES = ['bot-feedback-gate'];
 
 const FEEDBACK_PLAN_RE = /##\s*feedback\s+plan\b/i;
 
@@ -102,7 +103,7 @@ export function resolvePrNumber(prArg) {
   return { pr: view, branch };
 }
 
-export function fetchRequiredCi(prNumber) {
+export function fetchRequiredCi(prNumber, { ignoredNames = [] } = {}) {
   const r = spawnSync(
     'gh',
     ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state,startedAt,completedAt,workflow,link'],
@@ -110,7 +111,12 @@ export function fetchRequiredCi(prNumber) {
   );
   const result = readCheckResult(r);
   if (result.error) return { ok: false, error: result.error };
-  const latest = selectLatestChecks(result.checks);
+  const ignored = new Set(ignoredNames.map((name) => name.toLowerCase()));
+  const relevant = result.checks.filter((check) => {
+    const name = String(check.name || '').toLowerCase();
+    return !ignored.has(name) && !ignored.has(name.slice(name.lastIndexOf('/') + 1).trim());
+  });
+  const latest = selectLatestChecks(relevant);
   if (latest.error) return { ok: false, error: latest.error };
   const checks = latest.checks;
   let pending = false;
@@ -190,7 +196,10 @@ export function gateCiRequired(prNumber) {
 }
 
 export function gateGithubBotChecks(prNumber) {
-  const { found, error, skipped } = fetchNamedChecks(prNumber, BOT_GATE_CHECK_NAMES);
+  const names = resolveRequiredKeys().length
+    ? ['bot-presence-gate', ...BOT_GATE_CHECK_NAMES]
+    : BOT_GATE_CHECK_NAMES;
+  const { found, error, skipped } = fetchNamedChecks(prNumber, names);
   if (error) {
     return {
       id: 'github-bot-gates',
@@ -199,7 +208,7 @@ export function gateGithubBotChecks(prNumber) {
       action: 'Ensure GitHub Actions workflows pr-bot-presence-gate and pr-bot-feedback-check ran',
     };
   }
-  if (skipped || !BOT_GATE_CHECK_NAMES.some((name) => found[name])) {
+  if (skipped || !names.some((name) => found[name])) {
     return {
       id: 'github-bot-gates',
       pass: true,
@@ -211,7 +220,7 @@ export function gateGithubBotChecks(prNumber) {
   let pass = true;
   let botPresencePass = false;
   let botPresenceCompletedAt = null;
-  for (const name of BOT_GATE_CHECK_NAMES) {
+  for (const name of names) {
     const c = found[name];
     if (!c) {
       parts.push(`${name}: not reported yet`);
