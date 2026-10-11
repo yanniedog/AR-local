@@ -52,10 +52,11 @@ size and desktop codec timing alone do not establish that acceptance result.
 
 Code merge alone does not activate this capability. Follow the controlled Pi
 recovery runbook and latest chronological handoff, preserving the pinned runtime,
-Drive write hold and current ownership until the guarded transition is approved.
-The runbook's production-environment approval requirement is at
-`PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`, Phase B, together with the immutable main
-candidate and canary evidence requirements.
+Drive write hold and current ownership until the guarded transition is ready.
+The current `CDR_QUALITY_PIPELINE.md` authority and latest handoff govern runtime
+work. The runbook's Phase B GitHub route requires a configured production
+environment and exact canary evidence. The D-027 local sealed activation route
+is a separate supported path; an absent GitHub environment does not alone block it.
 
 1. Deploy the reviewed automatic delivery service allowlist from
    `services/app-data/` and verify authenticated packed-asset routing and exact
@@ -75,5 +76,9 @@ candidate and canary evidence requirements.
    installation, against the few-second requirement. Record native and subsequent
    natural-cycle evidence separately from code, service and publication checks.
 
-This activation does not create, enable, resume or start scheduled tasks and does
-not resume Drive writes. Missing runtime evidence remains pending.
+Do not create, enable, resume or start scheduled tasks or resume Drive writes.
+The local sealed activator stops and then starts previously active watchdog and
+runtime-health timers, including on rollback. That restoration is a material
+boundary under a no-start instruction: resolve authorization before activation;
+do not bypass or alter the guarded procedure. Missing runtime evidence remains
+pending.
