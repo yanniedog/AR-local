@@ -494,6 +494,8 @@ def _package_payload(
     tag: str = DEFAULT_TAG,
 ) -> Dict[str, Any]:
     """Gzip + write the manifest for one tag's release from precomputed payload data."""
+    if payload_crypto.resolve_key_from_env() is not None:
+        raise ValueError("Direct GitHub delivery requires unencrypted domain assets; disable legacy inner ARE1 packaging")
     return _package(
         data["core"],
         data["details"],
@@ -513,9 +515,9 @@ def _package_payload(
         executable_v2_root=data.get('executable_v2_root'),
         executable_v3_root=data.get('executable_v3_root'),
         executable_v4_root=data.get('executable_v4_root'),
-        # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
-        # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
-        enc_key=payload_crypto.resolve_key_from_env(),
+        # ARE2 remains the encrypted compatibility transport. Direct companions
+        # contain these exact gzip domain bytes, so never add an inner ARE1 layer.
+        direct_delivery=True,
     )
 
 
@@ -534,6 +536,7 @@ def _package(
     bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
+    direct_delivery: bool = False,
     source_observation: Optional[Mapping[str, Any]] = None,
     terms: Optional[Mapping[str, Any]] = None,
     executable_root: Optional[Path] = None,
@@ -542,6 +545,8 @@ def _package(
     executable_v4_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
+    if direct_delivery and enc_key:
+        raise ValueError("Direct GitHub delivery cannot contain inner encrypted assets")
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     from app_payload_bank_history_asset import ASSET_KIND, NAMESPACE, critical_core, encode_envelope
@@ -598,6 +603,8 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
+    if direct_delivery:
+        manifest["delivery"] = {"mode": "github-public-v1"}
     if catalogue is not None:
         history_wire = encode_envelope(catalogue, run_date=run_date, core_sha256=files['core']['sha256'])
         manifest[NAMESPACE] = {"schema_version": 1, "file": _asset(

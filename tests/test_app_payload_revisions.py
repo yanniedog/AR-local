@@ -172,6 +172,12 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
     (exports / "dashboard-cache" / "latest.json").write_bytes(canonical({"run_date": DAY}))
     store = MemoryStore()
     calls = []
+    public_mirrors = []
+    def mirror(directory, backend, state):
+        assert backend is store and store.promotions == 1
+        assert decode_document((directory / "manifest.json").read_bytes())["delivery"] == {"mode": "github-public-v1"}
+        public_mirrors.append(directory)
+    monkeypatch.setattr("app_payload_public_companion.publish_companion", mirror)
 
     def compute(*args, **kwargs):
         assert kwargs["include_history"] is True
@@ -182,6 +188,7 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
 
     def alias(directory, *, repo, tag):
         assert store.promotions == 1
+        assert public_mirrors[-1] == directory
         manifest = decode_document((directory / "manifest.json").read_bytes())
         assert manifest["payload_revision"]["revision"] == 1
         assert "search_index" in manifest["files"]
