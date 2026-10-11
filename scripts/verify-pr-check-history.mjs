@@ -25,3 +25,5 @@ assert.match(selectLatestChecks([old, { ...newer, startedAt: '0001-01-01T00:00:0
 assert.match(selectLatestChecks([{ ...old, link: 'https://review.example/' }, { ...newer, link: 'https://review.example/' }]).error, /Cannot identify producer/);
 assert.deepEqual(selectNamedCheckHistory([newer, { name: 'advisory' }, { name: 'advisory' }], ['bot-feedback-gate']).checks, [newer]);
 assert.deepEqual(selectNamedCheckHistory([{ ...newer, name: 'workflow / bot-feedback-gate' }], ['bot-feedback-gate']).checks.length, 1);
+
+assert.match(selectNamedCheckHistory([null], ['bot-feedback-gate']).error, /no name/);

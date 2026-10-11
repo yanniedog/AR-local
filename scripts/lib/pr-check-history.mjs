@@ -52,6 +52,9 @@ export function selectLatestChecks(checks) {
 
 /** Scope chronology errors to the requested gates, not unrelated advisory jobs. */
 export function selectNamedCheckHistory(checks, names) {
+  if (checks.some((check) => !check || typeof check.name !== 'string' || !check.name)) {
+    return { error: 'Check observation has no name' };
+  }
   const wanted = new Set(names.map((name) => name.toLowerCase()));
   return selectLatestChecks(checks.filter((check) => {
     const name = String(check.name || '').toLowerCase();
