@@ -8,6 +8,7 @@ import pytest
 import pi_daily_sync as sync
 import pi_daily_watchdog as watchdog
 import pi_payload_continuity as continuity
+import ar_local_operation_lock as operation_lock
 from ar_local_operation_lock import production_lock
 
 NOW = datetime(2026, 10, 11, 0, tzinfo=timezone.utc)  # 11:00 Hobart
@@ -110,6 +111,24 @@ def test_active_ingest_and_protected_window_defer_reconciliation(runtime, monkey
         assert (state / "daily-ingest.lock").read_bytes() == original
     monkeypatch.setattr(continuity, "payload_retry_window_reason", lambda *args: "protected_natural_ingest_window")
     assert reconcile(root, ["2026-10-01"])["reason"] == "protected_natural_ingest_window"
+
+
+def test_crashed_owner_lock_recovers_orphaned_publication_intent(runtime, monkeypatch):
+    root, state = runtime
+    state.mkdir()
+    lock = state / "daily-ingest.lock"
+    lock.write_text("pid=12345\nrole=payload\n", encoding="utf-8")
+    original = lock.read_bytes()
+    monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _: False)
+    monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "")
+    monkeypatch.setattr(continuity, "retained_pointer", lambda _, day: (pointer(day), "complete"))
+    # A diagnostic pass never reclaims the crashed owner's lock.
+    assert reconcile(root, ["2026-10-01"], dry_run=True)["status"] == "deferred"
+    assert lock.read_bytes() == original
+    assert reconcile(root, ["2026-10-01"])["queued_dates"] == ["2026-10-01"]
+    assert sync.pending_publication_pointer(root) == pointer("2026-10-01")
+    assert not lock.exists()
 
 
 def test_corrupt_pending_state_is_preserved(runtime, monkeypatch):
