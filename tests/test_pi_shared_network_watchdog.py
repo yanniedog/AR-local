@@ -49,8 +49,8 @@ def test_single_gateway_failure_does_not_mutate_network(tmp_path):
         assert 'below' in network.recover(tmp_path / 'state.json', tmp_path)
 
 
-@pytest.mark.parametrize('units,expected', [('failed\ninactive\n', True),
-                                        ('active\ninactive\n', False), ('', False)])
+@pytest.mark.parametrize('units,expected', [('failed\ninactive\ninactive\n', True),
+    ('active\ninactive\ninactive\n', False), ('inactive\ninactive\nactive\n', False), ('', False)])
 def test_only_idle_verified_wifi_can_be_recovered(tmp_path, units, expected):
     state = tmp_path / 'state.json'
     state.write_text(json.dumps({'gateway': '192.168.1.1', 'interface': 'wlan0', 'failures': 2}))
@@ -67,3 +67,20 @@ def test_only_idle_verified_wifi_can_be_recovered(tmp_path, units, expected):
         network.recover(state, tmp_path)
     mutations = [row for row in calls if 'connect' in row]
     assert mutations == ([['nmcli', '--wait', '20', 'device', 'connect', 'wlan0']] if expected else [])
+    if expected:
+        assert json.loads(state.read_text())['failures'] == 0
+
+
+@pytest.mark.parametrize('login,remote', [('pi :0 (:0)', False), ('pi pts/0 (192.168.1.2)', True)])
+def test_local_display_does_not_block_recovery(login, remote):
+    with patch.object(network, 'command', side_effect=[result(), result(login)]):
+        assert network.remote_sessions_active() is remote
+
+
+@pytest.mark.parametrize('old_state', ['broken JSON', '[]', '{"failures": "bad"}'])
+def test_corrupt_state_restarts_threshold_without_recovery(tmp_path, old_state):
+    state = tmp_path / 'state.json'
+    state.write_text(old_state)
+    with patch.object(network, 'command', side_effect=[
+            result('[{"gateway":"192.168.1.1","dev":"wlan0"}]'), result(code=1)]):
+        assert 'below' in network.recover(state, tmp_path)
