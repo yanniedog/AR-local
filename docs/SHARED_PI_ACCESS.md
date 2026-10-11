@@ -38,6 +38,21 @@ connection on that one verified Wi-Fi interface. It defers for remote SSH/login
 sessions, active ingest, an occupied production lease, ambiguous routes or
 unavailable evidence. It never restarts NetworkManager or other interfaces.
 NetworkManager's existing autoconnect remains responsible for absent routes.
+Recovery is excluded from 00:30 through 02:00 Hobart and from the preceding
+two minutes, so a bounded reconnect cannot occupy the natural-ingest lease.
+The clock is checked again after inspection, immediately before mutation.
+Tailscale SSH can hide non-PTY sessions from socket and login records; while
+`RunSSH` is enabled or cannot be read, automatic Wi-Fi recovery defers even
+when `ss` and `who` are empty. Use an authorized queued host operation for
+manual recovery. Standard OpenSSH session processes also cause deferral,
+including sessions on other ports.
+
+The watchdog runs as the normal AR-local service user. Its production lock
+helper is loaded from that user's checkout without gaining root execution.
+The only privileged action is the validated interface's static
+`sudo -n /usr/bin/nmcli --wait 20 device connect` command. A 120-second overall
+command budget fits within the 150-second service deadline; command failures
+and aborted checks exit nonzero, while ordinary coordination deferrals succeed.
 
 For an existing host, install the reviewed standalone network script under
 `/usr/local/lib/ar-local-shared-host/`. Install `shared-host-network.conf` as
@@ -48,6 +63,16 @@ Preserve the old files before installation. Run `systemctl daemon-reload` and
 read back effective properties. These steps do not start, enable or restart
 services or timers. Test the network script with `--dry-run` before installing
 the override. Schedule activation remains a separate operator decision.
+Render the network override's `AR_LOCAL_USER`, `AR_LOCAL_GROUP`, `AR_LOCAL_REPO`
+and `AR_LOCAL_DATA_ROOT` placeholders using the same selected installation
+paths as the producer; do not install the template literally. This supports
+portable roots such as `/mnt/ar-local-ssd` and preserves the correct native
+transaction lock. The standard installer installs that rendered override and
+root-owned entry script before its existing power-resilience activation step.
+The legacy shell fallback now fails closed; standalone power-resilience setup
+does not activate a network timer without the guarded installation contract.
+Do not execute either installer merely to apply these runtime overrides:
+their full setup paths activate scheduled services and require explicit approval.
 
 The limits reduce contention; they do not establish a latency guarantee or prove
 the cause of a past connection failure. Verify SSH and dashboard latency while

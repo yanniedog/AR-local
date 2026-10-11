@@ -180,24 +180,10 @@ fi
 # unreachable, restarts NetworkManager + re-ups the wifi profiles.
 cat > /usr/local/sbin/ar-local-net-watchdog.sh <<'WD'
 #!/usr/bin/env sh
-# Re-establish networking if the default gateway is unreachable.
-gw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
-[ -n "$gw" ] && ping -c1 -W3 "$gw" >/dev/null 2>&1 && exit 0
-logger -t ar-local-net-watchdog "no network (gw='${gw:-none}'); restarting NetworkManager"
-systemctl restart NetworkManager 2>/dev/null || true
-sleep 8
-if command -v nmcli >/dev/null 2>&1; then
-  # Try wifi profiles in autoconnect-priority order (highest first), stop on the
-  # first that brings up a default gateway. Gives Nikipedia -> ASUS_2.4 -> Slow
-  # failover even if NetworkManager's own autoconnect fixates on one SSID.
-  nmcli -t -f AUTOCONNECT-PRIORITY,TYPE,NAME connection show 2>/dev/null \
-    | awk -F: '$2=="802-11-wireless"{print $1":"$3}' | sort -t: -k1 -rn | cut -d: -f2- \
-    | while IFS= read -r n; do
-        nmcli connection up "$n" 2>/dev/null || continue
-        ngw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
-        [ -n "$ngw" ] && ping -c1 -W3 "$ngw" >/dev/null 2>&1 && break
-      done
-fi
+# Recovery is supplied only by the reviewed non-root shared-host override.
+# A missing override must fail closed rather than reset the whole host network.
+echo "Guarded network watchdog override is required" >&2
+exit 1
 WD
 chmod +x /usr/local/sbin/ar-local-net-watchdog.sh
 cat > /etc/systemd/system/ar-local-net-watchdog.service <<'WS'
@@ -219,8 +205,15 @@ Persistent=true
 WantedBy=timers.target
 WT
 systemctl daemon-reload
-systemctl enable --now ar-local-net-watchdog.timer 2>/dev/null \
-  && log "net-watchdog timer enabled (every 3 min)" \
-  || log "WARN: could not enable net-watchdog timer"
+if [ "${AR_LOCAL_GUARDED_NETWORK_INSTALLED:-0}" = 1 ] \
+    && [ -f /usr/local/lib/ar-local-shared-host/pi_shared_network_watchdog.py ] \
+    && [ -f /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf ] \
+    && ! grep -q '{{' /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf; then
+  systemctl enable --now ar-local-net-watchdog.timer 2>/dev/null \
+    && log "guarded net-watchdog timer enabled (every 3 min)" \
+    || log "WARN: could not enable guarded net-watchdog timer"
+else
+  log "network timer activation skipped: install rendered shared-host override first"
+fi
 
 log "done. cmdline.txt / config.txt changes require a reboot to take effect."
