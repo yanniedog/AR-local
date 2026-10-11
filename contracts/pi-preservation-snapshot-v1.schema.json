@@ -51,8 +51,8 @@
       "properties": {
         "policy_version": {"const": 1},
         "included": {
-          "type": "array", "minItems": 2, "maxItems": 5, "uniqueItems": true,
-          "items": {"enum": ["runs", "state", "logs", "predeploy", "runs-archive"]},
+          "type": "array", "minItems": 2, "maxItems": 6, "uniqueItems": true,
+          "items": {"enum": ["runs", "state", "logs", "predeploy", "runs-archive", ".daily-raw-stage"]},
           "allOf": [
             {"contains": {"const": "runs"}},
             {"contains": {"const": "state"}}
