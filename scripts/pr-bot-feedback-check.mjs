@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
-import { checkRequiredBotsOnPr, readBotWaitState } from './lib/bot-wait-presence.mjs';
+import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
 import {
   GhRateLimitError,
   classifyThreads,
@@ -148,16 +148,7 @@ function main() {
 
   let botPresence = null;
   if (!args.skipBotPresence) {
-    const state = readBotWaitState(prNumber);
-    const cliOverride = args.requireBots !== null;
-    const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
-    const requiredKeys = cliOverride
-      ? resolveRequiredKeys(args.requireBots)
-      : envOverride
-        ? resolveRequiredKeys()
-        : state?.requiredKeys?.length
-          ? state.requiredKeys
-          : resolveRequiredKeys();
+    const requiredKeys = resolveRequiredKeys(args.requireBots);
     try {
       botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
     } catch (e) {
