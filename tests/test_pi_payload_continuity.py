@@ -8,6 +8,7 @@ import pytest
 import pi_daily_sync as sync
 import pi_daily_watchdog as watchdog
 import pi_payload_continuity as continuity
+import ar_local_operation_lock as operation_lock
 from ar_local_operation_lock import production_lock
 
 NOW = datetime(2026, 10, 11, 0, tzinfo=timezone.utc)  # 11:00 Hobart
@@ -112,6 +113,24 @@ def test_active_ingest_and_protected_window_defer_reconciliation(runtime, monkey
     assert reconcile(root, ["2026-10-01"])["reason"] == "protected_natural_ingest_window"
 
 
+def test_crashed_owner_lock_recovers_orphaned_publication_intent(runtime, monkeypatch):
+    root, state = runtime
+    state.mkdir()
+    lock = state / "daily-ingest.lock"
+    lock.write_text("pid=12345\nrole=payload\n", encoding="utf-8")
+    original = lock.read_bytes()
+    monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _: False)
+    monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "")
+    monkeypatch.setattr(continuity, "retained_pointer", lambda _, day: (pointer(day), "complete"))
+    # A diagnostic pass never reclaims the crashed owner's lock.
+    assert reconcile(root, ["2026-10-01"], dry_run=True)["status"] == "deferred"
+    assert lock.read_bytes() == original
+    assert reconcile(root, ["2026-10-01"])["queued_dates"] == ["2026-10-01"]
+    assert sync.pending_publication_pointer(root) == pointer("2026-10-01")
+    assert not lock.exists()
+
+
 def test_corrupt_pending_state_is_preserved(runtime, monkeypatch):
     root, state = runtime
     state.mkdir()
@@ -132,6 +151,20 @@ def test_retry_selects_current_day_before_older_ready_failure(runtime, monkeypat
     monkeypatch.setattr(watchdog, "retry_admission", admitted)
     assert watchdog.run_payload_retry(True)["status"] == "dry_run"
     assert admitted.call_args.args[1]["pointer"] == pointer(TODAY)
+
+
+def test_null_date_cannot_take_retry_priority_from_today(runtime, monkeypatch):
+    root, _ = runtime
+    malformed = {"observation_date": None, "generation_id": "protocol-malformed"}
+    sync.mark_payload_publication_pending(root, "retained malformed pointer", malformed)
+    sync.mark_payload_publication_pending(root, "today", pointer(TODAY))
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(watchdog, "REPO_ROOT", root)
+    admitted = Mock(return_value={"status": "ready", "source_key": "a" * 64})
+    monkeypatch.setattr(watchdog, "retry_admission", admitted)
+    assert watchdog.run_payload_retry(True)["status"] == "dry_run"
+    assert admitted.call_args.args[1]["pointer"] == pointer(TODAY)
+    assert sync.pending_publication_pointer(root) == malformed
 
 
 def test_selected_historical_revision_is_not_stranded_by_older_queued_generation(runtime, monkeypatch):

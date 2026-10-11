@@ -6,7 +6,7 @@ source bytes before building/uploading, under the same production lock.
 from __future__ import annotations
 
 import json
-from contextlib import nullcontext
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -135,10 +135,15 @@ def reconcile_missing_publication(repo_root: Path, publication: dict, expected: 
     if reason := payload_retry_window_reason(now_utc):
         return {"status": "deferred", "reason": reason}
     lock = data_state_root(repo_root) / "daily-ingest.lock"
-    if lock.exists():
+    if dry_run and lock.exists():
         return {"status": "deferred", "reason": "production_busy"}
     try:
-        with nullcontext() if dry_run else production_lock(lock, "payload-continuity"):
+        with ExitStack() as stack:
+            if not dry_run:
+                try:
+                    stack.enter_context(production_lock(lock, "payload-continuity"))
+                except RuntimeError:
+                    return {"status": "deferred", "reason": "production_busy"}
             if reason := payload_retry_window_reason():
                 return {"status": "deferred", "reason": reason}
             return _reconcile(repo_root, dates, expected, now_utc, dry_run)
