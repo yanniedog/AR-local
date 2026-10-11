@@ -87,6 +87,19 @@ def test_active_ingest_blocks_freeze(layout):
             source.freeze(layout.data, layout.spool / "stage", controls=[], guard=lambda: None)
 
 
+@pytest.mark.parametrize("namespace", ["runs-archive/.daily-raw-stage", ".daily-raw-stage"])
+def test_retained_capture_stages_are_frozen_before_later_reuse(layout, namespace):
+    raw = layout.data / namespace / "runs/2026-10-11/response.json"
+    raw.parent.mkdir(parents=True)
+    raw.write_bytes(b"original retained capture")
+    manifest = source.freeze(layout.data, layout.spool / "stage", controls=[], guard=lambda: None)
+    row = next(row for row in manifest["files"] if row["source_path"] == raw.as_posix())
+    assert row["direct"] is False
+    raw.write_bytes(b"later interrupted-attempt reuse")
+    assert Path(row["backup_path"]).read_bytes() == b"original retained capture"
+    source.verify_direct_sources(manifest)
+
+
 def test_direct_source_change_rejects_acceptance(layout):
     manifest = source.freeze(layout.data, layout.spool / "stage", controls=[], guard=lambda: None)
     direct = next(row for row in manifest["files"] if row["direct"])

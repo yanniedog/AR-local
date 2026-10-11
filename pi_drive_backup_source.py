@@ -148,6 +148,10 @@ def _is_database(path: Path) -> bool:
 def _direct_run_file(relative: Path, source: Path) -> bool:
     # Finalized run namespaces are immutable by producer contract. Restic gets
     # their original bytes; state, logs and predeploy are frozen private copies.
+    if relative.parts[:2] == ("runs-archive", ".daily-raw-stage"):
+        # Interrupted stages may be archived or reused after the freeze lock
+        # releases. Freeze these bytes privately instead of relying on live paths.
+        return False
     return (relative.parts[0] in {"runs", "runs-archive"}
             and not any(path.exists() and path.stat().st_size
                         for path in (Path(str(source) + suffix) for suffix in ("-wal", "-journal"))))
