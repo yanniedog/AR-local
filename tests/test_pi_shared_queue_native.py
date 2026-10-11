@@ -268,3 +268,23 @@ def test_deadline_arm_failure_never_enters_native_guard_or_spawns(monkeypatch):
     with pytest.raises(ValueError):
         queue.run_supervised(store, record(resources=['host']), ['command'], 10,
                              queue.Cancellation(), lambda store: pytest.fail('native guard entered'))
+
+
+@pytest.mark.parametrize('error', [OSError('temporary'), ValueError('incomplete'),
+                                  subprocess.TimeoutExpired('systemctl', 10)])
+def test_legacy_observation_errors_defer_and_release_native_lease(error):
+    from pi_shared_queue_native import NativeHostGuard, NativeHostBusy
+    store = MemoryStore([record(state='running')])
+    events = []
+    @contextmanager
+    def lease(path, role):
+        events.append('locked')
+        yield
+        events.append('released')
+    def unavailable(units):
+        raise error
+    with pytest.raises(NativeHostBusy, match='observation unavailable'):
+        with NativeHostGuard(store, lock_factory=lambda: lease, ready=unavailable,
+                             marker=lambda job: None).hold(record()):
+            pytest.fail('unknown legacy ownership must not execute')
+    assert events == ['locked', 'released']

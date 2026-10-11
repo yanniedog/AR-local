@@ -173,6 +173,7 @@ def admission(job: Mapping, jobs: Sequence[Mapping], now: datetime) -> tuple[boo
             if now + timedelta(seconds=candidate.max_duration_seconds + STOP_GRACE_SECONDS) >= next_start:
                 return False, "would-cross-ingest-start"
         promoted = _priority(candidate, now, critical)
+        reserved_slots = 0
         for other in others:
             if other.state != "waiting":
                 continue
@@ -180,8 +181,10 @@ def admission(job: Mapping, jobs: Sequence[Mapping], now: datetime) -> tuple[boo
             precedes = (other_promoted and not promoted) or (
                 other_promoted == promoted and other.sequence < candidate.sequence
             )
-            if other_promoted and precedes and running_slots + candidate.cpu_slots + other.cpu_slots > CPU_SLOT_BUDGET:
-                return False, "ar-local-cpu-reservation"
+            if other_promoted and precedes:
+                reserved_slots += other.cpu_slots
+                if running_slots + candidate.cpu_slots + reserved_slots > CPU_SLOT_BUDGET:
+                    return False, "ar-local-cpu-reservation"
             if not _conflicts(candidate, other):
                 continue
             if precedes:

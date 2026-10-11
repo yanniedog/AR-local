@@ -226,3 +226,18 @@ def test_dst_transition_keeps_next_quiet_window_at_calendar_0030(date, utc_hours
     assert next_start.hour == 0 and next_start.minute == 30
     assert next_start.date() == start.date() + timedelta(days=1)
     assert (next_start.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds() == utc_hours * 3600
+
+
+def test_multiple_promoted_shared_ar_requests_reserve_all_slots():
+    promoted = [job(f'ar-{i}', i, project='ar-local', mode='shared', age=7200)
+                for i in range(1, 4)]
+    newcomer = job('newcomer', 4, resources=['mining'])
+    assert admission(newcomer, [*promoted, newcomer], NOW) == (False, 'ar-local-cpu-reservation')
+    assert all(admission(item, promoted, NOW)[0] for item in promoted)
+
+
+def test_promoted_reservations_leave_only_true_spare_capacity():
+    promoted = [job(f'ar-{i}', i, project='ar-local', mode='shared', age=7200)
+                for i in range(1, 3)]
+    newcomer = job('newcomer', 3, resources=['mining'])
+    assert admission(newcomer, [*promoted, newcomer], NOW) == (True, 'admitted')

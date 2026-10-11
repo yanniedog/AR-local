@@ -264,3 +264,35 @@ def test_standalone_health_script_uses_explicit_production_data_root(staged, mon
     monkeypatch.setenv("AR_LOCAL_DATA_ROOT", str(root))
     standalone = tmp_path / "installed-queue-runtime"
     assert runtime.data_state_root(standalone) == root / "state"
+
+
+@pytest.mark.parametrize('jobs, trustworthy, allowed', [([{'state': 'running'}], True, False),
+                                                       ([], False, False), ([], True, True)])
+def test_tailscale_restart_excludes_every_queue_claim(staged, monkeypatch, jobs, trustworthy, allowed):
+    from contextlib import contextmanager
+    import pi_shared_queue_store
+    state, _ = staged
+    held = []
+    class QueueStore:
+        @contextmanager
+        def transaction(self):
+            held.append(True)
+            try:
+                yield {'jobs': jobs}
+            finally:
+                held.pop()
+        def reconcile(self, state):
+            return trustworthy
+    def restart(*, dry_run):
+        assert held == [True]
+        assert (state / 'daily-ingest.lock').exists()
+        return 0
+    monkeypatch.setattr(health, 'is_raspberry_pi', lambda: True)
+    monkeypatch.setattr(health, '_production_activity_block_reason', lambda **kwargs: '')
+    monkeypatch.setattr(pi_shared_queue_store, 'Store', QueueStore)
+    monkeypatch.setattr(health, 'restart_tailscaled', Mock(side_effect=restart))
+    code, reason = health._guarded_tailscale_heal(dry_run=False)
+    assert (code == 0) is allowed
+    assert bool(reason) is not allowed
+    assert health.restart_tailscaled.call_count == int(allowed)
+    assert not held

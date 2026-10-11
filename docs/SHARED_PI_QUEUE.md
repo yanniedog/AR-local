@@ -99,7 +99,8 @@ returns; ambiguous ownership blocks admission. Do not delete state to bypass
 that protection. Inspect the recorded unit and its complete cgroup first.
 
 Install the exact tested `pi_shared_queue.py`, `pi_shared_queue_store.py`,
-`pi_shared_queue_policy.py`, `pi_shared_queue_native.py` and `pi_shared_task.py` under root-owned
+`pi_shared_queue_policy.py`, `pi_shared_queue_native.py`,
+`pi_shared_queue_producer.py` and `pi_shared_task.py` under root-owned
 `/usr/local/lib/shared-pi-queue/`. The `pi-shared-task` entry point executes the
 installed launcher. Create the user-owned 0700 state directory. Preserve old
 files and service overrides before replacement.
@@ -119,7 +120,12 @@ an unrelated data directory.
 Install `deploy/pi/shared-queue-daily.conf`, `shared-queue-watchdog.conf` and
 `shared-queue-ingest-now.conf` as `98-shared-queue.conf` in their respective
 AR-local service drop-in directories. Preserve the stable producer executable
-and existing environment files. Reload definitions and read back the effective
+and existing environment files. The fixed producer wrapper checks the preserved
+`WorkingDirectory` against the commissioned `/srv/ar-local/AR-local` checkout
+and validates the effective data roots before launching. Custom repository roots
+are unsupported: do not activate these overrides on a custom-root installation;
+the wrapper refuses execution instead of launching a stale default checkout.
+Reload definitions and read back the effective
 command, CPU quota, timeout and kill policy. Do not start, enable or restart a
 timer. The daily-watchdog timer intentionally remains inactive.
 
@@ -142,7 +148,10 @@ checks (40 curl retries, ordinary endpoint probes and three history deadlines).
 The service still bounds the entire startup; hook runtime retains its queue claim.
 The runtime-health override installs the reviewed standalone health script while
 using the stable producer's dependencies and existing environment. Its Tailscale
-recovery acquires the native production lease, so a host network task defers it.
+recovery acquires the native production lease, then reconciles the shared queue
+and defers while any queue request remains. It holds the queue transaction
+through restart, preventing admission between its idle observation and mutation.
+Unknown ownership also defers; it never bypasses an occupied queue claim.
 Install `deploy/pi/shared-queue-health.conf` as the health service's
 `98-shared-queue.conf`; reload definitions without starting or enabling its timer.
 An invocation cancelled before execution cannot restart an incumbent's paused

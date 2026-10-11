@@ -276,8 +276,22 @@ def _guarded_dashboard_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
 
 
 def _guarded_tailscale_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
-    """Network recovery uses the same lease as queued host mutations."""
-    return _guarded_service_heal(restart_tailscaled, dry_run=dry_run, role="runtime-health-network")
+    """Fence all queue work while retaining the native production lease."""
+    def restart_when_queue_idle(*, dry_run):
+        if not is_raspberry_pi() or dry_run:
+            return restart_tailscaled(dry_run=dry_run)
+        from pi_shared_queue_store import Store
+
+        # The native lease is acquired first, matching NativeHostGuard's order.
+        # Keep the queue transaction locked through restart so a new claimant
+        # cannot be admitted after our idle observation.
+        store = Store()
+        with store.transaction() as state:
+            if not store.reconcile(state) or state['jobs']:
+                raise RuntimeError('shared queue occupied or ownership unknown')
+            return restart_tailscaled(dry_run=False)
+
+    return _guarded_service_heal(restart_when_queue_idle, dry_run=dry_run, role="runtime-health-network")
 
 
 def _guarded_service_heal(restart, *, dry_run: bool, role: str = "runtime-health") -> tuple[Optional[int], str]:
@@ -292,7 +306,7 @@ def _guarded_service_heal(restart, *, dry_run: bool, role: str = "runtime-health
             if reason:
                 return None, reason
             return restart(dry_run=False), ""
-    except (OSError, RuntimeError):
+    except (OSError, RuntimeError, ValueError, ImportError, subprocess.SubprocessError):
         return None, "production_lock_unavailable"
 
 
