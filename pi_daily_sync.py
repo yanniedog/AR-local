@@ -165,7 +165,7 @@ def _app_payload_enabled() -> bool:
 def _same_payload_revision(left: dict, right: dict) -> bool:
     if str(left.get("run_date") or "") != str(right.get("run_date") or ""):
         return False
-    for namespace in ("bank_rate_history_catalogue", "bank_rate_history_catalogue_packed"):
+    for namespace in ("bank_rate_history_catalogue", "bank_rate_history_catalogue_packed", "bank_rate_history_ready"):
         if namespace not in left and namespace not in right:
             continue
         from app_payload_optional_assets import iter_payload_assets

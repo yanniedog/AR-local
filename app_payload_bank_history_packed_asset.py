@@ -30,7 +30,11 @@ def decode_envelope(raw, *, run_date, core_sha256):
 
 
 def descriptor(manifest):
-    namespace = manifest[NAMESPACE]
+    return url_free_descriptor(manifest, NAMESPACE, ASSET_KIND)
+
+
+def url_free_descriptor(manifest, namespace_name, asset_kind):
+    namespace = manifest[namespace_name]
     if (not isinstance(namespace, dict) or set(namespace) != {"schema_version", "file"}
             or type(namespace["schema_version"]) is not int or namespace["schema_version"] != 1):
         raise ValueError("Packed historical namespace must use schema 1 with one file")
@@ -43,12 +47,12 @@ def descriptor(manifest):
     if (not isinstance(repo, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo)
             or not isinstance(tag, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", tag)):
         raise ValueError("Packed historical release identity is invalid")
-    expected = f"{ASSET_KIND}-{manifest.get('run_date')}-{entry['sha256'][:12]}.json.gz" + (".enc" if entry.get("enc") else "")
+    expected = f"{asset_kind}-{manifest.get('run_date')}-{entry['sha256'][:12]}.json.gz" + (".enc" if entry.get("enc") else "")
     if entry["name"] != expected:
         raise ValueError("Packed historical asset name/date/hash differs")
     # Reuse all established byte/encryption checks without changing either
     # manifest. The temporary old-kind projection is never published or hashed.
-    old_name = expected.replace(ASSET_KIND, "bank-rate-history-catalogue", 1)
+    old_name = expected.replace(asset_kind, "bank-rate-history-catalogue", 1)
     old_file = {**entry, "name": old_name, "url": f"https://github.com/{repo}/releases/download/{tag}/{old_name}"}
     legacy_descriptor({**manifest, "bank_rate_history_catalogue": {"schema_version": 1, "file": old_file}})
     return {**entry, "url": f"https://github.com/{repo}/releases/download/{tag}/{expected}"}

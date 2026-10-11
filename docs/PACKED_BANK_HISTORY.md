@@ -1,4 +1,32 @@
-# Packed bank history transport
+# Prepared bank history transport
+
+The app's graph path uses `bank_rate_history_ready`, a required producer-compiled
+projection of exact rate distributions. Its URL-free namespace is
+`{schema_version: 1, file: {name, bytes, sha256, enc?}}`; filenames begin with
+`bank-rate-history-ready-`. It uses the same core/date-bound envelope below.
+
+The inner `ar-history-ready-v1` document pins `compiler_sha256` to the reviewed
+standalone compiler in `contracts/history_ready/`. The compiler is generated from
+the app's exact classification, dated evidence and feature-scope predicates;
+Python does not approximate these decisions. Compilation requires Node.js 24 or
+newer, which producer CI installs. Compiler pin, semantic validation, processing
+budget or runtime failures defer publication explicitly. They never silently
+replace ready history with raw history for new clients.
+
+Each section has cohorts keyed by bank, exact structural profile dimensions,
+dated-evidence availability, broad availability and the curated feature bitmask.
+Cohorts carry sorted date/rate frequency changes. Multiplicity is preserved so
+filtered minimum, maximum, mean, median and counts remain exact. Separate product
+best-rate spans serve product history. Calendar gaps, source receipts and the
+Savings term-deposit quarantine are preserved. Null dimensions remain distinct
+from empty strings. Consumers can filter and summarize these small distributions
+without reclassifying thousands of products or loading their evidence.
+
+Ready JSON is capped at 4 MiB, its decoded envelope at 2 MiB and its delivered
+asset at 1 MiB, including any encryption framing. Packaging reserves room for ready history before
+the optional packed raw archive and keeps the unchanged 8 MiB transfer budget.
+The full legacy history asset remains independently available for compatibility
+and evidence; the raw packed asset remains available when budget permits.
 
 The producer emits `bank_rate_history_catalogue_packed` alongside the unchanged
 `bank_rate_history_catalogue`. Neither capability belongs in the legacy eager

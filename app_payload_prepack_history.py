@@ -107,6 +107,8 @@ def prepack(root: Path, output: Path, *, index_sha256: str):
     if len(compressed) > CORE_MAX_BYTES:
         raise ValueError("Prepacked critical core exceeds its compressed byte budget")
     envelope = encode_envelope(catalogue_value, run_date=observed[-1], core_sha256=digest(compressed))
+    from app_payload_bank_history_ready_asset import encode_envelope as encode_ready
+    ready_envelope = encode_ready(catalogue_value, run_date=observed[-1], core_sha256=digest(compressed))
     from app_payload_bank_history_packed_asset import encode_envelope as encode_packed, PackedBudgetError
     try:
         packed_envelope = encode_packed(catalogue_value, run_date=observed[-1], core_sha256=digest(compressed))
@@ -124,11 +126,13 @@ def prepack(root: Path, output: Path, *, index_sha256: str):
               "evidence_count": len(catalogue.evidence), "source_count": len(catalogue.sources)}
     report["packed_history"] = ({"status": "PASS", "sha256": digest(packed_envelope), "bytes": len(packed_envelope)}
                                 if packed_envelope is not None else {"status": "OMITTED", "reason": packed_reason})
+    report["ready_history"] = {"status": "PASS", "sha256": digest(ready_envelope), "bytes": len(ready_envelope)}
     output.mkdir(parents=True)
     (output / "core.json").write_bytes(encoded)
     (output / "core.json.gz").write_bytes(compressed)
     (output / "catalogue.json").write_bytes(packed_catalogue)
     (output / "bank_rate_history_catalogue.json.gz").write_bytes(envelope)
+    (output / "bank_rate_history_ready.json.gz").write_bytes(ready_envelope)
     if packed_envelope is not None:
         (output / "bank_rate_history_catalogue_packed.json.gz").write_bytes(packed_envelope)
     (output / "verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -30,7 +30,7 @@ def digest(raw):
 def critical_core(core):
     """Never put either historical archive on a legacy client's startup path."""
     return {key: value for key, value in core.items()
-            if key not in ("bank_rate_history", NAMESPACE, "bank_rate_history_catalogue_packed")}
+            if key not in ("bank_rate_history", NAMESPACE, "bank_rate_history_catalogue_packed", "bank_rate_history_ready")}
 
 
 def encode_envelope(catalogue, *, run_date, core_sha256):
@@ -39,7 +39,8 @@ def encode_envelope(catalogue, *, run_date, core_sha256):
     return _encode_document(catalogue, run_date=run_date, core_sha256=core_sha256)
 
 
-def _encode_document(catalogue, *, run_date, core_sha256, inner_limit=None, budget_error=ValueError):
+def _encode_document(catalogue, *, run_date, core_sha256, inner_limit=None, budget_error=ValueError,
+                     outer_json_limit=None, outer_gzip_limit=None):
     """Shared envelope; callers validate their independently versioned document."""
     if (date.fromisoformat(run_date).isoformat() != run_date
             or not HASH.fullmatch(core_sha256)):
@@ -54,10 +55,10 @@ def _encode_document(catalogue, *, run_date, core_sha256, inner_limit=None, budg
                 "catalogue": {"sha256": digest(decoded), "bytes": len(decoded),
                               "gzip_base64": base64.b64encode(compressed).decode("ascii")}}
     raw = canonical(envelope)
-    if len(raw) > OUTER_JSON_MAX_BYTES:
+    if len(raw) > (OUTER_JSON_MAX_BYTES if outer_json_limit is None else outer_json_limit):
         raise budget_error("Historical envelope decoded bytes exceed budget")
     wire = gzip.compress(raw, mtime=0)
-    if len(wire) > OUTER_GZIP_MAX_BYTES:
+    if len(wire) > (OUTER_GZIP_MAX_BYTES if outer_gzip_limit is None else outer_gzip_limit):
         raise budget_error("Historical envelope compressed bytes exceed budget")
     return wire
 
@@ -90,10 +91,11 @@ def decode_envelope(raw, *, run_date, core_sha256):
     return catalogue
 
 
-def _decode_document(raw, *, run_date, core_sha256, inner_limit=None):
-    if not 0 < len(raw) <= OUTER_GZIP_MAX_BYTES:
+def _decode_document(raw, *, run_date, core_sha256, inner_limit=None,
+                     outer_json_limit=None, outer_gzip_limit=None):
+    if not 0 < len(raw) <= (OUTER_GZIP_MAX_BYTES if outer_gzip_limit is None else outer_gzip_limit):
         raise ValueError("Historical envelope compressed bytes exceed budget")
-    value = _document(_inflate(raw, OUTER_JSON_MAX_BYTES))
+    value = _document(_inflate(raw, OUTER_JSON_MAX_BYTES if outer_json_limit is None else outer_json_limit))
     if (not isinstance(value, dict) or set(value) != {"schema_version", "run_date", "core_sha256", "catalogue"}
             or type(value["schema_version"]) is not int or value["schema_version"] != 1
             or value["run_date"] != run_date or value["core_sha256"] != core_sha256):

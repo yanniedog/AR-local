@@ -108,6 +108,9 @@ def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> Non
     if root is not None and "bank_rate_history_catalogue_packed" in manifest:
         from app_payload_bank_history_packed_asset import validate_local_asset as validate_packed
         validate_packed(manifest, root)
+    if root is not None and "bank_rate_history_ready" in manifest:
+        from app_payload_bank_history_ready_asset import validate_local_asset as validate_ready
+        validate_ready(manifest, root)
 
 
 def bundle_sha256(manifest: dict[str, Any]) -> str:
