@@ -2,6 +2,7 @@
  * Shared helpers for npm run pr:gates:check (merge-blocking PR gate audit).
  */
 import { spawnSync } from 'node:child_process';
+import { readCheckResult, selectLatestChecks, selectNamedCheckHistory } from './pr-check-history.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBotWaitStateFile } from './bot-wait-state.mjs';
@@ -104,20 +105,14 @@ export function resolvePrNumber(prArg) {
 export function fetchRequiredCi(prNumber) {
   const r = spawnSync(
     'gh',
-    ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state'],
+    ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state,startedAt,completedAt,workflow,link'],
     { encoding: 'utf8' },
   );
-  if (r.status === 8) {
-    return { ok: true, pending: true, failed: false, failedNames: [], checks: [] };
-  }
-  if (r.status !== 0) {
-    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
-    if (/no checks reported/i.test(msg) || /no required checks reported/i.test(msg)) {
-      return { ok: true, pending: false, failed: false, failedNames: [], checks: [] };
-    }
-    return { ok: false, error: msg };
-  }
-  const checks = JSON.parse(r.stdout || '[]');
+  const result = readCheckResult(r);
+  if (result.error) return { ok: false, error: result.error };
+  const latest = selectLatestChecks(result.checks);
+  if (latest.error) return { ok: false, error: latest.error };
+  const checks = latest.checks;
   let pending = false;
   let failed = false;
   const failedNames = [];
@@ -140,22 +135,24 @@ export function fetchRequiredCi(prNumber) {
 export function fetchNamedChecks(prNumber, names) {
   const r = spawnSync(
     'gh',
-    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,completedAt'],
+    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,startedAt,completedAt,workflow,link'],
     { encoding: 'utf8' },
   );
-  if (r.status !== 0) {
-    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
-    if (/no checks reported/i.test(msg)) return { found: {}, skipped: true };
-    return { found: {}, error: msg };
-  }
-  const all = JSON.parse(r.stdout || '[]');
+  const result = readCheckResult(r);
+  if (result.error) return { found: {}, error: result.error };
+  const latest = selectNamedCheckHistory(result.checks, names);
+  if (latest.error) return { found: {}, error: latest.error };
+  const all = latest.checks;
   const want = new Set(names.map((n) => n.toLowerCase()));
   const found = {};
   for (const c of all) {
     const lower = (c.name || '').toLowerCase();
     const tail = lower.includes('/') ? lower.slice(lower.lastIndexOf('/') + 1) : lower;
     for (const key of want) {
-      if (lower === key || tail === key) found[key] = c;
+      if (lower === key || tail === key) {
+        // Independent workflows sharing a gate name must all pass.
+        if (!found[key] || checkBucketPass(found[key])) found[key] = c;
+      }
     }
   }
   return { found };
