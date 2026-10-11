@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+CPUQuota=300%
+CPUWeight=500
+IOWeight=500
 KillMode=control-group
 TimeoutStopSec=45s
 TimeoutStartSec=6h15min

@@ -10,6 +10,13 @@ Wants=network-online.target
 User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 Type=oneshot
+Nice=15
+CPUQuota=25%
+CPUWeight=10
+IOWeight=10
+MemoryHigh=128M
+MemoryMax=256M
+TimeoutStartSec=300s
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_PI_VERIFY_LOCAL=1
 Environment=AR_PI_BASE_URL=http://127.0.0.1/

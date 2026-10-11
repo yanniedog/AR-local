@@ -5,6 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Nice=15
+CPUQuota=25%
+CPUWeight=10
+IOWeight=10
+MemoryHigh=128M
+MemoryMax=256M
+TimeoutStartSec=360s
 User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}

@@ -6,6 +6,9 @@ OnFailure=ar-local-ingest-alert.service
 
 [Service]
 Type=oneshot
+CPUQuota=300%
+CPUWeight=500
+IOWeight=500
 KillMode=control-group
 TimeoutStopSec=45s
 TimeoutStartSec=6h15min
