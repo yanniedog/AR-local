@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 REQUIRED_DATA_DIRS = ("runs", "state")
-OPTIONAL_DATA_DIRS = ("logs", "predeploy", "runs-archive")
+OPTIONAL_DATA_DIRS = ("logs", "predeploy", "runs-archive", ".daily-raw-stage")
 TRANSIENT_EMPTY_DIRS = (".daily-export-stage",)
 METADATA_ONLY_DIRS = {
     "netdata": "live telemetry databases and credential-bearing state are not CDR recovery data",
