@@ -8,12 +8,67 @@ import re
 import subprocess
 import sys
 import time
+import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 COMMAND_DEADLINE = None
 RECOVERY_BUDGET_SECONDS = 120
+BOOT_ID_PATH = Path('/proc/sys/kernel/random/boot_id')
+
+
+def _sync_directory(path: Path) -> None:
+    if os.name != 'posix':
+        return
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+@contextmanager
+def native_network_lease(path: Path):
+    """Try the producer's native lease once, never recovering a predecessor.
+
+    Even a provably stale record is occupied for this optional health check.
+    Avoiding producer stale recovery also avoids its unbounded recovery flock.
+    The record remains compatible with the pinned producer's native schema.
+    """
+    boot_id = BOOT_ID_PATH.read_text(encoding='ascii').strip()
+    if len(boot_id) != 36 or str(uuid.UUID(boot_id)) != boot_id:
+        raise ValueError('network lease requires a canonical boot identifier')
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        yield False
+        return
+    owned = os.fstat(descriptor)
+    try:
+        payload = f'pid={os.getpid()}\nrole=network-watchdog\nboot_id={boot_id}\n'.encode('ascii')
+        with os.fdopen(os.dup(descriptor), 'wb') as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _sync_directory(path.parent)
+        yield True
+    finally:
+        # Windows cannot unlink our open descriptor. Production is POSIX; keep
+        # it open there until after verifying/removing only our original inode.
+        if os.name == 'nt':
+            os.close(descriptor)
+        try:
+            current = path.lstat()
+            if (owned.st_dev, owned.st_ino) == (current.st_dev, current.st_ino):
+                path.unlink()
+                _sync_directory(path.parent)
+        except FileNotFoundError:
+            pass
+        finally:
+            if os.name != 'nt':
+                os.close(descriptor)
 
 
 def command(args, *, timeout=5):
@@ -126,19 +181,9 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
         raise RuntimeError('network recovery must run as the non-root service user')
     if recovery_window_blocked():
         return 'recovery deferred: protected ingest window'
-    repo = Path(os.environ.get('AR_LOCAL_REPO', '/srv/ar-local/AR-local'))
-    sys.path.insert(0, str(repo))
-    from ar_local_operation_lock import production_lock
-    try:
-        lease = production_lock(data / 'state/daily-ingest.lock', 'network-watchdog')
-        lease.__enter__()
-    except RuntimeError as exc:
-        if str(exc).startswith(('production lock is active:',
-                                'production lock changed during stale recovery:',
-                                'production lock was acquired concurrently:')):
+    with native_network_lease(data / 'state/daily-ingest.lock') as acquired:
+        if not acquired:
             return 'recovery deferred: production lease occupied'
-        raise
-    try:
         units = command(['systemctl', 'is-active', 'ar-local-daily.service',
                          'ar-local-ingest-now.service', 'ar-local-daily-watchdog.service'])
         states = units.stdout.splitlines()
@@ -157,8 +202,6 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
         if result.returncode:
             raise RuntimeError('interface recovery failed')
         return 'interface recovery requested'
-    finally:
-        lease.__exit__(None, None, None)
 
 
 def main():

@@ -6,6 +6,17 @@ repo_dir="${2:-$portable_root/AR-local}"
 site_dir="${3:-$portable_root/australianrates}"
 data_dir="${4:-$portable_root/data}"
 run_user="${AR_LOCAL_USER:-${SUDO_USER:-$(id -un)}}"
+case "$run_user" in
+  ''|[!A-Za-z_]*|*[!A-Za-z0-9_-]*)
+    echo "The service user must be a simple existing Unix account name" >&2
+    exit 1
+    ;;
+esac
+run_uid="$(id -u "$run_user")"
+if [ "$run_uid" -eq 0 ]; then
+  echo "The shared network watchdog requires a non-root service user" >&2
+  exit 1
+fi
 run_group="${AR_LOCAL_GROUP:-$(id -gn "$run_user")}"
 run_home="$(getent passwd "$run_user" | cut -d: -f6)"
 case "$run_home" in
@@ -76,10 +87,7 @@ render_unit "$repo_dir/deploy/pi/ar-local-runtime-health.service" "$tmp_dir/ar-l
 render_unit "$repo_dir/deploy/pi/ar-local-capacity-monitor.service" "$tmp_dir/ar-local-capacity-monitor.service"
 render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-now.service" "$tmp_dir/ar-local-ingest-now.service"
-if [ "$(id -u "$run_user")" -eq 0 ]; then
-  echo "The shared network watchdog requires a non-root service user" >&2
-  exit 1
-fi
+sudo sh "$repo_dir/deploy/pi/install-network-watchdog-sudoers.sh" "$run_user"
 render_unit "$repo_dir/deploy/pi/shared-host-network.conf" "$tmp_dir/shared-host-network.conf"
 sudo install -d -m 0755 /usr/local/lib/ar-local-shared-host /etc/systemd/system/ar-local-net-watchdog.service.d
 sudo install -m 0644 "$repo_dir/pi_shared_network_watchdog.py" /usr/local/lib/ar-local-shared-host/pi_shared_network_watchdog.py

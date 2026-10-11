@@ -47,8 +47,9 @@ when `ss` and `who` are empty. Use an authorized queued host operation for
 manual recovery. Standard OpenSSH session processes also cause deferral,
 including sessions on other ports.
 
-The watchdog runs as the normal AR-local service user. Its production lock
-helper is loaded from that user's checkout without gaining root execution.
+The watchdog runs as the normal AR-local service user. Its native lease is a
+nonblocking exclusive-file attempt using the producer's record schema. It never
+imports the producer or reclaims a stale predecessor; any existing record defers.
 The only privileged action is the validated interface's static
 `sudo -n /usr/bin/nmcli --wait 20 device connect` command. A 120-second overall
 command budget fits within the 150-second service deadline; command failures
@@ -69,6 +70,15 @@ paths as the producer; do not install the template literally. This supports
 portable roots such as `/mnt/ar-local-ssd` and preserves the correct native
 transaction lock. The standard installer installs that rendered override and
 root-owned entry script before its existing power-resilience activation step.
+It rejects a root service account before package installation, ownership changes
+or other setup effects. It also validates and installs
+`/etc/sudoers.d/ar-local-network-watchdog` for the selected account before any
+timer activation. This grants only the exact reconnect command for each
+currently detected, validated Wi-Fi interface; it grants no command wildcard or
+general NetworkManager administration. New Wi-Fi hardware requires an explicitly
+authorized permission update with `install-network-watchdog-sudoers.sh USER`.
+This permission step does not start a timer. Existing broader operator sudo
+policies are separate and are not changed by this installer.
 The legacy shell fallback now fails closed; standalone power-resilience setup
 does not activate a network timer without the guarded installation contract.
 Do not execute either installer merely to apply these runtime overrides:

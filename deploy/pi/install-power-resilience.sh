@@ -174,10 +174,9 @@ else
   log "default target already multi-user.target"
 fi
 
-# --- 8. Network self-heal watchdog: kick NM if the link wedges --------------
-# autoconnect-retries=0 makes NM retry forever, but a wedged wifi driver can
-# need a nudge. This timer pings the default gateway every 3 min and, if it is
-# unreachable, restarts NetworkManager + re-ups the wifi profiles.
+# --- 8. Guarded network watchdog: preserve shared-host and ingest access ----
+# The reviewed non-root override may reconnect one verified Wi-Fi interface;
+# the legacy fallback cannot reset NetworkManager or switch arbitrary profiles.
 cat > /usr/local/sbin/ar-local-net-watchdog.sh <<'WD'
 #!/usr/bin/env sh
 # Recovery is supplied only by the reviewed non-root shared-host override.
@@ -208,6 +207,8 @@ systemctl daemon-reload
 if [ "${AR_LOCAL_GUARDED_NETWORK_INSTALLED:-0}" = 1 ] \
     && [ -f /usr/local/lib/ar-local-shared-host/pi_shared_network_watchdog.py ] \
     && [ -f /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf ] \
+    && [ -f /etc/sudoers.d/ar-local-network-watchdog ] \
+    && /usr/sbin/visudo -cf /etc/sudoers.d/ar-local-network-watchdog >/dev/null 2>&1 \
     && ! grep -q '{{' /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf; then
   systemctl enable --now ar-local-net-watchdog.timer 2>/dev/null \
     && log "guarded net-watchdog timer enabled (every 3 min)" \
