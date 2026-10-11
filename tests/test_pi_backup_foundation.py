@@ -441,8 +441,9 @@ def _git_repo(path: Path) -> None:
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=path, check=True)
 
 
+@pytest.mark.parametrize('retained_stage', [False, True])
 def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(
-    monkeypatch, tmp_path: Path, isolated_snapshot_host: Path,
+    monkeypatch, tmp_path: Path, isolated_snapshot_host: Path, retained_stage: bool,
 ) -> None:
     policy = make_policy(tmp_path)
     repo = tmp_path / "repo"
@@ -453,6 +454,10 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(
     (data / "runs/2026-08-24/_exports").mkdir(parents=True)
     (data / "runs/2026-08-24/_exports/evidence.json").write_text("{}\n", encoding="utf-8")
     (data / "state").mkdir()
+    if retained_stage:
+        for namespace in ('logs', 'predeploy', 'runs-archive', '.daily-raw-stage'):
+            (data / namespace).mkdir()
+        (data / '.daily-raw-stage/response.json').write_bytes(b'preserved raw capture')
     (data / ".daily-export-stage").mkdir()
     (data / "netdata/lib/bearer_tokens").mkdir(parents=True)
     netdata_secret = data / "netdata/lib/mcp_dev_preview_api_key"
@@ -483,7 +488,10 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(
     assert not (snapshot / "data/netdata").exists()
     assert not (snapshot / "data/.daily-export-stage").exists()
     manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["data_scope"]["included"] == ["runs", "state"]
+    assert manifest["data_scope"]["included"] == (["runs", "state", "logs", "predeploy", "runs-archive", ".daily-raw-stage"]
+                                                 if retained_stage else ["runs", "state"])
+    if retained_stage:
+        assert (snapshot / 'data/.daily-raw-stage/response.json').read_bytes() == b'preserved raw capture'
     assert next(
         item for item in manifest["data_scope"]["excluded"] if item["path"] == "netdata"
     )["contents_copied"] is False
