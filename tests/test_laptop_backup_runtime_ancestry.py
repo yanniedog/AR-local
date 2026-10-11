@@ -218,6 +218,60 @@ def test_orphan_runtime_ancestry_is_verified_before_pointer_adoption(tmp_path, m
     assert orphan_path.read_bytes() == orphan_before
 
 
+@pytest.mark.parametrize("receiver_only", [False, True])
+def test_old_runtime_orphan_suffix_is_adopted_before_one_current_transition(tmp_path, receiver_only):
+    production = ("1" if receiver_only else "2") * 40
+    prior = _record(tmp_path, "natural-pass", "1" * 40, "a" * 40)
+    pin = _pin(tmp_path, prior)
+    old = _record(tmp_path, "old-orphan", "1" * 40, "a" * 40, prior)
+    bridge = _record(tmp_path, "production-orphan", production, "a" * 40, old,
+                     action="BACKFILL", result="FAIL")
+    current = _record(tmp_path, "current-orphan", production, "b" * 40, bridge,
+                      runtime_predecessor=pin)
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(prior, result="PASS")))
+    before = {path: path.read_bytes() for path in (tmp_path / "catalog/scheduled-runs").glob("*.json")}
+    expected = {**EXPECTED, "protected_code_sha": production, "candidate_code_sha": "b" * 40,
+                "runtime_predecessor": pin}
+
+    assert lineage.repair_orphaned_suffix(tmp_path, expected) == dict(current, result="PASS")
+    assert json.loads(pointer.read_bytes()) == dict(current, result="PASS")
+    assert lineage.repair_orphaned_suffix(tmp_path, expected) == dict(current, result="PASS")
+    assert all(path.read_bytes() == payload for path, payload in before.items())
+
+
+@pytest.mark.parametrize("regression", [("1", "a"), ("2", "a")])
+def test_runtime_regression_is_rejected_even_when_both_pairs_are_authorized(tmp_path, regression):
+    prior = _record(tmp_path, "natural-pass", "1" * 40, "a" * 40)
+    pin = _pin(tmp_path, prior)
+    current = _record(tmp_path, "current", "2" * 40, "b" * 40, prior, runtime_predecessor=pin)
+    regressed = _record(tmp_path, "regressed", regression[0] * 40, regression[1] * 40, current)
+    expected = {**EXPECTED, "protected_code_sha": "2" * 40, "candidate_code_sha": "b" * 40,
+                "runtime_predecessor": pin}
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(current, result="PASS")))
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*.json")}
+    with pytest.raises(ValueError, match="regressed"):
+        ancestry.authenticate_pointer_descendant(tmp_path, regressed, expected)
+    with pytest.raises(ValueError, match="regressed"):
+        lineage.repair_orphaned_suffix(tmp_path, expected)
+    assert all(path.read_bytes() == payload for path, payload in before.items())
+
+
+def test_old_runtime_orphan_branches_are_rejected_without_pointer_change(tmp_path):
+    prior = _record(tmp_path, "natural-pass", "1" * 40, "a" * 40)
+    pin = _pin(tmp_path, prior)
+    _record(tmp_path, "old-a", "1" * 40, "a" * 40, prior)
+    _record(tmp_path, "old-b", "1" * 40, "a" * 40, prior, exact_commands=["pytest other branch"])
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(prior, result="PASS")))
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*.json")}
+    with pytest.raises(ValueError, match="branched"):
+        lineage.repair_orphaned_suffix(tmp_path, {**EXPECTED, "protected_code_sha": "2" * 40,
+            "candidate_code_sha": "b" * 40, "runtime_predecessor": pin})
+    assert all(path.read_bytes() == payload for path, payload in before.items())
+
+
 @pytest.mark.parametrize("phase,action,result", [
     ("preflight", "PREFLIGHT_FAILED", "BLOCKED"),
     ("backup", "BACKFILL", "FAIL"),
