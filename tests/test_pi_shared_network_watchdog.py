@@ -84,3 +84,19 @@ def test_corrupt_state_restarts_threshold_without_recovery(tmp_path, old_state):
     with patch.object(network, 'command', side_effect=[
             result('[{"gateway":"192.168.1.1","dev":"wlan0"}]'), result(code=1)]):
         assert 'below' in network.recover(state, tmp_path)
+
+
+def test_eligible_dry_run_preserves_state_and_never_acquires_lease(tmp_path):
+    state = tmp_path / 'state.json'
+    original = json.dumps({'gateway': '192.168.1.1', 'interface': 'wlan0', 'failures': 2})
+    state.write_text(original)
+    def run(args, **kwargs):
+        assert 'connect' not in args
+        return {'ip': result('[{"gateway":"192.168.1.1","dev":"wlan0"}]'),
+                'ping': result(code=1), 'nmcli': result('wifi'), 'ss': result(),
+                'who': result(), 'systemctl': result('inactive\nfailed\ninactive\n', code=3)}[args[0]]
+    with patch.object(network, 'command', run), patch.object(ar_local_operation_lock, 'production_lock') as lease:
+        assert 'eligible' in network.recover(state, tmp_path, dry_run=True)
+        lease.assert_not_called()
+    assert state.read_text() == original
+    assert not (tmp_path / 'state.tmp').exists()

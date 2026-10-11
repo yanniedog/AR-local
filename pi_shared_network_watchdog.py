@@ -38,10 +38,15 @@ def default_route():
 def recover(state: Path, data: Path, *, dry_run=False) -> str:
     gateway, interface = default_route()
     ping = command(['ping', '-c1', '-W3', gateway])
-    state.parent.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        state.parent.mkdir(parents=True, exist_ok=True)
     try:
         previous = json.loads(state.read_text()) if state.exists() else {}
     except json.JSONDecodeError:
+        previous = {}
+    except OSError:
+        if not dry_run:
+            raise
         previous = {}
     if not isinstance(previous, dict):
         previous = {}
@@ -52,8 +57,9 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
     streak = min(3, count + 1) if same_route else 1
     record = {'gateway': gateway, 'interface': interface, 'failures': streak if ping.returncode else 0}
     temporary = state.with_suffix('.tmp')
-    temporary.write_text(json.dumps(record) + '\n')
-    temporary.replace(state)
+    if not dry_run:
+        temporary.write_text(json.dumps(record) + '\n')
+        temporary.replace(state)
     if not ping.returncode:
         return 'gateway healthy; no network mutation'
     if streak < 3:
@@ -63,6 +69,14 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
         return 'recovery deferred: default interface is not verified Wi-Fi'
     if remote_sessions_active():
         return 'recovery deferred: remote session active'
+    if dry_run:
+        units = command(['systemctl', 'is-active', 'ar-local-daily.service',
+                         'ar-local-ingest-now.service', 'ar-local-daily-watchdog.service'])
+        states = units.stdout.splitlines()
+        if (data / 'state/daily-ingest.lock').exists() or len(states) != 3 or any(
+                value not in {'inactive', 'failed'} for value in states):
+            return 'dry run: recovery deferred for ingest or occupied lease'
+        return 'dry run: eligible for interface-only recovery'
     repo = Path(os.environ.get('AR_LOCAL_REPO', '/srv/ar-local/AR-local'))
     sys.path.insert(0, str(repo))
     from ar_local_operation_lock import production_lock
@@ -74,8 +88,6 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
             return 'recovery deferred: ingest active or unknown'
         if remote_sessions_active() or default_route() != (gateway, interface):
             return 'recovery deferred: activity or route changed'
-        if dry_run:
-            return 'dry run: eligible for interface-only recovery'
         # A failed reconnect must not trigger another attempt on every tick.
         record['failures'] = 0
         temporary.write_text(json.dumps(record) + '\n')
