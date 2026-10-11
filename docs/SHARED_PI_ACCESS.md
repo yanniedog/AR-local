@@ -60,7 +60,18 @@ For an existing host, install the reviewed standalone network script under
 `ar-local-net-watchdog.service.d/97-shared-host.conf`, `shared-host-health.conf`
 for the runtime-health and deploy-watchdog services, and `shared-host-ingest.conf`
 for the daily, daily-watchdog and ingest-now services under `/etc/systemd/system`.
-Preserve the old files before installation. Run `systemctl daemon-reload` and
+Preserve the old files before installation. Before activating the non-root
+watchdog, install and validate its initial reconnect permission for the same
+selected service account (replace `USER` with that existing non-root account):
+
+```sh
+sudo sh deploy/pi/install-network-watchdog-sudoers.sh USER
+sudo /usr/sbin/visudo -cf /etc/sudoers.d/ar-local-network-watchdog
+```
+
+The installer enumerates validated Wi-Fi interfaces and grants only exact
+reconnect arguments. Stop the rollout if permission installation or validation
+fails. Run `systemctl daemon-reload` and
 read back effective properties. These steps do not start, enable or restart
 services or timers. Test the network script with `--dry-run` before installing
 the override. Schedule activation remains a separate operator decision.
