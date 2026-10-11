@@ -51,7 +51,7 @@ def _asset_cap(key: str) -> int:
         return DETAILS_MAX_BYTES
     if key == "search_index":
         return SEARCH_INDEX_MAX_BYTES
-    if key == "bank_rate_history_catalogue":
+    if key in ("bank_rate_history_catalogue", "bank_rate_history_catalogue_packed"):
         from app_payload_bank_history_asset import OUTER_GZIP_MAX_BYTES
         return OUTER_GZIP_MAX_BYTES
     return OTHER_ASSET_MAX_BYTES
@@ -96,6 +96,7 @@ def validate_payload_network_budget(
         "current_standard_home": current_home,
         "deep_search": deep_search,
         "deferred_bank_history": sizes.get("bank_rate_history_catalogue", 0),
+        "deferred_bank_history_packed": sizes.get("bank_rate_history_catalogue_packed", 0),
         "all_declared_assets": total,
     }
     return {

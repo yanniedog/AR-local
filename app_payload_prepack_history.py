@@ -106,6 +106,11 @@ def prepack(root: Path, output: Path, *, index_sha256: str):
     if len(compressed) > CORE_MAX_BYTES:
         raise ValueError("Prepacked critical core exceeds its compressed byte budget")
     envelope = encode_envelope(json.loads(packed_catalogue), run_date=observed[-1], core_sha256=digest(compressed))
+    from app_payload_bank_history_packed_asset import encode_envelope as encode_packed, PackedBudgetError
+    try:
+        packed_envelope = encode_packed(json.loads(packed_catalogue), run_date=observed[-1], core_sha256=digest(compressed))
+    except PackedBudgetError:
+        packed_envelope = None
     report = {"status": "PASS", "acquisition": "verified_public_inputs", "publication_verified": False,
               "index_sha256": index_sha256, "observed_dates": len(observed), "calendar_dates": len(dates),
               "run_date": observed[-1], "first_date": observed[0],
@@ -115,11 +120,15 @@ def prepack(root: Path, output: Path, *, index_sha256: str):
               "history_asset_sha256": digest(envelope), "history_asset_bytes": len(envelope),
               "tiers": {section: len(catalogue.sections[section]) for section in VALID_SECTIONS},
               "evidence_count": len(catalogue.evidence), "source_count": len(catalogue.sources)}
+    report["packed_history"] = ({"status": "PASS", "sha256": digest(packed_envelope), "bytes": len(packed_envelope)}
+                                if packed_envelope is not None else {"status": "OMITTED", "reason": "decoded byte budget"})
     output.mkdir(parents=True)
     (output / "core.json").write_bytes(encoded)
     (output / "core.json.gz").write_bytes(compressed)
     (output / "catalogue.json").write_bytes(packed_catalogue)
     (output / "bank_rate_history_catalogue.json.gz").write_bytes(envelope)
+    if packed_envelope is not None:
+        (output / "bank_rate_history_catalogue_packed.json.gz").write_bytes(packed_envelope)
     (output / "verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 

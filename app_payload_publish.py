@@ -359,7 +359,7 @@ def publish_payload(
         raise RuntimeError("immutable revision archives must use the revision coordinator")
     if revision_mode_enabled() and not manifest.get("payload_revision"):
         raise RuntimeError("revision mode refuses an unversioned alias publish")
-    if "bank_rate_history_catalogue" in manifest:
+    if any(key in manifest for key in ("bank_rate_history_catalogue", "bank_rate_history_catalogue_packed")):
         from app_payload_revisions_state import validate_manifest
         validate_manifest(manifest, payload_dir)
     for key, entry in iter_payload_assets(manifest):

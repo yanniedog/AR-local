@@ -634,6 +634,9 @@ def _package(
         if namespace is not None:manifest['executable_v4']=namespace
     if enc_key:
         manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
+    if catalogue is not None:
+        from app_payload_bank_history_packed_asset import add_packed_asset
+        add_packed_asset(manifest, catalogue, out_dir, release_base, enc_key, _asset)
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
     from app_payload_network_budget import validate_payload_network_budget
 
