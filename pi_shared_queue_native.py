@@ -6,6 +6,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -14,6 +16,117 @@ import time
 from pi_shared_queue_store import validate_job
 
 NATIVE_LOCK = Path('/srv/ar-local/data/state/daily-ingest.lock')
+FIXED_ROOTS = {'AR_LOCAL_DATA_ROOT': '/srv/ar-local/data',
+               'AR_LOCAL_PORTABLE_ROOT': '/srv/ar-local'}
+
+
+def _fixed_root_values(values):
+    for name, expected in FIXED_ROOTS.items():
+        if name in values and values[name] != expected:
+            raise ValueError('unsupported native bridge data configuration')
+
+
+def _environment_file_roots(path):
+    """Read only supported root assignments; never report environment contents."""
+    try:
+        with path.open('rb') as handle:
+            body = handle.read(65537)
+    except PermissionError:
+        # Deployed environment files can contain credentials and have root-only
+        # parent directories. Read a bounded, root-owned regular file privately;
+        # stdout is captured and only root assignments leave this function.
+        reader = (
+            'import os,stat,sys\n'
+            'try: fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW)\n'
+            'except FileNotFoundError: sys.exit(44)\n'
+            's=os.fstat(fd)\n'
+            'if not (stat.S_ISREG(s.st_mode) and s.st_uid==0 and s.st_nlink==1 '
+            'and not s.st_mode & 0o022 and s.st_size<=65536): '
+            'raise ValueError("unsafe producer environment file")\n'
+            'body=os.read(fd,65537); os.close(fd); os.write(1,body)'
+        )
+        try:
+            result = subprocess.run(['sudo', '-n', '/usr/bin/python3', '-c', reader, str(path)],
+                                    capture_output=True, timeout=10, check=True)
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 44:
+                raise FileNotFoundError(path) from None
+            raise
+        body = result.stdout
+    if len(body) > 65536:
+        raise ValueError('oversized producer environment file')
+    values = {}
+    for line in body.decode('utf-8').splitlines():
+        match = re.match(r'^\s*(AR_LOCAL_DATA_ROOT|AR_LOCAL_PORTABLE_ROOT)\s*=(.*)$', line)
+        if match:
+            name, value = match.groups()
+            value = value.strip()
+            expected = FIXED_ROOTS[name]
+            if value not in (expected, '"' + expected + '"', "'" + expected + "'"):
+                raise ValueError('unsupported producer environment root assignment')
+            values[name] = expected
+    return values
+
+
+def verify_native_deployment(environ=None, run=subprocess.run, resolve=None, read_roots=_environment_file_roots):
+    """The native bridge supports this fixed Pi layout, never an inferred lock.
+
+    systemctl's Environment excludes EnvironmentFile overrides. Inspect both,
+    rejecting unsupported syntax rather than silently fencing the wrong data.
+    """
+    _fixed_root_values(os.environ if environ is None else environ)
+    result = run(['systemctl', 'show', 'ar-local-daily.service', '--no-pager',
+                  '--property=LoadState,Environment,EnvironmentFiles,PassEnvironment,UnsetEnvironment'],
+                 text=True, capture_output=True, timeout=10, check=True)
+    details, environment_files = {}, []
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition('=')
+        if not separator:
+            raise ValueError('ambiguous producer environment inspection')
+        if key == 'EnvironmentFiles':
+            environment_files.append(value)
+        elif key in details:
+            raise ValueError('duplicate producer environment inspection field')
+        else:
+            details[key] = value
+    if environment_files:
+        details['EnvironmentFiles'] = ' '.join(value for value in environment_files if value)
+    required = {'LoadState', 'Environment', 'EnvironmentFiles', 'PassEnvironment', 'UnsetEnvironment'}
+    if set(details) != required or details['LoadState'] != 'loaded':
+        raise ValueError('producer environment inspection unavailable')
+    for key in ('PassEnvironment', 'UnsetEnvironment'):
+        if any(token.split('=', 1)[0] in FIXED_ROOTS for token in shlex.split(details[key])):
+            raise ValueError('ambiguous producer root inheritance')
+    environment = {}
+    for token in shlex.split(details['Environment']):
+        name, separator, value = token.partition('=')
+        if not separator:
+            raise ValueError('ambiguous producer environment')
+        if name in FIXED_ROOTS:
+            environment[name] = value
+    _fixed_root_values(environment)
+    files = details['EnvironmentFiles'].strip()
+    entries = re.findall(r'(/[^\s]+) \(ignore_errors=(yes|no)\)', files)
+    if len(entries) > 64 or ' '.join(path + ' (ignore_errors=' + optional + ')' for path, optional in entries) != files:
+        raise ValueError('unsupported producer environment file configuration')
+    for name, optional in entries:
+        path = Path(name)
+        if '..' in path.parts or any(char in name for char in '*?[]%\\'):
+            raise ValueError('ambiguous producer environment file path')
+        try:
+            overrides = read_roots(path)
+        except FileNotFoundError:
+            if optional == 'yes':
+                continue
+            raise
+        _fixed_root_values(overrides)
+        environment.update(overrides)
+    if environment.get('AR_LOCAL_DATA_ROOT') != FIXED_ROOTS['AR_LOCAL_DATA_ROOT']:
+        raise ValueError('explicit fixed producer data root required')
+    resolve = resolve or (lambda path: path.resolve(strict=True))
+    for root in FIXED_ROOTS.values():
+        if resolve(Path(root)) != Path(root):
+            raise ValueError('native bridge roots must not contain symlinks')
 
 
 def _native_values(fd):
@@ -86,6 +199,7 @@ def native_lock_factory(repo=Path('/srv/ar-local/AR-local')):
     path = repo / 'ar_local_operation_lock.py'
     if not path.is_file() or path.is_symlink():
         raise ValueError('deployed production lock helper is unavailable')
+    verify_native_deployment()
     # These dependency names are shared by the deployed helper; reject a cached
     # module from a different source before importing the reviewed implementation.
     for name in ('ar_local_backup_policy', 'cdr_file_lock', 'process_safety'):

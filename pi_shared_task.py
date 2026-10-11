@@ -60,7 +60,7 @@ def launch_spec(args, user: str, cwd: Path, unit: str) -> list[str]:
         'SendSIGKILL': 'yes',
     }
     result = ['sudo', '-n', 'systemd-run', '--wait', '--pipe', '--collect',
-              '--service-type=exec', '--unit=' + unit]
+              '--service-type=exec', '--expand-environment=no', '--unit=' + unit]
     result += ['--property=' + key + '=' + value for key, value in properties.items()]
     result += ['--setenv=PYTHONUNBUFFERED=1', '--setenv=HOME=' + str(Path.home()),
                '--', '/usr/bin/python3', str(RUNTIME), 'run', '--project', args.project,

@@ -17,7 +17,7 @@ import time
 import uuid
 
 from pi_shared_queue_policy import admission
-from pi_shared_queue_store import Store, Supervisor
+from pi_shared_queue_store import Store, Supervisor, FIXED_AR_UNITS
 from pi_shared_queue_native import NativeHostBusy, NativeHostGuard
 
 
@@ -82,7 +82,7 @@ def descendants_done(store, job):
 
 def release(store, job):
     # The live systemd invocation must still match and contain only this wrapper.
-    if not descendants_done(store, job):
+    if job['unit'] in FIXED_AR_UNITS or not descendants_done(store, job):
         return False
     with store.transaction() as state:
         state['jobs'] = [record for record in state['jobs'] if record['id'] != job['id']]
@@ -148,6 +148,8 @@ def enforce_cgroup_deadline(store, job, deadline, stop_started, cancelled=None):
 
 
 def execute(store, job, command, cancelled, deadline=None, release_claim=True):
+    if job['unit'] in FIXED_AR_UNITS:
+        release_claim = False  # systemd post hooks run after this wrapper returns.
     deadline = time.monotonic() + job['max_duration_seconds'] if deadline is None else deadline
     if time.monotonic() >= deadline:
         log(job, 'execution-budget-exhausted')
@@ -300,7 +302,8 @@ def main(argv=None):
             return run_supervised(store, job, command, args.wait_timeout, cancelled)
         finally:
             # This never frees a slot occupied by surviving supervised descendants.
-            release(store, job)
+            if job['unit'] not in FIXED_AR_UNITS:
+                release(store, job)
     except (OSError, ValueError, ImportError, subprocess.SubprocessError) as exc:
         # Commands and their environment can contain secrets; don't print either.
         print('shared Pi queue failed closed: ' + type(exc).__name__, file=sys.stderr)

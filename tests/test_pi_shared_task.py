@@ -42,3 +42,12 @@ def test_command_arguments_are_not_shell_interpreted():
     args = parser().parse_args(['--project', 'jcs2', '--', '/bin/echo', '$(touch /bad)'])
     result = launch_spec(args, 'pi', Path('/srv/project'), 'shared-pi-task-test.service')
     assert result[-2:] == ['/bin/echo', '$(touch /bad)']
+    assert '--expand-environment=no' in result
+
+
+def test_deployed_entry_point_preserves_arguments():
+    entry = Path(__file__).resolve().parents[1] / 'deploy' / 'pi' / 'pi-shared-task'
+    assert entry.read_text().splitlines() == [
+        '#!/bin/sh',
+        'exec /usr/bin/python3 /usr/local/lib/shared-pi-queue/pi_shared_task.py "$@"',
+    ]

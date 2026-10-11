@@ -85,6 +85,10 @@ while descendants survive. Host claims mark the native AR lease as requiring
 explicit recovery, so a dead wrapper cannot expose surviving children to a
 legacy worker's PID-based reclamation. Queue reconciliation clears only its own
 matching native hold after proving whole-cgroup termination.
+Fixed AR-local services keep their claims through systemd post-start and
+post-stop hooks, including gaps between hooks. A new invocation can retire its
+own predecessor only after the new wrapper is verified as its cgroup's sole
+member, before it starts a command. Surviving or ambiguous ownership still blocks.
 Expiration alone never frees a running slot. A
 temporary observation error defers admission and can recover when evidence
 returns; ambiguous ownership blocks admission. Do not delete state to bypass
@@ -95,6 +99,18 @@ Install the exact tested `pi_shared_queue.py`, `pi_shared_queue_store.py`,
 `/usr/local/lib/shared-pi-queue/`. The `pi-shared-task` entry point executes the
 installed launcher. Create the user-owned 0700 state directory. Preserve old
 files and service overrides before replacement.
+
+After preserving existing files, install the checked-in executable entry point:
+
+```sh
+sudo install -m 0755 deploy/pi/pi-shared-task /usr/local/bin/pi-shared-task
+```
+
+The launcher requires systemd's `--expand-environment=no` support (verified on
+this Pi's systemd 257), preserving `$VAR` and shell expressions exactly as
+submitted. The queue is currently commissioned for the fixed Pi producer and
+data roots; host claims reject unsupported root overrides rather than locking
+an unrelated data directory.
 
 Install `deploy/pi/shared-queue-daily.conf`, `shared-queue-watchdog.conf` and
 `shared-queue-ingest-now.conf` as `98-shared-queue.conf` in their respective

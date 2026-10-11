@@ -773,3 +773,81 @@ def test_verified_kill_all_expected_term_of_its_own_command_is_not_an_error(monk
     else:
         with pytest.raises(subprocess.CalledProcessError):
             Supervisor.terminate(supervisor, job, signum)
+
+def fixed_record(**changes):
+    result = record(unit='ar-local-daily.service', cgroup='/system.slice/ar-local-daily.service')
+    result.update(changes)
+    return result
+
+
+def fixed_supervisor():
+    supervisor = FakeSupervisor()
+    supervisor.cgroup = lambda pid: fixed_record()['cgroup']
+    supervisor.details['ControlGroup'] = fixed_record()['cgroup']
+    return supervisor
+
+
+def test_fixed_service_claim_covers_post_hooks_until_inactive_empty_cgroup():
+    supervisor = fixed_supervisor()
+    job = fixed_record(state='running', pid=os.getpid())
+    store = MemoryStore([job], supervisor)
+    assert not queue.release(store, job)
+    supervisor.wrapper = False
+    supervisor.processes = [777]  # ExecStartPost/ExecStopPost survives the wrapper.
+    supervisor.details.update(MainPID='0', ActiveState='activating')
+    assert store.reconcile(store.state)
+    assert store.state['jobs'][0]['state'] == 'running'
+    supervisor.processes = []
+    assert not store.reconcile(store.state)  # Between hooks is not termination.
+    assert len(store.state['jobs']) == 1
+    supervisor.details['ActiveState'] = 'inactive'
+    assert store.reconcile(store.state)
+    assert store.state['jobs'] == []
+
+
+def test_fixed_new_invocation_can_register_after_exact_wrapper_only_handoff():
+    supervisor = fixed_supervisor()
+    supervisor.details['InvocationID'] = 'b' * 32
+    supervisor.wrapper = False
+    owner = supervisor.current(1, 1200)
+    old = fixed_record(state='running', pid=777, start_ticks=100)
+    assert supervisor.ownership(old) == 'gone'
+    store = MemoryStore([old], supervisor)
+    new = queue.register(store, {'project': 'ar-local', 'resources': ['ar-local'],
+                                'mode': 'exclusive', 'cpu_slots': 1, 'max_duration_seconds': 600}, owner, 100)
+    assert store.state['jobs'] == [new]
+    assert new['invocation_id'] == 'b' * 32 and new['state'] == 'waiting'
+
+
+@pytest.mark.parametrize('uncertainty', ['child', 'old-wrapper-live', 'no-current-proof', 'old-wrapper-unknown'])
+def test_fixed_handoff_never_reclaims_surviving_or_unverified_predecessor(uncertainty):
+    supervisor = fixed_supervisor()
+    supervisor.details['InvocationID'] = 'b' * 32
+    supervisor.wrapper = False
+    if uncertainty != 'no-current-proof':
+        supervisor.current(1, 1200)
+    if uncertainty == 'child': supervisor.processes = [os.getpid(), 555]
+    if uncertainty == 'old-wrapper-live': supervisor.wrapper = True
+    if uncertainty == 'old-wrapper-unknown':
+        supervisor.wrapper_alive = lambda job: (_ for _ in ()).throw(PermissionError())
+    old = fixed_record(state='running', pid=777, start_ticks=100)
+    store = MemoryStore([old], supervisor)
+    assert not store.reconcile(store.state)
+    assert store.state['jobs'] == [old]
+
+
+def test_fixed_service_execute_returns_without_releasing_or_waiting_for_own_exit(monkeypatch):
+    import signal
+    supervisor = fixed_supervisor()
+    job = fixed_record(state='running', pid=os.getpid())
+    store = MemoryStore([job], supervisor)
+    class Child:
+        pid = 999
+        returncode = 0
+        def poll(self): return 0
+    monkeypatch.setattr(signal, 'SIG_BLOCK', 0, raising=False)
+    monkeypatch.setattr(signal, 'SIG_SETMASK', 2, raising=False)
+    monkeypatch.setattr(signal, 'pthread_sigmask', lambda *args: set(), raising=False)
+    monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: Child())
+    assert queue.execute(store, job, ['command'], queue.Cancellation()) == 0
+    assert store.state['jobs'] == [job]

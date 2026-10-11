@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import uuid
 
+FIXED_AR_UNITS = frozenset({'ar-local-daily.service', 'ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'})
 MAX_BYTES = 1024 * 1024
 UNIT = re.compile(r'(?:ar-local-(?:daily|daily-watchdog|ingest-now)|ar-local-payload-[a-zA-Z0-9_.-]+|ar-local-queue-task-[a-zA-Z0-9_.-]+|shared-pi-task-[a-zA-Z0-9_.-]+)\.service\Z')
 
@@ -156,8 +157,10 @@ class Supervisor:
         runtime = duration(details.get(runtime_property, ''))
         if not required_runtime <= runtime <= required_runtime + 240:
             raise ValueError('service runtime must cover wait and execution with bounded grace')
-        return {'pid': pid, 'start_ticks': self.ticks(pid), 'boot_id': self.boot_id(),
-                'unit': unit, 'invocation_id': invocation, 'cgroup': group}
+        ownership = {'pid': pid, 'start_ticks': self.ticks(pid), 'boot_id': self.boot_id(),
+                     'unit': unit, 'invocation_id': invocation, 'cgroup': group}
+        self._current_owner = ownership
+        return ownership
 
     def members(self, group):
         directory = self.cgroups / group.lstrip('/')
@@ -167,6 +170,24 @@ class Supervisor:
         for entry in directory.rglob('cgroup.procs'):
             members.update(int(value) for value in entry.read_text().split())
         return sorted(members)
+
+    def safe_fixed_handoff(self, job, details, members):
+        current = getattr(self, '_current_owner', None)
+        if current is None or job['unit'] not in FIXED_AR_UNITS:
+            return False
+        if (current['unit'] != job['unit'] or current['boot_id'] != job['boot_id']
+                or current['cgroup'] != job['cgroup']
+                or current['invocation_id'] == job['invocation_id']
+                or details.get('InvocationID') != current['invocation_id']
+                or details.get('ControlGroup') != current['cgroup']
+                or details.get('MainPID') != str(os.getpid())
+                or current['pid'] != os.getpid() or members != [os.getpid()]):
+            return False
+        # Only current()'s freshly verified wrapper may supersede its own fixed
+        # service predecessor, before any command/descendants have been spawned.
+        return (self.ticks(os.getpid()) == current['start_ticks']
+                and self.cgroup(os.getpid()) == current['cgroup']
+                and not self.wrapper_alive(job))
 
     def ownership(self, job):
         validate_job(job)
@@ -180,6 +201,8 @@ class Supervisor:
             if details.get('ActiveState') in ('inactive', 'failed'):
                 return 'gone'
             return 'unknown'
+        if self.safe_fixed_handoff(job, details, members):
+            return 'gone'
         # A reused unit can replace its cgroup path. A nonempty path is ambiguous.
         if not members and details.get('ActiveState') in ('inactive', 'failed'):
             return 'gone'
