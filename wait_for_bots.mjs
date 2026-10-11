@@ -1,8 +1,10 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
+import { fetchRequiredCi } from './scripts/lib/pr-gates-lib.mjs';
+import { requiredCiWaitResult, applyReviewerPolicy } from './scripts/lib/bot-wait-ci.mjs';
 /**
  * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
- * Exit 0 only when CI is settled, every required bot has completed since anchor,
- * and the quiet window has passed after the last bot activity.
+ * Reviewers are advisory by default: exit 0 means required CI has settled.
+ * Explicit reviewer opt-in also enforces bot activity and the quiet window.
  * Exit 2 = still waiting; exit 1 = error or required bots missing at safety cap.
  */
 import { execSync, spawnSync } from 'node:child_process';
@@ -268,6 +270,10 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
   const repo = repoIn || resolveRepo();
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
+  if (requiredKeys.length === 0) {
+    return requiredCiWaitResult(fetchRequiredCi(prNumber, { ignoredNames: (process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '').split(',').map((name) => name.trim()).filter(Boolean) }));
+  }
+
   const knownBots = allKnownBotLogins(requiredKeys);
   const elapsedMs = Date.now() - anchor.getTime();
   const maxMs = MAX_WAIT_MIN * 60 * 1000;
@@ -521,18 +527,8 @@ async function main() {
     writeState(prNumber, state);
   }
 
-  const cliOverride = args.requireBots !== null;
-  const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
-  const effectiveRequired =
-    cliOverride || envOverride ? requiredKeys : state.requiredKeys || requiredKeys;
-  if (
-    state.requiredKeys &&
-    JSON.stringify(state.requiredKeys) !== JSON.stringify(effectiveRequired)
-  ) {
-    state.requiredKeys = effectiveRequired;
-    state.readyAt = null;
-    writeState(prNumber, state);
-  }
+  const effectiveRequired = applyReviewerPolicy(state, requiredKeys);
+  writeState(prNumber, state);
 
   const finish = (result) => {
     const st = readState(prNumber) || state;
