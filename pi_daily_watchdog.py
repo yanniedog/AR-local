@@ -29,6 +29,7 @@ from pi_payload_retry_policy import (
     publication_source_key, retry_admission,
 )
 from pi_payload_freshness import check_publication
+from pi_payload_continuity import reconcile_missing_publication
 from pi_process_group import run_process_group
 from pi_cdr_recovery import (
     EXPECTED_GENERATION_ENV, HOBART, restore_dashboard_if_idle, run_same_day_recovery,
@@ -145,7 +146,10 @@ def run_payload_retry(dry_run: bool) -> dict:
     if not _app_payload_enabled():
         return {"status": "deferred", "reason": "publication_disabled"}
     admission = {"status": "deferred", "reason": "no_pending_marker"}
-    for candidate in publication_retry_candidates(read_payload_publication_pending(REPO_ROOT)):
+    candidates = publication_retry_candidates(read_payload_publication_pending(REPO_ROOT))
+    candidates.sort(key=lambda item: str(item["pointer"].get("observation_date", ""))
+                    if isinstance(item.get("pointer"), dict) else "", reverse=True)
+    for candidate in candidates:
         admission = retry_admission(REPO_ROOT, candidate, reserve=not dry_run)
         if admission["status"] == "ready":
             break
@@ -291,12 +295,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         send_missed_ingest_alert(run_date, writable_error)
     publication = {"publication_current": None, "publication_issues": []}
     publication_state = "disabled"
+    continuity = {"status": "not_due"}
     if _app_payload_enabled():
         publication_state = "not_checked"
         if complete and not active and not should_start and now_utc >= ready_at:
             publication = check_publication(run_date)
             publication_state = "current" if publication["publication_current"] else "stale_or_withheld"
-    publication_failed = publication["publication_current"] is False
+            if publication["publication_current"] and publication.get("missing_dates"):
+                publication_state = "incomplete_history"
+            if not writable_error and not recovery.get("capture_attempted"):
+                continuity = reconcile_missing_publication(
+                    REPO_ROOT, publication, run_date, now_utc=now_utc, dry_run=args.dry_run,
+                )
+                payload_pending = payload_publication_pending(REPO_ROOT)
+    publication_failed = (publication["publication_current"] is False
+                          or publication.get("publication_continuous") is False)
     payload = {
         "now_utc": now_utc.isoformat(),
         "due_utc": due_utc.isoformat(),
@@ -317,6 +330,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "payload_retry_attempted": payload_retry_attempted,
         "payload_retry_failed": payload_retry_failed,
         "payload_retry": payload_retry,
+        "payload_continuity": continuity,
         "same_day_recovery": recovery,
         "dry_run": bool(args.dry_run),
     }

@@ -64,6 +64,36 @@ def test_publisher_authenticates_then_hosted_check_requires_no_key(publication, 
     assert not status.check('2026-05-20')['publication_current']
 
 
+def test_historical_index_refresh_preserves_current_manifest_and_repairs_receipt(publication, monkeypatch):
+    from app_payload_secure_upload import decode_public_bytes
+    store, manifest = publication
+    status.publish(store, manifest)
+    monkeypatch.setattr('app_payload_revisions_github.GitHubRevisionStore', lambda *a, **kw: store)
+    rolling = store.objects[store.url(status.TAG, 'manifest.json')]
+    index_url = store.url(status.TAG, 'dates-index.json')
+    index = json.loads(decode_public_bytes(store.objects[index_url], status.LIMIT))
+    # Pure index protocol metadata: add an earlier legacy publication date.
+    index['dates'].insert(0, '2026-05-18');index['count'] += 1
+    store.objects[index_url] = encrypt_transport(json.dumps(index).encode(), KEY)
+    assert not status.check(DAY)['publication_current']
+    receipt = status.refresh_current(REPO)
+    assert receipt['run_date'] == DAY
+    assert status.check(DAY)['publication_current']
+    assert store.objects[store.url(status.TAG, 'manifest.json')] == rolling
+    assert store.writes == [status.NAME, status.NAME]
+
+
+def test_historical_receipt_refresh_refuses_an_unverified_current_pointer(publication, monkeypatch):
+    store, manifest = publication
+    status.publish(store, manifest)
+    original = store.objects[store.url(status.TAG, status.NAME)]
+    store.objects[store.url(status.TAG, 'manifest.json')] = encrypt_transport(manifest + b' ', KEY)
+    monkeypatch.setattr('app_payload_revisions_github.GitHubRevisionStore', lambda *a, **kw: store)
+    with pytest.raises(ValueError, match='manifest changed'):
+        status.refresh_current(REPO)
+    assert store.objects[store.url(status.TAG, status.NAME)] == original
+
+
 @pytest.mark.parametrize('asset', ['manifest', 'index', 'selected'])
 @pytest.mark.parametrize('fault', ['missing', 'tampered', 'plaintext', 'oversized'])
 def test_host_rejects_interrupted_or_changed_publication(publication, monkeypatch, asset, fault):
