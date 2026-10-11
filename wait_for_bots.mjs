@@ -560,7 +560,7 @@ async function main() {
 
   const runOnce = () => {
     const st = readState(prNumber) || state;
-    const keys = st.requiredKeys || effectiveRequired;
+    const keys = effectiveRequired;
     return evaluate({
       prNumber,
       anchorIso: st.anchor || anchorFromPr,

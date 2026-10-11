@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -62,6 +63,23 @@ export function readBotWaitStateFile(prNumber, repoRoot) {
  */
 export function writeBotWaitStateFile(prNumber, state, repoRoot) {
   const p = botWaitStatePath(prNumber, repoRoot);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  writeJsonAtomically(p, state);
+}
+
+/** A failed write or replacement leaves the previously accepted anchor intact. */
+export function writeJsonAtomically(destination, state) {
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    const descriptor = fs.openSync(temporary, 'wx');
+    try {
+      fs.writeFileSync(descriptor, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fs.renameSync(temporary, destination);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
 }

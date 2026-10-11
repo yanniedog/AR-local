@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeBotWaitStateFile, readBotWaitStateFile } from './lib/bot-wait-state.mjs';
+import { writeBotWaitStateFile, readBotWaitStateFile, botWaitStatePath } from './lib/bot-wait-state.mjs';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
 import { requiredCiWaitResult, applyReviewerPolicy } from './lib/bot-wait-ci.mjs';
 import { BOT_GATE_CHECK_NAMES } from './lib/pr-gates-lib.mjs';
@@ -29,6 +29,16 @@ try {
   assert.deepEqual(persisted.requiredKeys, []);
   assert.equal(persisted.readyAt, null);
   assert.deepEqual(applyReviewerPolicy(persisted, ['sourcery']), ['sourcery']);
+  const accepted = fs.readFileSync(botWaitStatePath(123, stateRoot), 'utf8');
+  const originalRename = fs.renameSync;
+  try {
+    fs.renameSync = () => { throw new Error('replacement interrupted'); };
+    assert.throws(() => writeBotWaitStateFile(123, { anchor: 'new' }, stateRoot), /replacement interrupted/);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.equal(fs.readFileSync(botWaitStatePath(123, stateRoot), 'utf8'), accepted);
+  assert.deepEqual(fs.readdirSync(path.dirname(botWaitStatePath(123, stateRoot))), ['123.json']);
   // Return before attempting GitHub access even with stale saved keys.
   assert.equal(checkRequiredBotsOnPr('invalid', 'invalid', 123, { repoRoot: stateRoot }).ok, true);
   assert.equal(checkRequiredBotsOnPr('invalid', 'invalid', 123, { requiredKeys: [], repoRoot: stateRoot }).ok, true);
