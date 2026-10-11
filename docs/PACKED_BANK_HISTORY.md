@@ -86,23 +86,22 @@ work. The runbook's Phase B GitHub route requires a configured production
 environment and exact canary evidence. The D-027 local sealed activation route
 is a separate supported path; an absent GitHub environment does not alone block it.
 
-1. Deploy the reviewed automatic delivery service allowlist from
-   `services/app-data/` and verify authenticated packed-asset routing and exact
-   gzip bytes. Its explicit filename allowlist otherwise rejects the new family.
-   Service deployment is separate from Pi deployment and requires the privately
-   held hosting token; retain its prior version for rollback.
+1. Populate and verify the direct GitHub app-data branch before releasing the
+   consumer app, following `DIRECT_APP_DELIVERY.md`. Existing encrypted release
+   namespaces remain available to old clients; new clients require no delivery
+   service deployment. Initial bootstrap preserves the already-published edition.
 2. Validate the exact merged producer candidate, including updated consumer app
-   proof for both asset inventories. Admit the controlled Pi transition through
+   proof for the complete declared asset inventory. Admit the controlled Pi transition through
    the shared task queue and production lease, respecting current resource,
    quiet-window, canary, approval and rollback gates. Then activate that exact
    candidate, not a moving branch.
 3. Build and publish a new immutable revision from verified existing source
    observations. Preserve historical releases, upload assets before the manifest,
-   and authenticate public service readback of both descriptors, envelope/core
+   and authenticate canonical release and direct GitHub readback, envelope/core
    binding, bytes and hashes, selected manifest and rolling index.
 4. Measure cold and cached native application processing, including validation and
    installation, against the few-second requirement. Record native and subsequent
-   natural-cycle evidence separately from code, service and publication checks.
+   natural-cycle evidence separately from code and publication checks.
 
 Do not create, enable, resume or start scheduled tasks or resume Drive writes.
 The local sealed activator stops and then starts previously active watchdog and

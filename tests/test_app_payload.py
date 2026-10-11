@@ -830,6 +830,8 @@ def test_package_payload_same_data_packages_both_tags(tmp_path):
 
     # Packaging must not mutate the shared precomputed data (reused across tags).
     assert data == original
+    assert dated["delivery"] == latest["delivery"] == {"mode": "github-public-v1"}
+    assert not dated.get("enc") and not latest.get("enc")
     assert dated["files"]["core"]["sha256"] == latest["files"]["core"]["sha256"]
     assert dated_tag in dated["files"]["core"]["url"]
     assert app_payload.DEFAULT_TAG in latest["files"]["core"]["url"]

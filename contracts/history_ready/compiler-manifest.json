@@ -1,6 +1,6 @@
 {
-  "sha256": "05d5cb07542145ed8a985c2500c6e61f1d6891acd0d6c609d5425594922a33f6",
-  "compiler_sha256": "05d5cb07542145ed8a985c2500c6e61f1d6891acd0d6c609d5425594922a33f6",
+  "sha256": "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3",
+  "compiler_sha256": "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3",
   "semantic_revision": "ar-history-ready-v1",
   "source_files": {
     "node_modules/@noble/hashes/_md.js": "4eaf0ae8f8191c50acdab7c3de7f335bf24845e4b562bdbc3e9f61cb7a873831",
@@ -26,9 +26,11 @@
     "src/data/historicalBankRateReadyWire.ts": "03d3152b0104347d32a182cbef7a37994029c77c00228b072f9365a383b72e26",
     "src/data/productFacts.ts": "55f2bedca0ee6f2d5de6901cdc37b9563811457dff8f8af9ebdab67cd7ebcdc7",
     "src/data/profile.ts": "028e41fac26947858f66cdf68f31dfbc2804132c23fad9388e2fd68f658693fe",
-    "src/data/sectionIntegrity.ts": "c3c7211b2bf692c0e97fb2a020050f9fa65c6f7e96c73ed6f506e3b03cc71a11",
+    "src/data/sectionIntegrity.ts": "58eea7e5d271452789b11010b060778f0f67cac20fab0e59ec569fdb97d2d0a4",
     "src/data/suitabilityGate.ts": "7ca0eeb2f0b2e35267e4e1f0f8a0aa49a328a1b2f383167b65142c17065725d4",
     "src/lib/calendarDate.ts": "4287d8f3c32c2993af5d4608c086f4a95dddbe9972c5d0a73e8295880d8aeefe",
+    "src/lib/jsonContentHash.ts": "fb3021d570d30ff8753f844750973ce7a10c0c75582d73f21f9db0adbf9a6581",
+    "src/lib/jsonContentHashPortable.ts": "8e5848e8bb803666d692d136d6ec412b91b864f25da45592a4c4d38e963c6974",
     "src/types.ts": "bac5aa71bb71176fe52bfb69e7902432abd755c9d1b97727dfd3aa9d49e9297e"
   }
 }
