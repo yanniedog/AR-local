@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import socket
 import subprocess
@@ -31,6 +32,7 @@ from ar_local_pi_service_heal import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
+QUEUE_ROOT = Path('/var/lib/shared-pi-queue')
 STATE_NAME = "runtime_health.json"
 PROBE_PATH = "/api/latest"
 DEFAULT_PROBE_TIMEOUT_SEC = 15.0
@@ -276,8 +278,30 @@ def _guarded_dashboard_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
 
 
 def _guarded_tailscale_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
-    """Network recovery uses the same lease as queued host mutations."""
-    return _guarded_service_heal(restart_tailscaled, dry_run=dry_run, role="runtime-health-network")
+    """Serialize host-wide recovery with every occupied queue claim."""
+    try:
+        with _queue_network_guard():
+            return _guarded_service_heal(restart_tailscaled, dry_run=dry_run, role="runtime-health-network")
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        return None, "shared_queue_occupied_or_unavailable"
+
+
+@contextmanager
+def _queue_network_guard():
+    root = QUEUE_ROOT
+    # Legacy hosts without a commissioned queue retain their native lease.
+    if not is_raspberry_pi() or not root.exists() and not root.is_symlink():
+        yield
+        return
+    from pi_shared_queue_store import Store
+
+    store = Store(root)
+    # Keep admission excluded throughout the mutation, so a job cannot start
+    # between the ownership readback and the Tailscale restart.
+    with store.transaction() as state:
+        if not store.reconcile(state) or any(job['state'] == 'running' for job in state['jobs']):
+            raise RuntimeError('shared queue is occupied or ownership is unknown')
+        yield
 
 
 def _guarded_service_heal(restart, *, dry_run: bool, role: str = "runtime-health") -> tuple[Optional[int], str]:

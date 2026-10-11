@@ -569,6 +569,8 @@ def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Pat
     source_root.mkdir()
     payload = source_root / "evidence.json"
     payload.write_text("{}", encoding="utf-8")
+    # Make the mismatch independent of the runner's umask (including 0077).
+    payload.chmod(0o644)
     entries = [manifest_entry(payload, source_root)]
     manifest = {**base_manifest("diagnostic", entries), "run_date": "2026-08-25", "publishable": False}
     manifest["files"][0]["mode"] = "0o600"

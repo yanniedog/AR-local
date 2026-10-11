@@ -318,7 +318,11 @@ class NativeHostGuard:
                 if not self.store.reconcile(state):
                     raise NativeHostBusy('queue ownership observation unavailable')
                 units = {job['unit'] for job in state['jobs']}
-            if not self.ready(units):
+            try:
+                ready = self.ready(units)
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                raise NativeHostBusy('legacy service observation unavailable') from exc
+            if not ready:
                 raise NativeHostBusy('legacy AR-local service occupies the host')
             yield
         finally:

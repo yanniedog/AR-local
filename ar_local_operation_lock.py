@@ -125,13 +125,31 @@ def recovery_lock_path(lock_path: Path) -> Path:
     return lock_path.with_name(f".{lock_path.name}.recovery-lock")
 
 
+def _open_after_network_recovery(path: Path, role: str) -> int:
+    """Scheduled work waits for the bounded low-priority network watchdog."""
+    deadline = time.monotonic() + 120
+    while True:
+        try:
+            return _open_exclusive(path, role)
+        except FileExistsError:
+            values = _lock_values(path) if not path.is_symlink() else {}
+            if (role == 'network-watchdog' or values.get('role') != 'network-watchdog'
+                    or set(values) - {'pid', 'role', 'boot_id', 'recovery'}
+                    or not values.get('pid', '').isdigit() or int(values['pid']) <= 0
+                    or values.get('recovery', 'automatic') != 'automatic'
+                    or 'boot_id' in values and not _canonical_boot_id(values['boot_id'])
+                    or _existing_lock_is_stale(path) or time.monotonic() >= deadline):
+                raise
+            time.sleep(0.25)
+
+
 @contextmanager
 def production_lock(lock_path: Path, role: str) -> Iterator[None]:
     """Hold an O_EXCL lock and recover only a provably stale predecessor."""
 
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        descriptor = _open_exclusive(lock_path, role)
+        descriptor = _open_after_network_recovery(lock_path, role)
     except FileExistsError as exc:
         if not _existing_lock_is_stale(lock_path):
             raise RuntimeError(f"production lock is active: {lock_path}") from exc
