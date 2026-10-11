@@ -6,6 +6,10 @@ OnFailure=ar-local-ingest-alert.service
 
 [Service]
 Type=oneshot
+# Keep at least one of the Pi 5's four cores available to the shared host.
+CPUQuota=300%
+CPUWeight=500
+IOWeight=500
 KillMode=control-group
 TimeoutStopSec=45s
 TimeoutStartSec=6h15min
