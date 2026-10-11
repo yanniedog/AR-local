@@ -6,6 +6,9 @@ on:
       - 'scripts/lib/pr-*.mjs'
       - 'scripts/lib/gh-pr-review-threads.mjs'
       - 'scripts/verify-pr-*.mjs'
+      - 'scripts/apply-branch-protection.mjs'
+      - 'scripts/verify-branch-protection-policy.mjs'
+      - '.github/workflows/pr-bot-presence-gate.yml'
       - 'package.json'
       - '.github/workflows/pr-closeout-ci.yml'
   push:
@@ -15,6 +18,9 @@ on:
       - 'scripts/lib/pr-*.mjs'
       - 'scripts/lib/gh-pr-review-threads.mjs'
       - 'scripts/verify-pr-*.mjs'
+      - 'scripts/apply-branch-protection.mjs'
+      - 'scripts/verify-branch-protection-policy.mjs'
+      - '.github/workflows/pr-bot-presence-gate.yml'
       - 'package.json'
       - '.github/workflows/pr-closeout-ci.yml'
 jobs:

@@ -6,9 +6,10 @@
  * Usage: npm run branch-protection:apply [-- --branch main] [-- --dry-run]
  */
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 /** Bot merge gates — must match workflow YAML job keys exactly. */
-const BOT_GATE_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+const BOT_GATE_CHECKS = ['bot-feedback-gate'];
 
 const GH_TIMEOUT_MS = 120_000;
 
@@ -36,8 +37,10 @@ function ghJson(args, { allow404 = false } = {}) {
   return r.stdout.trim() ? JSON.parse(r.stdout) : null;
 }
 
-function mergeCheckContexts(existingContexts, botChecks) {
-  const merged = [...(existingContexts || []), ...botChecks];
+export function mergeCheckContexts(existingContexts, botChecks = BOT_GATE_CHECKS) {
+  // Retire the obsolete presence requirement while retaining product CI.
+  const retained = (existingContexts || []).filter((name) => name !== 'bot-presence-gate');
+  const merged = [...retained, ...botChecks];
   return [...new Set(merged.filter(Boolean))];
 }
 
@@ -154,7 +157,7 @@ function main() {
     console.log(`Branch protection applied on ${repo}:${args.branch}`);
     console.log(`Required checks (${mergedContexts.length}): ${mergedContexts.join(', ')}`);
     if (existingContexts.length) {
-      console.log(`Preserved ${existingContexts.length} existing check(s); added bot gates: ${BOT_GATE_CHECKS.join(', ')}`);
+      console.log(`Retained product checks, retired bot-presence-gate; required bot gates: ${BOT_GATE_CHECKS.join(', ')}`);
     }
     console.log(`required_conversation_resolution: ${payload.required_conversation_resolution}`);
     process.exit(0);
@@ -166,4 +169,4 @@ function main() {
   process.exit(r.status === 403 || r.status === 404 ? 2 : 1);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
