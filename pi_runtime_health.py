@@ -272,17 +272,26 @@ def _production_activity_block_reason(*, include_ingest_lock: bool = True) -> st
 
 def _guarded_dashboard_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
     """Serialize both service mutations with ingest, backup and deployment."""
+    return _guarded_service_heal(restart_dashboard_and_nginx, dry_run=dry_run)
+
+
+def _guarded_tailscale_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
+    """Network recovery uses the same lease as queued host mutations."""
+    return _guarded_service_heal(restart_tailscaled, dry_run=dry_run, role="runtime-health-network")
+
+
+def _guarded_service_heal(restart, *, dry_run: bool, role: str = "runtime-health") -> tuple[Optional[int], str]:
     reason = _production_activity_block_reason()
     if reason:
         return None, reason
     if dry_run:
-        return restart_dashboard_and_nginx(dry_run=True), ""
+        return restart(dry_run=True), ""
     try:
-        with production_lock(data_state_root(REPO_ROOT) / "daily-ingest.lock", "runtime-health"):
+        with production_lock(data_state_root(REPO_ROOT) / "daily-ingest.lock", role):
             reason = _production_activity_block_reason(include_ingest_lock=False)
             if reason:
                 return None, reason
-            return restart_dashboard_and_nginx(dry_run=False), ""
+            return restart(dry_run=False), ""
     except (OSError, RuntimeError):
         return None, "production_lock_unavailable"
 
@@ -338,20 +347,33 @@ def cmd_heal(args: argparse.Namespace) -> int:
         tail_ok, tail_msgs = check_tailscale(http_timeout=args.timeout)
     for line in tail_msgs:
         print(f"pi_runtime_health: tailscale {line}")
-    state["tailscale_fail_streak"] = 0 if tail_ok else int(state.get("tailscale_fail_streak") or 0) + 1
+    previous_tail_streak = int(state.get("tailscale_fail_streak") or 0)
+    state["tailscale_fail_streak"] = 0 if tail_ok else previous_tail_streak + 1
+    state.pop("tailscale_heal_deferred_reason", None)
+    tail_deferred_reason = ""
     tail_streak = int(state.get("tailscale_fail_streak") or 0)
     if not tail_ok and tail_streak >= args.tailscale_fail_threshold:
         if cooldown_elapsed(state, "last_tailscale_heal_at", args.tailscale_heal_cooldown):
-            print(f"pi_runtime_health: tailscale fail streak {tail_streak}; restarting tailscaled")
-            if restart_tailscaled(dry_run=args.dry_run) != 0:
+            code, tail_deferred_reason = _guarded_tailscale_heal(dry_run=args.dry_run)
+            if tail_deferred_reason:
+                state["tailscale_fail_streak"] = previous_tail_streak
+                state["tailscale_heal_deferred_reason"] = tail_deferred_reason
+                state["last_tailscale_heal_deferred_at"] = _utc_iso()
+                print(f"pi_runtime_health: tailscale heal deferred ({tail_deferred_reason})")
+            elif code != 0:
                 save_state(state)
                 return EXIT_UNHEALTHY
-            state["last_tailscale_heal_at"] = _utc_iso()
-            state["tailscale_fail_streak"] = 0
-            healed = True
+            else:
+                state.pop("tailscale_heal_deferred_reason", None)
+                state["last_tailscale_heal_at"] = _utc_iso()
+                state["tailscale_fail_streak"] = 0
+                healed = True
         else:
             print("pi_runtime_health: tailscale heal skipped (cooldown)", file=sys.stderr)
     save_state(state)
+    if tail_deferred_reason:
+        print("pi_runtime_health: coordinated work active; tailscale heal deferred")
+        return EXIT_OK
     if deferred_reason and tail_ok:
         print("pi_runtime_health: coordinated work active; dashboard heal deferred")
         return EXIT_OK

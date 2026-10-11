@@ -123,6 +123,15 @@ Also install `pi_shared_queue_stop_hook.py` with those modules. The overrides
 replace unconditional dashboard restoration with this guarded hook. It requires
 the exact invocation's persisted proof that its command started, retains the
 queue claim, and acquires an idle native lease before restoring the dashboard.
+Daily and manual service startup budgets reserve another hour after the
+six-hour queue wait and six-hour command limits for inherited restart and smoke
+checks (40 curl retries, ordinary endpoint probes and three history deadlines).
+The service still bounds the entire startup; hook runtime retains its queue claim.
+The runtime-health override installs the reviewed standalone health script while
+using the stable producer's dependencies and existing environment. Its Tailscale
+recovery acquires the native production lease, so a host network task defers it.
+Install `deploy/pi/shared-queue-health.conf` as the health service's
+`98-shared-queue.conf`; reload definitions without starting or enabling its timer.
 An invocation cancelled before execution cannot restart an incumbent's paused
 dashboard. An interrupted launch without persisted start proof defers recovery
 to the existing bounded health check once the native owner has ended.

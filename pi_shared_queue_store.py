@@ -157,7 +157,8 @@ class Supervisor:
             raise ValueError('service CPU quota exceeds requested slots')
         runtime_property = 'TimeoutStartUSec' if details.get('Type') == 'oneshot' else 'RuntimeMaxUSec'
         runtime = duration(details.get(runtime_property, ''))
-        if not required_runtime <= runtime <= required_runtime + 240:
+        post_hook_allowance = 3600 if unit in FIXED_AR_UNITS else 240
+        if not required_runtime <= runtime <= required_runtime + post_hook_allowance:
             raise ValueError('service runtime must cover wait and execution with bounded grace')
         ownership = {'pid': pid, 'start_ticks': self.ticks(pid), 'boot_id': self.boot_id(),
                      'unit': unit, 'invocation_id': invocation, 'cgroup': group}

@@ -51,3 +51,111 @@ def test_deployed_entry_point_preserves_arguments():
         '#!/bin/sh',
         'exec /usr/bin/python3 /usr/local/lib/shared-pi-queue/pi_shared_task.py "$@"',
     ]
+
+import signal
+import subprocess
+
+import pi_shared_task as task
+
+
+UNIT = 'shared-pi-task-' + 'a' * 32 + '.service'
+
+
+@pytest.mark.parametrize('signum,expected', [(signal.SIGINT, 130), (signal.SIGTERM, 143)])
+def test_launcher_signal_cancels_exact_unit_and_restores_handlers(monkeypatch, signum, expected):
+    handlers, cancelled = {}, []
+    monkeypatch.setattr(signal, 'getsignal', lambda value: 'previous')
+    monkeypatch.setattr(signal, 'signal', lambda value, handler: handlers.__setitem__(value, handler))
+    class Monitor:
+        def poll(self): return None
+    def spawn(command, **kwargs):
+        assert kwargs['start_new_session'] is True
+        handlers[signum](signum, None)
+        return Monitor()
+    def stop(unit, monitor, cancellation):
+        cancelled.append((unit, cancellation.signum))
+        return cancellation.exit_code
+    monkeypatch.setattr(subprocess, 'Popen', spawn)
+    monkeypatch.setattr(task, 'cancel_submission', stop)
+    assert task.run_submission(['sudo', '-n', 'systemd-run'], UNIT) == expected
+    assert cancelled == [(UNIT, signum)]
+    assert handlers == {signal.SIGINT: 'previous', signal.SIGTERM: 'previous'}
+
+
+def test_cancel_does_not_accept_missing_unit_while_creation_monitor_is_alive(monkeypatch):
+    clock, attempts, polls = [100.0], [], [0]
+    cancellation = task.LaunchCancellation()
+    cancellation.signum = signal.SIGTERM
+    class Monitor:
+        def poll(self):
+            polls[0] += 1
+            return 1 if polls[0] >= 4 else None
+    monkeypatch.setattr(task.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(task.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(task, 'control_unit', lambda unit, operation: attempts.append((unit, operation)))
+    monkeypatch.setattr(task, 'unit_inactive', lambda unit: True)
+    assert task.cancel_submission(UNIT, Monitor(), cancellation, timeout=2) == 143
+    assert polls[0] == 4 and attempts == [(UNIT, 'stop')]
+
+
+def test_cancellation_kills_exact_unit_after_bounded_stop_grace(monkeypatch):
+    clock, attempts, killed = [100.0], [], [False]
+    cancellation = task.LaunchCancellation()
+    cancellation.signum = signal.SIGINT
+    class Monitor:
+        def poll(self): return 1 if killed[0] else None
+    def control(unit, operation):
+        assert unit == UNIT
+        attempts.append(operation)
+        if operation == 'kill': killed[0] = True
+    monkeypatch.setattr(task.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(task.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(task, 'control_unit', control)
+    monkeypatch.setattr(task, 'unit_inactive', lambda unit: killed[0])
+    assert task.cancel_submission(UNIT, Monitor(), cancellation, timeout=1) == 130
+    assert attempts == ['stop', 'kill']
+
+
+def test_shutdown_observation_failure_returns_error_not_false_cancellation_success(monkeypatch, capsys):
+    clock = [100.0]
+    cancellation = task.LaunchCancellation()
+    cancellation.signum = signal.SIGTERM
+    class Monitor:
+        def poll(self): return 1
+    def unavailable(unit): raise PermissionError()
+    monkeypatch.setattr(task.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(task.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(task, 'control_unit', lambda *args: None)
+    monkeypatch.setattr(task, 'unit_inactive', unavailable)
+    assert task.cancel_submission(UNIT, Monitor(), cancellation, timeout=1) == 75
+    assert clock[0] <= 116
+    assert 'could not confirm whole-unit shutdown' in capsys.readouterr().err
+
+
+def test_whole_unit_shutdown_requires_empty_cgroup_and_zero_mainpid(monkeypatch):
+    import pi_shared_queue_store as store
+    details = {'Id': UNIT, 'ActiveState': 'inactive', 'MainPID': '0', 'ControlGroup': ''}
+    members = []
+    class Supervisor:
+        def show(self, unit): return details
+        def members(self, group):
+            assert group == '/system.slice/' + UNIT
+            return members
+    monkeypatch.setattr(store, 'Supervisor', Supervisor)
+    assert task.unit_inactive(UNIT)
+    members.append(999)
+    assert not task.unit_inactive(UNIT)
+    members.clear()
+    details['MainPID'] = '999'
+    assert not task.unit_inactive(UNIT)
+
+
+def test_stop_control_is_exact_argument_list_without_shell_interpretation(monkeypatch):
+    seen = []
+    monkeypatch.setattr(subprocess, 'run', lambda command, **kwargs: seen.append(command))
+    task.control_unit(UNIT, 'stop')
+    task.control_unit(UNIT, 'kill')
+    assert seen == [
+        ['sudo', '-n', '/usr/bin/systemctl', 'stop', '--no-block', UNIT],
+        ['sudo', '-n', '/usr/bin/systemctl', 'kill', '--kill-whom=all', '--signal=SIGKILL', UNIT],
+    ]

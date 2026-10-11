@@ -904,3 +904,19 @@ def test_legacy_records_without_command_marker_remain_valid_and_false_by_default
 def _recovery_lock_factory(path):
     from cdr_file_lock import FileLock
     return FileLock(path.with_name('.' + path.name + '.recovery-lock'))
+
+
+def test_fixed_service_has_bounded_additional_post_hook_startup_budget():
+    supervisor = fixed_supervisor()
+    supervisor.details.update(Type='oneshot', TimeoutStartUSec='13h')
+    assert supervisor.current(1, 43260)['unit'] == 'ar-local-daily.service'
+    supervisor.details['TimeoutStartUSec'] = '14h'
+    with pytest.raises(ValueError):
+        supervisor.current(1, 43260)
+
+
+def test_transient_service_cannot_use_fixed_service_post_hook_allowance():
+    supervisor = FakeSupervisor()
+    supervisor.details['RuntimeMaxUSec'] = '13h'
+    with pytest.raises(ValueError):
+        supervisor.current(1, 43260)

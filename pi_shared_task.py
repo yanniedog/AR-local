@@ -7,6 +7,9 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import signal
+import time
+import re
 import sys
 import uuid
 
@@ -71,6 +74,100 @@ def launch_spec(args, user: str, cwd: Path, unit: str) -> list[str]:
     return result + ['--'] + command
 
 
+class LaunchCancellation:
+    def __init__(self):
+        self.signum = None
+
+    def handle(self, signum, frame):
+        if self.signum is None:
+            self.signum = signum
+
+    @property
+    def exit_code(self):
+        return 130 if self.signum == signal.SIGINT else 143
+
+
+def unit_inactive(unit):
+    from pi_shared_queue_store import Supervisor
+    if not re.fullmatch(r'(?:ar-local-queue-task-|shared-pi-task-)[0-9a-f]{32}\.service', unit):
+        raise ValueError('invalid submitted unit identity')
+    supervisor = Supervisor()
+    details = supervisor.show(unit)
+    expected = '/system.slice/' + unit
+    if (details.get('ActiveState') not in ('inactive', 'failed')
+            or details.get('MainPID') != '0'
+            or details.get('ControlGroup') not in ('', expected)):
+        return False
+    return supervisor.members(expected) == []
+
+
+def control_unit(unit, operation):
+    command = ['sudo', '-n', '/usr/bin/systemctl']
+    if operation == 'stop':
+        command += ['stop', '--no-block', unit]
+    elif operation == 'kill':
+        command += ['kill', '--kill-whom=all', '--signal=SIGKILL', unit]
+    else:
+        raise ValueError('unsupported submitted unit control')
+    subprocess.run(command, text=True, capture_output=True, timeout=10, check=True)
+
+
+def cancel_submission(unit, monitor, cancellation, timeout=90):
+    """Stop the exact transient unit; the monitor alone does not own its job."""
+    deadline, next_stop = time.monotonic() + timeout, 0.0
+    while time.monotonic() < deadline:
+        if time.monotonic() >= next_stop:
+            try:
+                control_unit(unit, 'stop')
+            except (OSError, subprocess.SubprocessError):
+                pass  # Creation may still be in flight; retry the same unit only.
+            next_stop = time.monotonic() + 2
+        try:
+            if unit_inactive(unit) and monitor.poll() is not None:
+                return cancellation.exit_code
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        time.sleep(.25)
+    try:
+        control_unit(unit, 'kill')
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # Give PID 1 and the wait monitor bounded time to report cgroup termination.
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            if unit_inactive(unit) and monitor.poll() is not None:
+                return cancellation.exit_code
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        time.sleep(.25)
+    print('Shared task cancellation could not confirm whole-unit shutdown', file=sys.stderr)
+    return 75
+
+
+def run_submission(command, unit):
+    cancellation = LaunchCancellation()
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+    for signum in previous:
+        signal.signal(signum, cancellation.handle)
+    try:
+        if cancellation.signum is not None:
+            return cancellation.exit_code
+        # Isolate the monitor's terminal signals. Ctrl-C is handled here and
+        # stops its service, including all command descendants, through PID 1.
+        monitor = subprocess.Popen(command, start_new_session=True)
+        while True:
+            if cancellation.signum is not None:
+                return cancel_submission(unit, monitor, cancellation)
+            result = monitor.poll()
+            if result is not None:
+                return result if result >= 0 else 128 - result
+            time.sleep(.1)
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     if sys.platform != 'linux' or os.geteuid() == 0:
@@ -93,7 +190,7 @@ def main(argv=None):
         return 0
     if not RUNTIME.is_file():
         raise SystemExit('Shared queue runtime is not installed')
-    return subprocess.call(command)
+    return run_submission(command, unit)
 
 
 if __name__ == '__main__':
