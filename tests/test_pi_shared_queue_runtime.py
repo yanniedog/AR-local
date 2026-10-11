@@ -503,7 +503,7 @@ def test_manual_native_bridge_retained_for_live_children_and_cleared_only_after_
     supervisor.processes = [555]
     store = MemoryStore([job], supervisor)
     original = module.clear_native_manual
-    monkeypatch.setattr(module, 'clear_native_manual', lambda job: original(job, path))
+    monkeypatch.setattr(module, 'clear_native_manual', lambda job: original(job, path, recovery_lock_factory=_recovery_lock_factory))
     assert store.reconcile(store.state)
     assert path.exists() and len(store.state['jobs']) == 1
     supervisor.processes = []
@@ -524,7 +524,7 @@ def test_manual_native_bridge_mismatch_or_corruption_is_never_cleared(tmp_path, 
     if corruption == 'truncated': body = body[:-3]
     path = tmp_path / 'native.lock'
     path.write_text(body)
-    assert not clear_native_manual(job, path)
+    assert not clear_native_manual(job, path, recovery_lock_factory=_recovery_lock_factory)
     assert path.read_text() == body
 
 
@@ -850,4 +850,57 @@ def test_fixed_service_execute_returns_without_releasing_or_waiting_for_own_exit
     monkeypatch.setattr(signal, 'pthread_sigmask', lambda *args: set(), raising=False)
     monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: Child())
     assert queue.execute(store, job, ['command'], queue.Cancellation()) == 0
+    assert store.state['jobs'] == [dict(job, command_started=True)]
+
+@pytest.mark.parametrize('marker', [None, 0, 1, 'true', []])
+def test_command_start_receipt_requires_bool(marker):
+    with pytest.raises(ValueError):
+        Store.validate({'version': 1, 'next_sequence': 1, 'jobs': [record(command_started=marker)]})
+
+
+def test_fixed_waiting_registration_has_false_start_receipt():
+    supervisor = fixed_supervisor()
+    owner = supervisor.current(1, 1200)
+    store = MemoryStore([], supervisor)
+    job = queue.register(store, {'project': 'ar-local', 'resources': ['ar-local'],
+                                'mode': 'exclusive', 'cpu_slots': 1, 'max_duration_seconds': 600}, owner, 100)
+    assert job['state'] == 'waiting' and job['command_started'] is False
+    with pytest.raises(ValueError):
+        queue.mark_command_started(store, job)
+    assert store.state['jobs'][0]['command_started'] is False
+
+
+def test_fixed_spawn_receipt_persistence_failure_keeps_running_claim(monkeypatch):
+    import signal
+    job = fixed_record(state='running', pid=os.getpid(), command_started=False)
+    store = MemoryStore([job], fixed_supervisor())
+    class Child:
+        pid = 999
+        returncode = 0
+        def poll(self):
+            pytest.fail('child polled before spawn receipt committed')
+    @contextmanager
+    def failed_commit():
+        raise OSError('receipt persistence unavailable')
+        yield
+    monkeypatch.setattr(store, 'transaction', failed_commit)
+    monkeypatch.setattr(signal, 'SIG_BLOCK', 0, raising=False)
+    monkeypatch.setattr(signal, 'SIG_SETMASK', 2, raising=False)
+    monkeypatch.setattr(signal, 'pthread_sigmask', lambda *args: set(), raising=False)
+    monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: Child())
+    with pytest.raises(OSError):
+        queue.execute(store, job, ['command'], queue.Cancellation())
     assert store.state['jobs'] == [job]
+    assert store.state['jobs'][0]['command_started'] is False
+    assert not queue.release(store, job)
+
+
+def test_legacy_records_without_command_marker_remain_valid_and_false_by_default():
+    job = fixed_record(state='running')
+    Store.validate({'version': 1, 'next_sequence': 1, 'jobs': [job]})
+    assert job.get('command_started', False) is False
+
+
+def _recovery_lock_factory(path):
+    from cdr_file_lock import FileLock
+    return FileLock(path.with_name('.' + path.name + '.recovery-lock'))

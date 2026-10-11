@@ -49,6 +49,8 @@ def register(store, spec, ownership, monotonic):
             raise ValueError('queue capacity reached')
         job = dict(spec, **ownership, id=uuid.uuid4().hex,
                    sequence=state['next_sequence'], queued_monotonic=monotonic, state='waiting')
+        if job['unit'] in FIXED_AR_UNITS:
+            job['command_started'] = False
         state['next_sequence'] += 1
         view = policy_view([*state['jobs'], job], datetime.now(timezone.utc), monotonic)
         if admission(view[-1], view, datetime.now(timezone.utc))[1] == 'invalid-state':
@@ -147,6 +149,21 @@ def enforce_cgroup_deadline(store, job, deadline, stop_started, cancelled=None):
     return now if stop_started is None else stop_started
 
 
+def mark_command_started(store, job):
+    """Publish the fixed service spawn receipt before polling its command."""
+    if job['unit'] not in FIXED_AR_UNITS:
+        return
+    with store.transaction() as state:
+        matches = [record for record in state['jobs'] if record['id'] == job['id']]
+        if len(matches) != 1 or matches[0]['state'] != 'running':
+            raise ValueError('admitted command ownership lost before spawn receipt')
+        record = matches[0]
+        ownership = ('pid', 'start_ticks', 'boot_id', 'unit', 'invocation_id', 'cgroup')
+        if any(record[key] != job[key] for key in ownership):
+            raise ValueError('command invocation changed before spawn receipt')
+        record['command_started'] = True
+
+
 def execute(store, job, command, cancelled, deadline=None, release_claim=True):
     if job['unit'] in FIXED_AR_UNITS:
         release_claim = False  # systemd post hooks run after this wrapper returns.
@@ -169,6 +186,7 @@ def execute(store, job, command, cancelled, deadline=None, release_claim=True):
         cancelled.child = child
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+    mark_command_started(store, job)
     termination_at, cgroup_stop = None, None
     while child.poll() is None:
         cgroup_stop = enforce_cgroup_deadline(store, job, deadline, cgroup_stop, cancelled)

@@ -119,6 +119,14 @@ and existing environment files. Reload definitions and read back the effective
 command, CPU quota, timeout and kill policy. Do not start, enable or restart a
 timer. The daily-watchdog timer intentionally remains inactive.
 
+Also install `pi_shared_queue_stop_hook.py` with those modules. The overrides
+replace unconditional dashboard restoration with this guarded hook. It requires
+the exact invocation's persisted proof that its command started, retains the
+queue claim, and acquires an idle native lease before restoring the dashboard.
+An invocation cancelled before execution cannot restart an incumbent's paused
+dashboard. An interrupted launch without persisted start proof defers recovery
+to the existing bounded health check once the native owner has ended.
+
 Before activating these wrappers, run the queue's Linux process tests and
 supervised harmless canaries: compatible jobs overlap; conflicting jobs execute
 in order; a dead wrapper with a live child retains its slot; a live native AR

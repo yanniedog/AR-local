@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import importlib.util
+import inspect
 import json
 import os
 from pathlib import Path
@@ -160,8 +161,33 @@ def mark_native_manual(job, path=NATIVE_LOCK):
         os.close(fd)
 
 
-def clear_native_manual(job, path=NATIVE_LOCK):
-    """Called only after exact service termination proof under queue.lock."""
+def _native_recovery_lock(path):
+    factory = native_lock_factory()
+    # production_lock is decorated with contextmanager; the visible wrapper's
+    # globals belong to contextlib, not the verified deployed source module.
+    deployed = getattr(inspect.unwrap(factory), '__globals__', {})
+    lock_type, recovery_path = deployed.get('FileLock'), deployed.get('recovery_lock_path')
+    if not callable(lock_type) or not callable(recovery_path):
+        raise ValueError('deployed native recovery lock API unavailable')
+    return lock_type(recovery_path(path))
+
+
+def clear_native_manual(job, path=NATIVE_LOCK, recovery_lock_factory=None):
+    """After cgroup termination proof, serialize with legacy stale reclamation.
+
+    The wrapper can die after lease acquisition but before its manual marker.
+    Only its exact base or fully marked record is recoverable here.
+    """
+    try:
+        validate_job(job)
+        factory = recovery_lock_factory or _native_recovery_lock
+        with factory(path):
+            return _clear_native_owned_file(job, path)
+    except (OSError, UnicodeError, ValueError, ImportError, subprocess.SubprocessError):
+        return False
+
+
+def _clear_native_owned_file(job, path):
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     except FileNotFoundError:
@@ -171,8 +197,8 @@ def clear_native_manual(job, path=NATIVE_LOCK):
     try:
         info, values = _native_values(fd)
         expected = {'pid': str(job['pid']), 'boot_id': job['boot_id'],
-                    'role': 'shared-pi-host-task:' + job['id'], 'recovery': 'manual'}
-        if values != expected:
+                    'role': 'shared-pi-host-task:' + job['id']}
+        if values != expected and values != dict(expected, recovery='manual'):
             return False
         current = path.lstat()
         if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):

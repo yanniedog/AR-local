@@ -22,8 +22,10 @@ NAME = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
 
 def validate_job(job):
     required = {'id','project','resources','mode','cpu_slots','max_duration_seconds','state','sequence','queued_monotonic','pid','start_ticks','boot_id','unit','invocation_id','cgroup'}
-    if not isinstance(job, dict) or set(job) != required or job['state'] not in ('waiting', 'running', 'quarantined'):
+    if not isinstance(job, dict) or not required <= set(job) or set(job) - required - {'command_started'} or job['state'] not in ('waiting', 'running', 'quarantined'):
         raise ValueError('invalid queue record')
+    if 'command_started' in job and type(job['command_started']) is not bool:
+        raise ValueError('invalid command start marker')
     for name in ('id', 'project'):
         if not isinstance(job[name], str) or not NAME.fullmatch(job[name]):
             raise ValueError('invalid queue name')

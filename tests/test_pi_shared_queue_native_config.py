@@ -1,6 +1,8 @@
 """Fixed-layout native bridge checks never need Linux processes or Pi access."""
 from pathlib import Path
 import subprocess
+from contextlib import contextmanager
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -181,3 +183,129 @@ def test_missing_root_only_optional_file_is_still_optional(monkeypatch):
     monkeypatch.setattr(Path, 'open', denied)
     monkeypatch.setattr('pi_shared_queue_native.subprocess.run', missing)
     check(inspect(files='/etc/ar-local/missing.env (ignore_errors=yes)'))
+
+
+@pytest.fixture
+def native_cleanup(tmp_path, monkeypatch):
+    if os.name != 'posix':
+        pytest.skip('native lease unlink and directory fsync require POSIX')
+    import pi_shared_queue_native as native
+    job = {'id': 'recovered-job', 'project': 'other', 'resources': ['host'],
+           'mode': 'exclusive', 'cpu_slots': 1, 'max_duration_seconds': 600,
+           'state': 'running', 'sequence': 0, 'queued_monotonic': 100,
+           'pid': 123, 'start_ticks': 100,
+           'boot_id': '12345678-1234-1234-1234-123456789abc',
+           'unit': 'shared-pi-task-recovered.service', 'invocation_id': 'a' * 32,
+           'cgroup': '/system.slice/shared-pi-task-recovered.service'}
+    path = tmp_path / 'daily-ingest.lock'
+    body = 'pid=123\nboot_id=' + job['boot_id'] + '\nrole=shared-pi-host-task:recovered-job\n'
+    active = [False]
+    @contextmanager
+    def lock(target):
+        assert target == path
+        assert not active[0]
+        active[0] = True
+        try:
+            yield
+        finally:
+            active[0] = False
+    return native, job, path, body, lock, active
+
+
+@pytest.mark.parametrize('marker', ['', 'recovery=manual\n'])
+def test_exact_pre_marker_and_marked_native_claims_are_recovered(native_cleanup, marker):
+    native, job, path, body, lock, active = native_cleanup
+    path.write_text(body + marker)
+    assert native.clear_native_manual(job, path, recovery_lock_factory=lock)
+    assert not path.exists() and not active[0]
+
+
+@pytest.mark.parametrize('change', ['foreign-role', 'foreign-pid', 'foreign-boot', 'unknown-key', 'automatic'])
+def test_native_cleanup_preserves_foreign_or_unrecognized_claims(native_cleanup, change):
+    native, job, path, body, lock, active = native_cleanup
+    if change == 'foreign-role':
+        body = body.replace('recovered-job', 'other-job')
+    elif change == 'foreign-pid':
+        body = body.replace('pid=123', 'pid=124')
+    elif change == 'foreign-boot':
+        body = body.replace(job['boot_id'], '87654321-1234-1234-1234-123456789abc')
+    else:
+        body += 'unknown=value\n' if change == 'unknown-key' else 'recovery=automatic\n'
+    path.write_text(body)
+    assert not native.clear_native_manual(job, path, recovery_lock_factory=lock)
+    assert path.read_text() == body
+
+
+def test_native_cleanup_reads_and_unlinks_only_inside_recovery_lock(native_cleanup, monkeypatch):
+    native, job, path, body, lock, active = native_cleanup
+    path.write_text(body)
+    original_read, original_unlink = native._native_values, Path.unlink
+    def read(fd):
+        assert active[0]
+        return original_read(fd)
+    def unlink(target, *args, **kwargs):
+        assert active[0]
+        return original_unlink(target, *args, **kwargs)
+    monkeypatch.setattr(native, '_native_values', read)
+    monkeypatch.setattr(Path, 'unlink', unlink)
+    assert native.clear_native_manual(job, path, recovery_lock_factory=lock)
+
+
+def test_native_cleanup_rechecks_a_claim_changed_before_lock_acquisition(native_cleanup):
+    native, job, path, body, lock, active = native_cleanup
+    path.write_text(body)
+    replacement = body.replace('recovered-job', 'new-owner')
+    @contextmanager
+    def competing_recovery(target):
+        with lock(target):
+            target.write_text(replacement)
+            yield
+    assert not native.clear_native_manual(job, path, recovery_lock_factory=competing_recovery)
+    assert path.read_text() == replacement
+
+
+def test_native_cleanup_does_not_unlink_changed_inode(native_cleanup, monkeypatch):
+    native, job, path, body, lock, active = native_cleanup
+    path.write_text(body)
+    original_lstat = Path.lstat
+    def changed(target, *args, **kwargs):
+        info = original_lstat(target, *args, **kwargs)
+        return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino + 1) if target == path else info
+    monkeypatch.setattr(Path, 'lstat', changed)
+    assert not native.clear_native_manual(job, path, recovery_lock_factory=lock)
+    assert path.read_text() == body
+
+
+def test_native_recovery_uses_deployed_helper_lock_namespace(monkeypatch):
+    import pi_shared_queue_native as native
+    seen = []
+    namespace = {'FileLock': lambda path: seen.append(path) or 'lock-context',
+                 'recovery_lock_path': lambda path: path.with_name('.' + path.name + '.recovery-lock')}
+    exec('def factory():\n    pass\n', namespace)
+    factory = namespace['factory']
+    monkeypatch.setattr(native, 'native_lock_factory', lambda: factory)
+    path = Path('/srv/ar-local/data/state/daily-ingest.lock')
+    assert native._native_recovery_lock(path) == 'lock-context'
+    assert seen == [path.with_name('.daily-ingest.lock.recovery-lock')]
+
+
+def test_native_recovery_unwraps_contextmanager_helper(monkeypatch):
+    import pi_shared_queue_native as native
+    seen = []
+    namespace = {'contextmanager': contextmanager,
+                 'FileLock': lambda path: seen.append(path) or 'wrapped-lock',
+                 'recovery_lock_path': lambda path: path.with_name('.' + path.name + '.recovery-lock')}
+    exec('@contextmanager\ndef production_lock():\n    yield\n', namespace)
+    factory = namespace['production_lock']
+    assert 'FileLock' not in factory.__globals__
+    monkeypatch.setattr(native, 'native_lock_factory', lambda: factory)
+    path = Path('/srv/ar-local/data/state/daily-ingest.lock')
+    assert native._native_recovery_lock(path) == 'wrapped-lock'
+    assert seen == [path.with_name('.daily-ingest.lock.recovery-lock')]
+
+
+def test_native_recovery_missing_api_fails_closed(monkeypatch):
+    import pi_shared_queue_native as native
+    monkeypatch.setattr(native, 'native_lock_factory', lambda: lambda: None)
+    with pytest.raises(ValueError, match='API unavailable'):
+        native._native_recovery_lock(Path('/srv/ar-local/data/state/daily-ingest.lock'))
