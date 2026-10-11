@@ -177,15 +177,90 @@ def test_deferred_application_keeps_independent_tailscale_checks(monkeypatch, fa
     app_probe.assert_not_called()
 
 
-def test_real_tailscale_failure_can_still_heal_during_application_pause(staged, monkeypatch):
+def test_tailscale_failure_defers_network_mutation_during_coordinated_work(staged, monkeypatch):
     _, args = staged
     health.save_state({"http_fail_streak": 2, "tailscale_fail_streak": 1})
     monkeypatch.setattr(health, "_production_activity_block_reason", Mock(return_value="backup_source_active"))
     monkeypatch.setattr(health, "check_tailscale", Mock(return_value=(False, ["tailscaled.service not active"])))
     assert health.cmd_heal(args) == health.EXIT_OK
     health.restart_dashboard_and_nginx.assert_not_called()
-    health.restart_tailscaled.assert_called_once_with(dry_run=False)
+    health.restart_tailscaled.assert_not_called()
     receipt = health.load_state()
     assert receipt["http_fail_streak"] == 2
     assert "last_http_heal_at" not in receipt
-    assert "last_tailscale_heal_at" in receipt
+    assert "last_tailscale_heal_at" not in receipt
+    assert receipt["tailscale_fail_streak"] == 1
+    assert receipt["tailscale_heal_deferred_reason"] == "backup_source_active"
+
+
+def test_native_host_lease_prevents_tailscale_restart(staged, monkeypatch):
+    state, args = staged
+    health.save_state({"http_fail_streak": 2, "tailscale_fail_streak": 1})
+    monkeypatch.setattr(health, "check_tailscale", Mock(return_value=(False, ["network transaction active"])))
+    lock = state / "daily-ingest.lock"
+    with operation_lock.production_lock(lock, "shared-pi-host-task:network-maintenance"):
+        before = lock.read_bytes()
+        assert health.cmd_heal(args) == health.EXIT_OK
+        assert lock.read_bytes() == before
+    health.restart_tailscaled.assert_not_called()
+    receipt = health.load_state()
+    assert receipt["tailscale_heal_deferred_reason"] == "production_lock_unavailable"
+    assert receipt["tailscale_fail_streak"] == 1
+    assert "last_tailscale_heal_at" not in receipt
+
+
+def test_tailscale_restart_holds_native_lease_and_rechecks_activity(staged, monkeypatch):
+    state, args = staged
+    health.save_state({"http_fail_streak": 0, "tailscale_fail_streak": 1})
+    monkeypatch.setattr(health, "run_http_probes", Mock(return_value=(True, ["OK"])))
+    monkeypatch.setattr(health, "check_tailscale", Mock(return_value=(False, ["tailscaled inactive"])))
+    checks = []
+    def activity(*, include_ingest_lock=True):
+        checks.append(include_ingest_lock)
+        if not include_ingest_lock:
+            assert "role=runtime-health-network" in (state / "daily-ingest.lock").read_text()
+        return ""
+    def restart(*, dry_run):
+        assert not dry_run
+        with pytest.raises(RuntimeError, match="production lock is active"):
+            with operation_lock.production_lock(state / "daily-ingest.lock", "host-maintenance"):
+                pytest.fail("host transaction overlapped network restart")
+        return 0
+    monkeypatch.setattr(health, "_production_activity_block_reason", activity)
+    monkeypatch.setattr(health, "restart_tailscaled", Mock(side_effect=restart))
+    assert health.cmd_heal(args) == health.EXIT_OK
+    assert False in checks
+    health.restart_tailscaled.assert_called_once_with(dry_run=False)
+    assert not (state / "daily-ingest.lock").exists()
+    assert "last_tailscale_heal_at" in health.load_state()
+
+
+def test_tailscale_restart_defers_if_activity_appears_inside_lease(staged, monkeypatch):
+    state, args = staged
+    health.save_state({"http_fail_streak": 0, "tailscale_fail_streak": 1})
+    monkeypatch.setattr(health, "run_http_probes", Mock(return_value=(True, ["OK"])))
+    monkeypatch.setattr(health, "check_tailscale", Mock(return_value=(False, ["tailscaled inactive"])))
+    monkeypatch.setattr(health, "_production_activity_block_reason",
+                        lambda include_ingest_lock=True: "" if include_ingest_lock else "backup_source_active")
+    assert health.cmd_heal(args) == health.EXIT_OK
+    health.restart_tailscaled.assert_not_called()
+    assert not (state / "daily-ingest.lock").exists()
+    assert health.load_state()["tailscale_heal_deferred_reason"] == "backup_source_active"
+
+
+def test_healthy_network_clears_previous_tailscale_deferral(staged, monkeypatch):
+    _, args = staged
+    health.save_state({"http_fail_streak": 0, "tailscale_fail_streak": 1,
+                       "tailscale_heal_deferred_reason": "production_lock_unavailable"})
+    monkeypatch.setattr(health, "run_http_probes", Mock(return_value=(True, ["OK"])))
+    assert health.cmd_heal(args) == health.EXIT_OK
+    assert "tailscale_heal_deferred_reason" not in health.load_state()
+    health.restart_tailscaled.assert_not_called()
+
+
+def test_standalone_health_script_uses_explicit_production_data_root(staged, monkeypatch, tmp_path):
+    import ar_local_pi_runtime as runtime
+    root = tmp_path / "production-data"
+    monkeypatch.setenv("AR_LOCAL_DATA_ROOT", str(root))
+    standalone = tmp_path / "installed-queue-runtime"
+    assert runtime.data_state_root(standalone) == root / "state"

@@ -36908,3 +36908,37 @@ and commits, PR/review state, test and source receipts, blockers, next commands
 and acceptance boundaries. Preserve prior checkpoints. A fresh thread must read
 it and discover current ownership before resuming. Neither this entry, a merged
 PR nor a configured schedule establishes live hold or natural-cycle acceptance.
+
+## 2026-10-11 — publication recovery and approved shared task queue
+
+The operator authorized repairing publication and subsequently implementing
+shared queue rules, while explicitly withholding permission to start or enable
+scheduled tasks. Both requested 30-minute pauses released the owned publisher
+and production lease. No new automation or timer was created or activated.
+
+Publication stalled because retained raw capture stages exhausted `/dev/shm`
+inodes. Recovery preserved unsealed evidence, routed future daily raw staging to
+NVMe, and used a bounded reviewed one-off publisher. Public 2026-10-11 revision 1
+now matches the finalized partial observation; authenticated readback verified
+all eight assets, their hashes, receipt, selected manifest and rolling index.
+The underlying observation remains partial, with 18 source failures. Issue #880
+was closed with this evidence. The stable production checkout remains pinned;
+the temporary raw stage was archived rather than discarded. Drive writes remain
+held. Natural-cycle and native Android acceptance are separate outstanding gates.
+
+Existing resource checks were bounded with additive service overrides. Runtime
+health remains every two minutes, network checks every three, and deployment
+verification every five. Successful natural checks and concurrent mining
+observations were recorded. This Pi's memory controller remains disabled;
+configured cgroup memory ceilings do not establish a hard memory limit.
+
+The approved shared queue is demand-driven, without a scheduled worker. It uses
+scoped resource claims, three CPU slots, finite whole-cgroup execution deadlines,
+FIFO conflicts and priority for AR-local after two hours of waiting. Only verified
+daily ingest/watchdog units enter the 00:30–02:00 quiet window. Host claims bridge
+the existing production lease, preserving manual recovery until complete cgroup
+termination is proven. Installation wraps existing AR commands without starting
+or enabling their timers. See `SHARED_PI_QUEUE.md` for the entry point, limits,
+crash recovery and rollout procedure. Linux tests, harmless live canaries, exact
+merged source hashes and effective service readback must establish installation
+acceptance; future natural ingest remains unverified until observed.

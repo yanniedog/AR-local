@@ -1,6 +1,8 @@
 # Shared Pi access
 
 AR-local retains priority for the natural 01:00 Australia/Hobart ingest.
+The demand-driven [shared task queue](SHARED_PI_QUEUE.md) supplies resource
+claims, FIFO access and AR-local priority after two hours without a new timer.
 Its daily, watchdog and manual ingest services have a three-core CPU ceiling
 on the four-core Pi 5, with higher CPU and I/O weights than background checks.
 No hard ingest memory ceiling is imposed without a measured capture peak.
