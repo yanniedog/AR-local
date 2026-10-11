@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
@@ -11,6 +12,7 @@ import cdr_finalization as finalization
 import pi_cdr_recovery as recovery
 import pi_cdr_selection_recovery as saved
 import pi_daily_sync as sync
+import pi_payload_retry_policy as retry_policy
 from cdr_observation_selection import load_pointer_observation, selected_observation
 from tests.test_cdr_same_day_selection import DATE, finish, make_export
 from tests.test_pi_recovery_selection_retry import NOW, staged_revision
@@ -37,6 +39,11 @@ def test_recovered_observation_remains_the_pending_upload_after_a_later_day(tmp_
     next_exports = tmp_path / "runs" / next_date / "_exports"
     make_export(next_exports, ["p1"], failures=100, date=next_date)
     finish(next_exports, state, "done", date=next_date)
+    # Exercise the real publication window on the fixture's later day, not the
+    # CI runner's wall clock (which can correctly be outside the safe window).
+    clock = Mock(wraps=retry_policy.datetime)
+    clock.now.return_value = NOW + timedelta(days=1)
+    monkeypatch.setattr(retry_policy, "datetime", clock)
     monkeypatch.setattr(sync, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sync, "ensure_runtime_data_writable", lambda _: None)
     monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
