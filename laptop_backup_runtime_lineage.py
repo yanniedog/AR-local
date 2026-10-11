@@ -151,21 +151,29 @@ def authenticate_pointer_descendant(
     records = _Records(target, expected)
     anchor = records.pinned(runtime)
     current = {key: pointer[key] for key in ("record_path", "record_sha256")}
-    allowed = {
-        (expected["protected_code_sha"], expected["candidate_code_sha"]),
+    phases = [
         (runtime["production_sha"], runtime["receiver_sha"]),
         # A receiver update may follow a failed attempt on the now-authorized
         # production release using the receiver authenticated by the PASS pin.
         (expected["protected_code_sha"], runtime["receiver_sha"]),
-    }
+        (expected["protected_code_sha"], expected["candidate_code_sha"]),
+    ]
+    # Walk backwards through the pinned-old -> production-only -> current
+    # transition. Collapsed phases (receiver-only updates) share one rank.
+    ranks = {pair: rank for rank, pair in enumerate(phases)}
+    latest_rank = len(phases) - 1
     seen: set[str] = set()
     while True:
         if current["record_path"] in seen:
             raise ValueError("runtime descendant lineage contains a cycle")
         seen.add(current["record_path"])
         value = records.read(current)
-        if _pair(value) not in allowed:
+        rank = ranks.get(_pair(value))
+        if rank is None:
             raise ValueError("runtime descendant contains a foreign runtime identity")
+        if rank > latest_rank:
+            raise ValueError("runtime descendant regressed to an older runtime")
+        latest_rank = rank
         if current == anchor:
             return
         if value.get("runtime_predecessor") is not None:
