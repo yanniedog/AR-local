@@ -34,7 +34,9 @@ jobs:
           # CI has no .ar-bot-wait state; anchor falls back to PR createdAt (long-open PRs exceed 28m).
           BOT_WAIT_MAX_MIN: "240"
         run: |
-          if [ "$AR_BOT_WAIT_REQUIRED" = "off" ]; then
+          node -e 'const raw=process.env.PR; if (!/^[1-9][0-9]*$/.test(raw || "") || !Number.isSafeInteger(Number(raw))) { console.error("pr_number must be a positive safe integer"); process.exit(1); }'
+          policy=$(printf '%s' "$AR_BOT_WAIT_REQUIRED" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [ -z "$policy" ] || [ "$policy" = "off" ] || [ "$policy" = "none" ] || [ "$policy" = "disabled" ]; then
             echo "Reviewer presence is advisory; no vendors explicitly required."
             exit 0
           fi
