@@ -231,6 +231,34 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
     assert (state / f"{DATE}.done.json").is_file()
 
 
+def test_pi_inode_exhaustion_captures_on_disk_without_removing_old_ram(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import cdr_capture_stage_capacity
+
+    args, runs, state, ram = _configure(tmp_path, monkeypatch)
+    args.ram_stage = False
+    monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
+    monkeypatch.setattr(cdr_capture_stage_capacity.os, "statvfs", lambda _: SimpleNamespace(
+        f_bavail=2 * 1024 ** 3, f_frsize=1, f_favail=0), raising=False)
+    old = ram / "runs" / "2026-10-06" / "evidence.json"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"retained original")
+    original_ingest = cdr_daily.run_ingest
+    disk = runs.parent / ".daily-raw-stage"
+
+    def ingest(script_dir, out_dir, date, extra):
+        assert out_dir == disk / "runs"
+        original_ingest(script_dir, out_dir, date, extra)
+
+    monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
+    assert cdr_daily.run_once(args) == 1
+    finalized = json.loads((state / f"{DATE}.done.json").read_text(encoding="utf-8"))
+    assert finalized["ram_root"] == str(disk)
+    assert verify_completion_marker(finalized, state, DATE)
+    assert old.read_bytes() == b"retained original"
+    assert not (disk / "runs" / DATE).exists()
+
+
 def test_completed_pi_run_retries_failed_persistent_stage_cleanup(tmp_path, monkeypatch):
     args, runs, _state, _ram = _configure(tmp_path, monkeypatch)
     args.ram_stage = False
