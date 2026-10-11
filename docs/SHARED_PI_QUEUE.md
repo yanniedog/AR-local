@@ -116,9 +116,16 @@ submitted. The queue is currently commissioned for the fixed Pi producer and
 data roots; host claims reject unsupported root overrides rather than locking
 an unrelated data directory.
 
-Install `deploy/pi/shared-queue-daily.conf`, `shared-queue-watchdog.conf` and
+Render `deploy/pi/shared-queue-daily.conf`, `shared-queue-watchdog.conf` and
 `shared-queue-ingest-now.conf` as `98-shared-queue.conf` in their respective
-AR-local service drop-in directories. Preserve the stable producer executable
+AR-local service drop-in directories. First read back each installed unit's
+`WorkingDirectory` and original producer command, and verify the repository root
+matches both. Use `python3 scripts/render-shared-pi-units.py --repo-root <verified-root>
+--template <template> --output <staged-file>` for each override. Never install an
+unrendered template or assume the default checkout: unresolved placeholders
+deliberately cannot launch an old `/srv` executable. Non-default data roots remain
+unsupported by the native bridge and must not activate these wrappers.
+Preserve the stable producer executable
 and existing environment files. Reload definitions and read back the effective
 command, CPU quota, timeout and kill policy. Do not start, enable or restart a
 timer. The daily-watchdog timer intentionally remains inactive.
@@ -142,7 +149,9 @@ checks (40 curl retries, ordinary endpoint probes and three history deadlines).
 The service still bounds the entire startup; hook runtime retains its queue claim.
 The runtime-health override installs the reviewed standalone health script while
 using the stable producer's dependencies and existing environment. Its Tailscale
-recovery acquires the native production lease, so a host network task defers it.
+recovery holds queue admission closed while checking all occupied claims and
+acquiring the native production lease. Any running job or uncertain ownership
+defers the restart, including non-AR jobs without a `host` resource.
 Install `deploy/pi/shared-queue-health.conf` as the health service's
 `98-shared-queue.conf`; reload definitions without starting or enabling its timer.
 An invocation cancelled before execution cannot restart an incumbent's paused
