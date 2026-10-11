@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeBotWaitStateFile } from './lib/bot-wait-state.mjs';
+import { writeBotWaitStateFile, readBotWaitStateFile } from './lib/bot-wait-state.mjs';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
-import { requiredCiWaitResult } from './lib/bot-wait-ci.mjs';
+import { requiredCiWaitResult, applyReviewerPolicy } from './lib/bot-wait-ci.mjs';
 import { BOT_GATE_CHECK_NAMES } from './lib/pr-gates-lib.mjs';
 import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
 assert.deepEqual(parseRequiredKeys(''), []);
@@ -23,6 +23,12 @@ try {
   delete process.env.AR_BOT_WAIT_REQUIRED;
   delete process.env.BOT_WAIT_REQUIRED;
   writeBotWaitStateFile(123, { requiredKeys: ['gemini', 'codex'], anchor: '2026-10-11T00:00:00Z' }, stateRoot);
+  const persisted = readBotWaitStateFile(123, stateRoot);
+  assert.deepEqual(persisted.requiredKeys, ['gemini', 'codex']);
+  assert.deepEqual(applyReviewerPolicy(persisted, resolveRequiredKeys()), []);
+  assert.deepEqual(persisted.requiredKeys, []);
+  assert.equal(persisted.readyAt, null);
+  assert.deepEqual(applyReviewerPolicy(persisted, ['sourcery']), ['sourcery']);
   // Return before attempting GitHub access even with stale saved keys.
   assert.equal(checkRequiredBotsOnPr('invalid', 'invalid', 123, { repoRoot: stateRoot }).ok, true);
   assert.equal(checkRequiredBotsOnPr('invalid', 'invalid', 123, { requiredKeys: [], repoRoot: stateRoot }).ok, true);

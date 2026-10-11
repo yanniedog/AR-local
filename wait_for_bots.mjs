@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { fetchRequiredCi } from './scripts/lib/pr-gates-lib.mjs';
-import { requiredCiWaitResult } from './scripts/lib/bot-wait-ci.mjs';
+import { requiredCiWaitResult, applyReviewerPolicy } from './scripts/lib/bot-wait-ci.mjs';
 /**
  * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
  * Reviewers are advisory by default: exit 0 means required CI has settled.
@@ -271,7 +271,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
   if (requiredKeys.length === 0) {
-    return requiredCiWaitResult(fetchRequiredCi(prNumber));
+    return requiredCiWaitResult(fetchRequiredCi(prNumber, { ignoredNames: (process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '').split(',').map((name) => name.trim()).filter(Boolean) }));
   }
 
   const knownBots = allKnownBotLogins(requiredKeys);
@@ -527,15 +527,8 @@ async function main() {
     writeState(prNumber, state);
   }
 
-  const effectiveRequired = requiredKeys;
-  if (
-    state.requiredKeys &&
-    JSON.stringify(state.requiredKeys) !== JSON.stringify(effectiveRequired)
-  ) {
-    state.requiredKeys = effectiveRequired;
-    state.readyAt = null;
-    writeState(prNumber, state);
-  }
+  const effectiveRequired = applyReviewerPolicy(state, requiredKeys);
+  writeState(prNumber, state);
 
   const finish = (result) => {
     const st = readState(prNumber) || state;

@@ -102,7 +102,7 @@ export function resolvePrNumber(prArg) {
   return { pr: view, branch };
 }
 
-export function fetchRequiredCi(prNumber) {
+export function fetchRequiredCi(prNumber, { ignoredNames = [] } = {}) {
   const r = spawnSync(
     'gh',
     ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state'],
@@ -118,7 +118,11 @@ export function fetchRequiredCi(prNumber) {
     }
     return { ok: false, error: msg };
   }
-  const checks = JSON.parse(r.stdout || '[]');
+  const ignored = new Set(ignoredNames.map((name) => name.toLowerCase()));
+  const checks = JSON.parse(r.stdout || '[]').filter((check) => {
+    const name = String(check.name || '').toLowerCase();
+    return !ignored.has(name) && !ignored.has(name.slice(name.lastIndexOf('/') + 1).trim());
+  });
   let pending = false;
   let failed = false;
   const failedNames = [];
