@@ -13,16 +13,15 @@ MIN_FREE_INODES = 100000
 def select_capture_stage(ram_root: Path, runs_root: Path, run_date: str) -> Path:
     """Use persistent staging under pressure, without removing retained evidence.
 
-    Existing current-day stages remain on their original filesystem so the
-    explicit interrupted-attempt archive path can preserve them before retry.
+    Existing disk stages remain available for explicit interrupted-attempt
+    archival. Under pressure, existing RAM stages are preserved in place while
+    the new attempt uses disk; archiving one day may not free enough RAM inodes.
     Unknown capacity fails toward disk. Explicit --ram-stage callers opt out.
     """
     ram_root = ram_root.expanduser().resolve()
     disk_root = runs_root.expanduser().resolve().parent / ".daily-raw-stage"
     if (disk_root / "runs" / run_date).exists():
         return disk_root
-    if (ram_root / "runs" / run_date).exists():
-        return ram_root
     probe = ram_root
     while not probe.exists() and probe != probe.parent:
         probe = probe.parent

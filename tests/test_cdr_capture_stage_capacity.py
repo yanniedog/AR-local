@@ -22,17 +22,28 @@ def test_healthy_ram_remains_default(tmp_path, monkeypatch):
     assert stage.select_capture_stage(tmp_path / "ram", tmp_path / "data" / "runs", "2026-10-11") == tmp_path / "ram"
 
 
-@pytest.mark.parametrize("location", ["ram", "disk"])
-def test_interrupted_stage_stays_available_for_explicit_archive(tmp_path, monkeypatch, location):
+def test_interrupted_disk_stage_stays_available_for_explicit_archive(tmp_path, monkeypatch):
     ram = tmp_path / "ram"
     runs = tmp_path / "data" / "runs"
-    expected = ram if location == "ram" else runs.parent / ".daily-raw-stage"
+    expected = runs.parent / ".daily-raw-stage"
     evidence = expected / "runs" / "2026-10-11" / "evidence.json"
     evidence.parent.mkdir(parents=True)
     evidence.write_bytes(b"captured")
     monkeypatch.setattr(stage.os, "statvfs", lambda _: pytest.fail("existing stage must keep its location"), raising=False)
     assert stage.select_capture_stage(ram, runs, "2026-10-11") == expected
     assert evidence.read_bytes() == b"captured"
+
+
+def test_exhausted_current_day_ram_stage_is_preserved_and_new_attempt_uses_disk(tmp_path, monkeypatch):
+    ram = tmp_path / "ram"
+    runs = tmp_path / "data" / "runs"
+    evidence = ram / "runs" / "2026-10-11" / "evidence.json"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_bytes(b"partial capture")
+    monkeypatch.setattr(stage.os, "statvfs", lambda _: SimpleNamespace(
+        f_bavail=2 * 1024 ** 3, f_frsize=1, f_favail=0), raising=False)
+    assert stage.select_capture_stage(ram, runs, "2026-10-11") == runs.parent / ".daily-raw-stage"
+    assert evidence.read_bytes() == b"partial capture"
 
 
 def test_capacity_probe_error_uses_disk(tmp_path, monkeypatch):
