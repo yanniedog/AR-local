@@ -374,6 +374,9 @@ def retry_terms_capture(marker: Path, args: argparse.Namespace, state_dir: Path,
 
 def run_once(args: argparse.Namespace) -> int:
     """Return 0 when skipped, 1 on success, 2 when banking export is empty."""
+    # A daemon reuses its parsed configuration on each day. Stage selection is
+    # per invocation; a disk fallback must not replace the configured RAM root.
+    args = argparse.Namespace(**vars(args))
     script_dir = Path(__file__).resolve().parent
     ensure_runtime_data_writable(script_dir)
     persistent_runs_root = args.runs.expanduser().resolve()
