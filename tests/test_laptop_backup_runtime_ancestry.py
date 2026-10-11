@@ -272,6 +272,66 @@ def test_old_runtime_orphan_branches_are_rejected_without_pointer_change(tmp_pat
     assert all(path.read_bytes() == payload for path, payload in before.items())
 
 
+@pytest.mark.parametrize("bridge", [False, True])
+def test_orphans_from_already_transitioned_receiver_preserve_historical_pin(tmp_path, bridge):
+    chain = _chain(tmp_path)
+    anchor = chain[-1]
+    pin = _pin(tmp_path, anchor)
+    historical_pin = _pin(tmp_path, chain[-2])
+    old = _record(tmp_path, "old-orphan", "4" * 40, "d" * 40, anchor,
+                  runtime_predecessor=historical_pin)
+    if bridge:
+        old = _record(tmp_path, "bridge-orphan", "5" * 40, "d" * 40, old,
+                      runtime_predecessor=historical_pin, action="BACKFILL", result="FAIL")
+    current = _record(tmp_path, "new-orphan", "5" * 40, "e" * 40, old,
+                      runtime_predecessor=pin)
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(anchor, result="PASS")))
+    evidence = {path: path.read_bytes() for path in (tmp_path / "catalog/scheduled-runs").glob("*.json")}
+    expected = {**EXPECTED, "protected_code_sha": "5" * 40, "candidate_code_sha": "e" * 40,
+                "runtime_predecessor": pin}
+    assert lineage.repair_orphaned_suffix(tmp_path, expected) == dict(current, result="PASS")
+    assert lineage.repair_orphaned_suffix(tmp_path, expected) == dict(current, result="PASS")
+    assert all(path.read_bytes() == payload for path, payload in evidence.items())
+
+
+def test_old_runtime_orphan_cannot_substitute_another_authenticated_historical_pin(tmp_path):
+    chain = _chain(tmp_path)
+    anchor = chain[-1]
+    _record(tmp_path, "old-orphan", "4" * 40, "d" * 40, anchor,
+            runtime_predecessor=_pin(tmp_path, chain[0]))
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(anchor, result="PASS")))
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*.json")}
+    with pytest.raises(ValueError, match="changed the pinned predecessor"):
+        lineage.repair_orphaned_suffix(tmp_path, {**EXPECTED, "protected_code_sha": "5" * 40,
+            "candidate_code_sha": "e" * 40, "runtime_predecessor": _pin(tmp_path, anchor)})
+    assert all(path.read_bytes() == payload for path, payload in before.items())
+
+
+@pytest.mark.parametrize("fault", ["branch", "foreign_runtime", "regression", "invalid_envelope"])
+def test_invalid_suffix_after_valid_prefix_preserves_original_pointer(tmp_path, fault):
+    anchor = _record(tmp_path, "anchor", "1" * 40, "a" * 40)
+    pin = _pin(tmp_path, anchor)
+    old = _record(tmp_path, "valid-prefix", "1" * 40, "a" * 40, anchor)
+    if fault == "branch":
+        _record(tmp_path, "branch-a", "1" * 40, "a" * 40, old)
+        _record(tmp_path, "branch-b", "1" * 40, "a" * 40, old)
+    elif fault == "regression":
+        new = _record(tmp_path, "new-prefix", "2" * 40, "b" * 40, old, runtime_predecessor=pin)
+        _record(tmp_path, "regression", "1" * 40, "a" * 40, new)
+    else:
+        _record(tmp_path, "invalid-child", ("9" if fault == "foreign_runtime" else "1") * 40,
+                "a" * 40, old, operator="foreign" if fault == "invalid_envelope" else "pytest")
+    pointer = tmp_path / "catalog/latest-scheduled.json"
+    pointer.write_bytes(receiver.canonical_json_bytes(dict(anchor, result="PASS")))
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*.json")}
+    with pytest.raises(ValueError):
+        lineage.repair_orphaned_suffix(tmp_path, {**EXPECTED, "protected_code_sha": "2" * 40,
+            "candidate_code_sha": "b" * 40, "runtime_predecessor": pin})
+    assert all(path.read_bytes() == payload for path, payload in before.items())
+
+
 @pytest.mark.parametrize("phase,action,result", [
     ("preflight", "PREFLIGHT_FAILED", "BLOCKED"),
     ("backup", "BACKFILL", "FAIL"),
