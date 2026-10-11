@@ -80,7 +80,7 @@ def test_crash_after_selecting_partial_head_settles_upload_before_positive_probe
     launch.assert_not_called()
 
 
-def test_older_date_upload_is_preserved_when_no_current_saved_head_needs_selection(tmp_path, monkeypatch):
+def test_historical_upload_is_preserved_while_current_recovery_requires_request_evidence(tmp_path, monkeypatch):
     state, _, _ = staged_revision(tmp_path, monkeypatch)
     older_date = "2026-09-06"
     older_exports = tmp_path / "runs" / older_date / "_exports"
@@ -91,12 +91,13 @@ def test_older_date_upload_is_preserved_when_no_current_saved_head_needs_selecti
     sync.mark_payload_publication_pending(tmp_path, "earlier_upload_failed", older["pointer"])
     pending = sync.payload_publication_pending_path(tmp_path)
     preserved = pending.read_bytes()
-    probes = Mock(side_effect=AssertionError("older upload must settle before probing"))
+    probes = Mock(side_effect=AssertionError("missing request evidence must prevent probing"))
     monkeypatch.setattr(recovery, "_probe_due", probes)
-    launch = Mock(side_effect=AssertionError("older upload must settle before recapture"))
+    launch = Mock(side_effect=AssertionError("missing request evidence must prevent recapture"))
     report = recovery.run_same_day_recovery(tmp_path, now_utc=NOW, dry_run=False, launch=launch)
-    assert report["status"] == "pending_publication_must_settle"
-    assert report["publication_required"] and not report["capture_attempted"]
+    assert report["status"] == "unresolved_request_evidence_unavailable"
+    assert not report.get("publication_required", False)
+    assert not report.get("capture_attempted", False)
     assert pending.read_bytes() == preserved
     assert sync.pending_publication_pointer(tmp_path) == older["pointer"]
     probes.assert_not_called()
