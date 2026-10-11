@@ -17,14 +17,19 @@ def start_dashboard():
                    capture_output=True, timeout=30)
 
 
+def restoration_allowed(unit, now=None):
+    if unit != 'ar-local-daily-watchdog.service':
+        return True
+    local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Australia/Hobart'))
+    return not time(0, 30) <= local.time() < time(3, 30)
+
+
 def recover(store, unit, invocation, factory=native_lock_factory,
             ready=legacy_host_ready, restart=start_dashboard, now=None):
     if unit not in FIXED_AR_UNITS or not invocation:
         return False
-    if unit == 'ar-local-daily-watchdog.service':
-        local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Australia/Hobart'))
-        if time(0, 30) <= local.time() < time(3, 30):
-            return False  # Preserve the watchdog's natural-ingest restore gate.
+    if not restoration_allowed(unit, now):
+        return False  # Preserve the watchdog's natural-ingest restore gate.
     with store.transaction() as state:
         matches = [job for job in state['jobs']
                    if job['unit'] == unit and job['invocation_id'] == invocation
@@ -40,7 +45,7 @@ def recover(store, unit, invocation, factory=native_lock_factory,
     # must also have ended before restoring a dashboard paused by ingest.
     try:
         with factory()(NATIVE_LOCK, 'shared-pi-stop-hook:' + job['id']):
-            if not ready(registered):
+            if not ready(registered) or not restoration_allowed(unit, now):
                 return False
             restart()
     except RuntimeError:

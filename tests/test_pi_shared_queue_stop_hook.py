@@ -81,3 +81,21 @@ def test_daily_failure_can_restore_inside_watchdog_protected_window():
     assert recover(FixtureStore(), 'ar-local-daily.service', 'a'*32,
                    now=datetime(2026, 10, 11, 14, tzinfo=timezone.utc), **kwargs)
     assert 'restart' in events
+
+
+def test_watchdog_rechecks_window_after_slow_native_inspection(monkeypatch):
+    import pi_shared_queue_stop_hook as hook
+    from datetime import datetime as DateTime
+    from zoneinfo import ZoneInfo
+    times = iter([DateTime(2026, 10, 12, 0, 29, tzinfo=ZoneInfo('Australia/Hobart')),
+                  DateTime(2026, 10, 12, 0, 30, tzinfo=ZoneInfo('Australia/Hobart'))])
+    class Clock:
+        @staticmethod
+        def now(tz): return next(times)
+    monkeypatch.setattr(hook, 'datetime', Clock)
+    store = FixtureStore()
+    unit = 'ar-local-daily-watchdog.service'
+    store.job['unit'] = unit
+    events, kwargs = callbacks()
+    assert not recover(store, unit, 'a'*32, **kwargs)
+    assert events == ['lease', 'released']
