@@ -147,7 +147,7 @@ def run_payload_retry(dry_run: bool) -> dict:
         return {"status": "deferred", "reason": "publication_disabled"}
     admission = {"status": "deferred", "reason": "no_pending_marker"}
     candidates = publication_retry_candidates(read_payload_publication_pending(REPO_ROOT))
-    candidates.sort(key=lambda item: str(item["pointer"].get("observation_date", ""))
+    candidates.sort(key=lambda item: str(item["pointer"].get("observation_date") or "")
                     if isinstance(item.get("pointer"), dict) else "", reverse=True)
     for candidate in candidates:
         admission = retry_admission(REPO_ROOT, candidate, reserve=not dry_run)

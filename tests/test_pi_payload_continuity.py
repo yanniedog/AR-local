@@ -134,6 +134,20 @@ def test_retry_selects_current_day_before_older_ready_failure(runtime, monkeypat
     assert admitted.call_args.args[1]["pointer"] == pointer(TODAY)
 
 
+def test_null_date_cannot_take_retry_priority_from_today(runtime, monkeypatch):
+    root, _ = runtime
+    malformed = {"observation_date": None, "generation_id": "protocol-malformed"}
+    sync.mark_payload_publication_pending(root, "retained malformed pointer", malformed)
+    sync.mark_payload_publication_pending(root, "today", pointer(TODAY))
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(watchdog, "REPO_ROOT", root)
+    admitted = Mock(return_value={"status": "ready", "source_key": "a" * 64})
+    monkeypatch.setattr(watchdog, "retry_admission", admitted)
+    assert watchdog.run_payload_retry(True)["status"] == "dry_run"
+    assert admitted.call_args.args[1]["pointer"] == pointer(TODAY)
+    assert sync.pending_publication_pointer(root) == malformed
+
+
 def test_selected_historical_revision_is_not_stranded_by_older_queued_generation(runtime, monkeypatch):
     root, _ = runtime
     old = pointer("2026-10-01")
