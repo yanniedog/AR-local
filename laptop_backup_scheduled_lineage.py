@@ -152,6 +152,7 @@ def _validate_owned_record(
 def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict[str, str] | None:
     """Roll a stale pointer through its one authenticated immutable child chain."""
     pointer_path = safe_path(target, "catalog/latest-scheduled.json", must_exist=False)
+    original = pointer_path.read_bytes() if pointer_path.exists() else None
     root = safe_path(target, "catalog/scheduled-runs", must_exist=False)
     if not root.exists():
         if pointer_path.exists():
@@ -173,9 +174,8 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
             "record_sha256": receiver.sha256_file(path),
             "result": str(value["result"]),
         }
-        receiver.atomic_replace(pointer_path, receiver.canonical_json_bytes(current))
     else:
-        current = _pointer_identity(target, pointer_path.read_bytes())
+        current = _pointer_identity(target, original)
         pointed = safe_path(target, current["record_path"])
         pointed_value = json.loads(pointed.read_text(encoding="utf-8"))
         if not isinstance(pointed_value, Mapping):
@@ -187,6 +187,7 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
 
             authenticate_pointer_descendant(target, current, expected)
     seen = {current["record_path"]}
+    initial = current
     while True:
         matches: list[tuple[str, str, Mapping[str, object]]] = []
         predecessor = {key: current[key] for key in ("record_path", "record_sha256")}
@@ -211,8 +212,10 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
         if len(matches) > 1:
             raise ValueError("scheduled execution lineage is branched")
         if not matches:
+            # Reject the whole suffix before publishing any accepted prefix.
+            if original is None or current != initial:
+                receiver.atomic_replace(pointer_path, receiver.canonical_json_bytes(current))
             return current
         relative, digest, value = matches[0]
         current = {"record_path": relative, "record_sha256": digest, "result": str(value["result"])}
-        receiver.atomic_replace(pointer_path, receiver.canonical_json_bytes(current))
         seen.add(relative)
