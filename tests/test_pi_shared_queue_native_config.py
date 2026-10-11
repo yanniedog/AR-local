@@ -309,3 +309,14 @@ def test_native_recovery_missing_api_fails_closed(monkeypatch):
     monkeypatch.setattr(native, 'native_lock_factory', lambda: lambda: None)
     with pytest.raises(ValueError, match='API unavailable'):
         native._native_recovery_lock(Path('/srv/ar-local/data/state/daily-ingest.lock'))
+
+
+@pytest.mark.parametrize('source', [None, ''])
+def test_cached_dependency_without_source_is_rejected_explicitly(tmp_path, monkeypatch, source):
+    import sys
+    import pi_shared_queue_native as native
+    (tmp_path / 'ar_local_operation_lock.py').write_text('production_lock = None')
+    monkeypatch.setattr(native, 'verify_native_deployment', lambda: None)
+    monkeypatch.setitem(sys.modules, 'ar_local_backup_policy', SimpleNamespace(__file__=source))
+    with pytest.raises(ValueError, match='source collision'):
+        native.native_lock_factory(tmp_path)

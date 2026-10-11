@@ -37,6 +37,7 @@ class FakeSupervisor(Supervisor):
 
     def prepare(self, jobs): pass
     def terminate(self, job, signum): pass
+    def arm_execution_deadline(self, job, deadline): pass
     def boot_id(self): return self.boot
     def show(self, unit): return self.details
     def members(self, group): return self.processes
@@ -397,7 +398,7 @@ def test_ar_local_native_command_is_never_nested_in_host_guard(monkeypatch):
         pytest.fail('AR-local must retain its own native lock acquisition')
     monkeypatch.setattr(queue, 'wait_admission', lambda *args, **kwargs: True)
     monkeypatch.setattr(queue, 'execute', lambda *args, **kwargs: 0)
-    assert queue.run_supervised(None, record(resources=['ar-local']), ['command'],
+    assert queue.run_supervised(MemoryStore(), record(resources=['ar-local']), ['command'],
                                 10, queue.Cancellation(), forbidden) == 0
 
 
@@ -920,3 +921,113 @@ def test_transient_service_cannot_use_fixed_service_post_hook_allowance():
     supervisor.details['RuntimeMaxUSec'] = '13h'
     with pytest.raises(ValueError):
         supervisor.current(1, 43260)
+
+
+class NotifyFixture:
+    def __init__(self, monkeypatch):
+        import pi_shared_queue_store as module
+        self.supervisor = FakeSupervisor()
+        self.job = record(pid=os.getpid(), project='other', max_duration_seconds=1800)
+        self.supervisor.details.update(Type='notify', NotifyAccess='main',
+                                       ActiveState='activating', RuntimeMaxUSec='1800s',
+                                       TimeoutStartUSec='14460s')
+        self.messages = []
+        monkeypatch.setattr(module.time, 'monotonic', lambda: 120)
+        monkeypatch.setenv('NOTIFY_SOCKET', '/fixture-notify')
+        fixture = self
+        class Notifier:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def settimeout(self, seconds): pass
+            def connect(self, address): assert address == '/fixture-notify'
+            def sendall(self, message):
+                fixture.messages.append(message)
+                fixture.supervisor.details.update(ActiveState='active',
+                                                  ActiveEnterTimestampMonotonic='120000000')
+        monkeypatch.setattr(module.socket, 'socket', lambda *a: Notifier())
+
+
+def test_transient_fallback_discards_unused_waiting_allowance(monkeypatch):
+    fixture = NotifyFixture(monkeypatch)
+    supervisor = fixture.supervisor
+    assert supervisor.current(1, 16260, execution_runtime=1800, wait_seconds=14400)
+    Supervisor.arm_execution_deadline(supervisor, fixture.job, 1920)
+    assert fixture.messages == [b'READY=1']
+    # Execution activated at admission, without the 14400s waiting allowance.
+    assert 120 + duration(supervisor.details['RuntimeMaxUSec']) + 45 <= 1920 + 60
+    Supervisor.arm_execution_deadline(supervisor, fixture.job, 1921)
+    assert fixture.messages == [b'READY=1']  # Native-lock retry never resets PID 1.
+
+
+@pytest.mark.parametrize('failure', ['notify-failed', 'new-invocation', 'bad-clock',
+                                   'long-stop', 'extended-runtime', 'missing-socket'])
+def test_transient_deadline_arm_fails_closed(monkeypatch, failure):
+    import pi_shared_queue_store as module
+    fixture = NotifyFixture(monkeypatch)
+    if failure == 'notify-failed':
+        monkeypatch.setattr(module.socket, 'socket', lambda *a: (_ for _ in ()).throw(OSError()))
+    elif failure == 'new-invocation': fixture.supervisor.details['InvocationID'] = 'b' * 32
+    elif failure == 'long-stop': fixture.supervisor.details['TimeoutStopUSec'] = '60s'
+    elif failure == 'extended-runtime': fixture.supervisor.details['RuntimeMaxUSec'] = '16320s'
+    elif failure == 'missing-socket': monkeypatch.delenv('NOTIFY_SOCKET')
+    elif failure == 'bad-clock':
+        fixture.supervisor.details.update(ActiveState='active', ActiveEnterTimestampMonotonic='0')
+    with pytest.raises((ValueError, OSError)):
+        Supervisor.arm_execution_deadline(fixture.supervisor, fixture.job, 1920)
+
+
+def test_deadline_arm_failure_never_enters_native_guard_or_spawns(monkeypatch):
+    store = MemoryStore()
+    def unavailable(job, deadline): raise ValueError('deadline unavailable')
+    store.supervisor.arm_execution_deadline = unavailable
+    monkeypatch.setattr(queue, 'wait_admission', lambda *a, **k: True)
+    monkeypatch.setattr(queue, 'execute', lambda *a, **k: pytest.fail('unbounded execution'))
+    with pytest.raises(ValueError):
+        queue.run_supervised(store, record(resources=['host']), ['command'], 10,
+                             queue.Cancellation(), lambda store: pytest.fail('native guard entered'))
+
+
+@pytest.mark.parametrize('unit,seconds,accepted', [
+    ('ar-local-daily.service', 900, True),
+    ('ar-local-daily.service', 901, False),
+    ('shared-pi-task-test.service', 900, False),
+])
+def test_only_fixed_lifecycle_hooks_receive_larger_stop_budget(unit, seconds, accepted):
+    supervisor = FakeSupervisor()
+    group = '/system.slice/' + unit
+    supervisor.cgroup = lambda pid: group
+    supervisor.details.update(ControlGroup=group, TimeoutStopUSec=f'{seconds}s')
+    if accepted:
+        assert supervisor.current(1, 1200)
+    else:
+        with pytest.raises(ValueError): supervisor.current(1, 1200)
+
+
+def test_unreadable_descendants_retain_claim_until_observation_recovers():
+    store = MemoryStore([record(state='running')])
+    def unavailable(group): raise PermissionError('cgroup unavailable')
+    store.supervisor.members = unavailable
+    assert not queue.descendants_done(store, record())
+    assert not queue.release(store, record())
+    assert len(store.state['jobs']) == 1
+    store.supervisor.members = lambda group: [os.getpid()]
+    assert queue.release(store, record())
+
+
+@pytest.mark.parametrize('change', [{'RuntimeMaxUSec': '16320s'},
+                                   {'TimeoutStartUSec': 'infinity'},
+                                   {'TimeoutStartUSec': '14400s'}])
+def test_notify_wait_and_execution_timers_are_verified_separately(monkeypatch, change):
+    fixture = NotifyFixture(monkeypatch)
+    fixture.supervisor.details.update(change)
+    with pytest.raises(ValueError):
+        fixture.supervisor.current(1, 16260, execution_runtime=1800, wait_seconds=14400)
+
+
+def test_late_systemd_activation_cannot_exceed_reserved_quiet_window_grace(monkeypatch):
+    import pi_shared_queue_store as module
+    fixture = NotifyFixture(monkeypatch)
+    fixture.supervisor.details.update(ActiveState='active', ActiveEnterTimestampMonotonic='136000000')
+    monkeypatch.setattr(module.time, 'monotonic', lambda: 136)
+    with pytest.raises(ValueError, match='deadline readback'):
+        Supervisor.arm_execution_deadline(fixture.supervisor, fixture.job, 1920)

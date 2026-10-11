@@ -14,8 +14,10 @@ def test_submission_is_non_root_supervised_and_has_no_schedule():
                          'shared-pi-task-test.service')
     assert '--property=User=pi' in result
     assert '--property=CPUQuota=100%' in result
-    assert '--property=RuntimeMaxSec=16320' in result
-    assert '--service-type=exec' in result
+    assert '--property=RuntimeMaxSec=1800' in result
+    assert '--service-type=notify' in result
+    assert '--property=TimeoutStartSec=14460' in result
+    assert '--property=NotifyAccess=main' in result
     assert '--on-calendar' not in result
     assert result[-2:] == ['--', '/bin/true']
 

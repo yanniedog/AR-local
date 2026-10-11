@@ -123,6 +123,15 @@ Also install `pi_shared_queue_stop_hook.py` with those modules. The overrides
 replace unconditional dashboard restoration with this guarded hook. It requires
 the exact invocation's persisted proof that its command started, retains the
 queue claim, and acquires an idle native lease before restoring the dashboard.
+The watchdog preserves its 00:30–03:30 Hobart restoration deferral. Fixed ingest
+services have a finite 900-second stop budget: the supported maximum of 64
+privileged environment-file reads can consume 640 seconds, before service
+inspection and dashboard restoration. Their claims remain held throughout.
+Transient operator jobs retain a 45-second stop grace. Before execution, the
+wrapper sends MainPID readiness for `Type=notify` and verifies PID 1 activation
+and its runtime deadline. A separate startup timer bounds waiting; unused
+queue-wait allowance never extends execution. Failure to signal or verify
+readiness prevents command spawn.
 Daily and manual service startup budgets reserve another hour after the
 six-hour queue wait and six-hour command limits for inherited restart and smoke
 checks (40 curl retries, ordinary endpoint probes and three history deadlines).

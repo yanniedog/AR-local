@@ -79,7 +79,10 @@ def admit(store, job_id, now, monotonic, pressure=pressure_ready):
 
 def descendants_done(store, job):
     supervisor = store.supervisor
-    return supervisor.ownership(job) == 'live' and supervisor.members(job['cgroup']) == [os.getpid()]
+    try:
+        return supervisor.ownership(job) == 'live' and supervisor.members(job['cgroup']) == [os.getpid()]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False  # Unreadable/vanishing cgroups retain claims until proof.
 
 
 def release(store, job):
@@ -240,6 +243,7 @@ def run_supervised(store, job, command, wait_seconds, cancelled, guard_factory=N
         if not wait_admission(store, job, wait_seconds, cancelled, deadline=deadline):
             return 143 if cancelled.requested else 75
         execution_deadline = time.monotonic() + job['max_duration_seconds']
+        store.supervisor.arm_execution_deadline(job, execution_deadline)
         if not native_host:
             return execute(store, job, command, cancelled, deadline=execution_deadline)
         try:
@@ -304,7 +308,8 @@ def main(argv=None):
         if args.project != 'ar-local' and args.cpu_slots != 1:
             raise ValueError('other projects require one CPU slot')
         supervisor = Supervisor()
-        ownership = supervisor.current(args.cpu_slots, args.wait_timeout + args.max_runtime + 60)
+        ownership = supervisor.current(args.cpu_slots, args.wait_timeout + args.max_runtime + 60,
+                                       execution_runtime=args.max_runtime, wait_seconds=args.wait_timeout)
         if args.project == 'ar-local' and not ownership['unit'].startswith('ar-local-'):
             raise ValueError('AR-local requests require an AR-local service')
         if args.project != 'ar-local' and not ownership['unit'].startswith('shared-pi-task-'):

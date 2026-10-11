@@ -58,3 +58,26 @@ def test_active_native_or_legacy_owner_prevents_restart(options):
     events, kwargs = callbacks(**options)
     assert not recover(FixtureStore(), 'ar-local-daily.service', 'a'*32, **kwargs)
     assert 'restart' not in events
+
+
+@pytest.mark.parametrize('hour,minute,restored', [(0, 29, True), (0, 30, False),
+                                                (1, 0, False), (3, 29, False), (3, 30, True)])
+def test_watchdog_preserves_protected_restoration_window(hour, minute, restored):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    store = FixtureStore()
+    unit = 'ar-local-daily-watchdog.service'
+    store.job['unit'] = unit
+    events, kwargs = callbacks()
+    now = datetime(2026, 10, 12, hour, minute, tzinfo=ZoneInfo('Australia/Hobart'))
+    assert recover(store, unit, 'a'*32, now=now, **kwargs) is restored
+    assert ('restart' in events) is restored
+    if not restored: assert events == []
+
+
+def test_daily_failure_can_restore_inside_watchdog_protected_window():
+    from datetime import datetime, timezone
+    events, kwargs = callbacks()
+    assert recover(FixtureStore(), 'ar-local-daily.service', 'a'*32,
+                   now=datetime(2026, 10, 11, 14, tzinfo=timezone.utc), **kwargs)
+    assert 'restart' in events

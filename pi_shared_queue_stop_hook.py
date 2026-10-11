@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from pi_shared_queue_native import NATIVE_LOCK, legacy_host_ready, native_lock_factory
 from pi_shared_queue_store import FIXED_AR_UNITS, Store
@@ -16,9 +18,13 @@ def start_dashboard():
 
 
 def recover(store, unit, invocation, factory=native_lock_factory,
-            ready=legacy_host_ready, restart=start_dashboard):
+            ready=legacy_host_ready, restart=start_dashboard, now=None):
     if unit not in FIXED_AR_UNITS or not invocation:
         return False
+    if unit == 'ar-local-daily-watchdog.service':
+        local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Australia/Hobart'))
+        if time(0, 30) <= local.time() < time(3, 30):
+            return False  # Preserve the watchdog's natural-ingest restore gate.
     with store.transaction() as state:
         matches = [job for job in state['jobs']
                    if job['unit'] == unit and job['invocation_id'] == invocation

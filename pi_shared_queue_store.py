@@ -8,8 +8,10 @@ from pathlib import Path
 import re
 import stat
 import signal
+import socket
 import subprocess
 import tempfile
+import time
 import uuid
 
 FIXED_AR_UNITS = frozenset({'ar-local-daily.service', 'ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'})
@@ -131,7 +133,7 @@ class Supervisor:
         if snapshot is not None:
             return snapshot[unit]
         result = subprocess.run(['systemctl', 'show', unit, '--no-pager',
-                                 '--property=Id,MainPID,InvocationID,ControlGroup,LoadState,ActiveState,Type,CPUQuotaPerSecUSec,RuntimeMaxUSec,TimeoutStartUSec,KillMode,SendSIGKILL,TimeoutStopUSec'],
+                                 '--property=Id,MainPID,InvocationID,ControlGroup,LoadState,ActiveState,Type,CPUQuotaPerSecUSec,RuntimeMaxUSec,TimeoutStartUSec,KillMode,SendSIGKILL,TimeoutStopUSec,ActiveEnterTimestampMonotonic,NotifyAccess'],
                                 text=True, capture_output=True, timeout=10, check=False, env=dict(os.environ, LC_ALL='C'))
         details = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
         if details.get('Id') != unit:
@@ -139,7 +141,7 @@ class Supervisor:
         allow_collected_show(result, [details])
         return details
 
-    def current(self, slots, required_runtime):
+    def current(self, slots, required_runtime, execution_runtime=None, wait_seconds=None):
         pid = os.getpid()
         group = self.cgroup(pid)
         unit = group.rsplit('/', 1)[-1]
@@ -151,19 +153,80 @@ class Supervisor:
             raise ValueError('wrapper must be the exact service MainPID')
         if details.get('KillMode') != 'control-group' or details.get('SendSIGKILL') != 'yes':
             raise ValueError('supervisor must kill the whole service cgroup')
-        if duration(details.get('TimeoutStopUSec', '')) > 60:
-            raise ValueError('supervisor stop grace must be finite and at most 60 seconds')
+        stop_limit = 900 if unit in FIXED_AR_UNITS else 60
+        if duration(details.get('TimeoutStopUSec', '')) > stop_limit:
+            raise ValueError('supervisor stop grace exceeds its bounded unit allowance')
         if duration(details.get('CPUQuotaPerSecUSec', '')) > slots:
             raise ValueError('service CPU quota exceeds requested slots')
-        runtime_property = 'TimeoutStartUSec' if details.get('Type') == 'oneshot' else 'RuntimeMaxUSec'
-        runtime = duration(details.get(runtime_property, ''))
-        post_hook_allowance = 3600 if unit in FIXED_AR_UNITS else 240
-        if not required_runtime <= runtime <= required_runtime + post_hook_allowance:
-            raise ValueError('service runtime must cover wait and execution with bounded grace')
+        if details.get('Type') == 'notify':
+            runtime = duration(details.get('RuntimeMaxUSec', ''))
+            startup = duration(details.get('TimeoutStartUSec', ''))
+            if (execution_runtime is None or wait_seconds is None
+                    or runtime != execution_runtime
+                    or not wait_seconds + 60 <= startup <= wait_seconds + 120):
+                raise ValueError('notify service requires separate bounded waiting and execution timers')
+        else:
+            runtime_property = 'TimeoutStartUSec' if details.get('Type') == 'oneshot' else 'RuntimeMaxUSec'
+            runtime = duration(details.get(runtime_property, ''))
+            post_hook_allowance = 3600 if unit in FIXED_AR_UNITS else 240
+            if not required_runtime <= runtime <= required_runtime + post_hook_allowance:
+                raise ValueError('service runtime must cover wait and execution with bounded grace')
         ownership = {'pid': pid, 'start_ticks': self.ticks(pid), 'boot_id': self.boot_id(),
                      'unit': unit, 'invocation_id': invocation, 'cgroup': group}
         self._current_owner = ownership
         return ownership
+
+    def arm_execution_deadline(self, job, deadline):
+        """Start the transient execution timer only when admission has succeeded."""
+        if job['unit'] in FIXED_AR_UNITS:
+            return  # Fixed oneshots retain their bounded lifecycle hook budget.
+        details = self.show(job['unit'])
+        if details.get('ActiveState') == 'active':
+            # Native-lock deferral may readmit this invocation. Its original
+            # execution timer remains active; never reset it by notifying again.
+            self._execution_owner(job, details, 'active')
+            self._verify_execution_deadline(job, details, deadline)
+            return
+        self._execution_owner(job, details, 'activating')
+        address = os.environ.get('NOTIFY_SOCKET', '')
+        if not address or address[0] not in ('/', '@') or time.monotonic() >= deadline:
+            raise ValueError('service readiness socket or execution clock unavailable')
+        if address.startswith('@'):
+            address = '\0' + address[1:]
+        # Send from MainPID itself: NotifyAccess=main rejects child impostors.
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notifier:
+            notifier.settimeout(5)
+            notifier.connect(address)
+            notifier.sendall(b'READY=1')
+        while True:
+            verified = self.show(job['unit'])
+            if verified.get('ActiveState') == 'active':
+                self._execution_owner(job, verified, 'active')
+                self._verify_execution_deadline(job, verified, deadline)
+                return
+            self._execution_owner(job, verified, 'activating')
+            if time.monotonic() >= deadline or time.monotonic() > deadline - job['max_duration_seconds'] + 15:
+                raise ValueError('service readiness acknowledgement timed out')
+            time.sleep(.05)
+
+    def _verify_execution_deadline(self, job, details, deadline):
+        started = int(details.get('ActiveEnterTimestampMonotonic', '0')) / 1e6
+        # Readiness delivery plus <=45s stop grace must fit the 60s allowance
+        # reserved by admission, even if explicit cgroup termination fails.
+        if (not 0 < started <= time.monotonic() < deadline
+                or started + duration(details['RuntimeMaxUSec']) > deadline + 15):
+            raise ValueError('execution deadline readback failed')
+
+    def _execution_owner(self, job, details, state):
+        if (details.get('MainPID') != str(os.getpid()) or job['pid'] != os.getpid()
+                or details.get('InvocationID') != job['invocation_id']
+                or details.get('ControlGroup') != job['cgroup']
+                or details.get('ActiveState') != state or details.get('Type') != 'notify'
+                or details.get('NotifyAccess') != 'main'
+                or duration(details.get('RuntimeMaxUSec', '')) != job['max_duration_seconds']
+                or details.get('KillMode') != 'control-group' or details.get('SendSIGKILL') != 'yes'
+                or duration(details.get('TimeoutStopUSec', '')) > 45):
+            raise ValueError('execution supervisor ownership or stop grace changed')
 
     def members(self, group):
         directory = self.cgroups / group.lstrip('/')

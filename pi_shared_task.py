@@ -58,12 +58,13 @@ def launch_spec(args, user: str, cwd: Path, unit: str) -> list[str]:
         'Nice': '0' if args.project == 'ar-local' else '10',
         'MemoryHigh': '1536M' if args.project == 'ar-local' else '768M',
         'MemoryMax': '2048M' if args.project == 'ar-local' else '1024M',
-        'RuntimeMaxSec': str(args.wait_timeout + args.max_runtime + 120),
+        'RuntimeMaxSec': str(args.max_runtime),
+        'TimeoutStartSec': str(args.wait_timeout + 60), 'NotifyAccess': 'main',
         'TimeoutStopSec': '45s', 'TasksMax': '128',
         'SendSIGKILL': 'yes',
     }
     result = ['sudo', '-n', 'systemd-run', '--wait', '--pipe', '--collect',
-              '--service-type=exec', '--expand-environment=no', '--unit=' + unit]
+              '--service-type=notify', '--expand-environment=no', '--unit=' + unit]
     result += ['--property=' + key + '=' + value for key, value in properties.items()]
     result += ['--setenv=PYTHONUNBUFFERED=1', '--setenv=HOME=' + str(Path.home()),
                '--', '/usr/bin/python3', str(RUNTIME), 'run', '--project', args.project,

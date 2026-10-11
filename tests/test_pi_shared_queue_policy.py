@@ -213,3 +213,16 @@ def test_running_candidate_and_naive_clock_are_denied():
     candidate = job("candidate", 1, state="running")
     assert admission(candidate, [candidate], NOW) == (False, "already-running")
     assert admission(candidate, [candidate], NOW.replace(tzinfo=None)) == (False, "invalid-state")
+
+
+@pytest.mark.parametrize('date,utc_hours', [('2026-04-05', 25), ('2026-10-04', 23)])
+def test_dst_transition_keeps_next_quiet_window_at_calendar_0030(date, utc_hours):
+    from zoneinfo import ZoneInfo
+    from pi_shared_queue_policy import _protected
+    start = datetime.fromisoformat(date).replace(hour=0, minute=30,
+                                                tzinfo=ZoneInfo('Australia/Hobart'))
+    critical, next_start = _protected(start)
+    assert critical
+    assert next_start.hour == 0 and next_start.minute == 30
+    assert next_start.date() == start.date() + timedelta(days=1)
+    assert (next_start.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds() == utc_hours * 3600

@@ -42,7 +42,7 @@ def _environment_file_roots(path):
             'except FileNotFoundError: sys.exit(44)\n'
             's=os.fstat(fd)\n'
             'if not (stat.S_ISREG(s.st_mode) and s.st_uid==0 and s.st_nlink==1 '
-            'and not s.st_mode & 0o022 and s.st_size<=65536): '
+            'and not (s.st_mode & 0o022) and s.st_size<=65536): '
             'raise ValueError("unsafe producer environment file")\n'
             'body=os.read(fd,65537); os.close(fd); os.write(1,body)'
         )
@@ -230,7 +230,8 @@ def native_lock_factory(repo=Path('/srv/ar-local/AR-local')):
     # module from a different source before importing the reviewed implementation.
     for name in ('ar_local_backup_policy', 'cdr_file_lock', 'process_safety'):
         cached = sys.modules.get(name)
-        if cached is not None and Path(getattr(cached, '__file__', '')).resolve().parent != repo.resolve():
+        source = getattr(cached, '__file__', None)
+        if cached is not None and (not source or Path(source).resolve().parent != repo.resolve()):
             raise ValueError('production helper dependency source collision')
     old_path = list(sys.path)
     try:
