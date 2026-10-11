@@ -9,8 +9,11 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def ordinary_recovery_context(monkeypatch):
+def ordinary_recovery_context(monkeypatch, tmp_path):
     original_window = getattr(network, 'recovery_window_blocked', None)
+    # Unit recovery fixtures must never inspect or lock the operator's queue.
+    # Dedicated queue-guard tests supply their own real temporary queue.
+    monkeypatch.setattr(network, 'QUEUE_ROOT', tmp_path / 'shared-pi-queue')
     monkeypatch.setattr(network.os, 'geteuid', lambda: 1000, raising=False)
     monkeypatch.setattr(network, 'recovery_window_blocked', lambda: False, raising=False)
     return original_window
