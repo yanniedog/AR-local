@@ -197,7 +197,9 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
                 relative = regular.relative_to(target.resolve(strict=True)).as_posix()
                 if relative in seen:
                     raise ValueError("scheduled execution lineage contains a cycle")
-                _validate_owned_record(value, expected)
+                # Old-runtime crash records remain admissible only through the
+                # exact pinned ancestry and its ordered runtime transition.
+                _validate_owned_record(value, expected, predecessor=bool(expected.get("runtime_predecessor")))
                 digest = receiver.sha256_file(regular)
                 if expected.get("runtime_predecessor"):
                     from laptop_backup_runtime_lineage import authenticate_pointer_descendant
