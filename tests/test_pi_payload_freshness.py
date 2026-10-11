@@ -28,6 +28,7 @@ def test_current_manifest_and_index_are_both_required():
     assert result["publication_current"] is False
     assert set(result["publication_issues"]) == {
         "dates_index_stale", "expected_date_not_indexed", "rolling_index_mismatch",
+        "dates_index_calendar_gaps",
     }
 
 
@@ -47,6 +48,41 @@ def test_future_dates_do_not_hide_a_missing_day():
     result = freshness.check_publication(DATE, fetch=documents("2026-09-07", "2026-09-07"))
     assert not result["publication_current"]
     assert "manifest_future" in result["publication_issues"]
+
+
+def test_latest_publication_does_not_hide_an_interior_calendar_gap():
+    def fetch(url):
+        if "dates-index" in url:
+            return {"schema_version": 1, "dates": ["2026-09-03", DATE], "latest_date": DATE, "count": 2}
+        return documents()(url)
+
+    result = freshness.check_publication(DATE, fetch=fetch)
+    assert result["publication_current"] is True
+    assert result["publication_healthy"] is False
+    assert result["publication_continuous"] is False
+    assert result["missing_dates"] == ["2026-09-04", "2026-09-05"]
+    assert result["publication_issues"] == ["dates_index_calendar_gaps"]
+
+
+def test_calendar_gap_detection_includes_trailing_days_and_leap_day():
+    assert freshness.missing_calendar_dates(["2024-02-28", "2024-03-01"], "2024-03-03") == [
+        "2024-02-29", "2024-03-02", "2024-03-03"]
+    with pytest.raises(ValueError, match="span_too_large"):
+        freshness.missing_calendar_dates(["0001-01-01", DATE], DATE)
+
+
+def test_invalid_revision_heads_cannot_authorize_gap_repair():
+    def fetch(url):
+        value = documents()(url)
+        if "dates-index" in url:
+            value.update(dates=["2026-09-03", DATE], count=2,
+                         revision_protocol=1, revision_heads={DATE: {"revision": 1,
+                         "manifest_url": "https://example.org/unbound/manifest.json"}})
+        return value
+    result = freshness.check_publication(DATE, fetch=fetch)
+    assert result["dates_index_error"] == "ValueError"
+    assert result["missing_dates"] == []
+    assert result["publication_healthy"] is False
 
 
 def test_diagnostic_manifest_is_not_a_published_app_day():
@@ -125,6 +161,7 @@ def stage_watchdog(monkeypatch, *, active=False, enabled=True):
     monkeypatch.setattr(watchdog, "expected_run_date_for_due", lambda _: DATE)
     monkeypatch.setattr(watchdog, "run_daily_ingest", lambda *a: pytest.fail("must not reingest"))
     monkeypatch.setattr(watchdog, "run_payload_retry", lambda *a: pytest.fail("must not invent retry"))
+    monkeypatch.setattr(watchdog, "reconcile_missing_publication", lambda *a, **k: {"status": "not_due"})
 
 
 def test_finalized_but_unpublished_day_fails_without_a_pending_marker(monkeypatch, capsys):
@@ -137,6 +174,18 @@ def test_finalized_but_unpublished_day_fails_without_a_pending_marker(monkeypatc
     assert result["capture_finalized"] is True
     assert result["publication_state"] == "stale_or_withheld"
     assert result["payload_pending"] is False
+
+
+def test_current_day_success_and_permanent_history_gap_remain_distinct(monkeypatch, capsys):
+    stage_watchdog(monkeypatch)
+    monkeypatch.setattr(watchdog, "check_publication", lambda _: {
+        "publication_current": True, "publication_continuous": False,
+        "missing_dates": ["2026-05-14"], "publication_issues": ["dates_index_calendar_gaps"],
+    })
+    assert watchdog.main(["--json"]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["publication_current"] is True
+    assert result["publication_state"] == "incomplete_history"
 
 
 @pytest.mark.parametrize("active,enabled", [(True, True), (False, False)])

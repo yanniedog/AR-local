@@ -156,7 +156,8 @@ def test_source_observation_changes_revision_even_when_assets_match(tmp_path):
     assert delta["assets_changed"] == []
 
 
-def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path, monkeypatch):
+@pytest.mark.parametrize("historical,dated_success", [(False, True), (True, True), (True, False)])
+def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path, monkeypatch, historical, dated_success):
     import app_payload
     import app_payload_build
     import app_payload_revisions
@@ -186,21 +187,40 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
         assert "search_index" in manifest["files"]
         assert all("-r000001/" in item["url"] for item in manifest["files"].values())
         calls.append(tag)
-        return True
+        return dated_success if tag == f"app-payload-{DAY}" else True
 
     monkeypatch.setenv("AR_LOCAL_PAYLOAD_REVISIONS", "1")
     monkeypatch.setenv("AR_APP_REVISION_CONSUMER_SHA", CONSUMER)
-    monkeypatch.setattr(app_payload, "_live_manifest_status", lambda *args: ("missing", None))
+    monkeypatch.setattr(app_payload, "_live_manifest_status", lambda *args:
+                        ("present", {"run_date": "2026-05-20"}) if historical else ("missing", None))
     monkeypatch.setattr(app_payload, "_compute_payload", compute)
     monkeypatch.setattr(app_payload_revisions, "publish_revision_bundle", revision)
     monkeypatch.setattr(app_payload_build, "publish_payload", alias)
+    monkeypatch.setattr("publication_status.refresh_current", lambda repo: calls.append("receipt:" + repo))
     provenance = {"generation_id": "retained-observation", "contract_digest": "d" * 64}
+    if not dated_success:
+        with pytest.raises(RuntimeError, match="dated compatibility alias not verified"):
+            app_payload_build.build_and_publish_dual(
+                exports, repo=REPO, state_dir=tmp_path / "persistent", source_observation=provenance,
+            )
+        assert store.promotions == 1
+        assert calls == [f"app-payload-{DAY}", "receipt:" + REPO]
+        return
     manifest, dated, latest = app_payload_build.build_and_publish_dual(
         exports, repo=REPO, state_dir=tmp_path / "persistent", source_observation=provenance,
     )
     assert manifest["source_observation"] == provenance
-    assert dated is True and latest is True
-    assert calls == [f"app-payload-{DAY}", DEFAULT_TAG]
+    assert dated is True and latest is (not historical)
+    expected = [f"app-payload-{DAY}", "receipt:" + REPO if historical else DEFAULT_TAG]
+    assert calls == expected
+    if historical:
+        # A lost receipt must also be repaired on the idempotent retry, when
+        # the revision coordinator does not change the index again.
+        app_payload_build.build_and_publish_dual(
+            exports, repo=REPO, state_dir=tmp_path / "persistent", source_observation=provenance,
+        )
+        assert store.promotions == 1
+        assert calls == expected + expected
 
 
 def test_return_to_previous_bundle_creates_new_revision_with_current_parent(tmp_path):

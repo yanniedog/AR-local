@@ -769,6 +769,13 @@ def build_and_publish_dual(
                                            repo=repo, enabled=True)
         published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date))
         published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG) if need_latest else False
+        if update_latest and not need_latest:
+            # Historical promotion changes index ciphertext. Keep the operational
+            # receipt bound to it without regressing the current rolling alias.
+            from publication_status import refresh_current
+            refresh_current(repo)
+        if not published_dated:
+            raise RuntimeError("dated compatibility alias not verified")
         return revision.manifest, published_dated, published_latest
 
     dated = dated_tag(run_date)
