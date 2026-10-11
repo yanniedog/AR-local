@@ -2,6 +2,9 @@ name: pr-closeout-ci
 on:
   pull_request:
     paths:
+      - 'wait_for_bots.mjs'
+      - 'scripts/lib/bot-wait-*.mjs'
+      - 'scripts/verify-advisory-review-policy.mjs'
       - 'scripts/pr-merge.mjs'
       - 'scripts/lib/pr-*.mjs'
       - 'scripts/lib/gh-pr-review-threads.mjs'
@@ -11,6 +14,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'wait_for_bots.mjs'
+      - 'scripts/lib/bot-wait-*.mjs'
+      - 'scripts/verify-advisory-review-policy.mjs'
       - 'scripts/pr-merge.mjs'
       - 'scripts/lib/pr-*.mjs'
       - 'scripts/lib/gh-pr-review-threads.mjs'
