@@ -2,7 +2,7 @@
  * Shared helpers for npm run pr:gates:check (merge-blocking PR gate audit).
  */
 import { spawnSync } from 'node:child_process';
-import { readCheckResult, selectLatestChecks } from './pr-check-history.mjs';
+import { readCheckResult, selectLatestChecks, selectNamedCheckHistory } from './pr-check-history.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBotWaitStateFile } from './bot-wait-state.mjs';
@@ -140,7 +140,7 @@ export function fetchNamedChecks(prNumber, names) {
   );
   const result = readCheckResult(r);
   if (result.error) return { found: {}, error: result.error };
-  const latest = selectLatestChecks(result.checks);
+  const latest = selectNamedCheckHistory(result.checks, names);
   if (latest.error) return { found: {}, error: latest.error };
   const all = latest.checks;
   const want = new Set(names.map((n) => n.toLowerCase()));

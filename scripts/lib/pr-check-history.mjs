@@ -32,8 +32,12 @@ export function selectLatestChecks(checks) {
   const latest = [];
   for (const group of groups.values()) {
     if (group.length === 1) { latest.push(group[0]); continue; }
+    if (!group.every((check) => check.app?.id || check.appId ||
+      (check.workflow && /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/job\/\d+$/.test(check.link || '')))) {
+      return { error: `Cannot identify producer of duplicate check runs: ${group[0].name}` };
+    }
     const times = group.map((check) => Date.parse(check.startedAt || ''));
-    if (times.some((time) => !Number.isFinite(time))) {
+    if (times.some((time) => !Number.isFinite(time) || time <= 0)) {
       return { error: `Cannot order duplicate check runs: ${group[0].name} (missing startedAt)` };
     }
     const newest = Math.max(...times);
@@ -44,4 +48,14 @@ export function selectLatestChecks(checks) {
     latest.push(candidates[0]);
   }
   return { checks: latest };
+}
+
+/** Scope chronology errors to the requested gates, not unrelated advisory jobs. */
+export function selectNamedCheckHistory(checks, names) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  return selectLatestChecks(checks.filter((check) => {
+    const name = String(check.name || '').toLowerCase();
+    const tail = name.slice(name.lastIndexOf('/') + 1).trim();
+    return wanted.has(name) || wanted.has(tail);
+  }));
 }
