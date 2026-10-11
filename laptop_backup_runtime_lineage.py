@@ -150,6 +150,7 @@ def authenticate_pointer_descendant(
     authenticated_runtime_pairs(target, runtime, expected)
     records = _Records(target, expected)
     anchor = records.pinned(runtime)
+    historical_pin = records.read(anchor).get("runtime_predecessor")
     current = {key: pointer[key] for key in ("record_path", "record_sha256")}
     phases = [
         (runtime["production_sha"], runtime["receiver_sha"]),
@@ -178,7 +179,12 @@ def authenticate_pointer_descendant(
             return
         if value.get("runtime_predecessor") is not None:
             if value["runtime_predecessor"] != runtime:
-                raise ValueError("runtime descendant changed the pinned predecessor")
+                # An already-transitioned old receiver retains its own config
+                # pin even after a production-only update. The anchor's pin is
+                # hash-bound and its complete ancestry was authenticated above.
+                if (_pair(value)[1] != runtime["receiver_sha"]
+                        or value["runtime_predecessor"] != historical_pin):
+                    raise ValueError("runtime descendant changed the pinned predecessor")
         previous = value.get("previous_execution")
         if previous is None:
             raise ValueError("runtime descendant is not bound to the pinned receipt")
