@@ -127,12 +127,26 @@ def recovery_lock_path(lock_path: Path) -> Path:
 
 def _open_after_network_recovery(path: Path, role: str) -> int:
     """Scheduled work waits for the bounded low-priority network watchdog."""
-    deadline = time.monotonic() + 120
+    started = time.monotonic()
+    deadline = started + 120
     while True:
         try:
             return _open_exclusive(path, role)
         except FileExistsError:
             values = _lock_values(path) if not path.is_symlink() else {}
+            # O_EXCL creates the visible file before its owner bytes are
+            # written. Briefly retry incomplete ordinary initialization without
+            # treating an unknown record as a stale owner or altering it.
+            if (role != 'network-watchdog' and not path.is_symlink()
+                    and path.is_file() and time.monotonic() < started + 2
+                    and not set(values) - {'pid', 'role', 'boot_id', 'recovery'}
+                    and values.get('recovery', 'automatic') == 'automatic'
+                    and values.get('role') in (None, 'network-watchdog')
+                    and (not values.get('pid') or values['pid'].isdigit())
+                    and (not values.get('role') or not values.get('pid')
+                         or 'boot_id' in values and not _canonical_boot_id(values['boot_id']))):
+                time.sleep(0.05)
+                continue
             if (role == 'network-watchdog' or values.get('role') != 'network-watchdog'
                     or set(values) - {'pid', 'role', 'boot_id', 'recovery'}
                     or not values.get('pid', '').isdigit() or int(values['pid']) <= 0

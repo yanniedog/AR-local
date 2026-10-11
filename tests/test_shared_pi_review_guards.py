@@ -39,6 +39,52 @@ def test_scheduled_operation_waits_for_network_watchdog_release(tmp_path, monkey
     assert not path.exists()
 
 
+@pytest.mark.parametrize('partial', ['', 'pid=123\nrole=network-watchdog\nboot_id=partial'])
+def test_scheduled_call_waits_for_owner_initialization(tmp_path, monkeypatch, partial):
+    import os
+    path = tmp_path / 'daily-ingest.lock'
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    os.write(descriptor, partial.encode())
+    acquired = threading.Event()
+    started = threading.Event()
+    errors = []
+    monkeypatch.setattr(locks, '_current_boot_id', lambda: '')
+    def scheduled():
+        started.set()
+        try:
+            with locks.production_lock(path, 'daily-ingest'):
+                acquired.set()
+        except Exception as exc:
+            errors.append(exc)
+    task = threading.Thread(target=scheduled)
+    task.start()
+    assert started.wait(1)
+    assert not acquired.wait(0.1)
+    assert path.read_text() == partial
+    os.ftruncate(descriptor, 0)
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    os.write(descriptor, f'pid={os.getpid()}\nrole=network-watchdog\n'.encode())
+    assert not acquired.wait(0.1)
+    os.close(descriptor)
+    path.unlink()
+    task.join(timeout=2)
+    assert not task.is_alive()
+    assert acquired.is_set() and not errors
+
+
+def test_incomplete_owner_retry_is_bounded_and_preserves_record(tmp_path, monkeypatch):
+    path = tmp_path / 'daily-ingest.lock'
+    path.write_bytes(b'')
+    elapsed = [0.0]
+    monkeypatch.setattr(locks.time, 'monotonic', lambda: elapsed[0])
+    monkeypatch.setattr(locks.time, 'sleep', lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds))
+    with pytest.raises(RuntimeError, match='active'):
+        with locks.production_lock(path, 'daily-ingest'):
+            pytest.fail('incomplete owner admitted')
+    assert 2 <= elapsed[0] < 2.1
+    assert path.read_bytes() == b''
+
+
 def test_unknown_network_lock_schema_remains_fail_closed(tmp_path):
     path = tmp_path / 'daily-ingest.lock'
     path.write_text('pid=123\nrole=network-watchdog\nrecovery=manual\n')
