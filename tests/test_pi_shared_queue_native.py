@@ -90,6 +90,26 @@ def test_legacy_service_busy_releases_native_lease_before_retry():
     assert events == ['locked', 'released']
 
 
+@pytest.mark.parametrize('failure', [ValueError('incomplete observation'), OSError('unavailable'), subprocess.TimeoutExpired('systemctl', 10)])
+def test_transient_legacy_observation_is_busy_and_releases_lease(failure):
+    from pi_shared_queue_native import NativeHostGuard, NativeHostBusy
+    store = MemoryStore([record(state='running')])
+    events = []
+    @contextmanager
+    def lease(*args):
+        events.append('locked')
+        try:
+            yield
+        finally:
+            events.append('released')
+    def unavailable(units):
+        raise failure
+    with pytest.raises(NativeHostBusy, match='observation unavailable'):
+        with NativeHostGuard(store, lock_factory=lambda: lease, ready=unavailable, marker=lambda job: None).hold(record()):
+            pytest.fail('uncertain legacy ownership must not start the command')
+    assert events == ['locked', 'released']
+
+
 def test_legacy_service_gate_ignores_readonly_and_completed_but_blocks_backup(monkeypatch):
     from pi_shared_queue_native import legacy_host_ready
     services = [
