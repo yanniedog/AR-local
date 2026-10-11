@@ -65,6 +65,15 @@ def test_aged_ar_reserves_cpu_even_against_disjoint_newcomer():
     assert admission(ar, [ar, newcomer], NOW)[0]
 
 
+def test_all_promoted_shared_ar_jobs_reserve_their_cpu_slots():
+    promoted = [job('ar-' + str(index), index, project='ar-local', age=7200, mode='shared') for index in range(3)]
+    newcomer = job('newcomer', 4, resources=['mining'])
+    assert admission(newcomer, [*promoted, newcomer], NOW) == (False, 'ar-local-cpu-reservation')
+    for ar in promoted:
+        assert admission(ar, [*promoted, newcomer], NOW)[0]
+    assert admission(newcomer, [promoted[0], newcomer], NOW) == (True, 'admitted')
+
+
 def test_compatible_small_jobs_can_use_spare_cpu_before_ar_ages():
     ar = job("ar", 1, project="ar-local", age=7199, slots=3)
     newcomer = job("newcomer", 2, resources=["mining"])
