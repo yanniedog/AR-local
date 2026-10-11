@@ -63,6 +63,17 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 
 ## Local site and dashboard
 
+### Shared Pi task admission
+
+Use the demand-driven queue described in `docs/SHARED_PI_QUEUE.md` for manual
+deployments and maintenance when it is installed. Declare project resources;
+declare `host` for shared network, packages, reboot or other host-wide changes.
+Preserve AR-local's production transaction locks, the 00:30 quiet window and
+priority after two hours of ready waiting. Do not bypass occupied queue claims
+or erase ambiguous ownership. Bounded read-only checks and controlled queue
+installation/canaries keep their documented paths. Queue installation does not
+authorize creating, enabling or starting a scheduled task.
+
 - **Dashboard:** `cdr_dashboard_server.py` serves **`dashboard/`** HTML/JS/CSS and proxies **`/site/*`** from the AustralianRates **`site`** directory when configured (auto-detect prefers a tree that has **`assets/banks/*.png`** when possible).
 - **Canonical public shell assets** still come from the AustralianRates **`site`** folder on disk (clone **`australianrates`** beside this repo or pass **`--site-root`**). There is no Pages deploy from this repo.
 - **Verification (Pi — primary):** **`npm run verify:local -- --base-url=http://100.78.28.10/`** or **`npm run verify:pi`** against the Pi dashboard (Tailscale; nginx :80). Override via **`AR_PI_BASE_URL`** or **`--base-url`**. Use **Browser MCP** against the same Pi URL. Local `127.0.0.1` only when the user explicitly runs the dev server locally.
