@@ -106,6 +106,24 @@ def publish(root, store, payload=None):
                                    repo=REPO, enabled=True, consumer_commit=CONSUMER, store=store)
 
 
+@pytest.mark.parametrize("marked", [False, True])
+def test_cloudflare_publication_and_retry_do_not_require_public_branch(tmp_path, monkeypatch, marked):
+    store = MemoryStore()
+    manifest = build_payload(tmp_path / "payload")
+    if marked:
+        manifest["delivery"] = {"mode": "github-public-v1"}
+        (tmp_path / "payload/manifest.json").write_bytes(canonical(manifest))
+    monkeypatch.setattr("app_payload_public_companion.publish_companion",
+                        lambda *_: pytest.fail("Public branch must not block canonical delivery"))
+    first = publish(tmp_path, store)
+    retained = copy.deepcopy(store.objects)
+    retry = publish(tmp_path, store)
+    assert retry.head == first.head
+    assert not retry.index_changed and store.promotions == 1
+    assert store.objects == retained
+    assert retry.manifest.get("delivery") == manifest.get("delivery")
+
+
 def test_initial_and_details_only_revisions_preserve_all_bytes(tmp_path):
     store = MemoryStore()
     first_manifest = build_payload(tmp_path / "payload", omit_last_product=True)
@@ -172,12 +190,8 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
     (exports / "dashboard-cache" / "latest.json").write_bytes(canonical({"run_date": DAY}))
     store = MemoryStore()
     calls = []
-    public_mirrors = []
-    def mirror(directory, backend, state):
-        assert backend is store and store.promotions == 1
-        assert decode_document((directory / "manifest.json").read_bytes())["delivery"] == {"mode": "github-public-v1"}
-        public_mirrors.append(directory)
-    monkeypatch.setattr("app_payload_public_companion.publish_companion", mirror)
+    monkeypatch.setattr("app_payload_public_companion.publish_companion",
+                        lambda *_: pytest.fail("Cloudflare publication must not depend on a public mirror"))
 
     def compute(*args, **kwargs):
         assert kwargs["include_history"] is True
@@ -188,8 +202,8 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
 
     def alias(directory, *, repo, tag):
         assert store.promotions == 1
-        assert public_mirrors[-1] == directory
         manifest = decode_document((directory / "manifest.json").read_bytes())
+        assert "delivery" not in manifest
         assert manifest["payload_revision"]["revision"] == 1
         assert "search_index" in manifest["files"]
         assert all("-r000001/" in item["url"] for item in manifest["files"].values())

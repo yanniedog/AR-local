@@ -178,9 +178,8 @@ transaction has already preserved all prior dates and revision heads.
     with production_lock(state_dir / ".revision-publication.lock", "payload-revisions"):
         result = _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo,
                                  migrate_encryption=migrate_encryption)
-        if result.manifest.get("delivery") == {"mode": "github-public-v1"}:
-            from app_payload_public_companion import publish_companion
-            publish_companion(result.archive_dir, backend, state_dir / "public-companion")
+        # Canonical ARE2 releases are delivered through Cloudflare. Historical
+        # direct-delivery metadata never adds a public-branch publication dependency.
         return result
 
 

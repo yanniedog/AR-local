@@ -1,5 +1,14 @@
 # Direct GitHub app delivery
 
+**Historical migration record, superseded on 2026-10-11:** the operator selected
+Cloudflare app-data delivery. Production packaging no longer emits the direct
+delivery marker, and canonical revision publication never invokes the public
+companion, including retries of previously marked editions. The public branch
+and bootstrap tools remain preserved; they are not an active publication or
+release prerequisite. Do not delete already-published bytes. The procedure below
+documents the retained migration implementation, not current deployment authority.
+See `services/app-data/README.md` and `PACKED_BANK_HISTORY.md` for current delivery.
+
 New apps read `https://raw.githubusercontent.com/yanniedog/AR-local/app-payload-public/`.
 This dedicated orphan data branch contains only validated app inventory:
 
@@ -62,7 +71,7 @@ edition and complete index; historical heads remain receipts. READY supplies
 historical rates without fetching every old core. Older uncached optional assets
 may require a current refresh. Historical ARE1 editions are not rewritten.
 
-## Subsequent prepared-history activation
+## Historical subsequent prepared-history activation plan
 
 After the consumer app is shipped and verified, follow `CDR_QUALITY_PIPELINE.md`
 and the controlled Pi canary/seal process for the exact producer candidate.
