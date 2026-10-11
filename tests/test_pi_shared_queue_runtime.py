@@ -718,3 +718,58 @@ def test_ar_local_host_completed_record_cleans_only_its_native_marker(monkeypatc
     monkeypatch.setattr(native, 'clear_native_manual', lambda job: cleaned.append(job['id']) or True)
     assert store.reconcile(store.state)
     assert cleaned == ['job-1'] and store.state['jobs'] == []
+
+def test_operator_cancel_stops_escaped_descendants_immediately_before_budget(monkeypatch):
+    import signal
+    store, cancelled = MemoryStore(), queue.Cancellation()
+    clock, checks, signals = [100.0], [0], []
+    class Child:
+        pid = 999
+        returncode = 0
+        def poll(self): return 0
+    def released(store, job):
+        checks[0] += 1
+        if checks[0] == 1:
+            cancelled.handle(signal.SIGTERM, None)
+            return False
+        return True
+    store.supervisor.terminate = lambda job, signum: signals.append((signum, clock[0]))
+    monkeypatch.setattr(signal, 'SIG_BLOCK', 0, raising=False)
+    monkeypatch.setattr(signal, 'SIG_SETMASK', 2, raising=False)
+    monkeypatch.setattr(signal, 'pthread_sigmask', lambda *args: set(), raising=False)
+    monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: Child())
+    monkeypatch.setattr(queue, 'release', released)
+    monkeypatch.setattr(queue.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(queue.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    assert queue.execute(store, record(), ['command'], cancelled, deadline=1900) == 143
+    assert signals == [('SIGTERM', 100)]
+    assert cancelled.stop_reason == 'operator'
+
+
+def test_operator_cancel_escalates_after_thirty_seconds_before_execution_deadline(monkeypatch):
+    store, cancelled, signals = MemoryStore(), queue.Cancellation(), []
+    cancelled.requested = True
+    clock = [100.0]
+    store.supervisor.terminate = lambda job, signum: signals.append(signum)
+    monkeypatch.setattr(queue.time, 'monotonic', lambda: clock[0])
+    started = queue.enforce_cgroup_deadline(store, record(), 1900, None, cancelled)
+    clock[0] = 130
+    queue.enforce_cgroup_deadline(store, record(), 1900, started, cancelled)
+    assert signals == ['SIGTERM', 'SIGKILL']
+    assert cancelled.stop_reason == 'operator'
+
+
+@pytest.mark.parametrize('signum,code,allowed', [
+    ('SIGTERM', -15, True), ('SIGTERM', 1, False), ('SIGTERM', -9, False), ('SIGKILL', -15, False),
+])
+def test_verified_kill_all_expected_term_of_its_own_command_is_not_an_error(monkeypatch, signum, code, allowed):
+    supervisor = FakeSupervisor()
+    def killed(command, **kwargs):
+        raise subprocess.CalledProcessError(code, command)
+    monkeypatch.setattr(subprocess, 'run', killed)
+    job = record(pid=os.getpid())
+    if allowed:
+        Supervisor.terminate(supervisor, job, signum)
+    else:
+        with pytest.raises(subprocess.CalledProcessError):
+            Supervisor.terminate(supervisor, job, signum)

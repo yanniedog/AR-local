@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import signal
 import subprocess
 import tempfile
 import uuid
@@ -194,9 +195,15 @@ class Supervisor:
                 or details.get('ControlGroup') != job['cgroup']
                 or details.get('MainPID') != str(os.getpid())):
             raise ValueError('service identity changed before cgroup termination')
-        subprocess.run(['sudo', '-n', '/usr/bin/systemctl', 'kill', '--kill-whom=all',
-                        '--signal=' + signum, job['unit']], capture_output=True,
-                       text=True, timeout=10, check=True)
+        try:
+            subprocess.run(['sudo', '-n', '/usr/bin/systemctl', 'kill', '--kill-whom=all',
+                            '--signal=' + signum, job['unit']], capture_output=True,
+                           text=True, timeout=10, check=True)
+        except subprocess.CalledProcessError as exc:
+            # TERM also reaches this verified invocation's sudo/systemctl child.
+            # Its death by that exact signal is expected after kill-all succeeds.
+            if signum != 'SIGTERM' or exc.returncode != -signal.SIGTERM:
+                raise
 
     def wrapper_alive(self, job):
         try:

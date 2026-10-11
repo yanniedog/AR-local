@@ -96,10 +96,13 @@ def log(job, reason):
 class Cancellation:
     def __init__(self):
         self.requested = False
+        self.stop_reason = None
         self.child = None
 
     def handle(self, signum, frame):
         self.requested = True
+        if self.stop_reason is None:
+            self.stop_reason = 'operator'
         if self.child is not None and self.child.poll() is None:
             try:
                 os.killpg(self.child.pid, signal.SIGTERM)
@@ -124,10 +127,13 @@ def wait_admission(store, job, wait_seconds, cancelled, deadline=None):
     return False
 
 
-def enforce_cgroup_deadline(store, job, deadline, stop_started):
+def enforce_cgroup_deadline(store, job, deadline, stop_started, cancelled=None):
     now = time.monotonic()
-    if now < deadline:
+    requested = cancelled is not None and cancelled.requested
+    if stop_started is None and now < deadline and not requested:
         return stop_started
+    if stop_started is None and cancelled is not None:
+        cancelled.stop_reason = 'operator' if requested else 'deadline'
     signum = 'SIGTERM' if stop_started is None else 'SIGKILL' if now - stop_started >= 30 else None
     if signum is None:
         return stop_started
@@ -163,7 +169,7 @@ def execute(store, job, command, cancelled, deadline=None, release_claim=True):
         signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
     termination_at, cgroup_stop = None, None
     while child.poll() is None:
-        cgroup_stop = enforce_cgroup_deadline(store, job, deadline, cgroup_stop)
+        cgroup_stop = enforce_cgroup_deadline(store, job, deadline, cgroup_stop, cancelled)
         if cancelled.requested or time.monotonic() >= deadline:
             if termination_at is None:
                 termination_at = time.monotonic()
@@ -183,13 +189,13 @@ def execute(store, job, command, cancelled, deadline=None, release_claim=True):
     # the whole service at the independently verified hard deadline.
     finished = release if release_claim else descendants_done
     while not finished(store, job):
-        cgroup_stop = enforce_cgroup_deadline(store, job, deadline, cgroup_stop)
+        cgroup_stop = enforce_cgroup_deadline(store, job, deadline, cgroup_stop, cancelled)
         log_once = getattr(cancelled, 'descendants_logged', False)
         if not log_once:
             log(job, 'awaiting-supervised-descendants')
             cancelled.descendants_logged = True
         time.sleep(1)
-    if cgroup_stop is not None:
+    if cgroup_stop is not None and cancelled.stop_reason == 'deadline':
         log(job, 'runtime-timeout')
         return 124
     if cancelled.requested:
