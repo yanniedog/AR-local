@@ -244,7 +244,7 @@ def test_pi_inode_exhaustion_captures_on_disk_without_removing_old_ram(tmp_path,
     old.parent.mkdir(parents=True)
     old.write_bytes(b"retained original")
     original_ingest = cdr_daily.run_ingest
-    disk = runs.parent / ".daily-raw-stage"
+    disk = runs.parent / "runs-archive" / ".daily-raw-stage"
 
     def ingest(script_dir, out_dir, date, extra):
         assert out_dir == disk / "runs"
@@ -256,6 +256,7 @@ def test_pi_inode_exhaustion_captures_on_disk_without_removing_old_ram(tmp_path,
     assert finalized["ram_root"] == str(disk)
     assert verify_completion_marker(finalized, state, DATE)
     assert old.read_bytes() == b"retained original"
+    assert args.ram_root == ram  # Daemon configuration survives per-run fallback.
     assert not (disk / "runs" / DATE).exists()
 
 

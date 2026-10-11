@@ -63,6 +63,23 @@ def test_scope_rejects_unknown_top_level_path(tmp_path: Path) -> None:
         build_data_scope(root.resolve())
 
 
+def test_disk_capture_fallback_is_preserved_by_existing_backup_scope(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import cdr_capture_stage_capacity as stage
+
+    root = data_root(tmp_path)
+    monkeypatch.setattr(stage.os, "statvfs", lambda _: SimpleNamespace(
+        f_bavail=2 * 1024 ** 3, f_frsize=1, f_favail=0), raising=False)
+    chosen = stage.select_capture_stage(tmp_path / "ram", root / "runs", "2026-10-11")
+    raw = chosen / "runs" / "2026-10-11" / "original-response.json"
+    raw.parent.mkdir(parents=True)
+    raw.write_bytes(b"retained wire response")
+    scope = build_data_scope(root.resolve())
+    destination = tmp_path / "snapshot"
+    copy_scoped_data(scope, destination, exclude=set())
+    assert (destination / raw.relative_to(root)).read_bytes() == raw.read_bytes()
+
+
 def test_scope_rejects_nonempty_transient_stage(tmp_path: Path) -> None:
     root = data_root(tmp_path)
     (root / ".daily-export-stage").mkdir()

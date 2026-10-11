@@ -19,7 +19,9 @@ def select_capture_stage(ram_root: Path, runs_root: Path, run_date: str) -> Path
     Unknown capacity fails toward disk. Explicit --ram-stage callers opt out.
     """
     ram_root = ram_root.expanduser().resolve()
-    disk_root = runs_root.expanduser().resolve().parent / ".daily-raw-stage"
+    # runs-archive is included by the fail-closed backup scope. Retained raw
+    # evidence belongs in preservation snapshots, unlike derived export staging.
+    disk_root = runs_root.expanduser().resolve().parent / "runs-archive" / ".daily-raw-stage"
     if (disk_root / "runs" / run_date).exists():
         return disk_root
     probe = ram_root
