@@ -134,6 +134,45 @@ def test_shutdown_observation_failure_returns_error_not_false_cancellation_succe
     assert 'could not confirm whole-unit shutdown' in capsys.readouterr().err
 
 
+@pytest.mark.parametrize('wait_fails', [False, True])
+def test_unconfirmed_cancellation_reaps_submission_monitor_without_releasing_job(monkeypatch, capsys, wait_fails):
+    clock, events = [100.0], []
+    cancellation = task.LaunchCancellation()
+    cancellation.signum = signal.SIGTERM
+    class Monitor:
+        def poll(self): return None
+        def kill(self): events.append('monitor-kill')
+        def wait(self, timeout):
+            events.append(('monitor-wait', timeout))
+            if wait_fails:
+                raise subprocess.TimeoutExpired('systemd-run', timeout)
+            return -9
+    def unavailable(unit):
+        raise PermissionError()
+    monkeypatch.setattr(task.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(task.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(task, 'control_unit', lambda unit, operation: events.append((unit, operation)))
+    monkeypatch.setattr(task, 'unit_inactive', unavailable)
+    assert task.cancel_submission(UNIT, Monitor(), cancellation, timeout=1) == 75
+    assert events == [(UNIT, 'stop'), (UNIT, 'kill'), 'monitor-kill', ('monitor-wait', 5)]
+    assert 'could not confirm whole-unit shutdown' in capsys.readouterr().err
+
+
+def test_unconfirmed_shutdown_does_not_kill_an_already_finished_monitor(monkeypatch):
+    clock = [100.0]
+    cancellation = task.LaunchCancellation()
+    cancellation.signum = signal.SIGTERM
+    class Monitor:
+        def poll(self): return 1
+        def kill(self): pytest.fail('finished monitor must not be killed')
+        def wait(self, timeout): pytest.fail('poll already reaped finished monitor')
+    monkeypatch.setattr(task.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(task.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(task, 'control_unit', lambda *args: None)
+    monkeypatch.setattr(task, 'unit_inactive', lambda unit: False)
+    assert task.cancel_submission(UNIT, Monitor(), cancellation, timeout=1) == 75
+
+
 def test_whole_unit_shutdown_requires_empty_cgroup_and_zero_mainpid(monkeypatch):
     import pi_shared_queue_store as store
     details = {'Id': UNIT, 'ActiveState': 'inactive', 'MainPID': '0', 'ControlGroup': ''}

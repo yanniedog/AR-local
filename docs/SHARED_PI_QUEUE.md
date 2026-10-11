@@ -63,8 +63,12 @@ operator-authorized tools for privileged maintenance; the queue does not grant
 privileges or turn writable request metadata into root commands.
 
 Execution budgets start at admission. A job retaining escaped descendants at
-its deadline receives whole-cgroup termination and returns failure (124), even
-if its original child already exited successfully. Priority never interrupts
+its deadline receives whole-cgroup termination and returns failure, even
+if its original child already exited successfully. The wrapper returns 124 when
+it survives deadline teardown. A stubborn descendant requiring whole-unit
+SIGKILL also kills the wrapper; callers receive the actual nonzero systemd
+failure status instead. The pre-escalation log identifies the timeout, and
+claims remain held until whole-unit termination is proven. Priority never interrupts
 an active transaction; deadlines bound how long another project can occupy it.
 
 The launcher sets CPU and I/O priorities, whole-process-tree termination, finite

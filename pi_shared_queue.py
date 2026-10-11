@@ -138,13 +138,15 @@ def enforce_cgroup_deadline(store, job, deadline, stop_started, cancelled=None):
     if stop_started is None and now < deadline and not requested:
         return stop_started
     if stop_started is None and cancelled is not None:
-        cancelled.stop_reason = 'operator' if requested else 'deadline'
+        cancelled.stop_reason = 'deadline' if now >= deadline else 'operator'
     signum = 'SIGTERM' if stop_started is None else 'SIGKILL' if now - stop_started >= 30 else None
     if signum is None:
         return stop_started
     try:
+        # SIGKILL includes this MainPID; publish its cause before escalation.
+        reason = getattr(cancelled, 'stop_reason', 'deadline') if cancelled else 'deadline'
+        log(job, 'execution-' + reason + '-cgroup-' + signum.lower())
         store.supervisor.terminate(job, signum)
-        log(job, 'execution-cgroup-' + signum.lower())
     except (OSError, ValueError, subprocess.SubprocessError):
         log(job, 'execution-cgroup-termination-unavailable')
     # Failure keeps all claims and the manual native hold. The independently

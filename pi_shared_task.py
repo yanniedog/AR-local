@@ -142,6 +142,17 @@ def cancel_submission(unit, monitor, cancellation, timeout=90):
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
         time.sleep(.25)
+    # This is only the local submission monitor, not the supervised job. Leave
+    # queue/native ownership intact when whole-unit termination is uncertain.
+    if monitor.poll() is None:
+        try:
+            monitor.kill()
+        except OSError:
+            pass
+        try:
+            monitor.wait(timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            pass
     print('Shared task cancellation could not confirm whole-unit shutdown', file=sys.stderr)
     return 75
 
