@@ -8,7 +8,7 @@ payments exist, every authenticated user gets the `full` tier
 
 ## Owner deploy runbook (one-time)
 
-Prereqs: the existing Firebase project (the one behind the real
+Prereqs: Node.js 22 (required by firebase-admin 14), the existing Firebase project (the one behind the real
 `google-services.json`), upgraded to the Blaze plan; Firestore enabled;
 `npm i -g firebase-tools` and `firebase login`.
 
@@ -17,7 +17,7 @@ cd firebase
 firebase use <project-id>
 # Same key the Pi uses (deploy/pi/install-payload-enc-key.sh):
 firebase functions:secrets:set PAYLOAD_KEY_FULL   # paste the 64-hex key
-cd functions && npm install && npm test && cd ..
+cd functions && npm ci && npm test && cd ..
 firebase deploy --only functions
 ```
 
