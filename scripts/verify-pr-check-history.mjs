@@ -27,3 +27,5 @@ assert.deepEqual(selectNamedCheckHistory([newer, { name: 'advisory' }, { name: '
 assert.deepEqual(selectNamedCheckHistory([{ ...newer, name: 'workflow / bot-feedback-gate' }], ['bot-feedback-gate']).checks.length, 1);
 
 assert.match(selectNamedCheckHistory([null], ['bot-feedback-gate']).error, /no name/);
+
+assert.match(readCheckResult({ status: 0, stdout: '[null]' }).error, /observation has no name/);

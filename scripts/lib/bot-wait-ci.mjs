@@ -15,3 +15,12 @@ export function applyReviewerPolicy(state, currentKeys) {
   }
   return keys;
 }
+
+/** Self-gates are downstream of review synthesis and cannot gate bot wait itself. */
+export function reviewWaitIgnoredChecks(raw = '') {
+  return new Set([
+    'bot-presence-gate', 'bot-feedback-gate', 'pr-bot-presence-gate',
+    'pr-bot-feedback-check', 'pr-gates-advisory',
+    ...String(raw).split(',').map((name) => name.trim().toLowerCase()).filter(Boolean),
+  ]);
+}

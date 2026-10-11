@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { fetchRequiredCi } from './scripts/lib/pr-gates-lib.mjs';
-import { requiredCiWaitResult, applyReviewerPolicy } from './scripts/lib/bot-wait-ci.mjs';
+import { requiredCiWaitResult, applyReviewerPolicy, reviewWaitIgnoredChecks } from './scripts/lib/bot-wait-ci.mjs';
 /**
  * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
  * Reviewers are advisory by default: exit 0 means required CI has settled.
@@ -179,21 +179,8 @@ function fetchBotActivity(owner, name, prNumber) {
   return { events };
 }
 
-const DEFAULT_IGNORED_CHECK_NAMES = [
-  'bot-presence-gate',
-  'bot-feedback-gate',
-  'pr-bot-presence-gate',
-  'pr-bot-feedback-check',
-  'pr-gates-advisory',
-];
-
 function ignoredCheckNames() {
-  const raw = process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '';
-  const fromEnv = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...fromEnv]);
+  return reviewWaitIgnoredChecks(process.env.BOT_WAIT_IGNORE_CHECK_NAMES);
 }
 
 /** Match full `gh pr checks` name or trailing job segment (e.g. `workflow / job`). */
@@ -271,7 +258,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
   if (requiredKeys.length === 0) {
-    return requiredCiWaitResult(fetchRequiredCi(prNumber, { ignoredNames: (process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '').split(',').map((name) => name.trim()).filter(Boolean) }));
+    return requiredCiWaitResult(fetchRequiredCi(prNumber, { ignoredNames: [...ignoredCheckNames()] }));
   }
 
   const knownBots = allKnownBotLogins(requiredKeys);
@@ -440,20 +427,20 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
 function printHelp(requiredKeys) {
   console.log(`Usage: npm run wait-for-bots -- [options]
 
-Poll GitHub until every required bot has posted or reacted with thumbs-up since the wait anchor and activity is quiet.
+Check required product CI. Reviewers are advisory by default; explicit reviewer opt-in also requires activity since the anchor and a quiet window.
 
 Options:
   --pr <n>              Pull request number (default: open PR for current branch)
   --watch, -w           Poll every ${POLL_INTERVAL_SEC}s until ready or cap
   --bot-tag             Reset wait anchor to now (after @mentioning bots)
   --since <iso>         Anchor wait window to timestamp (ISO 8601)
-  --require-bots <list> Comma-separated required keys (default: gemini,codex,sourcery)
+  --require-bots <list> Comma-separated required keys (default: off)
   --help, -h            Show this help
 
 Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap (DO NOT MERGE)
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
-     AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
+     AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys or off
      AR_BOT_WAIT_STATE_DIR — per-PR anchor JSON dir (absolute or repo-relative; default: <repo>/.ar-bot-wait)
      BOT_WAIT_IGNORE_CHECK_NAMES — comma-separated gh pr checks names to ignore (CI self-gate)
 

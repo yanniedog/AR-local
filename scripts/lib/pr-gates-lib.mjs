@@ -103,8 +103,8 @@ export function resolvePrNumber(prArg) {
   return { pr: view, branch };
 }
 
-export function fetchRequiredCi(prNumber, { ignoredNames = [] } = {}) {
-  const r = spawnSync(
+export function fetchRequiredCi(prNumber, { ignoredNames = [], ghRunner = spawnSync } = {}) {
+  const r = ghRunner(
     'gh',
     ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state,startedAt,completedAt,workflow,link'],
     { encoding: 'utf8' },
@@ -195,11 +195,11 @@ export function gateCiRequired(prNumber) {
   return { id: 'ci-required', pass: true, detail: 'All required checks passed' };
 }
 
-export function gateGithubBotChecks(prNumber) {
-  const names = resolveRequiredKeys().length
+export function gateGithubBotChecks(prNumber, { fetchChecks = fetchNamedChecks, requiredKeys = resolveRequiredKeys() } = {}) {
+  const names = requiredKeys.length
     ? ['bot-presence-gate', ...BOT_GATE_CHECK_NAMES]
     : BOT_GATE_CHECK_NAMES;
-  const { found, error, skipped } = fetchNamedChecks(prNumber, names);
+  const { found, error, skipped } = fetchChecks(prNumber, names);
   if (error) {
     return {
       id: 'github-bot-gates',
