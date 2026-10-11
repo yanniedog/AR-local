@@ -105,14 +105,13 @@ properties and run the network script with `--dry-run`. Timer activation and
 reboot require separate operator authorization and the recovery runbook gates.
 
 Do not rerun `install-power-resilience.sh` merely to update the watchdog. It
-changes host configuration and installs a legacy shell entry point that always
-fails closed without the guarded override. Its standalone path skips activation
-but does not stop a timer enabled by an earlier installation. On such a host,
-install the complete guarded script, rendered override and validated sudoers
-rule before replacing the old handler; otherwise existing timer ticks will fail.
-The full `install-pi-systemd.sh` path installs these prerequisites before its
-power-resilience activation step. Any full installer run or reboot is a separate
-controlled host-maintenance operation.
+changes host configuration. Its reviewed standalone path installs the guarded
+script, rendered non-root override and validated exact-interface sudoers rule
+without starting or enabling a timer. Preserve and read back any already-enabled
+timer: installation alone does not stop it. The full `install-pi-systemd.sh`
+path installs these prerequisites before its existing activation steps. Any
+full installer run, schedule activation or reboot is a separate controlled
+host-maintenance operation.
 
 ---
 

@@ -174,47 +174,12 @@ else
   log "default target already multi-user.target"
 fi
 
-# --- 8. Guarded network watchdog: preserve shared-host and ingest access ----
-# The reviewed non-root override may reconnect one verified Wi-Fi interface;
-# the legacy fallback cannot reset NetworkManager or switch arbitrary profiles.
-cat > /usr/local/sbin/ar-local-net-watchdog.sh <<'WD'
-#!/usr/bin/env sh
-# Recovery is supplied only by the reviewed non-root shared-host override.
-# A missing override must fail closed rather than reset the whole host network.
-echo "Guarded network watchdog override is required" >&2
-exit 1
-WD
-chmod +x /usr/local/sbin/ar-local-net-watchdog.sh
-cat > /etc/systemd/system/ar-local-net-watchdog.service <<'WS'
-[Unit]
-Description=AR-local network self-heal (re-establish wifi if gateway unreachable)
-After=NetworkManager.service
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/ar-local-net-watchdog.sh
-WS
-cat > /etc/systemd/system/ar-local-net-watchdog.timer <<'WT'
-[Unit]
-Description=Run AR-local network self-heal every 3 minutes
-[Timer]
-OnBootSec=3min
-OnUnitActiveSec=3min
-Persistent=true
-[Install]
-WantedBy=timers.target
-WT
-systemctl daemon-reload
-if [ "${AR_LOCAL_GUARDED_NETWORK_INSTALLED:-0}" = 1 ] \
-    && [ -f /usr/local/lib/ar-local-shared-host/pi_shared_network_watchdog.py ] \
-    && [ -f /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf ] \
-    && [ -f /etc/sudoers.d/ar-local-network-watchdog ] \
-    && /usr/sbin/visudo -cf /etc/sudoers.d/ar-local-network-watchdog >/dev/null 2>&1 \
-    && ! grep -q '{{' /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf; then
-  systemctl enable --now ar-local-net-watchdog.timer 2>/dev/null \
-    && log "guarded net-watchdog timer enabled (every 3 min)" \
-    || log "WARN: could not enable guarded net-watchdog timer"
-else
-  log "network timer activation skipped: install rendered shared-host override first"
-fi
+# --- 8. Install guarded interface recovery without enabling a timer ---------
+# The old generated shell watchdog restarted NetworkManager globally. Install
+# the reviewed protected Python closure and rendered override before reload.
+repo_dir="${1:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}"
+data_dir="${2:-/srv/ar-local/data}"
+sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir" "${AR_LOCAL_USER:-${SUDO_USER:-}}" "${AR_LOCAL_GROUP:-}"
+log "guarded net-watchdog installed; timer activation requires operator approval"
 
 log "done. cmdline.txt / config.txt changes require a reboot to take effect."

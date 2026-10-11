@@ -453,3 +453,20 @@ def test_native_network_lease_preserves_dangling_symlink(tmp_path, native_boot_i
         assert acquired is False
     assert path.is_symlink()
     assert not target.exists()
+
+
+def test_occupied_queue_defers_before_native_lease_or_reconnect(tmp_path):
+    state = tmp_path / 'state.json'
+    state.write_text(json.dumps({'gateway': '192.168.1.1', 'interface': 'wlan0', 'failures': 2}))
+    calls = []
+    @contextmanager
+    def occupied():
+        raise RuntimeError('shared queue occupied or ownership unavailable')
+        yield
+    with patch.object(network, 'command', side_effect=eligible_commands(calls)), \
+            patch.object(network, 'queue_guard', occupied), \
+            patch.object(network, 'native_network_lease') as lease:
+        with pytest.raises(RuntimeError, match='shared queue occupied'):
+            network.recover(state, tmp_path)
+    lease.assert_not_called()
+    assert network_mutations(calls) == []

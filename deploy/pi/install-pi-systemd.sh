@@ -87,11 +87,7 @@ render_unit "$repo_dir/deploy/pi/ar-local-runtime-health.service" "$tmp_dir/ar-l
 render_unit "$repo_dir/deploy/pi/ar-local-capacity-monitor.service" "$tmp_dir/ar-local-capacity-monitor.service"
 render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-now.service" "$tmp_dir/ar-local-ingest-now.service"
-sudo sh "$repo_dir/deploy/pi/install-network-watchdog-sudoers.sh" "$run_user"
-render_unit "$repo_dir/deploy/pi/shared-host-network.conf" "$tmp_dir/shared-host-network.conf"
-sudo install -d -m 0755 /usr/local/lib/ar-local-shared-host /etc/systemd/system/ar-local-net-watchdog.service.d
-sudo install -m 0644 "$repo_dir/pi_shared_network_watchdog.py" /usr/local/lib/ar-local-shared-host/pi_shared_network_watchdog.py
-sudo install -m 0644 "$tmp_dir/shared-host-network.conf" /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf
+sudo sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir" "$run_user" "$run_group"
 
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
@@ -123,7 +119,7 @@ sudo systemctl enable --now ar-local-capacity-monitor.timer
 # Power-loss hardening: fsck auto-repair, a dormant BCM watchdog device,
 # tailscaled auto-start, and bounded persistent journald. Boot firmware edits
 # apply on the next reboot; systemd's runtime watchdog stays deliberately off.
-sudo env AR_LOCAL_GUARDED_NETWORK_INSTALLED=1 sh "$repo_dir/deploy/pi/install-power-resilience.sh" || echo "WARN: power-resilience hardening reported an error; review output above."
+sudo env AR_LOCAL_USER="$run_user" AR_LOCAL_GROUP="$run_group" sh "$repo_dir/deploy/pi/install-power-resilience.sh" "$repo_dir" "$data_dir" || echo "WARN: power-resilience hardening reported an error; review output above."
 if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
   sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir" "$run_group"
 fi

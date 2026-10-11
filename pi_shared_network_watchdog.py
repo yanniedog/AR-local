@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import stat
 import time
 import uuid
 from contextlib import contextmanager
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 COMMAND_DEADLINE = None
 RECOVERY_BUDGET_SECONDS = 120
+QUEUE_ROOT = Path('/var/lib/shared-pi-queue')
 BOOT_ID_PATH = Path('/proc/sys/kernel/random/boot_id')
 
 
@@ -116,6 +118,38 @@ def recovery_window_blocked(now=None) -> bool:
     return local + timedelta(seconds=RECOVERY_BUDGET_SECONDS) >= start
 
 
+@contextmanager
+def queue_guard():
+    """Observe cooperative queue state without importing producer code."""
+    if not QUEUE_ROOT.exists() and not QUEUE_ROOT.is_symlink():
+        yield
+        return
+    import fcntl
+    root = QUEUE_ROOT.lstat()
+    if not stat.S_ISDIR(root.st_mode) or stat.S_IMODE(root.st_mode) != 0o700:
+        raise RuntimeError('unsafe shared queue root')
+    fd = os.open(QUEUE_ROOT / 'queue.lock', os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != root.st_uid or info.st_nlink != 1:
+            raise RuntimeError('unsafe shared queue lock')
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        state_fd = os.open(QUEUE_ROOT / 'state.json', os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(state_fd, 'rb') as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != root.st_uid
+                    or info.st_nlink != 1 or info.st_size > 4 * 1024 * 1024):
+                raise RuntimeError('unsafe shared queue state')
+            state = json.loads(handle.read(4 * 1024 * 1024 + 1))
+        if (not isinstance(state, dict) or set(state) != {'version', 'next_sequence', 'jobs'}
+                or state['version'] != 1 or type(state['next_sequence']) is not int
+                or not isinstance(state['jobs'], list) or state['jobs']):
+            raise RuntimeError('shared queue occupied or ownership unavailable')
+        yield
+    finally:
+        os.close(fd)
+
+
 def default_route():
     result = command(['ip', '-j', 'route', 'show', 'default'])
     if result.returncode:
@@ -181,7 +215,7 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
         raise RuntimeError('network recovery must run as the non-root service user')
     if recovery_window_blocked():
         return 'recovery deferred: protected ingest window'
-    with native_network_lease(data / 'state/daily-ingest.lock') as acquired:
+    with queue_guard(), native_network_lease(data / 'state/daily-ingest.lock') as acquired:
         if not acquired:
             return 'recovery deferred: production lease occupied'
         units = command(['systemctl', 'is-active', 'ar-local-daily.service',

@@ -35,7 +35,8 @@ for future invocations or cross the protected operating window.
 The network watchdog checks the local gateway, not public internet ping servers.
 After three consecutive failed checks for the same route, it may request a
 connection on that one verified Wi-Fi interface. It defers for remote SSH/login
-sessions, active ingest, an occupied production lease, ambiguous routes or
+sessions (including OpenSSH session processes and Tailscale SSH be-child
+workers), the protected quiet window, active ingest, an occupied production lease, ambiguous routes or
 unavailable evidence. It never restarts NetworkManager or other interfaces.
 NetworkManager's existing autoconnect remains responsible for absent routes.
 Recovery is excluded from 00:30 through 02:00 Hobart and from the preceding
@@ -55,9 +56,16 @@ The only privileged action is the validated interface's static
 command budget fits within the 150-second service deadline; command failures
 and aborted checks exit nonzero, while ordinary coordination deferrals succeed.
 
-For an existing host, install the reviewed standalone network script under
-`/usr/local/lib/ar-local-shared-host/`. Install `shared-host-network.conf` as
-`ar-local-net-watchdog.service.d/97-shared-host.conf`, `shared-host-health.conf`
+For an existing host, preserve the old files, then run the reviewed
+`deploy/pi/install-shared-network-watchdog.sh <exact-tested-repo> <verified-data-root> USER GROUP`
+as root, selecting the existing non-root producer account. It installs the
+standalone script under root-owned `/usr/local/lib/ar-local-shared-host/`,
+validates exact-interface sudoers permissions, renders the account and data
+root, replaces the legacy global-restart definition and reloads systemd. The
+isolated Python entrypoint never imports a user-writable repository. It does not
+start, enable or restart any timer. Scheduled work using the updated lock helper
+waits up to 120 seconds for an already-running network watchdog rather than losing
+its invocation. Install `shared-host-health.conf`
 for the runtime-health and deploy-watchdog services, and `shared-host-ingest.conf`
 for the daily, daily-watchdog and ingest-now services under `/etc/systemd/system`.
 Preserve the old files before installation. Before activating the non-root
@@ -75,7 +83,7 @@ fails. Run `systemctl daemon-reload` and
 read back effective properties. These steps do not start, enable or restart
 services or timers. Test the network script with `--dry-run` before installing
 the override. Schedule activation remains a separate operator decision.
-Render the network override's `AR_LOCAL_USER`, `AR_LOCAL_GROUP`, `AR_LOCAL_REPO`
+Render the network override's `AR_LOCAL_USER`, `AR_LOCAL_GROUP`
 and `AR_LOCAL_DATA_ROOT` placeholders using the same selected installation
 paths as the producer; do not install the template literally. This supports
 portable roots such as `/mnt/ar-local-ssd` and preserves the correct native
