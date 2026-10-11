@@ -11,6 +11,25 @@ and bounded service runtimes. Existing terms and Drive workers retain their
 separate resource controls. Recovery publishers should use one core, low CPU
 and I/O weights, an explicit memory cap and a maximum runtime.
 
+Check `cgroup.controllers` before claiming an enforced memory cgroup ceiling.
+The small Python checks also have `LimitAS` address-space limits so their
+per-process memory remains bounded when the memory controller is unavailable.
+This is not a hard aggregate RSS limit for process trees, and must not be used
+for Go workers with large virtual reservations. A single-process manual Python
+publisher should also set an address-space limit and verify its actual process
+limits and host reserve. Changing boot memory-controller settings needs a
+separate planned reboot; resource policy installation does not reboot the host.
+
+Some other projects intentionally yield to every active AR-local unit. Resource
+caps alone do not change that admission policy. The mining monitor supports a
+root-issued, expiring permission for an exact publication invocation, with
+supported `ar-local-payload-` or `ar-local-app-payload-` unit names. Independently
+verify the live command, process tree and enforced limits before issuing such a
+permission. It allows existing collectors to use their normal slots; it never
+starts a collector, catches up missed slots or exempts capture. Expiry, reboot
+or a changed invocation restores priority protection. Do not issue permissions
+for future invocations or cross the protected operating window.
+
 The network watchdog checks the local gateway, not public internet ping servers.
 After three consecutive failed checks for the same route, it may request a
 connection on that one verified Wi-Fi interface. It defers for remote SSH/login

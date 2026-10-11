@@ -16,6 +16,7 @@ CPUWeight=10
 IOWeight=10
 MemoryHigh=128M
 MemoryMax=256M
+LimitAS=256M
 TimeoutStartSec=300s
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_PI_VERIFY_LOCAL=1
