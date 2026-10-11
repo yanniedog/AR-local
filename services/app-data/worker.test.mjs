@@ -1,5 +1,6 @@
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import assert from 'node:assert/strict';
 import { MAX_BYTES, PAYLOAD, decodeRelease, handleRequest, releaseRoute } from './worker.mjs';
 
@@ -94,6 +95,40 @@ for (const family of ['bank-rate-history-catalogue', 'bank-rate-history-catalogu
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), content);
   assert.equal((await handleRequest(request(target), env, context,
     async () => new Response(content), null)).status, 502);
+});
+
+for (const legacy of [false, true]) test(`packed gzip receipt survives encrypted service delivery (legacy=${legacy})`, async () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../tests/fixtures/history-dag-v1-interoperability.json', import.meta.url), 'utf8'));
+  const inner = Buffer.from(JSON.stringify(fixture.packed));
+  const receipt = { schema_version: 1, run_date: '2026-09-19', core_sha256: '1'.repeat(64), catalogue: {
+    sha256: hex(await crypto.subtle.digest('SHA-256', inner)), bytes: inner.length,
+    gzip_base64: gzipSync(inner).toString('base64'),
+  } };
+  const compressed = gzipSync(Buffer.from(JSON.stringify(receipt)));
+  // New uploads use ARE2 directly. ARE1 coverage verifies the existing frozen
+  // migration path, which must preserve its ciphertext digest before decoding.
+  const domain = legacy ? Buffer.from(await envelope(compressed, true)) : compressed;
+  const sourceHash = hex(await crypto.subtle.digest('SHA-256', domain));
+  const target = url.replace('core-2026-09-19-123456789abc.json.gz',
+    `bank-rate-history-catalogue-packed-2026-09-19-${sourceHash.slice(0, 12)}.json.gz${legacy ? '.enc' : ''}`);
+  const source = await envelope(domain);
+  const origin = async () => new Response(source);
+  const response = await handleRequest(request(target), env, context, origin, null);
+  assert.equal(response.status, 200);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), domain);
+  assert.equal(response.headers.get('etag'), `"${sourceHash}"`);
+  const delivered = legacy ? await handleRequest(new Request(target, { headers: { 'X-AR-Legacy-SHA256': sourceHash } }), env, context, origin, null)
+    : await handleRequest(request(target), env, context, origin, null);
+  assert.equal(delivered.status, 200);
+  const verified = JSON.parse(gunzipSync(Buffer.from(await delivered.arrayBuffer())));
+  assert.deepEqual(verified, receipt);
+  const unpackedBytes = gunzipSync(Buffer.from(verified.catalogue.gzip_base64, 'base64'));
+  assert.equal(unpackedBytes.length, verified.catalogue.bytes);
+  assert.equal(hex(await crypto.subtle.digest('SHA-256', unpackedBytes)), verified.catalogue.sha256);
+  assert.deepEqual(JSON.parse(unpackedBytes), fixture.packed);
+  const tampered = source.slice(); tampered[tampered.length - 1] ^= 1;
+  assert.equal((await handleRequest(request(target), env, context, async () => new Response(tampered), null)).status, 502);
+  if (legacy) assert.equal((await handleRequest(new Request(target, { headers: { 'X-AR-Legacy-SHA256': '0'.repeat(64) } }), env, context, origin, null)).status, 502);
 });
 for (const path of ['/v1/release/app-payload-latest/../key.json', '/v1/release/other/key.json',
   '/v1/release/app-payload-latest/source.zip', '/v1/release/app-payload-latest/a%2Fb.json',

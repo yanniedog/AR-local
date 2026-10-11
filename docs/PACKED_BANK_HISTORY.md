@@ -47,3 +47,33 @@ The producer tests also use retained real CDR observations. Before runtime
 activation, test the complete cold application decode/validate/install path on
 the intended device against the few-second processing requirement. Compressed
 size and desktop codec timing alone do not establish that acceptance result.
+
+## Runtime activation order
+
+Code merge alone does not activate this capability. Follow the controlled Pi
+recovery runbook and latest chronological handoff, preserving the pinned runtime,
+Drive write hold and current ownership until the guarded transition is approved.
+The runbook's production-environment approval requirement is at
+`PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`, Phase B, together with the immutable main
+candidate and canary evidence requirements.
+
+1. Deploy the reviewed automatic delivery service allowlist from
+   `services/app-data/` and verify authenticated packed-asset routing and exact
+   gzip bytes. Its explicit filename allowlist otherwise rejects the new family.
+   Service deployment is separate from Pi deployment and requires the privately
+   held hosting token; retain its prior version for rollback.
+2. Validate the exact merged producer candidate, including updated consumer app
+   proof for both asset inventories. Admit the controlled Pi transition through
+   the shared task queue and production lease, respecting current resource,
+   quiet-window, canary, approval and rollback gates. Then activate that exact
+   candidate, not a moving branch.
+3. Build and publish a new immutable revision from verified existing source
+   observations. Preserve historical releases, upload assets before the manifest,
+   and authenticate public service readback of both descriptors, envelope/core
+   binding, bytes and hashes, selected manifest and rolling index.
+4. Measure cold and cached native application processing, including validation and
+   installation, against the few-second requirement. Record native and subsequent
+   natural-cycle evidence separately from code, service and publication checks.
+
+This activation does not create, enable, resume or start scheduled tasks and does
+not resume Drive writes. Missing runtime evidence remains pending.
