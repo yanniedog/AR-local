@@ -203,7 +203,8 @@ def test_tailscale_ssh_or_unknown_preferences_defer_without_pty(prefs):
     assert network_mutations(calls) == []
 
 
-@pytest.mark.parametrize('processes', ['sshd sshd: pi@notty', 'sshd sshd: pi@pts/1'])
+@pytest.mark.parametrize('processes', ['sshd sshd: pi@notty', 'sshd sshd: pi@pts/1',
+                                       'tailscaled /usr/sbin/tailscaled be-child ssh --uid=1000'])
 def test_nonstandard_port_or_noninteractive_sshd_session_is_detected(processes):
     def run(args, **kwargs):
         return result('{"RunSSH":false}' if args[0] == 'tailscale'

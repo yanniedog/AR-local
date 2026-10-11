@@ -97,8 +97,10 @@ def remote_sessions_active() -> bool:
     # visible in ss/who. Enabled or unknown SSH cannot prove session idleness.
     if not isinstance(settings, dict) or settings.get('RunSSH') is not False:
         return True
-    remote_process = any(re.match(r'^\s*sshd\S*\s+sshd(?:-[A-Za-z0-9_-]+)?:', line)
-                         for line in processes.stdout.splitlines())
+    remote_process = any(
+        re.match(r'^\s*sshd\S*\s+sshd(?:-[A-Za-z0-9_-]+)?:', line)
+        or (line.split() and line.split()[0].startswith('tailscaled') and 'be-child' in line.split())
+        for line in processes.stdout.splitlines())
     remote_login = any(not re.fullmatch(r':\d+(?:\.\d+)?', host)
                        for host in re.findall(r'\(([^)]+)\)', users.stdout))
     return ssh.returncode != 0 or users.returncode != 0 or bool(ssh.stdout.strip()) or remote_login or remote_process
