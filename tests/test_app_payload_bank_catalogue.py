@@ -134,3 +134,14 @@ def test_private_prepack_rejects_corrupt_bound_inputs(tmp_path, observations, fa
     with pytest.raises(ValueError, match="differs"):
         prepack(root, tmp_path / "derived", index_sha256=index_sha)
     assert not (tmp_path / "derived").exists()
+
+
+def test_private_prepack_reports_the_actual_optional_budget(tmp_path, observations, monkeypatch):
+    import app_payload_history_packed as codec
+    root, index_sha = public_cache(tmp_path, observations)
+    monkeypatch.setattr(codec, "MAX_NODES", 1)
+    report = prepack(root, tmp_path / "derived", index_sha256=index_sha)
+    assert report["packed_history"] == {
+        "status": "OMITTED", "reason": "Historical dictionary node budget exceeded"}
+    assert (tmp_path / "derived" / "bank_rate_history_catalogue.json.gz").is_file()
+    assert not (tmp_path / "derived" / "bank_rate_history_catalogue_packed.json.gz").exists()

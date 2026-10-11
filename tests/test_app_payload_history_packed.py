@@ -74,7 +74,7 @@ def test_packed_envelope_rejects_wrong_authority_or_corruption(tmp_path, fault):
         decode_envelope(gzip.compress(canonical(value), mtime=0), run_date=manifest["run_date"], core_sha256=manifest["files"]["core"]["sha256"])
 
 
-@pytest.mark.parametrize("nodes", [[[0, "A"]], [0, [0, "gA"]], [0, [0, "g"]], [[0, ""], [1, 0, "A"]], [float("nan")]])
+@pytest.mark.parametrize("nodes", [[[0, "A"]], [0, [0, "gA"]], [0, [0, "g"]], [[0, ""], [1, 0, "A"]], [float("nan")], [10 ** 400]])
 def test_malformed_dictionary_cannot_expand(nodes):
     with pytest.raises(ValueError):
         unpack({"format": "ar-history-dag-v1", "root": len(nodes) - 1, "nodes": nodes})

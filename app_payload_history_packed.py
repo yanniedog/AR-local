@@ -78,7 +78,7 @@ def _decode_references(encoded, limit):
         part = ALPHABET.find(character)
         if part < 0 or shift > 15:
             raise ValueError("Historical dictionary reference is invalid")
-        ref += (part & 31) * (2 ** shift)
+        ref += (part & 31) << shift
         if part & 32:
             shift += 5
             continue
@@ -128,8 +128,13 @@ def unpack(packed):
             if keys is not None and len(keys) != len(children):
                 raise ValueError("Historical dictionary shape length differs")
             decoded = children if keys is None else dict(zip(keys, children))
-        elif node is not None and (type(node) not in (bool, int, float) or not math.isfinite(node)):
-            raise ValueError("Historical dictionary primitive is invalid")
+        elif node is not None:
+            try:
+                finite = type(node) in (bool, int, float) and math.isfinite(node)
+            except OverflowError:
+                finite = False
+            if not finite:
+                raise ValueError("Historical dictionary primitive is invalid")
         if characters > MAX_CHARACTERS or size > MAX_EXPANSION:
             raise PackedBudgetError("Historical dictionary character budget exceeded")
         values.append(decoded)

@@ -79,7 +79,7 @@ def add_packed_asset(manifest, catalogue, out_dir, release_base, enc_key, write_
     # Legacy encryption contributes framing bytes; inspect the exact new asset
     # before adoption. Unreferenced staging files are pruned by normal packaging.
     entry = write_asset(out_dir, ASSET_KIND, manifest["run_date"], wire, release_base, enc_key)
-    if sum(entry["bytes"] for _, entry in iter_payload_assets(manifest)) + entry["bytes"] > ROLLING_TOTAL_MAX_BYTES:
+    if sum(asset["bytes"] for _, asset in iter_payload_assets(manifest)) + entry["bytes"] > ROLLING_TOTAL_MAX_BYTES:
         print("[app_payload] optional packed history omitted: combined transfer budget exceeded")
         return
     manifest[NAMESPACE] = {"schema_version": 1, "file": {key: value for key, value in entry.items() if key != "url"}}
