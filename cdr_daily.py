@@ -46,6 +46,7 @@ from cdr_same_day_reuse import (
 )
 from cdr_terms.ingest import capture_if_configured, retry_capture_if_configured
 from cdr_ram_capture_cleanup import cleanup_captured_ram_stage, seal_ram_capture_stage
+from cdr_capture_stage_capacity import select_capture_stage
 
 
 def local_date() -> str:
@@ -384,6 +385,8 @@ def run_once(args: argparse.Namespace) -> int:
     automatic_pi_stage = is_raspberry_pi() and not args.no_ram_stage
     persistent_output_stage = automatic_pi_stage and not args.ram_stage
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
+    if persistent_output_stage:
+        args.ram_root = select_capture_stage(args.ram_root, persistent_runs_root, date)
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
     try:
