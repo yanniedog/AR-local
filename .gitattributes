@@ -59,3 +59,8 @@ contracts/product_terms/structured-review-v1.json -text whitespace=cr-at-eol
 contracts/product_terms/savings-activity-v4/** -text whitespace=cr-at-eol
 tests/fixtures/activity-v4/** -text whitespace=cr-at-eol
 tests/fixtures/activity-v4/blobs/** -diff
+
+# Exact standalone semantic compiler and interop fixture are receipt-bound bytes.
+contracts/history_ready/compiler.cjs -text
+contracts/history_ready/compiler-manifest.json -text
+tests/fixtures/history-ready-real.json -text
