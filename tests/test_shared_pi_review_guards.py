@@ -173,3 +173,49 @@ def test_standard_installer_cannot_restore_legacy_global_network_recovery():
     assert '--now' not in protected and 'systemctl enable' not in protected
     assert ' -I -S ' in service and 'AR_LOCAL_REPO=' not in service
     assert '{{AR_LOCAL_DATA_ROOT}}' in service and 'TimeoutStartSec=120s' in service
+
+
+@pytest.mark.parametrize('sequence', [-1, 2**63, True])
+def test_network_guard_rejects_invalid_sequence_metadata(tmp_path, monkeypatch, sequence):
+    root = tmp_path / 'queue'
+    root.mkdir(mode=0o700)
+    (root / 'queue.lock').touch()
+    state = root / 'state.json'
+    state.write_text(json.dumps({'version': 1, 'next_sequence': sequence, 'jobs': []}))
+    monkeypatch.setattr(network, 'QUEUE_ROOT', root)
+    with pytest.raises(RuntimeError, match='ownership unavailable'):
+        with network.queue_guard():
+            pytest.fail('invalid queue admitted')
+
+
+def test_root_watchdog_never_follows_stale_recovery_symlink(tmp_path):
+    path = tmp_path / 'daily-ingest.lock'
+    path.write_text('pid=99999999\nrole=daily-ingest\n')
+    protected = tmp_path / 'protected'
+    protected.write_bytes(b'')
+    path.with_name('.daily-ingest.lock.recovery-lock').symlink_to(protected)
+    before = path.read_bytes()
+    with pytest.raises(FileExistsError):
+        with network.watchdog_operation_lock(path, 'network-watchdog'):
+            pytest.fail('existing owner overwritten')
+    assert path.read_bytes() == before
+    assert protected.read_bytes() == b''
+
+
+def test_root_watchdog_pins_directory_and_rejects_symlink_components(tmp_path):
+    actual = tmp_path / 'actual'
+    actual.mkdir()
+    linked = tmp_path / 'linked'
+    linked.symlink_to(actual, target_is_directory=True)
+    with pytest.raises(OSError):
+        with network.watchdog_operation_lock(linked / 'daily-ingest.lock', 'network-watchdog'):
+            pytest.fail('symlink directory admitted')
+    assert not list(actual.iterdir())
+    with network.watchdog_operation_lock(actual / 'daily-ingest.lock', 'network-watchdog'):
+        moved = tmp_path / 'moved'
+        actual.rename(moved)
+        actual.mkdir()
+        replacement = actual / 'daily-ingest.lock'
+        replacement.write_text('another owner')
+    assert replacement.read_text() == 'another owner'
+    assert not (moved / 'daily-ingest.lock').exists()

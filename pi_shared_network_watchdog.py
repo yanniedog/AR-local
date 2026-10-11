@@ -49,8 +49,8 @@ def quiet_window(now=None) -> bool:
 
 
 def production_lock_factory():
-    # Never execute a module from AR_LOCAL_REPO as root. Verify the full
-    # standard-library-only closure and its protected ancestors before import.
+    # Validate the protected installation. Root uses its own no-follow guard
+    # and never invokes generic stale recovery in the operator's data tree.
     for path in [*reversed(TRUSTED_ROOT.parents), TRUSTED_ROOT,
                  *(TRUSTED_ROOT / (name + '.py') for name in LOCK_MODULES)]:
         info = path.lstat()
@@ -61,9 +61,44 @@ def production_lock_factory():
         loaded = sys.modules.get(name)
         if loaded is not None and Path(loaded.__file__) != TRUSTED_ROOT / (name + '.py'):
             raise RuntimeError('network lock module already loaded from an untrusted location')
-    sys.path.insert(0, str(TRUSTED_ROOT))
-    from ar_local_operation_lock import production_lock
-    return production_lock
+    return watchdog_operation_lock
+
+
+@contextmanager
+def watchdog_operation_lock(path: Path, role: str):
+    """Root never resolves a user-controlled auxiliary recovery-lock path."""
+    if role != 'network-watchdog' or not path.is_absolute() or '..' in path.parts:
+        raise RuntimeError('unsafe watchdog operation lock')
+    directory = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    descriptor = None
+    try:
+        # Pin every component without following symlinks. All later operations
+        # use the final directory descriptor, even if a parent is renamed.
+        for component in path.parent.parts[1:]:
+            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        descriptor = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o644, dir_fd=directory)
+        os.fchmod(descriptor, 0o644)
+        with os.fdopen(os.dup(descriptor), 'wb') as stream:
+            stream.write(f'pid={os.getpid()}\nrole=network-watchdog\n'.encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(directory)
+        yield
+    finally:
+        if descriptor is not None:
+            owned = os.fstat(descriptor)
+            os.close(descriptor)
+            try:
+                current = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+                    os.unlink(path.name, dir_fd=directory)
+                    os.fsync(directory)
+            except FileNotFoundError:
+                pass
+        os.close(directory)
 
 
 @contextmanager
@@ -91,6 +126,7 @@ def queue_guard():
             state = json.loads(handle.read(4 * 1024 * 1024 + 1))
         if (not isinstance(state, dict) or set(state) != {'version', 'next_sequence', 'jobs'}
                 or state['version'] != 1 or type(state['next_sequence']) is not int
+                or not 0 <= state['next_sequence'] < 2**63
                 or not isinstance(state['jobs'], list) or state['jobs']):
             raise RuntimeError('shared queue occupied or ownership unavailable')
         yield

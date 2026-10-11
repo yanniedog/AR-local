@@ -48,7 +48,11 @@ root, replaces the legacy global-restart definition and reloads systemd. The
 isolated Python entrypoint never imports a user-writable repository. It does not
 start, enable or restart any timer. Scheduled work using the updated lock helper
 waits up to 120 seconds for an already-running network watchdog rather than losing
-its invocation. Install `shared-host-health.conf`
+its invocation, including a brief bounded retry while its owner record is written.
+The root watchdog opens the operation-lock directory without following symlinks
+and keeps that directory pinned through creation and cleanup. It never recovers
+a stale operation lock through user-controlled auxiliary paths; an existing lock
+defers recovery for operator inspection. Install `shared-host-health.conf`
 for the runtime-health and deploy-watchdog services, and `shared-host-ingest.conf`
 for the daily, daily-watchdog and ingest-now services under `/etc/systemd/system`.
 Preserve the old files before installation. Run `systemctl daemon-reload` and

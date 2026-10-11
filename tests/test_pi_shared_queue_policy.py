@@ -235,3 +235,11 @@ def test_dst_transition_keeps_next_quiet_window_at_calendar_0030(date, utc_hours
     assert next_start.hour == 0 and next_start.minute == 30
     assert next_start.date() == start.date() + timedelta(days=1)
     assert (next_start.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds() == utc_hours * 3600
+
+
+@pytest.mark.parametrize('running', [False, True])
+def test_conflicting_promoted_reservations_do_not_consume_multiple_slots(running):
+    ar = [job('ar-' + str(i), i, project='ar-local', age=7200,
+              mode='exclusive', state='running' if running and i == 0 else 'waiting') for i in range(3)]
+    candidate = job('independent', 4, resources=['mining'])
+    assert admission(candidate, [*ar, candidate], NOW) == (True, 'admitted')
