@@ -495,7 +495,7 @@ def _package_payload(
 ) -> Dict[str, Any]:
     """Gzip + write the manifest for one tag's release from precomputed payload data."""
     if payload_crypto.resolve_key_from_env() is not None:
-        raise ValueError("Direct GitHub delivery requires unencrypted domain assets; disable legacy inner ARE1 packaging")
+        raise ValueError("Prepared app delivery requires unencrypted domain assets; disable legacy inner ARE1 packaging")
     return _package(
         data["core"],
         data["details"],
@@ -515,9 +515,8 @@ def _package_payload(
         executable_v2_root=data.get('executable_v2_root'),
         executable_v3_root=data.get('executable_v3_root'),
         executable_v4_root=data.get('executable_v4_root'),
-        # ARE2 remains the encrypted compatibility transport. Direct companions
-        # contain these exact gzip domain bytes, so never add an inner ARE1 layer.
-        direct_delivery=True,
+        # The release uploader applies ARE2; Cloudflare authenticates and opens
+        # that transport before the app receives these exact gzip domain bytes.
     )
 
 

@@ -86,10 +86,12 @@ work. The runbook's Phase B GitHub route requires a configured production
 environment and exact canary evidence. The D-027 local sealed activation route
 is a separate supported path; an absent GitHub environment does not alone block it.
 
-1. Populate and verify the direct GitHub app-data branch before releasing the
-   consumer app, following `DIRECT_APP_DELIVERY.md`. Existing encrypted release
-   namespaces remain available to old clients; new clients require no delivery
-   service deployment. Initial bootstrap preserves the already-published edition.
+1. Deploy and verify the reviewed Cloudflare app-data service with the READY and
+   packed catalogue filename allowlist before publishing those capabilities.
+   Follow `services/app-data/README.md`: retain historical release keys, authenticate
+   canonical ARE2 transport, and return exact gzip domain bytes with CORS and no
+   Content-Encoding. Existing encrypted releases and older clients remain supported.
+   The retained direct GitHub bootstrap is not an active publication dependency.
 2. Validate the exact merged producer candidate, including updated consumer app
    proof for the complete declared asset inventory. Admit the controlled Pi transition through
    the shared task queue and production lease, respecting current resource,
@@ -97,7 +99,7 @@ is a separate supported path; an absent GitHub environment does not alone block 
    candidate, not a moving branch.
 3. Build and publish a new immutable revision from verified existing source
    observations. Preserve historical releases, upload assets before the manifest,
-   and authenticate canonical release and direct GitHub readback, envelope/core
+   and authenticate canonical release and Cloudflare readback, envelope/core
    binding, bytes and hashes, selected manifest and rolling index.
 4. Measure cold and cached native application processing, including validation and
    installation, against the few-second requirement. Record native and subsequent
