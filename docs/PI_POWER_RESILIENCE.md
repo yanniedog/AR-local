@@ -119,13 +119,14 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | **Wi-Fi country (best-effort)** | `raspi-config do_wifi_country AU` | Sets AU for the location; cosmetic on this self-managed driver (regdom comes from the AP). |
 | **Headless boot** | `systemctl set-default multi-user.target` | Boots without waiting on a display/keyboard. |
 | **Ethernet auto + preferred** | NM wired `autoconnect`, `priority=200`, DHCP | Plugging in a cable "just works" and is preferred over Wi-Fi while connected; unplug falls back to Wi-Fi. |
-| **Network self-heal** | `ar-local-net-watchdog.timer` (every 3 min) | If the default gateway is unreachable, restarts NetworkManager + re-ups Wi-Fi (kicks a wedged driver). |
+| **Network self-heal** | Existing `ar-local-net-watchdog.timer` (every 3 min when separately activated) | After three failed gateway checks, the protected watchdog may reconnect the one verified Wi-Fi interface outside remote sessions, occupied work and the ingest quiet window. Installation does not enable a timer. |
 
 > Wi-Fi credentials are **never** stored in this repo — the script only hardens
 > the autoconnect settings of existing NetworkManager profiles. Configured
 > networks (highest priority first): **`Nikipedia`** (100) → **`ASUS_2.4`** (50)
 > → **`Slow`** (10). NetworkManager prefers the highest-priority visible network
-> and `ar-local-net-watchdog.sh` fails over through them in that order. Add or
+> and its existing autoconnect selects profiles in that order. The watchdog never
+> restarts NetworkManager or cycles unrelated profiles. Add or
 > replace a network with:
 > `sudo nmcli connection add type wifi con-name <SSID> ssid <SSID>` then
 > `sudo nmcli connection modify <SSID> wifi-sec.key-mgmt wpa-psk wifi-sec.psk <PSK> connection.autoconnect yes connection.autoconnect-priority <N>`.

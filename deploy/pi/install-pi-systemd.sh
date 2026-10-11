@@ -107,7 +107,7 @@ sudo systemctl enable --now ar-local-capacity-monitor.timer
 # Power-loss hardening: fsck auto-repair, a dormant BCM watchdog device,
 # tailscaled auto-start, and bounded persistent journald. Boot firmware edits
 # apply on the next reboot; systemd's runtime watchdog stays deliberately off.
-sudo sh "$repo_dir/deploy/pi/install-power-resilience.sh" || echo "WARN: power-resilience hardening reported an error; review output above."
+sudo sh "$repo_dir/deploy/pi/install-power-resilience.sh" "$repo_dir" "$data_dir" || echo "WARN: power-resilience hardening reported an error; review output above."
 if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
   sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir" "$run_group"
 fi

@@ -35,13 +35,20 @@ for future invocations or cross the protected operating window.
 The network watchdog checks the local gateway, not public internet ping servers.
 After three consecutive failed checks for the same route, it may request a
 connection on that one verified Wi-Fi interface. It defers for remote SSH/login
-sessions, active ingest, an occupied production lease, ambiguous routes or
+sessions (including OpenSSH session processes and Tailscale SSH be-child
+workers), the protected quiet window, active ingest, an occupied production lease, ambiguous routes or
 unavailable evidence. It never restarts NetworkManager or other interfaces.
 NetworkManager's existing autoconnect remains responsible for absent routes.
 
-For an existing host, install the reviewed standalone network script under
-`/usr/local/lib/ar-local-shared-host/`. Install `shared-host-network.conf` as
-`ar-local-net-watchdog.service.d/97-shared-host.conf`, `shared-host-health.conf`
+For an existing host, preserve the old files, then run the reviewed
+`deploy/pi/install-shared-network-watchdog.sh <exact-tested-repo> <verified-data-root>`
+as root. It installs the script and complete standard-library-only locking
+closure under root-owned `/usr/local/lib/ar-local-shared-host/`, renders the data
+root, replaces the legacy global-restart definition and reloads systemd. The
+isolated Python entrypoint never imports a user-writable repository. It does not
+start, enable or restart any timer. Scheduled work using the updated lock helper
+waits up to 120 seconds for an already-running network watchdog rather than losing
+its invocation. Install `shared-host-health.conf`
 for the runtime-health and deploy-watchdog services, and `shared-host-ingest.conf`
 for the daily, daily-watchdog and ingest-now services under `/etc/systemd/system`.
 Preserve the old files before installation. Run `systemctl daemon-reload` and
