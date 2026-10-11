@@ -174,53 +174,12 @@ else
   log "default target already multi-user.target"
 fi
 
-# --- 8. Network self-heal watchdog: kick NM if the link wedges --------------
-# autoconnect-retries=0 makes NM retry forever, but a wedged wifi driver can
-# need a nudge. This timer pings the default gateway every 3 min and, if it is
-# unreachable, restarts NetworkManager + re-ups the wifi profiles.
-cat > /usr/local/sbin/ar-local-net-watchdog.sh <<'WD'
-#!/usr/bin/env sh
-# Re-establish networking if the default gateway is unreachable.
-gw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
-[ -n "$gw" ] && ping -c1 -W3 "$gw" >/dev/null 2>&1 && exit 0
-logger -t ar-local-net-watchdog "no network (gw='${gw:-none}'); restarting NetworkManager"
-systemctl restart NetworkManager 2>/dev/null || true
-sleep 8
-if command -v nmcli >/dev/null 2>&1; then
-  # Try wifi profiles in autoconnect-priority order (highest first), stop on the
-  # first that brings up a default gateway. Gives Nikipedia -> ASUS_2.4 -> Slow
-  # failover even if NetworkManager's own autoconnect fixates on one SSID.
-  nmcli -t -f AUTOCONNECT-PRIORITY,TYPE,NAME connection show 2>/dev/null \
-    | awk -F: '$2=="802-11-wireless"{print $1":"$3}' | sort -t: -k1 -rn | cut -d: -f2- \
-    | while IFS= read -r n; do
-        nmcli connection up "$n" 2>/dev/null || continue
-        ngw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
-        [ -n "$ngw" ] && ping -c1 -W3 "$ngw" >/dev/null 2>&1 && break
-      done
-fi
-WD
-chmod +x /usr/local/sbin/ar-local-net-watchdog.sh
-cat > /etc/systemd/system/ar-local-net-watchdog.service <<'WS'
-[Unit]
-Description=AR-local network self-heal (re-establish wifi if gateway unreachable)
-After=NetworkManager.service
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/ar-local-net-watchdog.sh
-WS
-cat > /etc/systemd/system/ar-local-net-watchdog.timer <<'WT'
-[Unit]
-Description=Run AR-local network self-heal every 3 minutes
-[Timer]
-OnBootSec=3min
-OnUnitActiveSec=3min
-Persistent=true
-[Install]
-WantedBy=timers.target
-WT
-systemctl daemon-reload
-systemctl enable --now ar-local-net-watchdog.timer 2>/dev/null \
-  && log "net-watchdog timer enabled (every 3 min)" \
-  || log "WARN: could not enable net-watchdog timer"
+# --- 8. Install guarded interface recovery without enabling a timer ---------
+# The old generated shell watchdog restarted NetworkManager globally. Install
+# the reviewed protected Python closure and rendered override before reload.
+repo_dir="${1:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}"
+data_dir="${2:-/srv/ar-local/data}"
+sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir"
+log "guarded net-watchdog installed; timer activation requires operator approval"
 
 log "done. cmdline.txt / config.txt changes require a reboot to take effect."
