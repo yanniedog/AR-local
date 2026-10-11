@@ -294,6 +294,26 @@ def test_unchanged_stale_publication_does_not_repeat_failure_escalation(tmp_path
     assert json.loads(output.read_text())["attention_required"] is True
 
 
+@pytest.mark.parametrize("material_change", [False, True], ids=["crlf-only", "changed-content"])
+def test_github_body_line_endings_do_not_mask_material_changes(tmp_path, monkeypatch, material_change):
+    value = report(); api = API(); cloud.reconcile(api, value)
+    stored = api.rows[1]["body"].replace("\n", "\r\n")
+    if material_change:
+        stored = stored.replace("90 minutes", "30 minutes")
+    api.rows[1]["body"] = stored
+    api.calls.clear()
+    monkeypatch.setattr(cloud, "collect_check", lambda **k: value)
+    monkeypatch.setattr(cloud, "GitHub", lambda *a: api)
+    output = tmp_path / "check.json"
+    assert cloud.main(["--output", str(output)]) == int(material_change)
+    result = json.loads(output.read_text())
+    assert result["attention_required"] is True
+    assert result["delivery"]["new_attention"] is material_change
+    assert result["delivery"]["status"] == ("UPDATED" if material_change else "UNCHANGED")
+    mutations = [(method, path) for method, path, _ in api.calls if method != "GET"]
+    assert mutations == ([("PATCH", "issues/1")] if material_change else [])
+
+
 def test_unknown_check_fails_even_when_its_issue_is_unchanged(tmp_path, monkeypatch):
     value = cloud.collect_check(unavailable=True, clock=lambda: NOW)
     api = API(); cloud.reconcile(api, value)

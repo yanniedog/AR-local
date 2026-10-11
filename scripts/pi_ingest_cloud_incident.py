@@ -215,7 +215,10 @@ def reconcile(client, report):
         return {"status": "CREATED", "issue": created["number"], **evidence, "new_attention": True}
     number, assigned = issue_identity(issue)
     changes = {}
-    if issue.get("body") != body:
+    stored_body = issue.get("body")
+    # GitHub may return CRLF for the LF body we submitted. Preserve all other
+    # whitespace/content distinctions so real changes still trigger an update.
+    if not isinstance(stored_body, str) or stored_body.replace("\r\n", "\n") != body:
         changes["body"] = body
     if issue["state"] != state:
         changes["state"] = state
