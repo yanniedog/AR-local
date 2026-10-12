@@ -1,6 +1,6 @@
 # Private PDF geometry candidates
 
-This optional offline builder preserves pypdf 6.10.0 geometry observations beside
+This optional offline builder preserves pypdf 6.19.0 geometry observations beside
 an existing immutable PDF/text extraction. It does not modify the extractor,
 store, clauses, graph, revisions, queue, worker, public schemas or app. It makes
 no network request, installs nothing and executes no PDF action or OCR engine.

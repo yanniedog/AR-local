@@ -2,8 +2,9 @@
  * Shared helpers for npm run pr:gates:check (merge-blocking PR gate audit).
  */
 import { spawnSync } from 'node:child_process';
+import { readMergeCi as fetchRequiredCi, readUniversalCheck } from './pr-ci-readiness.mjs';
 import { resolveRequiredKeys } from './bot-wait-config.mjs';
-import { readCheckResult, selectLatestChecks, selectNamedCheckHistory } from './pr-check-history.mjs';
+import { readCheckResult, selectNamedCheckHistory } from './pr-check-history.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBotWaitStateFile } from './bot-wait-state.mjs';
@@ -103,40 +104,7 @@ export function resolvePrNumber(prArg) {
   return { pr: view, branch };
 }
 
-export function fetchRequiredCi(prNumber, { ignoredNames = [], ghRunner = spawnSync } = {}) {
-  const r = ghRunner(
-    'gh',
-    ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state,startedAt,completedAt,workflow,link'],
-    { encoding: 'utf8' },
-  );
-  const result = readCheckResult(r);
-  if (result.error) return { ok: false, error: result.error };
-  const ignored = new Set(ignoredNames.map((name) => name.toLowerCase()));
-  const relevant = result.checks.filter((check) => {
-    const name = String(check.name || '').toLowerCase();
-    return !ignored.has(name) && !ignored.has(name.slice(name.lastIndexOf('/') + 1).trim());
-  });
-  const latest = selectLatestChecks(relevant);
-  if (latest.error) return { ok: false, error: latest.error };
-  const checks = latest.checks;
-  let pending = false;
-  let failed = false;
-  const failedNames = [];
-  for (const c of checks) {
-    if (c.bucket === 'pending') pending = true;
-    if (
-      c.bucket === 'fail' ||
-      c.bucket === 'cancel' ||
-      c.state === 'FAILURE' ||
-      c.state === 'ERROR' ||
-      c.state === 'CANCELLED'
-    ) {
-      failed = true;
-      failedNames.push(c.name);
-    }
-  }
-  return { ok: true, pending, failed, failedNames, checks };
-}
+export { readMergeCi as fetchRequiredCi } from './pr-ci-readiness.mjs';
 
 export function fetchNamedChecks(prNumber, names) {
   const r = spawnSync(
@@ -146,11 +114,18 @@ export function fetchNamedChecks(prNumber, names) {
   );
   const result = readCheckResult(r);
   if (result.error) return { found: {}, error: result.error };
-  const latest = selectNamedCheckHistory(result.checks, names);
+  const latest = selectNamedCheckHistory(result.checks, names.filter((name) => name.toLowerCase() !== 'bot-feedback-gate'));
   if (latest.error) return { found: {}, error: latest.error };
   const all = latest.checks;
   const want = new Set(names.map((n) => n.toLowerCase()));
   const found = {};
+  if (want.has('bot-feedback-gate')) {
+    try {
+      const { owner, name } = repoSlug();
+      const meta = ghJson(['pr', 'view', String(prNumber), '--json', 'headRefOid']);
+      found['bot-feedback-gate'] = readUniversalCheck(prNumber, { repository: `${owner}/${name}`, headSha: meta.headRefOid });
+    } catch (error) { return { found: {}, error: error.message }; }
+  }
   for (const c of all) {
     const lower = (c.name || '').toLowerCase();
     const tail = lower.includes('/') ? lower.slice(lower.lastIndexOf('/') + 1) : lower;

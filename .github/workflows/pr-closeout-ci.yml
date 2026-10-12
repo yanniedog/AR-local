@@ -2,27 +2,29 @@ name: pr-closeout-ci
 on:
   pull_request:
     paths:
+      - 'scripts/**'
       - 'wait_for_bots.mjs'
-      - 'scripts/lib/bot-wait-*.mjs'
-      - 'scripts/verify-advisory-review-policy.mjs'
-      - 'scripts/pr-merge.mjs'
-      - 'scripts/lib/pr-*.mjs'
-      - 'scripts/lib/gh-pr-review-threads.mjs'
-      - 'scripts/verify-pr-*.mjs'
       - 'package.json'
-      - '.github/workflows/pr-closeout-ci.yml'
+      - '.github/workflows/**'
+      - '.github/rulesets/**'
+      - '.github/MERGE_POLICY.md'
+      - 'WORKFLOW.md'
+      - 'AGENTS.md'
   push:
     branches: [main]
     paths:
+      - 'scripts/**'
       - 'wait_for_bots.mjs'
-      - 'scripts/lib/bot-wait-*.mjs'
-      - 'scripts/verify-advisory-review-policy.mjs'
-      - 'scripts/pr-merge.mjs'
-      - 'scripts/lib/pr-*.mjs'
-      - 'scripts/lib/gh-pr-review-threads.mjs'
-      - 'scripts/verify-pr-*.mjs'
       - 'package.json'
-      - '.github/workflows/pr-closeout-ci.yml'
+      - '.github/workflows/**'
+      - '.github/rulesets/**'
+      - '.github/MERGE_POLICY.md'
+      - 'WORKFLOW.md'
+      - 'AGENTS.md'
+
+permissions:
+  contents: read
+
 jobs:
   closeout-contract:
     strategy:

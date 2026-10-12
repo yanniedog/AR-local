@@ -79,6 +79,12 @@ export function writeJsonAtomically(destination, state) {
       fs.closeSync(descriptor);
     }
     fs.renameSync(temporary, destination);
+    // Windows cannot open directory descriptors through Node. POSIX also
+    // persists the directory entry so a crash cannot lose the accepted rename.
+    if (process.platform !== 'win32') {
+      const directory = fs.openSync(path.dirname(destination), 'r');
+      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+    }
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }

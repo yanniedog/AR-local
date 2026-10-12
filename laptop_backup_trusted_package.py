@@ -191,7 +191,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             return str(Path(install_root) / name)
 
         tools = {name: Path(getattr(args, name)).resolve() for name in ("git", "ssh", "scp", "whoami")}
-        trusted = {
+        child_manifest = {
             "schema_version": 6,
             "authority_path": installed("authority"),
             "atomic_path": installed("laptop_backup_atomic.py"),
@@ -219,7 +219,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "ssh_port": args.ssh_port, "ssh_user": args.ssh_user,
             "whoami_path": str(tools["whoami"]), "whoami_sha256": sha256(tools["whoami"]),
         }
-        (root / "trusted-child.json").write_bytes(canonical_json(trusted))
+        (root / "trusted-child.json").write_bytes(canonical_json(child_manifest))
         file_hashes = {
             path.relative_to(root).as_posix(): sha256(path)
             for path in root.rglob("*") if path.is_file()

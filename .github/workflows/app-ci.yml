@@ -29,8 +29,11 @@ on:
       - 'ar_local_pi_runtime.py'
       - 'ar_local_operation_lock.py'
       - 'verify_local*.py'
-      - 'deploy/pi/ar-local-daily.service'
-      - 'deploy/pi/ar-local-ingest-now.service'
+      - 'dashboard/**'
+      - 'deploy/pi/**'
+      - 'scripts/*.py'
+      - 'cdr_domain/**'
+      - 'cdr_pipeline/**'
       - 'cleanup_removed_cdr_sector.py'
       - 'requirements.txt'
       - 'requirements-terms.txt'
@@ -63,13 +66,19 @@ on:
       - 'ar_local_pi_runtime.py'
       - 'ar_local_operation_lock.py'
       - 'verify_local*.py'
-      - 'deploy/pi/ar-local-daily.service'
-      - 'deploy/pi/ar-local-ingest-now.service'
+      - 'dashboard/**'
+      - 'deploy/pi/**'
+      - 'scripts/*.py'
+      - 'cdr_domain/**'
+      - 'cdr_pipeline/**'
       - 'cleanup_removed_cdr_sector.py'
       - 'requirements.txt'
       - 'requirements-terms.txt'
       - 'tests/**'
       - '.github/workflows/app-ci.yml'
+
+permissions:
+  contents: read
 
 jobs:
   process-liveness-windows:
@@ -90,6 +99,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'

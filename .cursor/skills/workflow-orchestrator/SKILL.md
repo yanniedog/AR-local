@@ -59,9 +59,9 @@ Each PR gets the **full** ship bar (steps 1?9 in `WORKFLOW.md`).
 **Merge gate (step 7 ? FORBIDDEN to skip):**
 
 - All bot **implement** commits are on the PR branch **before** merge (rebase/push if bots posted after last push).
-- GitHub required checks **`bot-presence-gate`** and **`pr-bot-feedback-check`** are green (when branch protection is enabled).
-- `npm run wait-for-bots -- --pr <n>` exit **0** ? **gemini**, **codex**, and **sourcery** must each post since anchor, then quiet window. Exit **1** = required bots missing at cap ? **do not merge**.
-- `npm run pr:bot-feedback-check -- --pr <n>` exit **0** ? includes required-bot presence and thread closure.
+- Applicable exact-head product CI and **`bot-feedback-gate`** must pass. Reviewer presence is advisory by default.
+- `npm run wait-for-bots -- --pr <n>` checks applicable required CI; reviewers are advisory by default. Use `--require-bots gemini,codex,sourcery` only when explicitly requested to require activity since the anchor and a quiet window. Exit **1** blocks closeout; exit **2** parks ownership for a later turn.
+- `npm run pr:bot-feedback-check -- --pr <n>` must exit **0** after substantive feedback receives a disposition and its thread is resolved.
 - **Never** `npm run pr:merge` / `gh pr merge --auto --squash` on "CI green" alone or before both GitHub checks and local gates pass.
 - **Never** close a PR without merge unless the user waives in writing; auditor fails on closed-unmerged PRs with open bot threads.
 
@@ -71,11 +71,11 @@ Each PR gets the **full** ship bar (steps 1?9 in `WORKFLOW.md`).
 2. Commit + push on topic branch only
 3. `gh pr create --base main`
 4. CI green
-5. `npm run wait-for-bots` until exit **0** ? **gemini, codex, and sourcery** must each post since anchor, then quiet window (after new PR; `--bot-tag` after @mentioning bots). Exit **1** = missing required bots at cap ? **do not merge**.
+5. Run `npm run wait-for-bots -- --pr <n>` once. Reviewers are advisory by default; `--require-bots gemini,codex,sourcery` explicitly opts in to activity and quiet-window checks. When only GitHub work remains, park ownership and check once in a later turn.
 5b. `## Feedback plan` then one push then in-thread replies
 6. Thread closure ? every **substantive** inline thread (bot or human) gets in-thread implement/defer/decline; resolve GitHub threads before merge. **Substantive** = file-level inline comment, P1/P2 bot finding, CI failure tied to the PR, or any thread proposing a code/doc change (exclude pure summary-only bot posts).
 7. `npm run pr:bot-feedback-check -- --pr <n>` ? exit non-zero blocks merge
-8. `npm run pr:merge -- --pr <n>` (`gh pr merge --auto --squash --delete-branch`) — **FORBIDDEN** until GitHub checks **`bot-presence-gate`** + **`pr-bot-feedback-check`** are green, `npm run wait-for-bots -- --pr <n>` exit **0**, `npm run pr:bot-feedback-check -- --pr <n>` exit **0**, and substantive inline threads are closed. Never merge on "CI green" alone.
+8. Run `npm run pr:merge -- --pr <n> --no-sync` from the reviewed topic checkout after applicable exact-head product CI, `bot-feedback-gate`, local gates, and substantive thread closure pass. Synchronize a stale branch separately and verify its new exact head before closeout.
 7b. Post-merge close-loop:
 
 ```sh

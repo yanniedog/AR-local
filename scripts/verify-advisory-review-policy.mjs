@@ -6,6 +6,7 @@ import { writeBotWaitStateFile, readBotWaitStateFile, botWaitStatePath } from '.
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
 import { requiredCiWaitResult, applyReviewerPolicy, reviewWaitIgnoredChecks } from './lib/bot-wait-ci.mjs';
 import { BOT_GATE_CHECK_NAMES, gateGithubBotChecks, fetchRequiredCi } from './lib/pr-gates-lib.mjs';
+import { readMergeCi } from './lib/pr-ci-readiness.mjs';
 import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
 assert.deepEqual(parseRequiredKeys(''), []);
 for (const mode of ['off', 'none', 'disabled', 'OFF']) assert.deepEqual(parseRequiredKeys(mode), []);
@@ -40,6 +41,24 @@ try {
   }
   assert.equal(fs.readFileSync(botWaitStatePath(123, stateRoot), 'utf8'), accepted);
   assert.deepEqual(fs.readdirSync(path.dirname(botWaitStatePath(123, stateRoot))), ['123.json']);
+  if (process.platform !== 'win32') {
+    const originalFsync = fs.fsyncSync;
+    let directorySynced = false;
+    try {
+      fs.fsyncSync = (descriptor) => {
+        directorySynced ||= fs.fstatSync(descriptor).isDirectory();
+        return originalFsync(descriptor);
+      };
+      writeBotWaitStateFile(123, persisted, stateRoot);
+    } finally { fs.fsyncSync = originalFsync; }
+    assert.equal(directorySynced, true, 'accepted rename persists its directory');
+  }
+  assert.equal(gateGithubBotChecks(123, {
+    fetchChecks: (_pr, names) => {
+      assert.deepEqual(names, ['bot-feedback-gate']);
+      return { found: { 'bot-feedback-gate': { bucket: 'pass', state: 'SUCCESS' } } };
+    },
+  }).pass, true, 'ordinary invocation uses the default resolver');
   // Return before attempting GitHub access even with stale saved keys.
   assert.equal(checkRequiredBotsOnPr('invalid', 'invalid', 123, { repoRoot: stateRoot }).ok, true);
   assert.equal(checkRequiredBotsOnPr('invalid', 'invalid', 123, { requiredKeys: [], repoRoot: stateRoot }).ok, true);
@@ -62,18 +81,20 @@ const reported = [
   { name: 'bot-feedback-gate', bucket: 'fail', state: 'FAILURE' },
   { name: 'product-ci', bucket: 'pass', state: 'SUCCESS' },
 ];
-const ghRunner = () => ({ status: 1, stdout: JSON.stringify(reported) });
-assert.equal(fetchRequiredCi(123, { ghRunner }).failed, true);
-assert.equal(fetchRequiredCi(123, { ghRunner, ignoredNames: ['BOT-FEEDBACK-GATE'] }).failed, false);
-assert.equal(requiredCiWaitResult(fetchRequiredCi(123, { ghRunner, ignoredNames: [...reviewWaitIgnoredChecks()] })).status, 'ready');
-assert.match(fetchRequiredCi(123, { ghRunner: () => ({ status: 0, stdout: '[null]' }) }).error, /observation has no name/);
-assert.equal(gateGithubBotChecks(123, {
-  requiredKeys: [],
-  fetchChecks: (_pr, names) => {
-    assert.deepEqual(names, ['bot-feedback-gate']);
-    return { found: { 'bot-feedback-gate': { bucket: 'pass', state: 'SUCCESS' } } };
-  },
-}).pass, true);
+const head = 'a'.repeat(40), base = 'b'.repeat(40);
+const ciOptions = {
+  run: () => ({ status: 1, stdout: JSON.stringify(reported) }),
+  readProduct: () => ({ ok: true, repository: 'owner/repo', headSha: head, baseSha: base, baseRef: 'main',
+    pending: false, failed: false, pendingNames: [], failedNames: [], checks: [] }),
+  read: () => ({ number: 123, state: 'OPEN', headRefOid: head, baseRefOid: base, baseRefName: 'main' }),
+  api: () => ({ check_runs: [{ id: 1, name: 'bot-feedback-gate', head_sha: head,
+    app: { id: 15368, slug: 'github-actions' }, status: 'completed', conclusion: 'failure' }], total_count: 1 }),
+};
+assert.equal(fetchRequiredCi, readMergeCi, 'retain exact-head product CI from the merge policy');
+assert.equal(fetchRequiredCi(123, ciOptions).failed, true);
+assert.equal(fetchRequiredCi(123, { ...ciOptions, ignoredNames: ['BOT-FEEDBACK-GATE'] }).failed, false);
+assert.equal(requiredCiWaitResult(fetchRequiredCi(123, { ...ciOptions, ignoredNames: [...reviewWaitIgnoredChecks()] })).status, 'ready');
+assert.match(fetchRequiredCi(123, { ...ciOptions, run: () => ({ status: 0, stdout: '[null]' }) }).error, /observation has no name/);
 assert.equal(gateGithubBotChecks(123, {
   requiredKeys: ['sourcery'],
   fetchChecks: (_pr, names) => {
