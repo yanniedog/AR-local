@@ -105,15 +105,25 @@ export function writeJsonAtomically(destination, state) {
     }
     fs.renameSync(temporary, destination);
     Object.defineProperty(state, SNAPSHOT, { value: { filename: path.resolve(destination), fingerprint: fingerprint(content) }, writable: true, configurable: true });
-    // Node cannot open directory descriptors on Windows; file fsync plus atomic
-    // replacement remains the portable guarantee there. POSIX also persists rename.
-    if (process.platform !== 'win32') {
-      const directory = fs.openSync(path.dirname(destination), 'r');
-      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
-    }
+    syncStateDirectory(path.dirname(destination));
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
     fs.closeSync(lockDescriptor);
     fs.unlinkSync(lock);
+  }
+}
+
+function syncStateDirectory(directoryPath) {
+  // Node cannot open directory descriptors on Windows.
+  if (process.platform === 'win32') return;
+  try {
+    const directory = fs.openSync(directoryPath, 'r');
+    try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+  } catch (error) {
+    if (['EINVAL', 'ENOTSUP', 'EOPNOTSUPP'].includes(error.code)) {
+      console.warn('Wait state replaced; this filesystem does not support directory fsync.');
+      return;
+    }
+    throw new Error('Wait state was replaced, but its directory could not be synced', { cause: error });
   }
 }
