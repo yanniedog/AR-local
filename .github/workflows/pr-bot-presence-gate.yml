@@ -1,7 +1,8 @@
 name: pr-bot-presence-gate
 
-# Reviewer presence is advisory. Run only on explicit dispatch; vendors require
-# an operator opt-in through the AR_BOT_WAIT_REQUIRED repository variable.
+# Read-only diagnostic, never PR-head merge evidence. Local closeout evaluates
+# explicit reviewer opt-in itself. The repository variable opts into this
+# diagnostic only; it does not change the universal server merge requirements.
 on:
   workflow_dispatch:
     inputs:
@@ -11,22 +12,32 @@ on:
         type: string
 
 permissions:
+  actions: read
+  checks: read
   contents: read
   pull-requests: read
   issues: read
+  statuses: read
 
 jobs:
-  bot-presence-gate:
+  reviewer-presence-diagnostic:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Optional reviewer presence check
         env:
-          GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR: ${{ inputs.pr_number }}
           AR_BOT_WAIT_REQUIRED: ${{ vars.AR_BOT_WAIT_REQUIRED || 'off' }}

@@ -54,7 +54,7 @@ async function main() {
 
 Gates enforced:
   ci-required              Required GitHub checks green (gh pr checks --required)
-  github-bot-gates           bot-presence-gate + bot-feedback-gate when reported
+  github-bot-gates         trusted bot-feedback-gate on the current PR head
   wait-for-bots            npm run wait-for-bots -- --pr N (exit 0)
   pr-bot-feedback-check    npm run pr:bot-feedback-check -- --pr N (exit 0)
   feedback-plan            ## Feedback plan when bot wait ready and threads open

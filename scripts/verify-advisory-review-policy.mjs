@@ -5,10 +5,11 @@ import path from 'node:path';
 import { writeBotWaitStateFile, readBotWaitStateFile, botWaitStatePath } from './lib/bot-wait-state.mjs';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
 import { requiredCiWaitResult, applyReviewerPolicy, reviewWaitIgnoredChecks } from './lib/bot-wait-ci.mjs';
-import { BOT_GATE_CHECK_NAMES, gateGithubBotChecks, fetchRequiredCi } from './lib/pr-gates-lib.mjs';
+import { BOT_GATE_CHECK_NAMES, gateGithubBotChecks, gateWaitForBots, fetchRequiredCi } from './lib/pr-gates-lib.mjs';
 import { readMergeCi } from './lib/pr-ci-readiness.mjs';
 import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
-import { evaluate } from '../wait_for_bots.mjs';
+import { gateExemptReasonFromPrMeta } from './lib/pr-gate-exempt.mjs';
+import { evaluate, reviewerExemption } from '../wait_for_bots.mjs';
 assert.deepEqual(parseRequiredKeys(''), []);
 for (const mode of ['off', 'none', 'disabled', 'OFF']) assert.deepEqual(parseRequiredKeys(mode), []);
 assert.deepEqual(resolveRequiredKeys([], 'gemini,codex'), []);
@@ -94,7 +95,44 @@ assert.match(fetchRequiredCi(123, { ...ciOptions, run: () => ({ status: 0, stdou
 assert.equal(gateGithubBotChecks(123, {
   requiredKeys: ['sourcery'],
   fetchChecks: (_pr, names) => {
-    assert.deepEqual(names, ['bot-presence-gate', 'bot-feedback-gate']);
+    assert.deepEqual(names, ['bot-feedback-gate']);
     return { found: { 'bot-feedback-gate': { bucket: 'pass', state: 'SUCCESS' } } };
   },
-}).pass, false);
+}).pass, true, 'opt-in must not require a diagnostic check attached to the default branch');
+
+const botPr = { title: 'chore: automated report', author: { login: 'github-actions[bot]', type: 'Bot' } };
+const botExemption = () => gateExemptReasonFromPrMeta(botPr);
+assert.equal(reviewerExemption(123, [], botExemption), 'bot-authored');
+assert.equal(reviewerExemption(123, ['sourcery'], botExemption), null, 'explicit opt-in overrides the bot PR exemption');
+for (const [events, checks, expectedExit] of [
+  [[], { pending: false, failed: false }, 2],
+  [[{ login: 'sourcery-ai', at: new Date(reviewNow - 120_000).toISOString() }], { pending: false, failed: true }, 1],
+  [[{ login: 'sourcery-ai', at: new Date(reviewNow - 120_000).toISOString() }], { pending: false, failed: false }, 0],
+]) {
+  let evaluations = 0;
+  const result = gateWaitForBots(123, {
+    botPresencePass: true, botPresenceCompletedAt: new Date(reviewNow).toISOString(),
+    runScript: (script, args) => {
+      assert.equal(script, 'wait_for_bots.mjs');
+      assert.deepEqual(args, ['--pr', '123']);
+      evaluations += 1;
+      const current = evaluate({ prNumber: 123, anchorIso: new Date(reviewNow - 600_000).toISOString(),
+        state: {}, repo: { owner: 'owner', name: 'repo' }, requiredKeys: ['sourcery'],
+        fetchActivity: () => ({ events }), readChecks: () => ({ ok: true, ...checks }),
+      });
+      return { exitCode: current.status === 'ready' ? 0 : current.status === 'waiting' ? 2 : 1,
+        stdout: current.message, stderr: '' };
+    },
+  });
+  assert.equal(evaluations, 1, 'old green presence checks never bypass a fresh local evaluation');
+  assert.equal(result.exitCode, expectedExit);
+  assert.equal(result.pass, expectedExit === 0);
+}
+
+const presenceWorkflow = fs.readFileSync(new URL('../.github/workflows/pr-bot-presence-gate.yml', import.meta.url), 'utf8');
+assert.match(presenceWorkflow, /if: github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/);
+assert.match(presenceWorkflow, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
+assert.match(presenceWorkflow, /persist-credentials: false/);
+assert.match(presenceWorkflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+assert.doesNotMatch(presenceWorkflow, /secrets\.|:\s*write\b|pull_request\s*:|pull_request_target\s*:/);
+console.log('Local reviewer opt-in and trusted read-only diagnostic regressions passed');

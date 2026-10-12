@@ -3,11 +3,9 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readMergeCi as fetchRequiredCi, readUniversalCheck } from './pr-ci-readiness.mjs';
-import { resolveRequiredKeys } from './bot-wait-config.mjs';
 import { readCheckResult, selectNamedCheckHistory } from './pr-check-history.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readBotWaitStateFile } from './bot-wait-state.mjs';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
 import { isReportsOnlyPr } from './pr-reports-only.mjs';
 import { fetchPrMergeMeta, gateAutoMergeEnabled, gateBranchFreshMeta } from './pr-branch-sync.mjs';
@@ -170,17 +168,17 @@ export function gateCiRequired(prNumber) {
   return { id: 'ci-required', pass: true, detail: 'All required checks passed' };
 }
 
-export function gateGithubBotChecks(prNumber, { fetchChecks = fetchNamedChecks, requiredKeys = resolveRequiredKeys() } = {}) {
-  const names = requiredKeys.length
-    ? ['bot-presence-gate', ...BOT_GATE_CHECK_NAMES]
-    : BOT_GATE_CHECK_NAMES;
+export function gateGithubBotChecks(prNumber, { fetchChecks = fetchNamedChecks } = {}) {
+  // Manual reviewer diagnostics run on the default branch, not the PR head.
+  // Explicit local reviewer policy is evaluated by gateWaitForBots every time.
+  const names = BOT_GATE_CHECK_NAMES;
   const { found, error, skipped } = fetchChecks(prNumber, names);
   if (error) {
     return {
       id: 'github-bot-gates',
       pass: false,
       detail: error,
-      action: 'Ensure GitHub Actions workflows pr-bot-presence-gate and pr-bot-feedback-check ran',
+      action: 'Ensure the trusted pr-bot-feedback-check reporter evaluated the current PR head',
     };
   }
   if (skipped || !names.some((name) => found[name])) {
@@ -193,8 +191,6 @@ export function gateGithubBotChecks(prNumber, { fetchChecks = fetchNamedChecks, 
   }
   const parts = [];
   let pass = true;
-  let botPresencePass = false;
-  let botPresenceCompletedAt = null;
   for (const name of names) {
     const c = found[name];
     if (!c) {
@@ -205,10 +201,6 @@ export function gateGithubBotChecks(prNumber, { fetchChecks = fetchNamedChecks, 
     const ok = checkBucketPass(c);
     if (ok === true) {
       parts.push(`${name}: pass`);
-      if (name === 'bot-presence-gate') {
-        botPresencePass = true;
-        botPresenceCompletedAt = c.completedAt || null;
-      }
     }
     else if (ok === false) {
       parts.push(`${name}: ${c.bucket || c.state}`);
@@ -222,8 +214,6 @@ export function gateGithubBotChecks(prNumber, { fetchChecks = fetchNamedChecks, 
     id: 'github-bot-gates',
     pass,
     detail: parts.join('; '),
-    botPresencePass,
-    botPresenceCompletedAt,
     action: pass
       ? undefined
       : `Resolve the reported gate state and recheck once: ${names.join(', ')}`,
@@ -246,30 +236,8 @@ export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxB
   };
 }
 
-export function gateWaitForBots(prNumber, githubBotGate) {
-  const exempt = gateExemptReason(prNumber);
-  if (exempt) {
-    return {
-      id: 'wait-for-bots',
-      pass: true,
-      detail: `Skipped (${exempt} — human bot review not required)`,
-      skipped: true,
-    };
-  }
-  if (githubBotGate?.botPresencePass) {
-    const state = readBotWaitStateFile(prNumber, REPO_ROOT);
-    const anchorMs = new Date(state?.anchor || '').getTime();
-    const gateMs = new Date(githubBotGate.botPresenceCompletedAt || '').getTime();
-    if (!Number.isFinite(anchorMs) || (Number.isFinite(gateMs) && anchorMs <= gateMs)) {
-      return {
-        id: 'wait-for-bots',
-        pass: true,
-        detail: 'Bot wait satisfied by green GitHub bot-presence-gate',
-        exitCode: 0,
-      };
-    }
-  }
-  const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
+export function gateWaitForBots(prNumber, { runScript = runNodeScript } = {}) {
+  const { exitCode, stderr, stdout } = runScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
   if (exitCode === 0) {
     return { id: 'wait-for-bots', pass: true, detail: 'Bot wait satisfied (exit 0)', exitCode };
   }
@@ -399,7 +367,7 @@ export function evaluateGates(prNumber, options = {}) {
 
   const ci = gateCiRequired(prNumber);
   const ghBot = gateGithubBotChecks(prNumber);
-  const wait = gateWaitForBots(prNumber, ghBot);
+  const wait = gateWaitForBots(prNumber);
   const feedback = gateBotFeedback(prNumber);
   const plan = gateFeedbackPlan(prNumber, {
     skip: options.skipFeedbackPlan,

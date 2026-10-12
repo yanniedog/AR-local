@@ -374,6 +374,10 @@ Required bots: ${formatRequiredKeys(requiredKeys)}
 `);
 }
 
+export function reviewerExemption(prNumber, requiredKeys, readExemption = gateExemptReason) {
+  return requiredKeys.length === 0 ? readExemption(prNumber) : null;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const requiredKeys = resolveRequiredKeys(args.requireBots);
@@ -411,7 +415,7 @@ async function main() {
     process.exit(1);
   }
 
-  const exempt = gateExemptReason(prNumber);
+  const exempt = reviewerExemption(prNumber, requiredKeys);
   if (exempt) {
     const ci = requiredCiWaitResult(fetchRequiredCi(prNumber));
     console.log(`>>> PR #${prNumber}: ${ci.message} (reviewer exemption: ${exempt})`);
