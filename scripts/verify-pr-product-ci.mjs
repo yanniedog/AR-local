@@ -49,6 +49,16 @@ assert.equal(latestProductRun([{ ...run, id: 11 }, { ...run, run_attempt: 2, sta
   'a rerun of an older run cannot hide behind a newer successful run');
 assert.equal(latestProductRun([{ ...run, id: 11 }, { ...run, run_attempt: 2, conclusion: 'failure',
   run_started_at: '2026-10-12T02:00:00Z' }], meta, identified).conclusion, 'failure');
+for (const ref of ['main', 'refs/heads/feature', 'refs/pull/42/merge', head, 'feature/with@sign']) {
+  assert.equal(latestProductRun([{ ...run, path: `${workflow.path}@${ref}` }], meta, identified)?.id, run.id,
+    `documented ref-qualified workflow path accepted: ${ref}`);
+}
+for (const path of [`${workflow.path}.other@main`, `${workflow.path}/other@main`, `other/${workflow.path}@main`,
+  ...['', '@', '/main', 'main/', 'refs//main', '.hidden', 'refs/.hidden', 'main.lock', 'main.',
+    'main..other', 'main@{1}', 'main branch', 'main\n', 'main\\other', 'main[1]', 'main?', 'main:', 'main\x7f']
+    .map((ref) => `${workflow.path}@${ref}`)]) {
+  assert.equal(latestProductRun([{ ...run, path }], meta, identified), undefined, `invalid path/ref rejected: ${JSON.stringify(path)}`);
+}
 
 assert.deepEqual(getApplicableProductCi(['README.md']), []);
 assert.throws(() => getApplicableProductCi([{}]), /Invalid changed-file/);
@@ -138,6 +148,10 @@ function fixture(overrides = {}) {
 const read = (overrides = {}) => readProductCi(42, { repository, ...fixture(overrides) });
 assert.equal(read().ok, true);
 assert.equal(read().failed, false);
+assert.equal(read().pending, false);
+const qualifiedRun = { ...run, path: `${workflow.path}@refs/pull/42/merge` };
+assert.equal(read({ runs: [qualifiedRun], refreshedRun: qualifiedRun }).failed, false);
+assert.equal(read({ runs: [qualifiedRun], refreshedRun: qualifiedRun }).pending, false);
 assert.equal(read({ runs: [] }).pending, true);
 assert.equal(read({ runs: [{ ...run, status: 'in_progress', conclusion: null }], refreshedRun: { ...run, status: 'in_progress', conclusion: null } }).pending, true);
 assert.equal(read({ refreshedRun: { ...run, run_attempt: 2, status: 'queued', conclusion: null } }).pending, true);
@@ -148,6 +162,42 @@ assert.equal(read({ finalPr: { ...pr, head: { ...pr.head, sha: base } } }).pendi
 assert.equal(read({ finalPr: { ...pr, base: { ...pr.base, sha: head } } }).pending, true, 'base changes during read block');
 assert.equal(read({ api: () => { throw new Error('API unavailable'); } }).ok, false);
 assert.equal(readProductCi(42, { repository, ...fixture(), expectedHeadSha: base }).ok, false);
+
+// Workflow A can rerun while workflow B's jobs are read. Revalidating A before
+// reading B misses the change even though the PR's head and base remain stable.
+function multiWorkflowRead(change) {
+  const second = PRODUCT_CI_WORKFLOWS.find((item) => item.name === 'app-data-service-ci');
+  const secondRun = { ...run, id: 30, workflow_id: 21, path: second.path };
+  let secondJobsRead = false;
+  const f = fixture({ api: (endpoint) => {
+    if (endpoint.includes('/pulls/42/files?')) return [{ filename: 'app_payload_secure_upload.py' }];
+    if (endpoint.endsWith(`/actions/workflows/${second.path.split('/').pop()}`)) return { ...second, id: 21 };
+    if (endpoint.includes('/actions/workflows/21/runs?')) return { workflow_runs: [secondRun], total_count: 1 };
+    if (endpoint.includes('/actions/runs/30/jobs?')) {
+      secondJobsRead = true;
+      return { jobs: second.jobs.map((name, id) => ({ id: id + 30, name, run_id: 30,
+        head_sha: head, status: 'completed', conclusion: 'success' })), total_count: second.jobs.length };
+    }
+    if (endpoint.endsWith('/actions/runs/30')) return secondRun;
+    if (secondJobsRead && change && endpoint.endsWith('/actions/runs/10')) return change.id === run.id ? change : run;
+    if (secondJobsRead && change && endpoint.includes('/actions/workflows/20/runs?')) {
+      return { workflow_runs: change.id === run.id ? [change] : [run, change], total_count: change.id === run.id ? 1 : 2 };
+    }
+    return undefined;
+  } });
+  return { result: readProductCi(42, { repository, api: f.api }), calls: f.calls };
+}
+const multipleGreen = multiWorkflowRead();
+assert.ok(multipleGreen.result.ok && !multipleGreen.result.pending && !multipleGreen.result.failed);
+assert.ok(multipleGreen.calls.indexOf(`repos/${repository}/actions/runs/10`) >
+  multipleGreen.calls.findIndex((endpoint) => endpoint.includes('/actions/runs/30/jobs?')),
+  'all selected runs are revalidated only after the complete job snapshot');
+for (const change of [{ ...run, run_attempt: 2, status: 'queued', conclusion: null },
+  { ...run, run_attempt: 2, conclusion: 'failure' }, { ...run, conclusion: 'failure' },
+  { ...run, id: 12, status: 'in_progress', conclusion: null }]) {
+  const snapshot = multiWorkflowRead(change).result;
+  assert.ok(snapshot.ok && snapshot.pending, 'a rerun, failure, or new run during another workflow read blocks success');
+}
 
 const many = Array.from({ length: 300 }, (_, index) => ({ filename: `docs/${index}.md` }));
 many.push({ filename: 'cdr_daily.py' });
@@ -167,18 +217,29 @@ const bot = { id: 100, name: 'bot-feedback-gate', head_sha: head, app: { id: 153
   details_url: `https://github.com/${repository}/actions/runs/100` };
 const botOptions = { repository, headSha: head, api: () => ({ check_runs: [bot], total_count: 1 }) };
 assert.equal(readRequiredCi(42, { ...botOptions, api: () => ({ check_runs: [], total_count: 0 }), run: () => requiredOutput([]) }).pending, true, 'missing universal check never passes');
-assert.equal(readRequiredCi(42, { ...botOptions, run: () => requiredOutput([{ name: 'bot-feedback-gate', bucket: 'pass' }]) }).pending, false);
+const requiredSuccess = readRequiredCi(42, { ...botOptions, run: () => requiredOutput([{ name: 'bot-feedback-gate', bucket: 'pass' }]) });
+assert.ok(requiredSuccess.ok && !requiredSuccess.pending && !requiredSuccess.failed);
 assert.equal(readRequiredCi(42, { ...botOptions, api: () => ({ check_runs: [{ ...bot, conclusion: 'skipped' }] }), run: () => requiredOutput([]) }).failed, true);
 const duplicateCustom = [100, 101].map((id) => ({ name: 'bot-feedback-gate', bucket: 'pass', workflow: '', link: `https://github.com/${repository}/actions/runs/${id}` }));
 assert.equal(readRequiredCi(42, { ...botOptions, api: () => ({ check_runs: [bot, { ...bot, id: 101, status: 'in_progress' }] }),
   run: () => requiredOutput(duplicateCustom) }).pending, true, 'custom check duplicates retain trusted API producer identity');
 assert.equal(readUniversalCheck(42, { ...botOptions, api: () => ({ check_runs: [{ ...bot, app: { id: 999, slug: 'attacker' } }] }) }).bucket, 'pending');
 assert.equal(readUniversalCheck(42, { ...botOptions, api: () => ({ check_runs: [{ ...bot, external_id: `ar-local-required:43:${head}` }] }) }).bucket, 'pending');
+for (const external_id of [undefined, null, '', 'unrelated-reporter', '123', `ar-local-required:42:${base}`]) {
+  const foreign = { ...bot, id: 101, external_id };
+  assert.equal(readUniversalCheck(42, { ...botOptions, api: () => ({ check_runs: [foreign] }) }).bucket, 'pending',
+    'generic Actions app/name alone cannot satisfy the local reporter identity');
+  assert.equal(readUniversalCheck(42, { ...botOptions, api: () => ({ check_runs: [bot, foreign] }) }).id, bot.id,
+    'newer unrelated checks cannot supersede the exact reporter');
+  assert.equal(readUniversalCheck(42, { ...botOptions, api: () => ({ check_runs: [{ ...bot, conclusion: 'failure' }, foreign] }) }).bucket, 'fail');
+}
 const ciGreen = { ok: true, ...meta, pending: false, failed: false, pendingNames: [], failedNames: [], checks: [] };
 const currentView = { number: 42, state: 'OPEN', headRefOid: head, baseRefOid: base, baseRefName: 'main' };
 const mergedRead = { readProduct: () => ciGreen, read: () => currentView,
   api: botOptions.api, run: () => requiredOutput([{ name: 'bot-feedback-gate', bucket: 'pass' }]) };
-assert.equal(readMergeCi(42, mergedRead).pending, false);
+const mergedSuccess = readMergeCi(42, mergedRead);
+assert.ok(mergedSuccess.ok && !mergedSuccess.pending && !mergedSuccess.failed);
+assert.equal(readMergeCi(42, { ...mergedRead, api: () => ({ check_runs: [{ ...bot, conclusion: 'failure' }] }) }).failed, true);
 assert.equal(readMergeCi(42, { ...mergedRead, read: () => ({ ...currentView, headRefOid: base }) }).pending, true);
 assert.equal(readMergeCi(42, { ...mergedRead, readProduct: () => ({ ...ciGreen, pending: true, pendingNames: ['payload'] }) }).pending, true);
 
