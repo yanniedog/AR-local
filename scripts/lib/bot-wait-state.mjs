@@ -66,7 +66,7 @@ export function writeBotWaitStateFile(prNumber, state, repoRoot) {
   writeJsonAtomically(p, state);
 }
 
-/** A failed write or replacement leaves the previously accepted anchor intact. */
+/** Failures before rename preserve the anchor; post-rename durability errors say it was replaced. */
 export function writeJsonAtomically(destination, state) {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
@@ -79,13 +79,23 @@ export function writeJsonAtomically(destination, state) {
       fs.closeSync(descriptor);
     }
     fs.renameSync(temporary, destination);
-    // Windows cannot open directory descriptors through Node. POSIX also
-    // persists the directory entry so a crash cannot lose the accepted rename.
-    if (process.platform !== 'win32') {
-      const directory = fs.openSync(path.dirname(destination), 'r');
-      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
-    }
+    syncStateDirectory(path.dirname(destination));
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+}
+
+function syncStateDirectory(directoryPath) {
+  // Node cannot open directory descriptors on Windows.
+  if (process.platform === 'win32') return;
+  try {
+    const directory = fs.openSync(directoryPath, 'r');
+    try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+  } catch (error) {
+    if (['EINVAL', 'ENOTSUP', 'EOPNOTSUPP'].includes(error.code)) {
+      console.warn('Wait state replaced; this filesystem does not support directory fsync.');
+      return;
+    }
+    throw new Error('Wait state was replaced, but its directory could not be synced', { cause: error });
   }
 }

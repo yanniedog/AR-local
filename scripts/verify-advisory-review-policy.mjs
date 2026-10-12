@@ -8,6 +8,7 @@ import { requiredCiWaitResult, applyReviewerPolicy, reviewWaitIgnoredChecks } fr
 import { BOT_GATE_CHECK_NAMES, gateGithubBotChecks, fetchRequiredCi } from './lib/pr-gates-lib.mjs';
 import { readMergeCi } from './lib/pr-ci-readiness.mjs';
 import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
+import { evaluate } from '../wait_for_bots.mjs';
 assert.deepEqual(parseRequiredKeys(''), []);
 for (const mode of ['off', 'none', 'disabled', 'OFF']) assert.deepEqual(parseRequiredKeys(mode), []);
 assert.deepEqual(resolveRequiredKeys([], 'gemini,codex'), []);
@@ -52,6 +53,26 @@ try {
       writeBotWaitStateFile(123, persisted, stateRoot);
     } finally { fs.fsyncSync = originalFsync; }
     assert.equal(directorySynced, true, 'accepted rename persists its directory');
+    const originalWarn = console.warn;
+    const warnings = [];
+    try {
+      console.warn = (message) => warnings.push(message);
+      for (const code of ['EINVAL', 'ENOTSUP', 'EOPNOTSUPP', 'EIO']) {
+        fs.fsyncSync = (descriptor) => {
+          if (fs.fstatSync(descriptor).isDirectory()) throw Object.assign(new Error(code), { code });
+          return originalFsync(descriptor);
+        };
+        const updated = readBotWaitStateFile(123, stateRoot);
+        updated.anchor = code;
+        if (code === 'EIO') {
+          assert.throws(() => writeBotWaitStateFile(123, updated, stateRoot), /was replaced/);
+        } else {
+          writeBotWaitStateFile(123, updated, stateRoot);
+        }
+        assert.equal(readBotWaitStateFile(123, stateRoot).anchor, code);
+      }
+      assert.equal(warnings.length, 3, 'unsupported directory syncing is an explicit limitation');
+    } finally { fs.fsyncSync = originalFsync; console.warn = originalWarn; }
   }
   assert.equal(gateGithubBotChecks(123, {
     fetchChecks: (_pr, names) => {
@@ -76,6 +97,16 @@ console.log('Advisory review policy regression tests passed');
 
 assert.ok(reviewWaitIgnoredChecks().has('bot-feedback-gate'));
 assert.ok(reviewWaitIgnoredChecks('UNIT-CHECK').has('unit-check'));
+
+const reviewNow = Date.now();
+const reviewerWait = (ageSeconds) => evaluate({ prNumber: 123,
+  anchorIso: new Date(reviewNow - 600_000).toISOString(), state: {}, repo: { owner: 'owner', name: 'repo' },
+  requiredKeys: ['sourcery'],
+  fetchActivity: () => ({ events: [{ login: 'sourcery-ai', at: new Date(reviewNow - ageSeconds * 1000).toISOString() }] }),
+  readChecks: () => ({ ok: true, pending: false, failed: false }),
+});
+assert.equal(reviewerWait(0).status, 'waiting', 'one-shot opt-in retains the quiet window');
+assert.equal(reviewerWait(120).status, 'ready', 'a later one-shot observation can satisfy quiet');
 
 const reported = [
   { name: 'bot-feedback-gate', bucket: 'fail', state: 'FAILURE' },

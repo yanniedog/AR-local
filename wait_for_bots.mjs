@@ -9,6 +9,8 @@ import { requiredCiWaitResult, applyReviewerPolicy, reviewWaitIgnoredChecks } fr
  */
 import { execSync, spawnSync } from 'node:child_process';
 import { setTimeout as sleepMs } from 'node:timers/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   allKnownBotLogins,
   formatRequiredKeys,
@@ -194,7 +196,8 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, singleShot = false }) {
+export function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys,
+  fetchActivity = fetchBotActivity, readChecks = fetchChecks }) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
@@ -211,7 +214,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
   const elapsedMs = Date.now() - anchor.getTime();
   const maxMs = MAX_WAIT_MIN * 60 * 1000;
 
-  const activity = fetchBotActivity(repo.owner, repo.name, prNumber);
+  const activity = fetchActivity(repo.owner, repo.name, prNumber);
   if (activity.error) {
     if (isGithubRateLimitError(activity.error)) {
       return {
@@ -253,7 +256,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
     lastQuietAnchorAt !== null &&
     Date.now() - lastQuietAnchorAt.getTime() >= QUIET_WINDOW_SEC * 1000;
 
-  const checks = fetchChecks(prNumber);
+  const checks = readChecks(prNumber);
   if (checks.error && !checks.failed) {
     if (isGithubRateLimitError(checks.error)) {
       return {
@@ -290,14 +293,14 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
 
   if (
     checksReady &&
-    (minElapsed || singleShot) &&
+    minElapsed &&
     allRequiredPosted &&
-    (quiet || singleShot)
+    quiet
   ) {
     const suffix = noiseEventCount > 0
       ? ` Ignored ${noiseEventCount} noise event(s) — quota / trivial replies.`
       : '';
-    const quietNote = singleShot && !quiet ? ' (single-shot; quiet window skipped)' : `; ${QUIET_WINDOW_SEC}s quiet`;
+    const quietNote = `; ${QUIET_WINDOW_SEC}s quiet`;
     return {
       status: 'ready',
       message: `Bot wait satisfied (required bots posted since anchor${quietNote}). Clear to sweep threads.${suffix}`,
@@ -501,7 +504,6 @@ async function main() {
       state: st,
       repo,
       requiredKeys: keys,
-      singleShot: !args.watch,
     });
   };
 
@@ -524,7 +526,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`>>> BOT WAIT ERROR: ${err.message}`);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`>>> BOT WAIT ERROR: ${err.message}`);
+    process.exit(1);
+  });
+}
