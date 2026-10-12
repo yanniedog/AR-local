@@ -39,7 +39,7 @@ def credentials_directory(path: Path) -> None:
         raise ValueError("credentials directory must be owned by this user with mode 0700")
 
 
-def write_new_password(directory: Path) -> dict:
+def write_new_password(directory: Path) -> None:
     credentials_directory(directory)
     path = directory / "restic.password"
     with path.open("xb") as stream:
@@ -47,8 +47,6 @@ def write_new_password(directory: Path) -> dict:
         stream.write((secrets.token_urlsafe(48) + "\n").encode("ascii"))
         stream.flush()
         os.fsync(stream.fileno())
-    return {"result": "PASS", "action": "PASSWORD_CREATED", "backup": "NOT_RUN",
-            "recovery_key": "Store restic.password separately in your password manager before commissioning"}
 
 
 def _read_output(stream, output: queue.Queue) -> None:
@@ -125,8 +123,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rclone", default="rclone")
     args = parser.parse_args(argv)
     try:
-        result = (enroll(args.credentials_dir, rclone=args.rclone) if args.command == "oauth"
-                  else write_new_password(args.credentials_dir))
+        if args.command == "oauth":
+            result = enroll(args.credentials_dir, rclone=args.rclone)
+        else:
+            write_new_password(args.credentials_dir)
+            result = {
+                "result": "PASS",
+                "action": "PASSWORD_CREATED",
+                "backup": "NOT_RUN",
+                "recovery_key": "Store restic.password separately in your password manager before commissioning",
+            }
     except configparser.Error:
         result = {"result": "BLOCKED", "error": "Invalid private rclone configuration; details withheld", "backup": "NOT_RUN"}
     except (OSError, ValueError, KeyError, RuntimeError) as error:

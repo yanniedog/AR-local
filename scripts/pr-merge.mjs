@@ -37,6 +37,6 @@ function main() {
   if (r.sync && !args.noSync) console.log(`sync ${r.sync.action}: ${r.sync.detail}`);
   if (r.autoMerge) console.log(`auto-merge ${r.autoMerge.action}: ${r.autoMerge.detail}`);
   if (r.blocked) process.exit(r.sync?.exitCode === 2 ? 2 : 1);
-  process.exit(r.ok ? 0 : 1);
+  process.exit(r.ok ? 0 : r.autoMerge?.exitCode || 1);
 }
 main();

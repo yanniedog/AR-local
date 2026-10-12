@@ -1,172 +1,43 @@
 #!/usr/bin/env node
-/**
- * Apply branch protection on main requiring bot merge gates.
- * Requires admin/repo scope on GH_TOKEN or gh auth.
- *
- * Usage: npm run branch-protection:apply [-- --branch main] [-- --dry-run]
- */
+/** Update required status checks without replacing unrelated branch protections. */
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
-
-/** Bot merge gates — must match workflow YAML job keys exactly. */
-const BOT_GATE_CHECKS = ['bot-feedback-gate'];
-
-const GH_TIMEOUT_MS = 120_000;
+import { applyStatusCheckPolicy } from './lib/branch-protection-policy.mjs';
 
 function parseArgs(argv) {
-  const out = { branch: 'main', dryRun: false, help: false };
+  const options = { dryRun: false };
   for (let i = 2; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '--help' || a === '-h') out.help = true;
-    else if (a === '--dry-run') out.dryRun = true;
-    else if (a === '--branch' && argv[i + 1]) out.branch = argv[++i];
-    else if (a.startsWith('--branch=')) out.branch = a.slice('--branch='.length);
+    const arg = argv[i];
+    if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--help' || arg === '-h') options.help = true;
+    else if (arg === '--branch' && argv[i + 1]) options.branch = argv[++i];
+    else if (arg.startsWith('--branch=')) options.branch = arg.slice('--branch='.length);
+    else throw new Error(`Unknown or incomplete option: ${arg}`);
   }
-  return out;
+  return options;
 }
 
-function ghJson(args, { allow404 = false } = {}) {
-  const r = spawnSync('gh', args, { encoding: 'utf8', timeout: GH_TIMEOUT_MS });
-  if (r.error) throw new Error(r.error.message);
-  if (r.status !== 0) {
-    const msg = (r.stderr || r.stdout || '').trim();
-    // gh uses process exit codes; HTTP 404 appears in stderr (e.g. "HTTP 404: Not Found").
-    if (allow404 && /\b404\b/.test(msg)) return null;
-    throw new Error(msg || `gh exit ${r.status}`);
+function ghJson(args, input) {
+  const result = spawnSync('gh', args, {
+    encoding: 'utf8', timeout: 120_000,
+    ...(input === undefined ? {} : { input: JSON.stringify(input) }),
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(result.error?.message || (result.stderr || result.stdout || '').trim()
+      || `gh exited ${result.status}`);
   }
-  return r.stdout.trim() ? JSON.parse(r.stdout) : null;
+  return JSON.parse(result.stdout);
 }
 
-export function mergeCheckContexts(existingContexts, botChecks = BOT_GATE_CHECKS) {
-  // Retire the obsolete presence requirement while retaining product CI.
-  const retained = (existingContexts || []).filter((name) => name !== 'bot-presence-gate');
-  const merged = [...retained, ...botChecks];
-  return [...new Set(merged.filter(Boolean))];
+try {
+  const options = parseArgs(process.argv);
+  if (options.help) {
+    console.log('Usage: npm run branch-protection:apply [-- --branch <default branch>] [--dry-run]');
+    console.log('Requires existing status-check protection; defaults to the live repository default branch.');
+  } else {
+    const result = applyStatusCheckPolicy(options, { read: ghJson, write: ghJson });
+    console.log(JSON.stringify(result, null, 2));
+  }
+} catch (error) {
+  console.error(`apply-branch-protection: ${error.message}`);
+  process.exitCode = 1;
 }
-
-/** Map GET branch protection to PUT input, merging required check contexts. */
-function buildProtectionPayload(existing, mergedContexts) {
-  const strict = existing?.required_status_checks?.strict ?? true;
-  const enforceAdmins =
-    typeof existing?.enforce_admins?.enabled === 'boolean' ? existing.enforce_admins.enabled : true;
-
-  const payload = {
-    required_status_checks: { strict, contexts: mergedContexts },
-    enforce_admins: enforceAdmins,
-    required_pull_request_reviews: null,
-    restrictions: null,
-    required_conversation_resolution: existing?.required_conversation_resolution?.enabled ?? true,
-    allow_force_pushes: existing?.allow_force_pushes?.enabled ?? false,
-    allow_deletions: existing?.allow_deletions?.enabled ?? false,
-  };
-
-  const reviews = existing?.required_pull_request_reviews;
-  if (reviews) {
-    payload.required_pull_request_reviews = {
-      dismiss_stale_reviews: reviews.dismiss_stale_reviews ?? false,
-      require_code_owner_reviews: reviews.require_code_owner_reviews ?? false,
-      required_approving_review_count: reviews.required_approving_review_count ?? 0,
-    };
-  }
-
-  return payload;
-}
-
-function printManualSteps(repo, branch, checks) {
-  console.log(`
-Branch protection could not be applied via API (token may lack admin:repo scope).
-
-Manual GitHub UI steps for ${repo} → Settings → Branches → Branch protection rules → Add rule:
-
-1. Branch name pattern: \`${branch}\`
-2. Require a pull request before merging: ON (no approval count required unless you want human review)
-3. Require status checks to pass before merging: ON
-   - Require branches to be up to date before merging: ON
-   - Required checks (exact job names):
-${checks.map((c) => `     - \`${c}\``).join('\n')}
-4. Require conversation resolution before merging: ON
-5. Do not allow bypassing the above settings (recommended for admins too)
-
-Repo merge method (Settings → General → Pull Requests, or \`npm run repo-merge-settings:apply\`):
-squash only, auto-merge ON, delete head branches ON. Agents: \`npm run pr:merge -- --pr <n>\`.
-
-Note: GitHub cannot block "Close pull request" via branch protection. Agents must not close
-PRs without merge unless the user waives in writing; \`npm run agent:auditor\` flags
-closed-unmerged PRs with open bot threads.
-`);
-}
-
-function main() {
-  const args = parseArgs(process.argv);
-  if (args.help) {
-    console.log('Usage: npm run branch-protection:apply [-- --branch main] [-- --dry-run]');
-    process.exit(0);
-  }
-
-  if (spawnSync('gh', ['--version'], { stdio: 'ignore' }).status !== 0) {
-    console.error('apply-branch-protection: install gh CLI and authenticate (gh auth login)');
-    process.exit(1);
-  }
-
-  let repo;
-  try {
-    repo = ghJson(['repo', 'view', '--json', 'nameWithOwner']).nameWithOwner;
-  } catch (e) {
-    console.error(`apply-branch-protection: ${e.message}`);
-    process.exit(1);
-  }
-
-  const protectionPath = `repos/${repo}/branches/${args.branch}/protection`;
-  let existing = null;
-  try {
-    existing = ghJson(['api', protectionPath], { allow404: true });
-  } catch (e) {
-    console.error(`apply-branch-protection: could not read existing protection: ${e.message}`);
-    process.exit(1);
-  }
-
-  const existingContexts = existing?.required_status_checks?.contexts || [];
-  const mergedContexts = mergeCheckContexts(existingContexts, BOT_GATE_CHECKS);
-  const payload = buildProtectionPayload(existing, mergedContexts);
-
-  if (args.dryRun) {
-    console.log(
-      JSON.stringify(
-        {
-          repo,
-          branch: args.branch,
-          existingContexts,
-          mergedContexts,
-          botGates: BOT_GATE_CHECKS,
-          payload,
-        },
-        null,
-        2,
-      ),
-    );
-    process.exit(0);
-  }
-
-  const path = protectionPath;
-  const r = spawnSync(
-    'gh',
-    ['api', '--method', 'PUT', path, '--input', '-'],
-    { encoding: 'utf8', input: JSON.stringify(payload), timeout: GH_TIMEOUT_MS },
-  );
-  if (r.status === 0) {
-    console.log(`Branch protection applied on ${repo}:${args.branch}`);
-    console.log(`Required checks (${mergedContexts.length}): ${mergedContexts.join(', ')}`);
-    if (existingContexts.length) {
-      console.log(`Retained product checks, retired bot-presence-gate; required bot gates: ${BOT_GATE_CHECKS.join(', ')}`);
-    }
-    console.log(`required_conversation_resolution: ${payload.required_conversation_resolution}`);
-    process.exit(0);
-  }
-
-  console.error(`apply-branch-protection: API failed (exit ${r.status})`);
-  if (r.stderr) console.error(r.stderr.trim());
-  printManualSteps(repo, args.branch, mergedContexts);
-  process.exit(r.status === 403 || r.status === 404 ? 2 : 1);
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

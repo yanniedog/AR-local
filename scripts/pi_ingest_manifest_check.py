@@ -96,7 +96,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             index_url=args.dates_index_url or args.manifest_url.rsplit("/", 1)[0] + "/dates-index.json",
             fetch=fetch_manifest,
         )
-    stale = check_due and not publication["publication_current"]
+    stale = check_due and not publication.get("publication_healthy", publication["publication_current"])
     payload.update(publication)
     payload["stale"] = stale
     run_date = publication["manifest_run_date"]

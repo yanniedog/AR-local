@@ -117,6 +117,17 @@ do
 done
 sudo install -m 0755 "$repo_dir/deploy/pi/cdr-ingest" /usr/local/bin/cdr-ingest
 
+# Persist observation-only entry points even when older queue overrides exist.
+render_unit "$repo_dir/deploy/pi/ar-local-queue-task-daily-repair.service" "$tmp_dir/ar-local-queue-task-daily-repair.service"
+sudo install -m 0644 "$tmp_dir/ar-local-queue-task-daily-repair.service" /etc/systemd/system/ar-local-queue-task-daily-repair.service
+for pair in "ar-local-daily-watchdog:ar-local-daily-watchdog-observe.conf" "ar-local-boot-recovery:ar-local-boot-observe.conf"; do
+  unit="${pair%%:*}"
+  source="${pair#*:}"
+  render_unit "$repo_dir/deploy/pi/$source" "$tmp_dir/$source"
+  sudo install -d -m 0755 "/etc/systemd/system/$unit.service.d"
+  sudo install -m 0644 "$tmp_dir/$source" "/etc/systemd/system/$unit.service.d/zz-daily-observe-20261012.conf"
+done
+# The repair unit is manual-only: never enable it or create a timer.
 sudo systemctl daemon-reload
 sudo systemctl enable ar-local-dashboard.service ar-local-boot-recovery.service
 sudo systemctl enable --now \

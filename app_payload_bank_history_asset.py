@@ -30,30 +30,36 @@ def digest(raw):
 def critical_core(core):
     """Never put either historical archive on a legacy client's startup path."""
     return {key: value for key, value in core.items()
-            if key not in ("bank_rate_history", NAMESPACE)}
+            if key not in ("bank_rate_history", NAMESPACE, "bank_rate_history_catalogue_packed", "bank_rate_history_ready")}
 
 
 def encode_envelope(catalogue, *, run_date, core_sha256):
     if not isinstance(catalogue, dict) or catalogue.get("schema_version") != 2:
         raise ValueError("Historical catalogue must use schema 2")
+    return _encode_document(catalogue, run_date=run_date, core_sha256=core_sha256)
+
+
+def _encode_document(catalogue, *, run_date, core_sha256, inner_limit=None, budget_error=ValueError,
+                     outer_json_limit=None, outer_gzip_limit=None):
+    """Shared envelope; callers validate their independently versioned document."""
     if (date.fromisoformat(run_date).isoformat() != run_date
             or not HASH.fullmatch(core_sha256)):
         raise ValueError("Historical envelope date or core binding is invalid")
     decoded = canonical(catalogue)
-    if not 0 < len(decoded) <= INNER_JSON_MAX_BYTES:
-        raise ValueError("Historical catalogue decoded bytes exceed budget")
+    if not 0 < len(decoded) <= (INNER_JSON_MAX_BYTES if inner_limit is None else inner_limit):
+        raise budget_error("Historical catalogue decoded bytes exceed budget")
     compressed = gzip.compress(decoded, mtime=0)
     if len(compressed) > INNER_GZIP_MAX_BYTES:
-        raise ValueError("Historical catalogue compressed bytes exceed budget")
+        raise budget_error("Historical catalogue compressed bytes exceed budget")
     envelope = {"schema_version": 1, "run_date": run_date, "core_sha256": core_sha256,
                 "catalogue": {"sha256": digest(decoded), "bytes": len(decoded),
                               "gzip_base64": base64.b64encode(compressed).decode("ascii")}}
     raw = canonical(envelope)
-    if len(raw) > OUTER_JSON_MAX_BYTES:
-        raise ValueError("Historical envelope decoded bytes exceed budget")
+    if len(raw) > (OUTER_JSON_MAX_BYTES if outer_json_limit is None else outer_json_limit):
+        raise budget_error("Historical envelope decoded bytes exceed budget")
     wire = gzip.compress(raw, mtime=0)
-    if len(wire) > OUTER_GZIP_MAX_BYTES:
-        raise ValueError("Historical envelope compressed bytes exceed budget")
+    if len(wire) > (OUTER_GZIP_MAX_BYTES if outer_gzip_limit is None else outer_gzip_limit):
+        raise budget_error("Historical envelope compressed bytes exceed budget")
     return wire
 
 
@@ -79,9 +85,17 @@ def _document(raw):
 
 def decode_envelope(raw, *, run_date, core_sha256):
     """Verify both byte domains and current-core authority before adopting data."""
-    if not 0 < len(raw) <= OUTER_GZIP_MAX_BYTES:
+    catalogue = _decode_document(raw, run_date=run_date, core_sha256=core_sha256)
+    if not isinstance(catalogue, dict) or catalogue.get("schema_version") != 2:
+        raise ValueError("Historical catalogue must use schema 2")
+    return catalogue
+
+
+def _decode_document(raw, *, run_date, core_sha256, inner_limit=None,
+                     outer_json_limit=None, outer_gzip_limit=None):
+    if not 0 < len(raw) <= (OUTER_GZIP_MAX_BYTES if outer_gzip_limit is None else outer_gzip_limit):
         raise ValueError("Historical envelope compressed bytes exceed budget")
-    value = _document(_inflate(raw, OUTER_JSON_MAX_BYTES))
+    value = _document(_inflate(raw, OUTER_JSON_MAX_BYTES if outer_json_limit is None else outer_json_limit))
     if (not isinstance(value, dict) or set(value) != {"schema_version", "run_date", "core_sha256", "catalogue"}
             or type(value["schema_version"]) is not int or value["schema_version"] != 1
             or value["run_date"] != run_date or value["core_sha256"] != core_sha256):
@@ -89,7 +103,7 @@ def decode_envelope(raw, *, run_date, core_sha256):
     archive = value["catalogue"]
     if (not isinstance(archive, dict) or set(archive) != {"sha256", "bytes", "gzip_base64"}
             or not isinstance(archive["sha256"], str) or not HASH.fullmatch(archive["sha256"])
-            or type(archive["bytes"]) is not int or not 0 < archive["bytes"] <= INNER_JSON_MAX_BYTES
+            or type(archive["bytes"]) is not int or not 0 < archive["bytes"] <= (INNER_JSON_MAX_BYTES if inner_limit is None else inner_limit)
             or not isinstance(archive["gzip_base64"], str)
             or len(archive["gzip_base64"]) > 4 * ((INNER_GZIP_MAX_BYTES + 2) // 3)):
         raise ValueError("Historical archive descriptor is invalid")
@@ -100,10 +114,7 @@ def decode_envelope(raw, *, run_date, core_sha256):
     decoded = _inflate(compressed, archive["bytes"])
     if len(decoded) != archive["bytes"] or digest(decoded) != archive["sha256"]:
         raise ValueError("Historical catalogue decoded bytes differ from receipt")
-    catalogue = _document(decoded)
-    if not isinstance(catalogue, dict) or catalogue.get("schema_version") != 2:
-        raise ValueError("Historical catalogue must use schema 2")
-    return catalogue
+    return _document(decoded)
 
 
 def descriptor(manifest):

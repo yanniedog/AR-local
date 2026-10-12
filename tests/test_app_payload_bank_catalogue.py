@@ -57,6 +57,19 @@ def test_all_historical_tiers_and_date_scoped_facts_survive(observations):
     assert any(span[1] == 2 for tiers in result["sections"].values() for tier in tiers for span in tier["spans"])
 
 
+@pytest.mark.parametrize("encoded, expected", [("1", True), ("", False), ("0", False), ("true", True), (False, False)])
+def test_historical_csv_boolean_projection_preserves_source(observations, encoded, expected):
+    from app_payload_bank_catalogue import historical_descriptor
+    row = deepcopy(observations[-1]["sections"]["Savings"][0])
+    row["ribbon_normalized"] = encoded
+    projected = historical_descriptor(row)
+    assert projected["ribbon_normalized"] is expected
+    assert row["ribbon_normalized"] == encoded
+    row["ribbon_normalized"] = "unknown control"
+    with pytest.raises(ValueError, match="known CSV boolean"):
+        historical_descriptor(row)
+
+
 @pytest.mark.parametrize("fault", ["missing", "wrong_provider", "malformed_facts", "malformed_constraints"])
 def test_unknown_or_conflicting_published_metadata_cannot_donate_features(observations, fault):
     current = observations[-1]
@@ -134,3 +147,14 @@ def test_private_prepack_rejects_corrupt_bound_inputs(tmp_path, observations, fa
     with pytest.raises(ValueError, match="differs"):
         prepack(root, tmp_path / "derived", index_sha256=index_sha)
     assert not (tmp_path / "derived").exists()
+
+
+def test_private_prepack_reports_the_actual_optional_budget(tmp_path, observations, monkeypatch):
+    import app_payload_history_packed as codec
+    root, index_sha = public_cache(tmp_path, observations)
+    monkeypatch.setattr(codec, "MAX_NODES", 1)
+    report = prepack(root, tmp_path / "derived", index_sha256=index_sha)
+    assert report["packed_history"] == {
+        "status": "OMITTED", "reason": "Historical dictionary node budget exceeded"}
+    assert (tmp_path / "derived" / "bank_rate_history_catalogue.json.gz").is_file()
+    assert not (tmp_path / "derived" / "bank_rate_history_catalogue_packed.json.gz").exists()

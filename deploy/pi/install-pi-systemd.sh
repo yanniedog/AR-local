@@ -6,6 +6,17 @@ repo_dir="${2:-$portable_root/AR-local}"
 site_dir="${3:-$portable_root/australianrates}"
 data_dir="${4:-$portable_root/data}"
 run_user="${AR_LOCAL_USER:-${SUDO_USER:-$(id -un)}}"
+case "$run_user" in
+  ''|[!A-Za-z_]*|*[!A-Za-z0-9_-]*)
+    echo "The service user must be a simple existing Unix account name" >&2
+    exit 1
+    ;;
+esac
+run_uid="$(id -u "$run_user")"
+if [ "$run_uid" -eq 0 ]; then
+  echo "The shared network watchdog requires a non-root service user" >&2
+  exit 1
+fi
 run_group="${AR_LOCAL_GROUP:-$(id -gn "$run_user")}"
 run_home="$(getent passwd "$run_user" | cut -d: -f6)"
 case "$run_home" in
@@ -76,6 +87,7 @@ render_unit "$repo_dir/deploy/pi/ar-local-runtime-health.service" "$tmp_dir/ar-l
 render_unit "$repo_dir/deploy/pi/ar-local-capacity-monitor.service" "$tmp_dir/ar-local-capacity-monitor.service"
 render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-now.service" "$tmp_dir/ar-local-ingest-now.service"
+sudo sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir" "$run_user" "$run_group"
 
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
@@ -95,6 +107,17 @@ chmod +x "$repo_dir/deploy/pi/ar-local-boot-recovery.sh" "$repo_dir/deploy/pi/in
 render_unit "$repo_dir/deploy/pi/ar-local-deploy-watchdog.service" "$tmp_dir/ar-local-deploy-watchdog.service"
 sudo install -m 0644 "$tmp_dir/ar-local-deploy-watchdog.service" /etc/systemd/system/ar-local-deploy-watchdog.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-deploy-watchdog.timer" /etc/systemd/system/ar-local-deploy-watchdog.timer
+# Persist observation-only entry points even when older queue overrides exist.
+render_unit "$repo_dir/deploy/pi/ar-local-queue-task-daily-repair.service" "$tmp_dir/ar-local-queue-task-daily-repair.service"
+sudo install -m 0644 "$tmp_dir/ar-local-queue-task-daily-repair.service" /etc/systemd/system/ar-local-queue-task-daily-repair.service
+for pair in "ar-local-daily-watchdog:ar-local-daily-watchdog-observe.conf" "ar-local-boot-recovery:ar-local-boot-observe.conf"; do
+  unit="${pair%%:*}"
+  source="${pair#*:}"
+  render_unit "$repo_dir/deploy/pi/$source" "$tmp_dir/$source"
+  sudo install -d -m 0755 "/etc/systemd/system/$unit.service.d"
+  sudo install -m 0644 "$tmp_dir/$source" "/etc/systemd/system/$unit.service.d/zz-daily-observe-20261012.conf"
+done
+# The repair unit is manual-only: never enable it or create a timer.
 sudo systemctl daemon-reload
 sudo systemctl enable ar-local-dashboard.service
 sudo systemctl enable ar-local-boot-recovery.service
@@ -107,7 +130,7 @@ sudo systemctl enable --now ar-local-capacity-monitor.timer
 # Power-loss hardening: fsck auto-repair, a dormant BCM watchdog device,
 # tailscaled auto-start, and bounded persistent journald. Boot firmware edits
 # apply on the next reboot; systemd's runtime watchdog stays deliberately off.
-sudo sh "$repo_dir/deploy/pi/install-power-resilience.sh" "$repo_dir" "$data_dir" || echo "WARN: power-resilience hardening reported an error; review output above."
+sudo env AR_LOCAL_USER="$run_user" AR_LOCAL_GROUP="$run_group" sh "$repo_dir/deploy/pi/install-power-resilience.sh" "$repo_dir" "$data_dir" || echo "WARN: power-resilience hardening reported an error; review output above."
 if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
   sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir" "$run_group"
 fi

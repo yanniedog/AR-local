@@ -108,6 +108,20 @@ def verify(store, value: dict) -> None:
             raise ValueError('publication ciphertext changed after receipt')
 
 
+def refresh_current(repo: str = DEFAULT_REPO) -> dict:
+    """Rebind a changed historical index without replacing the rolling manifest.
+
+    Caller retains the production lease through historical publication and this
+    verification. A retry also refreshes an unchanged index after a lost receipt.
+    """
+    from app_payload_revisions_github import GitHubRevisionStore
+    store = GitHubRevisionStore(repo)
+    current = store.read(TAG, 'manifest.json', LIMIT, require_encrypted=True)
+    if current is None:
+        raise ValueError('current publication manifest unavailable')
+    return publish(store, current)
+
+
 def check(expected_date: str, repo: str = DEFAULT_REPO) -> dict:
     from app_payload_revisions_github import GitHubRevisionStore
     result = {'manifest_run_date': '', 'dates_index_latest_date': '', 'generated_at': '',
