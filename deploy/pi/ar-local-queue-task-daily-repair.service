@@ -1,0 +1,33 @@
+[Unit]
+Description=One daily AR-local repair, bounded to 20 minutes including kill grace
+After=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_REPO={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+Environment=HOME={{AR_LOCAL_HOME}}
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/ar-local/app-payload.env
+UnsetEnvironment=AR_LOCAL_DRIVE_BACKUP_SPOOL
+StateDirectory=ar-local-daily-repair
+StateDirectoryMode=0750
+CPUQuota=300%
+CPUWeight=500
+IOWeight=500
+# Startup + execution + forced-kill grace = 61 + 1120 + 10 = 1191s < 20min.
+TimeoutStartSec=61s
+RuntimeMaxSec=1120s
+TimeoutStopSec=10s
+KillMode=control-group
+SendSIGKILL=yes
+Restart=no
+ExecStart=/usr/bin/python3 -B {{AR_LOCAL_REPO}}/pi_daily_repair_once.py
+# Restore serving under the producer's existing idle/lease guard after termination.
+ExecStopPost=/usr/bin/python3 -B {{AR_LOCAL_REPO}}/pi_daily_repair_once.py --finish
+# Deliberately no [Install] section and no timer. The single daily controller calls it.
