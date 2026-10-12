@@ -33,7 +33,9 @@ for (const event of ['pull_request', 'pull_request_review', 'pull_request_review
   assert.deepEqual(discoverGatePrs({ workflow_run: { ...run, event } }, 'workflow_run', repository, discoveryApi), [42]);
 }
 assert.ok(apiCalls.every((endpoint) => endpoint.includes('/pulls?state=open&per_page=100&page=1')));
-assert.deepEqual(discoverGatePrs({ workflow_run: { ...run, event: 'push' } }, 'workflow_run', repository), []);
+for (const event of ['push', 'workflow_dispatch']) {
+  assert.deepEqual(discoverGatePrs({ workflow_run: { ...run, event } }, 'workflow_run', repository), []);
+}
 assert.throws(() => discoverGatePrs({ workflow_run: { ...run, repository: { full_name: 'other/repo' } } },
   'workflow_run', repository), /repository/);
 
@@ -198,8 +200,27 @@ const workflow = fs.readFileSync(new URL('../.github/workflows/pr-bot-feedback-c
 assert.match(workflow, /\n  pull_request_target:/);
 assert.doesNotMatch(workflow, /\n  pull_request:|\n  pull_request_review(?:_comment)?:/);
 assert.match(workflow, /types: \[requested, in_progress, completed\]/, 'reruns refresh the gate');
-assert.match(workflow, /group: required-pr-gate-\$\{\{ matrix\.pr \}\}/);
-assert.match(workflow, /cancel-in-progress: false/);
+assert.doesNotMatch(workflow.split('\njobs:')[0], /^concurrency:/m,
+  'workflow cancellation would discard independent prior-head retirement');
+const discoveryJob = workflow.split('\n  discover:')[1]?.split('\n  evaluate-gates:')[0];
+assert.match(discoveryJob, /github\.event_name != 'issue_comment' \|\| github\.event\.issue\.pull_request != null/);
+assert.match(discoveryJob, /github\.event_name != 'workflow_run' \|\|\s+contains\(fromJSON\('([^']+)'\), github\.event\.workflow_run\.event\)/,
+  'skip irrelevant source events before allocating discovery runners');
+const discoveryEvents = discoveryJob.match(/contains\(fromJSON\('([^']+)'\), github\.event\.workflow_run\.event\)/)[1];
+assert.deepEqual(JSON.parse(discoveryEvents), ['pull_request', 'pull_request_review', 'pull_request_review_comment'],
+  'all review bridge sources and product PR runs refresh gates; main push/manual product runs do not');
+assert.match(discoveryJob,
+  /group: required-pr-gate-discover-\$\{\{ github\.event_name == 'workflow_run' && format\('run-\{0\}', github\.event\.workflow_run\.id\) \|\| format\('pr-\{0\}', github\.event\.pull_request\.number \|\| github\.event\.issue\.number \|\| inputs\.pr_number\) \}\}/,
+  'discovery coalesces only the same source run or direct PR, with distinct identity namespaces');
+assert.match(discoveryJob, /cancel-in-progress: true/);
+assert.doesNotMatch(discoveryJob, /checks: write|--publish|--retire-event/,
+  'only read-only discovery may be cancelled');
+assert.match(discoveryJob, /node scripts\/pr-required-gate\.mjs --discover/);
+const evaluationJob = workflow.split('\n  evaluate-gates:')[1];
+assert.match(evaluationJob, /group: required-pr-gate-\$\{\{ matrix\.pr \}\}/);
+assert.match(evaluationJob, /cancel-in-progress: false/);
+assert.equal((workflow.match(/cancel-in-progress: true/g) || []).length, 1,
+  'check writers must finish or be superseded through owned-check retirement');
 assert.doesNotMatch(workflow, /\n  bot-feedback-gate:/, 'Actions job cannot compete with the published required check');
 assert.doesNotMatch(workflow, /BOT_GATE_TOKEN|secrets\./, 'no privileged PAT in PR-controlled execution');
 assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3);
