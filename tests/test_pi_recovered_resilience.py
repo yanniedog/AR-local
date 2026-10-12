@@ -368,8 +368,8 @@ def test_ingest_units_kill_the_whole_process_tree(name: str) -> None:
     assert "TimeoutStartSec=6h15min" in text
     assert "RuntimeMaxSec=" not in text
     if name == "ar-local-daily-watchdog.service":
-        assert "ExecStopPost=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_cdr_recovery.py --restore-dashboard" in text
-        assert "ExecStopPost=+" not in text
+        assert "ExecStopPost=" not in text
+        assert "pi_cdr_recovery.py --restore-dashboard" not in text
     else:
         assert "ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service" in text
 
