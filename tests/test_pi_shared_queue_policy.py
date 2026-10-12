@@ -235,3 +235,24 @@ def test_dst_transition_keeps_next_quiet_window_at_calendar_0030(date, utc_hours
     assert next_start.hour == 0 and next_start.minute == 30
     assert next_start.date() == start.date() + timedelta(days=1)
     assert (next_start.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds() == utc_hours * 3600
+
+
+@pytest.mark.parametrize('running', [False, True])
+def test_conflicting_promoted_reservations_do_not_consume_multiple_slots(running):
+    ar = [job('ar-' + str(i), i, project='ar-local', age=7200,
+              mode='exclusive', state='running' if running and i == 0 else 'waiting') for i in range(3)]
+    candidate = job('independent', 4, resources=['mining'])
+    assert admission(candidate, [*ar, candidate], NOW) == (True, 'admitted')
+
+
+@pytest.mark.parametrize('running_slots,promoted_slots', [(1, 3), (2, 2)])
+def test_promoted_cpu_reservation_blocks_new_arrivals_while_running_work_drains(
+        running_slots, promoted_slots):
+    running = [job(f'running-{index}', index, resources=[f'other-running-{index}'], state='running')
+               for index in range(running_slots)]
+    promoted = job('promoted', 10, project='ar-local', age=7200, slots=promoted_slots)
+    newcomer = job('newcomer', 11, resources=['other-new'])
+    records = [*running, promoted, newcomer]
+    assert admission(promoted, records, NOW) == (False, 'cpu-capacity')
+    assert admission(newcomer, records, NOW) == (False, 'ar-local-cpu-reservation')
+    assert admission(promoted, [promoted, newcomer], NOW) == (True, 'admitted')
