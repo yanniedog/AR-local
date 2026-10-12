@@ -12,6 +12,12 @@ const ok = (c, m) => { if (!c) fail.push(m); };
 ok(formatCellMarkdown({ status: CELL_STATUS.GREEN, label: 'OK' }) === '**PASS**', 'PASS');
 ok(formatCellMarkdown({ status: CELL_STATUS.YELLOW, label: 'Open' }) === '**FAIL**', 'FAIL');
 ok(buildMatrixMarkdown(r).includes('| PR | Title | Merged |'), 'header');
+const hostile = buildMatrixMarkdown({
+  ...r,
+  rows: [{ ...r.rows[0], title: 'a|b\\c\r\n' }],
+});
+ok(hostile.includes('a\\|b\\\\c'), 'escapes pipes and backslashes before they can break a cell');
+ok(!hostile.includes('a|b\\c'), 'raw pipe and backslash are not left in the cell');
 ok(buildMatrixPrBody(r).includes(MATRIX_MD_FILE), 'pr body');
 ok(buildMatrixHtml(r).includes(MATRIX_MD_FILE), 'html link');
 const tmp = mkdtempSync(path.join(tmpdir(), 'mx-'));
