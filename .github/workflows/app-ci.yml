@@ -71,6 +71,9 @@ on:
       - 'tests/**'
       - '.github/workflows/app-ci.yml'
 
+permissions:
+  contents: read
+
 jobs:
   process-liveness-windows:
     name: process liveness (Windows)
