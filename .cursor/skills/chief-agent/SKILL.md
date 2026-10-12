@@ -45,7 +45,7 @@ See `~/.cursor/rules/close-loop-never-defer.mdc`.
 4. **Perfection bar** — deliverables = merged PRs with thread closure and project verify when code shipped.
 5. **Escalation to human** — only after a remediation subagent reports a **hard blocker** (auth failure, GitHub outage) **with evidence**. Until then, chief keeps delegating.
 
-See `workflow-orchestrator` skill — orchestrator **must not merge** until `wait-for-bots` exit **0** (gemini + codex + sourcery posted since anchor), `pr:bot-feedback-check` exit **0**, and substantive bot/human inline threads are closed. **Never** merge on CI green alone.
+See `workflow-orchestrator` skill. Reviewers are advisory by default. `wait-for-bots` exit **0** confirms required CI readiness; `--require-bots gemini,codex,sourcery` explicitly adds reviewer activity and quiet-window checks. Applicable exact-head product CI, `bot-feedback-gate`, local feedback checks, and substantive thread closure remain required.
 
 ## Global feature sync (chief enforces)
 
@@ -200,9 +200,9 @@ When `chief:scan` exit 1, path overlap, worktree duplicate, or branch/PR mismatc
 2. Partition mixed WIP — stash or branch per path prefix; document paths per PR
 3. For CONFLICTING PRs: checkout head branch, rebase origin/main, resolve conflicts, push
 4. npm run pr:bot-feedback-check -- --pr <n>
-5. npm run wait-for-bots until exit 0 (gemini + codex + sourcery each posted since anchor; exit 1 = do not merge)
+5. Run npm run wait-for-bots once (reviewers advisory by default; --require-bots gemini,codex,sourcery opts in). Park pending GitHub work and check once in a later turn.
 6. In-thread implement/defer/decline on every substantive bot/human thread
-7. npm run pr:merge (`gh pr merge --auto --squash --delete-branch`) only after GitHub checks bot-presence-gate + pr-bot-feedback-check green, wait-for-bots exit 0, pr:bot-feedback-check exit 0, and threads closed — **never** on CI green alone
+7. npm run pr:merge -- --pr <n> --no-sync only after applicable exact-head product CI, bot-feedback-gate, local gates, and substantive thread closure pass
 8. Pi verify / npm run verify:local when code shipped
 9. npm run chief:scan — must exit 0 before chief marks cycle complete
 ```

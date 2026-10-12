@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { fetchRequiredCi } from './scripts/lib/pr-gates-lib.mjs';
-import { requiredCiWaitResult, applyReviewerPolicy } from './scripts/lib/bot-wait-ci.mjs';
+import { requiredCiWaitResult, applyReviewerPolicy, reviewWaitIgnoredChecks } from './scripts/lib/bot-wait-ci.mjs';
 /**
  * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
  * Reviewers are advisory by default: exit 0 means required CI has settled.
@@ -9,6 +9,8 @@ import { requiredCiWaitResult, applyReviewerPolicy } from './scripts/lib/bot-wai
  */
 import { execSync, spawnSync } from 'node:child_process';
 import { setTimeout as sleepMs } from 'node:timers/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   allKnownBotLogins,
   formatRequiredKeys,
@@ -179,21 +181,8 @@ function fetchBotActivity(owner, name, prNumber) {
   return { events };
 }
 
-const DEFAULT_IGNORED_CHECK_NAMES = [
-  'bot-presence-gate',
-  'bot-feedback-gate',
-  'pr-bot-presence-gate',
-  'pr-bot-feedback-check',
-  'pr-gates-advisory',
-];
-
 function ignoredCheckNames() {
-  const raw = process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '';
-  const fromEnv = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...fromEnv]);
+  return reviewWaitIgnoredChecks(process.env.BOT_WAIT_IGNORE_CHECK_NAMES);
 }
 
 function fetchChecks(prNumber) {
@@ -207,7 +196,8 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, singleShot = false }) {
+export function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys,
+  fetchActivity = fetchBotActivity, readChecks = fetchChecks }) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
@@ -217,14 +207,14 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
   if (requiredKeys.length === 0) {
-    return requiredCiWaitResult(fetchRequiredCi(prNumber, { ignoredNames: (process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '').split(',').map((name) => name.trim()).filter(Boolean) }));
+    return requiredCiWaitResult(fetchRequiredCi(prNumber, { ignoredNames: [...ignoredCheckNames()] }));
   }
 
   const knownBots = allKnownBotLogins(requiredKeys);
   const elapsedMs = Date.now() - anchor.getTime();
   const maxMs = MAX_WAIT_MIN * 60 * 1000;
 
-  const activity = fetchBotActivity(repo.owner, repo.name, prNumber);
+  const activity = fetchActivity(repo.owner, repo.name, prNumber);
   if (activity.error) {
     if (isGithubRateLimitError(activity.error)) {
       return {
@@ -266,7 +256,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
     lastQuietAnchorAt !== null &&
     Date.now() - lastQuietAnchorAt.getTime() >= QUIET_WINDOW_SEC * 1000;
 
-  const checks = fetchChecks(prNumber);
+  const checks = readChecks(prNumber);
   if (checks.error && !checks.failed) {
     if (isGithubRateLimitError(checks.error)) {
       return {
@@ -303,14 +293,14 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
 
   if (
     checksReady &&
-    (minElapsed || singleShot) &&
+    minElapsed &&
     allRequiredPosted &&
-    (quiet || singleShot)
+    quiet
   ) {
     const suffix = noiseEventCount > 0
       ? ` Ignored ${noiseEventCount} noise event(s) — quota / trivial replies.`
       : '';
-    const quietNote = singleShot && !quiet ? ' (single-shot; quiet window skipped)' : `; ${QUIET_WINDOW_SEC}s quiet`;
+    const quietNote = `; ${QUIET_WINDOW_SEC}s quiet`;
     return {
       status: 'ready',
       message: `Bot wait satisfied (required bots posted since anchor${quietNote}). Clear to sweep threads.${suffix}`,
@@ -386,20 +376,20 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
 function printHelp(requiredKeys) {
   console.log(`Usage: npm run wait-for-bots -- [options]
 
-Poll GitHub until every required bot has posted or reacted with thumbs-up since the wait anchor and activity is quiet.
+Check required product CI. Reviewers are advisory by default; explicit reviewer opt-in also requires activity since the anchor and a quiet window.
 
 Options:
   --pr <n>              Pull request number (default: open PR for current branch)
   --watch, -w           Poll every ${POLL_INTERVAL_SEC}s until ready or cap
   --bot-tag             Reset wait anchor to now (after @mentioning bots)
   --since <iso>         Anchor wait window to timestamp (ISO 8601)
-  --require-bots <list> Comma-separated required keys (default: gemini,codex,sourcery)
+  --require-bots <list> Comma-separated required keys (default: off)
   --help, -h            Show this help
 
 Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap (DO NOT MERGE)
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
-     AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
+     AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys or off
      AR_BOT_WAIT_STATE_DIR — per-PR anchor JSON dir (absolute or repo-relative; default: <repo>/.ar-bot-wait)
      BOT_WAIT_IGNORE_CHECK_NAMES — comma-separated gh pr checks names to ignore (CI self-gate)
 
@@ -455,7 +445,7 @@ async function main() {
 
   if (args.botTag) {
     const anchorIso = new Date().toISOString();
-    state = { anchor: anchorIso, readyAt: null, requiredKeys };
+    Object.assign(state, { anchor: anchorIso, readyAt: null, requiredKeys });
     writeState(prNumber, state);
     console.log(`>>> BOT WAIT: anchor reset (bot-tag) at ${anchorIso} for PR #${prNumber}`);
     console.log(`>>> Required: ${formatRequiredKeys(requiredKeys)}`);
@@ -507,14 +497,13 @@ async function main() {
 
   const runOnce = () => {
     const st = readState(prNumber) || state;
-    const keys = st.requiredKeys || effectiveRequired;
+    const keys = effectiveRequired;
     return evaluate({
       prNumber,
       anchorIso: st.anchor || anchorFromPr,
       state: st,
       repo,
       requiredKeys: keys,
-      singleShot: !args.watch,
     });
   };
 
@@ -537,7 +526,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`>>> BOT WAIT ERROR: ${err.message}`);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`>>> BOT WAIT ERROR: ${err.message}`);
+    process.exit(1);
+  });
+}
