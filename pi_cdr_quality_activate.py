@@ -70,6 +70,12 @@ def write(path: Path, value: dict) -> None:
     write_bytes(path, (json.dumps(value, sort_keys=True, indent=2) + "\n").encode())
 
 
+def canary_phase(operation: Path, phase: str) -> None:
+    """Create-once private progress, independent of canary acceptance receipts."""
+    write(operation / f"phase-{phase}.json", {"phase": phase,
+          "started_at": datetime.now(timezone.utc).isoformat(), "monotonic_ns": time.monotonic_ns()})
+
+
 def layout(source: Path, production: Path, data: Path, operation: Path) -> None:
     roots = (source, production, data, operation)
     if any(p is None or not p.is_absolute() or p.resolve() != p or any(x.is_symlink() for x in (p, *p.parents)) for p in roots):
@@ -194,24 +200,29 @@ def canary_worker(args) -> dict:
     if cache_options and os.access(args.verified_cache.parent, os.W_OK):
         raise ValueError("verified cache must be mounted read-only in the protected worker")
     target = clean_commit(source)
+    canary_phase(operation, "01-source-snapshot")
     before, files = protected_files(data), source_files(source)
     controls = control_state(data)
     predecessor = rollback_contract(source, args.production)
     require_controls(data, controls, predecessor)
     run_date, generation, exports = current_state(data)
     tests = operation / "pytest.xml"
-    run([args.python, "-B", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider",
+    canary_phase(operation, "02-pytest")
+    run([args.python, "-u", "-B", "-m", "pytest", "tests", "-v", "-p", "no:cacheprovider",
          "--basetemp", operation / "pytest-temp", f"--junitxml={tests}"], cwd=source,
         timeout=3600, output=operation / "pytest.txt")
     test_result = junit_result(tests)
+    canary_phase(operation, "03-source-audit")
     report = audit(data, run_date, scrub=True, public=False, audit_root=operation / "source-audit", **cache_options)
     if report["capture"]["status"] != "PASS":
         raise ValueError("canary has no verified current source")
     dispositions = read(args.dispositions) if args.dispositions else {}
     source_acceptance(report, generation, dispositions)
     output = operation / "payload"
+    canary_phase(operation, "04-payload-build")
     manifest = build_payload(exports, output)
     validate_payload(manifest, output)
+    canary_phase(operation, "05-reconciliation")
     if manifest.get("enc"):
         raise ValueError("canary must build private plaintext for local reconciliation")
     core = json.loads(gzip.decompress((output / manifest["files"]["core"]["name"]).read_bytes()))
@@ -226,6 +237,7 @@ def canary_worker(args) -> dict:
     exported = json.loads((exports / "dashboard-cache" / run_date / "banks.json").read_bytes())
     if canonical_digest(details["products"]) != canonical_digest(build_details(exported["products"])):
         raise ValueError("candidate payload product details differ from verified source")
+    canary_phase(operation, "06-final-inventory")
     if protected_files(data) != before or source_files(source) != files or clean_commit(source) != target:
         raise ValueError("canary changed production evidence or candidate code")
     require_controls(data, controls, predecessor)

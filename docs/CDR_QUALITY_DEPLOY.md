@@ -12,6 +12,22 @@ capture, public publication, app installation, Drive restore, or natural timer r
 
 ## Prerequisites
 
+Canary paging diagnostics do not waive the no-host-swap guard. Resource receipts
+retain allowlisted memory/reclaim counters from the same reads used by the
+supervisor, plus the previous and triggering samples, elapsed time and UTC when
+a sampled resource limit fires. Missing or malformed optional telemetry is explicitly unavailable;
+it never grants acceptance. Zone watermarks are sampled before resource preflight
+and, on failure, only after workload cleanup. The latter describes post-cleanup
+state and cannot prove the exact zone watermark at the instant of failure.
+
+Private `phase-*.json` files identify source snapshot, pytest, audit, payload and
+reconciliation boundaries. `pytest.txt` uses verbose, unbuffered native pytest
+output so the active test is visible before it completes; there is no extra
+pytest plugin or host process scan. Read only a bounded tail when investigating
+a stopped test. Progress files and partial pytest output are diagnostic evidence,
+not complete canary receipts. Preserve all original failed receipts, and require
+a fresh complete canary under the unchanged guards before activation.
+
 Publication controls are part of the canary and seal: the presence and exact bytes
 of `state/app-payload-publication-pending.json`, `state/app-payload-continuity.json`,
 and the complete bounded `state/app-payload-retries/` inventory. Missing files

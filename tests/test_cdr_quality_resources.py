@@ -25,6 +25,9 @@ def test_missing_psi_is_disclosed_and_swap_counters_are_required(tmp_path):
     (tmp_path / "meminfo").write_text("MemAvailable: 6000000 kB\n")
     (tmp_path / "vmstat").write_text("pswpin 10\npswpout 20\n")
     value = resources.host_sample(tmp_path, page_size_bytes=16384)
+    diagnostics = value.pop("diagnostics")
+    assert diagnostics["vmstat"]["status"] == "partial"
+    assert diagnostics["vmstat"]["unavailable"]["pgscan_kswapd"] == "missing"
     assert value == {"available_bytes": 6000000 * 1024, "swap_in_pages": 10, "swap_out_pages": 20, "page_size_bytes": 16384, "psi_avg10": None}
     (tmp_path / "vmstat").write_text("pswpin 10\n")
     with pytest.raises(ValueError):
