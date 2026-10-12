@@ -38,8 +38,19 @@ function validatePr(pr, repository, number, defaultBranch) {
   return meta;
 }
 
+function matchesWorkflowPath(path, expected) {
+  if (path === expected) return true;
+  // GitHub also documents workflow-run paths as <path>@<ref>. Preserve the
+  // complete path boundary and reject malformed refs instead of prefix matching.
+  if (typeof path !== 'string' || !path.startsWith(`${expected}@`)) return false;
+  const ref = path.slice(expected.length + 1);
+  return ref !== '@' && !/[\x00-\x20\x7f~^:?*\[\\]/.test(ref) &&
+    !ref.includes('..') && !ref.includes('@{') && !ref.endsWith('.') &&
+    ref.split('/').every((part) => part && !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
 function matchesRun(run, meta, workflow) {
-  return run.workflow_id === workflow.id && run.path === workflow.path &&
+  return run.workflow_id === workflow.id && matchesWorkflowPath(run.path, workflow.path) &&
     run.event === 'pull_request' && run.head_sha === meta.headSha &&
     run.repository?.full_name === meta.repository && run.head_repository?.full_name === meta.headRepository &&
     run.head_branch === meta.headRef && Array.isArray(run.pull_requests) &&
@@ -101,18 +112,18 @@ function readWorkflow(api, prefix, workflow, meta) {
     // filter=latest retains successful jobs reused by GitHub's rerun-failed-jobs,
     // while selecting the new execution of every job actually retried.
     ? readApiPages(api, `${prefix}/actions/runs/${run.id}/jobs?filter=latest`, 'jobs') : [];
-  // A rerun may have started while jobs were read. Never reuse the old success.
-  if (run) {
-    const current = api(`${prefix}/actions/runs/${run.id}`);
-    const newest = latestProductRun(readApiPages(api, endpoint, 'workflow_runs'), meta, bound);
-    if (!matchesRun(current, meta, bound) || current.run_attempt !== run.run_attempt ||
-        current.status !== run.status || current.conclusion !== run.conclusion ||
-        !newest || newest.id !== run.id || newest.run_attempt !== run.run_attempt ||
-        newest.status !== run.status || newest.conclusion !== run.conclusion) {
-      return { run: { ...run, status: 'queued', conclusion: null }, jobs: [] };
-    }
-  }
-  return { run, jobs };
+  return { run, jobs, workflow: bound, endpoint };
+}
+
+function revalidateWorkflow(api, prefix, observation, meta) {
+  const { run, workflow, endpoint } = observation;
+  if (!run) return observation; // Missing observations already block success.
+  const current = api(`${prefix}/actions/runs/${run.id}`);
+  const newest = latestProductRun(readApiPages(api, endpoint, 'workflow_runs'), meta, workflow);
+  const unchanged = (candidate) => candidate && matchesRun(candidate, meta, workflow) &&
+    ['id', 'run_attempt', 'status', 'conclusion', 'run_started_at'].every((key) => candidate[key] === run[key]);
+  return unchanged(current) && unchanged(newest) ? observation :
+    { ...observation, run: { ...run, status: 'queued', conclusion: null }, jobs: [] };
 }
 
 export function readProductCi(prNumber, { repository, api = githubApi, expectedHeadSha } = {}) {
@@ -131,6 +142,11 @@ export function readProductCi(prNumber, { repository, api = githubApi, expectedH
     const workflows = getApplicableProductCi(files);
     const observations = {};
     for (const workflow of workflows) observations[workflow.path] = readWorkflow(api, prefix, workflow, meta);
+    // Recheck every selected workflow after all jobs have been read: an earlier
+    // workflow can start another attempt while a later workflow is inspected.
+    for (const workflow of workflows) {
+      observations[workflow.path] = revalidateWorkflow(api, prefix, observations[workflow.path], meta);
+    }
     const current = productPrIdentity(api(`${prefix}/pulls/${prNumber}`));
     if (JSON.stringify(current) !== JSON.stringify(meta)) {
       return { ok: true, ...meta, pending: true, failed: false, pendingNames: ['PR identity changed'], failedNames: [], checks: [], detail: 'PR head/base changed during CI read; recheck the new head' };
