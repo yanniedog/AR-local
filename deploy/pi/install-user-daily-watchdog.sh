@@ -28,5 +28,7 @@ EOF
 cp "$repo_dir/deploy/pi/ar-local-daily-watchdog.timer" "$unit_dir/ar-local-daily-watchdog.timer"
 
 systemctl --user daemon-reload
-systemctl --user enable --now ar-local-daily-watchdog.timer
+# This legacy timer duplicates the system observer. Installation must not
+# recreate its schedule; disabling the timer does not stop an in-flight service.
+systemctl --user disable --now ar-local-daily-watchdog.timer
 systemctl --user list-timers --all ar-local-daily-watchdog.timer --no-pager
