@@ -35,6 +35,12 @@ def claim_day(state, now, invocation):
             json.dump(value, stream); stream.flush(); os.fsync(stream.fileno())
     except FileExistsError:
         return None, "already_attempted_today"
+    if os.name == "posix":
+        descriptor = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     return receipt, "claimed"
 
 
@@ -56,7 +62,7 @@ def main():
     os.environ.pop("AR_LOCAL_DRIVE_BACKUP_SPOOL", None)
     # exec preserves the exact systemd MainPID required by the shared queue.
     worker = str(Path(__file__).with_name("pi_daily_repair_work.py"))
-    args = ["/usr/bin/python3", "-B", QUEUE, "run", "--project", "ar-local",
+    args = ["/usr/bin/python3", "-B", str(Path(__file__).with_name("pi_daily_repair_queue.py")), "run", "--project", "ar-local",
             "--resource", "ar-local", "--mode", "exclusive", "--cpu-slots", "3",
             "--wait-timeout", "1", "--max-runtime", "1100", "--",
             "/usr/bin/python3", "-B", worker]
@@ -75,7 +81,7 @@ def finish():
     with receipt.with_suffix(".finished.json").open("x", encoding="utf-8") as stream:
         json.dump(outcome, stream); stream.flush(); os.fsync(stream.fileno())
     repo = Path(os.environ.get("AR_LOCAL_CODE_ROOT", Path(__file__).resolve().parent))
-    subprocess.run(["/usr/bin/python3", "-B", str(repo / "pi_cdr_recovery.py"),
+    subprocess.run(["/usr/bin/python3", "-B", str(Path(__file__).with_name("pi_daily_repair_queue.py")),
                     "--restore-dashboard"], check=False, timeout=8)
     return 0
 

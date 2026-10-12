@@ -17,8 +17,10 @@ def repair(watchdog, recovery, day, now, read_pending=None):
     pending = (read_pending or watchdog.read_payload_publication_pending)(watchdog.REPO_ROOT)
     if pending:
         pointer = pending.get("pointer", {})
-        if (pending.get("run_date") != day or pointer.get("observation_date") != day
-                or pending.get("queued_pointers") or pending.get("selection_retry")):
+        queued = pending.get("queued_pointers", [])
+        if (not isinstance(pointer, dict) or pending.get("run_date") != day
+                or pointer.get("observation_date") != day or not isinstance(queued, list)
+                or queued or "selection_retry" in pending):
             return {"status": "blocked", "reason": "publication_scope_not_exclusively_today"}
         outcome = watchdog.run_payload_retry(False)
         return {"status": "publication_attempted", "outcome": outcome}

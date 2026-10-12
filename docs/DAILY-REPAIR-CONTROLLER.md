@@ -32,3 +32,5 @@ existing Pi issue creator and canonical marker before posting one labelled test
 mention. Record the workflow/comment ID before checking Gmail. Verify automatic
 Inbox delivery before any label promotion; never treat manual promotion as proof
 of server-side routing.
+
+Installation also replaces the late watchdog override and boot observation entry point. The legacy user watchdog installer now uses observation only; the commissioned duplicate user timer is disabled. Standard installers install the manual repair service without enabling it. The daily claim directory is fsynced before admission. The repair-only queue adapter retains this invocation through the existing guarded stop hook without modifying the shared queue or unrelated health services. Observations follow the scheduled due date and the existing 30/90-minute capture/publication grace periods; historical baseline gaps are not daily failures.
