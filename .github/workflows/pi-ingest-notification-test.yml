@@ -1,0 +1,38 @@
+name: pi-ingest-notification-test
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing trusted Pi ingest incident to use for the delivery test
+        required: true
+        type: number
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: pi-ingest-notification-test
+  cancel-in-progress: false
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        with:
+          script: |
+            const crypto = require('crypto');
+            const issue_number = Number(process.env.ISSUE_NUMBER);
+            if (!Number.isSafeInteger(issue_number) || issue_number < 1) throw Error('Invalid issue');
+            const {data: issue} = await github.rest.issues.get({...context.repo, issue_number});
+            const match = /^Pi ingest needs attention: (\d{4}-\d{2}-\d{2})$/.exec(issue.title);
+            if (!match || issue.pull_request || issue.user.login !== context.repo.owner) throw Error('Untrusted incident');
+            const digest = crypto.createHash('sha256').update(`${context.repo.owner}/${context.repo.repo}:ingest:${match[1]}`).digest('hex');
+            if (!issue.body.includes(`<!-- ar-local-pi-incident:${digest} -->`)) throw Error('Marker mismatch');
+            const marker = `<!-- ar-ingest-notification-test:${context.runId} -->`;
+            const {data: comments} = await github.rest.issues.listComments({...context.repo, issue_number, per_page: 100});
+            if (comments.some(c => c.body.includes(marker))) return;
+            const {data: comment} = await github.rest.issues.createComment({...context.repo, issue_number,
+              body: `${marker}\n@${context.repo.owner} — Requested GitHub-to-Inbox notification delivery test. This is a test, not a new ingest failure. Reference: AR-INGEST-NOTIFY-${context.runId}.`});
+            await core.summary.addRaw(`Notification test comment: ${comment.html_url}`).write();

@@ -494,6 +494,8 @@ def _package_payload(
     tag: str = DEFAULT_TAG,
 ) -> Dict[str, Any]:
     """Gzip + write the manifest for one tag's release from precomputed payload data."""
+    if payload_crypto.resolve_key_from_env() is not None:
+        raise ValueError("Prepared app delivery requires unencrypted domain assets; disable legacy inner ARE1 packaging")
     return _package(
         data["core"],
         data["details"],
@@ -513,9 +515,8 @@ def _package_payload(
         executable_v2_root=data.get('executable_v2_root'),
         executable_v3_root=data.get('executable_v3_root'),
         executable_v4_root=data.get('executable_v4_root'),
-        # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
-        # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
-        enc_key=payload_crypto.resolve_key_from_env(),
+        # The release uploader applies ARE2; Cloudflare authenticates and opens
+        # that transport before the app receives these exact gzip domain bytes.
     )
 
 
@@ -534,6 +535,7 @@ def _package(
     bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
+    direct_delivery: bool = False,
     source_observation: Optional[Mapping[str, Any]] = None,
     terms: Optional[Mapping[str, Any]] = None,
     executable_root: Optional[Path] = None,
@@ -542,6 +544,8 @@ def _package(
     executable_v4_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
+    if direct_delivery and enc_key:
+        raise ValueError("Direct GitHub delivery cannot contain inner encrypted assets")
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     from app_payload_bank_history_asset import ASSET_KIND, NAMESPACE, critical_core, encode_envelope
@@ -598,6 +602,8 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
+    if direct_delivery:
+        manifest["delivery"] = {"mode": "github-public-v1"}
     if catalogue is not None:
         history_wire = encode_envelope(catalogue, run_date=run_date, core_sha256=files['core']['sha256'])
         manifest[NAMESPACE] = {"schema_version": 1, "file": _asset(
@@ -634,6 +640,11 @@ def _package(
         if namespace is not None:manifest['executable_v4']=namespace
     if enc_key:
         manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
+    if catalogue is not None:
+        from app_payload_bank_history_ready_asset import add_ready_asset
+        from app_payload_bank_history_packed_asset import add_packed_asset
+        add_ready_asset(manifest, catalogue, out_dir, release_base, enc_key, _asset)
+        add_packed_asset(manifest, catalogue, out_dir, release_base, enc_key, _asset)
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
     from app_payload_network_budget import validate_payload_network_budget
 
@@ -769,6 +780,13 @@ def build_and_publish_dual(
                                            repo=repo, enabled=True)
         published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date))
         published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG) if need_latest else False
+        if update_latest and not need_latest:
+            # Historical promotion changes index ciphertext. Keep the operational
+            # receipt bound to it without regressing the current rolling alias.
+            from publication_status import refresh_current
+            refresh_current(repo)
+        if not published_dated:
+            raise RuntimeError("dated compatibility alias not verified")
         return revision.manifest, published_dated, published_latest
 
     dated = dated_tag(run_date)

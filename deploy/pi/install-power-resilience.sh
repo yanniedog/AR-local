@@ -179,7 +179,7 @@ fi
 # the reviewed protected Python closure and rendered override before reload.
 repo_dir="${1:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}"
 data_dir="${2:-/srv/ar-local/data}"
-sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir"
+sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir" "${AR_LOCAL_USER:-${SUDO_USER:-}}" "${AR_LOCAL_GROUP:-}"
 log "guarded net-watchdog installed; timer activation requires operator approval"
 
 log "done. cmdline.txt / config.txt changes require a reboot to take effect."

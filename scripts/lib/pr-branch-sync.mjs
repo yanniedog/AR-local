@@ -130,20 +130,12 @@ export function updatePrBranch(prNumber, { dryRun = false, force = false } = {})
 }
 
 export function enableSquashAutoMerge(prNumber, { dryRun = false } = {}) {
-  const meta = fetchPrMergeMeta(prNumber);
-  if (isAutoMergeEnabled(meta)) {
-    return {
-      ok: true,
-      action: 'skipped',
-      detail: `squash auto-merge already enabled (${meta.autoMergeRequest?.enabledAt})`,
-      exitCode: 0,
-    };
-  }
+  // Even an already-armed PR must prove current-head CI; cached auto-merge is not readiness.
   const result = mergePullRequest(prNumber, { dryRun });
   if (!result.ok) {
     return {
       ok: false,
-      action: 'failed',
+      action: result.exitCode === 2 ? 'pending' : 'failed',
       detail: result.stderr || result.stdout || `gh pr merge exit ${result.exitCode}`,
       exitCode: result.exitCode || 1,
     };
@@ -156,8 +148,9 @@ export function enableSquashAutoMerge(prNumber, { dryRun = false } = {}) {
   };
 }
 
-export function progressPullRequest(prNumber, { dryRun = false, syncBranch = true, enableAuto = true } = {}) {
-  const meta = fetchPrMergeMeta(prNumber);
+export function progressPullRequest(prNumber, { dryRun = false, syncBranch = true, enableAuto = true,
+  fetchMeta = fetchPrMergeMeta, updateBranch = updatePrBranch, enableMerge = enableSquashAutoMerge } = {}) {
+  const meta = fetchMeta(prNumber);
   const state = classifyBranchState(meta);
   const out = {
     prNumber,
@@ -174,17 +167,24 @@ export function progressPullRequest(prNumber, { dryRun = false, syncBranch = tru
     return out;
   }
   if (syncBranch && (state.behind || state.status === 'blocked' || state.status === 'unknown')) {
-    out.sync = updatePrBranch(prNumber, { dryRun, force: state.behind });
+    out.sync = updateBranch(prNumber, { dryRun, force: state.behind });
     if (!out.sync.ok) {
       out.blocked = true;
       out.ok = false;
+      return out;
+    }
+    if (out.sync.action === 'updated') {
+      out.blocked = true;
+      out.ok = false;
+      out.sync.exitCode = 2;
+      out.sync.detail += '; recheck CI on the updated head before enabling merge';
       return out;
     }
   } else if (syncBranch) {
     out.sync = { ok: true, action: 'skipped', detail: state.detail, exitCode: 0 };
   }
   if (enableAuto) {
-    out.autoMerge = enableSquashAutoMerge(prNumber, { dryRun });
+    out.autoMerge = enableMerge(prNumber, { dryRun });
     if (!out.autoMerge.ok) out.ok = false;
   }
   return out;

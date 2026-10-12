@@ -12,7 +12,7 @@ mkdir -p "$unit_dir"
 
 cat > "$unit_dir/ar-local-daily-watchdog.service" <<EOF
 [Unit]
-Description=AR-local daily ingest watchdog catch-up
+Description=AR-local daily ingest observation only
 After=network-online.target
 Wants=network-online.target
 
@@ -21,7 +21,8 @@ Type=oneshot
 WorkingDirectory=$repo_dir
 Environment=AR_LOCAL_PORTABLE_ROOT=$portable_root
 Environment=AR_LOCAL_DATA_ROOT=$data_root
-ExecStart=$python_executable $repo_dir/pi_daily_watchdog.py
+Environment=AR_LOCAL_CODE_ROOT=$repo_dir
+ExecStart=$python_executable -B $repo_dir/pi_ingest_observe.py
 EOF
 
 cp "$repo_dir/deploy/pi/ar-local-daily-watchdog.timer" "$unit_dir/ar-local-daily-watchdog.timer"

@@ -94,19 +94,32 @@ sudo systemctl enable --now tailscaled
 sudo tailscale up         # re-auth if needed
 ```
 
-### Step 6 — apply hardening (if not already current)
-```bash
-cd /srv/ar-local/AR-local && git pull --ff-only origin main
-sudo sh deploy/pi/install-power-resilience.sh
-sudo reboot               # cmdline.txt/config.txt changes need a reboot
-```
+### Step 6 — review the guarded hardening rollout
+
+Use the existing-host procedure in [SHARED_PI_ACCESS.md](SHARED_PI_ACCESS.md):
+preserve the installed files, install the exact reviewed standalone network
+script, render its non-root override from the producer's selected paths, and
+install and validate `install-network-watchdog-sudoers.sh USER` permissions for
+that service account before any activation. Read back effective systemd
+properties and run the network script with `--dry-run`. Timer activation and
+reboot require separate operator authorization and the recovery runbook gates.
+
+Do not rerun `install-power-resilience.sh` merely to update the watchdog. It
+changes host configuration. Its reviewed standalone path installs the guarded
+script, rendered non-root override and validated exact-interface sudoers rule
+without starting or enabling a timer. Preserve and read back any already-enabled
+timer: installation alone does not stop it. The full `install-pi-systemd.sh`
+path installs these prerequisites before its existing activation steps. Any
+full installer run, schedule activation or reboot is a separate controlled
+host-maintenance operation.
 
 ---
 
 ## 2. What the hardening does
 
 `deploy/pi/install-power-resilience.sh` (run automatically by
-`install-pi-systemd.sh`, and safe to re-run):
+`install-pi-systemd.sh` after guarded installation prerequisites; its full host
+configuration changes require an authorized maintenance operation):
 
 | Mechanism | File | Effect |
 |---|---|---|
@@ -119,14 +132,16 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | **Wi-Fi country (best-effort)** | `raspi-config do_wifi_country AU` | Sets AU for the location; cosmetic on this self-managed driver (regdom comes from the AP). |
 | **Headless boot** | `systemctl set-default multi-user.target` | Boots without waiting on a display/keyboard. |
 | **Ethernet auto + preferred** | NM wired `autoconnect`, `priority=200`, DHCP | Plugging in a cable "just works" and is preferred over Wi-Fi while connected; unplug falls back to Wi-Fi. |
-| **Network self-heal** | Existing `ar-local-net-watchdog.timer` (every 3 min when separately activated) | After three failed gateway checks, the protected watchdog may reconnect the one verified Wi-Fi interface outside remote sessions, occupied work and the ingest quiet window. Installation does not enable a timer. |
+| **Network self-heal** | `ar-local-net-watchdog.timer` (every 3 min) | After three failures on the same verified route, the guarded non-root watchdog may reconnect only that Wi-Fi interface. It defers for SSH ambiguity, occupied leases, ingest and the protected window. |
 
 > Wi-Fi credentials are **never** stored in this repo — the script only hardens
 > the autoconnect settings of existing NetworkManager profiles. Configured
 > networks (highest priority first): **`Nikipedia`** (100) → **`ASUS_2.4`** (50)
 > → **`Slow`** (10). NetworkManager prefers the highest-priority visible network
-> and its existing autoconnect selects profiles in that order. The watchdog never
-> restarts NetworkManager or cycles unrelated profiles. Add or
+> and NetworkManager autoconnect selects eligible profiles. The guarded watchdog
+> never restarts NetworkManager, switches arbitrary profiles or resets Ethernet.
+> With Tailscale SSH enabled or unreadable, automatic Wi-Fi recovery defers;
+> authorized manual recovery uses the shared queue with the `host` resource. Add or
 > replace a network with:
 > `sudo nmcli connection add type wifi con-name <SSID> ssid <SSID>` then
 > `sudo nmcli connection modify <SSID> wifi-sec.key-mgmt wpa-psk wifi-sec.psk <PSK> connection.autoconnect yes connection.autoconnect-priority <N>`.

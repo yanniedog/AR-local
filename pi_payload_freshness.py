@@ -12,13 +12,14 @@ import re
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable
 
 
 MANIFEST_URL = "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json"
 DATES_INDEX_URL = "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json"
 MAX_DOCUMENT_BYTES = 1024 * 1024
+MAX_CALENDAR_DAYS = 36600
 
 
 def fresh_document_url(url: str) -> str:
@@ -64,12 +65,24 @@ def _valid_date(value: object) -> bool:
         return False
 
 
+def missing_calendar_dates(dates: list[str], expected: str) -> list[str]:
+    """Find interior and trailing gaps, starting at the first published day."""
+    first = date.fromisoformat(dates[0])
+    last = max(date.fromisoformat(dates[-1]), date.fromisoformat(expected))
+    span = (last - first).days + 1
+    if span > MAX_CALENDAR_DAYS:
+        raise ValueError("dates_index_calendar_span_too_large")
+    published = set(dates)
+    return [day for offset in range(span)
+            if (day := (first + timedelta(days=offset)).isoformat()) not in published]
+
+
 def check_publication(
     expected: str, *, manifest_url: str | None = None,
     index_url: str | None = None,
     fetch: Callable[[str], dict] = fetch_document,
 ) -> dict:
-    """Require coherent current rolling/index dates; report each failure separately."""
+    """Require both current rolling/index dates and uninterrupted indexed history."""
     if not _valid_date(expected):
         raise ValueError("invalid_expected_date")
     configured_manifest, configured_index = configured_publication_urls()
@@ -78,6 +91,7 @@ def check_publication(
     result = {
         "manifest_run_date": "", "dates_index_latest_date": "", "generated_at": "",
         "manifest_error": None, "dates_index_error": None, "publication_issues": [],
+        "dates_index_first_date": "", "missing_dates": [], "publication_continuous": None,
     }
     issues = result["publication_issues"]
     manifest_date = ""
@@ -119,6 +133,16 @@ def check_publication(
             raise ValueError("invalid_dates_index")
         if type(index.get("count")) is not int or index["count"] != len(dates):
             raise ValueError("invalid_dates_index_count")
+        if "revision_protocol" in index or "revision_heads" in index:
+            from app_payload_revisions_state import RevisionError, validate_index
+            try:
+                validate_index(index, repo=os.environ.get("AR_LOCAL_REPO", "yanniedog/AR-local"))
+            except RevisionError as error:
+                raise ValueError("invalid_revision_dates_index") from error
+        missing = missing_calendar_dates(dates, expected)
+        result["dates_index_first_date"] = dates[0]
+        result["missing_dates"] = missing
+        result["publication_continuous"] = not missing
         result["dates_index_latest_date"] = dates[-1]
         if dates[-1] != expected:
             issues.append("dates_index_stale" if dates[-1] < expected else "dates_index_future")
@@ -130,4 +154,7 @@ def check_publication(
         result["dates_index_error"] = type(error).__name__
         issues.append("dates_index_unavailable_or_invalid")
     result["publication_current"] = not issues
+    if result["missing_dates"]:
+        issues.append("dates_index_calendar_gaps")
+    result["publication_healthy"] = result["publication_current"] and result["publication_continuous"] is True
     return result

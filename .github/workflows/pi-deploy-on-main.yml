@@ -130,8 +130,7 @@ jobs:
       - name: Detect runner environment
         id: runner_env
         run: |
-          # runner.environment is not a valid context; use self-hosted label instead.
-          if echo "${{ join(runner.labels, ' ') }}" | grep -qE '(^| )self-hosted( |$)'; then
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
             echo "requires_tailscale=false" >> "$GITHUB_OUTPUT"
           else
             echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
