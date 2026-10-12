@@ -1,2 +1,2 @@
 # Optional low-priority document interpretation runtime; never installed by ingest.
-pypdf==6.10.0
+pypdf==6.19.0
