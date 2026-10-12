@@ -38,6 +38,9 @@ MAX_PROBES_PER_TICK = 4
 MAX_PROBES_PER_DAY = 384
 MAX_CAPTURES_PER_DAY = 4
 PROBE_BUDGET_SECONDS = 60
+# A single daily service must reach beyond the former frequent watchdog batch.
+DAILY_PROBE_LIMIT = 32
+DAILY_PROBE_BUDGET_SECONDS = 180
 CAPTURE_BUDGET_SECONDS = 30 * 60
 CAPTURE_COOLDOWN_SECONDS = 60 * 60
 UNCHANGED_PROOF_COOLDOWN_SECONDS = 2 * 60 * 60
@@ -300,7 +303,8 @@ def _requests(observation: dict, providers: dict, cache_root: Path) -> list[dict
     return list(requests.values())
 
 
-def _due_requests(requests: list[dict], history: list[dict], now: datetime) -> list[dict]:
+def _due_requests(requests: list[dict], history: list[dict], now: datetime,
+                  *, probe_limit: int = MAX_PROBES_PER_TICK) -> list[dict]:
     probes = [row for row in history if row["kind"] == "probe"]
     counts = Counter(row.get("request_key") for row in probes)
     by_provider: dict[str, list[dict]] = {}
@@ -316,7 +320,7 @@ def _due_requests(requests: list[dict], history: list[dict], now: datetime) -> l
         selected = min(rows, key=lambda row: (counts[row["request_key"]], row["request_key"]))
         candidates.append((last or datetime.min.replace(tzinfo=timezone.utc), provider,
                            dict(selected, version_offset=2 * len(attempts))))
-    return [row for _, _, row in sorted(candidates)[:MAX_PROBES_PER_TICK]]
+    return [row for _, _, row in sorted(candidates)[:probe_limit]]
 
 
 def _coverage_health(observation: dict) -> dict:
@@ -353,13 +357,14 @@ def _schedule_health(requests: list[dict], history: list[dict], now: datetime) -
 
 
 def _probe_due(root: Path, observation: dict, providers: dict, due: list[dict],
-               history: list[dict], now: datetime) -> tuple[list[dict], list[dict]]:
+               history: list[dict], now: datetime,
+               *, probe_budget_seconds: int = PROBE_BUDGET_SECONDS) -> tuple[list[dict], list[dict]]:
     local = datetime.now(timezone.utc).astimezone(HOBART)
     closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
     remaining = max(0.0, (closing - local).total_seconds())
     if not recovery_window(local) or remaining <= 0:
         return [], []
-    deadline = time.monotonic() + min(PROBE_BUDGET_SECONDS, remaining)
+    deadline = time.monotonic() + min(probe_budget_seconds, remaining)
     run_date, generation = observation["contract"]["observation_date"], observation["contract"]["generation_id"]
     register_reservation = _reserve(root, run_date, generation, "register", now)
     registry, brands = probe_register(deadline=deadline)
@@ -450,7 +455,8 @@ def _pending_is_only_historical(pending: dict, run_date: str) -> bool:
     return pending.get("run_date", pending["pointer"]["observation_date"]) == pending["pointer"]["observation_date"]
 
 
-def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callable) -> dict:
+def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callable,
+                    *, daily_pass: bool = False) -> dict:
     run_date = now.astimezone(HOBART).date().isoformat()
     observation = selected_observation(state, run_date)
     if observation is None:
@@ -483,10 +489,17 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     probe_count = sum(row["kind"] == "probe" for row in history)
     if probe_count >= MAX_PROBES_PER_DAY:
         return {"status": "daily_probe_budget_exhausted", **health}
-    due = _due_requests(requests, history, now)[:MAX_PROBES_PER_DAY - probe_count]
+    limit = DAILY_PROBE_LIMIT if daily_pass else MAX_PROBES_PER_TICK
+    due = _due_requests(requests, history, now, probe_limit=limit)[:MAX_PROBES_PER_DAY - probe_count]
     if not due:
         return {"status": "provider_cooldown", **health}
-    positive, reports = _probe_due(root, observation, providers, due, history, now)
+    positive, reports = _probe_due(root, observation, providers, due, history, now,
+        probe_budget_seconds=DAILY_PROBE_BUDGET_SECONDS if daily_pass else PROBE_BUDGET_SECONDS)
+    probed_providers = {row.get("provider_dir") for row in reports}
+    unresolved_providers = {row["provider_dir"] for row in requests}
+    health.update(providers_probed=len(probed_providers & unresolved_providers),
+                  providers_not_probed=sorted(unresolved_providers - probed_providers),
+                  provider_probe_coverage_complete=unresolved_providers <= probed_providers)
     health.update(_schedule_health(requests, history, datetime.now(timezone.utc)))
     if not positive:
         return {"status": "upstream_gaps_remain", "probes": reports, **health}
@@ -505,7 +518,7 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     reservation = _reserve(root, run_date, observation["contract"]["generation_id"],
                            "capture", current, timeout_seconds=timeout, proofs=positive)
     history.append(reservation)
-    report = {"status": "capture_finished", "capture_attempted": True, "probes": reports}
+    report = {**health, "status": "capture_finished", "capture_attempted": True, "probes": reports}
     try:
         launch(run_date, timeout, observation["contract"]["generation_id"])
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
@@ -521,7 +534,7 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
 
 
 def run_same_day_recovery(repo_root: Path, *, now_utc: datetime, dry_run: bool,
-                          launch: Callable[[str, float, str], None]) -> dict:
+                          launch: Callable[[str, float, str], None], daily_pass: bool = False) -> dict:
     """One watchdog tick. Dry runs perform no probes, reservations, or captures."""
     if not recovery_window(now_utc):
         return {"status": "outside_recovery_window", "window": "03:30-22:00 Australia/Hobart"}
@@ -536,7 +549,7 @@ def run_same_day_recovery(repo_root: Path, *, now_utc: datetime, dry_run: bool,
             if not acquired:
                 return {"status": "recovery_already_active"}
             try:
-                report = _recover_locked(repo_root, state, now_utc, launch)
+                report = _recover_locked(repo_root, state, now_utc, launch, daily_pass=daily_pass)
             except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
                 report = {"status": "recovery_evidence_unavailable",
                           "failure_category": type(error).__name__, "capture_attempted": False}

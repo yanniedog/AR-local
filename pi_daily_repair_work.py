@@ -25,7 +25,8 @@ def repair(watchdog, recovery, day, now, read_pending=None):
         outcome = watchdog.run_payload_retry(False)
         return {"status": "publication_attempted", "outcome": outcome}
     return recovery.run_same_day_recovery(watchdog.REPO_ROOT, now_utc=now,
-                                         dry_run=False, launch=watchdog.run_recovery_ingest)
+                                         dry_run=False, launch=watchdog.run_recovery_ingest,
+                                         daily_pass=True)
 
 
 def main():
