@@ -12,6 +12,8 @@ from app_payload_bank_history_asset import (
 from app_payload_build import _package
 from app_payload_common import DEFAULT_TAG
 from app_payload_optional_assets import iter_payload_assets
+from app_payload_bank_history_packed_asset import NAMESPACE as PACKED_NAMESPACE
+from app_payload_bank_history_ready_asset import NAMESPACE as READY_NAMESPACE
 from app_payload_revisions import _preserve_alias
 from app_payload_revisions_state import RevisionError, bundle_sha256, validate_manifest
 from tests.test_app_payload_bank_catalogue import FIXTURE, packed
@@ -50,7 +52,7 @@ def test_packaging_keeps_legacy_core_small_and_binds_optional_envelope(tmp_path,
                               run_date=manifest["run_date"], core_sha256=manifest["files"]["core"]["sha256"])
     assert decoded == catalogue
     validate_manifest(manifest, tmp_path)
-    assert list(dict(iter_payload_assets(manifest))) == ["core", "details", NAMESPACE]
+    assert list(dict(iter_payload_assets(manifest))) == ["core", "details", NAMESPACE, READY_NAMESPACE, PACKED_NAMESPACE]
 
 
 @pytest.mark.parametrize("fault", ["core", "date", "sha", "bytes", "base64", "schema"])
@@ -131,8 +133,9 @@ def test_candidate_app_proof_must_verify_lazy_history(tmp_path):
         app_checks(proof, canary)
     audit_path = Path(proof["headless_audit"]["path"])
     audit = json.loads(audit_path.read_bytes())
-    entry = manifest[NAMESPACE]["file"]
-    audit["assets"][NAMESPACE] = {"status": "PASS", "sha256": entry["sha256"], "bytes": entry["bytes"]}
+    for namespace in (NAMESPACE, READY_NAMESPACE, PACKED_NAMESPACE):
+        entry = manifest[namespace]["file"]
+        audit["assets"][namespace] = {"status": "PASS", "sha256": entry["sha256"], "bytes": entry["bytes"]}
     proof["headless_audit"] = save(audit_path, audit)
     app_checks(proof, canary)
     audit["assets"][NAMESPACE]["sha256"] = "0" * 64

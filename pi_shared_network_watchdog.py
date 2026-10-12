@@ -3,22 +3,81 @@ from __future__ import annotations
 
 import json
 import ipaddress
-from contextlib import contextmanager
 import os
 import re
-import stat
 import subprocess
 import sys
-from datetime import datetime, timedelta
+import stat
+import time
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-TRUSTED_ROOT = Path('/usr/local/lib/ar-local-shared-host')
-LOCK_MODULES = ('ar_local_operation_lock', 'ar_local_backup_policy', 'cdr_file_lock', 'process_safety')
+COMMAND_DEADLINE = None
+RECOVERY_BUDGET_SECONDS = 120
 QUEUE_ROOT = Path('/var/lib/shared-pi-queue')
+BOOT_ID_PATH = Path('/proc/sys/kernel/random/boot_id')
+
+
+def _sync_directory(path: Path) -> None:
+    if os.name != 'posix':
+        return
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+@contextmanager
+def native_network_lease(path: Path):
+    """Try the producer's native lease once, never recovering a predecessor.
+
+    Even a provably stale record is occupied for this optional health check.
+    Avoiding producer stale recovery also avoids its unbounded recovery flock.
+    The record remains compatible with the pinned producer's native schema.
+    """
+    boot_id = BOOT_ID_PATH.read_text(encoding='ascii').strip()
+    if len(boot_id) != 36 or str(uuid.UUID(boot_id)) != boot_id:
+        raise ValueError('network lease requires a canonical boot identifier')
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        yield False
+        return
+    owned = os.fstat(descriptor)
+    try:
+        payload = f'pid={os.getpid()}\nrole=network-watchdog\nboot_id={boot_id}\n'.encode('ascii')
+        with os.fdopen(os.dup(descriptor), 'wb') as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _sync_directory(path.parent)
+        yield True
+    finally:
+        # Windows cannot unlink our open descriptor. Production is POSIX; keep
+        # it open there until after verifying/removing only our original inode.
+        if os.name == 'nt':
+            os.close(descriptor)
+        try:
+            current = path.lstat()
+            if (owned.st_dev, owned.st_ino) == (current.st_dev, current.st_ino):
+                path.unlink()
+                _sync_directory(path.parent)
+        except FileNotFoundError:
+            pass
+        finally:
+            if os.name != 'nt':
+                os.close(descriptor)
 
 
 def command(args, *, timeout=5):
+    if COMMAND_DEADLINE is not None:
+        timeout = min(timeout, COMMAND_DEADLINE - time.monotonic())
+        if timeout <= 0:
+            raise TimeoutError('network watchdog execution budget exhausted')
     return subprocess.run(args, capture_output=True, text=True, check=False, timeout=timeout)
 
 
@@ -26,84 +85,44 @@ def remote_sessions_active() -> bool:
     # Fail closed if either source of session evidence is unavailable.
     ssh = command(['ss', '-Htn', 'state', 'established', '( sport = :22 )'])
     users = command(['who'])
-    processes = command(['ps', '-eo', 'comm=,args='])
+    processes = command(['ps', '-eo', 'comm,args'])
+    prefs = command(['tailscale', 'debug', 'prefs'])
+    if processes.returncode or prefs.returncode:
+        return True
+    try:
+        settings = json.loads(prefs.stdout)
+    except (TypeError, ValueError):
+        return True
+    # Userspace Tailscale SSH, especially non-PTY commands, is not reliably
+    # visible in ss/who. Enabled or unknown SSH cannot prove session idleness.
+    if not isinstance(settings, dict) or settings.get('RunSSH') is not False:
+        return True
+    remote_process = any(
+        re.match(r'^\s*sshd\S*\s+sshd(?:-[A-Za-z0-9_-]+)?:', line)
+        or (line.split() and line.split()[0].startswith('tailscaled') and 'be-child' in line.split())
+        for line in processes.stdout.splitlines())
     remote_login = any(not re.fullmatch(r':\d+(?:\.\d+)?', host)
                        for host in re.findall(r'\(([^)]+)\)', users.stdout))
-    # Tailscale SSH's userspace socket and non-PTY commands do not appear in
-    # ss/who. Its be-child worker is a separate process for each SSH session.
-    remote_process = any(
-        (line.split()[0].startswith('sshd') and '[listener]' not in line)
-        or (line.split()[0].startswith('tailscaled') and 'be-child' in line.split())
-        for line in processes.stdout.splitlines() if line.split())
-    return (ssh.returncode != 0 or users.returncode != 0 or processes.returncode != 0 or not processes.stdout.strip()
-            or bool(ssh.stdout.strip()) or remote_login or remote_process)
+    return ssh.returncode != 0 or users.returncode != 0 or bool(ssh.stdout.strip()) or remote_login or remote_process
 
 
-def quiet_window(now=None) -> bool:
-    now = now or datetime.now(ZoneInfo('Australia/Hobart'))
+def recovery_window_blocked(now=None) -> bool:
+    now = datetime.now(timezone.utc) if now is None else now
+    if now.utcoffset() is None:
+        raise ValueError('network recovery clock requires timezone evidence')
     local = now.astimezone(ZoneInfo('Australia/Hobart'))
     start = local.replace(hour=0, minute=30, second=0, microsecond=0)
     end = local.replace(hour=2, minute=0, second=0, microsecond=0)
-    # The complete service budget plus cleanup must fit before the quiet window.
-    return start - timedelta(seconds=150) <= local < end
-
-
-def production_lock_factory():
-    # Validate the protected installation. Root uses its own no-follow guard
-    # and never invokes generic stale recovery in the operator's data tree.
-    for path in [*reversed(TRUSTED_ROOT.parents), TRUSTED_ROOT,
-                 *(TRUSTED_ROOT / (name + '.py') for name in LOCK_MODULES)]:
-        info = path.lstat()
-        if (path.is_symlink() or info.st_uid != 0 or info.st_mode & 0o022
-                or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))):
-            raise RuntimeError('network lock bundle is not protected')
-    for name in LOCK_MODULES:
-        loaded = sys.modules.get(name)
-        if loaded is not None and Path(loaded.__file__) != TRUSTED_ROOT / (name + '.py'):
-            raise RuntimeError('network lock module already loaded from an untrusted location')
-    return watchdog_operation_lock
-
-
-@contextmanager
-def watchdog_operation_lock(path: Path, role: str):
-    """Root never resolves a user-controlled auxiliary recovery-lock path."""
-    if role != 'network-watchdog' or not path.is_absolute() or '..' in path.parts:
-        raise RuntimeError('unsafe watchdog operation lock')
-    directory = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
-    descriptor = None
-    try:
-        # Pin every component without following symlinks. All later operations
-        # use the final directory descriptor, even if a parent is renamed.
-        for component in path.parent.parts[1:]:
-            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
-            os.close(directory)
-            directory = child
-        descriptor = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                             0o644, dir_fd=directory)
-        os.fchmod(descriptor, 0o644)
-        with os.fdopen(os.dup(descriptor), 'wb') as stream:
-            stream.write(f'pid={os.getpid()}\nrole=network-watchdog\n'.encode())
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.fsync(directory)
-        yield
-    finally:
-        if descriptor is not None:
-            owned = os.fstat(descriptor)
-            os.close(descriptor)
-            try:
-                current = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
-                if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
-                    os.unlink(path.name, dir_fd=directory)
-                    os.fsync(directory)
-            except FileNotFoundError:
-                pass
-        os.close(directory)
+    if start <= local < end:
+        return True
+    if local >= start:
+        start += timedelta(days=1)
+    return local + timedelta(seconds=RECOVERY_BUDGET_SECONDS) >= start
 
 
 @contextmanager
 def queue_guard():
-    """Root observes cooperative queue state without importing operator code."""
+    """Observe cooperative queue state without importing producer code."""
     if not QUEUE_ROOT.exists() and not QUEUE_ROOT.is_symlink():
         yield
         return
@@ -139,12 +158,15 @@ def default_route():
     if result.returncode:
         raise RuntimeError('route evidence unavailable')
     routes = json.loads(result.stdout)
-    if len(routes) != 1:
+    if not isinstance(routes, list) or len(routes) != 1 or not isinstance(routes[0], dict):
         raise RuntimeError('default route absent or ambiguous')
     gateway, interface = routes[0].get('gateway', ''), routes[0].get('dev', '')
-    if not gateway or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,32}', interface):
+    if not isinstance(gateway, str) or not isinstance(interface, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,31}', interface):
         raise RuntimeError('unsafe or incomplete default route')
-    ipaddress.ip_address(gateway)
+    try:
+        ipaddress.ip_address(gateway)
+    except ValueError as exc:
+        raise RuntimeError('unsafe default gateway') from exc
     return gateway, interface
 
 
@@ -177,7 +199,7 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
         return 'gateway healthy; no network mutation'
     if streak < 3:
         return 'gateway failure below three-check threshold'
-    if quiet_window():
+    if recovery_window_blocked():
         return 'recovery deferred: protected ingest window'
     kind = command(['nmcli', '-g', 'GENERAL.TYPE', 'device', 'show', interface])
     if kind.returncode or kind.stdout.strip() != 'wifi':
@@ -192,34 +214,46 @@ def recover(state: Path, data: Path, *, dry_run=False) -> str:
                 value not in {'inactive', 'failed'} for value in states):
             return 'dry run: recovery deferred for ingest or occupied lease'
         return 'dry run: eligible for interface-only recovery'
-    production_lock = production_lock_factory()
-    with queue_guard(), production_lock(data / 'state/daily-ingest.lock', 'network-watchdog'):
+    if os.geteuid() == 0:
+        raise RuntimeError('network recovery must run as the non-root service user')
+    if recovery_window_blocked():
+        return 'recovery deferred: protected ingest window'
+    with queue_guard(), native_network_lease(data / 'state/daily-ingest.lock') as acquired:
+        if not acquired:
+            return 'recovery deferred: production lease occupied'
         units = command(['systemctl', 'is-active', 'ar-local-daily.service',
                          'ar-local-ingest-now.service', 'ar-local-daily-watchdog.service'])
         states = units.stdout.splitlines()
         if len(states) != 3 or any(value not in {'inactive', 'failed'} for value in states):
             return 'recovery deferred: ingest active or unknown'
-        if quiet_window() or remote_sessions_active() or default_route() != (gateway, interface):
+        if remote_sessions_active() or default_route() != (gateway, interface):
             return 'recovery deferred: activity or route changed'
+        if recovery_window_blocked():
+            return 'recovery deferred: protected ingest window'
         # A failed reconnect must not trigger another attempt on every tick.
         record['failures'] = 0
         temporary.write_text(json.dumps(record) + '\n')
         temporary.replace(state)
         # Never restart NetworkManager, tailscaled, Ethernet, or other profiles.
-        result = command(['nmcli', '--wait', '20', 'device', 'connect', interface], timeout=25)
-        return 'interface recovery requested' if not result.returncode else 'interface recovery failed'
+        result = command(['sudo', '-n', '/usr/bin/nmcli', '--wait', '20', 'device', 'connect', interface], timeout=25)
+        if result.returncode:
+            raise RuntimeError('interface recovery failed')
+        return 'interface recovery requested'
 
 
 def main():
+    global COMMAND_DEADLINE
+    previous_deadline = COMMAND_DEADLINE
+    COMMAND_DEADLINE = time.monotonic() + RECOVERY_BUDGET_SECONDS
     try:
         state = Path(os.environ.get('AR_LOCAL_NETWORK_STATE', '/run/ar-local-net-watchdog/state.json'))
         data = Path(os.environ.get('AR_LOCAL_DATA_ROOT', '/srv/ar-local/data'))
-        outcome = recover(state, data, dry_run='--dry-run' in sys.argv)
-        print(outcome)
-        return 1 if outcome == 'interface recovery failed' else 0
-    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
-        print(f'recovery deferred: {type(error).__name__}', file=sys.stderr)
+        print(recover(state, data, dry_run='--dry-run' in sys.argv))
+    except (OSError, RuntimeError, ValueError, ImportError, subprocess.SubprocessError) as error:
+        print(f'network watchdog check aborted: {type(error).__name__}', file=sys.stderr)
         return 1
+    finally:
+        COMMAND_DEADLINE = previous_deadline
     return 0
 
 

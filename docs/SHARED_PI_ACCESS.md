@@ -39,26 +39,70 @@ sessions (including OpenSSH session processes and Tailscale SSH be-child
 workers), the protected quiet window, active ingest, an occupied production lease, ambiguous routes or
 unavailable evidence. It never restarts NetworkManager or other interfaces.
 NetworkManager's existing autoconnect remains responsible for absent routes.
+Recovery is excluded from 00:30 through 02:00 Hobart and from the preceding
+two minutes, so a bounded reconnect cannot occupy the natural-ingest lease.
+The clock is checked again after inspection, immediately before mutation.
+Tailscale SSH can hide non-PTY sessions from socket and login records; while
+`RunSSH` is enabled or cannot be read, automatic Wi-Fi recovery defers even
+when `ss` and `who` are empty. Use an authorized queued host operation for
+manual recovery. Standard OpenSSH session processes also cause deferral,
+including sessions on other ports.
+
+The watchdog runs as the normal AR-local service user. Its native lease is a
+nonblocking exclusive-file attempt using the producer's record schema. It never
+imports the producer or reclaims a stale predecessor; any existing record defers.
+The only privileged action is the validated interface's static
+`sudo -n /usr/bin/nmcli --wait 20 device connect` command. A 120-second overall
+command budget fits within the 150-second service deadline; command failures
+and aborted checks exit nonzero, while ordinary coordination deferrals succeed.
 
 For an existing host, preserve the old files, then run the reviewed
-`deploy/pi/install-shared-network-watchdog.sh <exact-tested-repo> <verified-data-root>`
-as root. It installs the script and complete standard-library-only locking
-closure under root-owned `/usr/local/lib/ar-local-shared-host/`, renders the data
+`deploy/pi/install-shared-network-watchdog.sh <exact-tested-repo> <verified-data-root> USER GROUP`
+as root, selecting the existing non-root producer account. It installs the
+standalone script under root-owned `/usr/local/lib/ar-local-shared-host/`,
+validates exact-interface sudoers permissions, renders the account and data
 root, replaces the legacy global-restart definition and reloads systemd. The
 isolated Python entrypoint never imports a user-writable repository. It does not
 start, enable or restart any timer. Scheduled work using the updated lock helper
 waits up to 120 seconds for an already-running network watchdog rather than losing
 its invocation, including a brief bounded retry while its owner record is written.
-The root watchdog opens the operation-lock directory without following symlinks
-and keeps that directory pinned through creation and cleanup. It never recovers
-a stale operation lock through user-controlled auxiliary paths; an existing lock
-defers recovery for operator inspection. Install `shared-host-health.conf`
+Install `shared-host-health.conf`
 for the runtime-health and deploy-watchdog services, and `shared-host-ingest.conf`
 for the daily, daily-watchdog and ingest-now services under `/etc/systemd/system`.
-Preserve the old files before installation. Run `systemctl daemon-reload` and
+Preserve the old files before installation. Before activating the non-root
+watchdog, install and validate its initial reconnect permission for the same
+selected service account (replace `USER` with that existing non-root account):
+
+```sh
+sudo sh deploy/pi/install-network-watchdog-sudoers.sh USER
+sudo /usr/sbin/visudo -cf /etc/sudoers.d/ar-local-network-watchdog
+```
+
+The installer enumerates validated Wi-Fi interfaces and grants only exact
+reconnect arguments. Stop the rollout if permission installation or validation
+fails. Run `systemctl daemon-reload` and
 read back effective properties. These steps do not start, enable or restart
 services or timers. Test the network script with `--dry-run` before installing
 the override. Schedule activation remains a separate operator decision.
+Render the network override's `AR_LOCAL_USER`, `AR_LOCAL_GROUP`
+and `AR_LOCAL_DATA_ROOT` placeholders using the same selected installation
+paths as the producer; do not install the template literally. This supports
+portable roots such as `/mnt/ar-local-ssd` and preserves the correct native
+transaction lock. The standard installer installs that rendered override and
+root-owned entry script before its existing power-resilience activation step.
+It rejects a root service account before package installation, ownership changes
+or other setup effects. It also validates and installs
+`/etc/sudoers.d/ar-local-network-watchdog` for the selected account before any
+timer activation. This grants only the exact reconnect command for each
+currently detected, validated Wi-Fi interface; it grants no command wildcard or
+general NetworkManager administration. New Wi-Fi hardware requires an explicitly
+authorized permission update with `install-network-watchdog-sudoers.sh USER`.
+This permission step does not start a timer. Existing broader operator sudo
+policies are separate and are not changed by this installer.
+The legacy shell fallback now fails closed; standalone power-resilience setup
+does not activate a network timer without the guarded installation contract.
+Do not execute either installer merely to apply these runtime overrides:
+their full setup paths activate scheduled services and require explicit approval.
 
 The limits reduce contention; they do not establish a latency guarantee or prove
 the cause of a past connection failure. Verify SSH and dashboard latency while

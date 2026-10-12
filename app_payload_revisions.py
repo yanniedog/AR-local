@@ -176,8 +176,11 @@ transaction has already preserved all prior dates and revision heads.
     state_dir = state_dir.expanduser().resolve()
     backend = store or GitHubRevisionStore(repo)
     with production_lock(state_dir / ".revision-publication.lock", "payload-revisions"):
-        return _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo,
-                               migrate_encryption=migrate_encryption)
+        result = _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo,
+                                 migrate_encryption=migrate_encryption)
+        # Canonical ARE2 releases are delivered through Cloudflare. Historical
+        # direct-delivery metadata never adds a public-branch publication dependency.
+        return result
 
 
 def _publish_locked(

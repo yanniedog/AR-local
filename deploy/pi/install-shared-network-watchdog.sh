@@ -10,14 +10,20 @@ esac
 case "$data_dir" in
   *[!a-zA-Z0-9_./-]*|*/../*|*/..) echo 'unsupported data root' >&2; exit 1 ;;
 esac
+run_user=${3:-${AR_LOCAL_USER:-${SUDO_USER:-}}}
+run_group=${4:-${AR_LOCAL_GROUP:-$(id -gn "$run_user")}}
+case "$run_group" in
+  ''|*[!A-Za-z0-9_-]*) echo 'unsupported service group' >&2; exit 1 ;;
+esac
+getent group "$run_group" >/dev/null
+# Validate account and exact reconnect permissions before replacing definitions.
+sh "$repo_dir/deploy/pi/install-network-watchdog-sudoers.sh" "$run_user"
 bundle=/usr/local/lib/ar-local-shared-host
 install -d -o root -g root -m 0755 "$bundle" /etc/systemd/system/ar-local-net-watchdog.service.d
-for module in pi_shared_network_watchdog ar_local_operation_lock ar_local_backup_policy cdr_file_lock process_safety; do
-  install -o root -g root -m 0555 "$repo_dir/$module.py" "$bundle/$module.py"
-done
+install -o root -g root -m 0555 "$repo_dir/pi_shared_network_watchdog.py" "$bundle/pi_shared_network_watchdog.py"
 temporary=$(mktemp)
 trap 'rm -f "$temporary"' EXIT
-sed "s|{{AR_LOCAL_DATA_ROOT}}|$data_dir|g" "$repo_dir/deploy/pi/shared-host-network.conf" > "$temporary"
+sed -e "s|{{AR_LOCAL_DATA_ROOT}}|$data_dir|g" -e "s|{{AR_LOCAL_USER}}|$run_user|g" -e "s|{{AR_LOCAL_GROUP}}|$run_group|g" "$repo_dir/deploy/pi/shared-host-network.conf" > "$temporary"
 install -o root -g root -m 0644 "$temporary" /etc/systemd/system/ar-local-net-watchdog.service.d/97-shared-host.conf
 # This base definition replaces the legacy global NetworkManager restart.
 cat > "$temporary" <<'UNIT'

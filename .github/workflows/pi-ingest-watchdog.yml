@@ -1,123 +1,56 @@
-# End-of-night check: Pi 01:00 ingest should publish today's manifest before 03:17 Brisbane.
-# Notify via GitHub (failed workflow + ingest-missed issue) — no SMTP secrets in Actions.
-
+# Off-Pi publication monitoring. Scheduled delivery can be delayed by GitHub.
 name: pi-ingest-watchdog
 
 on:
   schedule:
-    # 03:17 Australia/Brisbane is 17:17 UTC on the previous calendar day.
-    # Avoid the top of the hour, where GitHub documents higher schedule delay.
-    # Do not gate on runner start time: a delayed scheduled run must still check.
-    - cron: "17 17 * * *"
+    - cron: "17,47 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: pi-ingest-watchdog
+  cancel-in-progress: false
+
 jobs:
   manifest-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        id: checkout
 
       - uses: actions/setup-python@v5
+        id: python
         with:
           python-version: "3.12"
 
       - name: Install watchdog dependencies
+        id: dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Check manifest freshness
-        id: check
-        env:
-          TZ: Australia/Brisbane
-        run: |
-          set -euo pipefail
-          python scripts/pi_ingest_manifest_check.py \
-            --public-receipt \
-            --expected-tz Australia/Brisbane \
-            --json > check.json || true
-          cat check.json
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pathlib import Path
-          data = json.loads(Path("check.json").read_text(encoding="utf-8"))
-          print(f"stale={'true' if data.get('stale') else 'false'}")
-          print(f"expected={data.get('expected_run_date', '')}")
-          print(f"manifest={data.get('manifest_run_date', '')}")
-          print(f"index={data.get('dates_index_latest_date', '')}")
-          print(f"issues={','.join(data.get('publication_issues', []))}")
-          PY
-
-      - name: Close resolved ingest-missed issues
-        if: steps.check.outputs.stale == 'false'
+      - name: Check publication and reconcile its daily issue
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          CHECKER_AVAILABLE: ${{ steps.checkout.outcome == 'success' && steps.python.outcome == 'success' && steps.dependencies.outcome == 'success' }}
         run: |
           set -euo pipefail
-          expected="${{ steps.check.outputs.expected }}"
-          mapfile -t nums < <(gh issue list \
-            --label ingest-missed \
-            --state open \
-            --json number,title \
-            --jq ".[] | select(.title | contains(\"${expected}\")) | .number")
-          if [ "${#nums[@]}" -eq 0 ]; then
-            echo "No open ingest-missed issues for ${expected}"
-            exit 0
-          fi
-          for num in "${nums[@]}"; do
-            gh issue close "$num" \
-              --comment "Rolling manifest and dates index are current (${expected}). Closed by pi-ingest-watchdog."
-          done
-
-      - name: Open ingest-missed issue when stale
-        if: steps.check.outputs.stale == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # The label has never existed in this repo, so `gh issue create --label`
-          # exited 1 ("could not add label: 'ingest-missed' not found") every time
-          # the watchdog fired — 2026-08-14 and 2026-08-15 both detected a stale
-          # payload and then failed to file anything. Create it on demand so the
-          # alarm cannot be silenced by repository state again.
-          gh label create ingest-missed \
-            --color B60205 \
-            --description "Pi daily ingest did not publish a current app-payload manifest" \
-            2>/dev/null || true
-          expected="${{ steps.check.outputs.expected }}"
-          manifest="${{ steps.check.outputs.manifest }}"
-          index="${{ steps.check.outputs.index }}"
-          issues="${{ steps.check.outputs.issues }}"
-          title="Pi ingest missed: ${expected}"
-          body=$(cat <<EOF
-          GitHub \`app-payload-latest\` publication is unavailable or inconsistent after the scheduled watchdog.
-
-          - expected \`run_date\`: **${expected}**
-          - manifest \`run_date\`: **${manifest:-missing}**
-          - dates index \`latest_date\`: **${index:-missing}**
-          - publication issues: **${issues:-unknown}**
-          - manifest URL: https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json
-          - dates index URL: https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json
-
-          Pi ingest is scheduled for 01:00 local (see \`deploy/pi/ar-local-daily.timer\`). This check is scheduled for 03:17 Brisbane (2h17m buffer) and may start later if GitHub Actions is queued.
-          EOF
-          )
-          mapfile -t existing < <(gh issue list \
-            --label ingest-missed \
-            --state open \
-            --json number,title \
-            --jq ".[] | select(.title == \"${title}\") | .number")
-          if [ "${#existing[@]}" -gt 0 ]; then
-            echo "Open issue #${existing[0]} already tracks ${expected}"
-            gh issue comment "${existing[0]}" --body "Publication check failed: expected=${expected}, manifest=${manifest:-missing}, index=${index:-missing}, issues=${issues:-unknown}."
+          # Keep evidence even if checkout, setup, or the controller itself fails.
+          printf '%s\n' '{"schema_version":1,"status":"UNKNOWN","reason":"CHECK_INFRASTRUCTURE_FAILED","delivery":{"status":"NOT_ATTEMPTED"}}' > check.json
+          if [ "$CHECKER_AVAILABLE" = "true" ]; then
+            python scripts/pi_ingest_cloud_incident.py --output check.json
           else
-            gh issue create --title "$title" --label ingest-missed --body "$body"
+            python scripts/pi_ingest_cloud_incident.py --output check.json --checker-unavailable
           fi
 
-      - name: Fail workflow for GitHub email notification
-        if: steps.check.outputs.stale == 'true'
-        run: |
-          echo "::error::App publication check failed — expected ${{ steps.check.outputs.expected }}, index ${{ steps.check.outputs.index }}, issues ${{ steps.check.outputs.issues }}"
-          exit 1
+      - name: Retain publication check evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-ingest-check-${{ github.run_id }}-${{ github.run_attempt }}
+          path: check.json
+          if-no-files-found: error
+          retention-days: 30
