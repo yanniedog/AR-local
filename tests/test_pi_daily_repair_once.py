@@ -51,7 +51,8 @@ def test_observation_has_no_mutation_capabilities():
         check_publication=lambda d: {"publication_current": False},
         run_complete=lambda d: False, service_active=lambda: False,
         payload_publication_pending=lambda r: True)
-    result = observe(w, datetime(2026, 10, 12, 9, tzinfo=timezone.utc))
+    w.run_complete = Mock(side_effect=AssertionError("legacy verifier repairs pointers"))
+    result = observe(w, datetime(2026, 10, 12, 9, tzinfo=timezone.utc), lambda day: None)
     assert result["observation_only"] and result["repair_started"] is False
     assert result["capture_finalized"] is False
 
@@ -86,3 +87,11 @@ def test_service_has_no_timer_or_restart_and_kernel_total_is_bounded():
     assert "TimeoutStartSec=61s" in text and "RuntimeMaxSec=1100s" in text
     assert "TimeoutStopSec=10s" in text and 61 + 1100 + 10 + 10 <= 1200
     assert not (root / "deploy/pi/ar-local-queue-task-daily-repair.timer").exists()
+
+
+def test_local_code_root_does_not_override_public_repository_slug():
+    root = Path(__file__).resolve().parents[1]
+    for name in ["pi_daily_repair_once.py", "pi_daily_repair_work.py", "pi_ingest_observe.py"]:
+        text = (root / name).read_text()
+        assert 'os.environ.get("AR_LOCAL_CODE_ROOT",' in text
+        assert 'os.environ.get("AR_LOCAL_REPO",' not in text

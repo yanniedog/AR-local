@@ -8,7 +8,7 @@ NotifyAccess=main
 User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}
-Environment=AR_LOCAL_REPO={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_CODE_ROOT={{AR_LOCAL_REPO}}
 Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
 Environment=HOME={{AR_LOCAL_HOME}}
