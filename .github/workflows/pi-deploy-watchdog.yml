@@ -16,6 +16,7 @@ permissions:
 jobs:
   pi-watchdog:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +42,7 @@ jobs:
       - name: Detect runner environment
         id: runner_env
         run: |
-          if echo "${{ join(runner.labels, ' ') }}" | grep -qE '(^| )self-hosted( |$)'; then
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
             echo "requires_tailscale=false" >> "$GITHUB_OUTPUT"
           else
             echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
@@ -97,20 +98,22 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
-      - name: Skip (Pi SSH not configured)
+      - name: Fail verification (Pi SSH not configured)
         if: steps.secrets.outputs.configured != 'true'
         run: |
-          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY, PI_SSH_HOST, and PI_SSH_KNOWN_HOSTS"
-          echo "Automatic deployment is intentionally disabled."
+          echo "::error::Pi deployment was not verified: SSH configuration is missing."
+          echo "Pi deployment was not verified. Configure PI_SSH_PRIVATE_KEY, PI_SSH_HOST, and PI_SSH_KNOWN_HOSTS." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
-      - name: Skip verify (Tailscale OAuth missing for hosted runner)
+      - name: Fail verification (Tailscale OAuth missing for hosted runner)
         if: >-
           steps.secrets.outputs.configured == 'true' &&
           steps.runner_env.outputs.requires_tailscale == 'true' &&
           steps.tailscale.outputs.configured != 'true'
         run: |
-          echo "::warning::PI_SSH_* set but TS_OAUTH_* missing — cloud runner cannot reach Tailscale-only Pi."
-          echo "Automatic deployment is intentionally disabled."
+          echo "::error::Pi deployment was not verified: Tailscale OAuth configuration is missing."
+          echo "Pi deployment was not verified. Configure TS_OAUTH_CLIENT_ID and TS_OAUTH_SECRET for the hosted runner." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - name: Verify Pi deploy
         id: verify
@@ -142,8 +145,10 @@ jobs:
           VERIFY_EXIT: ${{ steps.verify.outputs.exit }}
         run: |
           if [ "$VERIFY_EXIT" = "0" ]; then
+            echo "Pi deployment verification passed." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          echo "Pi deployment verification failed (exit $VERIFY_EXIT)." >> "$GITHUB_STEP_SUMMARY"
           echo "pi-deploy-watchdog: verify failed (exit $VERIFY_EXIT)"
           echo "Use the canary-gated pi-deploy-canary workflow after investigation."
           exit 1

@@ -1,0 +1,1 @@
+{"errors":[{"code":"EBAU001","title":"Error while fetching token","detail":"Error while fetching the authorisation token for the given tenantId","meta":{"urn":"urn:au-cds:error:cds-all:GeneralError/Expected"}}]}

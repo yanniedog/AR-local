@@ -201,6 +201,8 @@ class FetchResult:
     failure_category: Optional[str] = None
     retryable: bool = False
     validation_error: Optional[str] = None
+    partial_index: Optional[dict] = None
+    body_sha256: Optional[str] = None
 
     @cached_property
     def data(self) -> Any:
@@ -208,8 +210,22 @@ class FetchResult:
             return None
         try:
             return json.loads(self.text)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             return None
+
+
+@dataclass(frozen=True)
+class HttpRequestResult:
+    """Original byte digest plus the established three-value request interface."""
+    status: int
+    text: str
+    retry_after: Optional[float]
+    body_sha256: Optional[str]
+
+    def __iter__(self):
+        yield self.status
+        yield self.text
+        yield self.retry_after
 
 
 # Cap a server-requested Retry-After: an absurd or malicious value must not be
@@ -249,7 +265,7 @@ def http_request(
     attempt_journal: Optional[RawAttemptJournal] = None,
     attempt_key: Optional[str] = None,
     attempt_context: Optional[Mapping[str, Any]] = None,
-) -> Tuple[int, str, Optional[float]]:
+) -> HttpRequestResult:
     """GET ``url``; return (status, body, retry_after_seconds). retry_after is the
     parsed Retry-After header (None when absent), surfaced so the caller can honor
     a server-requested backoff on 429/503."""
@@ -257,6 +273,7 @@ def http_request(
     started_at = attempt_utc_now()
     response_headers: Mapping[str, str] = {}
     body = b""
+    body_sha256: Optional[str] = None
     wire_bytes = 0
     inflated_bytes = 0
     wire_sha256 = hashlib.sha256(b"").hexdigest()
@@ -269,6 +286,7 @@ def http_request(
         status = response.status
         response_headers = response.headers
         body = response.body
+        body_sha256 = hashlib.sha256(body).hexdigest()
         wire_bytes = response.wire_bytes
         inflated_bytes = response.inflated_bytes
         wire_sha256 = response.wire_sha256
@@ -310,7 +328,7 @@ def http_request(
             error_message=error_message,
             context=attempt_context,
         )
-    return status, text, retry_after
+    return HttpRequestResult(status, text, retry_after, body_sha256)
 
 
 def fetch_with_retries(
@@ -329,6 +347,7 @@ def fetch_with_retries(
     last_status = 0
     last_text = ""
     last_retry_after: Optional[float] = None
+    last_body_sha256: Optional[str] = None
     max_retries = max(0, min(int(max_retries), DEFAULT_HTTP_POLICY.max_retries))
     timeout = max(0.001, min(float(timeout), DEFAULT_HTTP_POLICY.max_request_seconds))
     if deadline is None:
@@ -346,12 +365,12 @@ def fetch_with_retries(
                 break
         attempt += 1
         if attempt_journal is None:
-            status, text, retry_after = http_request(url, headers, timeout=req_timeout)
+            response = http_request(url, headers, timeout=req_timeout)
         else:
             context = dict(attempt_context or {})
             context["retry_ordinal"] = attempt
             request_key = str(context.get("request_id") or url)
-            status, text, retry_after = http_request(
+            response = http_request(
                 url,
                 headers,
                 timeout=req_timeout,
@@ -359,6 +378,8 @@ def fetch_with_retries(
                 attempt_key=f"{request_key}|{fetch_nonce}|{attempt}",
                 attempt_context=context,
             )
+        status, text, retry_after = response
+        last_body_sha256 = getattr(response, "body_sha256", None)
         last_status, last_text = status, text
         last_retry_after = retry_after
         failure = classify_fetch_failure(status, text)
@@ -372,6 +393,7 @@ def fetch_with_retries(
                 retry_after=retry_after,
                 failure_category=None if 200 <= status < 300 else failure.category,
                 retryable=failure.retryable,
+                body_sha256=last_body_sha256,
             )
         if attempt > max_retries:
             break
@@ -392,6 +414,7 @@ def fetch_with_retries(
         ok=False, status=last_status, url=url, text=last_text, attempts=attempt,
         retry_after=last_retry_after,
         failure_category=failure.category, retryable=failure.retryable,
+        body_sha256=last_body_sha256,
     )
 
 
@@ -436,6 +459,7 @@ def fetch_cdr_json(
     max_total_seconds: Optional[float] = None,
     attempt_journal: Optional[RawAttemptJournal] = None,
     attempt_context: Optional[Mapping[str, Any]] = None,
+    allow_partial_index: bool = False,
 ) -> FetchResult:
     order = list(CDR_VERSION_ORDER if versions is None else versions)
     # ONE shared budget for the whole logical fetch. The old code gave every
@@ -516,10 +540,18 @@ def fetch_cdr_json(
             data, phase=str((attempt_context or {}).get("phase") or ""),
             product_id=str((attempt_context or {}).get("product_id") or ""),
         ) if res.ok and data is not None and not has_cdr_errors(data) else None
+        partial_index = None
+        if (allow_partial_index and res.status == 200 and res.body_sha256 and shape_error
+                and (attempt_context or {}).get("phase") == "products_index"):
+            from cdr_partial_index import partial_index_evidence
+            partial_index = partial_index_evidence(data)
+            if partial_index:
+                return FetchResult(True, res.status, url, res.text, attempts=total_attempts,
+                                   version=v, partial_index=partial_index, body_sha256=res.body_sha256)
         if res.ok and data is not None and not has_cdr_errors(data) and shape_error is None:
             return FetchResult(
                 ok=True, status=res.status, url=url, text=res.text,
-                attempts=total_attempts, version=v,
+                attempts=total_attempts, version=v, body_sha256=res.body_sha256,
             )
 
         # A subsequent unsupported-version probe must not hide the holder's
@@ -570,6 +602,7 @@ def fetch_cdr_json(
         attempts=total_attempts, retry_after=failure.retry_after,
         failure_category=failure.failure_category,
         retryable=failure.retryable, validation_error=failure.validation_error,
+        body_sha256=failure.body_sha256,
     )
 
 

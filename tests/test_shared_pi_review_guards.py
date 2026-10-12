@@ -122,8 +122,9 @@ def test_standard_installer_cannot_restore_legacy_global_network_recovery():
     assert 'systemctl restart NetworkManager' not in power
     assert 'install-shared-network-watchdog.sh' in power
     assert '"$repo_dir" "$data_dir"' in installer
-    assert 'ar_local_operation_lock ar_local_backup_policy cdr_file_lock process_safety' in protected
+    assert 'install-network-watchdog-sudoers.sh' in protected
+    assert 'ar_local_operation_lock' not in protected
     assert '-o root -g root -m 0555' in protected
     assert '--now' not in protected and 'systemctl enable' not in protected
     assert ' -I -S ' in service and 'AR_LOCAL_REPO=' not in service
-    assert '{{AR_LOCAL_DATA_ROOT}}' in service and 'TimeoutStartSec=120s' in service
+    assert '{{AR_LOCAL_DATA_ROOT}}' in service and 'TimeoutStartSec=150s' in service

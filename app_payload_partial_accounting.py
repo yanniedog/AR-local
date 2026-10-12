@@ -17,6 +17,7 @@ CLASSIFIED_FAILURES = frozenset({
     "endpoint_not_found", "product_inactive", "incompatible_version",
     "public_endpoint_auth_required", "access_denied", "transient_upstream",
     "transport", "upstream_schema_invalid", "upstream_rejection", "invalid_response",
+    "upstream_dependency_failure",
 })
 
 

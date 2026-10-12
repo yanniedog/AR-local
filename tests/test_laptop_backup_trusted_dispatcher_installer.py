@@ -401,6 +401,7 @@ def test_package_builder_makes_standalone_exact_checkouts(
         )
         assert trusted["dispatcher_security_sha256"] == package["files"]["laptop_backup_dispatcher_security.py"]
         assert "ssh/id" not in names
+        assert trusted["ssh_identity_sha256"] == trusted_package.hashlib.sha256(identity.read_bytes()).hexdigest()
         assert all(b"OPENSSH PRIVATE KEY" not in archive.read(name) for name in names)
         assert archive.read("ssh/known_hosts") == b"ar-local-pi5 ssh-ed25519 QUJDRA==\n"
         assert set(package["files"]) == names - {"package-manifest.json"}
