@@ -37,7 +37,7 @@ def main():
             or not any(line.endswith("/ar-local-queue-task-daily-repair.service")
                        for line in Path("/proc/self/cgroup").read_text().splitlines())):
         raise RuntimeError("worker is outside its claimed service invocation")
-    repo = Path(os.environ.get("AR_LOCAL_REPO", Path(__file__).resolve().parent))
+    repo = Path(os.environ.get("AR_LOCAL_CODE_ROOT", Path(__file__).resolve().parent))
     sys.path.insert(0, str(repo))
     import pi_daily_watchdog as watchdog
     import pi_cdr_recovery as recovery
