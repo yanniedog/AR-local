@@ -80,3 +80,20 @@ def test_successful_address_fallback_can_finish_its_http_request(monkeypatch):
     conn.request("GET", "/products")
     response = conn.getresponse()
     assert response.status == 200 and response.read() == b"{}"
+
+
+@pytest.mark.parametrize("close_phase", ["settimeout", "do_handshake"])
+def test_timeout_closure_during_tls_is_a_transport_error(monkeypatch, close_phase):
+    clock = [0.0]
+    conn = connection(monkeypatch, clock)
+    raw, tls, context = Mock(), Mock(), Mock()
+    monkeypatch.setattr(policy.socket, "create_connection", Mock(return_value=raw))
+    context.wrap_socket.return_value = tls
+    conn._context = context
+    def close():
+        conn.close()
+        clock[0] = 8
+    getattr(tls, close_phase).side_effect = lambda *a: close()
+    with pytest.raises(OSError):
+        conn.connect()
+    assert conn.sock is None and conn.peer_ip is None

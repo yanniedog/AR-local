@@ -4,10 +4,11 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 from zoneinfo import ZoneInfo
 
 
-def repair(watchdog, recovery, day, now, read_pending=None):
+def repair(watchdog, recovery, day, now, read_pending=None, *, execution_deadline=None):
     reason = recovery.recovery_block_reason(watchdog.REPO_ROOT, include_ingest_lock=False)
     if reason:
         return {"status": "blocked", "reason": reason}
@@ -26,7 +27,19 @@ def repair(watchdog, recovery, day, now, read_pending=None):
         return {"status": "publication_attempted", "outcome": outcome}
     return recovery.run_same_day_recovery(watchdog.REPO_ROOT, now_utc=now,
                                          dry_run=False, launch=watchdog.run_recovery_ingest,
-                                         daily_pass=True)
+                                         daily_pass=True, execution_deadline=execution_deadline)
+
+
+def service_deadline():
+    # Start at ExecMainStart, earlier than queue admission/READY, so queue wait
+    # and wrapper setup are charged too. The supervisor fixes runtime at 1100s.
+    result = subprocess.run(["systemctl", "show", "ar-local-queue-task-daily-repair.service",
+                             "--property=ExecMainStartTimestampMonotonic", "--value"],
+                            check=True, capture_output=True, text=True, timeout=5)
+    started = int(result.stdout.strip()) / 1_000_000
+    if started <= 0:
+        raise RuntimeError("daily repair service start timestamp unavailable")
+    return started + 1100
 
 
 def main():
@@ -45,7 +58,8 @@ def main():
     import pi_daily_watchdog as watchdog
     import pi_cdr_recovery as recovery
     from pi_daily_sync import read_payload_publication_pending
-    result = repair(watchdog, recovery, day, now, read_payload_publication_pending)
+    result = repair(watchdog, recovery, day, now, read_payload_publication_pending,
+                    execution_deadline=service_deadline())
     with receipt.with_suffix(".result.json").open("x", encoding="utf-8") as stream:
         json.dump({"date": day, "result": result}, stream); stream.flush(); os.fsync(stream.fileno())
     print(json.dumps(result))

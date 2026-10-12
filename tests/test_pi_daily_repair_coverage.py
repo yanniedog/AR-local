@@ -47,7 +47,7 @@ def test_daily_owner_selects_single_bounded_daily_pass():
     w.read_payload_publication_pending.return_value = None
     repair(w, r, DATE, NOW)
     r.run_same_day_recovery.assert_called_once_with(w.REPO_ROOT, now_utc=NOW,
-        dry_run=False, launch=w.run_recovery_ingest, daily_pass=True)
+        dry_run=False, launch=w.run_recovery_ingest, daily_pass=True, execution_deadline=None)
 
 
 @pytest.mark.parametrize("failure", ["missing_identity", "deadline"])
@@ -75,3 +75,52 @@ def test_daily_provider_batch_stays_bounded_and_preserves_cooldown():
     history = [{"kind": "probe", "provider_dir": "Bank 00", "request_key": "0", "reserved_at": NOW.isoformat()}]
     due = recovery._due_requests(requests, history, NOW, probe_limit=recovery.DAILY_PROBE_LIMIT)
     assert len(due) == 32 and all(row["provider_dir"] != "Bank 00" for row in due)
+
+
+def test_daily_rotation_reaches_later_providers_with_new_empty_day_history():
+    requests = [{"provider_dir": f"Bank {n:02}", "request_key": str(n)} for n in range(64)]
+    first = recovery._due_requests(requests, [], NOW, probe_limit=32, rotation=32 * 123)
+    second = recovery._due_requests(requests, [], NOW, probe_limit=32, rotation=32 * 124)
+    assert len(first) == len(second) == 32
+    assert {r["provider_dir"] for r in first + second} == {r["provider_dir"] for r in requests}
+
+
+@pytest.mark.parametrize("remaining,expected_probe", [(1100, 155), (1060, 115)])
+def test_probe_and_capture_share_service_deadline(monkeypatch, tmp_path, remaining, expected_probe):
+    stage(monkeypatch, tmp_path)
+    clock = [0.0]
+    monkeypatch.setattr(recovery.time, "monotonic", lambda: clock[0])
+    def probes(*args, probe_budget_seconds):
+        assert probe_budget_seconds == expected_probe
+        clock[0] += probe_budget_seconds
+        proof = {"request_key": "p1", "body_sha256": "a" * 64}
+        return [proof], [{"provider_dir": PROVIDER["provider_dir"], "attempts": [{"status": 200}]}]
+    monkeypatch.setattr(recovery, "_probe_due", probes)
+    launch = Mock()
+    result = recovery.run_same_day_recovery(tmp_path, now_utc=NOW, dry_run=False,
+        launch=launch, daily_pass=True, execution_deadline=remaining)
+    launch.assert_called_once_with(DATE, 900, "g1")
+    assert clock[0] + launch.call_args.args[1] + recovery.CLEANUP_SECONDS == remaining
+    assert result["capture_attempted"] is True
+
+
+def test_short_service_budget_does_not_spend_capture_reservation(monkeypatch, tmp_path):
+    state, _ = stage(monkeypatch, tmp_path)
+    monkeypatch.setattr(recovery.time, "monotonic", lambda: 200)
+    probe = Mock()
+    monkeypatch.setattr(recovery, "_probe_due", probe)
+    launch = Mock()
+    result = recovery.run_same_day_recovery(tmp_path, now_utc=NOW, dry_run=False,
+        launch=launch, daily_pass=True, execution_deadline=1100)
+    assert result["status"] == "insufficient_service_budget"
+    probe.assert_not_called()
+    launch.assert_not_called()
+    assert recovery._history(state / "cdr-recovery-v1" / DATE, DATE) == []
+
+
+def test_worker_uses_original_service_start_including_queue_delay(monkeypatch):
+    import pi_daily_repair_work as work
+    run = Mock(return_value=Mock(stdout="123000000\n"))
+    monkeypatch.setattr(work.subprocess, "run", run)
+    assert work.service_deadline() == 1223
+    assert "--property=ExecMainStartTimestampMonotonic" in run.call_args.args[0]

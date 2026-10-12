@@ -406,22 +406,27 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         last_error: Optional[OSError] = None
         for address in self._validated_addresses:
             raw: Optional[socket.socket] = None
+            tls: Optional[ssl.SSLSocket] = None
             try:
                 raw = socket.create_connection((address, self.port),
                                                self._remaining_connect_seconds(), self.source_address)
                 raw.settimeout(self._remaining_connect_seconds())
-                self.sock = self._context.wrap_socket(raw, server_hostname=self.host,
-                                                      do_handshake_on_connect=False)
-                self.sock.settimeout(self._remaining_connect_seconds())
-                self.sock.do_handshake()
-                self.sock.settimeout(self._remaining_connect_seconds())
+                tls = self._context.wrap_socket(raw, server_hostname=self.host,
+                                                do_handshake_on_connect=False)
+                self.sock = tls
+                tls.settimeout(self._remaining_connect_seconds())
+                tls.do_handshake()
+                tls.settimeout(self._remaining_connect_seconds())
+                if self.sock is not tls:
+                    raise OSError("HTTPS connection closed during TLS setup")
                 self.peer_ip = address
                 return
             except OSError as error:
                 # Closing HTTPConnection here also resets its request state;
                 # a successful fallback must still finish the pending GET.
-                if self.sock is not None:
-                    self.sock.close()
+                if tls is not None:
+                    tls.close()
+                if self.sock is tls:
                     self.sock = None
                 if raw is not None:
                     raw.close()
