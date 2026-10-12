@@ -18,6 +18,11 @@ const hostile = buildMatrixMarkdown({
 });
 ok(hostile.includes('a\\|b\\\\c'), 'escapes pipes and backslashes before they can break a cell');
 ok(!hostile.includes('a|b\\c'), 'raw pipe and backslash are not left in the cell');
+const literalTitle = buildMatrixMarkdown({
+  ...r,
+  rows: [{ ...r.rows[0], title: '\\[Review](https://example.com) \\*x*' }],
+});
+ok(literalTitle.includes('\\\\\\[Review\\]\\(https://example.com\\) \\\\\\*x\\*'), 'keeps escaped punctuation literal');
 ok(buildMatrixPrBody(r).includes(MATRIX_MD_FILE), 'pr body');
 ok(buildMatrixHtml(r).includes(MATRIX_MD_FILE), 'html link');
 const tmp = mkdtempSync(path.join(tmpdir(), 'mx-'));
