@@ -310,37 +310,14 @@ export function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKey
     };
   }
 
-  if (elapsedMs > maxMs) {
-    if (missing.length) {
-      return {
-        status: 'timeout',
-        message:
-          `Required bot(s) never posted before safety cap (${MAX_WAIT_MIN} min): ${missing.join(', ')}. ` +
-          `DO NOT MERGE. Tag bots or extend cap; expected: ${formatRequiredKeys(requiredKeys)}.`,
-        missing,
-        botsSeen: seenLogins,
-      };
-    }
-    if (allRequiredPosted && checksReady) {
-      const suffix =
-        noiseEventCount > 0
-          ? ` Ignored ${noiseEventCount} noise event(s) — quota / trivial replies.`
-          : '';
-      return {
-        status: 'ready',
-        message:
-          `Bot wait satisfied (required bots present since anchor; ` +
-          `safety cap skipped for aged PR anchor).${suffix}`,
-        lastBotAt: lastBotAt?.toISOString() || null,
-        botsSeen: seenLogins,
-        missing: [],
-      };
-    }
+  if (elapsedMs > maxMs && missing.length) {
     return {
       status: 'timeout',
       message:
-        `Bot wait safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ${anchor.toISOString()} ` +
-        'without satisfying quiet window. Re-sweep manually or tag bots again.',
+        `Required bot(s) never posted before safety cap (${MAX_WAIT_MIN} min): ${missing.join(', ')}. ` +
+        `DO NOT MERGE. Tag bots or extend cap; expected: ${formatRequiredKeys(requiredKeys)}.`,
+      missing,
+      botsSeen: seenLogins,
     };
   }
 

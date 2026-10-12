@@ -55,7 +55,7 @@ git -C "$repo_dir" pull --ff-only origin main
 git -C "$site_dir" checkout main
 git -C "$site_dir" pull --ff-only origin main
 
-repo_dir="$(cd "$repo_dir" && pwd)"
+repo_dir="$(CDPATH= cd "$repo_dir" && pwd -P)"
 site_dir="$(cd "$site_dir" && pwd)"
 site_root="$site_dir/site"
 sudo mkdir -p "$data_dir/runs" "$data_dir/state"

@@ -101,14 +101,16 @@ assert.ok(reviewWaitIgnoredChecks().has('bot-feedback-gate'));
 assert.ok(reviewWaitIgnoredChecks('UNIT-CHECK').has('unit-check'));
 
 const reviewNow = Date.now();
-const reviewerWait = (ageSeconds) => evaluate({ prNumber: 123,
-  anchorIso: new Date(reviewNow - 600_000).toISOString(), state: {}, repo: { owner: 'owner', name: 'repo' },
+const reviewerWait = (ageSeconds, anchorAgeSeconds = 600) => evaluate({ prNumber: 123,
+  anchorIso: new Date(reviewNow - anchorAgeSeconds * 1000).toISOString(), state: {}, repo: { owner: 'owner', name: 'repo' },
   requiredKeys: ['sourcery'],
   fetchActivity: () => ({ events: [{ login: 'sourcery-ai', at: new Date(reviewNow - ageSeconds * 1000).toISOString() }] }),
   readChecks: () => ({ ok: true, pending: false, failed: false }),
 });
 assert.equal(reviewerWait(0).status, 'waiting', 'one-shot opt-in retains the quiet window');
 assert.equal(reviewerWait(120).status, 'ready', 'a later one-shot observation can satisfy quiet');
+assert.equal(reviewerWait(0, 86400).status, 'waiting', 'an aged anchor cannot bypass recent reviewer activity');
+assert.equal(reviewerWait(120, 86400).status, 'ready', 'an aged anchor is ready once reviewer activity is quiet');
 
 const reported = [
   { name: 'bot-feedback-gate', bucket: 'fail', state: 'FAILURE' },
@@ -121,6 +123,7 @@ const ciOptions = {
     pending: false, failed: false, pendingNames: [], failedNames: [], checks: [] }),
   read: () => ({ number: 123, state: 'OPEN', headRefOid: head, baseRefOid: base, baseRefName: 'main' }),
   api: () => ({ check_runs: [{ id: 1, name: 'bot-feedback-gate', head_sha: head,
+    external_id: `ar-local-required:123:${head}`,
     app: { id: 15368, slug: 'github-actions' }, status: 'completed', conclusion: 'failure' }], total_count: 1 }),
 };
 assert.equal(fetchRequiredCi, readMergeCi, 'retain exact-head product CI from the merge policy');

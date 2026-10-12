@@ -1,6 +1,7 @@
 """Installer verification tests: no systemd mutation or network operations."""
 import copy
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -116,3 +117,18 @@ def test_legacy_installer_disables_duplicate_without_starting_observer():
     assert result.stdout.splitlines() == ["--user daemon-reload",
         "--user disable --now ar-local-daily-watchdog.timer",
         "--user list-timers --all ar-local-daily-watchdog.timer --no-pager"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX installer path semantics")
+@pytest.mark.parametrize("filename", ["apply-pi-runtime-units.sh", "install-pi-systemd.sh"])
+def test_installer_renders_the_same_physical_repo_path_as_verifier(tmp_path, filename):
+    actual = tmp_path / "actual repository"
+    actual.mkdir()
+    alias = tmp_path / "repository alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    source = (ROOT / "deploy/pi" / filename).read_text()
+    assignment = next(line for line in source.splitlines() if line.startswith('repo_dir="$('))
+    script = 'repo_dir="$1"\n' + assignment + '\nprintf "%s\\n" "$repo_dir"\n'
+    result = subprocess.run(["sh", "-c", script, "installer-path-test", str(alias)],
+                            capture_output=True, text=True, timeout=10, check=True)
+    assert result.stdout.strip() == str(alias.resolve(strict=True))

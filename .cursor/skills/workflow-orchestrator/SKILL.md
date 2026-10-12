@@ -31,7 +31,7 @@ You are the **continuous workflow guardian** for the current repository. You run
 | Branch | `git branch --show-current` | Never feature work on `main` |
 | Open PRs | `gh pr list --state open` | One pr-fix/babysit worker per PR number |
 | Closeout | `npm run ship:closeout:strict` | Exit 2 ? open PR |
-| Bot wait | `npm run wait-for-bots` | Exit 2 ? loop until 0 |
+| Bot wait | `npm run wait-for-bots` | Exit 2 parks ownership; check once in a later turn |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` | Active/completed subagents |
 
 ## Task ? owner routing
@@ -108,10 +108,10 @@ For **each** open PR from `gh pr list --state open`:
 
 Parallel pr-fix workers: allowed for **disjoint** PR numbers only. Never two writers on the same PR.
 
-## Orchestrator loop
+## Orchestrator cycle
 
 ```
-SCAN → PLAN → DELEGATE (pr-fix per PR + path owners) → (subagents run) → SCAN → …
+SCAN → PLAN → DELEGATE (pr-fix per PR + path owners) → (subagents run) → record state
 ```
 
 **Closeout before idle claim:**
@@ -121,18 +121,15 @@ npm run ship:closeout:strict && npm run wait-for-bots
 npm run close-loop:check -- --post-merge-gap   # on main after merges
 ```
 
-**Bot wait retry loop** (dynamic poll ? not a fixed sleep):
+**One-shot wait check:**
 
 ```sh
-while true; do
-  npm run wait-for-bots --silent
-  code=$?
-  [ "$code" -eq 0 ] && break
-  [ "$code" -eq 1 ] && exit 1
-  sleep 45
-done
-# or: npm run wait-for-bots -- --watch
+npm run wait-for-bots -- --pr <n>
 ```
+
+Exit 2 parks ownership for a later turn. Fix actionable failures immediately;
+when only GitHub checks or merge processing remain, record the head and blocker
+and stop polling. Do not use watch or retry loops.
 
 ## Steps 8?9 (project-specific)
 
