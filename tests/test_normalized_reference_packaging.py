@@ -9,11 +9,13 @@ from cdr_clean_export import detail_json
 from cdr_terms.discovery import document_url
 
 
-@pytest.mark.parametrize('raw', [
-    '%20https://www.cwcu.com.au/disclosure-documents/fees-and-charges',
-    ' %20%20HTTPS://example.com/a%20b?q=%20#fees ',
+@pytest.mark.parametrize('raw, expected_url, expected_source', [
+    ('%20https://www.cwcu.com.au/disclosure-documents/fees-and-charges', None, None),
+    (' %20%20HTTPS://example.com/a%20b?q=%20#fees ',
+     'https://example.com/a%20b?q=%20',
+     'https://example.com/a%20b?q=%20#fees'),
 ])
-def test_recovered_reference_survives_cleaning_and_payload_packaging(raw):
+def test_recovered_reference_survives_cleaning_and_payload_packaging(raw, expected_url, expected_source):
     cleaned = detail_json({'additionalInformation': {'feesAndPricingUri': raw}})
     result = build_details([{'product_key': 'protocol-product', 'details_json': cleaned}])
     reference = result['protocol-product']['sourceDocuments'][0]
@@ -22,9 +24,9 @@ def test_recovered_reference_survives_cleaning_and_payload_packaging(raw):
     assert reference['sourceNormalization'] == 'leading-encoded-space-v1'
     assert reference['sourcePath'] == '/additionalInformation/feesAndPricingUri'
     assert reference['url'].startswith('https://')
-    if 'example.com' in raw:
-        assert reference['url'] == 'https://example.com/a%20b?q=%20'
-        assert reference['sourceUrl'] == 'https://example.com/a%20b?q=%20#fees'
+    if expected_url is not None:
+        assert reference['url'] == expected_url
+        assert reference['sourceUrl'] == expected_source
     assert source_documents({'sourceDocuments': [reference]}) == [reference]
 
 

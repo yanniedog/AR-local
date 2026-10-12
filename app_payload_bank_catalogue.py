@@ -169,6 +169,23 @@ def retained_evidence(products, *, cache=None):
     return result
 
 
+def historical_descriptor(row):
+    """Project CSV's explicit boolean encoding without changing source evidence."""
+    result = {key: value for key, value in row.items() if key not in OBSERVATION_FIELDS}
+    if "ribbon_normalized" in result:
+        value = result["ribbon_normalized"]
+        if type(value) is bool:
+            return result
+        token = value.strip().lower() if isinstance(value, str) else value
+        if token in ("1", "true") or type(token) is int and token == 1:
+            result["ribbon_normalized"] = True
+        elif token in ("", "0", "false") or type(token) is int and token == 0:
+            result["ribbon_normalized"] = False
+        else:
+            raise ValueError("Historical ribbon_normalized flag is not a known CSV boolean")
+    return result
+
+
 class HistoricalCatalogue:
     def __init__(self, dates):
         self.dates = list(dates)
@@ -195,7 +212,7 @@ class HistoricalCatalogue:
                 value = rate_percent(row.get("rate"))
                 if value is None:
                     continue
-                descriptor = {key: item for key, item in row.items() if key not in OBSERVATION_FIELDS}
+                descriptor = historical_descriptor(row)
                 key = canonical(descriptor)
                 if key not in self.tiers[section]:
                     self.tiers[section][key] = len(self.sections[section])

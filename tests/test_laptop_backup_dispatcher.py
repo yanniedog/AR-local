@@ -333,12 +333,12 @@ def test_expired_dead_lease_is_preserved_and_recovered(tmp_path: Path) -> None:
 
 def test_activation_lease_cannot_enter_ingest_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
     real_datetime = dispatcher.datetime
-    local_zone = real_datetime.now().astimezone().tzinfo
 
     class FrozenDateTime(real_datetime):
         @classmethod
         def now(cls, tz: object = None) -> datetime:
-            value = real_datetime(2026, 8, 30, 0, 15, tzinfo=local_zone)
+            # Resolve the local offset for this date, not the runner's season.
+            value = real_datetime(2026, 8, 30, 0, 15).astimezone()
             return value if tz is None else value.astimezone(tz)  # type: ignore[arg-type]
 
     monkeypatch.setattr(dispatcher, "datetime", FrozenDateTime)

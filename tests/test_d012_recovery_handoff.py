@@ -65,6 +65,16 @@ def _frozen_source(relative: str) -> bytes:
             "a697bc5006f7d937eba7c18baba57cb728834f683dba40054e18a1b0447fa2d4"
         )
         return payload
+    if path == "laptop_backup_trusted_package.py":
+        # The live builder no longer stores its child manifest under a
+        # trusted-data name. Historical D-012 evidence still binds the
+        # original source bytes.
+        archive = ROOT / "tests/fixtures/d012-retired-trusted-package-6c2e722c.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest() == (
+            "6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43"
+        )
+        return payload
     if path in {"laptop_backup_transport.py", "laptop_pull_backup.py"}:
         assert "D-015-USER-SESSION-NO-UAC" in HANDOFF.read_text(encoding="utf-8")
         archive = (ROOT / "tests/fixtures/d012-retired-sources-ec008b26.json.gz").read_bytes()

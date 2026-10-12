@@ -504,6 +504,24 @@ def test_enrollment_filter_emits_only_loopback_authorization_url():
         "http://127.0.0.1:53682/auth?state=safe-state_12")
 
 
+def test_generated_restic_secret_is_not_printed(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(enroll, "credentials_directory", lambda path: None)
+    monkeypatch.setattr(os, "fchmod", lambda *_args: None, raising=False)
+    code = enroll.main(["password", "--credentials-dir", str(tmp_path)])
+    captured = capsys.readouterr().out
+    stored = (tmp_path / "restic.password").read_text(encoding="ascii").strip()
+    payload = json.loads(captured)
+    assert code == 0
+    assert stored
+    assert stored not in captured
+    assert payload == {
+        "action": "PASSWORD_CREATED",
+        "backup": "NOT_RUN",
+        "recovery_key": "Store restic.password separately in your password manager before commissioning",
+        "result": "PASS",
+    }
+
+
 def test_access_token_without_refresh_token_is_blocked(layout, monkeypatch):
     monkeypatch.setattr(backup.shutil, "which", lambda _: "/test/executable")
     layout.rclone_config.write_text('[ar_local_drive]\ntype = drive\nscope = drive.file\ntoken = {"access_token":"SECRET"}\n')

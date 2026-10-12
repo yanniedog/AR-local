@@ -8,11 +8,13 @@ After `npm run pr:gates:check -- --pr <n>` exits **0**:
 
 ```sh
 npm run pr:merge -- --pr <n>
-# equivalent:
-gh pr merge <n> --auto --squash --delete-branch
 ```
 
-`--auto` queues merge until required checks pass (and updates branch when protection requires up-to-date). Do not merge on CI green alone — complete bot wait and thread closure per `WORKFLOW.md`.
+The wrapper checks applicable product CI and required checks on the current head,
+then pins the merge request to that commit. After branch synchronization it
+parks for fresh verification. The required `bot-feedback-gate` also independently
+enforces product CI and feedback on GitHub. Do not use bare `gh pr merge`;
+complete feedback disposition and resolution per `WORKFLOW.md`.
 
 ## `gh pr create`
 

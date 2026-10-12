@@ -350,6 +350,7 @@ def ingest_brand(
     index_tracker = ProductIndexTracker()
     last_meta: Dict[str, Any] = {}
     accounting_error: Optional[str] = None
+    partial_index_hashes: set[str] = set()
     existing_leaves, resume_conflicts = existing_product_leaves(date_root, bank_dir_name) if resume else ({}, set())
     # Per-holder circuit breaker, shared across Phase-1 classification probes and
     # the Phase-2 detail workers (so a down detail endpoint trips in either phase).
@@ -394,6 +395,7 @@ def ingest_brand(
         _pace_fetch(sleep_ms, deadline)
         res = fetch_cdr_json(
             url, versions=_index_version_list(preferred_version),
+            allow_partial_index=True,
             timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
             **({"max_total_seconds": max(0.0, deadline - time.monotonic())} if deadline is not None else {}),
             attempt_journal=attempt_journal,
@@ -426,7 +428,11 @@ def ingest_brand(
             preferred_version = res.version
         last_meta = parsed.get("meta") or {}
 
-        for product in extract_products(parsed):
+        from cdr_partial_index import add_partial_index_diagnostics, capture_index_products, record_partial_index
+        if digest := record_partial_index(res, date_root, bank_dir_name, url, pages, lock=failure_lock):
+            partial_index_hashes.add(digest)
+
+        for product in capture_index_products(extract_products(parsed), res.partial_index):
             if deadline is not None and time.monotonic() >= deadline:
                 append_failure(date_root, {
                     "phase": "products_index", "bank": bank_dir_name,
@@ -540,10 +546,13 @@ def ingest_brand(
 
     # ─── Phase 2: parallel detail fetches ────────────────────────────────────
 
-    atomic_write_json(index_dir / "diagnostics.json", index_tracker.summary(
+    diagnostics = index_tracker.summary(
         pages=pages, raw_records=products_seen,
-        complete=not url and not capped and accounting_error is None, meta=last_meta,
-    ))
+        complete=not url and not capped and accounting_error is None and not partial_index_hashes, meta=last_meta,
+    )
+    if partial_index_hashes:
+        add_partial_index_diagnostics(diagnostics, partial_index_hashes)
+    atomic_write_json(index_dir / "diagnostics.json", diagnostics)
     if not pending:
         return
 
