@@ -248,10 +248,11 @@ def test_conflicting_promoted_reservations_do_not_consume_multiple_slots(running
 @pytest.mark.parametrize('running_slots,promoted_slots', [(1, 3), (2, 2)])
 def test_promoted_cpu_reservation_blocks_new_arrivals_while_running_work_drains(
         running_slots, promoted_slots):
-    running = job('running', 1, resources=['other-running'], state='running', slots=running_slots)
-    promoted = job('promoted', 2, project='ar-local', age=7200, slots=promoted_slots)
-    newcomer = job('newcomer', 3, resources=['other-new'])
-    records = [running, promoted, newcomer]
+    running = [job(f'running-{index}', index, resources=[f'other-running-{index}'], state='running')
+               for index in range(running_slots)]
+    promoted = job('promoted', 10, project='ar-local', age=7200, slots=promoted_slots)
+    newcomer = job('newcomer', 11, resources=['other-new'])
+    records = [*running, promoted, newcomer]
     assert admission(promoted, records, NOW) == (False, 'cpu-capacity')
     assert admission(newcomer, records, NOW) == (False, 'ar-local-cpu-reservation')
     assert admission(promoted, [promoted, newcomer], NOW) == (True, 'admitted')
