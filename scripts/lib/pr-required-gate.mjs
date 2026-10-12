@@ -66,7 +66,7 @@ function samePr(a, b) {
 }
 
 /** Complete abandoned evaluations without touching workflow jobs or other PRs. */
-function retirePendingEvaluations(prNumber, headSha, { prefix, api, write, now, beforeId = Infinity }) {
+function retirePendingEvaluations(prNumber, headSha, { prefix, api, write, now, beforeId = Infinity, reason }) {
   const rows = readApiPages(api,
     prefix + '/commits/' + headSha + '/check-runs?check_name=' + REQUIRED_GATE_NAME + '&filter=all', 'check_runs');
   const owned = rows.filter((check) => check.name === REQUIRED_GATE_NAME && check.head_sha === headSha &&
@@ -79,11 +79,35 @@ function retirePendingEvaluations(prNumber, headSha, { prefix, api, write, now, 
   for (const check of owned.filter((check) => check.id < beforeId)) {
     write(prefix + '/check-runs/' + check.id, {
       status: 'completed', conclusion: 'cancelled', completed_at: now(),
-      output: { title: 'Evaluation retired', summary: beforeId === Infinity
+      output: { title: 'Evaluation retired', summary: reason || (beforeId === Infinity
         ? 'The pull request is closed; this pending evaluation no longer applies.'
-        : 'A newer required-gate evaluation supersedes this pending snapshot.' },
+        : 'A newer required-gate evaluation supersedes this pending snapshot.') },
     }, 'PATCH');
   }
+}
+
+/** Runs outside replaceable reporter concurrency so every old head is retired. */
+export function retirePriorEventGate(event, eventName, {
+  repository, api = githubApi, write = writeCheck, now = () => new Date().toISOString(),
+} = {}) {
+  validateRepository(repository);
+  if (eventName !== 'pull_request_target' || event.action !== 'synchronize') return { skipped: true };
+  const prNumber = validPrNumber(event.pull_request?.number);
+  const priorSha = event.before;
+  if (event.repository?.full_name !== repository || event.pull_request?.base?.repo?.full_name !== repository ||
+      !/^[0-9a-f]{40}$/.test(priorSha || '') || !/^[0-9a-f]{40}$/.test(event.pull_request?.head?.sha || '') ||
+      priorSha === event.pull_request.head.sha) throw new Error('Invalid synchronize event identity');
+  const prefix = 'repos/' + repository;
+  const current = api(prefix + '/pulls/' + prNumber);
+  if (current.number !== prNumber || current.base?.repo?.full_name !== repository ||
+      !['open', 'closed'].includes(current.state) || !/^[0-9a-f]{40}$/.test(current.head?.sha || '')) {
+    throw new Error('Invalid live PR identity for prior-head cleanup');
+  }
+  // A delayed event may arrive after the branch was reset back to this SHA.
+  if (current.state === 'open' && current.head.sha === priorSha) return { skipped: true };
+  retirePendingEvaluations(prNumber, priorSha, { prefix, api, write, now,
+    reason: 'The pull request moved away from this head; this pending evaluation no longer applies.' });
+  return { retiredHead: priorSha, prNumber };
 }
 
 export function publishRequiredGate(prNumber, {
@@ -123,9 +147,13 @@ export function publishRequiredGate(prNumber, {
     // started during feedback collection cannot reuse an earlier green result.
     const product = productReader(prNumber, { repository, api, expectedHeadSha: initial.head.sha });
     outcome = combineRequiredGate(product, classifyThreads(threads));
-    if (!samePr(initial, api(prPath))) {
-      outcome = { status: 'in_progress', title: 'PR changed during evaluation',
-        summary: 'The head or base changed. A fresh evaluation is required before merge.' };
+    const current = api(prPath);
+    if (!samePr(initial, current)) {
+      const abandoned = current.state !== 'open' || current.head?.sha !== initial.head.sha;
+      outcome = { status: abandoned ? 'completed' : 'in_progress',
+        ...(abandoned ? { conclusion: 'cancelled' } : {}), title: 'PR changed during evaluation',
+        summary: abandoned ? 'The PR closed or moved to another head; this evaluation was retired.'
+          : 'The PR base changed. A fresh evaluation is required before merge.' };
     }
   } catch (error) {
     outcome = { status: 'completed', conclusion: 'failure', title: 'Gate verification unavailable',

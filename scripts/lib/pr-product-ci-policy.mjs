@@ -41,7 +41,7 @@ export const PRODUCT_CI_WORKFLOWS = [
 export function pathMatches(file, pattern) {
   if (!/^[A-Za-z0-9_./*\-]+$/.test(pattern)) throw new Error(`Unsupported CI path pattern: ${pattern}`);
   const expression = pattern.split('**').map((part) => part.split('*')
-    .map((literal) => literal.replace(/[.]/g, '\\.')).join('[^/]*')).join('.*');
+    .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')).join('.*');
   return new RegExp(`^${expression}$`).test(file);
 }
 

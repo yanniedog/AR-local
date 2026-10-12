@@ -24,6 +24,29 @@ permissions:
   actions: read
 
 jobs:
+  retire-previous-head:
+    # Do not put this job in replaceable per-PR concurrency: a later push can
+    # otherwise drop the only event naming a force-pushed-away prior SHA.
+    if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Retire owned pending checks on the previous PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/pr-required-gate.mjs --retire-event
+
   discover:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
     runs-on: ubuntu-latest

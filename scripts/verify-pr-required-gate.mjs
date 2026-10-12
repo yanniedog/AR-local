@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  combineRequiredGate, discoverGatePrs, publishRequiredGate, validPrNumber,
+  combineRequiredGate, discoverGatePrs, publishRequiredGate, retirePriorEventGate, validPrNumber,
 } from './lib/pr-required-gate.mjs';
 
 const repository = 'owner/repo';
@@ -107,8 +107,10 @@ assert.equal(restartedDuringThreads.writes.at(-1).body.conclusion, undefined,
 for (const final of [{ ...pr, head: { ...pr.head, sha: baseSha } },
   { ...pr, base: { ...pr.base, sha: headSha } }, { ...pr, state: 'closed' }]) {
   const raced = publishFixture({ final });
-  assert.equal(raced.writes.at(-1).body.status, 'in_progress', 'head/base/state race must prevent success');
-  assert.equal(raced.writes.at(-1).body.conclusion, undefined);
+  const abandoned = final.state === 'closed' || final.head.sha !== headSha;
+  assert.equal(raced.writes.at(-1).body.status, abandoned ? 'completed' : 'in_progress', 'head/base/state race must prevent success');
+  assert.equal(raced.writes.at(-1).body.conclusion, abandoned ? 'cancelled' : undefined,
+    'an in-flight old-head evaluation cannot resurrect a pending check after synchronize cleanup');
 }
 const unresolved = [{ isResolved: false, comments: { nodes: [{
   author: { login: 'reviewer', __typename: 'User' }, body: 'This branch can delete the retained evidence.',
@@ -144,6 +146,45 @@ assert.ok(closed.writes.every((event) => event.body.conclusion === 'cancelled'))
 assert.deepEqual(closed.writes.map((event) => event.endpoint), [90, 91, 99, 100].map((id) => 'repos/owner/repo/check-runs/' + id));
 assert.equal(publishFixture({ existingChecks: [{ ...owned, id: -1 }] }).writes.at(-1).body.conclusion, 'failure');
 
+const movedPr = { ...pr, head: { ...pr.head, sha: baseSha } };
+const synchronize = { action: 'synchronize', before: headSha, repository: { full_name: repository }, pull_request: movedPr };
+function retireFixture({ event = synchronize, current = movedPr, eventName = 'pull_request_target', checks = history } = {}) {
+  const calls = [], writes = [];
+  const result = retirePriorEventGate(event, eventName, { repository,
+    api: (endpoint) => {
+      calls.push(endpoint);
+      return endpoint.includes('/check-runs?') ? { check_runs: checks, total_count: checks.length } : current;
+    },
+    write: (endpoint, body, method) => { writes.push({ endpoint, body, method }); return { id: 1 }; },
+    now: () => '2026-10-12T00:00:00.000Z',
+  });
+  return { result, calls, writes };
+}
+const oldHead = retireFixture();
+assert.equal(oldHead.result.retiredHead, headSha);
+assert.ok(oldHead.calls.some((endpoint) => endpoint.includes('/commits/' + headSha + '/check-runs?')));
+assert.deepEqual(oldHead.writes.map((entry) => entry.endpoint), [90, 91, 99, 100].map((id) => 'repos/owner/repo/check-runs/' + id));
+assert.ok(oldHead.writes.every((entry) => entry.method === 'PATCH' && entry.body.conclusion === 'cancelled'));
+assert.equal(retireFixture({ current: pr }).writes.length, 0, 'delayed old event cannot retire a head that became current again');
+assert.equal(retireFixture({ current: { ...movedPr, state: 'closed' } }).writes.length, 4,
+  'synchronize cleanup still retires old-head checks after a later close event');
+assert.equal(retireFixture({ eventName: 'workflow_dispatch' }).calls.length, 0);
+assert.equal(retireFixture({ event: { ...synchronize, action: 'closed' } }).calls.length, 0);
+for (const event of [{ ...synchronize, before: 'malformed' }, { ...synchronize, before: baseSha },
+  { ...synchronize, repository: { full_name: 'other/repo' } },
+  { ...synchronize, pull_request: { ...movedPr, base: { ...pr.base, repo: { full_name: 'other/repo' } } } }]) {
+  assert.throws(() => retireFixture({ event }), /identity/);
+}
+assert.throws(() => retireFixture({ current: { ...movedPr, number: 43 } }), /identity/);
+// Both independent events survive even when replaceable reporter B never runs.
+const lastSha = 'c'.repeat(40);
+const newestPr = { ...pr, head: { ...pr.head, sha: lastSha } };
+const secondEvent = { ...synchronize, before: baseSha, pull_request: newestPr };
+const secondChecks = [{ ...owned, id: 101, head_sha: baseSha, external_id: 'ar-local-required:42:' + baseSha }];
+assert.equal(retireFixture({ event: secondEvent, current: newestPr, checks: secondChecks }).writes[0].endpoint,
+  'repos/owner/repo/check-runs/101');
+assert.equal(retireFixture({ current: newestPr }).writes.length, 4);
+
 const workflow = fs.readFileSync(new URL('../.github/workflows/pr-bot-feedback-check.yml', import.meta.url), 'utf8');
 assert.match(workflow, /\n  pull_request_target:/);
 assert.doesNotMatch(workflow, /\n  pull_request:|\n  pull_request_review(?:_comment)?:/);
@@ -152,9 +193,9 @@ assert.match(workflow, /group: required-pr-gate-\$\{\{ matrix\.pr \}\}/);
 assert.match(workflow, /cancel-in-progress: false/);
 assert.doesNotMatch(workflow, /\n  bot-feedback-gate:/, 'Actions job cannot compete with the published required check');
 assert.doesNotMatch(workflow, /BOT_GATE_TOKEN|secrets\./, 'no privileged PAT in PR-controlled execution');
-assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2);
+assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3);
 const refs = [...workflow.matchAll(/^\s+ref: (.+)$/gm)].map((match) => match[1]);
-assert.equal(refs.length, 2);
+assert.equal(refs.length, 3);
 for (const ref of refs) {
   assert.match(ref, /github\.event\.repository\.default_branch/);
   assert.doesNotMatch(ref, /pull_request\.(?:head|base)|workflow_run\.head/);
@@ -165,6 +206,11 @@ for (const ref of refs) {
 }
 assert.doesNotMatch(workflow.split('\njobs:')[0], /checks: write/);
 assert.match(workflow, /\n  evaluate-gates:[\s\S]*checks: write/);
+const retirementJob = workflow.split('\n  retire-previous-head:')[1]?.split('\n  discover:')[0];
+assert.match(retirementJob, /github\.event_name == 'pull_request_target' && github\.event\.action == 'synchronize'/);
+assert.doesNotMatch(retirementJob, /\n\s+concurrency:|\n\s+needs:/,
+  'prior-head cleanup cannot be replaced by newer per-PR reporter events');
+assert.match(retirementJob, /node scripts\/pr-required-gate\.mjs --retire-event/);
 assert.doesNotMatch(workflow, /download-artifact|refs\/pull\//);
 const bridge = fs.readFileSync(new URL('../.github/workflows/pr-review-events.yml', import.meta.url), 'utf8');
 assert.match(bridge, /pull_request_review:/);

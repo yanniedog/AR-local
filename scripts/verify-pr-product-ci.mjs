@@ -62,6 +62,8 @@ for (const file of ['deploy/pi/ar-local-ingest-watchdog.service', 'dashboard/app
 }
 assert.equal(pathMatches('nested/cdr_daily.py', 'cdr_*.py'), false);
 assert.throws(() => pathMatches('a', '!**'), /Unsupported/);
+assert.throws(() => pathMatches('a.py', 'a\\.py'), /Unsupported/);
+assert.equal(pathMatches('fileXpy', 'file.py'), false, 'literal dots are escaped');
 
 // Every PR workflow needs an intentional classification. Adding a new product
 // workflow must update the required policy instead of silently making it advisory.
