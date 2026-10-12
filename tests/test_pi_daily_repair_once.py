@@ -30,7 +30,7 @@ def test_window_is_hobart_with_daylight_saving(tmp_path, utc, allowed):
 def supervisor():
     return {"Id": gate.UNIT, "Type": "notify", "NotifyAccess": "main", "MainPID": "123",
             "ControlGroup": "/system.slice/" + gate.UNIT, "KillMode": "control-group",
-            "SendSIGKILL": "yes", "Restart": "no", "RuntimeMaxUSec": "18min 40s",
+            "SendSIGKILL": "yes", "Restart": "no", "RuntimeMaxUSec": "18min 20s",
             "TimeoutStartUSec": "1min 1s", "TimeoutStopUSec": "10s"}
 
 
@@ -83,6 +83,6 @@ def test_service_has_no_timer_or_restart_and_kernel_total_is_bounded():
     text = (root / "deploy/pi/ar-local-queue-task-daily-repair.service").read_text()
     assert "\n[Install]" not in text
     assert "Restart=no" in text and "KillMode=control-group" in text
-    assert "TimeoutStartSec=61s" in text and "RuntimeMaxSec=1120s" in text
-    assert "TimeoutStopSec=10s" in text and 61 + 1120 + 10 <= 1200
+    assert "TimeoutStartSec=61s" in text and "RuntimeMaxSec=1100s" in text
+    assert "TimeoutStopSec=10s" in text and 61 + 1100 + 10 + 10 <= 1200
     assert not (root / "deploy/pi/ar-local-queue-task-daily-repair.timer").exists()

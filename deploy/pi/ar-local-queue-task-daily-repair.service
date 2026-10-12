@@ -20,9 +20,9 @@ StateDirectoryMode=0750
 CPUQuota=300%
 CPUWeight=500
 IOWeight=500
-# Startup + execution + forced-kill grace = 61 + 1120 + 10 = 1191s < 20min.
+# Startup + execution + forced-kill grace + stop hook = 61 + 1100 + 10 + 10 = 1181s < 20min.
 TimeoutStartSec=61s
-RuntimeMaxSec=1120s
+RuntimeMaxSec=1100s
 TimeoutStopSec=10s
 KillMode=control-group
 SendSIGKILL=yes

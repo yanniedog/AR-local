@@ -16,7 +16,7 @@ def validate_supervisor(details, group, pid):
     expected = {"Id": UNIT, "Type": "notify", "NotifyAccess": "main", "MainPID": str(pid),
                 "ControlGroup": group, "KillMode": "control-group",
                 "SendSIGKILL": "yes", "Restart": "no",
-                "RuntimeMaxUSec": "18min 40s", "TimeoutStartUSec": "1min 1s",
+                "RuntimeMaxUSec": "18min 20s", "TimeoutStartUSec": "1min 1s",
                 "TimeoutStopUSec": "10s"}
     if not group.endswith("/" + UNIT) or any(details.get(k) != v for k, v in expected.items()):
         raise RuntimeError("repair requires the verified 20-minute systemd supervisor")
@@ -58,7 +58,7 @@ def main():
     worker = str(Path(__file__).with_name("pi_daily_repair_work.py"))
     args = ["/usr/bin/python3", "-B", QUEUE, "run", "--project", "ar-local",
             "--resource", "ar-local", "--mode", "exclusive", "--cpu-slots", "3",
-            "--wait-timeout", "1", "--max-runtime", "1120", "--",
+            "--wait-timeout", "1", "--max-runtime", "1100", "--",
             "/usr/bin/python3", "-B", worker]
     os.execv(args[0], args)
 

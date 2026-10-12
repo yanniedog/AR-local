@@ -7,14 +7,14 @@ import sys
 from zoneinfo import ZoneInfo
 
 
-def repair(watchdog, recovery, day, now):
+def repair(watchdog, recovery, day, now, read_pending=None):
     reason = recovery.recovery_block_reason(watchdog.REPO_ROOT, include_ingest_lock=False)
     if reason:
         return {"status": "blocked", "reason": reason}
     observation = recovery.selected_observation(recovery.data_state_root(watchdog.REPO_ROOT), day)
     if observation is None:
         return {"status": "blocked", "reason": "no_verified_current_day_capture; no blind full rerun"}
-    pending = watchdog.read_payload_publication_pending(watchdog.REPO_ROOT)
+    pending = (read_pending or watchdog.read_payload_publication_pending)(watchdog.REPO_ROOT)
     if pending:
         pointer = pending.get("pointer", {})
         if (pending.get("run_date") != day or pointer.get("observation_date") != day
@@ -41,7 +41,8 @@ def main():
     sys.path.insert(0, str(repo))
     import pi_daily_watchdog as watchdog
     import pi_cdr_recovery as recovery
-    result = repair(watchdog, recovery, day, now)
+    from pi_daily_sync import read_payload_publication_pending
+    result = repair(watchdog, recovery, day, now, read_payload_publication_pending)
     with receipt.with_suffix(".result.json").open("x", encoding="utf-8") as stream:
         json.dump({"date": day, "result": result}, stream); stream.flush(); os.fsync(stream.fileno())
     print(json.dumps(result))

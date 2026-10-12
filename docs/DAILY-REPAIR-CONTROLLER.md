@@ -15,10 +15,10 @@ and systemd timeouts, then exclusively creates a permanent Hobart-date claim in
 repair consumes that date. Do not delete a claim or retry after an ambiguous
 response. Existing shared-Pi admission and producer locking still apply.
 
-The kernel limits startup to 61 seconds, execution to 1120 seconds and stop
-grace to 10 seconds: at most 1191 seconds before the entire repair cgroup is
-forcibly killed, including descendants that ignore TERM or start new sessions.
-Serving restoration is a separate guarded stop hook after repair has ended.
+The kernel limits startup to 61 seconds, execution to 1100 seconds and stop
+grace to 10 seconds, with another 10 seconds reserved for the stop hook. The repair process tree is
+forcibly killed at its deadline, including descendants that ignore TERM or start new sessions.
+The total service budget is at most 1181 seconds. Serving restoration is a separate guarded stop hook after repair has ended.
 This bounds Pi repair processes; it is not a Codex token or chat-time quota.
 
 The worker makes one pass over verified current-day evidence. Historical or
