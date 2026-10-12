@@ -377,8 +377,13 @@ def _probe_due(root: Path, observation: dict, providers: dict, due: list[dict],
             url = current_target_url(request, providers[request["provider_dir"]], brands)
             report = probe_request(url, phase=request["phase"],
                                    product_id=str(request.get("product_id") or ""), deadline=deadline,
-                                   version_offset=request.get("version_offset", 0))
+                                   version_offset=request.get("version_offset", 0),
+                                   allow_partial_index=request["phase"] == "products_index")
             report.pop("data", None)
+            if report.get("ok") and report.get("partial_index"):
+                from cdr_partial_index import partial_probe_has_progress
+                if not partial_probe_has_progress(report, request, observation, history):
+                    report.update(ok=False, failure_category="unchanged_partial_index")
         except (KeyError, ValueError, RuntimeError) as error:
             report = {"ok": False, "failure_category": type(error).__name__, "complete_capture": False}
         report.update(provider_dir=request["provider_dir"], request_key=request["request_key"],
