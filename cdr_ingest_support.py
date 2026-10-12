@@ -220,7 +220,7 @@ class HttpRequestResult:
     status: int
     text: str
     retry_after: Optional[float]
-    body_sha256: str
+    body_sha256: Optional[str]
 
     def __iter__(self):
         yield self.status
@@ -273,6 +273,7 @@ def http_request(
     started_at = attempt_utc_now()
     response_headers: Mapping[str, str] = {}
     body = b""
+    body_sha256: Optional[str] = None
     wire_bytes = 0
     inflated_bytes = 0
     wire_sha256 = hashlib.sha256(b"").hexdigest()
@@ -285,6 +286,7 @@ def http_request(
         status = response.status
         response_headers = response.headers
         body = response.body
+        body_sha256 = hashlib.sha256(body).hexdigest()
         wire_bytes = response.wire_bytes
         inflated_bytes = response.inflated_bytes
         wire_sha256 = response.wire_sha256
@@ -326,7 +328,7 @@ def http_request(
             error_message=error_message,
             context=attempt_context,
         )
-    return HttpRequestResult(status, text, retry_after, hashlib.sha256(body).hexdigest())
+    return HttpRequestResult(status, text, retry_after, body_sha256)
 
 
 def fetch_with_retries(
