@@ -23,7 +23,12 @@ const STATUS_LEGEND = [
 ];
 
 function escapeMarkdownCell(text) {
-  return String(text ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ').replace(/\r/g, '');
+  return String(text ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/[[\]()*_`]/g, '\\$&')
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, ' ')
+    .replace(/\r/g, '');
 }
 
 function truncateText(text, maxLen = 55) {
