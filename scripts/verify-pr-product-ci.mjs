@@ -117,6 +117,8 @@ const reporterNames = reporterSource.match(/^\s+workflows: \[([^\]]+)\]/m)?.[1].
 for (const expected of PRODUCT_CI_WORKFLOWS) {
   assert.ok(reporterNames.includes(expected.name), `${expected.name} completion must refresh the required gate`);
   const source = fs.readFileSync(new URL(`../${expected.path}`, import.meta.url), 'utf8');
+  const declaredName = source.match(/^name:\s*(.+)$/m)?.[1].trim();
+  assert.equal(declaredName, expected.name, `${expected.path} declared workflow name must match the CI policy and completion trigger`);
   for (const event of ['pull_request', 'push']) {
     const section = source.split(new RegExp(`^  ${event}:`, 'm'))[1]?.split(/^\S|^  [a-z_]+:/m)[0];
     assert.ok(section, `${expected.name} has ${event} trigger`);
