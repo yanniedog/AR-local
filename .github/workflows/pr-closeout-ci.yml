@@ -17,6 +17,10 @@ on:
       - 'scripts/verify-pr-*.mjs'
       - 'package.json'
       - '.github/workflows/pr-closeout-ci.yml'
+
+permissions:
+  contents: read
+
 jobs:
   closeout-contract:
     strategy:
