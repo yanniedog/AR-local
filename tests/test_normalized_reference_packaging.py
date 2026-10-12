@@ -1,5 +1,6 @@
 """Discovery-to-publication protocol controls; no fabricated acceptance data."""
 import copy
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -22,7 +23,7 @@ def test_recovered_reference_survives_cleaning_and_payload_packaging(raw):
     assert reference['sourceNormalization'] == 'leading-encoded-space-v1'
     assert reference['sourcePath'] == '/additionalInformation/feesAndPricingUri'
     assert reference['url'].startswith('https://')
-    if 'example.com' in raw:
+    if urlsplit(reference['url']).hostname == 'example.com':
         assert reference['url'] == 'https://example.com/a%20b?q=%20'
         assert reference['sourceUrl'] == 'https://example.com/a%20b?q=%20#fees'
     assert source_documents({'sourceDocuments': [reference]}) == [reference]
