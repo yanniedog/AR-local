@@ -256,3 +256,25 @@ def test_promoted_cpu_reservation_blocks_new_arrivals_while_running_work_drains(
     assert admission(promoted, records, NOW) == (False, 'cpu-capacity')
     assert admission(newcomer, records, NOW) == (False, 'ar-local-cpu-reservation')
     assert admission(promoted, [promoted, newcomer], NOW) == (True, 'admitted')
+
+
+@pytest.mark.parametrize('owner_slots', [1, 2])
+def test_conflict_blocked_promoted_waiter_reserves_next_cpu_capacity(owner_slots):
+    owner = job('owner', 1, project='ar-local', state='running', slots=owner_slots)
+    promoted = job('promoted', 2, project='ar-local', age=7200, slots=3)
+    newcomer = job('newcomer', 3, resources=['mining'])
+    records = [owner, promoted, newcomer]
+    assert admission(promoted, records, NOW) == (False, 'running-conflict')
+    assert admission(newcomer, records, NOW) == (False, 'ar-local-cpu-reservation')
+    # Releasing the original owner must leave room for the promoted waiter.
+    assert admission(promoted, [promoted, newcomer], NOW) == (True, 'admitted')
+    # Admitting the newcomer earlier would steal that next safe CPU slot.
+    assert admission(promoted, [promoted, dict(newcomer, state='running')], NOW) == (
+        False, 'cpu-capacity')
+
+
+def test_conflict_blocked_waiter_does_not_reserve_cpu_before_promotion():
+    owner = job('owner', 1, project='ar-local', state='running')
+    waiter = job('waiter', 2, project='ar-local', age=7199, slots=3)
+    newcomer = job('newcomer', 3, resources=['mining'])
+    assert admission(newcomer, [owner, waiter, newcomer], NOW) == (True, 'admitted')
