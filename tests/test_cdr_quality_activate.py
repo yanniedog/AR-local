@@ -13,6 +13,7 @@ import pytest
 
 import pi_cdr_quality_activate as activate
 import pi_cdr_quality_activate_evidence as evidence
+import pi_cdr_quality_runtime_state as runtime_state
 from pi_cdr_quality_resources import GIB, Limits, SCHEMA as RESOURCE_SCHEMA
 from cdr_quality_accounting import canonical_digest
 
@@ -71,7 +72,15 @@ def sealed(tmp_path):
         directory.mkdir()
     (source / "worker.py").write_text("# candidate code\n")
     (production / "worker.py").write_text("# previous code\n")
+    (data / "state").mkdir()
+    shutil.copyfile(Path(activate.__file__).with_name("pi_daily_sync.py"), source / "pi_daily_sync.py")
+    (production / "pi_daily_sync.py").write_text(
+        "def mark_payload_publication_pending(root, reason, pointer=None): pass\n"
+        "def clear_payload_publication_pending(root): pass\n")
     files = {"worker.py": evidence.sha(source / "worker.py")}
+    files["pi_daily_sync.py"] = evidence.sha(source / "pi_daily_sync.py")
+    controls = runtime_state.control_state(data)
+    predecessor = runtime_state.rollback_contract(source, production)
     ci = ci_proof(operation)
     junit = operation / "pytest.xml"
     junit.write_text('<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0"><testcase name="metadata"/></testsuite></testsuites>')
@@ -95,6 +104,7 @@ def sealed(tmp_path):
         "baseline": host, "last_host_sample": host})
     canary = save(operation / "canary.json", {"schema": evidence.CANARY_SCHEMA, "result": "PASS", "target_commit": TARGET,
         "source_files": files, "protected_files": protected, "tests": evidence.junit_result(junit),
+        "publication_controls": controls, "rollback_contract": predecessor,
         "resources": resources, "source_audit": audit, "candidate_manifest": candidate, "run_date": "2026-09-11", "generation_id": "recorded-generation", "dispositions": {}})
     bundle = save(operation / "candidate.bundle", {"artifact": "candidate bundle metadata fixture"})
     rollback = save(operation / "rollback.bundle", {"artifact": "rollback bundle metadata fixture"})
@@ -103,6 +113,7 @@ def sealed(tmp_path):
         "source_root": str(source), "production_root": str(production), "data_root": str(data), "operation_root": str(operation),
         "created_at": current.isoformat(), "expires_at": (current + timedelta(hours=1)).isoformat(), "source_files": files,
         "changed_files": files, "protected_files": protected,
+        "publication_controls": controls, "rollback_contract": predecessor,
         "evidence": {"candidate_bundle": bundle, "rollback_bundle": rollback, "ci": ci, "app": app, "canary": canary},
         "backup": {"status": "UNVERIFIED"}}
     path = operation / "activation.json"
@@ -294,6 +305,48 @@ def test_success_keeps_exact_candidate_and_no_backup_claim(runtime):
     result = activate.activate(args)
     assert result["result"] == "PASS" and state["checkout"] == [TARGET]
     assert result["backup"]["status"] == "UNVERIFIED"
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_new_pending_obligation_blocks_activation_before_runtime_mutation(runtime, dry_run):
+    args, state = runtime
+    args.dry_run = dry_run
+    manifest = evidence.read(args.manifest)
+    pending = Path(manifest["data_root"]) / "state" / runtime_state.PENDING
+    pending.write_text('{"pointer":{"generation_id":"new-obligation"}}')
+    with pytest.raises(ValueError, match="publication control state changed"):
+        activate.activate(args)
+    assert state["checkout"] == []
+    assert all(value == "active" for value in state["timers"].values())
+
+
+def test_control_change_during_pre_switch_smoke_prevents_checkout(runtime, monkeypatch):
+    args, state = runtime
+    data = Path(evidence.read(args.manifest)["data_root"])
+    def smoke(*_, **kwargs):
+        (data / "state" / "app-payload-continuity.json").write_text('{"dates":{}}')
+    monkeypatch.setattr(activate, "smoke", smoke)
+    with pytest.raises(RuntimeError, match="publication control state changed"):
+        activate.activate(args)
+    assert state["checkout"] == []
+
+
+def test_new_queue_after_switch_is_preserved_and_unsafe_rollback_refused(runtime, monkeypatch):
+    args, state = runtime
+    manifest = evidence.read(args.manifest)
+    pending = Path(manifest["data_root"]) / "state" / runtime_state.PENDING
+    body = '{"pointer":{"generation_id":"first"},"queued_pointers":[{"generation_id":"second"}]}'
+    def verify(*_, **kwargs):
+        pending.write_text(body)
+        raise RuntimeError("post-switch failed after new obligation")
+    monkeypatch.setattr(activate, "verify_runtime", verify)
+    with pytest.raises(RuntimeError, match="publication control state changed"):
+        activate.activate(args)
+    assert state["checkout"] == [TARGET]
+    assert pending.read_text() == body
+    result = evidence.read(next(Path(manifest["operation_root"]).glob("activation-*/result.json")))
+    assert result["result"] == "FAIL" and "rollback" not in result
+    assert "post-switch failed" in result["activation_failure"]
 
 
 def test_rollback_failure_does_not_erase_original_activation_reason(runtime, monkeypatch):

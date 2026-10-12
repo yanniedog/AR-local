@@ -12,6 +12,28 @@ capture, public publication, app installation, Drive restore, or natural timer r
 
 ## Prerequisites
 
+Publication controls are part of the canary and seal: the presence and exact bytes
+of `state/app-payload-publication-pending.json`, `state/app-payload-continuity.json`,
+and the complete bounded `state/app-payload-retries/` inventory. Missing files
+remain distinct from malformed or unreadable files. These controls are rechecked
+in dry-run, under the production lease immediately before checkout, after runtime
+verification, and before and after rollback. A changed control is never restored
+from a snapshot: preserve outstanding work and report the failed transaction.
+
+If `queued_pointers` is present, rollback requires byte-identical predecessor and
+candidate `pi_daily_sync.py` files with the tested queue-capable implementation.
+An older predecessor can be used for immediate transactional rollback when no
+queue field exists and all sealed controls remain unchanged under the lease.
+This does not authorize a later manual downgrade: new captures or retries can
+create queued obligations after activation, so never blindly check out old code.
+
+Checkout activation does not install separate queue, health or daily-repair
+bundles. Keep an independent operator receipt binding their entry points, local
+module dependencies, effective unit/drop-in files and imports from the production
+root, and verify hash stability around the transition. Preserve existing worker
+installations in this transaction; replacing them requires its own tested plan.
+The receipt must distinguish source bytes, running processes and installed units.
+
 Use the Pi's ordinary service account with existing noninteractive permission for
 `systemd-run` and the named `systemctl` operations. No Windows elevation or new
 sudo policy is installed by the helper. Production must be a clean checkout at

@@ -22,6 +22,21 @@ def test_committed_ready_fixture_reproduces_from_retained_observations():
     assert actual == fixture
 
 
+def test_ready_compiler_matches_both_reviewed_shipping_consumers():
+    from app_payload_bank_history_ready_asset import compiler_identity, _invoke
+    # Independent consumer pin: AR-app e2e3753 (universal) and 4fd25f6 (ARM).
+    # Updating the artifact and generated fixture together must not silently
+    # adopt semantics that the commissioned apps cannot consume.
+    expected = "5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e"
+    assert compiler_identity()[1] == expected
+    ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
+    assert ready["compiler_sha256"] == expected
+    assert _invoke(ready, validate=True) == expected
+    ready["compiler_sha256"] = "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3"
+    with pytest.raises(ValueError, match="compilation/validation failed"):
+        _invoke(ready, validate=True)
+
+
 @pytest.mark.parametrize("encrypted", [False, True])
 def test_ready_history_is_bound_and_both_raw_formats_remain(tmp_path, monkeypatch, encrypted):
     import payload_crypto

@@ -180,6 +180,17 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
             or canary.get("source_files") != value["source_files"]
             or canary.get("protected_files") != value["protected_files"]):
         raise ValueError("canary does not bind the exact source and current protected data")
+    for key in ("publication_controls", "rollback_contract"):
+        if not isinstance(value.get(key), dict) or canary.get(key) != value[key]:
+            raise ValueError("canary does not bind publication controls and rollback compatibility")
+    from pi_cdr_quality_runtime_state import _pending_helpers
+    digest, helpers, capable = _pending_helpers(root)
+    rollback = value["rollback_contract"]
+    if (digest != rollback.get("candidate_file_sha256") or helpers != rollback.get("candidate_helpers_sha256")
+            or rollback.get("queue_compatible") != (capable and digest == rollback.get("previous_file_sha256"))
+            or not SHA.fullmatch(str(rollback.get("previous_file_sha256", "")))
+            or not SHA.fullmatch(str(rollback.get("previous_helpers_sha256", "")))):
+        raise ValueError("invalid rollback publication helper binding")
     junit_result(checked(canary["tests"]))
     source_acceptance(read(checked(canary["source_audit"])), canary["generation_id"], canary["dispositions"])
     candidate = read(checked(canary["candidate_manifest"]))
