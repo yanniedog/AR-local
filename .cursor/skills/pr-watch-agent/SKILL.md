@@ -1,13 +1,13 @@
 ---
 name: pr-watch-agent
 description: >-
-  Continuous loop on open PRs: bot/human thread closure, gates, squash merge,
+  One-shot open-PR cycle: bot/human thread closure, gates, squash merge,
   Pi deploy + verify on http://100.78.28.10/. Delegates path locks to chief.
 ---
 
 # PR watch agent (AR-local)
 
-You run a **continuous ship-bar loop** on **yanniedog/AR-local** open pull requests: triage and close review threads, pass merge gates, squash merge (oldest first), then sync and verify the **Pi dashboard** — not localhost by default.
+Run one bounded ship-bar cycle on **yanniedog/AR-local** open pull requests: triage and close review threads, fix actionable failures, verify exact-head gates, and squash merge eligible PRs oldest first. When only GitHub work remains, park ownership and check once in a later turn. Pi deployment and acceptance follow separately authorized recovery gates.
 
 You **combine** pr-fix (remediation), pr-gates (audit), workflow-orchestrator (merge + close-loop), pi-deploy-watchdog (runtime), and post-merge-verify (acceptance HTTP). You **do not** own unrelated feature implementation or path locks across concurrent agent branches — **chief** still assigns one writer per branch.
 
@@ -18,7 +18,7 @@ You **combine** pr-fix (remediation), pr-gates (audit), workflow-orchestrator (m
 ## Invocation phrases
 
 - **"run pr watch"** / **"watch open PRs"**
-- Chief/orchestrator: *Follow `.cursor/skills/pr-watch-agent/SKILL.md` in background until idle.*
+- Chief/orchestrator: *Follow `.cursor/skills/pr-watch-agent/SKILL.md` for one cycle, then record ownership and blockers.*
 - *Run `npm run pr:watch-once` each cycle; exit 0 idle or all gates green.*
 
 ## Relationship to other agents
@@ -39,7 +39,7 @@ You **combine** pr-fix (remediation), pr-gates (audit), workflow-orchestrator (m
 - **Commands:** `npm run verify:pi` or `npm run verify:local -- --base-url=http://100.78.28.10/`
 - **Do not** default to `127.0.0.1` for ship-bar sign-off.
 
-## Watch loop (every cycle)
+## One-shot cycle
 
 ### SCAN
 
@@ -52,9 +52,9 @@ npm run chief:scan             # exit 1 → fix clashes before merging
 
 **Merge order:** Process open PRs **oldest `createdAt` first** (script default). If multiple PRs touch `dashboard/app.css` or the same paths, **rebase the younger PR onto `origin/main`** after the older merges (dependency-aware). `pr:watch-once` prints `BEHIND` / `DIRTY` hints.
 
-**Idle:** No open PRs → report **idle**; with `--watch`, poll every `--idle-min` (default 5). Otherwise exit cycle and let chief re-spawn when PRs exist.
+**Idle or waiting:** No open PRs → report **idle**. If only GitHub checks or merge processing remain, record the current head and blocker, park ownership, and check once in a later turn. Do not use watch or retry loops.
 
-### Per PR (repeat until queue empty or blocked)
+### Per PR (one evaluation per cycle)
 
 #### 1. Orient
 
@@ -67,10 +67,9 @@ git fetch origin && git checkout <headRefName> && git rebase origin/main   # if 
 
 ```sh
 npm run wait-for-bots -- --pr <n>
-npm run wait-for-bots -- --pr <n> --watch    # exit 2 → loop
 ```
 
-After @mentioning bots: `npm run wait-for-bots -- --bot-tag` then loop until exit **0**. Code-only pushes do **not** reset the anchor.
+Review vendors are advisory by default. Use `--require-bots gemini,codex,sourcery` only when explicitly requested. After @mentioning bots, `npm run wait-for-bots -- --bot-tag` resets the anchor; exit **2** parks ownership. Code-only pushes do **not** reset the anchor.
 
 #### 3. Synthesis + fixes (steps 5b–6) — pr-fix patterns
 
@@ -89,7 +88,6 @@ Hand off to **pr-fix-agent** if you lack write access or the PR is outside your 
 
 ```sh
 npm run pr:gates:check -- --pr <n>
-npm run pr:gates:check -- --pr <n> --watch --timeout-min 35
 ```
 
 Merge **only** when `pr:gates:check` exit **0** (CI, GitHub `bot-*` gates, wait-for-bots, thread closure, feedback plan when required).
@@ -97,8 +95,7 @@ Merge **only** when `pr:gates:check` exit **0** (CI, GitHub `bot-*` gates, wait-
 #### 5. Merge (step 7)
 
 ```sh
-npm run pr:merge -- --pr <n>
-# gh pr merge <n> --auto --squash --delete-branch
+npm run pr:merge -- --pr <n> --no-sync
 npm run close-loop:check -- --pr <n>
 npm run git:graph-hygiene
 ```
@@ -127,13 +124,13 @@ the protected exact-commit deployment gate is approved.
 
 Optional: **post-merge-verify-agent** for evidence (Browser MCP on Pi URL).
 
-## Continuous mode
+## Resume ownership
 
 | Mode | How |
 |------|-----|
-| Agent loop | Re-invoke skill after each cycle until idle |
-| Script poll | `npm run pr:watch-once -- --watch --idle-min 5` |
-| Chief background | `Task` + this skill when open PRs exist; one pr-watch worker at a time |
+| Later turn | Re-invoke for one fresh cycle after parked GitHub work changes |
+| Single check | `npm run pr:watch-once` |
+| Chief assignment | One pr-watch worker at a time; retain ownership while parked |
 
 ```sh
 npm run ship:closeout:strict && npm run wait-for-bots   # session idle only when no open PR work

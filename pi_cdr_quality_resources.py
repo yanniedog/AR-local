@@ -18,6 +18,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
+from pi_cdr_quality_telemetry import MEMORY_FIELDS, VM_FIELDS, counter_context, reclaim_delta, utc_now, zone_snapshot
+
 GIB = 1024**3
 SCHEMA = "ar-local-quality-resources-v2"
 UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
@@ -43,18 +45,18 @@ class Limits:
             raise ValueError("resource limits exceed the reviewed maximum or weaken the host reserve")
 
 
-def numeric_fields(path: Path) -> dict[str, int]:
+def numeric_fields(path: Path, *, text: str | None = None) -> dict[str, int]:
     result = {}
-    for line in path.read_text().splitlines():
+    for line in (path.read_text() if text is None else text).splitlines():
         fields = line.replace(":", "").split()
         if len(fields) >= 2 and fields[1].isdigit():
             result[fields[0]] = int(fields[1]) * (1024 if len(fields) > 2 and fields[2] == "kB" else 1)
     return result
 
 
-def swap_counters(path: Path) -> dict[str, int]:
+def swap_counters(path: Path, *, text: str | None = None) -> dict[str, int]:
     values = {}
-    for line in path.read_text().splitlines():
+    for line in (path.read_text() if text is None else text).splitlines():
         row = line.split()
         if row and row[0] in {"pswpin", "pswpout"}:
             if len(row) != 2 or not row[1].isdigit() or row[0] in values:
@@ -66,7 +68,9 @@ def swap_counters(path: Path) -> dict[str, int]:
 
 
 def host_sample(proc: Path = Path("/proc"), *, page_size_bytes: int | None = None) -> dict:
-    memory, vm = numeric_fields(proc / "meminfo"), swap_counters(proc / "vmstat")
+    memory_text, vm_text = (proc / "meminfo").read_text(), (proc / "vmstat").read_text()
+    memory = numeric_fields(proc / "meminfo", text=memory_text)
+    vm = swap_counters(proc / "vmstat", text=vm_text)
     page_size = os.sysconf("SC_PAGE_SIZE") if page_size_bytes is None else page_size_bytes
     pressure_path = proc / "pressure/memory"
     pressure = None
@@ -74,7 +78,9 @@ def host_sample(proc: Path = Path("/proc"), *, page_size_bytes: int | None = Non
         rows = pressure_path.read_text().splitlines()
         pressure = float(dict(item.split("=") for item in rows[0].split()[1:])["avg10"])
     return {"available_bytes": memory["MemAvailable"], "swap_in_pages": vm["pswpin"],
-            "swap_out_pages": vm["pswpout"], "page_size_bytes": page_size, "psi_avg10": pressure}
+            "swap_out_pages": vm["pswpout"], "page_size_bytes": page_size, "psi_avg10": pressure,
+            "diagnostics": {"memory_bytes": counter_context(memory_text, MEMORY_FIELDS, kib=True),
+                            "vmstat": counter_context(vm_text, VM_FIELDS)}}
 
 
 def swap_progress(sample: dict, baseline: dict, previous: dict | None = None) -> dict:
@@ -296,6 +302,13 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
         elif now - started >= limits.runtime_seconds:
             reason = "workload_timeout"
         if reason:
+            # Preserve the triggering sample before cleanup changes host state.
+            # These diagnostics never relax or replace the reason above.
+            receipt["failure_sample"] = {"reason": reason, "at_utc": utc_now(),
+                "elapsed_seconds": now - started, "sample_number": receipt["samples"],
+                "previous_host": previous_host, "host": host, "workload": sample,
+                "reclaim_since_admission": reclaim_delta(host, baseline),
+                "reclaim_since_previous": reclaim_delta(host, previous_host)}
             raise RuntimeError(reason)
         status = child.poll()
         if status is not None:
@@ -325,6 +338,7 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
         if members(cgroup) != {os.getpid()}:
             raise RuntimeError("new workload cgroup already contains another process")
         owned = True
+        receipt["admission_zones"] = zone_snapshot(stage="before_resource_preflight")
         baseline = preflight(limits, admission=True)
         receipt.update(cgroup=str(cgroup), baseline=baseline,
             minimum_available_bytes=min(baseline["available_bytes"], baseline["admission_sample"]["available_bytes"]),
@@ -360,6 +374,10 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
                 receipt.update(group_clean=False, cleanup_error=type(error).__name__)
         if not receipt["group_clean"]:
             receipt["result"] = "FAIL" if child else "BLOCKED"
+        if child is not None and receipt["result"] != "PASS":
+            # Cleanup always precedes optional reads. This is explicitly a later
+            # snapshot, never a claim about exact zone watermarks at failure.
+            receipt["post_cleanup_zones"] = zone_snapshot(stage="after_workload_cleanup")
         receipt["early_stop_overshoot_bytes"] = max(0, receipt["peak_rss_bytes"] - (limits.workload_bytes - limits.margin_bytes))
         for signum, handler in saved_signals.items():
             signal.signal(signum, handler)

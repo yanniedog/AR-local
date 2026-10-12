@@ -6,13 +6,14 @@ import { readProductCi, readApiPages, githubApi } from './pr-product-ci.mjs';
 
 /** Custom reporter checks have no workflow/job identity in gh pr checks JSON. */
 export function readUniversalCheck(prNumber, { repository, headSha, api = githubApi } = {}) {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '') || !/^[0-9a-f]{40}$/.test(headSha || '')) {
+  if (!Number.isSafeInteger(prNumber) || prNumber <= 0 ||
+      !/^[\w.-]+\/[\w.-]+$/.test(repository || '') || !/^[0-9a-f]{40}$/.test(headSha || '')) {
     throw new Error('Current repository/head unavailable for required check verification');
   }
   const rows = readApiPages(api, `repos/${repository}/commits/${headSha}/check-runs?check_name=bot-feedback-gate&filter=all`, 'check_runs');
   const trusted = rows.filter((check) => check.name === 'bot-feedback-gate' && check.head_sha === headSha &&
     check.app?.id === 15368 && check.app?.slug === 'github-actions' &&
-    (!String(check.external_id || '').startsWith('ar-local-required:') || check.external_id === `ar-local-required:${prNumber}:${headSha}`));
+    check.external_id === `ar-local-required:${prNumber}:${headSha}`);
   if (trusted.some((check) => !Number.isSafeInteger(check.id))) throw new Error('Required check has invalid identity');
   const latest = trusted.sort((a, b) => b.id - a.id)[0];
   return { name: 'bot-feedback-gate', appId: 15368, id: latest?.id,

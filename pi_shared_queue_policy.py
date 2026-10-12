@@ -173,7 +173,7 @@ def admission(job: Mapping, jobs: Sequence[Mapping], now: datetime) -> tuple[boo
             if now + timedelta(seconds=candidate.max_duration_seconds + STOP_GRACE_SECONDS) >= next_start:
                 return False, "would-cross-ingest-start"
         promoted = _priority(candidate, now, critical)
-        reserved_slots = 0
+        promoted_waiters = []
         for other in others:
             if other.state != "waiting":
                 continue
@@ -182,11 +182,22 @@ def admission(job: Mapping, jobs: Sequence[Mapping], now: datetime) -> tuple[boo
                 other_promoted == promoted and other.sequence < candidate.sequence
             )
             if other_promoted and precedes:
-                reserved_slots += other.cpu_slots
+                promoted_waiters.append(other)
             if not _conflicts(candidate, other):
                 continue
             if precedes:
                 return False, "ar-local-priority" if other_promoted and not promoted else "earlier-conflicting-job"
+        reserved = []
+        reserved_slots = 0
+        for other in sorted(promoted_waiters, key=lambda record: record.sequence):
+            if any(_conflicts(other, owner) for owner in reserved):
+                continue
+            # Reserve future capacity even while a running resource owner
+            # blocks this waiter. New disjoint work must not take the CPU
+            # slots the waiter needs when that owner finishes.
+            if reserved_slots + other.cpu_slots <= CPU_SLOT_BUDGET:
+                reserved.append(other)
+                reserved_slots += other.cpu_slots
         if running_slots + candidate.cpu_slots + reserved_slots > CPU_SLOT_BUDGET:
             return False, "ar-local-cpu-reservation"
         return True, "admitted"

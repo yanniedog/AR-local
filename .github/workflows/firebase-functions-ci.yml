@@ -1,0 +1,36 @@
+name: Firebase functions CI
+
+on:
+  pull_request:
+    paths:
+      - 'firebase/functions/**'
+      - '.github/workflows/firebase-functions-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'firebase/functions/**'
+      - '.github/workflows/firebase-functions-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  functions:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firebase/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: firebase/functions/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Verify Firebase callable loads
+        run: >-
+          node --input-type=module -e
+          'import { issueContentKeys } from "./index.js";
+          if (typeof issueContentKeys !== "function") process.exit(1);'

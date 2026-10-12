@@ -145,6 +145,7 @@ def queue_guard():
             state = json.loads(handle.read(4 * 1024 * 1024 + 1))
         if (not isinstance(state, dict) or set(state) != {'version', 'next_sequence', 'jobs'}
                 or state['version'] != 1 or type(state['next_sequence']) is not int
+                or not 0 <= state['next_sequence'] < 2**63
                 or not isinstance(state['jobs'], list) or state['jobs']):
             raise RuntimeError('shared queue occupied or ownership unavailable')
         yield

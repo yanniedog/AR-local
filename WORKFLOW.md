@@ -3,6 +3,11 @@
 Use a fresh topic worktree from the repository default branch and preserve
 unrelated changes. Open a draft PR against that exact default branch.
 
+PR automation requires Node.js and Python 3.11 or newer. Wait-state writes use
+native file locks and hardlinks on the state filesystem. Kernel ownership is
+released on a writer crash; unknown legacy lock files require verified manual
+migration.
+
 Run checks appropriate to changed paths. For PR automation changes, run:
 
 ```sh
@@ -14,6 +19,15 @@ Read substantive review threads and relevant comments, post one feedback plan,
 implement valid fixes, and reply with `Implemented`, `Deferred`, or `Declined`
 before resolving each thread. Review vendors are advisory; substantive findings
 still need disposition. Applicable product CI and `bot-feedback-gate` must pass.
+
+Explicit reviewer opt-in (`AR_BOT_WAIT_REQUIRED`, or `--require-bots` for
+`wait-for-bots`) is a local one-shot policy: `pr:gates:check` and `wait-for-bots`
+evaluate current bot activity and the quiet window on every invocation,
+including bot/chore PRs.
+A green historical presence check never replaces that evaluation. The manual
+`pr-bot-presence-gate.yml` workflow is a read-only default-branch diagnostic;
+its repository variable controls that diagnostic only. It executes trusted
+default-branch code and its result is not PR-head merge evidence.
 
 The single required `bot-feedback-gate` combines substantive review-thread
 resolution with applicable deterministic product CI. It stays pending when an

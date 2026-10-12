@@ -9,7 +9,7 @@ on:
   issue_comment:
     types: [created, edited, deleted]
   workflow_run:
-    workflows: [app-ci, app-data-service-ci, historical-candidate-ci, pr-closeout-ci, pr-review-events]
+    workflows: [app-ci, app-data-service-ci, historical-candidate-ci, pr-closeout-ci, Firebase functions CI, pr-review-events]
     types: [requested, in_progress, completed]
   workflow_dispatch:
     inputs:
@@ -54,7 +54,16 @@ jobs:
         run: node scripts/pr-required-gate.mjs --retire-event
 
   discover:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    if: >-
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request != null) &&
+      (github.event_name != 'workflow_run' ||
+       contains(fromJSON('["pull_request", "pull_request_review", "pull_request_review_comment"]'), github.event.workflow_run.event))
+    # Discovery only reads current state. Coalesce repeated lifecycle events for
+    # one source run, or direct events for one PR, before allocating a runner.
+    # Prior-head retirement remains an independent, non-cancellable job.
+    concurrency:
+      group: required-pr-gate-discover-${{ github.event_name == 'workflow_run' && format('run-{0}', github.event.workflow_run.id) || format('pr-{0}', github.event.pull_request.number || github.event.issue.number || inputs.pr_number) }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

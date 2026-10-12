@@ -12,13 +12,25 @@ jobs:
     # Fork PRs do not receive GEMINI_API_KEY / write tokens on pull_request.
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: gemini-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - name: "Checkout Repo"
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
+      - name: Preserve review outcome handler
+        run: |
+          cp scripts/gemini-review-status.py "$RUNNER_TEMP/gemini-review-status.py"
+          rm -f review.txt
+
       - name: "Run AI Code Review"
+        id: gemini
+        # Handle quota exhaustion separately; the next step fails other errors.
+        continue-on-error: true
         # Pin v2 tag (ecc2434…) so the secret-backed action cannot drift via a mutable tag.
         uses: sshnaidm/gemini-code-review-action@ecc2434351ef76b0084b788a3d61ec7d3acf44f9 # v2
         with:
@@ -38,3 +50,9 @@ jobs:
             - Check for valid syntax and standard formatting.
             If reviewing Python:
             - Check for algorithmic efficiency and clear logical structures.
+
+      - name: Check review outcome
+        if: ${{ !cancelled() }}
+        env:
+          REVIEW_OUTCOME: ${{ steps.gemini.outcome }}
+        run: python "$RUNNER_TEMP/gemini-review-status.py" "$REVIEW_OUTCOME" review.txt

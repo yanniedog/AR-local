@@ -9,6 +9,9 @@ export function readCheckResult(result) {
   try {
     const checks = JSON.parse(result.stdout || '[]');
     if (!Array.isArray(checks)) throw new Error('expected an array');
+    if (checks.some((check) => !check || typeof check.name !== 'string' || !check.name.trim())) {
+      throw new Error('Check observation has no name');
+    }
     if (!checks.length && result.status !== 0) throw new Error('nonzero exit without check observations');
     return { checks };
   } catch (error) {
@@ -20,7 +23,7 @@ export function readCheckResult(result) {
 export function selectLatestChecks(checks) {
   const groups = new Map();
   for (const check of checks) {
-    if (!check || typeof check.name !== 'string' || !check.name) {
+    if (!check || typeof check.name !== 'string' || !check.name.trim()) {
       return { error: 'Check observation has no name' };
     }
     // Workflow and app identity keep independent producers from hiding one another.
@@ -52,7 +55,7 @@ export function selectLatestChecks(checks) {
 
 /** Scope chronology errors to the requested gates, not unrelated advisory jobs. */
 export function selectNamedCheckHistory(checks, names) {
-  if (checks.some((check) => !check || typeof check.name !== 'string' || !check.name)) {
+  if (checks.some((check) => !check || typeof check.name !== 'string' || !check.name.trim())) {
     return { error: 'Check observation has no name' };
   }
   const wanted = new Set(names.map((name) => name.toLowerCase()));
