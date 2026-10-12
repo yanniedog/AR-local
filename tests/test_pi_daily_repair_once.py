@@ -95,3 +95,38 @@ def test_local_code_root_does_not_override_public_repository_slug():
         text = (root / name).read_text()
         assert 'os.environ.get("AR_LOCAL_CODE_ROOT",' in text
         assert 'os.environ.get("AR_LOCAL_REPO",' not in text
+
+
+@pytest.mark.parametrize("local,day,capture_due,publication_due", [
+    ("2026-10-12T00:45:00+11:00", "2026-10-11", True, True),
+    ("2026-10-12T01:17:00+11:00", "2026-10-12", False, False),
+    ("2026-10-12T01:40:00+11:00", "2026-10-12", True, False),
+    ("2026-10-12T02:31:00+11:00", "2026-10-12", True, True)])
+def test_observer_respects_due_date_and_grace(local, day, capture_due, publication_due):
+    w = SimpleNamespace(REPO_ROOT=Path("/repo"), check_publication=lambda d: {},
+                        service_active=lambda: False, payload_publication_pending=lambda r: False)
+    value = observe(w, datetime.fromisoformat(local), lambda d: None)
+    assert (value["run_date"], value["capture_due"], value["publication_due"]) == (day,capture_due,publication_due)
+
+
+@pytest.mark.parametrize("extra", [{"selection_retry": {}}, {"selection_retry": False},
+                                     {"queued_pointers": None}, {"queued_pointers": ""}])
+def test_falsey_ambiguous_publication_is_rejected(extra):
+    w = Mock(REPO_ROOT=Path("/repo")); r = Mock()
+    r.recovery_block_reason.return_value = ""
+    w.read_payload_publication_pending.return_value = {
+        "run_date":"2026-10-12", "pointer":{"observation_date":"2026-10-12"}, **extra}
+    assert repair(w,r,"2026-10-12",None)["status"] == "blocked"
+    w.run_payload_retry.assert_not_called()
+
+
+def test_queue_adapter_retains_claim_until_stop_hook(monkeypatch):
+    import pi_daily_repair_queue as adapter
+    import sys
+    queue = SimpleNamespace(FIXED_AR_UNITS=frozenset(), main=Mock(return_value=17))
+    monkeypatch.setitem(sys.modules,"pi_shared_queue",queue)
+    monkeypatch.setattr(sys,"argv",["adapter","run","arguments"])
+    monkeypatch.setattr(Path,"read_text",lambda self: "0::/system.slice/"+adapter.UNIT)
+    assert adapter.main() == 17
+    assert adapter.UNIT in queue.FIXED_AR_UNITS
+    queue.main.assert_called_once_with(["run","arguments"])
