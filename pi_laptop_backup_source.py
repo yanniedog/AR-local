@@ -609,12 +609,6 @@ def excluded_file_inventory(paths: Iterable[Path]) -> list[dict[str, object]]:
         try:
             info = path.lstat()
             record.update({"exists": True, "mode": oct(stat.S_IMODE(info.st_mode)), "uid": info.st_uid, "gid": info.st_gid})
-            if stat.S_ISREG(info.st_mode) and not path.is_symlink():
-                try:
-                    record["sha256"] = sha256_file(path)
-                except PermissionError:
-                    record["sha256"] = None
-                    record["digest_status"] = "INACCESSIBLE"
         except FileNotFoundError:
             record["exists"] = False
         except PermissionError:

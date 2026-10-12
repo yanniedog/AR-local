@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-import hashlib
 import json
 from argparse import Namespace
 from datetime import datetime, time, timedelta
@@ -25,7 +24,7 @@ def test_excluded_file_inventory_records_digest_not_contents(tmp_path: Path) -> 
     encoded = json.dumps(records)
     stored = next(item for item in records if item["path"] == str(protected))
     assert stored["bytes_copied"] is False
-    assert stored["sha256"] == hashlib.sha256(b"TOKEN=do-not-copy\n").hexdigest()
+    assert "sha256" not in stored
     assert "do-not-copy" not in encoded
     assert next(item for item in records if item["path"] == str(missing))["exists"] is False
 
