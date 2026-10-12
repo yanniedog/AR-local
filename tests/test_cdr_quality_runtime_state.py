@@ -1,11 +1,17 @@
 """Publication-control regression tests; all values here are control metadata."""
 import json
+import os
 import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 import pi_cdr_quality_runtime_state as state
+import pi_payload_retry_policy as retries
 
 
 @pytest.fixture
@@ -102,3 +108,169 @@ def test_retry_directory_cannot_hide_nested_or_nonfile_controls(roots):
     (data / "state" / state.RETRIES / "nested").mkdir(parents=True)
     with pytest.raises(ValueError, match="regular file"):
         state.control_state(data)
+
+
+@pytest.fixture
+def reserved_retry(roots, monkeypatch):
+    data, _, _ = roots
+    monkeypatch.setattr(retries, "data_state_root", lambda _: data / "state")
+    reservation = retries.retry_admission(data, {"pointer": {"generation_id": "retained-control"}},
+        now_utc=datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc), reserve=True)
+    assert reservation["status"] == "ready"
+    record = retries.retry_state_path(data, reservation["source_key"])
+    return record, reservation
+
+
+def test_real_released_retry_lock_is_bound_without_changing_retry_state(roots, reserved_retry):
+    data, source, old = roots
+    record, reservation = reserved_retry
+    lock = record.with_suffix(".lock")
+    original = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in (record, lock)}
+    assert original[lock][0] == b"0"
+    before = state.control_state(data)
+    assert before["files"][lock.relative_to(data / "state").as_posix()]["bytes"] == 1
+    state.require_controls(data, before, state.rollback_contract(source, old))
+    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in original} == original
+    retries.finish_retry(data, reservation, succeeded=False, reason="retained failure",
+                         now_utc=datetime(2026, 10, 12, 0, 1, tzinfo=timezone.utc))
+    with pytest.raises(ValueError, match="state changed"):
+        state.require_controls(data, before, state.rollback_contract(source, old))
+    assert lock.read_bytes() == b"0"
+
+
+def test_retry_lock_held_by_real_writer_blocks_snapshot_then_recovers(roots, reserved_retry, tmp_path):
+    data, _, _ = roots
+    record, _ = reserved_retry
+    ready = tmp_path / "writer-ready"
+    source = ("import sys\nfrom pathlib import Path\nfrom cdr_file_lock import FileLock\n"
+              "with FileLock(Path(sys.argv[1])):\n"
+              "    Path(sys.argv[2]).write_text('ready')\n"
+              "    sys.stdin.readline()\n")
+    child = subprocess.Popen([sys.executable, "-B", "-c", source, str(record.with_suffix(".lock")), str(ready)],
+                             cwd=Path(state.__file__).parent, stdin=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ready.exists(), "owned retry writer did not acquire its lock"
+        started = time.monotonic()
+        with pytest.raises(ValueError, match="retry lock.*held"):
+            state.control_state(data)
+        assert time.monotonic() - started < 2
+    finally:
+        child.stdin.close()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()  # Only this owned child; Windows TerminateProcess, never signal zero.
+            child.wait(timeout=5)
+    assert child.returncode == 0
+    state.control_state(data)
+
+
+@pytest.mark.parametrize("name,body", [("a" * 64 + ".lock", b""), ("a" * 64 + ".lock", b"00"),
+                                      ("a" * 64 + ".lock", b"{}"), ("unknown.lock", b"0"),
+                                      ("unknown.json", b"{}"), ("a" * 64 + ".tmp", b"{}")])
+def test_unknown_or_malformed_retry_files_are_preserved_and_rejected(roots, name, body):
+    data, _, _ = roots
+    retry = data / "state" / state.RETRIES
+    retry.mkdir()
+    path = retry / name
+    path.write_bytes(body)
+    with pytest.raises(ValueError):
+        state.control_state(data)
+    assert path.read_bytes() == body
+
+
+def test_orphan_released_lock_is_preserved_but_membership_drift_is_rejected(roots):
+    from cdr_file_lock import FileLock
+
+    data, source, old = roots
+    lock = data / "state" / state.RETRIES / ("a" * 64 + ".lock")
+    with FileLock(lock):
+        pass  # A writer may die after creating the lock and before writing its record.
+    before = state.control_state(data)
+    lock.unlink()  # Test-only drift, never recovery behavior.
+    with pytest.raises(ValueError, match="state changed"):
+        state.require_controls(data, before, state.rollback_contract(source, old))
+
+
+def test_retry_lock_must_not_be_hardlinked(roots, tmp_path):
+    data, _, _ = roots
+    retry = data / "state" / state.RETRIES
+    retry.mkdir()
+    lock = retry / ("a" * 64 + ".lock")
+    lock.write_bytes(b"0")
+    os.link(lock, tmp_path / "alias")
+    with pytest.raises(ValueError, match="unique regular file"):
+        state.control_state(data)
+
+
+def test_retry_locks_stay_held_through_snapshot_and_release_afterward(roots, reserved_retry, monkeypatch):
+    from cdr_file_lock import FileLock
+
+    data, _, _ = roots
+    record, _ = reserved_retry
+    locks = [record.with_suffix(".lock"), record.with_name("b" * 64 + ".lock")]
+    with FileLock(locks[1]):
+        pass
+
+    def try_writer_lock(path):
+        descriptor = os.open(path, os.O_RDWR | getattr(os, "O_BINARY", 0))
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(descriptor)
+
+    original_finish = state.DigestSnapshot.finish
+    observed = []
+    def finish(snapshot):
+        for path in locks:
+            with pytest.raises(OSError):
+                try_writer_lock(path)
+            observed.append(path)
+        return original_finish(snapshot)
+    monkeypatch.setattr(state.DigestSnapshot, "finish", finish)
+    state.control_state(data)
+    assert observed == locks
+    for path in locks:
+        try_writer_lock(path)
+
+
+def test_retry_lock_replacement_between_identity_check_and_open_is_rejected(roots, reserved_retry, monkeypatch):
+    data, _, _ = roots
+    record, _ = reserved_retry
+    lock = record.with_suffix(".lock")
+    replacement = record.with_name("replacement")
+    original_open = state.os.open
+    def replace_then_open(path, flags, *args, **kwargs):
+        if Path(path) == lock:
+            replacement.write_bytes(b"0")
+            os.replace(replacement, lock)
+        return original_open(path, flags, *args, **kwargs)
+    monkeypatch.setattr(state.os, "open", replace_then_open)
+    with pytest.raises(ValueError, match="descriptor differs"):
+        state.control_state(data)
+    assert lock.read_bytes() == b"0"
+
+
+def test_retry_lock_added_during_snapshot_is_not_silently_omitted(roots, reserved_retry, monkeypatch):
+    from cdr_file_lock import FileLock
+
+    data, _, _ = roots
+    record, _ = reserved_retry
+    added = record.with_name("b" * 64 + ".lock")
+    original_finish = state.DigestSnapshot.finish
+    def finish(snapshot):
+        with FileLock(added):
+            pass
+        return original_finish(snapshot)
+    monkeypatch.setattr(state.DigestSnapshot, "finish", finish)
+    with pytest.raises(ValueError, match="directory changed"):
+        state.control_state(data)
+    assert added.read_bytes() == b"0"

@@ -4,15 +4,19 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
+import re
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
-from pi_cdr_quality_digest import DigestSnapshot, read_digest
+from pi_cdr_quality_digest import DigestSnapshot, FileDigest, _file_state, _identity, read_digest
 
 PENDING = "app-payload-publication-pending.json"
 CONTROL_FILES = (PENDING, "app-payload-continuity.json")
 RETRIES = "app-payload-retries"
 MAX_FILES = 4096
 MAX_BYTES = 64 * 1024 * 1024
+RETRY_ENTRY = re.compile(r"[0-9a-f]{64}\.(json|lock)")
 
 
 def _unique(pairs):
@@ -24,8 +28,43 @@ def _unique(pairs):
     return result
 
 
+@contextmanager
+def _retry_lock(path: Path, root: Path):
+    """Read an existing FileLock without writing, and fence it until snapshot end."""
+    identity, ancestors = _file_state(path, root)
+    if identity[4] != 1:
+        raise ValueError("publication retry lock has an unknown format")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(path, flags)
+    try:
+        if _identity(os.fstat(descriptor)) != identity:
+            raise ValueError("publication retry lock descriptor differs from its pathname")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except OSError as error:
+            raise ValueError("publication retry lock is held or locking is unavailable") from error
+        # Windows byte locks require reading through the same descriptor.
+        body = os.read(descriptor, 2)
+        if body != b"0":
+            raise ValueError("publication retry lock has an unknown format")
+        entry = FileDigest(hashlib.sha256(body).hexdigest(), 1, identity, ancestors)
+        entry.recheck(path, root)
+        yield entry
+        if _identity(os.fstat(descriptor)) != identity:
+            raise ValueError("publication retry lock changed during snapshot")
+        entry.recheck(path, root)
+    finally:
+        os.close(descriptor)  # Releases only this descriptor's kernel lock; retain the file.
+
+
 def control_state(data: Path) -> dict:
-    """Hash presence, directory membership and the exact bytes parsed as JSON."""
+    """Bind JSON controls and released retry locks, preserving their exact bytes."""
     state = data / "state"
     snapshot = DigestSnapshot(data)
     snapshot.directory(state)
@@ -41,27 +80,36 @@ def control_state(data: Path) -> dict:
         if len(children) > MAX_FILES:
             raise ValueError("publication retry inventory exceeds bound")
         paths.extend(children)
-    total = 0
-    for path in paths:
-        name = path.relative_to(state).as_posix()
-        try:
-            path.lstat()
-        except FileNotFoundError:
-            result["files"][name] = None
-            continue
-        entry, body = read_digest(path, root=data, capture=True, max_bytes=MAX_BYTES - total)
-        total += entry.size
-        value = json.loads(body, object_pairs_hook=_unique)
-        if not isinstance(value, dict):
-            raise ValueError("publication control must be a JSON object")
-        snapshot.files[path] = entry
-        result["files"][name] = {"sha256": entry.sha256, "bytes": entry.size}
-        if name == PENDING and "queued_pointers" in value:
-            queued = value["queued_pointers"]
-            if not isinstance(queued, list) or any(not isinstance(p, dict) or not p for p in queued):
-                raise ValueError("malformed queued publication pointers")
-            result["pending_has_queue"] = True
-    snapshot.finish()
+    with ExitStack() as locks:
+        total = 0
+        for path in paths:
+            name = path.relative_to(state).as_posix()
+            if path.parent == retry and not RETRY_ENTRY.fullmatch(path.name):
+                raise ValueError("publication retry entry must be a recognized regular file")
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                result["files"][name] = None
+                continue
+            if path.parent == retry and path.suffix == ".lock":
+                entry = locks.enter_context(_retry_lock(path, data))
+                value = None
+            else:
+                entry, body = read_digest(path, root=data, capture=True, max_bytes=MAX_BYTES - total)
+                value = json.loads(body, object_pairs_hook=_unique)
+                if not isinstance(value, dict):
+                    raise ValueError("publication control must be a JSON object")
+            total += entry.size
+            if total > MAX_BYTES:
+                raise ValueError("publication control inventory exceeds byte bound")
+            snapshot.files[path] = entry
+            result["files"][name] = {"sha256": entry.sha256, "bytes": entry.size}
+            if name == PENDING and "queued_pointers" in value:
+                queued = value["queued_pointers"]
+                if not isinstance(queued, list) or any(not isinstance(p, dict) or not p for p in queued):
+                    raise ValueError("malformed queued publication pointers")
+                result["pending_has_queue"] = True
+        snapshot.finish()
     return result
 
 
