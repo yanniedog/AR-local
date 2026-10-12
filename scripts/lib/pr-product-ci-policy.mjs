@@ -23,6 +23,11 @@ export const PRODUCT_CI_WORKFLOWS = [
     jobs: ['service-tests'],
   },
   {
+    name: 'Firebase functions CI', path: '.github/workflows/firebase-functions-ci.yml',
+    paths: ['firebase/functions/**', '.github/workflows/firebase-functions-ci.yml'],
+    jobs: ['functions'],
+  },
+  {
     name: 'historical-candidate-ci', path: '.github/workflows/historical-candidate-ci.yml',
     paths: ['cdr_historical_*.py', 'contracts/historical/**', 'docs/HISTORICAL_CANDIDATE_V1.md',
       'tests/test_cdr_historical_*.py', '.github/workflows/historical-candidate-ci.yml'],

@@ -55,6 +55,8 @@ assert.throws(() => getApplicableProductCi([{}]), /Invalid changed-file/);
 assert.throws(() => getApplicableProductCi([null]), /Invalid changed-file/);
 assert.deepEqual(getApplicableProductCi(['app_payload.py']).map((item) => item.name), ['app-ci']);
 assert.deepEqual(getApplicableProductCi(['app_payload_secure_upload.py']).map((item) => item.name), ['app-ci', 'app-data-service-ci']);
+assert.deepEqual(getApplicableProductCi(['firebase/functions/package-lock.json']).map((item) => item.name), ['Firebase functions CI']);
+assert.deepEqual(getApplicableProductCi(['.github/workflows/firebase-functions-ci.yml']).map((item) => item.name), ['Firebase functions CI', 'pr-closeout-ci']);
 assert.equal(getApplicableProductCi([{ filename: 'docs/moved.md', previous_filename: 'cdr_daily.py' }])[0].name, 'app-ci');
 assert.equal(getApplicableProductCi(['scripts/lib/pr-required-gate.mjs'])[0].name, 'pr-closeout-ci');
 for (const file of ['deploy/pi/ar-local-ingest-watchdog.service', 'dashboard/app.js', 'scripts/check.py', 'cdr_domain/models.py', 'cdr_pipeline/stage.py']) {
