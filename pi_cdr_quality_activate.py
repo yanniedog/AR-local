@@ -21,6 +21,7 @@ from pi_cdr_quality_activate_evidence import (
     CANARY_SCHEMA, SCHEMA, app_binding, checked, ci_binding, junit_result, read,
     record, relative, sha, source_acceptance, validate_manifest,
 )
+from pi_cdr_quality_runtime_state import control_state, require_controls, require_predecessor, rollback_contract
 
 TIMERS = ("ar-local-daily-watchdog.timer", "ar-local-runtime-health.timer")
 TZ = ZoneInfo("Australia/Hobart")
@@ -194,6 +195,9 @@ def canary_worker(args) -> dict:
         raise ValueError("verified cache must be mounted read-only in the protected worker")
     target = clean_commit(source)
     before, files = protected_files(data), source_files(source)
+    controls = control_state(data)
+    predecessor = rollback_contract(source, args.production)
+    require_controls(data, controls, predecessor)
     run_date, generation, exports = current_state(data)
     tests = operation / "pytest.xml"
     run([args.python, "-B", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider",
@@ -224,10 +228,13 @@ def canary_worker(args) -> dict:
         raise ValueError("candidate payload product details differ from verified source")
     if protected_files(data) != before or source_files(source) != files or clean_commit(source) != target:
         raise ValueError("canary changed production evidence or candidate code")
+    require_controls(data, controls, predecessor)
+    require_predecessor(args.production, predecessor)
     latest = read(operation / "source-audit/latest.json")
     return {"schema": CANARY_SCHEMA, "result": "PASS", "target_commit": target,
             "run_date": run_date, "generation_id": generation, "protected_files": before,
             "source_files": files, "tests": test_result,
+            "publication_controls": controls, "rollback_contract": predecessor,
             "source_audit": record(operation / "source-audit" / latest["path"]),
             "candidate_manifest": record(output / "manifest.json"),
             "dispositions": dispositions, "scope": "full pytest and retained-real-source replay; no live capture or publication",
@@ -320,6 +327,10 @@ def seal(args) -> dict:
         before = protected_files(args.data_root)
         if before != canary_result["protected_files"]:
             raise ValueError("current observation changed since canary")
+        controls, predecessor = canary_result["publication_controls"], canary_result["rollback_contract"]
+        if rollback_contract(args.source, args.production) != predecessor:
+            raise ValueError("publication helper changed since canary")
+        require_controls(args.data_root, controls, predecessor)
         bundle = args.operation / "candidate.bundle"
         rollback = args.operation / "rollback.bundle"
         git(args.source, "bundle", "create", bundle, "HEAD", timeout=300)
@@ -334,10 +345,13 @@ def seal(args) -> dict:
                  "source_root": str(args.source), "production_root": str(args.production), "data_root": str(args.data_root),
                  "operation_root": str(args.operation), "created_at": created.isoformat(), "expires_at": expires.isoformat(),
                  "source_files": source_files(args.source), "changed_files": changed_files, "protected_files": before,
+                 "publication_controls": controls, "rollback_contract": predecessor,
                  "evidence": {"candidate_bundle": record(bundle), "rollback_bundle": record(rollback),
                               "ci": record(args.ci_binding), "app": record(args.app_acceptance), "canary": record(canary_path)},
                  "backup": {"status": "UNVERIFIED", "reason": "independent Drive receipt; never inferred from activation"}}
         manifest = args.operation / "activation.json"
+        require_controls(args.data_root, controls, predecessor)
+        require_predecessor(args.production, predecessor)
         write(manifest, value)
         validate_manifest(manifest, sha(manifest))
         return {"result": "SEALED", **record(manifest), "target_commit": target}
@@ -413,6 +427,9 @@ def activate(args) -> dict:
         if run(["systemctl", "show", unit, "-p", "WorkingDirectory", "--value"]) != str(production):
             raise ValueError("service uses a different production checkout")
     activation_admission(manifest)
+    controls, predecessor = manifest["publication_controls"], manifest["rollback_contract"]
+    require_predecessor(production, predecessor)
+    require_controls(data, controls, predecessor)
     if args.dry_run:
         if protected_files(data) != manifest["protected_files"]:
             raise ValueError("protected observation changed since sealing")
@@ -440,6 +457,8 @@ def activate(args) -> dict:
             if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
                     or protected_files(data) != manifest["protected_files"]):
                 raise ValueError("production or protected data changed before activation lock")
+            require_predecessor(production, predecessor)
+            require_controls(data, controls, predecessor)
             smoke(source, operation=transaction, phase="pre-switch", commit=manifest["target_commit"], files=manifest["source_files"])
             candidate_bundle = checked(manifest["evidence"]["candidate_bundle"])
             rollback_bundle = checked(manifest["evidence"]["rollback_bundle"])
@@ -450,12 +469,15 @@ def activate(args) -> dict:
             try:
                 git(production, "fetch", "--no-tags", candidate_bundle, "HEAD", timeout=300)
                 activation_admission(manifest)
+                require_predecessor(production, predecessor)
+                require_controls(data, controls, predecessor)
                 # Mark before checkout so a partially failed checkout also rolls back.
                 switched = True
                 git(production, "checkout", "--detach", manifest["target_commit"])
                 run(["sudo", "-n", "systemctl", "restart", "ar-local-dashboard.service"])
                 verify_runtime(production, manifest["target_commit"], manifest["source_files"], data, manifest["protected_files"],
                                operation=transaction, verifier_source=source)
+                require_controls(data, controls, predecessor)
                 # Restore coordination while still holding the lease. A failure
                 # here takes the same rollback path as a failed runtime probe.
                 for unit, state in timers.items():
@@ -463,14 +485,20 @@ def activate(args) -> dict:
                         run(["sudo", "-n", "systemctl", "start", unit])
                     if active(unit) != state:
                         raise RuntimeError("coordination timer restoration failed")
+                require_controls(data, controls, predecessor)
             except BaseException as error:
                 receipt["activation_failure"] = type(error).__name__ + ": " + str(error)
                 if switched:
+                    # Never discard a new obligation to make old code safe to run.
+                    # Changed controls require an operator decision, not a blind downgrade.
+                    require_controls(data, controls, predecessor)
                     git(production, "checkout", "--detach", manifest["previous_commit"])
+                    require_predecessor(production, predecessor)
                     run(["sudo", "-n", "systemctl", "restart", "ar-local-dashboard.service"])
                     if clean_commit(production) != manifest["previous_commit"]:
                         raise RuntimeError("CRITICAL: rollback commit could not be verified")
                     smoke(source, operation=transaction, phase="rollback", commit=manifest["target_commit"], files=manifest["source_files"])
+                    require_controls(data, controls, predecessor)
                     receipt["rollback"] = "PASS"
                 raise
         receipt.update(result="PASS", target_commit=manifest["target_commit"], protected_data="UNCHANGED", dashboard="PASS")

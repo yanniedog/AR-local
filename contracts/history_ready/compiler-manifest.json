@@ -1,6 +1,6 @@
 {
-  "sha256": "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3",
-  "compiler_sha256": "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3",
+  "sha256": "5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e",
+  "compiler_sha256": "5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e",
   "semantic_revision": "ar-history-ready-v1",
   "source_files": {
     "node_modules/@noble/hashes/_md.js": "4eaf0ae8f8191c50acdab7c3de7f335bf24845e4b562bdbc3e9f61cb7a873831",
@@ -11,7 +11,7 @@
     "node_modules/@noble/hashes/utils.js": "7edf19720c345e1cb76e8d3a9306f3344457d4e03576bbb0b3e1ffd0a42d0d30",
     "node_modules/fflate/lib/node.cjs": "befa44cd80a1da830179db9e57930050a2e460ca3df13f0b05f83f52b1491818",
     "scripts/export-history-ready-compiler.cjs": "a9fdf0f1cbeb35e1aedc1150ca1290a25ccbf1f2054704e09ddcdc108b6b0ea8",
-    "src/data/access.ts": "0f92b40a25a7ca02cee718d55f1e983675015d69562e68e28a0c96180c2520b2",
+    "src/data/access.ts": "729002369f1e2d92ad705114d052fcc4a8e3c577366cbf318cc4fd05164f2671",
     "src/data/accountClass.ts": "a7c0eb853f6dbf35be39bd8068578abf7e78dff94baa564ec126a3360f58bf30",
     "src/data/bankRateHistoryWire.ts": "4489b9826fb0f26407d434b3007431e80911db833bdb0e24dc4c6cf09eb032a5",
     "src/data/bankRateOverview.ts": "758b8e90194a3c8a9c1894ba70dd313617b06183a75d92098757f424a86a6995",
