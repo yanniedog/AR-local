@@ -86,17 +86,22 @@ function retirePendingEvaluations(prNumber, headSha, { prefix, api, write, now, 
   }
 }
 
-/** Runs outside replaceable reporter concurrency so every old head is retired. */
+/** Runs outside reporter concurrency; dispatch can recover a lost prior-head event. */
 export function retirePriorEventGate(event, eventName, {
   repository, api = githubApi, write = writeCheck, now = () => new Date().toISOString(),
 } = {}) {
   validateRepository(repository);
-  if (eventName !== 'pull_request_target' || event.action !== 'synchronize') return { skipped: true };
-  const prNumber = validPrNumber(event.pull_request?.number);
-  const priorSha = event.before;
-  if (event.repository?.full_name !== repository || event.pull_request?.base?.repo?.full_name !== repository ||
-      !/^[0-9a-f]{40}$/.test(priorSha || '') || !/^[0-9a-f]{40}$/.test(event.pull_request?.head?.sha || '') ||
-      priorSha === event.pull_request.head.sha) throw new Error('Invalid synchronize event identity');
+  const manual = eventName === 'workflow_dispatch';
+  if (manual ? !event.inputs?.retired_head : eventName !== 'pull_request_target' || event.action !== 'synchronize') {
+    return { skipped: true };
+  }
+  const prNumber = validPrNumber(manual ? event.inputs.pr_number : event.pull_request?.number);
+  const priorSha = manual ? event.inputs.retired_head : event.before;
+  if (event.repository?.full_name !== repository || !/^[0-9a-f]{40}$/.test(priorSha || '') || (!manual &&
+      (event.pull_request?.base?.repo?.full_name !== repository ||
+      !/^[0-9a-f]{40}$/.test(event.pull_request?.head?.sha || '') || priorSha === event.pull_request.head.sha))) {
+    throw new Error('Invalid prior-head cleanup event identity');
+  }
   const prefix = 'repos/' + repository;
   const current = api(prefix + '/pulls/' + prNumber);
   if (current.number !== prNumber || current.base?.repo?.full_name !== repository ||

@@ -170,6 +170,15 @@ assert.equal(retireFixture({ current: { ...movedPr, state: 'closed' } }).writes.
   'synchronize cleanup still retires old-head checks after a later close event');
 assert.equal(retireFixture({ eventName: 'workflow_dispatch' }).calls.length, 0);
 assert.equal(retireFixture({ event: { ...synchronize, action: 'closed' } }).calls.length, 0);
+const manualRetirement = { repository: { full_name: repository }, inputs: { pr_number: '42', retired_head: headSha } };
+const manualCleanup = retireFixture({ event: manualRetirement, eventName: 'workflow_dispatch' });
+assert.deepEqual(manualCleanup.writes, oldHead.writes, 'manual recovery has the exact same narrow ownership filter');
+assert.equal(retireFixture({ event: manualRetirement, eventName: 'workflow_dispatch', current: pr }).writes.length, 0,
+  'manual recovery cannot cancel the current open PR head');
+assert.throws(() => retireFixture({ event: { ...manualRetirement, inputs: { pr_number: '42', retired_head: 'unsafe' } },
+  eventName: 'workflow_dispatch' }), /identity/);
+assert.throws(() => retireFixture({ event: { ...manualRetirement, inputs: { pr_number: '43', retired_head: headSha } },
+  eventName: 'workflow_dispatch' }), /identity/);
 for (const event of [{ ...synchronize, before: 'malformed' }, { ...synchronize, before: baseSha },
   { ...synchronize, repository: { full_name: 'other/repo' } },
   { ...synchronize, pull_request: { ...movedPr, base: { ...pr.base, repo: { full_name: 'other/repo' } } } }]) {
@@ -208,6 +217,8 @@ assert.doesNotMatch(workflow.split('\njobs:')[0], /checks: write/);
 assert.match(workflow, /\n  evaluate-gates:[\s\S]*checks: write/);
 const retirementJob = workflow.split('\n  retire-previous-head:')[1]?.split('\n  discover:')[0];
 assert.match(retirementJob, /github\.event_name == 'pull_request_target' && github\.event\.action == 'synchronize'/);
+assert.match(retirementJob, /github\.event_name == 'workflow_dispatch' && inputs\.retired_head != ''/);
+assert.match(workflow, /retired_head:[\s\S]*required: false/);
 assert.doesNotMatch(retirementJob, /\n\s+concurrency:|\n\s+needs:/,
   'prior-head cleanup cannot be replaced by newer per-PR reporter events');
 assert.match(retirementJob, /node scripts\/pr-required-gate\.mjs --retire-event/);

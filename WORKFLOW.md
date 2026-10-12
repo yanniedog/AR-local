@@ -34,6 +34,11 @@ If a thread was resolved without a new event, refresh the gate once:
 gh workflow run pr-bot-feedback-check.yml -f pr_number=<number>
 ```
 
+To recover a pending evaluation left on a previous head after a lost event,
+add `-f retired_head=<previous-40-character-sha>`. This cancels only this PR's
+owned pending reports from that old head and refuses to retire the current
+open head. It does not cancel product CI or manufacture a passing check.
+
 An explicit manual dispatch can use a reviewed workflow ref for bootstrapping
 a reporter change before it is merged. Only manual dispatch checks out that
 workflow's exact commit; automatic events always use the default branch.
