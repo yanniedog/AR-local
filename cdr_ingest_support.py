@@ -201,6 +201,7 @@ class FetchResult:
     failure_category: Optional[str] = None
     retryable: bool = False
     validation_error: Optional[str] = None
+    partial_index: Optional[dict] = None
 
     @cached_property
     def data(self) -> Any:
@@ -436,6 +437,7 @@ def fetch_cdr_json(
     max_total_seconds: Optional[float] = None,
     attempt_journal: Optional[RawAttemptJournal] = None,
     attempt_context: Optional[Mapping[str, Any]] = None,
+    allow_partial_index: bool = False,
 ) -> FetchResult:
     order = list(CDR_VERSION_ORDER if versions is None else versions)
     # ONE shared budget for the whole logical fetch. The old code gave every
@@ -516,6 +518,14 @@ def fetch_cdr_json(
             data, phase=str((attempt_context or {}).get("phase") or ""),
             product_id=str((attempt_context or {}).get("product_id") or ""),
         ) if res.ok and data is not None and not has_cdr_errors(data) else None
+        partial_index = None
+        if (allow_partial_index and res.status == 200 and shape_error
+                and (attempt_context or {}).get("phase") == "products_index"):
+            from cdr_partial_index import partial_index_evidence
+            partial_index = partial_index_evidence(data)
+            if partial_index:
+                return FetchResult(True, res.status, url, res.text, attempts=total_attempts,
+                                   version=v, partial_index=partial_index)
         if res.ok and data is not None and not has_cdr_errors(data) and shape_error is None:
             return FetchResult(
                 ok=True, status=res.status, url=url, text=res.text,

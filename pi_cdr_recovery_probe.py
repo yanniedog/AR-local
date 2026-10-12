@@ -27,7 +27,7 @@ PROBE_HTTP_POLICY = replace(
 
 
 def probe_request(url: str, *, phase: str, product_id: str = "", deadline: float,
-                  version_offset: int = 0) -> dict:
+                  version_offset: int = 0, allow_partial_index: bool = False) -> dict:
     versions = [2, 1] if phase == "register_discovery" else ([6, 5, 4, 3, 2, 1] if phase == "products_index" else [7, 6, 5, 4, 3, 2, 1])
     offset = version_offset % len(versions)
     versions = versions[offset:] + versions[:offset]
@@ -53,13 +53,18 @@ def probe_request(url: str, *, phase: str, product_id: str = "", deadline: float
             except (UnicodeError, ValueError):
                 data = None
             shape_error = response_shape_error(data, phase=phase, product_id=product_id)
+            partial_index = None
+            if allow_partial_index and phase == "products_index" and shape_error and not has_cdr_errors(data):
+                from cdr_partial_index import partial_index_evidence
+                partial_index = partial_index_evidence(data)
             valid = status == 200 and not has_cdr_errors(data) and shape_error is None
             attempt = {"status": status, "version": version, "body_bytes": len(body),
                        "body_sha256": hashlib.sha256(body).hexdigest(), "valid": valid}
             attempts.append(attempt)
-            if valid:
+            if valid or (status == 200 and partial_index):
                 return {"ok": True, "url": sanitize_url(url), "attempts": attempts,
                         "body_sha256": attempt["body_sha256"], "data": data,
+                        **({"partial_index": partial_index} if partial_index else {}),
                         "complete_capture": False}
             text = body.decode("utf-8", errors="replace")
             failure = classify_fetch_failure(status, text)
