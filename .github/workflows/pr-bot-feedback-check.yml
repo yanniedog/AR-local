@@ -1,101 +1,78 @@
 name: pr-bot-feedback-check
 
-# Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
-# in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
-# â€” no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
-# per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
-# Self-heal triggers are limited to events whose check-run attaches to the PR
-# HEAD: pull_request (push) and pull_request_review[_comment] (these run with
-# GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
-# against the default branch, so their check records against main, not the PR
-# head, and would leave a failed required check stale (Codex P1 PR #148).
-# NOTE: GitHub emits no event when a thread is *resolved*, so a resolve-only round
-# (no reply, no push) won't auto-re-run a previously-failed gate. After resolving,
-# reply inline on a review thread, push, or re-run THIS run on the PR head with
-# `gh run rerun <run-id>` (a top-level PR comment will NOT refresh the PR-head check).
+# Only trusted default-branch code gets checks:write. PR code and artifacts are
+# never executed here. The required check is published on the current PR head,
+# not on the default-branch SHA used by these event-driven reporter jobs.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
-  pull_request_review_comment:
-    types: [created]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited, closed]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: [app-ci, app-data-service-ci, historical-candidate-ci, pr-closeout-ci, pr-review-events]
+    types: [requested, in_progress, completed]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number
+        description: Pull request whose current gates should be refreshed
         required: true
         type: string
 
 permissions:
   contents: read
   pull-requests: read
-
-concurrency:
-  # MUST be false for a required check â€” cancelling an in-flight run leaves a
-  # "cancelled" check-run that branch protection reads as the latest required
-  # status, blocking the PR even when a later run succeeds (the "BLOCKED but
-  # all-green" trap). With false the newest event runs to completion, so the
-  # latest required check-run is always success/failure, never a stale cancel.
-  group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: false
+  actions: read
 
 jobs:
-  bot-feedback-gate:
-    if: >-
-      github.event.pull_request != null
-      || github.event.review != null
-      || github.event_name == 'workflow_dispatch'
+  discover:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      prs: ${{ steps.targets.outputs.prs }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-      - name: Skip thread gate for non-human / chore PRs
-        id: gate_exempt
+          node-version: '24'
+      - name: Resolve current PR targets
+        id: targets
         env:
-          GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PR="${{ inputs.pr_number }}"
-          else
-            PR="${{ github.event.pull_request.number }}"
-          fi
-          export PR
-          EXEMPT=$(node scripts/pr-gate-exempt-reason.mjs || true)
-          if [ -n "$EXEMPT" ]; then
-            echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
-            echo "gate_exempt_reason=$EXEMPT" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR is gate-exempt ($EXEMPT) — thread closure not required"
-          else
-            echo "gate_exempt=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Gate exempt — pass (no thread closure)
-        if: steps.gate_exempt.outputs.gate_exempt == 'true'
-        run: |
-          echo "bot-feedback-gate: skipped (${{ steps.gate_exempt.outputs.gate_exempt_reason }} — human bot review not required)"
-      - name: Review thread closure gate
-        if: steps.gate_exempt.outputs.gate_exempt != 'true'
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/pr-required-gate.mjs --discover
+
+  evaluate-gates:
+    needs: discover
+    if: needs.discover.outputs.prs != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJSON(needs.discover.outputs.prs) }}
+    # A replaced pending reporter is harmless: the next reporter for THIS PR
+    # evaluates current state. Do not share a concurrency group between PRs.
+    concurrency:
+      group: required-pr-gate-${{ matrix.pr }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Publish feedback and applicable CI gate
         env:
-          GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PR="${{ inputs.pr_number }}"
-          else
-            PR="${{ github.event.pull_request.number }}"
-          fi
-          set +e
-          npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
-          code=$?
-          set -e
-          if [ "$code" -eq 2 ]; then
-            echo "::warning::GitHub API rate limit â€” re-run after quota resets"
-            exit 1
-          fi
-          exit "$code"
+          GH_TOKEN: ${{ github.token }}
+          GATE_PR: ${{ matrix.pr }}
+        run: node scripts/pr-required-gate.mjs --publish
