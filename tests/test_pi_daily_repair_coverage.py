@@ -23,7 +23,8 @@ def test_single_pass_reaches_recoverable_eighth_provider(monkeypatch, tmp_path, 
     seen = []
     def probe(url, **kwargs):
         seen.append(url)
-        return {"ok": url == "Bank 7", "body_sha256": "a" * 64}
+        return {"ok": url == "Bank 7", "body_sha256": "a" * 64,
+                "attempts": [{"status": 200 if url == "Bank 7" else 500}]}
     monkeypatch.setattr(recovery, "probe_request", probe)
     launch = Mock()
     result = recovery.run_same_day_recovery(tmp_path, now_utc=NOW, dry_run=False,
@@ -47,6 +48,26 @@ def test_daily_owner_selects_single_bounded_daily_pass():
     repair(w, r, DATE, NOW)
     r.run_same_day_recovery.assert_called_once_with(w.REPO_ROOT, now_utc=NOW,
         dry_run=False, launch=w.run_recovery_ingest, daily_pass=True)
+
+
+@pytest.mark.parametrize("failure", ["missing_identity", "deadline"])
+def test_unattempted_provider_is_not_reported_as_probed(monkeypatch, tmp_path, failure):
+    stage(monkeypatch, tmp_path)
+    monkeypatch.setattr(recovery, "probe_register", lambda **k: ({"ok": True}, [PROVIDER]))
+    if failure == "missing_identity":
+        def reject(*args):
+            raise ValueError("fresh register provider identity is missing or ambiguous")
+        monkeypatch.setattr(recovery, "current_target_url", reject)
+    else:
+        monkeypatch.setattr(recovery, "current_target_url", lambda *a: PROVIDER["endpoint_url"])
+        monkeypatch.setattr(recovery, "probe_request", lambda *a, **k: {"ok": False, "attempts": []})
+    launch = Mock()
+    result = recovery.run_same_day_recovery(tmp_path, now_utc=NOW, dry_run=False,
+                                           launch=launch, daily_pass=True)
+    assert result["providers_probed"] == 0
+    assert result["providers_not_probed"] == [PROVIDER["provider_dir"]]
+    assert result["provider_probe_coverage_complete"] is False
+    launch.assert_not_called()
 
 
 def test_daily_provider_batch_stays_bounded_and_preserves_cooldown():

@@ -495,7 +495,7 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
         return {"status": "provider_cooldown", **health}
     positive, reports = _probe_due(root, observation, providers, due, history, now,
         probe_budget_seconds=DAILY_PROBE_BUDGET_SECONDS if daily_pass else PROBE_BUDGET_SECONDS)
-    probed_providers = {row.get("provider_dir") for row in reports}
+    probed_providers = {row.get("provider_dir") for row in reports if row.get("attempts")}
     unresolved_providers = {row["provider_dir"] for row in requests}
     health.update(providers_probed=len(probed_providers & unresolved_providers),
                   providers_not_probed=sorted(unresolved_providers - probed_providers),
