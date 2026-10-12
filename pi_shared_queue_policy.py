@@ -193,7 +193,9 @@ def admission(job: Mapping, jobs: Sequence[Mapping], now: datetime) -> tuple[boo
         for other in sorted(promoted_waiters, key=lambda record: record.sequence):
             if any(_conflicts(other, owner) for owner in [*running, *reserved]):
                 continue
-            if running_slots + reserved_slots + other.cpu_slots <= CPU_SLOT_BUDGET:
+            # Reserve future capacity while existing disjoint work drains;
+            # requiring the waiter to fit now lets newcomers starve it forever.
+            if reserved_slots + other.cpu_slots <= CPU_SLOT_BUDGET:
                 reserved.append(other)
                 reserved_slots += other.cpu_slots
         if running_slots + candidate.cpu_slots + reserved_slots > CPU_SLOT_BUDGET:
