@@ -1,5 +1,6 @@
 """Multiple public DNS addresses and TLS share one connection time budget."""
 import ssl
+from io import BytesIO
 from unittest.mock import Mock
 
 import pytest
@@ -67,3 +68,15 @@ def test_tls_exhaustion_closes_socket_and_stops_address_fallback(monkeypatch):
     assert dial.call_count == 1
     tls.close.assert_called_once()
     assert conn.sock is None and conn.peer_ip is None
+
+
+def test_successful_address_fallback_can_finish_its_http_request(monkeypatch):
+    conn = connection(monkeypatch, [0.0])
+    raw, tls, context = Mock(), Mock(), Mock()
+    monkeypatch.setattr(policy.socket, "create_connection", Mock(side_effect=[OSError("unreachable"), raw]))
+    context.wrap_socket.return_value = tls
+    tls.makefile.return_value = BytesIO(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+    conn._context = context
+    conn.request("GET", "/products")
+    response = conn.getresponse()
+    assert response.status == 200 and response.read() == b"{}"

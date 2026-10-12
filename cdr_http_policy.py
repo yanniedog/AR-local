@@ -418,7 +418,11 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
                 self.peer_ip = address
                 return
             except OSError as error:
-                self.close()
+                # Closing HTTPConnection here also resets its request state;
+                # a successful fallback must still finish the pending GET.
+                if self.sock is not None:
+                    self.sock.close()
+                    self.sock = None
                 if raw is not None:
                     raw.close()
                 last_error = error
