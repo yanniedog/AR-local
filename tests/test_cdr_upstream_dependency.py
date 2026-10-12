@@ -65,6 +65,18 @@ def test_duplicate_error_keys_never_override_client_authentication():
     assert classify_fetch_failure(401, body) == ('public_endpoint_auth_required', False, False)
 
 
+def test_deeply_nested_auth_body_is_recorded_without_aborting_fetch(tmp_path, monkeypatch):
+    body = '[' * 2000 + 'null' + ']' * 2000
+    monkeypatch.setattr(support, 'http_request', lambda *a, **k: (401, body, None))
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[5],
+        timeout=5, max_retries=6, sleep_ms=0, attempt_context={'phase': 'products_index'})
+    assert not result.ok and result.failure_category == 'public_endpoint_auth_required'
+    assert result.attempts == 1 and not result.retryable and result.text == body
+    support.append_failure(tmp_path, {'bank': 'DDH Graham', 'phase': 'products_index',
+        'snippet': body[:500], **ingest._fetch_failure_fields(result)})
+    assert support.summarize_failures(tmp_path)['by_failure_category'] == {'public_endpoint_auth_required': 1}
+
+
 def test_dependency_outage_gets_one_inline_recovery_not_http_retry_sweeps(tmp_path, monkeypatch):
     request = Mock(return_value=(401, BODY, None))
     monkeypatch.setattr(support, 'http_request', request)

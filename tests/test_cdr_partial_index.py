@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -16,6 +17,7 @@ from cdr_compatibility import response_shape_error
 from cdr_atomic import canonical_json_bytes
 from cdr_export_contract import load_contract
 from cdr_finalization import finalize_observation
+from cdr_http_policy import PolicyResponse
 from cdr_ingest_recovery import _index_captured
 from cdr_observation_selection import _verified_withdrawal_index
 from cdr_partial_index import partial_index_evidence, partial_probe_has_progress
@@ -32,8 +34,15 @@ URL = VALUE['links']['self']
 IDS = {row['productId'] for row in VALUE['data']['products'] if row['productId']}
 
 
+def transport(monkeypatch, raw=RAW, status=200):
+    response = PolicyResponse(status, URL, {}, raw, len(raw), len(raw),
+                              hashlib.sha256(raw).hexdigest(), None, ())
+    monkeypatch.setattr(support, 'request_https', lambda *a, **k: response)
+    monkeypatch.setattr(support, 'attempt_utc_now', lambda: '2026-10-11T14:05:24.681605Z')
+
+
 def fetch(monkeypatch, *, partial=False):
-    monkeypatch.setattr(support, 'http_request', lambda *a, **k: (200, BODY, None))
+    transport(monkeypatch)
     return support.fetch_cdr_json(URL, versions=[5], timeout=5, max_retries=0,
         sleep_ms=0, attempt_context={'phase': 'products_index'}, allow_partial_index=partial)
 
@@ -63,9 +72,8 @@ def test_partial_capture_does_not_accept_other_shape_faults(fault):
     assert partial_index_evidence(value) is None
 
 
-def capture(tmp_path, monkeypatch):
-    result = fetch(monkeypatch, partial=True)
-    monkeypatch.setattr(ingest, 'fetch_cdr_json', lambda *a, **k: result)
+def capture(tmp_path, monkeypatch, raw=RAW):
+    transport(monkeypatch, raw)
     dispatched = []
     def detail(work, *a, **k):
         dispatched.append(work.pid)
@@ -73,13 +81,16 @@ def capture(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest, '_fetch_bank_detail', detail)
     brand = {'brand_name': 'Geelong Bank', 'endpoint_url': URL}
     directory = support.allocate_bank_dir(brand['brand_name'], '', URL, set())
+    journal = RawAttemptJournal(tmp_path / 'attempt-evidence/raw-attempt-journals-v1', 'partial-index')
     ingest.ingest_brand(brand, date_root=tmp_path, resume=False, sleep_ms=0, timeout=5,
         max_retries=0, max_pages=None, max_products=None, fetch_unknown_detail=False,
-        bank_dir_name=directory, detail_workers=1, log=lambda _: None)
-    journal = RawAttemptJournal(tmp_path / 'attempt-evidence/raw-attempt-journals-v1', 'partial-index')
-    event = journal.record('index', request_url=URL, status=200, outcome='success', body=RAW,
-        started_at='2026-10-11T14:05:24Z', completed_at='2026-10-11T14:05:25Z',
-        context={'provider': directory, 'phase': 'products_index', 'page': 1})
+        bank_dir_name=directory, detail_workers=1, log=lambda _: None, attempt_journal=journal)
+    events = list(journal.events.glob('*.json'))
+    assert len(events) == 1
+    event = json.loads(events[0].read_bytes())
+    assert event['context']['phase'] == 'products_index' and event['context']['provider'] == directory
+    assert event['response']['body_sha256'] == hashlib.sha256(raw).hexdigest()
+    assert (journal.root / event['body_path']).read_bytes() == raw
     # Register receipt is a protocol control; no fabricated financial rows.
     snapshot = support.RegisterSnapshot(True, True, [{'ok': True, 'sha256': 'a' * 64}], [brand], 1)
     status = ingest._persist_ingest_status(banks_root=tmp_path, run_root=tmp_path,
@@ -103,6 +114,77 @@ def test_valid_rows_dispatch_while_provider_omission_and_unknown_population_surv
         'failed_providers': 1, 'providers_with_unknown_product_population': 1, 'product_count_is_lower_bound': True}
     assert _successful_body(journal, event, 'products_index') is None
     assert _index_captured(tmp_path, provider) is False
+
+
+def test_replacement_decoding_never_changes_original_response_identity(tmp_path, monkeypatch):
+    # Protocol corruption only: retain every original product row unchanged.
+    raw = RAW.replace(b'{', b'{"protocol_test":"\xff",', 1)
+    status, provider, _, journal, event = capture(tmp_path, monkeypatch, raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    assert digest != hashlib.sha256(raw.decode('utf-8', errors='replace').encode()).hexdigest()
+    failure = json.loads((tmp_path / 'failures.jsonl').read_text())
+    assert failure['source_body_sha256'] == digest == event['response']['body_sha256']
+    assert status['index_diagnostics'][provider]['partial_index_body_sha256s'] == [digest]
+    monkeypatch.setattr(probe, 'request_https', lambda *a, **k: SimpleNamespace(status=200, body=raw))
+    report = probe.probe_request(URL, phase='products_index', deadline=probe.time.monotonic() + 60,
+                                allow_partial_index=True)
+    assert report['ok'] is False and report['attempts'][0]['body_sha256'] == digest
+
+
+def test_many_partial_pages_keep_diagnostics_available_and_all_failures_bound(tmp_path, monkeypatch):
+    def request(url, *a, **k):
+        number = int(parse_qs(urlsplit(url).query).get('page', ['1'])[0])
+        # Repeat retained products to exercise pagination accounting, not new rates.
+        value = copy.deepcopy(VALUE)
+        value['meta'] = {'totalRecords': 60 * 18, 'totalPages': 60}
+        value['links']['self'] = url
+        value['links']['next'] = URL + f'?page={number + 1}' if number < 60 else None
+        raw = canonical_json_bytes(value)
+        return PolicyResponse(200, url, {}, raw, len(raw), len(raw), hashlib.sha256(raw).hexdigest(), None, ())
+    monkeypatch.setattr(support, 'request_https', request)
+    monkeypatch.setattr(ingest, '_fetch_bank_detail', lambda *a, **k: ingest._DetailOutcome(True, True))
+    brand, provider = {'brand_name': 'Geelong Bank', 'endpoint_url': URL}, 'Geelong Bank'
+    ingest.ingest_brand(brand, date_root=tmp_path, resume=False, sleep_ms=0, timeout=5,
+        max_retries=0, max_pages=None, max_products=None, fetch_unknown_detail=False,
+        bank_dir_name=provider, detail_workers=1, log=lambda _: None)
+    path = tmp_path / '_holders' / provider / '_products-index/diagnostics.json'
+    assert path.stat().st_size <= 4096
+    diagnostic = ingest._provider_index_diagnostics(tmp_path, [(brand, provider)])[provider]
+    assert diagnostic['unique_products'] == 17 and diagnostic['raw_records'] == 1080
+    assert diagnostic['partial_index_body_count'] == 60
+    assert diagnostic['partial_index_body_hashes_complete'] is False
+    assert len(diagnostic['partial_index_body_sha256s']) == 32
+    failures = [json.loads(row) for row in (tmp_path / 'failures.jsonl').read_text().splitlines()]
+    assert len(failures) == 60 and len({row['source_body_sha256'] for row in failures}) == 60
+    # Failure to keep the bounded reader usable used to disable every later probe.
+    report = {'body_sha256': 'f' * 64, 'partial_index': {'unique_products': 18}}
+    assert partial_probe_has_progress(report, {'provider_dir': provider, 'request_key': 'r'},
+        {'status': {'index_diagnostics': {provider: diagnostic}}}, [])
+
+
+def test_maximum_partial_proofs_fit_durable_history_without_omission_arrays(tmp_path, monkeypatch):
+    value = {'data': {'products': [VALUE['data']['products'][0], *([{}] * 8191)]},
+             'meta': {'totalRecords': 8192, 'totalPages': 1}, 'links': {}}
+    raw = canonical_json_bytes(value)
+    monkeypatch.setattr(probe, 'request_https', lambda *a, **k: SimpleNamespace(status=200, body=raw))
+    report = probe.probe_request(URL, phase='products_index', deadline=probe.time.monotonic() + 60,
+                                allow_partial_index=True)
+    report.pop('data')  # Same boundary as the production _probe_due path.
+    assert report['partial_index'] == {'raw_records': 8192, 'identified_records': 1,
+                                      'unidentified_records': 8191, 'unique_products': 1}
+    proofs = [{**report, 'request_key': str(number)} for number in range(recovery.MAX_PROBES_PER_TICK)]
+    reservation = recovery._reserve(tmp_path, '2026-09-07', 'g1', 'capture', NOW, proofs=proofs)
+    assert next(tmp_path.glob('*.reserved.json')).stat().st_size < 4096
+    assert recovery._history(tmp_path, '2026-09-07') == [reservation]
+
+
+def test_nested_json_probe_preserves_terminal_authentication_status(monkeypatch):
+    raw = ('[' * 2000 + 'null' + ']' * 2000).encode()
+    monkeypatch.setattr(probe, 'request_https', lambda *a, **k: SimpleNamespace(status=401, body=raw))
+    report = probe.probe_request(URL, phase='products_index', deadline=probe.time.monotonic() + 60,
+                                allow_partial_index=True)
+    assert report['ok'] is False and len(report['attempts']) == 1
+    assert report['attempts'][0]['failure_category'] == 'public_endpoint_auth_required'
 
 
 @pytest.mark.parametrize('nonempty_rates', [False, True])
