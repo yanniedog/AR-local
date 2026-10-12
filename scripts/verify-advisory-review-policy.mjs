@@ -32,50 +32,10 @@ try {
   assert.equal(persisted.readyAt, null);
   assert.deepEqual(applyReviewerPolicy(persisted, ['sourcery']), ['sourcery']);
   assert.deepEqual(persisted.requiredKeys, ['sourcery']);
-  const accepted = fs.readFileSync(botWaitStatePath(123, stateRoot), 'utf8');
-  const originalRename = fs.renameSync;
-  try {
-    fs.renameSync = () => { throw new Error('replacement interrupted'); };
-    const attempt = readBotWaitStateFile(123, stateRoot);
-    attempt.anchor = 'new';
-    assert.throws(() => writeBotWaitStateFile(123, attempt, stateRoot), /replacement interrupted/);
-  } finally {
-    fs.renameSync = originalRename;
-  }
-  assert.equal(fs.readFileSync(botWaitStatePath(123, stateRoot), 'utf8'), accepted);
-  assert.deepEqual(fs.readdirSync(path.dirname(botWaitStatePath(123, stateRoot))), ['123.json']);
-  if (process.platform !== 'win32') {
-    const originalFsync = fs.fsyncSync;
-    let directorySynced = false;
-    try {
-      fs.fsyncSync = (descriptor) => {
-        directorySynced ||= fs.fstatSync(descriptor).isDirectory();
-        return originalFsync(descriptor);
-      };
-      writeBotWaitStateFile(123, persisted, stateRoot);
-    } finally { fs.fsyncSync = originalFsync; }
-    assert.equal(directorySynced, true, 'accepted rename persists its directory');
-    const originalWarn = console.warn;
-    const warnings = [];
-    try {
-      console.warn = (message) => warnings.push(message);
-      for (const code of ['EINVAL', 'ENOTSUP', 'EOPNOTSUPP', 'EIO']) {
-        fs.fsyncSync = (descriptor) => {
-          if (fs.fstatSync(descriptor).isDirectory()) throw Object.assign(new Error(code), { code });
-          return originalFsync(descriptor);
-        };
-        const updated = readBotWaitStateFile(123, stateRoot);
-        updated.anchor = code;
-        if (code === 'EIO') {
-          assert.throws(() => writeBotWaitStateFile(123, updated, stateRoot), /was replaced/);
-        } else {
-          writeBotWaitStateFile(123, updated, stateRoot);
-        }
-        assert.equal(readBotWaitStateFile(123, stateRoot).anchor, code);
-      }
-      assert.equal(warnings.length, 3, 'unsupported directory syncing is an explicit limitation');
-    } finally { fs.fsyncSync = originalFsync; console.warn = originalWarn; }
-  }
+  // Atomic persistence/crash handling lives in verify-pr-wait-state.mjs.
+  writeBotWaitStateFile(123, persisted, stateRoot);
+  assert.deepEqual(readBotWaitStateFile(123, stateRoot).requiredKeys, ['sourcery']);
+  assert.deepEqual(fs.readdirSync(path.dirname(botWaitStatePath(123, stateRoot))).sort(), ['123.json', '123.json.writer-lock']);
   assert.equal(gateGithubBotChecks(123, {
     fetchChecks: (_pr, names) => {
       assert.deepEqual(names, ['bot-feedback-gate']);

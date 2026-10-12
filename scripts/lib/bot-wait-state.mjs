@@ -1,7 +1,8 @@
 import fs from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 /** @returns {string} */
 export function gitRepoRoot() {
@@ -67,6 +68,8 @@ export function writeBotWaitStateFile(prNumber, state, repoRoot) {
 
 const SNAPSHOT = Symbol('wait-state-snapshot');
 const fingerprint = (content) => createHash('sha256').update(content).digest('hex');
+const WRITE_HELPER = fileURLToPath(new URL('./bot-wait-state-write.py', import.meta.url));
+const MAX_REQUEST_BYTES = 1024 * 1024;
 
 /** Keep the read version outside JSON so callers can safely mutate their snapshot. */
 export function readJsonState(filename) {
@@ -80,50 +83,21 @@ export function readJsonState(filename) {
 /** Exclusive compare-and-swap rejects stale snapshots instead of replacing newer anchors. */
 export function writeJsonAtomically(destination, state) {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  const lock = `${destination}.lock`;
-  let lockDescriptor;
-  try {
-    lockDescriptor = fs.openSync(lock, 'wx');
-  } catch (error) {
-    if (error.code === 'EEXIST') throw new Error('Wait state update is locked; retry after the writer exits');
-    throw error;
-  }
-  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(lockDescriptor, JSON.stringify({ pid: process.pid }));
-    const actual = fs.existsSync(destination) ? fingerprint(fs.readFileSync(destination, 'utf8')) : null;
-    const snapshot = state[SNAPSHOT];
-    const expected = snapshot?.filename === path.resolve(destination) ? snapshot.fingerprint : null;
-    if (actual !== expected) throw new Error('Wait state changed since read; reread before updating');
-    const content = `${JSON.stringify(state, null, 2)}\n`;
-    const descriptor = fs.openSync(temporary, 'wx');
-    try {
-      fs.writeFileSync(descriptor, content, 'utf8');
-      fs.fsyncSync(descriptor);
-    } finally {
-      fs.closeSync(descriptor);
-    }
-    fs.renameSync(temporary, destination);
-    Object.defineProperty(state, SNAPSHOT, { value: { filename: path.resolve(destination), fingerprint: fingerprint(content) }, writable: true, configurable: true });
-    syncStateDirectory(path.dirname(destination));
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-    fs.closeSync(lockDescriptor);
-    fs.unlinkSync(lock);
-  }
-}
-
-function syncStateDirectory(directoryPath) {
-  // Node cannot open directory descriptors on Windows.
-  if (process.platform === 'win32') return;
-  try {
-    const directory = fs.openSync(directoryPath, 'r');
-    try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
-  } catch (error) {
-    if (['EINVAL', 'ENOTSUP', 'EOPNOTSUPP'].includes(error.code)) {
-      console.warn('Wait state replaced; this filesystem does not support directory fsync.');
-      return;
-    }
-    throw new Error('Wait state was replaced, but its directory could not be synced', { cause: error });
-  }
+  const filename = path.resolve(destination);
+  const snapshot = state[SNAPSHOT];
+  const expected = snapshot?.filename === filename ? snapshot.fingerprint : null;
+  const content = `${JSON.stringify(state, null, 2)}\n`;
+  const input = JSON.stringify({ destination: filename, content, expected });
+  if (Buffer.byteLength(input, 'utf8') > MAX_REQUEST_BYTES) throw new Error('Wait state request exceeds the supported size');
+  // Python owns the entire CAS while holding native file locks. A timeout kills
+  // only this child; kernel locks release even if it dies before cleaning up.
+  const result = spawnSync(process.platform === 'win32' ? 'python' : 'python3', ['-I', '-S', '-B', WRITE_HELPER], {
+    input, encoding: 'utf8', windowsHide: true, timeout: 10_000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024,
+  });
+  if (result.error) throw new Error('Wait state writer failed; Python 3 is required. Reread state before retrying', { cause: result.error });
+  if (result.status !== 0) throw new Error(result.stderr.trim() || 'Wait state writer failed; reread before retrying');
+  const written = JSON.parse(result.stdout);
+  if (written?.fingerprint !== fingerprint(content)) throw new Error('Invalid wait state writer receipt; reread before retrying');
+  if (result.stderr.trim()) console.warn(result.stderr.trim());
+  Object.defineProperty(state, SNAPSHOT, { value: { filename, fingerprint: written.fingerprint }, writable: true, configurable: true });
 }

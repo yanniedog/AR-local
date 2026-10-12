@@ -3,6 +3,11 @@
 Use a fresh topic worktree from the repository default branch and preserve
 unrelated changes. Open a draft PR against that exact default branch.
 
+PR automation requires Node.js and Python 3.11 or newer. Wait-state writes use
+native file locks and hardlinks on the state filesystem. Kernel ownership is
+released on a writer crash; unknown legacy lock files require verified manual
+migration.
+
 Run checks appropriate to changed paths. For PR automation changes, run:
 
 ```sh
