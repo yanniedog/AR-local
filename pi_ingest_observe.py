@@ -1,0 +1,37 @@
+"""Read-only ingest watchdog; never start capture, publication or recovery."""
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import sys
+
+
+def observe(watchdog, now):
+    day = now.astimezone(watchdog.HOBART).date().isoformat()
+    publication = watchdog.check_publication(day)
+    result = {"observation_only": True, "run_date": day,
+              "capture_finalized": watchdog.run_complete(day),
+              "service_active": watchdog.service_active(),
+              "payload_pending": watchdog.payload_publication_pending(watchdog.REPO_ROOT),
+              "publication": publication, "repair_started": False}
+    return result
+
+
+def main():
+    repo = Path(os.environ.get("AR_LOCAL_REPO", Path(__file__).resolve().parent))
+    sys.path.insert(0, str(repo))
+    import pi_daily_watchdog as watchdog
+    try:
+        result = observe(watchdog, datetime.now(timezone.utc))
+    except Exception as error:
+        result = {"observation_only": True, "status": "UNKNOWN",
+                  "error_category": type(error).__name__, "repair_started": False}
+    print(json.dumps(result, sort_keys=True))
+    return int(result.get("status") == "UNKNOWN" or
+               (not result.get("service_active") and
+                (not result.get("capture_finalized") or
+                 result.get("publication", {}).get("publication_current") is not True)))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
