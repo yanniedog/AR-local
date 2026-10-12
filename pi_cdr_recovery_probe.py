@@ -50,13 +50,15 @@ def probe_request(url: str, *, phase: str, product_id: str = "", deadline: float
             status = response.status
             try:
                 data = json.loads(body)
-            except (UnicodeError, ValueError):
+            except (UnicodeError, ValueError, RecursionError):
                 data = None
             shape_error = response_shape_error(data, phase=phase, product_id=product_id)
             partial_index = None
             if allow_partial_index and phase == "products_index" and shape_error and not has_cdr_errors(data):
-                from cdr_partial_index import partial_index_evidence
+                from cdr_partial_index import partial_index_evidence, partial_probe_summary
                 partial_index = partial_index_evidence(data)
+                if partial_index:
+                    partial_index = partial_probe_summary(partial_index)
             valid = status == 200 and not has_cdr_errors(data) and shape_error is None
             attempt = {"status": status, "version": version, "body_bytes": len(body),
                        "body_sha256": hashlib.sha256(body).hexdigest(), "valid": valid}

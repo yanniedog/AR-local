@@ -428,7 +428,7 @@ def ingest_brand(
             preferred_version = res.version
         last_meta = parsed.get("meta") or {}
 
-        from cdr_partial_index import capture_index_products, record_partial_index
+        from cdr_partial_index import add_partial_index_diagnostics, capture_index_products, record_partial_index
         if digest := record_partial_index(res, date_root, bank_dir_name, url, pages, lock=failure_lock):
             partial_index_hashes.add(digest)
 
@@ -551,7 +551,7 @@ def ingest_brand(
         complete=not url and not capped and accounting_error is None and not partial_index_hashes, meta=last_meta,
     )
     if partial_index_hashes:
-        diagnostics["partial_index_body_sha256s"] = sorted(partial_index_hashes)
+        add_partial_index_diagnostics(diagnostics, partial_index_hashes)
     atomic_write_json(index_dir / "diagnostics.json", diagnostics)
     if not pending:
         return

@@ -1,12 +1,13 @@
 """Explicit partial index capture; strict reuse/withdrawal validation stays intact."""
 from __future__ import annotations
 
-import hashlib
+import re
 from typing import Any
 
 from cdr_compatibility import response_shape_error
 
 MAX_PARTIAL_INDEX_ROWS = 8192
+MAX_DIAGNOSTIC_BODY_HASHES = 32
 
 
 def partial_index_evidence(data: Any) -> dict | None:
@@ -40,6 +41,20 @@ def capture_index_products(products: list, omissions: dict | None):
     return [None if index in omitted else row for index, row in enumerate(products)]
 
 
+def add_partial_index_diagnostics(diagnostics: dict, hashes: set[str]) -> None:
+    """Keep the bounded status usable; each full hash remains in its raw failure."""
+    if hashes:
+        diagnostics.update(partial_index_body_sha256s=sorted(hashes)[:MAX_DIAGNOSTIC_BODY_HASHES],
+                           partial_index_body_count=len(hashes),
+                           partial_index_body_hashes_complete=len(hashes) <= MAX_DIAGNOSTIC_BODY_HASHES)
+
+
+def partial_probe_summary(evidence: dict) -> dict:
+    """Capture journals retain positions; bounded recovery proofs need only counts."""
+    return {key: evidence[key] for key in
+            ("raw_records", "identified_records", "unidentified_records", "unique_products")}
+
+
 def record_partial_index(result, root, provider, url, page, *, lock=None) -> str | None:
     """Persist one provider-attributable omission, bound to the raw response."""
     from cdr_ingest_support import append_failure
@@ -47,7 +62,9 @@ def record_partial_index(result, root, provider, url, page, *, lock=None) -> str
     evidence = result.partial_index
     if not evidence:
         return None
-    digest = hashlib.sha256(result.text.encode("utf-8")).hexdigest()
+    digest = result.body_sha256
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("partial index has no original response digest")
     append_failure(root, {"phase": "products_index", "bank": provider,
         "url": sanitize_url(url), "status": result.status, "failure_category": "invalid_response",
         "retryable": False, "validation_error": "product index contains unidentified rows",

@@ -24,7 +24,7 @@ def dependency_failure_evidence(status, text: str) -> str | None:
         return None
     try:
         value = json.loads(str(text or "")[:65536], object_pairs_hook=_unique_object)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return None
     if not isinstance(value, dict) or set(value) != {"errors"}:
         return None
