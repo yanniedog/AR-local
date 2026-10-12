@@ -14,6 +14,8 @@ import re
 import threading
 from typing import Any, Iterable, NamedTuple, Optional
 
+from cdr_upstream_dependency import dependency_failure_evidence
+
 
 def _versions(value: str) -> list[int]:
     return sorted({int(x) for x in re.findall(r"(?<!\d)[1-9]\d?(?!\d)", value)}, reverse=True)
@@ -50,6 +52,8 @@ class FetchFailure(NamedTuple):
 
 def _authentication_evidence(status: Any, text: str = "") -> Optional[str]:
     """Return a compact matching clause from the normalized response input."""
+    if dependency_failure_evidence(status, text) is not None:
+        return None
     if isinstance(status, str) and status.isdigit():
         status = int(status)
     if status in {401, 403, 407}:
@@ -89,6 +93,8 @@ def compact_failure_evidence(status: Any, text: str = "") -> str:
     """
     body = str(text or "")[:65536]
     decision = classify_fetch_failure(status, body)
+    if decision.category == "upstream_dependency_failure":
+        return dependency_failure_evidence(status, body)
     if decision.category in {"public_endpoint_auth_required", "access_denied"}:
         return _authentication_evidence(status, body) or body[:500]
     if decision.category == "incompatible_version":
@@ -124,7 +130,8 @@ def compact_failure_evidence(status: Any, text: str = "") -> str:
 
 def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:
     """Separate a retryable outage from a deterministic rejection using evidence."""
-    body = str(text or "")[:65536].lower()
+    original = str(text or "")[:65536]
+    body = original.lower()
     if isinstance(status, str) and status.isdigit():
         status = int(status)
     if not ((type(status) is int and 200 <= status <= 599)
@@ -141,7 +148,9 @@ def classify_fetch_failure(status: Any, text: str = "") -> FetchFailure:
         or ("x-v" in body and parse_supported_versions(body))
     )):
         return FetchFailure("incompatible_version", False, True)
-    if is_public_authentication_failure(status, body):
+    if dependency_failure_evidence(status, original) is not None:
+        return FetchFailure("upstream_dependency_failure", True, False)
+    if is_public_authentication_failure(status, original):
         if status in {401, 403, 407} and not body:
             return FetchFailure("access_denied", False, False)
         return FetchFailure("public_endpoint_auth_required", False, False)

@@ -106,6 +106,24 @@ def publish(root, store, payload=None):
                                    repo=REPO, enabled=True, consumer_commit=CONSUMER, store=store)
 
 
+@pytest.mark.parametrize("marked", [False, True])
+def test_cloudflare_publication_and_retry_do_not_require_public_branch(tmp_path, monkeypatch, marked):
+    store = MemoryStore()
+    manifest = build_payload(tmp_path / "payload")
+    if marked:
+        manifest["delivery"] = {"mode": "github-public-v1"}
+        (tmp_path / "payload/manifest.json").write_bytes(canonical(manifest))
+    monkeypatch.setattr("app_payload_public_companion.publish_companion",
+                        lambda *_: pytest.fail("Public branch must not block canonical delivery"))
+    first = publish(tmp_path, store)
+    retained = copy.deepcopy(store.objects)
+    retry = publish(tmp_path, store)
+    assert retry.head == first.head
+    assert not retry.index_changed and store.promotions == 1
+    assert store.objects == retained
+    assert retry.manifest.get("delivery") == manifest.get("delivery")
+
+
 def test_initial_and_details_only_revisions_preserve_all_bytes(tmp_path):
     store = MemoryStore()
     first_manifest = build_payload(tmp_path / "payload", omit_last_product=True)
@@ -156,7 +174,8 @@ def test_source_observation_changes_revision_even_when_assets_match(tmp_path):
     assert delta["assets_changed"] == []
 
 
-def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path, monkeypatch):
+@pytest.mark.parametrize("historical,dated_success", [(False, True), (True, True), (True, False)])
+def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path, monkeypatch, historical, dated_success):
     import app_payload
     import app_payload_build
     import app_payload_revisions
@@ -171,6 +190,8 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
     (exports / "dashboard-cache" / "latest.json").write_bytes(canonical({"run_date": DAY}))
     store = MemoryStore()
     calls = []
+    monkeypatch.setattr("app_payload_public_companion.publish_companion",
+                        lambda *_: pytest.fail("Cloudflare publication must not depend on a public mirror"))
 
     def compute(*args, **kwargs):
         assert kwargs["include_history"] is True
@@ -182,25 +203,45 @@ def test_dual_build_promotes_full_revision_before_compatibility_aliases(tmp_path
     def alias(directory, *, repo, tag):
         assert store.promotions == 1
         manifest = decode_document((directory / "manifest.json").read_bytes())
+        assert "delivery" not in manifest
         assert manifest["payload_revision"]["revision"] == 1
         assert "search_index" in manifest["files"]
         assert all("-r000001/" in item["url"] for item in manifest["files"].values())
         calls.append(tag)
-        return True
+        return dated_success if tag == f"app-payload-{DAY}" else True
 
     monkeypatch.setenv("AR_LOCAL_PAYLOAD_REVISIONS", "1")
     monkeypatch.setenv("AR_APP_REVISION_CONSUMER_SHA", CONSUMER)
-    monkeypatch.setattr(app_payload, "_live_manifest_status", lambda *args: ("missing", None))
+    monkeypatch.setattr(app_payload, "_live_manifest_status", lambda *args:
+                        ("present", {"run_date": "2026-05-20"}) if historical else ("missing", None))
     monkeypatch.setattr(app_payload, "_compute_payload", compute)
     monkeypatch.setattr(app_payload_revisions, "publish_revision_bundle", revision)
     monkeypatch.setattr(app_payload_build, "publish_payload", alias)
+    monkeypatch.setattr("publication_status.refresh_current", lambda repo: calls.append("receipt:" + repo))
     provenance = {"generation_id": "retained-observation", "contract_digest": "d" * 64}
+    if not dated_success:
+        with pytest.raises(RuntimeError, match="dated compatibility alias not verified"):
+            app_payload_build.build_and_publish_dual(
+                exports, repo=REPO, state_dir=tmp_path / "persistent", source_observation=provenance,
+            )
+        assert store.promotions == 1
+        assert calls == [f"app-payload-{DAY}", "receipt:" + REPO]
+        return
     manifest, dated, latest = app_payload_build.build_and_publish_dual(
         exports, repo=REPO, state_dir=tmp_path / "persistent", source_observation=provenance,
     )
     assert manifest["source_observation"] == provenance
-    assert dated is True and latest is True
-    assert calls == [f"app-payload-{DAY}", DEFAULT_TAG]
+    assert dated is True and latest is (not historical)
+    expected = [f"app-payload-{DAY}", "receipt:" + REPO if historical else DEFAULT_TAG]
+    assert calls == expected
+    if historical:
+        # A lost receipt must also be repaired on the idempotent retry, when
+        # the revision coordinator does not change the index again.
+        app_payload_build.build_and_publish_dual(
+            exports, repo=REPO, state_dir=tmp_path / "persistent", source_observation=provenance,
+        )
+        assert store.promotions == 1
+        assert calls == expected + expected
 
 
 def test_return_to_previous_bundle_creates_new_revision_with_current_parent(tmp_path):

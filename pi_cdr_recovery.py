@@ -12,14 +12,15 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
 import uuid
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime, time as daytime, timedelta, timezone
-from pathlib import Path
+from datetime import date, datetime, time as daytime, timedelta, timezone
+from pathlib import Path, PurePosixPath
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -376,8 +377,13 @@ def _probe_due(root: Path, observation: dict, providers: dict, due: list[dict],
             url = current_target_url(request, providers[request["provider_dir"]], brands)
             report = probe_request(url, phase=request["phase"],
                                    product_id=str(request.get("product_id") or ""), deadline=deadline,
-                                   version_offset=request.get("version_offset", 0))
+                                   version_offset=request.get("version_offset", 0),
+                                   allow_partial_index=request["phase"] == "products_index")
             report.pop("data", None)
+            if report.get("ok") and report.get("partial_index"):
+                from cdr_partial_index import partial_probe_has_progress
+                if not partial_probe_has_progress(report, request, observation, history):
+                    report.update(ok=False, failure_category="unchanged_partial_index")
         except (KeyError, ValueError, RuntimeError) as error:
             report = {"ok": False, "failure_category": type(error).__name__, "complete_capture": False}
         report.update(provider_dir=request["provider_dir"], request_key=request["request_key"],
@@ -405,6 +411,45 @@ def _capture_allowed(history: list[dict], proofs: list[dict], now: datetime) -> 
     return True, ""
 
 
+def _pending_is_only_historical(pending: dict, run_date: str) -> bool:
+    """Order known pointer metadata only; the publisher verifies source bytes."""
+    queued = pending.get("queued_pointers", [])
+    if "selection_retry" in pending or not isinstance(queued, list):
+        return False
+    # Do not use retry_candidates: it intentionally filters malformed queued
+    # entries, which cannot be ignored when deciding whether recovery is safe.
+    for pointer in [pending.get("pointer"), *queued]:
+        if not isinstance(pointer, dict) or pointer.get("schema_version") != 2:
+            return False
+        day = pointer.get("observation_date")
+        try:
+            if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day or day >= run_date:
+                return False
+        except ValueError:
+            return False
+        generation = pointer.get("generation_id")
+        digest = pointer.get("ledger_event_digest")
+        if (not isinstance(generation, str) or not re.fullmatch(rf"obs-{day}-[0-9a-f]{{16}}", generation)
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or pointer.get("observation_state") not in {"complete", "partial", "failed"}):
+            return False
+        for name in ("marker_path", "export_path"):
+            value = pointer.get(name)
+            if (not isinstance(value, str) or not value or "\\" in value or ":" in value
+                    or PurePosixPath(value).is_absolute() or ".." in PurePosixPath(value).parts):
+                return False
+        parts = PurePosixPath(pointer["export_path"]).parts
+        if parts == ("runs", day, "_exports"):
+            marker = f"{day}.done.json"
+        elif len(parts) == 5 and parts[:3] == ("runs", day, "_revisions") and parts[4] == "_exports":
+            marker = f"{day}.revision.{parts[3]}.json"
+        else:
+            return False
+        if pointer["marker_path"] != marker:
+            return False
+    return pending.get("run_date", pending["pointer"]["observation_date"]) == pending["pointer"]["observation_date"]
+
+
 def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callable) -> dict:
     run_date = now.astimezone(HOBART).date().isoformat()
     observation = selected_observation(state, run_date)
@@ -414,11 +459,12 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     if reconsidered:
         return reconsidered
     # Re-entry above can finish an interrupted selection. Once it has no more
-    # work, settle any selected or older-date upload before spending probes or
-    # a capture that could suppress the watchdog's publication retry.
-    from pi_daily_sync import payload_publication_pending
+    # work, settle current or ambiguous uploads before spending probes. Older
+    # queued publication failures must not starve today's seeded recovery.
+    from pi_daily_sync import payload_publication_pending, read_payload_publication_pending
 
-    if payload_publication_pending(repo_root):
+    if (payload_publication_pending(repo_root)
+            and not _pending_is_only_historical(read_payload_publication_pending(repo_root), run_date)):
         return {"status": "pending_publication_must_settle", "publication_required": True,
                 "capture_attempted": False}
     health = _coverage_health(observation)
