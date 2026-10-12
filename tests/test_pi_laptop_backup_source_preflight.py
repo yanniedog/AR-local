@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import subprocess
+import hashlib
+import json
 from argparse import Namespace
 from datetime import datetime, time, timedelta
 from pathlib import Path
@@ -13,6 +15,19 @@ import pi_laptop_backup_source as source
 
 
 PROTECTED = "b" * 40
+
+
+def test_excluded_file_inventory_records_digest_not_contents(tmp_path: Path) -> None:
+    protected = tmp_path / "config.env"
+    protected.write_bytes(b"TOKEN=do-not-copy\n")
+    missing = tmp_path / "absent.env"
+    records = source.excluded_file_inventory([protected, missing])
+    encoded = json.dumps(records)
+    stored = next(item for item in records if item["path"] == str(protected))
+    assert stored["bytes_copied"] is False
+    assert stored["sha256"] == hashlib.sha256(b"TOKEN=do-not-copy\n").hexdigest()
+    assert "do-not-copy" not in encoded
+    assert next(item for item in records if item["path"] == str(missing))["exists"] is False
 
 
 def status_payload() -> dict[str, object]:

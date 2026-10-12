@@ -602,7 +602,7 @@ def capture_runtime_services(root: Path, selected: str) -> list[str]:
     return captured
 
 
-def secret_metadata(paths: Iterable[Path]) -> list[dict[str, object]]:
+def excluded_file_inventory(paths: Iterable[Path]) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for path in sorted(set(paths)):
         record: dict[str, object] = {"path": str(path), "bytes_copied": False}
@@ -646,13 +646,13 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
             write_command(root / f"system/systemd/{unit}.show.txt", ("systemctl", "show", unit))
         runtime_services = capture_runtime_services(root, str(args.runtime_service))
         write_command(root / "system/packages.tsv", ("dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"))
-        secret_paths = list(Path("/etc/ar-local").glob("*.env"))
-        secret_paths.extend((Path.home() / ".ssh", Path(args.state_root).parent / "netdata/lib/bearer_tokens"))
+        excluded_config_paths = list(Path("/etc/ar-local").glob("*.env"))
+        excluded_config_paths.extend((Path.home() / ".ssh", Path(args.state_root).parent / "netdata/lib/bearer_tokens"))
         metadata = {
             "schema_version": 1,
             "repositories": repositories,
             "runtime_services": runtime_services,
-            "secret_locations": secret_metadata(secret_paths),
+            "secret_locations": excluded_file_inventory(excluded_config_paths),
             "hostname": command("hostname").stdout.strip(),
             "uname": command("uname", "-a").stdout.strip(),
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip(),
