@@ -110,7 +110,10 @@ assert.equal(hasPullRequestTrigger('on:\n  pull_request_target:\n  pull_request_
 assert.ok(getApplicableProductCi([futureWorkflow]).some((item) => item.name === 'pr-closeout-ci'));
 
 // Guard policy drift with the real workflow triggers, not test-only copies.
+const reporterSource = fs.readFileSync(new URL('../.github/workflows/pr-bot-feedback-check.yml', import.meta.url), 'utf8');
+const reporterNames = reporterSource.match(/^\s+workflows: \[([^\]]+)\]/m)?.[1].split(',').map((name) => name.trim()) || [];
 for (const expected of PRODUCT_CI_WORKFLOWS) {
+  assert.ok(reporterNames.includes(expected.name), `${expected.name} completion must refresh the required gate`);
   const source = fs.readFileSync(new URL(`../${expected.path}`, import.meta.url), 'utf8');
   for (const event of ['pull_request', 'push']) {
     const section = source.split(new RegExp(`^  ${event}:`, 'm'))[1]?.split(/^\S|^  [a-z_]+:/m)[0];
