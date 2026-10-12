@@ -393,18 +393,41 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, target: ValidatedTarget, *, timeout: float, context: ssl.SSLContext) -> None:
         super().__init__(target.host, target.port, timeout=timeout, context=context)
         self._validated_addresses = target.addresses
+        self._connect_deadline = time.monotonic() + timeout
         self.peer_ip: Optional[str] = None
+
+    def _remaining_connect_seconds(self) -> float:
+        remaining = self._connect_deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("HTTPS connection deadline exhausted")
+        return remaining
 
     def connect(self) -> None:
         last_error: Optional[OSError] = None
         for address in self._validated_addresses:
             raw: Optional[socket.socket] = None
+            tls: Optional[ssl.SSLSocket] = None
             try:
-                raw = socket.create_connection((address, self.port), self.timeout, self.source_address)
-                self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+                raw = socket.create_connection((address, self.port),
+                                               self._remaining_connect_seconds(), self.source_address)
+                raw.settimeout(self._remaining_connect_seconds())
+                tls = self._context.wrap_socket(raw, server_hostname=self.host,
+                                                do_handshake_on_connect=False)
+                self.sock = tls
+                tls.settimeout(self._remaining_connect_seconds())
+                tls.do_handshake()
+                tls.settimeout(self._remaining_connect_seconds())
+                if self.sock is not tls:
+                    raise OSError("HTTPS connection closed during TLS setup")
                 self.peer_ip = address
                 return
             except OSError as error:
+                # Closing HTTPConnection here also resets its request state;
+                # a successful fallback must still finish the pending GET.
+                if tls is not None:
+                    tls.close()
+                if self.sock is tls:
+                    self.sock = None
                 if raw is not None:
                     raw.close()
                 last_error = error
