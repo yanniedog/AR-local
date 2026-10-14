@@ -118,8 +118,8 @@
   // Mirror of cdr_ribbon_normalize.named_lvr_tier: LVR/LTV stated as a bare
   // number with plain or natural-language operators and no % sign — e.g.
   // "<60 LVR", ">90 LVR", "80 LVR", "LVR less than 70". Keep in sync with Python.
-  var LVR_SIGNAL_RE = /\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b/i;
-  var LVR_NAME_RANGE = /(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)|(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)/i;
+  var LVR_SIGNAL_RE = /(?<![a-z])(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)(?![a-z])/i;
+  var LVR_NAME_RANGE = /(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)|(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)/i;
   var LVR_OP = '<=|>=|<|>|less[\\s_-]*than[\\s_-]*or[\\s_-]*equal[\\s_-]*to|greater[\\s_-]*than[\\s_-]*or[\\s_-]*equal[\\s_-]*to|less[\\s_-]*than|greater[\\s_-]*than|more[\\s_-]*than|no[\\s_-]*more[\\s_-]*than|at[\\s_-]*least|at[\\s_-]*most|under|below|over|above|from|max(?:imum)?|min(?:imum)?|up[\\s_-]*to';
   var LVR_LABEL = '(?:lvr|ltv|loan[\\s_-]*to[\\s_-]*value)';
   var LVR_NAME_OP = new RegExp('(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)\\s*%?\\s*' + LVR_LABEL + '|' + LVR_LABEL + '\\s*:?\\s*(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)', 'i');
@@ -303,11 +303,14 @@
     return 'lvr_' + (inclusive ? '>=' : '>') + lo + (hi != null ? '-' + hi : '') + '%';
   }
 
-  function lvrContextBounds(text) {
+  function lvrContextBounds(text, explicitOnly) {
     var t = lower(text);
     if (!LVR_SIGNAL_RE.test(t)) return null;
     var range = t.match(LVR_NAME_RANGE);
-    if (range) return { min: Number(range[1] || range[3]), max: Number(range[2] || range[4]), inclusive: false };
+    if (range) return { min: Number(range[1] || range[3]), max: Number(range[2] || range[4]),
+      inclusive: !Number.isInteger(Number(range[1] || range[3])) };
+    var suffix = t.match(new RegExp('(\\d{1,3}(?:\\.\\d+)?)\\s*%?\\s*(?:or more|or above|and above|or greater)\\s*' + LVR_LABEL, 'i'));
+    if (suffix) return { min: Number(suffix[1]), max: null, inclusive: true };
     var match = t.match(LVR_NAME_OP);
     if (!match) return null;
     var op = String(match[1] || match[3] || '').trim().replace(/[\s_-]+/g, ' ');
@@ -316,6 +319,7 @@
       return { min: number, max: null, inclusive: true };
     if (isLowerBoundOp(op)) return { min: number, max: null,
       inclusive: ['>=', 'greater than or equal to', 'at least', 'from', 'min', 'minimum'].includes(op) };
+    if (explicitOnly && !op) return null;
     return { min: null, max: number, inclusive: true };
   }
 
@@ -347,8 +351,9 @@
         var high = lvrPercent(additional ?? maxValue);
         if (high != null) max = Math.min(lvrPercent(max) ?? high, high) / 100;
       } else {
-        min = minValue ?? min;
-        max = maxValue ?? additional ?? max;
+        var genericLow = lvrPercent(minValue), genericHigh = lvrPercent(maxValue ?? additional);
+        if (genericLow != null) min = Math.max(lvrPercent(min) ?? genericLow, genericLow) / 100;
+        if (genericHigh != null) max = Math.min(lvrPercent(max) ?? genericHigh, genericHigh) / 100;
       }
     }
     return min != null || max != null ? { min: min, max: max } : null;
@@ -365,7 +370,7 @@
       if (!LVR_SIGNAL_RE.test(tierName)) continue;
       var tmin = parseNumeric(tier.minimumValue);
       var tmax = parseNumeric(tier.maximumValue);
-      var named = lvrContextBounds(String(tier.name || ''));
+      var named = lvrContextBounds(String(tier.name || ''), tmin != null || tmax != null);
       var minimumInclusive = tmin != null || !named || named.inclusive;
       if (named) { tmin = tmin ?? named.min; tmax = tmax ?? named.max; }
       if (tmin != null) {

@@ -344,11 +344,11 @@ def tier_for_boundary(percent: Any) -> str:
 # LVR/LTV encoded in free text with a BARE number (no % sign) and plain </>/<=/>=
 # operators — the %-anchored regexes above miss these. Real examples from the feed:
 # Cairns Bank "CLASSIC HOME LOAN VARIABLE <60 LVR IO", "... >90 LVR PI".
-_LVR_SIGNAL_RE = re.compile(r"\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b", re.IGNORECASE)
+_LVR_SIGNAL_RE = re.compile(r"(?<![a-z])(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)(?![a-z])", re.IGNORECASE)
 _LVR_LABEL = r"(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)"
 _LVR_NAME_RANGE = re.compile(
-    rf"(\d{{1,3}}(?:\.\d+)?)\s*(?:-|to)\s*(\d{{1,3}}(?:\.\d+)?)\s*%?\s*{_LVR_LABEL}"
-    rf"|{_LVR_LABEL}\s*:?\s*(\d{{1,3}}(?:\.\d+)?)\s*(?:-|to)\s*(\d{{1,3}}(?:\.\d+)?)",
+    rf"(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d{{1,3}}(?:\.\d+)?)\s*%?\s*{_LVR_LABEL}"
+    rf"|{_LVR_LABEL}\s*:?\s*(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d{{1,3}}(?:\.\d+)?)",
     re.IGNORECASE,
 )
 # Operator alternation: symbols, natural-language comparators, and bound words.
@@ -547,14 +547,18 @@ def resolve_lvr_tier(
     return "lvr_unspecified", source
 
 
-def lvr_bounds_from_context(text: str) -> Optional[Tuple[Optional[float], Optional[float], bool]]:
+def lvr_bounds_from_context(text: str, *, explicit_only: bool = False) -> Optional[Tuple[Optional[float], Optional[float], bool]]:
     """Operator-aware text bounds; a bare named number is an upper boundary."""
     txt = _lower(text)
     if not _LVR_SIGNAL_RE.search(txt):
         return None
     match = _LVR_NAME_RANGE.search(txt)
     if match:
-        return (float(match.group(1) or match.group(3)), float(match.group(2) or match.group(4)), False)
+        lo, hi = float(match.group(1) or match.group(3)), float(match.group(2) or match.group(4))
+        return (lo, hi, not lo.is_integer())
+    suffix_bound = re.search(rf"(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:or more|or above|and above|or greater)\s*{_LVR_LABEL}", txt)
+    if suffix_bound:
+        return (float(suffix_bound[1]), None, True)
     match = _LVR_NAME_OP.search(txt)
     if not match:
         return None
@@ -568,6 +572,8 @@ def lvr_bounds_from_context(text: str) -> Optional[Tuple[Optional[float], Option
             ">=", "greater than or equal to", "at least", "from", "min", "minimum"
         }
         return (number, None, inclusive)
+    if explicit_only and not op:
+        return None
     return (None, number, True)
 
 
@@ -601,11 +607,11 @@ def parse_lvr_bounds_from_constraints(constraints: List[Mapping[str, Any]]) -> O
             _, max_hi = intersect_bounds((None, max_hi), (None, candidate))
         else:
             if min_value is not None:
-                min_lo = min_value
+                min_lo, _ = intersect_bounds((min_lo, None), (min_value, None))
             if max_value is not None:
-                max_hi = max_value
+                _, max_hi = intersect_bounds((None, max_hi), (None, max_value))
             elif additional is not None:
-                max_hi = additional
+                _, max_hi = intersect_bounds((None, max_hi), (None, additional))
     return (min_lo, max_hi) if (min_lo is not None or max_hi is not None) else None
 
 
@@ -631,7 +637,7 @@ def parse_lvr_bounds_from_rate_item(item: Mapping[str, Any], *, include_text: bo
                 continue
             t_min = parse_numeric(tier.get("minimumValue"))
             t_max = parse_numeric(tier.get("maximumValue"))
-            named = lvr_bounds_from_context(str(tier.get("name") or ""))
+            named = lvr_bounds_from_context(str(tier.get("name") or ""), explicit_only=t_min is not None or t_max is not None)
             if named:
                 t_min = t_min if t_min is not None else named[0]
                 t_max = t_max if t_max is not None else named[1]

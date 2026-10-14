@@ -3,10 +3,12 @@
 ## LVR interval consumer candidate (2026-10-14)
 
 The LVR interval change exports compiler SHA-256
-`21b673783d7f7ccaf9189e36d4d76b8ad0ade6fa879bad1f2ec0d8b62367c1ce`
+`19ab18920ab6400be627d32d3df9be39416b826c6b83d0c6f90ac9440ec15676`
 from the matching AR-app source. The producer and consumer copies are identical;
 the retained-real fixture is regenerated from unchanged source observations.
 This is a reviewed-code compatibility candidate, not a commissioned APK.
+The consumer is AR-app PR #400, source commit
+`215c63f7a58e7f06fc5a92511281c4edfb482cff`.
 Do not publish this compiler's prepared assets until the matching app consumer
 has been separately released and verified. The commissioned consumer evidence
 below remains the record for the previously published pin and is not evidence

@@ -69,11 +69,13 @@ def test_multiple_constraints_and_tier_limits_use_the_tightest_cap(raw):
     caps = [{'constraintType': 'MAX_LVR', 'additionalValue': value} for value in ('0.9', '95')]
     assert resolve_lvr_tier('', rate, caps)[0] == 'lvr_>=80.01-90%'
     assert resolve_lvr_tier('', rate, list(reversed(caps)))[0] == 'lvr_>=80.01-90%'
+    caps.append({'constraintType': 'OTHER', 'additionalInfo': 'LVR', 'additionalValue': '.95'})
+    assert resolve_lvr_tier('', rate, caps)[0] == 'lvr_>=80.01-90%'
     rate['constraints'] = [{'constraintType': 'MAX_LVR', 'additionalValue': '0.85'}]
     assert resolve_lvr_tier('', rate, caps)[0] == 'lvr_80-85%'
 
 
-@pytest.mark.parametrize('name', ['LVR', 'LTV', 'Loan to value'])
+@pytest.mark.parametrize('name', ['LVR', 'LTV', 'Loan to value', 'LVR80', 'LVR_80'])
 def test_shared_lender_tier_names_use_the_same_generic_conversion(raw, name):
     rate = high_rate(raw)
     rate['tiers'][0]['name'] = name
@@ -106,6 +108,8 @@ def test_empty_optional_maximum_is_not_zero_or_a_new_cap(raw, maximum):
     ('LVR 80.01% or more', None, '.95', 'lvr_>=80.01-95%'),
     ('over 80% LVR', None, '.95', 'lvr_>80-95%'),
     ('LVR 80.01-90%', '.8001', None, 'lvr_>=80.01-90%'),
+    ('LVR 80.01% - 90%', '.8001', None, 'lvr_>=80.01-90%'),
+    ('80.01% or more LVR', None, '.95', 'lvr_>=80.01-95%'),
 ])
 def test_missing_numeric_bounds_can_use_named_evidence_without_widening(raw, name, minimum, maximum, expected):
     rate = high_rate(raw)

@@ -33,7 +33,7 @@ def minimum_inclusive(item: Any, minimum: Any, parse_context: Callable) -> bool:
 
 def invalid_structured_bounds(item: Any, product_constraints: Any) -> bool:
     """Malformed explicit limits cannot turn into an uncapped interval."""
-    signal = re.compile(r"\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b", re.I)
+    signal = re.compile(r"(?<![a-z])(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)(?![a-z])", re.I)
     for tier in item.get('tiers') or []:
         if isinstance(tier, dict) and signal.search(str(tier.get('name') or '')):
             for field in ('minimumValue', 'maximumValue'):
