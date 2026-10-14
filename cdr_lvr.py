@@ -35,7 +35,10 @@ def invalid_structured_bounds(item: Any, product_constraints: Any) -> bool:
     """Malformed explicit limits cannot turn into an uncapped interval."""
     signal = re.compile(r"(?<![a-z])(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)(?![a-z])", re.I)
     for tier in item.get('tiers') or []:
-        if isinstance(tier, dict) and signal.search(str(tier.get('name') or '')):
+        if not isinstance(tier, dict):
+            continue
+        label = ' '.join(str(tier.get(field) or '') for field in ('name', 'unitOfMeasure', 'rateApplicationMethod'))
+        if signal.search(label):
             for field in ('minimumValue', 'maximumValue'):
                 value = tier.get(field)
                 if value not in (None, '') and percent(value) is None:
@@ -44,7 +47,7 @@ def invalid_structured_bounds(item: Any, product_constraints: Any) -> bool:
         if not isinstance(constraint, dict):
             continue
         kind = str(constraint.get('constraintType') or '').upper()
-        if kind in ('MIN_LVR', 'MAX_LVR'):
+        if signal.search(kind + ' ' + str(constraint.get('additionalInfo') or '')):
             for field in ('additionalValue', 'minValue', 'maxValue'):
                 value = constraint.get(field)
                 if value not in (None, '') and percent(value) is None:

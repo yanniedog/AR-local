@@ -278,13 +278,15 @@
   function invalidLvrBounds(item, productConstraints) {
     var tiers = Array.isArray(item.tiers) ? item.tiers : [];
     for (var i = 0; i < tiers.length; i++) {
-      if (!tiers[i] || !LVR_SIGNAL_RE.test(String(tiers[i].name || ''))) continue;
+      if (!tiers[i]) continue;
+      var label = [tiers[i].name, tiers[i].unitOfMeasure, tiers[i].rateApplicationMethod].filter(Boolean).join(' ');
+      if (!LVR_SIGNAL_RE.test(label)) continue;
       if (['minimumValue', 'maximumValue'].some(function (key) {
         var value = tiers[i][key]; return value != null && value !== '' && lvrPercent(value) == null;
       })) return true;
     }
     return (Array.isArray(item.constraints) ? item.constraints : []).concat(productConstraints).some(function (constraint) {
-      if (!constraint || !['MIN_LVR', 'MAX_LVR'].includes(String(constraint.constraintType || '').toUpperCase())) return false;
+      if (!constraint || !LVR_SIGNAL_RE.test([constraint.constraintType, constraint.additionalInfo].filter(Boolean).join(' '))) return false;
       return ['additionalValue', 'minValue', 'maxValue'].some(function (key) {
         var value = constraint[key]; return value != null && value !== '' && lvrPercent(value) == null;
       });

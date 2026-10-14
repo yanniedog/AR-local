@@ -118,10 +118,25 @@ def test_missing_numeric_bounds_can_use_named_evidence_without_widening(raw, nam
 
 
 @pytest.mark.parametrize('bad', [True, 'NaN', 'Infinity', '-0.1', '200'])
-def test_malformed_explicit_maximum_fails_closed(raw, bad):
+@pytest.mark.parametrize('label_field', ['name', 'unitOfMeasure', 'rateApplicationMethod'])
+def test_malformed_explicit_maximum_fails_closed(raw, bad, label_field):
     rate = high_rate(raw)
+    rate['tiers'][0]['name'] = 'Loan tier'
+    rate['tiers'][0][label_field] = 'LVR'
     rate['tiers'][0]['maximumValue'] = bad
     assert resolve_lvr_tier('', rate, raw['constraints'])[0] == 'lvr_unspecified'
+
+
+@pytest.mark.parametrize('location', ['rate', 'product'])
+def test_malformed_generic_lvr_constraint_cannot_widen_a_rate(raw, location):
+    rate = high_rate(raw)
+    malformed = {'constraintType': 'OTHER', 'additionalInfo': 'LVR', 'maxValue': 'NaN'}
+    constraints = copy.deepcopy(raw['constraints'])
+    if location == 'rate':
+        rate['constraints'] = [malformed]
+    else:
+        constraints.append(malformed)
+    assert resolve_lvr_tier('', rate, constraints)[0] == 'lvr_unspecified'
 
 
 def test_unrelated_percentages_and_absent_lvr_remain_unknown():
@@ -156,9 +171,34 @@ def test_captured_raw_product_flows_through_json_sqlite_and_compact_app_contract
 
 
 def test_dashboard_fallback_matches_producer_for_captured_nab_rates(raw):
+    expected = [resolve_lvr_tier(raw['name'], rate, raw['constraints'])[0] for rate in raw['lendingRates']]
+    assert dashboard_tiers(raw) == expected
+
+
+@pytest.mark.parametrize('label_field', ['name', 'unitOfMeasure', 'rateApplicationMethod'])
+def test_dashboard_malformed_tier_maximum_remains_unknown(raw, label_field):
+    rate = high_rate(raw)
+    rate['tiers'][0].update(name='Loan tier', maximumValue='NaN')
+    rate['tiers'][0][label_field] = 'LVR'
+    raw['lendingRates'] = [rate]
+    assert dashboard_tiers(raw) == ['lvr_unspecified']
+
+
+@pytest.mark.parametrize('location', ['rate', 'product'])
+def test_dashboard_malformed_generic_constraint_remains_unknown(raw, location):
+    rate = high_rate(raw)
+    malformed = {'constraintType': 'OTHER', 'additionalInfo': 'LVR', 'maxValue': 'NaN'}
+    if location == 'rate':
+        rate['constraints'] = [malformed]
+    else:
+        raw['constraints'].append(malformed)
+    raw['lendingRates'] = [rate]
+    assert dashboard_tiers(raw) == ['lvr_unspecified']
+
+
+def dashboard_tiers(raw):
     node = shutil.which('node')
     assert node, 'Node is a repository verification prerequisite'
-    expected = [resolve_lvr_tier(raw['name'], rate, raw['constraints'])[0] for rate in raw['lendingRates']]
     script = """
 const fs=require('node:fs'), vm=require('node:vm');
 const raw=JSON.parse(fs.readFileSync(0,'utf8')); const window={};
@@ -169,4 +209,4 @@ process.stdout.write(JSON.stringify(window.LocalCdrRibbonMap.toRibbonProducts(ro
 """
     completed = subprocess.run([node, '-e', script], input=json.dumps(raw), text=True,
                                capture_output=True, check=True, timeout=20)
-    assert json.loads(completed.stdout) == expected
+    return json.loads(completed.stdout)
