@@ -39,6 +39,8 @@ def request_scope(store: EvidenceStore, request: dict) -> tuple[list[str], froze
     from .observation_checks import current_observation
     observations = current_observations(store, request["request_id"])
     hosts = set(DocumentGraph(store).request_hosts(request["request_id"]))
+    from .public_rates_store import PublicRateStore
+    hosts.update(PublicRateStore(store).request_hosts(request["request_id"]))
     for observation in observations:
         hosts.update(urlsplit(row[0]).hostname for row in store.db.execute(
             "SELECT d.source_url FROM applicability a JOIN documents d USING(document_id) "
@@ -101,9 +103,11 @@ def pending_counts(store: EvidenceStore) -> dict:
 
 
 def has_work(store: EvidenceStore) -> bool:
+    from cdr_public_rates_collector import pending_candidate
     return bool(AcquisitionQueue(store).next_due() or ProcessingQueue(store).has_work() or store.db.execute(
         "SELECT 1 FROM acquisition_events e WHERE sequence=(SELECT MAX(sequence) FROM acquisition_events "
-        "WHERE request_id=e.request_id) AND status='running' AND lease_expires_at<=? LIMIT 1", (utc_now(),)).fetchone())
+        "WHERE request_id=e.request_id) AND status='running' AND lease_expires_at<=? LIMIT 1", (utc_now(),)).fetchone()
+        or pending_candidate(store))
 
 
 def run_batch(store: EvidenceStore, *, registry_context: dict, deadline: float,
@@ -125,7 +129,13 @@ def run_batch(store: EvidenceStore, *, registry_context: dict, deadline: float,
             state["stop_reason"] = "processing_pending"
     elif work:
         state["stop_reason"] = "admission_deadline"
-    progress = bool(state["items"] or state["dispositions"] or state["processing"])
+    from cdr_public_rates_collector import configured, pending_candidate, refresh_one_pending_candidate
+    if configured() and pending_candidate(store):
+        if deadline - time.monotonic() >= RECEIPT_RESERVE_SECONDS and not _guard_reason(guard):
+            state["public_pricing"] = refresh_one_pending_candidate(store, deadline=deadline, guard=guard)
+        else:
+            state["public_pricing"] = {"status": "deferred", "reasonCode": "candidate_resource_admission_pending", "publication": "disabled"}
+    progress = bool(state["items"] or state["dispositions"] or state["processing"] or state.get("public_pricing"))
     result = {"result": "INCOMPLETE" if progress or state["stop_reason"] != "no_due_work" else "NO_WORK",
               **state, "network_called": bool(state["items"]), "codex_called": False,
               "attempts": len(state["items"]), "remaining": pending_counts(store),
@@ -179,14 +189,30 @@ def _collect(store, registry_context, deadline, guard, limits, state):
 
 
 def _fetch_one(store, queue, request, deadline, guard, byte_allowance):
+    from .public_rates_store import PublicRateStore
+    pricing = PublicRateStore(store)
+    registered = pricing.bindings(request["document_id"], request["ingest_id"])
     observations, hosts, _ = request_scope(store, request)
+    if registered:
+        hosts = pricing.request_hosts(request["request_id"])
     maximum = min(16 * 1024**2, byte_allowance)
     policy = FetchPolicy(max_bytes=maximum, timeout_seconds=min(30, max(0.001, deadline - time.monotonic())),
                          allowed_hosts=hosts or frozenset({"unresolved-scope.invalid"}),
                          request_guard=guard, deadline_monotonic=deadline)
     check_id = digest([request["request_id"], request["lease_id"]])
-    check = acquire_document(store, request["document_id"], check_id=check_id, policy=policy)
-    queue.finish(request, check_id, defer_processing=True)
+    if registered:
+        check = acquire_document(store, request["document_id"], check_id=check_id, policy=policy,
+                                 force_refresh=pricing.needs_unconditional(request["document_id"]))
+    else:
+        check = acquire_document(store, request["document_id"], check_id=check_id, policy=policy)
+    if registered:
+        queue.finish(request, check_id, terminal=check["status"] == "failed", defer_processing=False)
+    else:
+        queue.finish(request, check_id, defer_processing=True)
+    if registered:
+        # Registered reference documents have a deterministic pricing lane.
+        # Never enqueue generic interpretation/model processing for this path.
+        pricing.record_check(request, check)
     actual = 0
     if check["status"] == "fetched":
         actual = store.db.execute("SELECT byte_size FROM document_versions WHERE document_version_id=?",

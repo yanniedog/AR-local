@@ -1,0 +1,9 @@
+{
+  "sourceUrl": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+  "finalUrl": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+  "observedAt": "2026-10-14T12:38:46.354043+00:00",
+  "status": 200,
+  "requestVersion": "2",
+  "sha256": "af0565aff5261fb21fffed4b8872714bf13a325a2d1a5ace2781e0e6428ebcf5",
+  "bytes": 185824
+}

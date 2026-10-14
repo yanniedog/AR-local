@@ -216,7 +216,22 @@ __all__ = [
 def _cmd_build(args: argparse.Namespace) -> int:
     exports_dir = Path(args.exports).resolve()
     out_dir = Path(args.out).resolve() if args.out else (exports_dir / "app-payload")
-    manifest = build_payload(exports_dir, out_dir, repo=args.repo, tag=args.tag)
+    public_rates = Path(args.public_rates_root).resolve() if getattr(args, 'public_rates_root', '') else None
+    observation = None
+    if public_rates is not None:
+        if not getattr(args, 'source_observation', ''):
+            raise ValueError('--public-rates-root requires the selected --source-observation JSON file')
+        path = Path(args.source_observation).resolve()
+        if path.stat().st_size > 64 * 1024:
+            raise ValueError('source observation exceeds its metadata budget')
+        observation = json.loads(path.read_bytes())
+        if not isinstance(observation, dict) or not observation.get('generation_id'):
+            raise ValueError('source observation requires the selected generation_id')
+        if args.publish and not args.dry_run:
+            raise ValueError('Public catalogue CLI builds are review-only; use the controlled immutable revision publisher')
+    manifest = build_payload(exports_dir, out_dir, repo=args.repo, tag=args.tag,
+                             public_rates_root=public_rates, source_observation=observation,
+                             public_rates_receipt=Path(args.public_rates_receipt).resolve() if getattr(args, 'public_rates_receipt', '') else None)
     core = manifest["files"]["core"]
     details = manifest["files"]["details"]
     print(f"[app_payload] built payload for run_date={manifest['run_date']} -> {out_dir}")
@@ -256,6 +271,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     b = sub.add_parser("build", help="Build manifest + core + details from a run export.")
     b.add_argument("--exports", required=True, help="Path to a run's _exports directory.")
     b.add_argument("--out", default="", help="Output dir (default <exports>/app-payload).")
+    b.add_argument('--public-rates-root', default='', help='Explicit immutable public rate candidate file (disabled when absent).')
+    b.add_argument('--source-observation', default='', help='Selected ingest source observation JSON; required with --public-rates-root.')
+    b.add_argument('--public-rates-receipt', default='', help='Explicit reviewed publication receipt; absent means discovery only.')
     b.add_argument("--publish", action="store_true", help="Publish after building.")
     b.add_argument("--dry-run", action="store_true", help="With --publish, only print intended uploads.")
     b.set_defaults(func=_cmd_build)

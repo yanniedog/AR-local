@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "reviewBasis": "Retained official public captures; headings, units, scope, notes and relationships retained. Rate cells and explicit effective dates may change. Adapter changes and fixtures are required to approve new shapes.",
+  "sources": {
+    "nab-indicator": {
+      "adapterId": "nab_indicator",
+      "adapterVersion": "1",
+      "fixture": "nab-indicator-20261014.pdf",
+      "sha256": "8529d91aeb66d3ab3e547d5c7107dfee5a2f28c37d63eb5602b6aa26eb6b4781",
+      "semanticSha256": "a69fbb8572b5127b97b16a183078624fd2d958c4a906c92748fec40bff105aad",
+      "referenceRows": 106
+    },
+    "cba-reference": {
+      "adapterId": "cba_reference",
+      "adapterVersion": "1",
+      "fixture": "cba-rates-20261014.pdf",
+      "sha256": "44c4b9c0d1602db185004ffc58ec4cc1a073704f508597535f0fdf1188290fd5",
+      "semanticSha256": "2f9c00e52cc82ecee0ec8070b1d238aa510b9d7794b68a1fd4366d89b0b708f7",
+      "referenceRows": 32
+    },
+    "westpac-reference": {
+      "adapterId": "westpac_reference",
+      "adapterVersion": "1",
+      "fixture": "westpac-reference-20261014.html",
+      "sha256": "fb3d4c104100c46de6cb7c49da81ae959c9156b46f2f2a775b61bf76bfdb34ec",
+      "semanticSha256": "814450936cf653ab00ca842eff322b73879e321f4d4523b88e22abcea2fc7dba",
+      "referenceRows": 14
+    },
+    "anz-index-page": {
+      "adapterId": "anz_index_page",
+      "adapterVersion": "1",
+      "fixture": "anz-index-20261014.html",
+      "sha256": "f0b787d540ccc2148ba4b6a6f3cf3e717dc56ba4a5a58dd7db6e8e8ed182e70c",
+      "semanticSha256": "488842b15cef80fda9588944a47a7f3b6f4006d8229d8b342330a9db18ed612b",
+      "referenceRows": 0
+    },
+    "anz-owner-index": {
+      "adapterId": "anz_index_data",
+      "adapterVersion": "1",
+      "fixture": "anz-rate-data-20261014.txt",
+      "sha256": "5be663ae59d7f135dd963274f9c5aee8f540ae6dfbbca6359fc5dc717db85024",
+      "semanticSha256": "2a118cd9a15e86dc8acfe836d001a4c438c7894a8e92ff070e377dd599904558",
+      "referenceRows": 16
+    },
+    "anz-investment-index": {
+      "adapterId": "anz_index_data",
+      "adapterVersion": "1",
+      "fixture": "anz-investment-data-20261014.txt",
+      "sha256": "eae6c68ce5a50887757a7ab5ec44e0c80718ff0c1f8e960fa799bc30b7263b4c",
+      "semanticSha256": "e141cdf992ff98f842c356104c9bce84124d7095c0c0171d3b46bafd7ab300c9",
+      "referenceRows": 23
+    },
+    "ing-reference-page": {
+      "adapterId": "ing_reference_page",
+      "adapterVersion": "1",
+      "fixture": "ing-reference-20261014.html",
+      "sha256": "51c70ed9f7e855721482a7573b2a349d9306d8702784edb86bffc73df89e3f5d",
+      "semanticSha256": "ad66c576117f93e13a4c5ba5b10a08800e112fd11b458847a2706f98c2c4a8ed",
+      "referenceRows": 0
+    },
+    "ing-reference-data": {
+      "adapterId": "ing_reference_data",
+      "adapterVersion": "1",
+      "fixture": "ing-rate-data-20261014.json",
+      "sha256": "e2f9e9495ededf289e43fa43996581dac7192a79f24019091790a339da8d7ed8",
+      "semanticSha256": "7c3523b6e63e2e2bc9cc06fe193946111f2acee0080bfe50336128616fb8969c",
+      "referenceRows": 14
+    }
+  }
+}

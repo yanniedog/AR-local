@@ -1,0 +1,4570 @@
+{
+  "data": [
+    {
+      "dataHolderBrandId": "36991b60-d1ba-f111-81be-000d3a799057",
+      "brandName": "360 MMS",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/ed184656-b3bd-4bc4-a221-24b5fe4a2117",
+      "publicBaseUri": "https://public.360mms.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "96d4fce9-d2ba-f111-81be-000d3a799057",
+      "brandName": "AAA FINANCIAL CORPORATION",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.colcap.com.au/hubfs/brands/logos/1220245219-AAAFINANCIALCORPORATION/aaafin.png",
+      "publicBaseUri": "https://public.aaafincorp.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "0a76675b-d3ba-f111-81be-000d3a799057",
+      "brandName": "Abacus Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/eca3dc78-1207-4a71-a8c3-dca00a3917b8",
+      "publicBaseUri": "https://public.abacus.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "41cf8120-d4ba-f111-81be-000d3a799057",
+      "brandName": "Allstate Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/c64fc8c7-af6c-4ff9-a488-3baffc27f688",
+      "publicBaseUri": "https://public.allstate.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "9b0d9bf3-d5ba-f111-81be-000d3a799057",
+      "brandName": "Excel Funding Group",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/b220c70b-2f19-4ea7-8638-1a8a5caca022",
+      "publicBaseUri": "https://public.excel.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "af48f84c-d6ba-f111-81be-000d3a799057",
+      "brandName": "FinStreet",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/8fb5395b-364c-4784-a0bd-737723de0afb",
+      "publicBaseUri": "https://public.finstreet.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "d566ec33-d7ba-f111-81be-000d3a799057",
+      "brandName": "Folio Mortgage & Finance (AL&M)",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/259340dd-200e-4698-b707-8b403ac7f209",
+      "publicBaseUri": "https://public.folio.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "2d3cd758-d7ba-f111-81be-000d3a799057",
+      "brandName": "FreedomLend",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/edf531f4-a76a-44d9-92fb-f8d6baf94357",
+      "publicBaseUri": "https://public.freedom.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "b02a5d6f-d7ba-f111-81be-000d3a799057",
+      "brandName": "Future Assist Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/38e406dc-26ce-44c4-bf4a-cb735cf79c20",
+      "publicBaseUri": "https://public.future-assist.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "c6ea41db-d8ba-f111-81be-000d3a799057",
+      "brandName": "Greenhouse Mortgages",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/7e4a8d83-1be1-4859-86fb-1c0443943add",
+      "publicBaseUri": "https://public.greenhouse.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "3f545a84-d9ba-f111-81be-000d3a799057",
+      "brandName": "Greenline Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/737716dd-59d5-4f77-833d-4851c51f696b",
+      "publicBaseUri": "https://public.greenline.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "83ecccdb-d9ba-f111-81be-000d3a799057",
+      "brandName": "Hejaz Islamic Home Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/4ebe533d-2415-47d1-bc86-774808d7a71b",
+      "publicBaseUri": "https://public.hejaz.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "12167b56-dbba-f111-81be-000d3a799057",
+      "brandName": "LoanGuides",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.originmms.com.au/hubfs/brands/logos/loanguides.png",
+      "publicBaseUri": "https://public.loanguides.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "713764d7-dbba-f111-81be-000d3a799057",
+      "brandName": "Mortgage Direct",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://online.originmms.com.au/logo/Mortgagedirect.png",
+      "publicBaseUri": "https://public.mortgage-direct.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "084e6faf-ddba-f111-81be-000d3a799057",
+      "brandName": "Mortgage Mart",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/b269755b-96b9-4712-94ed-da36d65919e2",
+      "publicBaseUri": "https://public.mortgage-mart.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "68a2a3d0-ddba-f111-81be-000d3a799057",
+      "brandName": "Mortgageway",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.originmms.com.au/hubfs/brands/logos/9965741339-MortgageWay/MortgageWay-Logo.png",
+      "publicBaseUri": "https://public.mortgageway.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "81636cee-ddba-f111-81be-000d3a799057",
+      "brandName": "Origin Mortgage Management Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/f2b618dc-845d-4a8e-b5a7-b447347fec66",
+      "publicBaseUri": "https://public.origin-mms.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "a16ef317-deba-f111-81be-000d3a799057",
+      "brandName": "OwnHome",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/4312d0a4-88d9-4e6a-bfeb-1d9f125707f1",
+      "publicBaseUri": "https://public.ownhome.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "6be46834-deba-f111-81be-000d3a799057",
+      "brandName": "Oxygen",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/2ced4984-996a-41b8-8a17-c7bfe34f9ebe",
+      "publicBaseUri": "https://public.oxygen.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "535eb94a-deba-f111-81be-000d3a799057",
+      "brandName": "Premium Capital Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/7e07ac28-bed4-4706-9855-b83a13924e8c",
+      "publicBaseUri": "https://public.premium-capital.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "c7a586d0-deba-f111-81be-000d3a799057",
+      "brandName": "Prime Mortgage Group",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.colcap.com.au/hubfs/brands/logos/2000001020-PRIMEMORTGAGEGROUP/Statement%20Logo_Prime.png",
+      "publicBaseUri": "https://public.prime.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "5b837cec-deba-f111-81be-000d3a799057",
+      "brandName": "Qantas Money Atlas Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.colcap.com.au/hubfs/brands/logos/9965805389-ExcelFundingGroup/runway_brand_logo_loyalty_mobile_money.png",
+      "publicBaseUri": "https://public.qantas-atlas.cdr.colcap.com.au",
+      "productBaseUri": "https://public.qantas-atlas.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "36dba608-dfba-f111-81be-000d3a799057",
+      "brandName": "Rate Money",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/e7a2f920-f0ff-4444-ac89-cfa8428719bf",
+      "publicBaseUri": "https://public.rate-money.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "50efcf6b-dfba-f111-81be-000d3a799057",
+      "brandName": "Scene Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/76108e27-d352-448f-b764-b4019eb8efa5",
+      "publicBaseUri": "https://public.scene.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "727db382-dfba-f111-81be-000d3a799057",
+      "brandName": "So Money",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://online.originmms.com.au/logo/somoney.png",
+      "publicBaseUri": "https://public.so-money.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "8062959d-dfba-f111-81be-000d3a799057",
+      "brandName": "Synergy Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.originmms.com.au/hubfs/brands/logos/synergy.png",
+      "publicBaseUri": "https://public.synergy.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "0f04b9b4-3881-ef11-9443-000d3a79c46e",
+      "interimId": "8a28d246-46ba-4ff3-afcd-14b7d728fa1c",
+      "brandName": "Arcline by RACV",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://public.1stenergy.com.au/public/cdr_arcline.png",
+      "publicBaseUri": "https://public.cdr.energy.arcline.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/energy-locals",
+      "abn": "23606408879",
+      "acn": "606408879",
+      "lastUpdated": "2026-10-13T03:54:29Z"
+    },
+    {
+      "dataHolderBrandId": "6b72fd10-3c81-ef11-9443-000d3a79c46e",
+      "interimId": "dfa87138-0611-45c1-a53b-f30d0c0b8de7",
+      "brandName": "Cooperative Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://public.1stenergy.com.au/public/cdr_copower.png",
+      "publicBaseUri": "https://public.cdr.cooperativepower.org.au",
+      "productBaseUri": "https://public.cdr.cooperativepower.org.au",
+      "abn": "23606408879",
+      "acn": "606408879",
+      "lastUpdated": "2026-10-13T03:54:29Z"
+    },
+    {
+      "dataHolderBrandId": "31ed7874-3c81-ef11-9443-000d3a79c46e",
+      "interimId": "d5ac4f60-9bec-4602-8dd5-9dbff6b27f8c",
+      "brandName": "RAA Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://public.1stenergy.com.au/public/cdr_raa.png",
+      "publicBaseUri": "https://public.cdr.energy.raa.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/energy-locals",
+      "abn": "23606408879",
+      "acn": "606408879",
+      "lastUpdated": "2026-10-13T03:54:29Z"
+    },
+    {
+      "dataHolderBrandId": "ceca4dce-3f8f-ef11-95f6-000d3a79c46e",
+      "interimId": "fe051e80-e743-44e1-ae83-a4d6286eb596",
+      "brandName": "Alex.Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.alex.bank/assets/alex-bank-logo.png",
+      "publicBaseUri": "https://public.cdr.alex.com.au",
+      "productBaseUri": "https://public.cdr.alex.com.au",
+      "abn": "13627244848",
+      "acn": "627244848",
+      "lastUpdated": "2026-09-02T10:51:06Z"
+    },
+    {
+      "dataHolderBrandId": "cb31cdc7-ec9c-ef11-95f6-000d3a79c46e",
+      "brandName": "AMP Bank GO",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.amp.com.au/content/dam/bank-app/amp-bank-logo-open-banking.png",
+      "publicBaseUri": "https://pub.cdr-sme.amp.com.au/api",
+      "productBaseUri": "https://pub.cdr-sme.amp.com.au/api",
+      "abn": "15081596009",
+      "lastUpdated": "2026-09-02T10:51:27Z"
+    },
+    {
+      "dataHolderBrandId": "95aa74c1-9670-ef11-a4e6-000d3a79f8aa",
+      "brandName": "MyState Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://mystate.com.au/wp-content/uploads/MyState_Logo_s.png",
+      "publicBaseUri": "https://public.cdr.mystate.com.au",
+      "productBaseUri": "https://public.cdr.mystate.com.au",
+      "abn": "89067729195",
+      "acn": "067729195",
+      "lastUpdated": "2026-09-02T10:51:49Z"
+    },
+    {
+      "dataHolderBrandId": "721f880f-8e74-ef11-a4e6-000d3a79f8aa",
+      "interimId": "d5693987-1937-4f43-bddc-9df57b1866b0",
+      "brandName": "Aurora Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.auroraenergy.com.au/sites/default/files/2020-05/aurora-logo-transparent.png",
+      "publicBaseUri": "https://public.cdr.auroraenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/aurora",
+      "abn": "85082464622",
+      "acn": "082464622",
+      "lastUpdated": "2026-09-02T10:51:09Z"
+    },
+    {
+      "dataHolderBrandId": "ebcbaeb6-539f-ec11-a82c-000d3a8830d6",
+      "brandName": "PayPal Australia",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://newsroom.au.paypal-corp.com/image/pp_h_rgb.jpg",
+      "publicBaseUri": "https://api.paypal.com/v1/identity",
+      "productBaseUri": "https://api.paypal.com/v1/identity",
+      "abn": "93111195389",
+      "acn": "111195389",
+      "lastUpdated": "2026-10-05T09:23:15Z"
+    },
+    {
+      "dataHolderBrandId": "9c8c5e8d-5cb9-ec11-a82d-000d3a8830d6",
+      "brandName": "Wise",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://wise.com/public-resources/assets/logos/wise/brand_logo.svg",
+      "publicBaseUri": "https://au-cdrbanking-pub.wise.com",
+      "productBaseUri": "https://au-cdrbanking-pub.wise.com",
+      "abn": "38616463855",
+      "acn": "616463855",
+      "lastUpdated": "2026-09-02T10:51:09Z"
+    },
+    {
+      "dataHolderBrandId": "216813c9-21c6-ec11-a82e-000d3a8830d6",
+      "brandName": "Thriday",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://assets.website-files.com/61dd1b15c9c40d33f29a4235/61e502fda949f4c2ee4adeb0_Thriday%20Logo_Horizontal%20Full%20Colour-p-500.png",
+      "publicBaseUri": "https://public.cdr.thriday.com.au",
+      "productBaseUri": "https://public.cdr.thriday.com.au",
+      "abn": "21087650360",
+      "lastUpdated": "2026-09-02T10:51:41Z"
+    },
+    {
+      "dataHolderBrandId": "94847394-0cfd-ec11-a830-000d3a8830d6",
+      "brandName": "HSBC Bank Australia Limited – Wholesale Banking",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.hsbc.com.au/content/dam/hsbc/au/images/01_HSBC_MASTERBRAND_LOGO_RGB.svg",
+      "publicBaseUri": "https://public.ob.business.hsbc.com.au",
+      "productBaseUri": "https://public.ob.business.hsbc.com.au",
+      "abn": "48006434162",
+      "lastUpdated": "2026-10-07T01:29:00Z"
+    },
+    {
+      "dataHolderBrandId": "a890809f-ee12-ed11-a831-000d3a8830d6",
+      "brandName": "Revolut",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://assets.revolut.com/website/images/revolut-logo.png",
+      "publicBaseUri": "https://au-cdr-public.revolut.com/public",
+      "productBaseUri": "https://au-cdr-public.revolut.com/public",
+      "abn": "21634823180",
+      "acn": "634823180",
+      "lastUpdated": "2026-09-23T08:20:22Z"
+    },
+    {
+      "dataHolderBrandId": "244d8a80-3828-ed11-a832-000d3a8830d6",
+      "interimId": "37aebb2d-d96c-419f-8be4-f42cdffdb238",
+      "brandName": "Origin Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://res.cloudinary.com/originenergy/image/upload/v1667947270/CDR/origin-energy-logo.png",
+      "publicBaseUri": "https://public.mydata.cdr.originenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/origin",
+      "abn": "30000051696",
+      "acn": "000051696",
+      "lastUpdated": "2026-09-02T10:51:12Z"
+    },
+    {
+      "dataHolderBrandId": "fa840998-cd28-ed11-a832-000d3a8830d6",
+      "interimId": "55aec763-b78a-49d9-a5e1-767469cbd752",
+      "brandName": "Greater Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.ngmgroup.com.au/globalassets/open-banking/greater-bank/images/greaterbank_stacked_openbanking.jpg",
+      "publicBaseUri": "https://public.cdr.greater.com.au",
+      "productBaseUri": "https://public.cdr.greater.com.au",
+      "abn": "96087651992",
+      "lastUpdated": "2026-09-24T00:15:13Z"
+    },
+    {
+      "dataHolderBrandId": "d177e382-b12d-ed11-a832-000d3a8830d6",
+      "interimId": "a94e942b-6d39-4b4d-9b31-88e7cb65f6d1",
+      "brandName": "AGL",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://agl.com.au/content/dam/digital/agl/images/logos/agl/agl-vertical-gradient.svg",
+      "publicBaseUri": "https://public.cdr.agl.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/agl",
+      "abn": "74115061375",
+      "lastUpdated": "2026-09-02T10:51:15Z"
+    },
+    {
+      "dataHolderBrandId": "1cc7833a-b834-ed11-a832-000d3a8830d6",
+      "interimId": "1f1ef12a-f96f-467d-a69a-08160f2e6576",
+      "brandName": "EnergyAustralia",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.energyaustralia.com.au/themes/custom/ea/assets/images/EA_logo.svg",
+      "publicBaseUri": "https://authncdr.energyaustralia.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/energyaustralia",
+      "abn": "99086014968",
+      "acn": "086014968",
+      "lastUpdated": "2026-09-02T10:51:15Z"
+    },
+    {
+      "dataHolderBrandId": "d77535b2-ad4a-ed11-a833-000d3a8830d6",
+      "interimId": "d58b5666-6607-4a52-b95c-8f1f862cac7c",
+      "brandName": "Arab Bank Australia Limited",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.arabbank.com.au/themes/arabbank/images/abal-logo.svg",
+      "publicBaseUri": "https://public.cdr.arabbank.com.au",
+      "productBaseUri": "https://public.cdr.arabbank.com.au",
+      "abn": "37002950745",
+      "acn": "002950745",
+      "lastUpdated": "2026-09-02T10:51:15Z"
+    },
+    {
+      "dataHolderBrandId": "d1aafe41-365b-ed11-a834-000d3a8830d6",
+      "interimId": "c6f9397f-3212-4db8-a05b-a1b8916eda22",
+      "brandName": "Northern Inland Credit Union Limited",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://nicu.com.au/images/UserUploadedImages/11/NICUlogo.png",
+      "publicBaseUri": "https://secure.nicu.com.au/OpenBanking",
+      "productBaseUri": "https://secure.nicu.com.au/OpenBanking",
+      "abn": "36087650422",
+      "acn": "087650422",
+      "lastUpdated": "2026-09-02T10:51:15Z"
+    },
+    {
+      "dataHolderBrandId": "78883a14-67ae-ed11-a838-000d3a8830d6",
+      "brandName": "ME Bank - ME Go",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.mebank.com.au/getmedia/c79ff77e-5b3b-4410-9a1b-98e98a79f025/ME-logo-600px-black-transparent.png",
+      "publicBaseUri": "https://api.cds.mebank.com.au",
+      "productBaseUri": "https://api.cds.mebank.com.au",
+      "abn": "32009656740",
+      "acn": "009656740",
+      "lastUpdated": "2026-09-02T10:52:11Z"
+    },
+    {
+      "dataHolderBrandId": "7539fe61-f2e3-ed11-a83a-000d3a8830d6",
+      "brandName": "Great Southern Bank Business+",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.greatsouthernbank.com.au/media/images/global/logo.svg",
+      "publicBaseUri": "https://od1.open-banking.business.greatsouthernbank.com.au/api",
+      "productBaseUri": "https://od1.open-banking.business.greatsouthernbank.com.au/api",
+      "abn": "44087650959",
+      "lastUpdated": "2026-09-02T10:52:58Z"
+    },
+    {
+      "dataHolderBrandId": "40128cc1-56f8-ed11-a83b-000d3a8830d6",
+      "interimId": "1954f65b-b0c4-4e4d-8ae9-c1359ef09ce4",
+      "brandName": "ENGIE",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.engie.com.au/sites/default/files/icons/engie_logo.png",
+      "publicBaseUri": "https://public.cdr.engie.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/engie",
+      "abn": "67269241237",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "8bd0fd93-9d26-ee11-a83d-000d3a8830d6",
+      "interimId": "cd3f2e4f-bbef-4890-864b-67b7698c4624",
+      "brandName": "Alinta Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.alintaenergy.com.au/-/jssmedia/alinta-website/data/media/img/alinta_default_logo.png",
+      "publicBaseUri": "https://public.cdr.alintaenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/alinta",
+      "abn": "22149658300",
+      "acn": "149658300",
+      "lastUpdated": "2026-09-02T10:51:17Z"
+    },
+    {
+      "dataHolderBrandId": "b969898e-572f-ee11-a83d-000d3a8830d6",
+      "interimId": "ee2a4982-1616-4fe4-982a-8633293002ec",
+      "brandName": "Sumo Power (legacy)",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://sumo-public-share.s3.ap-southeast-2.amazonaws.com/SumoIT/URI/Sumo_Logo.png",
+      "publicBaseUri": "https://public-cdr-sumo.bravecloud.com/m8k36eqyhrvhqxeeic/public",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/sumo-power",
+      "abn": "86601199151",
+      "acn": "601199151",
+      "lastUpdated": "2026-09-02T10:53:40Z"
+    },
+    {
+      "dataHolderBrandId": "37a16559-cd30-ee11-a83d-000d3a8830d6",
+      "interimId": "f136007d-bab7-4a4d-adaf-55bfb4d654d7",
+      "brandName": "Police Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.policebank.com.au/wp-content/uploads/2024/11/Police-Bank-Logo-Base-Primary-2.svg",
+      "publicBaseUri": "https://public.cdr.prd.policebank.com.au",
+      "productBaseUri": "https://public.cdr.prd.policebank.com.au",
+      "abn": "95087650799",
+      "acn": "087650799",
+      "lastUpdated": "2026-09-02T10:51:20Z"
+    },
+    {
+      "dataHolderBrandId": "2ad0bc87-cd30-ee11-a83d-000d3a8830d6",
+      "interimId": "c7d6fc5e-4405-4541-a8ae-e3eb52bb0444",
+      "brandName": "Border Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.borderbank.com.au/wp-content/uploads/2023/05/BBLogoArtboard-2.png",
+      "publicBaseUri": "https://public.cdr.prd.borderbank.com.au",
+      "productBaseUri": "https://public.cdr.prd.borderbank.com.au",
+      "abn": "95087650799",
+      "acn": "087650799",
+      "lastUpdated": "2026-09-02T10:51:20Z"
+    },
+    {
+      "dataHolderBrandId": "49298578-5132-ee11-a83d-000d3a8830d6",
+      "interimId": "0ca1b95d-7f73-4bf9-99a3-fa428d26d733",
+      "brandName": "Kogan Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://s45145.pcdn.co/wp-content/uploads/2023/06/kogan-energy.png",
+      "publicBaseUri": "https://public.cdr.koganenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/kogan",
+      "abn": "41154914075",
+      "acn": "154914075",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "6aaeaf9b-5132-ee11-a83d-000d3a8830d6",
+      "interimId": "5141e4da-11cf-44ef-900b-54682bc0a49f",
+      "brandName": "Powershop",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.powershop.com.au/_next/image?url=%2Fpowershop-logo.png&w=256&q=75",
+      "publicBaseUri": "https://public.cdr.powershop.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/powershop",
+      "abn": "41154914075",
+      "acn": "154914075",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "de70398c-7e35-ee11-a83d-000d3a8830d6",
+      "interimId": "be9f78ea-d0cb-44a3-8318-09e41b2a0118",
+      "brandName": "ActewAGL",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.actewagl.com.au/-/media/project/actewagl/actewagldigital/logos/common/logo/brand-logo-actewagl-blue/actewagl_logo_green.png?h=172&w=1343&rev=b507a6379b2542b2afd10075d3318112&hash=640B0A9ED3B13973AEE5A7968C8AEB6A",
+      "publicBaseUri": "https://public.cdr.actewagl.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/actewagl",
+      "abn": "46221314841",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "40596bd5-f037-ee11-a83d-000d3a8830d6",
+      "interimId": "3a767c2a-017c-44ac-b5c8-436689d397b6",
+      "brandName": "Diamond Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://diamondenergy.com.au/wp-content/uploads/2023/06/DE-logo-approved_your-pure-power-people.png",
+      "publicBaseUri": "https://cdr.diamondenergy.com.au:18101",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/diamond",
+      "abn": "97107516334",
+      "acn": "107516334",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "ffe2945b-e094-ea11-a831-000d3a8842e1",
+      "brandName": "Westpac",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://banking.westpac.com.au/wbc/banking/Themes/Default/Desktop/WBC/Core/Images/logo_white_bg.png.ce5c4c19ec61b56796f0e218fc8329c558421fd8.png",
+      "publicBaseUri": "https://digital-api.westpac.com.au",
+      "productBaseUri": "https://digital-api.westpac.com.au",
+      "abn": "33007457141",
+      "acn": "007457141",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "25797662-e294-ea11-a831-000d3a8842e1",
+      "brandName": "NATIONAL AUSTRALIA BANK",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.nab.com.au/etc/designs/nabrwd/clientlibs/images/logo.png",
+      "publicBaseUri": "https://openbank.api.nab.com.au",
+      "productBaseUri": "https://openbank.api.nab.com.au",
+      "abn": "12004044937",
+      "acn": "004044937",
+      "lastUpdated": "2026-09-30T05:47:10Z"
+    },
+    {
+      "dataHolderBrandId": "f4562bb8-e394-ea11-a831-000d3a8842e1",
+      "brandName": "ANZ",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.anz.com.au/content/dam/anzcomau/logos/anz/ANZ-MB-Logo-3rd-Party-RGB.png",
+      "publicBaseUri": "https://api.anz",
+      "productBaseUri": "https://api.anz",
+      "abn": "11005357522",
+      "acn": "005357522",
+      "lastUpdated": "2026-09-02T10:52:13Z"
+    },
+    {
+      "dataHolderBrandId": "25233bad-e494-ea11-a831-000d3a8842e1",
+      "brandName": "CommBank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.commbank.com.au/content/dam/commbank-assets/cba-stacked.jpg",
+      "publicBaseUri": "https://api.commbank.com.au/public",
+      "productBaseUri": "https://api.commbank.com.au/public",
+      "abn": "48123123124",
+      "lastUpdated": "2026-09-22T01:31:26Z"
+    },
+    {
+      "dataHolderBrandId": "264db1e2-8e1d-eb11-a834-000d3a8842e1",
+      "brandName": "Regional Australia Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.regionalaustraliabank.com.au/getcontentasset/ac992c94-0e8c-4439-be38-0028dc45c133/3beffb48-3dfa-48f3-8905-aded8557907a/regional-australia-bank-primary-logo.png?language=en",
+      "publicBaseUri": "https://public-data.cdr.regaustbank.io",
+      "productBaseUri": "https://public-data.cdr.regaustbank.io",
+      "abn": "21087650360",
+      "lastUpdated": "2026-09-02T10:51:41Z"
+    },
+    {
+      "dataHolderBrandId": "fc9352a8-ad27-eb11-a834-000d3a8842e1",
+      "brandName": "ING BANK (Australia) Ltd",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.ing.com.au/img/logos/ING_Primary_Logo_RGB.png",
+      "publicBaseUri": "https://id.ob.ing.com.au",
+      "productBaseUri": "https://id.ob.ing.com.au",
+      "abn": "24000893292",
+      "lastUpdated": "2026-09-02T10:51:27Z"
+    },
+    {
+      "dataHolderBrandId": "f9b52d0f-1e2d-eb11-a835-000d3a8842e1",
+      "brandName": "AMP - My AMP",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.amp.com.au/content/dam/amp-au/data/icons/amp-logo-reversed.svg",
+      "publicBaseUri": "https://api.cdr-api.amp.com.au",
+      "productBaseUri": "https://api.cdr-api.amp.com.au",
+      "abn": "15081596009",
+      "lastUpdated": "2026-09-02T10:51:27Z"
+    },
+    {
+      "dataHolderBrandId": "971e8453-8933-eb11-a835-000d3a8842e1",
+      "brandName": "CommFCU",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cms.communityfirst.com.au/wp-content/uploads/2025/04/CommunityFirstBank-logo-RGB.png",
+      "publicBaseUri": "https://netbank.communityfirst.com.au/cf-OpenBanking",
+      "productBaseUri": "https://netbank.communityfirst.com.au/cf-OpenBanking",
+      "abn": "80087649938",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "3312bd10-ba3d-eb11-a835-000d3a8842e1",
+      "brandName": "Rabobank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.rabobank.com.au/content/dam/ranz/ranz-website-images/rbau-images/logo/rb-logo-stacked-200x242px.png",
+      "publicBaseUri": "https://openbanking.api.rabobank.com.au/public",
+      "productBaseUri": "https://openbanking.api.rabobank.com.au/public",
+      "abn": "50001621129",
+      "lastUpdated": "2026-09-02T10:51:29Z"
+    },
+    {
+      "dataHolderBrandId": "ae94b39d-6f30-eb11-a81d-000d3a884a20",
+      "brandName": "Bankwest",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bankwest.com.au/content/dam/bankwest/system/logos/bankwest-logo-padding.png",
+      "publicBaseUri": "https://open-api.bankwest.com.au/bwpublic",
+      "productBaseUri": "https://open-api.bankwest.com.au/bwpublic",
+      "abn": "48123123124",
+      "lastUpdated": "2026-09-22T01:31:26Z"
+    },
+    {
+      "dataHolderBrandId": "19568386-2b43-eb11-a81e-000d3a884a20",
+      "brandName": "First Option Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://firstoptionbank.com.au/wp-content/uploads/2022/03/Website.png",
+      "publicBaseUri": "https://internetbanking.firstoption.com.au/OpenBanking",
+      "productBaseUri": "https://internetbanking.firstoption.com.au/OpenBanking",
+      "abn": "95087650735",
+      "lastUpdated": "2026-09-02T10:51:30Z"
+    },
+    {
+      "dataHolderBrandId": "5aee067e-1664-eb11-a81f-000d3a884a20",
+      "brandName": "Beyond Bank Australia",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://brand.beyondbank.com.au/m/1a1424e421d07bea/thul-RGB-GRAD-Beyond-Bank-Logo.png",
+      "publicBaseUri": "https://public.cdr.api.beyondbank.com.au",
+      "productBaseUri": "https://public.cdr.api.beyondbank.com.au",
+      "abn": "15087651143",
+      "lastUpdated": "2026-09-23T00:13:25Z"
+    },
+    {
+      "dataHolderBrandId": "79c63de1-b77b-eb11-a820-000d3a884a20",
+      "brandName": "Cairns bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cairnsbank.com.au/fileadmin/templates/assets/images/cairns-bank-logo.png",
+      "publicBaseUri": "https://openbanking.cairnsbank.com.au/OpenBanking",
+      "productBaseUri": "https://openbanking.cairnsbank.com.au/OpenBanking",
+      "abn": "68087933757",
+      "lastUpdated": "2026-09-02T10:51:31Z"
+    },
+    {
+      "dataHolderBrandId": "480a35cd-4c7d-eb11-a820-000d3a884a20",
+      "brandName": "Teachers Mutual Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.tmbank.com.au/content/dam/channels/websites/common-assets/logos/Header%20logos/TMB-logo-rgb-colour-double.svg",
+      "publicBaseUri": "https://ob.tmbl.com.au/tmbank",
+      "productBaseUri": "https://ob.tmbl.com.au/tmbank",
+      "abn": "30087650459",
+      "lastUpdated": "2026-09-02T10:52:09Z"
+    },
+    {
+      "dataHolderBrandId": "7bae67c0-a280-eb11-a820-000d3a884a20",
+      "brandName": "Geelong Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://geelongbank.com.au/media/2007/geelongbank_logotag_horizontal.png",
+      "publicBaseUri": "https://online.geelongbank.com.au/OpenBanking",
+      "productBaseUri": "https://online.geelongbank.com.au/OpenBanking",
+      "abn": "85051868556",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "8d07eed3-588c-eb11-a821-000d3a884a20",
+      "brandName": "IMB Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://uploads-ssl.webflow.com/6523c01e3505e25d762e59e6/66038603eff828b190613f7a_imb-logo.png",
+      "publicBaseUri": "https://openbank.openbanking.imb.com.au",
+      "productBaseUri": "https://openbank.openbanking.imb.com.au",
+      "abn": "92087651974",
+      "lastUpdated": "2026-09-02T10:51:34Z"
+    },
+    {
+      "dataHolderBrandId": "1e13f188-0591-eb11-a821-000d3a884a20",
+      "brandName": "Suncorp Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.suncorpbank.com.au/content/dam/suncorp/bank/images/logos/suncorp/SuncorpBankVertical_PrimaryRGB_180.png",
+      "publicBaseUri": "https://id-ob.suncorpbank.com.au",
+      "productBaseUri": "https://id-ob.suncorpbank.com.au",
+      "abn": "66010831722",
+      "lastUpdated": "2026-09-02T10:51:34Z"
+    },
+    {
+      "dataHolderBrandId": "bdb3f8fa-d791-eb11-a821-000d3a884a20",
+      "brandName": "Southern Cross Credit Union",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.sccu.com.au/community/attachment/stacked-logo-cmyk-transparent/",
+      "publicBaseUri": "https://cdr.sccu.com.au/openbanking",
+      "productBaseUri": "https://cdr.sccu.com.au/openbanking",
+      "abn": "82087650682",
+      "acn": "087650682",
+      "lastUpdated": "2026-09-02T10:51:37Z"
+    },
+    {
+      "dataHolderBrandId": "9bd98cf1-5c97-eb11-a821-000d3a884a20",
+      "brandName": "Bank of Sydney",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.banksyd.com.au/globalassets/images/logos/bos-logo-edge-fix.svg",
+      "publicBaseUri": "https://openbank.api.banksyd.com.au",
+      "productBaseUri": "https://openbank.api.banksyd.com.au",
+      "abn": "44093488629",
+      "acn": "093488629",
+      "lastUpdated": "2026-09-02T10:51:37Z"
+    },
+    {
+      "dataHolderBrandId": "2ee9e2a8-1c98-eb11-a821-000d3a884a20",
+      "brandName": "Australian Military Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.australianmilitarybank.com.au/sites/default/files/amb_logo_478.png",
+      "publicBaseUri": "https://public.open.australianmilitarybank.com.au",
+      "productBaseUri": "https://public.open.australianmilitarybank.com.au",
+      "abn": "48087649741",
+      "acn": "087649741",
+      "lastUpdated": "2026-09-02T10:51:39Z"
+    },
+    {
+      "dataHolderBrandId": "5d5ecd1d-1d98-eb11-a821-000d3a884a20",
+      "brandName": "RSL Money",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.rslmoney.com.au/sites/default/files/logo-rslmoney.gif",
+      "publicBaseUri": "https://public.open.rslmoney.com.au",
+      "productBaseUri": "https://public.open.rslmoney.com.au",
+      "abn": "48087649741",
+      "acn": "087649741",
+      "lastUpdated": "2026-09-02T10:51:39Z"
+    },
+    {
+      "dataHolderBrandId": "6033e46f-ea9c-eb11-a821-000d3a884a20",
+      "brandName": "Bank First",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/e3Gq6M/oGkXA/Y01wk/original/Bank+First+Logo+Horizontal+Navy+RGB",
+      "publicBaseUri": "https://public.cdr.bankfirst.com.au",
+      "productBaseUri": "https://public.cdr.bankfirst.com.au",
+      "abn": "44087651769",
+      "lastUpdated": "2026-09-02T10:51:39Z"
+    },
+    {
+      "dataHolderBrandId": "bf1c01af-789d-eb11-a821-000d3a884a20",
+      "brandName": "Up",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://up.com.au/assets/images/logo_1000x1000.png",
+      "publicBaseUri": "https://api.up.com.au",
+      "productBaseUri": "https://api.up.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "5ae6bbec-939d-eb11-a821-000d3a884a20",
+      "brandName": "Broken Hill Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://images.squarespace-cdn.com/content/v1/63fd48114c119156c9e26d0d/d3e7437a-ce6d-4862-9029-5a34ec3350b2/BHB.Colour.Logo.png?format=1500w",
+      "publicBaseUri": "https://public.cdr-api.bhccu.com.au",
+      "productBaseUri": "https://public.cdr-api.bhccu.com.au",
+      "abn": "12087650762",
+      "lastUpdated": "2026-09-02T10:51:39Z"
+    },
+    {
+      "dataHolderBrandId": "459574b5-999d-eb11-a821-000d3a884a20",
+      "interimId": "f621c42f-b94b-483f-8f12-4d8c8e79ae3f",
+      "brandName": "Bendigo Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/globalassets/globalresources/brand-logos/bendigobank-logo.png",
+      "publicBaseUri": "https://api.cdr.bendigobank.com.au",
+      "productBaseUri": "https://api.cdr.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "1a74d48b-7e9e-eb11-a821-000d3a884a20",
+      "brandName": "Defence Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.defencebank.com.au/globalassets/images/logos/defence-bank/logo.svg",
+      "publicBaseUri": "https://product.defencebank.com.au",
+      "productBaseUri": "https://product.defencebank.com.au",
+      "abn": "57087651385",
+      "lastUpdated": "2026-09-02T10:51:40Z"
+    },
+    {
+      "dataHolderBrandId": "fa919a73-7ba1-eb11-a821-000d3a884a20",
+      "brandName": "Summerland Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.summerland.com.au/app/uploads/2024/02/SB_Logo_NoTagline_Stacked_RGB_BLACK.png",
+      "publicBaseUri": "https://public.cdr-api.summerland.com.au",
+      "productBaseUri": "https://public.cdr-api.summerland.com.au",
+      "abn": "21087650360",
+      "lastUpdated": "2026-09-02T10:51:41Z"
+    },
+    {
+      "dataHolderBrandId": "3eca8ca0-3da2-eb11-a821-000d3a884a20",
+      "brandName": "Dnister",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.dnister.com.au/wp-content/uploads/2026/03/DnisterLogo.png",
+      "publicBaseUri": "https://public.cdr-api.dnister.com.au",
+      "productBaseUri": "https://public.cdr-api.dnister.com.au",
+      "abn": "59087651394",
+      "acn": "087651394",
+      "lastUpdated": "2026-09-02T10:51:40Z"
+    },
+    {
+      "dataHolderBrandId": "7179a2ee-f6a2-eb11-a822-000d3a884a20",
+      "brandName": "Queensland Country Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.queenslandcountry.bank/siteassets/images/logo-bank/qcb-logo.png",
+      "publicBaseUri": "https://public.cdr-api.queenslandcountry.bank",
+      "productBaseUri": "https://public.cdr-api.queenslandcountry.bank",
+      "abn": "77087651027",
+      "lastUpdated": "2026-09-02T10:51:41Z"
+    },
+    {
+      "dataHolderBrandId": "f9ccd1f0-04a7-eb11-a822-000d3a884a20",
+      "brandName": "Central Murray Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.centralmurray.bank/images/header.png",
+      "publicBaseUri": "https://secure.centralmurray.bank/openbanking",
+      "productBaseUri": "https://secure.centralmurray.bank/openbanking",
+      "abn": "69087651812",
+      "acn": "087651812",
+      "lastUpdated": "2026-09-02T10:51:41Z"
+    },
+    {
+      "dataHolderBrandId": "14037661-e1ab-eb11-a822-000d3a884a20",
+      "brandName": "P&N Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://digital.pnbank.com.au/globalassets/internet-banking/onboarding/logo-small.png",
+      "publicBaseUri": "https://public.cdr-api.pnbank.com.au",
+      "productBaseUri": "https://public.cdr-api.pnbank.com.au",
+      "abn": "69087651876",
+      "lastUpdated": "2026-09-02T10:51:44Z"
+    },
+    {
+      "dataHolderBrandId": "902e9d5b-e4ab-eb11-a822-000d3a884a20",
+      "brandName": "BCU Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://digital.bcu.com.au/globalassets/internet-banking/onboarding/logo-small.png",
+      "publicBaseUri": "https://public.cdr-api.bcu.com.au",
+      "productBaseUri": "https://public.cdr-api.bcu.com.au",
+      "abn": "69087651876",
+      "lastUpdated": "2026-09-02T10:51:44Z"
+    },
+    {
+      "dataHolderBrandId": "9bf24742-68ac-eb11-a822-000d3a884a20",
+      "brandName": "Credit Union SA",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cms.creditunionsa.com.au/assets/images/Open-Banking/cusa-logo_stacked_trans_250px.png",
+      "publicBaseUri": "https://openbanking.api.creditunionsa.com.au",
+      "productBaseUri": "https://openbanking.api.creditunionsa.com.au",
+      "abn": "36087651232",
+      "lastUpdated": "2026-09-02T10:51:44Z"
+    },
+    {
+      "dataHolderBrandId": "298987af-3ead-eb11-a822-000d3a884a20",
+      "brandName": "Gateway Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.gatewaybank.com.au/media/ocrjwsze/gway-logo.png",
+      "publicBaseUri": "https://public.cdr-api.gatewaybank.com.au",
+      "productBaseUri": "https://public.cdr-api.gatewaybank.com.au",
+      "abn": "47087650093",
+      "lastUpdated": "2026-09-02T10:51:45Z"
+    },
+    {
+      "dataHolderBrandId": "ac4892a0-44ad-eb11-a822-000d3a884a20",
+      "brandName": "Qudos Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.prod.website-files.com/663aabca709a328fd2c0ea2e/663b1305def411e0460bafb4_logo-60.svg",
+      "publicBaseUri": "https://public.cdr.qudosbank.com.au",
+      "productBaseUri": "https://public.cdr.qudosbank.com.au",
+      "abn": "21087651607",
+      "lastUpdated": "2026-09-02T10:51:52Z"
+    },
+    {
+      "dataHolderBrandId": "c3ab13c0-5dad-eb11-a822-000d3a884a20",
+      "brandName": "Fire Service Credit Union",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.fscu.com.au/wp-content/uploads//2023/11/FSCU_logo.png",
+      "publicBaseUri": "https://public.cdr-api.fscu.com.au",
+      "productBaseUri": "https://public.cdr-api.fscu.com.au",
+      "abn": "17087651152",
+      "acn": "087651152",
+      "lastUpdated": "2026-09-02T10:51:45Z"
+    },
+    {
+      "dataHolderBrandId": "89d458be-14ae-eb11-a822-000d3a884a20",
+      "brandName": "MoveBank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://move.bank/images/logo-black.svg",
+      "publicBaseUri": "https://od1.cdr.digital.move.bank/api",
+      "productBaseUri": "https://od1.cdr.digital.move.bank/api",
+      "abn": "91087651090",
+      "acn": "087651090",
+      "lastUpdated": "2026-09-02T10:51:46Z"
+    },
+    {
+      "dataHolderBrandId": "31cc0d98-e3ae-eb11-a822-000d3a884a20",
+      "brandName": "St.George Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.stgeorge.com.au/content/dam/stg/images/home/STG-logo_1200x1200.jpg",
+      "publicBaseUri": "https://digital-api.stgeorge.com.au",
+      "productBaseUri": "https://digital-api.stgeorge.com.au",
+      "abn": "33007457141",
+      "acn": "007457141",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "01608f70-e4ae-eb11-a822-000d3a884a20",
+      "brandName": "BankSA",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.banksa.com.au/content/dam/bsa/images/home/BSA-logo_1200x1200.jpg",
+      "publicBaseUri": "https://digital-api.banksa.com.au",
+      "productBaseUri": "https://digital-api.banksa.com.au",
+      "abn": "33007457141",
+      "acn": "007457141",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "5570db5a-e5ae-eb11-a822-000d3a884a20",
+      "brandName": "Bank of Melbourne",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bankofmelbourne.com.au/content/dam/bom/images/home/BOM-logo_1200x1200.jpg",
+      "publicBaseUri": "https://digital-api.bankofmelbourne.com.au",
+      "productBaseUri": "https://digital-api.bankofmelbourne.com.au",
+      "abn": "33007457141",
+      "acn": "007457141",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "036fc691-efae-eb11-a822-000d3a884a20",
+      "brandName": "Auswide Bank Ltd",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://community.auswidebank.com.au/resources/images/templates/shared/auswide-bank-logo.svg",
+      "publicBaseUri": "https://api.auswidebank.com.au/openbanking",
+      "productBaseUri": "https://api.auswidebank.com.au/openbanking",
+      "abn": "89067729195",
+      "acn": "067729195",
+      "lastUpdated": "2026-09-02T10:51:49Z"
+    },
+    {
+      "dataHolderBrandId": "8ac1db25-30b1-eb11-a822-000d3a884a20",
+      "brandName": "UniBank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.unibank.com.au/content/dam/channels/websites/common-assets/logos/Header%20logos/UniBank-logo-rgb-carbon.svg",
+      "publicBaseUri": "https://ob.tmbl.com.au/unibank",
+      "productBaseUri": "https://ob.tmbl.com.au/unibank",
+      "abn": "30087650459",
+      "lastUpdated": "2026-09-02T10:52:09Z"
+    },
+    {
+      "dataHolderBrandId": "494c5cad-30b1-eb11-a822-000d3a884a20",
+      "brandName": "Firefighters Mutual Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.fmbank.com.au/content/dam/channels/websites/common-assets/logos/Header%20logos/FMB-logo-rgb-pos-double.svg",
+      "publicBaseUri": "https://ob.tmbl.com.au/fmbank",
+      "productBaseUri": "https://ob.tmbl.com.au/fmbank",
+      "abn": "30087650459",
+      "lastUpdated": "2026-09-02T10:52:09Z"
+    },
+    {
+      "dataHolderBrandId": "3445ce0d-31b1-eb11-a822-000d3a884a20",
+      "brandName": "Health Professionals Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.hpbank.com.au/content/dam/channels/websites/common-assets/logos/Header%20logos/HPB-logo-rgb-colour.svg",
+      "publicBaseUri": "https://ob.tmbl.com.au/hpbank",
+      "productBaseUri": "https://ob.tmbl.com.au/hpbank",
+      "abn": "30087650459",
+      "lastUpdated": "2026-09-02T10:52:09Z"
+    },
+    {
+      "dataHolderBrandId": "578efc60-4eb1-eb11-a822-000d3a884a20",
+      "brandName": "Bank Australia",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bankaust.com.au/globalassets/assets/imagery/logos/bank-australia/ba_horizontal_logo.png",
+      "publicBaseUri": "https://public.cdr.bankaust.com.au",
+      "productBaseUri": "https://public.cdr.bankaust.com.au",
+      "abn": "21087651607",
+      "lastUpdated": "2026-09-02T10:51:52Z"
+    },
+    {
+      "dataHolderBrandId": "ca0ad1c8-c0b3-eb11-a822-000d3a884a20",
+      "brandName": "HSBC",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.hsbc.com.au/content/dam/hsbc/au/images/01_HSBC_MASTERBRAND_LOGO_RGB.svg",
+      "publicBaseUri": "https://public.ob.hsbc.com.au",
+      "productBaseUri": "https://public.ob.hsbc.com.au",
+      "abn": "48006434162",
+      "lastUpdated": "2026-10-07T01:29:00Z"
+    },
+    {
+      "dataHolderBrandId": "0bd792ee-49b4-eb11-a822-000d3a884a20",
+      "brandName": "Tyro Payments",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.tyro.com/wp-content/uploads/2021/03/logo1.png",
+      "publicBaseUri": "https://public.cdr.tyro.com",
+      "productBaseUri": "https://public.cdr.tyro.com",
+      "abn": "49103575042",
+      "acn": "103575042",
+      "lastUpdated": "2026-09-02T10:52:46Z"
+    },
+    {
+      "dataHolderBrandId": "dd301af3-93b7-eb11-a822-000d3a884a20",
+      "brandName": "Judo Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.judo.bank/wp-content/uploads/2025/04/Judo_Assets_120721_Master-scaled.png",
+      "publicBaseUri": "https://public.open.judo.bank",
+      "productBaseUri": "https://public.open.judo.bank",
+      "abn": "11615995581",
+      "acn": "615995581",
+      "lastUpdated": "2026-09-02T10:51:53Z"
+    },
+    {
+      "dataHolderBrandId": "d64b7811-21bc-eb11-a823-000d3a884a20",
+      "brandName": "Macquarie Bank Limited",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.macquarie.com.au/assets/bfs/global/macquarie-logo_black.svg",
+      "publicBaseUri": "https://api.macquariebank.io",
+      "productBaseUri": "https://api.macquariebank.io",
+      "abn": "46008583542",
+      "acn": "008583542",
+      "lastUpdated": "2026-09-02T10:51:55Z"
+    },
+    {
+      "dataHolderBrandId": "5c95f4fd-37bc-eb11-a823-000d3a884a20",
+      "brandName": "Coles Credit Cards",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.coles.com.au/content/dam/coles/coles-financial-services/credit-cards/images/Coles-credit-cards-stacked-logo.png",
+      "publicBaseUri": "https://api.openbanking.secure.coles.com.au",
+      "productBaseUri": "https://api.openbanking.secure.coles.com.au",
+      "abn": "12004044937",
+      "acn": "004044937",
+      "lastUpdated": "2026-09-30T05:47:10Z"
+    },
+    {
+      "dataHolderBrandId": "66bb688e-38bc-eb11-a823-000d3a884a20",
+      "brandName": "Kogan Money Credit Cards",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://usl.nab.com.au/static/assets/kogan/img/kogan-money_logo_lg.svg",
+      "publicBaseUri": "https://api.openbanking.cards.koganmoney.com.au",
+      "productBaseUri": "https://api.openbanking.cards.koganmoney.com.au",
+      "abn": "12004044937",
+      "acn": "004044937",
+      "lastUpdated": "2026-09-30T05:47:10Z"
+    },
+    {
+      "dataHolderBrandId": "640ec6df-38bc-eb11-a823-000d3a884a20",
+      "brandName": "Qantas Money Credit Cards",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://assets.qantasmoney.com/logos/qantas-money-logo-sm.svg",
+      "publicBaseUri": "https://api.openbanking.qantasmoney.com",
+      "productBaseUri": "https://api.openbanking.qantasmoney.com",
+      "abn": "12004044937",
+      "acn": "004044937",
+      "lastUpdated": "2026-09-30T05:47:10Z"
+    },
+    {
+      "dataHolderBrandId": "23cf60aa-2fbd-eb11-a823-000d3a884a20",
+      "brandName": "Aussie Home Loans",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://aussie.openportal.com.au/assets/bfs/applications/digital/ahl/images/aussiehomeloans-logo.png",
+      "publicBaseUri": "https://aussie.openportal.com.au",
+      "abn": "46008583542",
+      "acn": "008583542",
+      "lastUpdated": "2026-09-02T10:51:55Z"
+    },
+    {
+      "dataHolderBrandId": "307dbf74-8bbe-eb11-a823-000d3a884a20",
+      "brandName": "UBank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.ubank.com.au/assets/images/light/ubank-logo.svg",
+      "publicBaseUri": "https://public.cdr-api.86400.com.au",
+      "productBaseUri": "https://public.cdr-api.86400.com.au",
+      "abn": "12004044937",
+      "acn": "004044937",
+      "lastUpdated": "2026-09-30T05:47:10Z"
+    },
+    {
+      "dataHolderBrandId": "4cde889c-9bbe-eb11-a823-000d3a884a20",
+      "brandName": "gmcu",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.gmcu.com.au/media/2985/gmcu_logo.png",
+      "publicBaseUri": "https://secure.gmcu.com.au/OpenBanking",
+      "productBaseUri": "https://secure.gmcu.com.au/OpenBanking",
+      "abn": "87087651509",
+      "acn": "087651509",
+      "lastUpdated": "2026-09-02T10:51:57Z"
+    },
+    {
+      "dataHolderBrandId": "cdff6335-a5be-eb11-a823-000d3a884a20",
+      "brandName": "Laboratories Credit Union",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://lcu.com.au/wp-content/uploads/2025/03/LCU-LOGO-High-res.png",
+      "publicBaseUri": "https://internetbanking.lcu.com.au/OpenBanking",
+      "productBaseUri": "https://internetbanking.lcu.com.au/OpenBanking",
+      "abn": "77087650217",
+      "acn": "087650217",
+      "lastUpdated": "2026-09-02T10:51:57Z"
+    },
+    {
+      "dataHolderBrandId": "439e1c2a-b0be-eb11-a823-000d3a884a20",
+      "brandName": "Coastline Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.sanity.io/images/djf521sf/production/619a4d8c4e9da4c964d2366eeb8ffd143ff37fc1-400x43.png",
+      "publicBaseUri": "https://public.cdr-api.coastline.com.au",
+      "productBaseUri": "https://public.cdr-api.coastline.com.au",
+      "abn": "88087649910",
+      "acn": "087649910",
+      "lastUpdated": "2026-09-02T10:51:57Z"
+    },
+    {
+      "dataHolderBrandId": "bf7df75a-52bf-eb11-a823-000d3a884a20",
+      "brandName": "Unity Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://ibank.unity.bank/OpenBanking/logo.png",
+      "publicBaseUri": "https://ibank.unity.bank/OpenBanking",
+      "productBaseUri": "https://ibank.unity.bank/OpenBanking",
+      "abn": "72087650637",
+      "lastUpdated": "2026-09-02T10:51:59Z"
+    },
+    {
+      "dataHolderBrandId": "d722e732-77bf-eb11-a823-000d3a884a20",
+      "brandName": "The Capricornian",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.capricornian.com.au/app/uploads/2025/11/TCB_Nimo_logo-300x117.png",
+      "publicBaseUri": "https://public.cdr.onlinebanking.capricornian.com.au",
+      "productBaseUri": "https://public.cdr.onlinebanking.capricornian.com.au",
+      "abn": "54087650940",
+      "acn": "087650940",
+      "lastUpdated": "2026-09-02T10:51:59Z"
+    },
+    {
+      "dataHolderBrandId": "09f9da8a-78bf-eb11-a823-000d3a884a20",
+      "brandName": "BankVic",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://ib.bankvic.com.au/bvib/App_Themes/BankVicResponsive/images/BankVic-logo.svg",
+      "publicBaseUri": "https://ib.bankvic.com.au/openbanking",
+      "productBaseUri": "https://ib.bankvic.com.au/openbanking",
+      "abn": "33087651661",
+      "lastUpdated": "2026-09-02T10:52:00Z"
+    },
+    {
+      "dataHolderBrandId": "ffc015ae-7ebf-eb11-a823-000d3a884a20",
+      "brandName": "SWSbank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.swsbank.com.au/Client_Theme/imgs/logo-desktop.png",
+      "publicBaseUri": "https://online.swsbank.com.au/openbanking",
+      "productBaseUri": "https://online.swsbank.com.au/openbanking",
+      "abn": "80087650673",
+      "acn": "087650673",
+      "lastUpdated": "2026-09-02T10:52:00Z"
+    },
+    {
+      "dataHolderBrandId": "cae03d79-bdc1-eb11-a823-000d3a884a20",
+      "brandName": "MyCard",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://content.nab.com.au/content/dam/mycard/images/eds/mycard-logo-stack-bronze-rgb.svg",
+      "publicBaseUri": "https://api-openbanking.secure.mycard.com.au",
+      "productBaseUri": "https://api-openbanking.secure.mycard.com.au",
+      "abn": "12004044937",
+      "acn": "004044937",
+      "lastUpdated": "2026-09-30T05:47:10Z"
+    },
+    {
+      "dataHolderBrandId": "e9a1ff83-96c2-eb11-a823-000d3a884a20",
+      "brandName": "Police Credit Union Ltd",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.pcunet1.com.au/internet-banking/App_Themes/PCU-Responsive/images/logo-login.png",
+      "publicBaseUri": "https://api.policecu.com.au/OpenBanking",
+      "productBaseUri": "https://api.policecu.com.au/OpenBanking",
+      "abn": "30087651205",
+      "acn": "087651205",
+      "lastUpdated": "2026-09-02T10:52:01Z"
+    },
+    {
+      "dataHolderBrandId": "54eff5f1-2ac4-eb11-a823-000d3a884a20",
+      "brandName": "ORANGE CREDIT UNION LTD",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://online.orangecu.com.au/openbanking/logo.png",
+      "publicBaseUri": "https://online.orangecu.com.au/openbanking",
+      "productBaseUri": "https://online.orangecu.com.au/openbanking",
+      "abn": "34087650477",
+      "acn": "087650477",
+      "lastUpdated": "2026-09-02T10:52:01Z"
+    },
+    {
+      "dataHolderBrandId": "1f412aa8-24c8-eb11-a823-000d3a884a20",
+      "brandName": "The Mac",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://themaccu.com.au/media/2735/logolb.png",
+      "publicBaseUri": "https://onlinebanking.themaccu.com.au/OpenBanking",
+      "productBaseUri": "https://onlinebanking.themaccu.com.au/OpenBanking",
+      "abn": "83087650244",
+      "acn": "087650244",
+      "lastUpdated": "2026-09-02T10:52:02Z"
+    },
+    {
+      "dataHolderBrandId": "27562b79-f6c8-eb11-a823-000d3a884a20",
+      "brandName": "Woolworths Team Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://woolworthsteambank.com.au/wp-content/uploads/2021/06/wp-log-top-navi-logo.png",
+      "publicBaseUri": "https://online.woolworthsteambank.com.au/OpenBanking",
+      "productBaseUri": "https://online.woolworthsteambank.com.au/OpenBanking",
+      "abn": "67087651803",
+      "acn": "087651803",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "b111c64b-b6c9-eb11-a823-000d3a884a20",
+      "brandName": "People First and Heritage Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.peoplefirstbank.com.au/pfb-logo",
+      "publicBaseUri": "https://public.openbanking.peoplefirstbank.com.au",
+      "productBaseUri": "https://public.openbanking.peoplefirstbank.com.au",
+      "abn": "11087651125",
+      "acn": "087651125",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "84d1b971-37cf-eb11-a824-000d3a884a20",
+      "brandName": "Easy Street",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cms.easystreet.com.au/wp-content/uploads/2025/04/Easy-Street-logo.png",
+      "publicBaseUri": "https://ebranch.easystreet.com.au/es-OpenBanking",
+      "productBaseUri": "https://ebranch.easystreet.com.au/es-OpenBanking",
+      "abn": "80087649938",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "49c500b3-dacf-eb11-a824-000d3a884a20",
+      "brandName": "Maitland Mutual Limited",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://openbanking.themutual.com.au/OpenBanking/logo.png",
+      "publicBaseUri": "https://openbanking.themutual.com.au/OpenBanking",
+      "productBaseUri": "https://openbanking.themutual.com.au/OpenBanking",
+      "abn": "94087651983",
+      "lastUpdated": "2026-09-02T10:52:04Z"
+    },
+    {
+      "dataHolderBrandId": "aff66646-9ad8-eb11-a824-000d3a884a20",
+      "brandName": "Great Southern Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.greatsouthernbank.com.au/media/images/global/logo.svg",
+      "publicBaseUri": "https://api.open-banking.greatsouthernbank.com.au",
+      "productBaseUri": "https://api.open-banking.greatsouthernbank.com.au",
+      "abn": "44087650959",
+      "lastUpdated": "2026-09-02T10:52:58Z"
+    },
+    {
+      "dataHolderBrandId": "2830e32a-4edd-eb11-a824-000d3a884a20",
+      "brandName": "QBANK",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.qbank.com.au/media/logo/qbank-logo.svg",
+      "publicBaseUri": "https://banking.qbank.com.au/openbanking",
+      "productBaseUri": "https://banking.qbank.com.au/openbanking",
+      "abn": "79087651036",
+      "acn": "087651036",
+      "lastUpdated": "2026-09-02T10:52:05Z"
+    },
+    {
+      "dataHolderBrandId": "5c2e8067-d2de-eb11-a824-000d3a884a20",
+      "brandName": "Horizon Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://horizonbank.com.au/Client_Theme/imgs/horizon_logo.png",
+      "publicBaseUri": "https://onlinebanking.horizonbank.com.au/openbanking",
+      "productBaseUri": "https://onlinebanking.horizonbank.com.au/openbanking",
+      "abn": "66087650173",
+      "acn": "087650173",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "d4ba9bdd-eede-eb11-a824-000d3a884a20",
+      "brandName": "bankWAW",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://onlinebanking.wawcu.com.au/OpenBanking/logo.png",
+      "publicBaseUri": "https://onlinebanking.wawcu.com.au/OpenBanking",
+      "productBaseUri": "https://onlinebanking.wawcu.com.au/OpenBanking",
+      "abn": "48087651787",
+      "acn": "087651787",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "5de290be-a7e2-eb11-a824-000d3a884a20",
+      "brandName": "Hume Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://ibankob.humebank.com.au/humebank.png",
+      "publicBaseUri": "https://ibankob.humebank.com.au/OpenBanking",
+      "productBaseUri": "https://ibankob.humebank.com.au/OpenBanking",
+      "abn": "85051868556",
+      "lastUpdated": "2026-09-02T10:52:06Z"
+    },
+    {
+      "dataHolderBrandId": "e22c0f07-21fb-eb11-a825-000d3a884a20",
+      "brandName": "Darling Downs Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.ddbank.com.au/app/uploads/2025/08/DDB-FinalRGB-01-e1755734579783.png",
+      "publicBaseUri": "https://ibanking.ddbank.com.au/OpenBanking",
+      "productBaseUri": "https://ibanking.ddbank.com.au/OpenBanking",
+      "abn": "98087651116",
+      "acn": "087651116",
+      "lastUpdated": "2026-09-14T01:35:29Z"
+    },
+    {
+      "dataHolderBrandId": "de48e3c6-aaff-eb11-a826-000d3a884a20",
+      "brandName": "CBA - CommBiz",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.commbank.com.au/content/dam/commbank/commBank-logo.svg",
+      "publicBaseUri": "https://cdr.commbiz.api.commbank.com.au/cbzpublic",
+      "productBaseUri": "https://cdr.commbiz.api.commbank.com.au/cbzpublic",
+      "abn": "48123123124",
+      "lastUpdated": "2026-09-22T01:31:26Z"
+    },
+    {
+      "dataHolderBrandId": "db914c7a-3d09-ec11-a826-000d3a884a20",
+      "brandName": "Bank of us",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://api.bankofus.com.au/OpenBanking/Logo.png",
+      "publicBaseUri": "https://api.bankofus.com.au/OpenBanking",
+      "productBaseUri": "https://api.bankofus.com.au/OpenBanking",
+      "abn": "32087652088",
+      "acn": "087652088",
+      "lastUpdated": "2026-09-03T02:07:45Z"
+    },
+    {
+      "dataHolderBrandId": "75a52ce6-120a-ec11-a826-000d3a884a20",
+      "brandName": "TMCU",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://banking.transportmutual.com.au/OpenBanking/logo.png",
+      "publicBaseUri": "https://banking.transportmutual.com.au/OpenBanking",
+      "productBaseUri": "https://banking.transportmutual.com.au/OpenBanking",
+      "abn": "78087650600",
+      "acn": "087650600",
+      "lastUpdated": "2026-09-02T10:52:09Z"
+    },
+    {
+      "dataHolderBrandId": "c289cfa3-b00b-ec11-a826-000d3a884a20",
+      "brandName": "Australian Mutual Bank LTD",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.tmbank.com.au/content/dam/channels/websites/common-assets/logos/Header%20logos/AMBL-logo-rgb-colour-horizontal.svg",
+      "publicBaseUri": "https://ob.tmbl.com.au/ambank",
+      "productBaseUri": "https://ob.tmbl.com.au/ambank",
+      "abn": "30087650459",
+      "lastUpdated": "2026-09-02T10:52:09Z"
+    },
+    {
+      "dataHolderBrandId": "227cc6c0-350d-ec11-a826-000d3a884a20",
+      "brandName": "Bank of Queensland Limited",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.boq.com.au/content/dam/boq/images/miscellaneous-images/boq-logo2.png",
+      "publicBaseUri": "https://api.cds.boq.com.au",
+      "productBaseUri": "https://api.cds.boq.com.au",
+      "abn": "32009656740",
+      "acn": "009656740",
+      "lastUpdated": "2026-09-02T10:52:11Z"
+    },
+    {
+      "dataHolderBrandId": "e7682728-370d-ec11-a826-000d3a884a20",
+      "brandName": "BOQ Specialist",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.boqspecialist.com.au/content/dam/boq-specialist/logos/BOQSpecialist_H_CMYK.png",
+      "publicBaseUri": "https://api.cds.boqspecialist.com.au",
+      "productBaseUri": "https://api.cds.boqspecialist.com.au",
+      "abn": "32009656740",
+      "acn": "009656740",
+      "lastUpdated": "2026-09-02T10:52:11Z"
+    },
+    {
+      "dataHolderBrandId": "bc0774f7-be0e-ec11-a826-000d3a884a20",
+      "brandName": "DDH Graham",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://ddhgraham.com.au/wp-content/uploads/DDH_BOQ_512.png",
+      "publicBaseUri": "https://api.cds.ddhgraham.com.au",
+      "productBaseUri": "https://api.cds.ddhgraham.com.au",
+      "abn": "32009656740",
+      "acn": "009656740",
+      "lastUpdated": "2026-09-02T10:52:11Z"
+    },
+    {
+      "dataHolderBrandId": "79e00408-cb0e-ec11-a826-000d3a884a20",
+      "interimId": "ff5f02ce-3a42-416b-a686-6c2da48d0501",
+      "brandName": "RACQ Bank",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/0Mvj/Y0GpK/RqBJZ/original/RACQ-BANK-LOGO_HOR_RGB.png",
+      "publicBaseUri": "https://cdrbank.racq.com.au",
+      "productBaseUri": "https://cdrbank.racq.com.au",
+      "abn": "83087651054",
+      "lastUpdated": "2026-09-02T10:52:11Z"
+    },
+    {
+      "dataHolderBrandId": "5f4a4ddc-670f-ec11-a826-000d3a884a20",
+      "brandName": "Virgin Money",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://virginmoney.com.au/content/dam/virginmoney/vma-logo.gif",
+      "publicBaseUri": "https://api.cds.virginmoney.com.au",
+      "productBaseUri": "https://api.cds.virginmoney.com.au",
+      "abn": "32009656740",
+      "acn": "009656740",
+      "lastUpdated": "2026-09-02T10:52:11Z"
+    },
+    {
+      "dataHolderBrandId": "457ab798-5811-ec11-a826-000d3a884a20",
+      "brandName": "Bank of China",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://boc-resources.s3.ap-southeast-2.amazonaws.com/images/BOC+logo.JPG",
+      "publicBaseUri": "https://api-gateway.bankofchina.com.au",
+      "productBaseUri": "https://api-gateway.bankofchina.com.au",
+      "abn": "28110077622",
+      "acn": "110077622",
+      "lastUpdated": "2026-09-02T10:52:14Z"
+    },
+    {
+      "dataHolderBrandId": "e89bd6dc-0515-ec11-a826-000d3a884a20",
+      "brandName": "ANZ Plus",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://assets.anz.com/is/image/anz/ANZPlus-Logo-Blue?$ResponsiveImage$&fmt=png-alpha",
+      "publicBaseUri": "https://cdr.apix.anz",
+      "productBaseUri": "https://cdr.apix.anz",
+      "abn": "11005357522",
+      "acn": "005357522",
+      "lastUpdated": "2026-09-02T10:52:13Z"
+    },
+    {
+      "dataHolderBrandId": "fcfec791-391b-ec11-a827-000d3a884a20",
+      "brandName": "Unloan",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.unloan.com.au/webflow/unloan-logo-black.svg",
+      "publicBaseUri": "https://public.api.cdr.unloan.com.au",
+      "productBaseUri": "https://public.api.cdr.unloan.com.au",
+      "abn": "48123123124",
+      "lastUpdated": "2026-09-22T01:31:26Z"
+    },
+    {
+      "dataHolderBrandId": "a8fcc391-7625-ec11-a827-000d3a884a20",
+      "brandName": "Central West CUL",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://ib.cwcu.com.au/OpenBanking/logo.png",
+      "publicBaseUri": "https://ib.cwcu.com.au/openbanking",
+      "productBaseUri": "https://ib.cwcu.com.au/openbanking",
+      "abn": "67087649885",
+      "acn": "087649885",
+      "lastUpdated": "2026-09-02T10:52:16Z"
+    },
+    {
+      "dataHolderBrandId": "567d75c9-3c35-ec11-a828-000d3a884a20",
+      "brandName": "Heartland",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.heartlandbank.com.au/images/heartland-bank-logo-white-on-midnight-blue.jpg",
+      "publicBaseUri": "https://api.cdr.heartlandbank.com.au",
+      "productBaseUri": "https://api.cdr.heartlandbank.com.au",
+      "abn": "54087651750",
+      "acn": "087651750",
+      "lastUpdated": "2026-09-04T04:18:41Z"
+    },
+    {
+      "dataHolderBrandId": "d5306c4e-ea83-ec11-a82b-000d3a884a20",
+      "brandName": "Newcastle Permanent",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.ngmgroup.com.au/globalassets/open-banking/np/np-logo.jpg",
+      "publicBaseUri": "https://openbank.newcastlepermanent.com.au",
+      "productBaseUri": "https://openbank.newcastlepermanent.com.au",
+      "abn": "96087651992",
+      "lastUpdated": "2026-09-24T00:15:13Z"
+    },
+    {
+      "dataHolderBrandId": "32eccf8c-d536-f111-9a91-000d3ae0db82",
+      "brandName": "Toyota Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://portal.toyotafinanceonline.com.au/content/dam/sscp/logos/Toyota-logo.jpg",
+      "publicBaseUri": "https://api.cdr.toyotafinanceonline.com.au",
+      "productBaseUri": "https://api.cdr.toyotafinanceonline.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "c38dea59-d836-f111-9a91-000d3ae0db82",
+      "brandName": "Power Alliance Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://portal.pafonline.com.au/content/dam/sscp/logos/paf-logo.png",
+      "publicBaseUri": "https://api.cdr.pafonline.com.au",
+      "productBaseUri": "https://api.cdr.pafonline.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "89f1d3a0-d836-f111-9a91-000d3ae0db82",
+      "brandName": "Hino Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://hfsonline.com.au/content/dam/sscp/logos/hino-logo.png",
+      "publicBaseUri": "https://api.cdr.hfsonline.com.au",
+      "productBaseUri": "https://api.cdr.hfsonline.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "c22401e1-d836-f111-9a91-000d3ae0db82",
+      "brandName": "Suzuki Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://portal.sfonline.com.au/content/dam/sscp/logos/suzuki-logo.png",
+      "publicBaseUri": "https://api.cdr.sfonline.com.au",
+      "productBaseUri": "https://api.cdr.sfonline.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "0b71bf2e-d936-f111-9a91-000d3ae0db82",
+      "brandName": "Mazda Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://portal.mfonline.com.au/content/dam/sscp/logos/mazda-logo.png",
+      "publicBaseUri": "https://api.cdr.mfonline.com.au",
+      "productBaseUri": "https://api.cdr.mfonline.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "ec73a25c-d936-f111-9a91-000d3ae0db82",
+      "brandName": "PowerTorque Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://portal.powertorquefinanceonline.com.au/content/dam/sscp/logos/ptf-logo.png",
+      "publicBaseUri": "https://api.cdr.powertorquefinanceonline.com.au",
+      "productBaseUri": "https://api.cdr.powertorquefinanceonline.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "59dd798f-d936-f111-9a91-000d3ae0db82",
+      "brandName": "Lexus Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://portal.lfsonline.lexusfinance.com.au/content/dam/sscp/logos/lexus-logo.png",
+      "publicBaseUri": "https://api.cdr.lfsonline.lexusfinance.com.au",
+      "productBaseUri": "https://api.cdr.lfsonline.lexusfinance.com.au",
+      "abn": "48002435181",
+      "acn": "002435181",
+      "lastUpdated": "2026-09-30T06:55:52Z"
+    },
+    {
+      "dataHolderBrandId": "32c3ea87-ce3b-ee11-a81c-002248143709",
+      "interimId": "15ed284e-f7b0-440d-b5dc-e9fe4c28c410",
+      "brandName": "COVAU PTY LIMITED",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://covau.com.au/wp-content/uploads/2022/01/covau-logo-300.png",
+      "publicBaseUri": "https://public.cdr.covau.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/covau",
+      "abn": "54090117730",
+      "acn": "090117730",
+      "lastUpdated": "2026-09-02T10:52:39Z"
+    },
+    {
+      "dataHolderBrandId": "4f2f096c-5841-ee11-a81c-002248143709",
+      "interimId": "97d5098f-d882-454b-979c-3c2b3cdbf44d",
+      "brandName": "Next Business Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://nextbusinessenergy.com.au/logo/nbe-logo.png",
+      "publicBaseUri": "https://public.cdr.nextbusinessenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/next-business",
+      "abn": "91167937555",
+      "acn": "167937555",
+      "lastUpdated": "2026-09-02T10:52:45Z"
+    },
+    {
+      "dataHolderBrandId": "71f693b4-d62b-f011-9d48-002248148db8",
+      "interimId": "6cb8e276-06fb-40d1-beee-ea188c962fbb",
+      "brandName": "BNK Bank (Goldfields Money/BCHL)",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bnk.com.au/wp-content/uploads/2026/04/BNK-small.png",
+      "publicBaseUri": "https://public.cdr.bnk.com.au",
+      "productBaseUri": "https://public.cdr.bnk.com.au",
+      "abn": "63087651849",
+      "acn": "087651849",
+      "lastUpdated": "2026-09-02T10:52:39Z"
+    },
+    {
+      "dataHolderBrandId": "ee8b5d25-93ae-ee11-a81c-0022481494e2",
+      "interimId": "78943358-0f53-4518-ac7d-f6a1903e276d",
+      "brandName": "1st Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://public.1stenergy.com.au/cdr-1e.png",
+      "publicBaseUri": "https://public.cdr.1stenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/1st-energy",
+      "abn": "71604999706",
+      "acn": "604999706",
+      "lastUpdated": "2026-09-02T10:52:40Z"
+    },
+    {
+      "dataHolderBrandId": "fb81a857-36c0-f011-aa43-00224814aa8a",
+      "brandName": "Aussie Elevate",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/siteassets/partner/tpb/aussie-elevate.png",
+      "publicBaseUri": "https://api.aussie.app.bendigobank.com.au",
+      "productBaseUri": "https://api.aussie.app.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "31433b9c-5ec0-f011-aa43-00224814aa8a",
+      "brandName": "AFG Home Loans Alpha",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/siteassets/partner/tpb/afg.png",
+      "publicBaseUri": "https://api.afg.app.bendigobank.com.au",
+      "productBaseUri": "https://api.afg.app.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "e86c1d80-60c0-f011-aa43-00224814aa8a",
+      "brandName": "Connective Select",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/siteassets/partner/tpb/connective-select.png",
+      "publicBaseUri": "https://api.connective.app.bendigobank.com.au",
+      "productBaseUri": "https://api.connective.app.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "80c15b20-61c0-f011-aa43-00224814aa8a",
+      "brandName": "NRMA Home Loans",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/siteassets/partner/tpb/nrma.png",
+      "publicBaseUri": "https://api.nrma.app.bendigobank.com.au",
+      "productBaseUri": "https://api.nrma.app.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "c1d2e9be-61c0-f011-aa43-00224814aa8a",
+      "brandName": "Qantas Money Basic/Offset Home Loans",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/siteassets/partner/tpb/qantas-money.png",
+      "publicBaseUri": "https://api.qantas.app.bendigobank.com.au",
+      "productBaseUri": "https://api.qantas.app.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "098b7b04-de22-ef11-8ee7-00224814bfdf",
+      "interimId": "59aabae5-18fa-4a69-a2ce-50d197716c33",
+      "brandName": "OVO Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://email-assets.ovoenergy.com.au/ovo_energy_full_green_logo.png",
+      "publicBaseUri": "https://public.cdr.ovoenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/ovo-energy",
+      "abn": "99623475089",
+      "acn": "623475089",
+      "lastUpdated": "2026-09-02T10:52:44Z"
+    },
+    {
+      "dataHolderBrandId": "81963e1d-f5cb-f011-ad8e-002248150129",
+      "brandName": "Indigo Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://indigopower.com.au/wp-content/uploads/2025/11/indigo-power_logo.png",
+      "publicBaseUri": "https://public.cdr.indigopower.com.au",
+      "abn": "91167937555",
+      "acn": "167937555",
+      "lastUpdated": "2026-09-02T10:52:45Z"
+    },
+    {
+      "dataHolderBrandId": "e9d78634-25aa-f011-9437-002248187b9e",
+      "brandName": "Tiimely Home",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.bendigobank.com.au/siteassets/partner/tpb/tiimely-home.png",
+      "publicBaseUri": "https://api.tiimely.app.bendigobank.com.au",
+      "productBaseUri": "https://api.tiimely.app.bendigobank.com.au",
+      "abn": "11068049178",
+      "acn": "068049178",
+      "lastUpdated": "2026-09-14T05:14:53Z"
+    },
+    {
+      "dataHolderBrandId": "3195340a-fe50-f011-95f3-00224818bd24",
+      "brandName": "Tyro Banking",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.troy-prod.troy-prod.cxnpl.io/logo/logo.png",
+      "publicBaseUri": "https://od1.cdr.banking.tyro.com/api",
+      "productBaseUri": "https://od1.cdr.banking.tyro.com/api",
+      "abn": "49103575042",
+      "acn": "103575042",
+      "lastUpdated": "2026-09-02T10:52:46Z"
+    },
+    {
+      "dataHolderBrandId": "f120a1b5-4c00-ef11-a73d-002248e1c726",
+      "interimId": "f918026a-b02c-4dea-89a0-e3295b7e7812",
+      "brandName": "Blue NRG",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.bluenrg.com.au/wp-content/uploads/2024/02/Blue-NRGLogo-Inverted-RGB-1200px-W-72ppi.png",
+      "publicBaseUri": "https://public.cdr.bluenrg.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/blue-nrg",
+      "abn": "30151014658",
+      "acn": "151014658",
+      "lastUpdated": "2026-09-02T10:52:46Z"
+    },
+    {
+      "dataHolderBrandId": "47dd2161-c951-ee11-a81c-002248e31327",
+      "interimId": "6b6e0923-4a4a-455a-a1b0-9f3228175788",
+      "brandName": "Nectr",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://nectr.com.au/wp-content/uploads/2023/04/header-logo.svg",
+      "publicBaseUri": "https://public.cdr.nectr.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/nectr",
+      "abn": "82630397214",
+      "acn": "630397214",
+      "lastUpdated": "2026-09-02T10:52:46Z"
+    },
+    {
+      "dataHolderBrandId": "3b80d279-c455-ee11-a81c-002248e31327",
+      "interimId": "052218fc-fb37-4087-b2cc-ced3f0dad299",
+      "brandName": "Dodo Power & Gas",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://s0.2mdn.net/creatives/assets/4983616/Dodo_Logo_Aug23_V1.svg",
+      "publicBaseUri": "https://public.cdr.dodo.com",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/dodo",
+      "abn": "15123155840",
+      "acn": "123155840",
+      "lastUpdated": "2026-09-02T10:52:48Z"
+    },
+    {
+      "dataHolderBrandId": "a18c6866-f45c-ee11-a81c-002248e31327",
+      "interimId": "b43ff855-5598-4dbb-8c1c-582f02c71e6f",
+      "brandName": "Momentum Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.momentumenergy.com.au/assets/images/logo.svg",
+      "publicBaseUri": "https://public.cdr.momentumenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/momentum",
+      "abn": "42100569159",
+      "acn": "100569159",
+      "lastUpdated": "2026-09-02T10:52:49Z"
+    },
+    {
+      "dataHolderBrandId": "d37e16d2-dd5d-ee11-a81c-002248e31327",
+      "interimId": "a53e525f-5ca0-4764-9617-3d2c161d828c",
+      "brandName": "Pacific Blue Retail",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.pacificblue.com.au/sites/default/files/2023-04/Pacific_Blue_300px.png",
+      "publicBaseUri": "https://public.cdr.pacificblue.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/pacific-blue",
+      "abn": "43155908839",
+      "acn": "155908839",
+      "lastUpdated": "2026-09-02T10:52:51Z"
+    },
+    {
+      "dataHolderBrandId": "8bbfb815-515e-ee11-a81c-002248e31327",
+      "interimId": "5c3a9def-c09b-4cbc-807d-a18364ee5232",
+      "brandName": "Tango Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.tangoenergy.com/sites/default/files/2022-08/Default-Logo-Tango.png",
+      "publicBaseUri": "https://public.cdr.tangoenergy.com",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/tango",
+      "abn": "43155908839",
+      "acn": "155908839",
+      "lastUpdated": "2026-09-02T10:52:51Z"
+    },
+    {
+      "dataHolderBrandId": "c12829c8-3a63-ee11-a81c-002248e31327",
+      "interimId": "a259655d-31c2-4492-a5d9-2207f46c0713",
+      "brandName": "GloBird Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.globirdenergy.com.au/wp-content/uploads/2017/09/GloBird_web_logo.svg",
+      "publicBaseUri": "https://publiccdr.globirdenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/globird",
+      "abn": "68600285827",
+      "acn": "600285827",
+      "lastUpdated": "2026-09-02T10:52:51Z"
+    },
+    {
+      "dataHolderBrandId": "dc328d2c-a56c-ee11-a81c-002248e31327",
+      "interimId": "bc9c8ab7-5dc7-4b6b-ac48-2fe68fa781db",
+      "brandName": "Lumo Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.lumoenergy.com.au/assets/images/logo--lumo.svg",
+      "publicBaseUri": "https://public.cdr.lumoenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/lumo",
+      "abn": "69100528327",
+      "acn": "100528327",
+      "lastUpdated": "2026-09-02T10:52:51Z"
+    },
+    {
+      "dataHolderBrandId": "39230258-a56c-ee11-a81c-002248e31327",
+      "interimId": "eb76743a-4ee5-40a7-aa1b-bd3b719a7622",
+      "brandName": "Red Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.redenergy.com.au/assets/img/logo-red-energy.png",
+      "publicBaseUri": "https://public.cdr.redenergy.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/red-energy",
+      "abn": "60107479372",
+      "acn": "107479372",
+      "lastUpdated": "2026-09-02T10:52:53Z"
+    },
+    {
+      "dataHolderBrandId": "42b1464d-6f42-f011-a2d9-6045bd3d9cc4",
+      "brandName": "Snowy Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://snowyenergy.com.au/wp-content/themes/snowyenergy/assets/img/svg/Snowy_Energy_Logo_RGB_TM.svg",
+      "publicBaseUri": "https://public.cdr.snowyenergy.com.au",
+      "abn": "60107479372",
+      "acn": "107479372",
+      "lastUpdated": "2026-09-02T10:52:53Z"
+    },
+    {
+      "dataHolderBrandId": "54968899-b7b5-ef11-95f6-6045bd3f1493",
+      "interimId": "dbfb4be7-27bf-4335-9d92-7e25f1bb8e2a",
+      "brandName": "Amber",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://cdn.prod.website-files.com/65bcfbd87eded73b1edd9413/65bcfdc9d78f09c7ba620068_amber-logo.svg",
+      "publicBaseUri": "https://public.cdr.amber.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/amber",
+      "abn": "98623603805",
+      "acn": "623603805",
+      "lastUpdated": "2026-09-02T10:52:56Z"
+    },
+    {
+      "dataHolderBrandId": "bfd87b4e-cdf8-ef11-a4de-6045bd3f1cfc",
+      "brandName": "Solo by MYOB",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://cdn.moby-prod.prod.cxnpl.io/logo/logoDark.svg",
+      "publicBaseUri": "https://od1.open-banking.myob.greatsouthernbank.com.au/api",
+      "productBaseUri": "https://od1.open-banking.myob.greatsouthernbank.com.au/api",
+      "abn": "44087650959",
+      "lastUpdated": "2026-09-02T10:52:58Z"
+    },
+    {
+      "dataHolderBrandId": "4b573dd8-d278-f111-9b47-6045bd3f59f5",
+      "brandName": "ColCap Private",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/d2620ca8-ab43-4e52-9ca1-6d1334dcb70f",
+      "publicBaseUri": "https://public.colcap-pvt.cdr.colcap.com.au",
+      "productBaseUri": "https://public.colcap-pvt.cdr.colcap.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "b1a68932-237c-f111-9b47-6045bd3f59f5",
+      "brandName": "Granite Home Loans Pty Ltd",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/5119f9e6-b564-4e02-ac3a-361a33eb0c5d",
+      "publicBaseUri": "https://public.cdr.granitehomeloans.com.au",
+      "productBaseUri": "https://public.cdr.granitehomeloans.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "3293e678-237c-f111-9b47-6045bd3f59f5",
+      "brandName": "Homestar Finance Pty Ltd",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://na1.hubspot-logos.com/9c19a2d1-854b-4709-b7f1-bc506894f7ec",
+      "publicBaseUri": "https://public.cdr.homestarfinance.com.au",
+      "productBaseUri": "https://public.cdr.homestarfinance.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "fa2173ca-237c-f111-9b47-6045bd3f59f5",
+      "brandName": "Zeus",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.zeus.lmglending.com.au/hubfs/Zeus/CDR/Zeus_3DS_200x70_150dpi_Burgundy.png",
+      "publicBaseUri": "https://public.cdr.zeus.lmglending.com.au",
+      "productBaseUri": "https://public.cdr.zeus.lmglending.com.au",
+      "abn": "51119531252",
+      "acn": "119531252",
+      "lastUpdated": "2026-10-14T01:09:41Z"
+    },
+    {
+      "dataHolderBrandId": "94bec46a-2308-ef11-989a-6045bd4001ae",
+      "interimId": "1a7c7ab5-f351-4039-8c99-21ff2a8f1787",
+      "brandName": "1st Energy (EL Retail Energy)",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://public.1stenergy.com.au/cdr-1e.png",
+      "publicBaseUri": "https://public.cdr.energylocalsretail.com.au",
+      "abn": "23606408879",
+      "acn": "606408879",
+      "lastUpdated": "2026-10-13T03:54:29Z"
+    },
+    {
+      "dataHolderBrandId": "556fe6e2-d208-ef11-989a-6045bd4001ae",
+      "brandName": "Liberty Financial",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://d2ttwt9gu7swv4.cloudfront.net/cdr_assets/Liberty-Aero-Horizontal-RGB.jpg",
+      "publicBaseUri": "https://services.liberty.com.au/api/data-holder-public",
+      "productBaseUri": "https://services.liberty.com.au/api/data-holder-public",
+      "abn": "55077248983",
+      "acn": "077248983",
+      "lastUpdated": "2026-10-01T04:30:28Z"
+    },
+    {
+      "dataHolderBrandId": "40f826f2-3ed1-ee11-a73d-6045bd4001ae",
+      "brandName": "ENGIE large business",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.engie.com.au/sites/default/files/icons/engie_logo.png",
+      "publicBaseUri": "https://public-cdr-engie.bravecloud.com/b1swktl2zamng9xf/public",
+      "abn": "67269241237",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "3a732abd-b2e1-ee11-a73d-6045bd4001ae",
+      "interimId": "3f85802e-1636-4e3a-9395-cba0062bfab9",
+      "brandName": "Ergon Energy Retail",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.ergon.com.au/__data/assets/image/0013/210613/retail-logo.png",
+      "publicBaseUri": "https://public.cdr.ergonretail.com.au",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/ergon",
+      "abn": "11121177802",
+      "acn": "121177802",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "a1d52141-5bb2-f111-aad1-000d3a79916b",
+      "brandName": "ORDE Financial",
+      "brandGroup": "HOME LOANS",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.datocms-assets.com/149193/1740093747-orde-brand-logo-white.svg",
+      "publicBaseUri": "https://prd.pm.productdata.au/c824d92f-d5bd-4699-b861-b07b145ef382/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/c824d92f-d5bd-4699-b861-b07b145ef382/adapter",
+      "abn": "27634779990",
+      "acn": "634779990",
+      "lastUpdated": "2026-09-17T05:50:07Z"
+    },
+    {
+      "dataHolderBrandId": "d6885866-1db6-f111-aad1-000d3a79916b",
+      "brandName": "Connective Athena",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://static.athena.com.au/images/connective-logo-vert-full-colour.svg",
+      "publicBaseUri": "https://connective.athena.com.au/",
+      "productBaseUri": "https://connective.athena.com.au/",
+      "abn": "24619536506",
+      "acn": "619536506",
+      "lastUpdated": "2026-09-22T00:36:00Z"
+    },
+    {
+      "dataHolderBrandId": "a67e5f63-c137-f111-9a91-000d3ae0db82",
+      "brandName": "Pepper Money",
+      "brandGroup": "PEPPER MONEY",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/fcbfe989-e2f7-ef11-bae2-00224810dad3?ts=638765705859460723",
+      "publicBaseUri": "https://api.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "e7c35439-323d-f111-9a91-000d3ae0db82",
+      "brandName": "AFG Home Loans Options",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/5b5d1ce8-1732-f011-8c4d-7c1e522afc6e?ts=638829706742982539",
+      "publicBaseUri": "https://api.afg.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.afg.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "b0ad2664-393d-f111-9a91-000d3ae0db82",
+      "brandName": "Aussie Activate",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/b8b50bfe-6c8c-f111-ab10-7c1e5289de98?ts=639210503240329657",
+      "publicBaseUri": "https://api.aus.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.aus.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "e9244a99-b43e-f111-9a91-000d3ae0db82",
+      "brandName": "Connective Solutions",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/b9b50bfe-6c8c-f111-ab10-7c1e5289de98?ts=639210503240798425",
+      "publicBaseUri": "https://api.cls.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.cls.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "91316f91-6c40-f111-9a91-000d3ae0db82",
+      "brandName": "Finsure Plus",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/a617cb4a-02f0-ef11-9341-002248982b45?ts=638757046205168048",
+      "publicBaseUri": "https://api.mlp.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.mlp.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "f7ee1a66-6f40-f111-9a91-000d3ae0db82",
+      "brandName": "Mortgage Choice Ignite",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/89b7b819-78b3-ef11-b8e9-000d3acc5a9a?ts=638690481931852340",
+      "publicBaseUri": "https://api.moc.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.moc.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "ac3f3e02-7040-f111-9a91-000d3ae0db82",
+      "brandName": "AAA Money",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/a07490f6-faef-ef11-9341-002248982b45?ts=638757014663518054",
+      "publicBaseUri": "https://api.aaa.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.aaa.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "5b678782-7040-f111-9a91-000d3ae0db82",
+      "brandName": "Amanah Islamic Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/de6a263d-1532-f011-8c4d-7c1e522afc6e?ts=638829695343396833",
+      "publicBaseUri": "https://api.aif.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.aif.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "5b9bac45-7140-f111-9a91-000d3ae0db82",
+      "brandName": "Australian Mortgage Fund",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/1ef8c72f-1b94-f011-b4cc-7c1e522afc6e?ts=638937472968120059",
+      "publicBaseUri": "https://api.amf.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.amf.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "7b28e5b8-7340-f111-9a91-000d3ae0db82",
+      "brandName": "Athena Mortgage",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/375444a5-fcef-ef11-9341-002248982b45?ts=638757021877946637",
+      "publicBaseUri": "https://api.ath.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "f40f5f48-7440-f111-9a91-000d3ae0db82",
+      "brandName": "AXIS Lending",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/4dc3aa27-0732-f011-8c4d-7c1e522afc6e?ts=638829634829991699",
+      "publicBaseUri": "https://api.oak.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.oak.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "edf6edb8-7440-f111-9a91-000d3ae0db82",
+      "brandName": "Citywide Lending",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/7311d929-04f0-ef11-9342-00224893f0cd?ts=638757054249089247",
+      "publicBaseUri": "https://api.cwh.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.cwh.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "951cc41a-7540-f111-9a91-000d3ae0db82",
+      "brandName": "Dreamstreet Lending",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/8a10a295-0d32-f011-8c4d-7c1e522afc6e?ts=638829662432063014",
+      "publicBaseUri": "https://api.dsh.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.dsh.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "1e75236e-7540-f111-9a91-000d3ae0db82",
+      "brandName": "Finstreet",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/179b27fa-0e32-f011-8c4d-7c1e522afc6e?ts=638829668450691071",
+      "publicBaseUri": "https://api.fnt.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.fnt.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "59cc80d2-7540-f111-9a91-000d3ae0db82",
+      "brandName": "Fundsnational Lending Specialists",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/14b5736c-1232-f011-8c4d-7c1e522afc6e?ts=638829683200839175",
+      "publicBaseUri": "https://api.fun.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.fun.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "22456f3a-7640-f111-9a91-000d3ae0db82",
+      "brandName": "Ijarah Islamic Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/46997341-06f0-ef11-9341-0022489389e9?ts=638757063216745195",
+      "publicBaseUri": "https://api.ijf.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.ijf.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "c3270f94-7640-f111-9a91-000d3ae0db82",
+      "brandName": "Infinity Group",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/bc123510-1332-f011-8c4d-7c1e522afc6e?ts=638829685971947928",
+      "publicBaseUri": "https://api.igf.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.igf.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "884667fa-7640-f111-9a91-000d3ae0db82",
+      "brandName": "LA Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/57b1fd19-2e57-f011-bec1-000d3ad0ea14?ts=638870484018406957",
+      "publicBaseUri": "https://api.laf.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "ae2bfd5c-7740-f111-9a91-000d3ae0db82",
+      "brandName": "LJ Hooker Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/8c871289-07f0-ef11-9341-0022489389e9?ts=638757068754091766",
+      "publicBaseUri": "https://api.ljh.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.ljh.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "87db1eb6-7740-f111-9a91-000d3ae0db82",
+      "brandName": "MCCA Islamic Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/da5bde89-0ef0-ef11-9342-00224893f0cd?ts=638757098828940309",
+      "publicBaseUri": "https://api.mcc.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.mcc.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "aa7b0c12-7840-f111-9a91-000d3ae0db82",
+      "brandName": "Mortgage Ezy",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/0cf8e9e7-1032-f011-8c4d-002248921402?ts=638829676693190206",
+      "publicBaseUri": "https://api.mez.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.mez.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "08227096-7840-f111-9a91-000d3ae0db82",
+      "brandName": "My Budget",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/2dfceaf3-06f0-ef11-9341-7c1e5289e14f?ts=638757066146383113",
+      "publicBaseUri": "https://api.mbl.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.mbl.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "709862fb-7840-f111-9a91-000d3ae0db82",
+      "brandName": "Non Conforming Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/affa7b7e-0dfb-ef11-bae2-000d3ad0ea14?ts=638769",
+      "publicBaseUri": "https://api.atp.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.atp.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "001ae15f-7940-f111-9a91-000d3ae0db82",
+      "brandName": "Rate Money",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/6f5398c5-1332-f011-8c4d-002248921402?ts=638829689056691431",
+      "publicBaseUri": "https://api.ram.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.ram.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "db099dc1-7940-f111-9a91-000d3ae0db82",
+      "brandName": "Wholesale Funding Group",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/47c2e690-2e57-f011-bec1-000d3ad0ea14?ts=638870486019964425",
+      "publicBaseUri": "https://api.wfg.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.wfg.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "cd69971e-7a40-f111-9a91-000d3ae0db82",
+      "brandName": "Zillion Finance (N1 Plus)",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/92bbc75a-2e57-f011-bec1-000d3ad0ea14?ts=",
+      "publicBaseUri": "https://api.zil.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.zil.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "1193a57c-7a40-f111-9a91-000d3ae0db82",
+      "brandName": "Lifestyle Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/32f8e9e7-1032-f011-8c4d-002248921402?ts=638829676711471552",
+      "publicBaseUri": "https://api.yml.openbanking.prod.peppermoney.com.au",
+      "productBaseUri": "https://api.yml.openbanking.prod.peppermoney.com.au",
+      "abn": "55094317665",
+      "acn": "094317665",
+      "lastUpdated": "2026-09-29T06:08:05Z"
+    },
+    {
+      "dataHolderBrandId": "d2d7a251-c942-f111-9a91-000d3ae0db82",
+      "brandName": "NOW Finance",
+      "brandGroup": "NOW FINANCE",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://nowfinance.com.au/wp-content/uploads/2025/12/Header-Logo.svg",
+      "publicBaseUri": "https://prd.cdr.nowfinance.com.au",
+      "productBaseUri": "https://prd.cdr.nowfinance.com.au",
+      "abn": "35158703612",
+      "acn": "158703612",
+      "lastUpdated": "2026-09-29T06:19:47Z"
+    },
+    {
+      "dataHolderBrandId": "45d673a2-fa53-f111-89e7-000d3ae1dc4e",
+      "brandName": "Angle Finance",
+      "brandGroup": "BUSINESS LENDING",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.anglefinance.com.au/wp-content/themes/anglefinance-theme/assets/images/logo1.png",
+      "publicBaseUri": "https://prd.pm.productdata.au/5d40bb2d-386a-4c3a-b593-ab10afde742f/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/5d40bb2d-386a-4c3a-b593-ab10afde742f/adapter",
+      "abn": "98603303126",
+      "acn": "603303126",
+      "lastUpdated": "2026-09-02T10:52:38Z"
+    },
+    {
+      "dataHolderBrandId": "686d723f-aa54-f111-89e7-000d3ae1dc4e",
+      "brandName": "Pepper Money Personal Loans by NOW Finance",
+      "brandGroup": "PEPPER MONEY",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://assets-oce.mkt.dynamics.com/a9be8645-a986-ef11-ac1e-0022489321cf/digitalassets/images/fcbfe989-e2f7-ef11-bae2-00224810dad3?ts=638765705859460723",
+      "publicBaseUri": "https://pepper.prd.cdr.nowfinance.com.au",
+      "productBaseUri": "https://pepper.prd.cdr.nowfinance.com.au",
+      "abn": "35158703612",
+      "acn": "158703612",
+      "lastUpdated": "2026-09-29T06:19:47Z"
+    },
+    {
+      "dataHolderBrandId": "31a20e18-6859-f111-89e7-000d3ae1dc4e",
+      "brandName": "Mercedes-Benz Financial",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://image.e.mercedes-benz.com.au/lib/fe8c137374620c7e72/m/1/3562a7f7-92b6-4041-aee3-4102cb409fdf.png",
+      "publicBaseUri": "https://cdr-api.mercedes-benz-financialservices.com.au",
+      "productBaseUri": "https://cdr-api.mercedes-benz-financialservices.com.au",
+      "abn": "73074134517",
+      "acn": "074134517",
+      "lastUpdated": "2026-09-02T10:52:38Z"
+    },
+    {
+      "dataHolderBrandId": "0189e547-b97c-f111-b27f-6045bd3ce80e",
+      "brandName": "Mortgage House",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://mortgagehouse.com.au/wp-content/uploads/2024/09/Mortgage-House-Logo.webp",
+      "publicBaseUri": "https://mortgagehouse.com.au",
+      "productBaseUri": "https://mortgagehouse.com.au",
+      "abn": "52106171537",
+      "acn": "106171537",
+      "lastUpdated": "2026-09-02T10:52:53Z"
+    },
+    {
+      "dataHolderBrandId": "792d806e-c37c-f111-b27f-6045bd3ce80e",
+      "brandName": "Mortgage Street",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://mortgagestreet.com.au/wp-content/uploads/2023/08/logo.svg",
+      "publicBaseUri": "https://mortgagestreet.com.au/",
+      "abn": "52106171537",
+      "acn": "106171537",
+      "lastUpdated": "2026-09-02T10:52:53Z"
+    },
+    {
+      "dataHolderBrandId": "91a24d98-ee8a-f111-b27e-6045bd3dd75c",
+      "brandName": "BYD Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedbyd.png",
+      "publicBaseUri": "https://public.prd.bydfinancialservices.com.au",
+      "productBaseUri": "https://public.prd.bydfinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "6c439eed-ee8a-f111-b27e-6045bd3dd75c",
+      "brandName": "DENZA Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/allieddnz.png",
+      "publicBaseUri": "https://public.prd.denzafinancialservices.com.au",
+      "productBaseUri": "https://public.prd.denzafinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "b7506c54-445e-f111-9b47-6045bd3f59f5",
+      "brandName": "Angle Auto Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/BP7V/dky9av/NJL8GA/original/Angle+Auto+Finance+Logo",
+      "publicBaseUri": "https://prd.cdr.angleauto.com.au",
+      "productBaseUri": "https://prd.cdr.angleauto.com.au",
+      "abn": "16161130696",
+      "acn": "161130696",
+      "lastUpdated": "2026-10-13T06:57:43Z"
+    },
+    {
+      "dataHolderBrandId": "ef700bd1-445e-f111-9b47-6045bd3f59f5",
+      "brandName": "Ford Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/BP7V/dky9av/73MyWg/original/Ford_Finance_Blue_Print_Spot_Vt_v1",
+      "publicBaseUri": "https://prd.cdr.ford-finance.com.au",
+      "productBaseUri": "https://prd.cdr.ford-finance.com.au",
+      "abn": "16161130696",
+      "acn": "161130696",
+      "lastUpdated": "2026-10-13T06:57:43Z"
+    },
+    {
+      "dataHolderBrandId": "4142a5c2-dc5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Volkswagen Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/2383x756/69037466c5/volkswagen-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.vwfinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.vwfinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "ed2ba021-dd5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Audi Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/1068x131/fce0c1cffa/audi-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.audifinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.audifinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "84373d60-dd5e-f111-9b47-6045bd3f59f5",
+      "brandName": "ŠKODA Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/1150x416/9936478fcc/skoda-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.skodafinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.skodafinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "216fa09c-dd5e-f111-9b47-6045bd3f59f5",
+      "brandName": "CUPRA Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/138x150/36333a30ee/cupra-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.cuprafinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.cuprafinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "c96d55e7-de5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Bentley Financial Services Australia",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/267x150/8a554bcd9b/bentley-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.bentleyfinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.bentleyfinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "df469723-df5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Jaguar Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/600x240/f1aa5f9d6d/jaguar-financial-services.png",
+      "publicBaseUri": "https://public.cdr.jaguarfinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.jaguarfinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "d3e54863-df5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Lamborghini Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/212x150/f30e472eb0/lamborghini-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.lamborghinifinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.lamborghinifinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "6fd4e396-df5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Land Rover Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/3543x2126/03357aeb89/land-rover-financial-services.png",
+      "publicBaseUri": "https://public.cdr.landroverfinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.landroverfinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "9f7200da-df5e-f111-9b47-6045bd3f59f5",
+      "brandName": "Porsche Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/300x20/eaf670b497/porsche-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.porsche-financialservices.com.au",
+      "productBaseUri": "https://public.cdr.porsche-financialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "9ef2710e-e05e-f111-9b47-6045bd3f59f5",
+      "brandName": "Volvo Car Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/1266x98/35aa96669f/volvo-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.volvo-financialservices.com.au",
+      "productBaseUri": "https://public.cdr.volvo-financialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "b6a1bd47-e05e-f111-9b47-6045bd3f59f5",
+      "brandName": "Ducati Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://a.storyblok.com/f/250412/556x204/f797110a36/ducati-financial-services.svg",
+      "publicBaseUri": "https://public.cdr.ducatifinancialservices.com.au",
+      "productBaseUri": "https://public.cdr.ducatifinancialservices.com.au",
+      "abn": "20097071460",
+      "acn": "097071460",
+      "lastUpdated": "2026-09-02T10:53:07Z"
+    },
+    {
+      "dataHolderBrandId": "b74ce68c-195f-f111-9b47-6045bd3f59f5",
+      "brandName": "Zip",
+      "brandGroup": "ZIP",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://static.zip.co/logo/dark.svg",
+      "publicBaseUri": "https://api.zip.co",
+      "productBaseUri": "https://api.zip.co",
+      "abn": "58164440993",
+      "acn": "164440993",
+      "lastUpdated": "2026-09-02T10:53:08Z"
+    },
+    {
+      "dataHolderBrandId": "408db63c-9160-f111-9b47-6045bd3f59f5",
+      "brandName": "ScotPac Business Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn-caiie.nitrocdn.com/cKuWaMxRUtiyNhywKGeaZBSyziASZNyd/assets/images/optimized/rev-86b9b9e/www.scotpac.com.au/wp-content/themes/scottishmain/images/scotpaclogo.png",
+      "publicBaseUri": "https://prd.pm.productdata.au/8700c6a5-9057-417a-81e5-0f52ee09040d/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/8700c6a5-9057-417a-81e5-0f52ee09040d/adapter",
+      "abn": "79008636388",
+      "acn": "008636388",
+      "lastUpdated": "2026-09-08T05:59:45Z"
+    },
+    {
+      "dataHolderBrandId": "91167d53-a563-f111-9b47-6045bd3f59f5",
+      "brandName": "La Trobe Financial",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.latrobefinancial.com.au/app/uploads/LFLogo_RGB_BlueKey-line.png",
+      "publicBaseUri": "https://cdr-api.latrobefinancial.com.au",
+      "productBaseUri": "https://cdr-api.latrobefinancial.com.au",
+      "abn": "30006479527",
+      "acn": "006479527",
+      "lastUpdated": "2026-09-02T10:53:34Z"
+    },
+    {
+      "dataHolderBrandId": "0243ede4-9768-f111-9b47-6045bd3f59f5",
+      "brandName": "BMW Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.bmw.com.au/content/dam/bmw/common/images/logo-icons/BMW/BMW_White_Logo.svg.asset.1670245093434.svg",
+      "publicBaseUri": "https://cdr-api.myfinance.bmw.com.au",
+      "productBaseUri": "https://cdr-api.myfinance.bmw.com.au",
+      "abn": "78007101715",
+      "acn": "007101715",
+      "lastUpdated": "2026-09-02T10:53:34Z"
+    },
+    {
+      "dataHolderBrandId": "d1dbb11f-9868-f111-9b47-6045bd3f59f5",
+      "brandName": "MINI Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://sydneyminigarage.b-cdn.net/wp-content/uploads/logo.webp",
+      "publicBaseUri": "https://cdr-api.myfinance.mini.com.au",
+      "productBaseUri": "https://cdr-api.myfinance.mini.com.au",
+      "abn": "78007101715",
+      "acn": "007101715",
+      "lastUpdated": "2026-09-02T10:53:34Z"
+    },
+    {
+      "dataHolderBrandId": "125faeb5-c56e-f111-9b47-6045bd3f59f5",
+      "brandName": "bravoauto Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedbfs.png",
+      "publicBaseUri": "https://public.prd.bravoautofinancialservices.com.au",
+      "productBaseUri": "https://public.prd.bravoautofinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "0da17409-c66e-f111-9b47-6045bd3f59f5",
+      "brandName": "Deepal Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/allieddfs.png",
+      "publicBaseUri": "https://public.prd.deepalfinancialservices.com.au",
+      "productBaseUri": "https://public.prd.deepalfinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "cc71e848-c66e-f111-9b47-6045bd3f59f5",
+      "brandName": "FOTON Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedffs.png",
+      "publicBaseUri": "https://public.prd.fotonfinancialservices.com.au",
+      "productBaseUri": "https://public.prd.fotonfinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "f1b1d07b-c66e-f111-9b47-6045bd3f59f5",
+      "brandName": "PEUGEOT Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedpefs.png",
+      "publicBaseUri": "https://public.prd.peugeotfinancialservices.com.au",
+      "productBaseUri": "https://public.prd.peugeotfinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "59e8e1c3-c66e-f111-9b47-6045bd3f59f5",
+      "brandName": "Automotive Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedamo.png",
+      "publicBaseUri": "https://public.prd.automotive-finance.com.au",
+      "productBaseUri": "https://public.prd.automotive-finance.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "7232b320-c76e-f111-9b47-6045bd3f59f5",
+      "brandName": "Alfa Romeo Financial Services Australia",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedafsa.png",
+      "publicBaseUri": "https://public.prd.alfaromeofinancialservices.com.au",
+      "productBaseUri": "https://public.prd.alfaromeofinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "52875371-c76e-f111-9b47-6045bd3f59f5",
+      "brandName": "Allcredit Automotive Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedaaf.png",
+      "publicBaseUri": "https://public.prd.allcreditautomotivefinance.com.au",
+      "productBaseUri": "https://public.prd.allcreditautomotivefinance.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "072e90ab-c76e-f111-9b47-6045bd3f59f5",
+      "brandName": "Chery Motor Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedchf.png",
+      "publicBaseUri": "https://public.prd.cheryfinanceaustralia.com.au",
+      "productBaseUri": "https://public.prd.cheryfinanceaustralia.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "f0f918f1-c76e-f111-9b47-6045bd3f59f5",
+      "brandName": "Fiat Financial Services Australia",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedffsa.png",
+      "publicBaseUri": "https://public.prd.fiatfinancialservices.com.au",
+      "productBaseUri": "https://public.prd.fiatfinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "e9aef335-c86e-f111-9b47-6045bd3f59f5",
+      "brandName": "Geely Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedgly.png",
+      "publicBaseUri": "https://public.prd.geelyfinance.com.au",
+      "productBaseUri": "https://public.prd.geelyfinance.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "e0934a70-c86e-f111-9b47-6045bd3f59f5",
+      "brandName": "Isuzu UTE Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliediuf.png",
+      "publicBaseUri": "https://public.prd.isuzuutefinance.com.au",
+      "productBaseUri": "https://public.prd.isuzuutefinance.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "bc5a4f29-ca6e-f111-9b47-6045bd3f59f5",
+      "brandName": "Jeep Financial Services Australia",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedjfsa.png",
+      "publicBaseUri": "https://public.prd.jeepfinancialservices.com.au",
+      "productBaseUri": "https://public.prd.jeepfinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "22367098-ca6e-f111-9b47-6045bd3f59f5",
+      "brandName": "Omoda Jaecoo Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedojfs.png",
+      "publicBaseUri": "https://public.prd.omodajaecoofinancialservices.com.au",
+      "productBaseUri": "https://public.prd.omodajaecoofinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "27033d6c-cc6e-f111-9b47-6045bd3f59f5",
+      "brandName": "Polestar Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedpol.png",
+      "publicBaseUri": "https://public.prd.polestarfinance.com.au",
+      "productBaseUri": "https://public.prd.polestarfinance.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "33f234ea-d16e-f111-9b47-6045bd3f59f5",
+      "brandName": "The Asset Financier",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedafi.png",
+      "publicBaseUri": "https://public.prd.theassetfinancier.com.au",
+      "productBaseUri": "https://public.prd.theassetfinancier.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "9afbf761-d26e-f111-9b47-6045bd3f59f5",
+      "brandName": "Veya Money",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedvik.png",
+      "publicBaseUri": "https://public.prd.veyamoney.com.au",
+      "productBaseUri": "https://public.prd.veyamoney.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "8e610ee2-d26e-f111-9b47-6045bd3f59f5",
+      "brandName": "MotorCycle Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedmcf.png",
+      "publicBaseUri": "https://public.prd.mcfinance.net.au",
+      "productBaseUri": "https://public.prd.mcfinance.net.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "6e88a230-d36e-f111-9b47-6045bd3f59f5",
+      "brandName": "Weekend Toy Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedwtf.png",
+      "publicBaseUri": "https://public.prd.weekendtoyfinance.com.au",
+      "productBaseUri": "https://public.prd.weekendtoyfinance.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "8161a6c5-d36e-f111-9b47-6045bd3f59f5",
+      "brandName": "Kawasaki Motors Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedkmf.png",
+      "publicBaseUri": "https://public.prd.kawasakimotorsfinance.com.au",
+      "productBaseUri": "https://public.prd.kawasakimotorsfinance.com.au",
+      "abn": "24143970094",
+      "acn": "143970094",
+      "lastUpdated": "2026-09-02T10:53:21Z"
+    },
+    {
+      "dataHolderBrandId": "3e27358c-3870-f111-9b47-6045bd3f59f5",
+      "brandName": "Aussie Select",
+      "brandGroup": "AUSSIE HOME LOANS",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://ap-southeast-2.graphassets.com/cmag32nvh02ky072u0mc16673/cmqg6epal9qdr071is1j08ocf",
+      "publicBaseUri": "https://prd.cdr.aussie.com.au",
+      "productBaseUri": "https://prd.cdr.aussie.com.au",
+      "abn": "82152378133",
+      "acn": "152378133",
+      "lastUpdated": "2026-09-02T10:53:21Z"
+    },
+    {
+      "dataHolderBrandId": "ac015b41-0f71-f111-9b47-6045bd3f59f5",
+      "brandName": "Athena Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://static.athena.com.au/images/athena-logo-horizontal.svg",
+      "publicBaseUri": "https://www.athena.com.au/",
+      "productBaseUri": "https://www.athena.com.au/",
+      "abn": "24619536506",
+      "acn": "619536506",
+      "lastUpdated": "2026-09-22T00:36:00Z"
+    },
+    {
+      "dataHolderBrandId": "1e9bf0f1-1d71-f111-9b47-6045bd3f59f5",
+      "brandName": "Mortgage Choice Freedom",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://static.athena.com.au/images/mortgage-choice-freedom-logo-horizontal.svg",
+      "publicBaseUri": "https://mortgagechoice.athena.com.au/",
+      "productBaseUri": "https://mortgagechoice.athena.com.au/",
+      "abn": "24619536506",
+      "acn": "619536506",
+      "lastUpdated": "2026-09-22T00:36:00Z"
+    },
+    {
+      "dataHolderBrandId": "412b575f-1e71-f111-9b47-6045bd3f59f5",
+      "brandName": "Apollo",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://static.athena.com.au/images/apollo-logo-horizontal.svg",
+      "publicBaseUri": "https://lmg.athena.com.au/",
+      "productBaseUri": "https://lmg.athena.com.au/",
+      "abn": "24619536506",
+      "acn": "619536506",
+      "lastUpdated": "2026-09-22T00:36:00Z"
+    },
+    {
+      "dataHolderBrandId": "efabbedf-2171-f111-9b47-6045bd3f59f5",
+      "brandName": "Latitude Personal and Motor Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://images.ctfassets.net/w0q68lqdeo57/yXPxCYiHJucDHSI6nTDNX/7656c648c094e8bfff54ef7a2b5f9dea/Latitude_primary-logo_indigo_RGB.png",
+      "publicBaseUri": "https://api.productcloud.com.au/public/LATITUDELOANS",
+      "productBaseUri": "https://api.productcloud.com.au/public/LATITUDELOANS",
+      "abn": "42008583588",
+      "acn": "008583588",
+      "lastUpdated": "2026-09-02T10:53:23Z"
+    },
+    {
+      "dataHolderBrandId": "ace09c43-2271-f111-9b47-6045bd3f59f5",
+      "brandName": "Latitude Credit Cards",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://images.ctfassets.net/w0q68lqdeo57/yXPxCYiHJucDHSI6nTDNX/7656c648c094e8bfff54ef7a2b5f9dea/Latitude_primary-logo_indigo_RGB.png",
+      "publicBaseUri": "https://api.productcloud.com.au/public/LATITUDECARDS",
+      "productBaseUri": "https://api.productcloud.com.au/public/LATITUDECARDS",
+      "abn": "42008583588",
+      "acn": "008583588",
+      "lastUpdated": "2026-09-02T10:53:23Z"
+    },
+    {
+      "dataHolderBrandId": "e18ba774-4471-f111-9b47-6045bd3f59f5",
+      "brandName": "AFG Home Loans - Retro",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://afghomeloans.com.au/wp-content/uploads/2022/03/AFG-Home-Loans-Retro-300x150.png",
+      "publicBaseUri": "https://public.cdr.afghomeloans.com.au",
+      "productBaseUri": "https://public.cdr.afghomeloans.com.au",
+      "abn": "90119343118",
+      "acn": "119343118",
+      "lastUpdated": "2026-09-02T10:53:54Z"
+    },
+    {
+      "dataHolderBrandId": "cceb4a45-5073-f111-9b47-6045bd3f59f5",
+      "brandName": "Subaru Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://app.productcloud.com.au/img/theme/alliedsfs.png",
+      "publicBaseUri": "https://public.prd.subarufinancialservices.com.au",
+      "productBaseUri": "https://public.prd.subarufinancialservices.com.au",
+      "abn": "31609859985",
+      "acn": "609859985",
+      "lastUpdated": "2026-09-02T10:54:31Z"
+    },
+    {
+      "dataHolderBrandId": "dd5e7c30-7473-f111-9b47-6045bd3f59f5",
+      "brandName": "MA Money",
+      "brandGroup": "MA MONEY",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.mamoney.com.au/wp-content/uploads/2024/11/MA-Money-Header-Logo.svg",
+      "publicBaseUri": "https://public.cdr.mamoney.com.au",
+      "productBaseUri": "https://public.cdr.mamoney.com.au",
+      "abn": "64639174315",
+      "acn": "639174315",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "9b298479-1474-f111-9b47-6045bd3f59f5",
+      "brandName": "AFG Align",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2024/09/afg-home-loans.png",
+      "publicBaseUri": "https://public.cdr-afg.thinktank.au",
+      "productBaseUri": "https://public.cdr-afg.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "2fc616d3-ce74-f111-9b47-6045bd3f59f5",
+      "brandName": "RedZed",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://images1.cmp.optimizely.com/Zz01OTQ5MGRlODZmZTMxMWVmYTViMDNhYjRkNTFkYzBmNA==?width=176&height=40",
+      "publicBaseUri": "https://public.cdr.redzed.com",
+      "productBaseUri": "https://public.cdr.redzed.com",
+      "abn": "31123588527",
+      "acn": "123588527",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "0db35cac-cf74-f111-9b47-6045bd3f59f5",
+      "brandName": "Connective Complete",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://connectivecomplete.com.au/connective-complete-long.svg",
+      "publicBaseUri": "https://public.cdr.connectivecomplete.com.au",
+      "productBaseUri": "https://public.cdr.connectivecomplete.com.au",
+      "abn": "31123588527",
+      "acn": "123588527",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "1ecded5d-f674-f111-9b47-6045bd3f59f5",
+      "brandName": "AFG Commercial",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2024/09/afg-commercial.png",
+      "publicBaseUri": "https://public.cdr-afg-commercial.thinktank.au",
+      "productBaseUri": "https://public.cdr-afg-commercial.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "2b5a43af-f674-f111-9b47-6045bd3f59f5",
+      "brandName": "Connective Advance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2025/02/62d0fe8d7d7beb2945a4032f_Connective-Advance-p-800.png",
+      "publicBaseUri": "https://public.cdr-connective.thinktank.au",
+      "productBaseUri": "https://public.cdr-connective.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "976ef8d0-f674-f111-9b47-6045bd3f59f5",
+      "brandName": "Finsure Thrive",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2024/09/finsure.png",
+      "publicBaseUri": "https://public.cdr-finsure.thinktank.au",
+      "productBaseUri": "https://public.cdr-finsure.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "f93dddec-f674-f111-9b47-6045bd3f59f5",
+      "brandName": "Paramount Edge",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2026/06/Paramount_Edge_Logo-1-scaled.png",
+      "publicBaseUri": "https://public.cdr-paramount.thinktank.au",
+      "productBaseUri": "https://public.cdr-paramount.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "0ad8b61a-f774-f111-9b47-6045bd3f59f5",
+      "brandName": "Rate Money Elevate",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2026/06/Rate-Money-Elevate-Logo-Grey-Pink.png",
+      "publicBaseUri": "https://public.cdr-rate-money.thinktank.au",
+      "productBaseUri": "https://public.cdr-rate-money.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "a9fdc72f-f774-f111-9b47-6045bd3f59f5",
+      "brandName": "Thinktank",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2026/06/Thinktank-Logo-1.png",
+      "publicBaseUri": "https://public.cdr.thinktank.au",
+      "productBaseUri": "https://public.cdr.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "4c697853-f774-f111-9b47-6045bd3f59f5",
+      "brandName": "Thinktank by LMG",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2026/05/Thinktank-byLMG_Thinktank_Full01-scaled.png",
+      "publicBaseUri": "https://public.cdr-thinktank-by-lmg.thinktank.au",
+      "productBaseUri": "https://public.cdr-thinktank-by-lmg.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "23846269-f774-f111-9b47-6045bd3f59f5",
+      "brandName": "YBR Lending Solutions",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://thinktank.au/wp-content/uploads/2025/05/ybr-adjusted.png",
+      "publicBaseUri": "https://public.cdr-ybr.thinktank.au",
+      "productBaseUri": "https://public.cdr-ybr.thinktank.au",
+      "abn": "75117819084",
+      "acn": "117819084",
+      "lastUpdated": "2026-09-02T10:53:57Z"
+    },
+    {
+      "dataHolderBrandId": "34dc1fab-0275-f111-9b47-6045bd3f59f5",
+      "brandName": "Bluestone Home Loans",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/NJgag2/n8XK/w8lw/original/Bluestone_Homeloans_Logo_Dark-Blue_RGB",
+      "publicBaseUri": "https://prd.pm.productdata.au/27572835-a272-4f6f-8a8a-7e8f7ea2a311/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/27572835-a272-4f6f-8a8a-7e8f7ea2a311/adapter",
+      "abn": "29122698328",
+      "acn": "122698328",
+      "lastUpdated": "2026-09-02T10:53:36Z"
+    },
+    {
+      "dataHolderBrandId": "608d291b-0c75-f111-9b47-6045bd3f59f5",
+      "brandName": "MoneyMe",
+      "brandGroup": "MONEYME",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.moneyme.com.au/images/commsimg/rebrand/mm-logo.png",
+      "publicBaseUri": "https://cdr.moneyme.com.au/moneyme",
+      "productBaseUri": "https://cdr.moneyme.com.au/moneyme",
+      "abn": "40163691236",
+      "acn": "163691236",
+      "lastUpdated": "2026-09-02T10:53:39Z"
+    },
+    {
+      "dataHolderBrandId": "4eb70dd1-8b76-f111-9b47-6045bd3f59f5",
+      "brandName": "Connective Elevate",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/NJgag2/PEPE/vr0W/original/RGB_Connective+Elevate_short_blue",
+      "publicBaseUri": "https://prd.pm.productdata.au/d72b13cc-5cce-419f-ae77-a60a19572c47/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/d72b13cc-5cce-419f-ae77-a60a19572c47/adapter",
+      "abn": "29122698328",
+      "acn": "122698328",
+      "lastUpdated": "2026-09-02T10:53:36Z"
+    },
+    {
+      "dataHolderBrandId": "b2cd8300-8c76-f111-9b47-6045bd3f59f5",
+      "brandName": "Mortgage Choice Amplify",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.intelligencebank.com/au/share/NJgag2/LBY3/o7wq/original/MC+Amplify+Red-rgb+340x140",
+      "publicBaseUri": "https://prd.pm.productdata.au/fd8a17fe-c3c9-41cc-9cbc-90f00380f306/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/fd8a17fe-c3c9-41cc-9cbc-90f00380f306/adapter",
+      "abn": "29122698328",
+      "acn": "122698328",
+      "lastUpdated": "2026-09-02T10:53:36Z"
+    },
+    {
+      "dataHolderBrandId": "39077114-be76-f111-9b47-6045bd3f59f5",
+      "brandName": "DLL (De Lage Landen)",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.dllgroup.com/au/en-au/-/media/Project/Dll/Shared/Header/header-logo.png?h=51&iar=0&w=187&hash=821532F05FC937F0A9DB19D2017B9EFE",
+      "publicBaseUri": "https://public.dll.prod.provider.fiskil.com",
+      "productBaseUri": "https://public.dll.prod.provider.fiskil.com",
+      "abn": "20101692040",
+      "acn": "101692040",
+      "lastUpdated": "2026-09-02T10:53:36Z"
+    },
+    {
+      "dataHolderBrandId": "3fc0dc4c-be76-f111-9b47-6045bd3f59f5",
+      "brandName": "AGCO Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.agcofinance.com/au/en-au/-/media/Project/AGCO/Shared/agcofinance_logo.svg?iar=0&hash=D202E57BE0963FD65742C9FE359428C8",
+      "publicBaseUri": "https://public.dll-agco.prod.provider.fiskil.com",
+      "productBaseUri": "https://public.dll-agco.prod.provider.fiskil.com",
+      "abn": "20101692040",
+      "acn": "101692040",
+      "lastUpdated": "2026-09-02T10:53:36Z"
+    },
+    {
+      "dataHolderBrandId": "9ef80a04-de78-f111-9b47-6045bd3f59f5",
+      "brandName": "Mortgage Ezy",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.mezy.com.au/wp-content/uploads/2015/09/logo-white-300x150.png",
+      "publicBaseUri": "https://public.cdr.mezy.mamoney.com.au",
+      "productBaseUri": "https://public.cdr.mezy.mamoney.com.au",
+      "abn": "64639174315",
+      "acn": "639174315",
+      "lastUpdated": "2026-09-02T10:53:56Z"
+    },
+    {
+      "dataHolderBrandId": "190a196d-0179-f111-9b47-6045bd3f59f5",
+      "brandName": "SocietyOne",
+      "brandGroup": "MONEYME",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.moneyme.com.au/images/commsimg/rebrand/soc1/S1xMME_v2.png",
+      "publicBaseUri": "https://cdr.moneyme.com.au/societyone",
+      "productBaseUri": "https://cdr.moneyme.com.au/societyone",
+      "abn": "40163691236",
+      "acn": "163691236",
+      "lastUpdated": "2026-09-02T10:53:39Z"
+    },
+    {
+      "dataHolderBrandId": "c864a78e-267b-f111-9b47-6045bd3f59f5",
+      "brandName": "loans.com.au",
+      "brandGroup": "FIRSTMAC",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.firstmac.com.au/media/cdr-logo/loanscomau.svg",
+      "publicBaseUri": "https://prd.pm.productdata.au/270801a2-ecee-4175-98fc-9ba0a1cd8d4d/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/270801a2-ecee-4175-98fc-9ba0a1cd8d4d/adapter",
+      "abn": "59094145963",
+      "acn": "094145963",
+      "lastUpdated": "2026-09-27T23:24:14Z"
+    },
+    {
+      "dataHolderBrandId": "dc5524f7-267b-f111-9b47-6045bd3f59f5",
+      "brandName": "Firstmac",
+      "brandGroup": "FIRSTMAC",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.firstmac.com.au/media/cdr-logo/firstmac.svg",
+      "publicBaseUri": "https://prd.pm.productdata.au/05a7dab9-5ad2-42b2-81e9-ed48e05ba21b/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/05a7dab9-5ad2-42b2-81e9-ed48e05ba21b/adapter",
+      "abn": "59094145963",
+      "acn": "094145963",
+      "lastUpdated": "2026-09-27T23:24:14Z"
+    },
+    {
+      "dataHolderBrandId": "17b7e215-277b-f111-9b47-6045bd3f59f5",
+      "brandName": "Afterpay",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://static.afterpay.com/email/logo-afterpay-colour.png",
+      "publicBaseUri": "https://sandbox.api.cash.app",
+      "productBaseUri": "https://sandbox.api.cash.app",
+      "abn": "15169342947",
+      "lastUpdated": "2026-09-02T10:53:41Z"
+    },
+    {
+      "dataHolderBrandId": "18b7e215-277b-f111-9b47-6045bd3f59f5",
+      "brandName": "LJ Hooker Home Loans",
+      "brandGroup": "FIRSTMAC",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.firstmac.com.au/media/cdr-logo/ljhooker.svg",
+      "publicBaseUri": "https://prd.pm.productdata.au/5c8b5d2a-56da-49ce-909e-8e7681a5775d/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/5c8b5d2a-56da-49ce-909e-8e7681a5775d/adapter",
+      "abn": "59094145963",
+      "acn": "094145963",
+      "lastUpdated": "2026-09-27T23:24:14Z"
+    },
+    {
+      "dataHolderBrandId": "67035638-277b-f111-9b47-6045bd3f59f5",
+      "brandName": "MCCA",
+      "brandGroup": "FIRSTMAC",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.firstmac.com.au/media/cdr-logo/mcca.svg",
+      "publicBaseUri": "https://prd.pm.productdata.au/634f7ed1-e01b-44ef-8ad2-8a7465c9c40a/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/634f7ed1-e01b-44ef-8ad2-8a7465c9c40a/adapter",
+      "abn": "59094145963",
+      "acn": "094145963",
+      "lastUpdated": "2026-09-27T23:24:14Z"
+    },
+    {
+      "dataHolderBrandId": "5cba81f6-5e7b-f111-9b47-6045bd3f59f5",
+      "brandName": "Nissan Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/nfs-cdr/logo-main.png",
+      "publicBaseUri": "https://public.nfs-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.nfs-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "ca4b5b47-5f7b-f111-9b47-6045bd3f59f5",
+      "brandName": "Renault Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/rfs-cdr/logo-main.png",
+      "publicBaseUri": "https://public.rfs-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.rfs-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "e0dd6774-5f7b-f111-9b47-6045bd3f59f5",
+      "brandName": "Skyline Car Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/scf-cdr/logo-main.png",
+      "publicBaseUri": "https://public.scf-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.scf-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "61f54194-5f7b-f111-9b47-6045bd3f59f5",
+      "brandName": "Mitsubishi Motors Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/mmfs-cdr/logo-main.png",
+      "publicBaseUri": "https://public.mmfs-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.mmfs-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "6832d6ef-5f7b-f111-9b47-6045bd3f59f5",
+      "brandName": "RAM Trucks Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/ramfs-cdr/logo-main.png",
+      "publicBaseUri": "https://public.ramfs-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.ramfs-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "52730747-607b-f111-9b47-6045bd3f59f5",
+      "brandName": "LDV Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/ldvfs-cdr/logo-main.png",
+      "publicBaseUri": "https://public.ldvfs-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.ldvfs-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "5e4128f8-eb7b-f111-9b47-6045bd3f59f5",
+      "brandName": "humm",
+      "brandGroup": "HUMM GROUP",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.shophumm.com/humm/uploads/sites/9/humm_logo_png.png",
+      "publicBaseUri": "https://public.cdr.humm-group.com/",
+      "productBaseUri": "https://public.cdr.humm-group.com/",
+      "abn": "75122574583",
+      "acn": "122574583",
+      "lastUpdated": "2026-09-02T10:53:46Z"
+    },
+    {
+      "dataHolderBrandId": "e368df64-f07b-f111-9b47-6045bd3f59f5",
+      "brandName": "American Express",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.aexp-static.com/cdaas/one/statics/@americanexpress/static-assets/2.28.0/package/dist/img/logos/dls-logo-bluebox-alt.svg",
+      "publicBaseUri": "https://apigw.americanexpress.com/cdr/unauth",
+      "productBaseUri": "https://apigw.americanexpress.com/cdr/unauth",
+      "abn": "92108952085",
+      "acn": "108952085",
+      "lastUpdated": "2026-10-13T23:52:50Z"
+    },
+    {
+      "dataHolderBrandId": "be3d7830-fb7b-f111-9b47-6045bd3f59f5",
+      "brandName": "INEOS Grenadier Financial Services",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://content.automotivelendingsolutions.com.au/branding/ineosfs-cdr/logo-main.png",
+      "publicBaseUri": "https://public.ineosfs-cdr.automotivelendingsolutions.com.au",
+      "productBaseUri": "https://public.ineosfs-cdr.automotivelendingsolutions.com.au",
+      "abn": "70130046794",
+      "acn": "130046794",
+      "lastUpdated": "2026-09-02T10:53:48Z"
+    },
+    {
+      "dataHolderBrandId": "ff020d9f-147c-f111-9b47-6045bd3f59f5",
+      "brandName": "MoneyPlace",
+      "brandGroup": "LIBERTY FINANCIAL PTY LTD",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://moneyplace.com.au/images/logo-header-light.svg",
+      "publicBaseUri": "https://services.liberty.com.au/api/data-holder-public/moneyplace",
+      "productBaseUri": "https://services.liberty.com.au/api/data-holder-public/moneyplace",
+      "abn": "55077248983",
+      "acn": "077248983",
+      "lastUpdated": "2026-10-01T04:30:28Z"
+    },
+    {
+      "dataHolderBrandId": "693663cf-147c-f111-9b47-6045bd3f59f5",
+      "brandName": "Moula",
+      "brandGroup": "LIBERTY FINANCIAL PTY LTD",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://moula.com.au/wp-content/uploads/2019/08/Moula_RGB.png",
+      "publicBaseUri": "https://services.liberty.com.au/api/data-holder-public/moula",
+      "productBaseUri": "https://services.liberty.com.au/api/data-holder-public/moula",
+      "abn": "55077248983",
+      "acn": "077248983",
+      "lastUpdated": "2026-10-01T04:30:28Z"
+    },
+    {
+      "dataHolderBrandId": "df336a60-197c-f111-9b47-6045bd3f59f5",
+      "brandName": "Dynamoney",
+      "brandGroup": "BUSINESS LENDING",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://growpublicaccess.blob.core.windows.net/logos/PNG/LR/DYNA_Logo_103023_Mono-Blue_LR_Trim.png",
+      "publicBaseUri": "https://public.cdr.dynamoney.com",
+      "productBaseUri": "https://public.cdr.dynamoney.com",
+      "abn": "80613082698",
+      "acn": "613082698",
+      "lastUpdated": "2026-09-02T10:53:49Z"
+    },
+    {
+      "dataHolderBrandId": "889f0975-1e7c-f111-9b47-6045bd3f59f5",
+      "brandName": "Plenti",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://cdn.prod.website-files.com/678e0e7049b23fa262dbfe16/678e0e7149b23fa262dbfe3b_Plenti_Logo_Navy.svg",
+      "publicBaseUri": "https://public.cdr.plenti.com.au",
+      "productBaseUri": "https://public.cdr.plenti.com.au",
+      "abn": "57166646635",
+      "acn": "166646635",
+      "lastUpdated": "2026-09-02T10:53:49Z"
+    },
+    {
+      "dataHolderBrandId": "cf80b92f-207c-f111-9b47-6045bd3f59f5",
+      "brandName": "homeloans.com.au",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.resimac.com.au/media-toolkits/homeloans",
+      "publicBaseUri": "https://prd.pm.productdata.au/cfb0204a-43c7-4274-a7ce-411b17243f01/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/cfb0204a-43c7-4274-a7ce-411b17243f01/adapter",
+      "abn": "55095034003",
+      "acn": "095034003",
+      "lastUpdated": "2026-10-14T02:45:49Z"
+    },
+    {
+      "dataHolderBrandId": "57ae7e9d-207c-f111-9b47-6045bd3f59f5",
+      "brandName": "Resimac",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.resimac.com.au/media-toolkits/resimac",
+      "publicBaseUri": "https://prd.pm.productdata.au/c7e51f96-9451-4a22-a923-284eed46902c/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/c7e51f96-9451-4a22-a923-284eed46902c/adapter",
+      "abn": "55095034003",
+      "acn": "095034003",
+      "lastUpdated": "2026-10-14T02:45:49Z"
+    },
+    {
+      "dataHolderBrandId": "d1f723db-207c-f111-9b47-6045bd3f59f5",
+      "brandName": "Resimac Asset Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://www.resimac.com.au/media-toolkits/resimac",
+      "publicBaseUri": "https://prd.pm.productdata.au/88b5eddd-718c-476e-b75e-a72af324ee40/adapter",
+      "productBaseUri": "https://prd.pm.productdata.au/88b5eddd-718c-476e-b75e-a72af324ee40/adapter",
+      "abn": "55095034003",
+      "acn": "095034003",
+      "lastUpdated": "2026-10-14T02:45:49Z"
+    },
+    {
+      "dataHolderBrandId": "f68924f3-217c-f111-9b47-6045bd3f59f5",
+      "brandName": "Metro Finance",
+      "industries": [
+        "non-bank-lending"
+      ],
+      "logoUri": "https://metrofin.com.au/wp-content/uploads/2023/08/Logo.svg",
+      "publicBaseUri": "https://api.cdr.metrofin.com.au",
+      "productBaseUri": "https://api.cdr.metrofin.com.au",
+      "abn": "44600674093",
+      "acn": "600674093",
+      "lastUpdated": "2026-09-02T10:53:51Z"
+    },
+    {
+      "interimId": "fb416e50-6dda-470e-a2aa-a108efd433b4",
+      "brandName": "Active Utilities Retail",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/active-utilities",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/active-utilities",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "d4aa3c79-ef00-454c-b1f0-dbd01b25bcca",
+      "brandName": "Altogether",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/altogether",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/altogether",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "e48e8b94-ff6b-44cf-a572-0dff928cf056",
+      "brandName": "Ampol Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/ampol",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/ampol",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "e7efef1f-22b8-4a15-826c-047f71aa2d20",
+      "brandName": "Arc Energy Group",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/arc-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/arc-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "bd2863a7-8430-4656-88bf-56bb5c12663c",
+      "brandName": "Arcstream",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/arcstream",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/arcstream",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "ea94715b-96fa-4ed2-9a44-6a7f1f40676c",
+      "brandName": "Besy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/besy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/besy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "736b2c27-aa4b-4554-987b-80101a93b728",
+      "brandName": "Brighte Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/brighte",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/brighte",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "40c3b4cd-2df1-4d55-843e-a7ff32aa9dc6",
+      "brandName": "CleanCo Queensland",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/cleanco",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/cleanco",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "d2c959ec-e0d4-4fc4-bcb3-2faf8060cd18",
+      "brandName": "CleanPeak Energy Retail",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/cleanpeak",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/cleanpeak",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "db23f052-0bec-48ab-87fe-59290d142704",
+      "brandName": "Coles Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/coles",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/coles",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "46b1550c-fd41-40ff-8374-2af6d0cc7293",
+      "brandName": "CPE Mascot",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/cpe-mascot",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/cpe-mascot",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "89b94654-8f1b-4e49-bcdb-7ab5df451372",
+      "brandName": "Discover Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/discover",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/discover",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "6dfc2033-f5ba-4e61-8119-1eac508e0ad1",
+      "brandName": "Ellis Air Connect",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/ea-connect",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/ea-connect",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "d433eba6-dfb2-4d88-94e2-771b1157dd62",
+      "brandName": "Evergy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/evergy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/evergy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "6b04484e-f1a0-483d-8860-95b50a27bb22",
+      "brandName": "Flipped Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/flipped",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/flipped",
+      "lastUpdated": "2025-07-07T05:16:38Z"
+    },
+    {
+      "interimId": "ee434966-7168-4884-9b98-98d71bd3ef3c",
+      "brandName": "Flow Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/flow-power",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/flow-power",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "f112314b-b7f3-45a0-b586-49573f8953ce",
+      "brandName": "Future X Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/future-x",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/future-x",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "a983ebe7-14b5-4c15-8d69-6d5aac7f47ef",
+      "brandName": "GEE Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/gee-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/gee-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "6fd3819d-4c31-4525-82cc-bd6f445af3d2",
+      "brandName": "Glow Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/glow-power",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/glow-power",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "126f03dc-3947-428b-99fd-685b94fe1363",
+      "brandName": "Humenergy Group",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/humenergy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/humenergy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "3e2d5a2a-2fb4-4ef6-bf7f-86e2f68ef620",
+      "brandName": "iGENO",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/igeno",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/igeno",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "ec724d29-819e-4f7a-8b6a-30c88280bb9b",
+      "brandName": "iO Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/radian",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/radian",
+      "lastUpdated": "2026-02-09T21:42:19Z"
+    },
+    {
+      "interimId": "d1c6becb-c00e-4e23-8117-227a4ecc03b0",
+      "brandName": "Locality Planning Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/locality-planning",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/locality-planning",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "9f59f54f-aeec-44ff-b481-a7e10be6a28e",
+      "brandName": "Localvolts",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/localvolts",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/localvolts",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "911c4a0a-6bba-4b30-86b6-bcec385b0dd1",
+      "brandName": "Macarthur Energy Retail",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/macarthur",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/macarthur",
+      "lastUpdated": "2025-07-07T05:21:45Z"
+    },
+    {
+      "interimId": "81e1f31b-c676-4f7b-8648-4a59b29be236",
+      "brandName": "Macquarie",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/macquarie",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/macquarie",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "cd90f1f3-a930-4674-9ce7-18a9dbc1eeb3",
+      "brandName": "Metered Energy Holdings",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/metered-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/metered-energy",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "db8a51cd-63f3-4979-8002-e410cb95a8f3",
+      "brandName": "Microgrid Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/microgrid",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/microgrid",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "45cd7adb-8830-4189-b5d7-4010c6dabb3c",
+      "brandName": "MYOB powered by OVO",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/ovo-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/ovo-energy",
+      "lastUpdated": "2025-07-07T05:24:42Z"
+    },
+    {
+      "interimId": "e4959768-2b87-42f0-aa24-328acd8c3126",
+      "brandName": "Perpetual Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/perpetual",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/perpetual",
+      "lastUpdated": "2025-07-07T05:37:41Z"
+    },
+    {
+      "interimId": "9a676d1f-6ec5-48a4-98af-5a2ab293d373",
+      "brandName": "PowerHub",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/powerhub",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/powerhub",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "499d880c-ee78-44ba-9442-a275f9465290",
+      "brandName": "Powow Power",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://powowpower.com.au/wp-content/uploads/2022/02/logo-whitepowowpower.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/powow",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/powow",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "4fd2ea8f-504b-4432-a5ca-d6d6a22fa5c8",
+      "brandName": "Radian Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/radian",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/radian",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "a10b23c3-af4d-458a-a22b-7b91ba09e8d2",
+      "brandName": "Real Utilities",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/real-utilities",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/real-utilities",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "859e29b4-4a81-4038-9533-3b3ff7b6dbe5",
+      "brandName": "Savant Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/savant",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/savant",
+      "lastUpdated": "2025-07-07T05:42:40Z"
+    },
+    {
+      "interimId": "3d4f1a26-66b6-4457-9877-5389818f1b75",
+      "brandName": "seene",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/seene",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/seene",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "baa3b594-2022-48ed-bf0d-9abeb74f4952",
+      "brandName": "Shell Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/shell-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/shell-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "d3181009-82ca-4dde-8c30-a19db4412374",
+      "brandName": "Smart Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/smart-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/smart-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "e1822b3f-8cc0-42d6-b270-f3554e255bf6",
+      "brandName": "Solstice Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/solstice",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/solstice",
+      "lastUpdated": "2025-07-07T05:45:39Z"
+    },
+    {
+      "interimId": "58e05a48-1826-4adb-be5f-4d71af1494ca",
+      "brandName": "Stanwell Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/stanwell",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/stanwell",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "d709dd2d-e1df-44ec-b427-90865c77b7bf",
+      "brandName": "Telstra Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/telstra-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/telstra-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "466f86ff-86a8-4dac-9437-e22f17c91ead",
+      "brandName": "Tesla Energy Ventures",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/tesla",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/tesla",
+      "lastUpdated": "2025-07-07T05:49:03Z"
+    },
+    {
+      "interimId": "d43e8fb4-b1a2-4cfd-bde4-ab91daec7399",
+      "brandName": "YES Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/yes-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/yes-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "6cbf6fb7-f565-4f2e-9b65-903b0badb20c",
+      "brandName": "ZEN Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/zen-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/zen-energy",
+      "lastUpdated": "2022-10-21T05:35:24Z"
+    },
+    {
+      "interimId": "cae1ccc1-f2de-4b61-85b6-0320c180e009",
+      "brandName": "Traditional Credit Union",
+      "industries": [
+        "banking"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://prd.tcu.com.au",
+      "productBaseUri": "https://prd.tcu.com.au",
+      "lastUpdated": "2022-09-30T03:33:44Z"
+    },
+    {
+      "interimId": "0dfc837b-563a-40e4-ad61-bc3ae4ba02bd",
+      "brandName": "ASENO",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/aseno",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/aseno",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "2b41d472-89d2-45e5-879a-644ec17298b3",
+      "brandName": "Commander Power & Gas",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/commander",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/commander",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "c3698c76-4441-4ab0-946b-4f0e6c7cbc96",
+      "brandName": "Energy Locals Urban",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/energy-locals-urban",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/energy-locals-urban",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "9b48c5f7-f842-45b0-85e3-161272172ab1",
+      "brandName": "ERC Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/erc-energy",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/erc-energy",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "7985e477-007f-429b-a58f-b39df8b5b89c",
+      "brandName": "Silver Asset Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/silver-asset",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/silver-asset",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "751d0efd-70cd-417e-ac49-f497cc953c41",
+      "brandName": "Veolia Energy",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/veolia",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/veolia",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    },
+    {
+      "interimId": "cb97e271-6c22-4bb5-85cc-deb41635706f",
+      "brandName": "WINconnect",
+      "industries": [
+        "energy"
+      ],
+      "logoUri": "https://www.cdr.gov.au/sites/default/files/2022-08/No-logo-available-2.png",
+      "publicBaseUri": "https://cdr.energymadeeasy.gov.au/winconnect",
+      "productBaseUri": "https://cdr.energymadeeasy.gov.au/winconnect",
+      "lastUpdated": "2026-02-09T06:52:53Z"
+    }
+  ],
+  "links": {
+    "self": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary"
+  },
+  "meta": {}
+}
