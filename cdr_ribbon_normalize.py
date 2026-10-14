@@ -13,7 +13,7 @@ import math
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from cdr_lvr import intersect_bounds, interval_tier, invalid_structured_bounds, percent as lvr_percent
+from cdr_lvr import intersect_bounds, interval_tier, invalid_structured_bounds, minimum_inclusive, percent as lvr_percent
 
 _ISO_DURATION = re.compile(r"^P(\d+)([DMYW])$", re.IGNORECASE)
 _MONTH_RE = re.compile(r"(\d+)\s*(?:MONTH|MTH|MO)", re.IGNORECASE)
@@ -509,7 +509,7 @@ def resolve_lvr_tier(
     product_bounds = parse_lvr_bounds_from_constraints(
         [x for x in product_constraints if isinstance(x, Mapping)]
     ) or (None, None)
-    inclusive = True
+    inclusive = minimum_inclusive(rate_item, l_min, lvr_bounds_from_context)
     # A named lower bound must survive a product-wide upper limit. The cap
     # constrains the rate interval; it does not replace its lower boundary.
     if source == "none" and _text_has_lvr_signal(context_text):
@@ -631,6 +631,10 @@ def parse_lvr_bounds_from_rate_item(item: Mapping[str, Any], *, include_text: bo
                 continue
             t_min = parse_numeric(tier.get("minimumValue"))
             t_max = parse_numeric(tier.get("maximumValue"))
+            named = lvr_bounds_from_context(str(tier.get("name") or ""))
+            if named:
+                t_min = t_min if t_min is not None else named[0]
+                t_max = t_max if t_max is not None else named[1]
             if t_min is not None or t_max is not None:
                 structured = intersect_bounds(structured, (t_min, t_max))
 

@@ -102,6 +102,17 @@ def test_empty_optional_maximum_is_not_zero_or_a_new_cap(raw, maximum):
     assert resolve_lvr_tier('', rate, raw['constraints'])[0] == 'lvr_>=80.01-95%'
 
 
+@pytest.mark.parametrize(('name', 'minimum', 'maximum', 'expected'), [
+    ('LVR 80.01% or more', None, '.95', 'lvr_>=80.01-95%'),
+    ('over 80% LVR', None, '.95', 'lvr_>80-95%'),
+    ('LVR 80.01-90%', '.8001', None, 'lvr_>=80.01-90%'),
+])
+def test_missing_numeric_bounds_can_use_named_evidence_without_widening(raw, name, minimum, maximum, expected):
+    rate = high_rate(raw)
+    rate['tiers'][0].update(name=name, minimumValue=minimum, maximumValue=maximum)
+    assert resolve_lvr_tier('', rate, raw['constraints'])[0] == expected
+
+
 @pytest.mark.parametrize('bad', [True, 'NaN', 'Infinity', '-0.1', '200'])
 def test_malformed_explicit_maximum_fails_closed(raw, bad):
     rate = high_rate(raw)

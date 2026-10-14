@@ -222,7 +222,7 @@
     var min = bounds.min;
     var max = bounds.max;
     var source = 'none';
-    var inclusive = true;
+    var inclusive = bounds.inclusive !== false;
     var pb = parseLvrBoundsFromConstraints(productConstraints || []) || { min: null, max: null };
     if (min != null || max != null) {
       source = 'rate_structured';
@@ -365,7 +365,15 @@
       if (!LVR_SIGNAL_RE.test(tierName)) continue;
       var tmin = parseNumeric(tier.minimumValue);
       var tmax = parseNumeric(tier.maximumValue);
-      if (tmin != null) bounds.min = Math.max(lvrPercent(bounds.min) ?? lvrPercent(tmin), lvrPercent(tmin)) / 100;
+      var named = lvrContextBounds(String(tier.name || ''));
+      var minimumInclusive = tmin != null || !named || named.inclusive;
+      if (named) { tmin = tmin ?? named.min; tmax = tmax ?? named.max; }
+      if (tmin != null) {
+        var previous = lvrPercent(bounds.min), candidate = lvrPercent(tmin);
+        if (previous == null || candidate > previous) bounds.inclusive = minimumInclusive;
+        else if (candidate === previous && !minimumInclusive) bounds.inclusive = false;
+        bounds.min = Math.max(previous ?? candidate, candidate) / 100;
+      }
       if (tmax != null) bounds.max = Math.min(lvrPercent(bounds.max) ?? lvrPercent(tmax), lvrPercent(tmax)) / 100;
     }
 

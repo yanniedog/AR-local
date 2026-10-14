@@ -9,10 +9,26 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 Bounds = Tuple[Optional[float], Optional[float]]
 CANONICAL_BANDS = ((0, 60), (60, 70), (70, 80), (80, 85), (85, 90), (90, 95))
+
+
+def minimum_inclusive(item: Any, minimum: Any, parse_context: Callable) -> bool:
+    """Retain the operator when a missing structured minimum comes from text."""
+    flags = []
+    for tier in item.get('tiers') or []:
+        if not isinstance(tier, dict):
+            continue
+        explicit = percent(tier.get('minimumValue'))
+        if explicit is not None and explicit == percent(minimum):
+            flags.append(True)
+        elif explicit is None:
+            named = parse_context(str(tier.get('name') or ''))
+            if named and named[0] is not None and percent(named[0]) == percent(minimum):
+                flags.append(named[2])
+    return all(flags)
 
 
 def invalid_structured_bounds(item: Any, product_constraints: Any) -> bool:
