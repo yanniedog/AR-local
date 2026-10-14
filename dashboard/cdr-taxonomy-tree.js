@@ -56,6 +56,9 @@
 
   function formatLabel(token) {
     if (!token) return '';
+    var lvr = /^LVR_(GE|GT|LE)(\d+(?:p\d+)?)(?:_(\d+(?:p\d+)?))?$/.exec(token);
+    if (lvr) return 'LVR ' + (lvr[1] === 'GE' ? '≥' : lvr[1] === 'GT' ? '>' : '≤') +
+      lvr[2].replace('p', '.') + (lvr[3] ? '–' + lvr[3].replace('p', '.') : '') + '%';
     // Term-month tokens: "12M", "24M", ...
     var termMatch = String(token).match(/^(\d+)M$/);
     if (termMatch) return termMatch[1] + ' month' + (Number(termMatch[1]) === 1 ? '' : 's');

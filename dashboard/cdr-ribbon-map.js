@@ -119,9 +119,10 @@
   // number with plain or natural-language operators and no % sign — e.g.
   // "<60 LVR", ">90 LVR", "80 LVR", "LVR less than 70". Keep in sync with Python.
   var LVR_SIGNAL_RE = /\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b/i;
-  var LVR_NAME_RANGE = /(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)|(?:lvr|ltv)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)/i;
+  var LVR_NAME_RANGE = /(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)|(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)/i;
   var LVR_OP = '<=|>=|<|>|less[\\s_-]*than[\\s_-]*or[\\s_-]*equal[\\s_-]*to|greater[\\s_-]*than[\\s_-]*or[\\s_-]*equal[\\s_-]*to|less[\\s_-]*than|greater[\\s_-]*than|more[\\s_-]*than|no[\\s_-]*more[\\s_-]*than|at[\\s_-]*least|at[\\s_-]*most|under|below|over|above|from|max(?:imum)?|min(?:imum)?|up[\\s_-]*to';
-  var LVR_NAME_OP = new RegExp('(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)\\s*%?\\s*(?:lvr|ltv)|(?:lvr|ltv)\\s*:?\\s*(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)', 'i');
+  var LVR_LABEL = '(?:lvr|ltv|loan[\\s_-]*to[\\s_-]*value)';
+  var LVR_NAME_OP = new RegExp('(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)\\s*%?\\s*' + LVR_LABEL + '|' + LVR_LABEL + '\\s*:?\\s*(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)', 'i');
   var LVR_TIER_ORDER = ['lvr_=60%', 'lvr_60-70%', 'lvr_70-80%', 'lvr_80-85%', 'lvr_85-90%', 'lvr_90-95%'];
   var LVR_LOWER_BOUND_OPS = {
     '>': 1, '>=': 1, 'over': 1, 'above': 1, 'greater than': 1,
@@ -216,24 +217,32 @@
   }
 
   function resolveLvrTier(contextText, item, productConstraints) {
-    var bounds = parseLvrBoundsFromRateItem(item);
+    if (invalidLvrBounds(item, productConstraints || [])) return { tier: 'lvr_unspecified', source: 'rate_structured' };
+    var bounds = parseLvrBoundsFromRateItem(item, false);
     var min = bounds.min;
     var max = bounds.max;
     var source = 'none';
+    var inclusive = true;
+    var pb = parseLvrBoundsFromConstraints(productConstraints || []) || { min: null, max: null };
     if (min != null || max != null) {
       source = 'rate_structured';
-    } else if (productConstraints && productConstraints.length) {
-      var pb = parseLvrBoundsFromConstraints(productConstraints);
-      if (pb) {
+    } else {
+      var context = lvrContextBounds(contextText);
+      if (context) {
+        min = context.min; max = context.max; inclusive = context.inclusive;
+        source = 'context_text';
+      } else if (pb.min != null || pb.max != null) {
         min = pb.min;
         max = pb.max;
-        if (min != null || max != null) source = 'product_constraints';
+        source = 'product_constraints';
       }
     }
-    // Structured bounds are authoritative.
     if (min != null || max != null) {
-      var tier = normalizeLvrTier(contextText, min, max);
-      if (tier !== 'lvr_unspecified') return { tier: tier, source: source };
+      if (pb.min != null && (min == null || lvrPercent(pb.min) > lvrPercent(min))) inclusive = true;
+      var lows = [min, pb.min].map(lvrPercent).filter(function (n) { return n != null; });
+      var highs = [max, pb.max].map(lvrPercent).filter(function (n) { return n != null; });
+      return { tier: lvrIntervalTier(lows.length ? Math.max.apply(null, lows) : null,
+        highs.length ? Math.min.apply(null, highs) : null, inclusive), source: source };
     }
     if (textHasLvrSignal(contextText)) {
       // Operator-aware name parser FIRST so lower-bound forms ("over 80 LVR",
@@ -255,8 +264,59 @@
   }
 
   function parseNumeric(value) {
+    if (value == null || value === '' || typeof value === 'boolean') return null;
     var n = Number(value);
     return Number.isFinite(n) ? n : null;
+  }
+
+  function lvrPercent(value) {
+    var n = parseNumeric(value);
+    if (n == null || n < 0 || n > 100) return null;
+    return Number((n > 0 && n <= 1 ? n * 100 : n).toFixed(4));
+  }
+
+  function invalidLvrBounds(item, productConstraints) {
+    var tiers = Array.isArray(item.tiers) ? item.tiers : [];
+    for (var i = 0; i < tiers.length; i++) {
+      if (!tiers[i] || !LVR_SIGNAL_RE.test(String(tiers[i].name || ''))) continue;
+      if (['minimumValue', 'maximumValue'].some(function (key) {
+        var value = tiers[i][key]; return value != null && value !== '' && lvrPercent(value) == null;
+      })) return true;
+    }
+    return (Array.isArray(item.constraints) ? item.constraints : []).concat(productConstraints).some(function (constraint) {
+      if (!constraint || !['MIN_LVR', 'MAX_LVR'].includes(String(constraint.constraintType || '').toUpperCase())) return false;
+      return ['additionalValue', 'minValue', 'maxValue'].some(function (key) {
+        var value = constraint[key]; return value != null && value !== '' && lvrPercent(value) == null;
+      });
+    });
+  }
+
+  function lvrIntervalTier(lo, hi, inclusive) {
+    if (lo == null && hi == null || hi != null && (hi <= 0 || lo != null &&
+        (lo > hi || lo === hi && !inclusive))) return 'lvr_unspecified';
+    if (lo == null || lo === 0) return hi != null ? 'lvr_=' + hi + '%' : 'lvr_unspecified';
+    var bands = [[60, 70], [70, 80], [80, 85], [85, 90], [90, 95]];
+    for (var i = 0; i < bands.length; i++) {
+      if (hi === bands[i][1] && (inclusive && lo === bands[i][0] + 0.01 ||
+          !inclusive && lo === bands[i][0])) return 'lvr_' + bands[i][0] + '-' + hi + '%';
+    }
+    return 'lvr_' + (inclusive ? '>=' : '>') + lo + (hi != null ? '-' + hi : '') + '%';
+  }
+
+  function lvrContextBounds(text) {
+    var t = lower(text);
+    if (!LVR_SIGNAL_RE.test(t)) return null;
+    var range = t.match(LVR_NAME_RANGE);
+    if (range) return { min: Number(range[1] || range[3]), max: Number(range[2] || range[4]), inclusive: false };
+    var match = t.match(LVR_NAME_OP);
+    if (!match) return null;
+    var op = String(match[1] || match[3] || '').trim().replace(/[\s_-]+/g, ' ');
+    var number = Number(match[2] || match[4]);
+    if (/^\s*%?\s*(?:or more|or above|and above|or greater)/.test(t.slice(match.index + match[0].length)))
+      return { min: number, max: null, inclusive: true };
+    if (isLowerBoundOp(op)) return { min: number, max: null,
+      inclusive: ['>=', 'greater than or equal to', 'at least', 'from', 'min', 'minimum'].includes(op) };
+    return { min: null, max: number, inclusive: true };
   }
 
   function parseLvrBoundsFromConstraints(constraints) {
@@ -281,9 +341,11 @@
       var minValue = parseNumeric(c.minValue);
       var maxValue = parseNumeric(c.maxValue);
       if (ctype.includes('min')) {
-        min = additional ?? minValue ?? min;
+        var low = lvrPercent(additional ?? minValue);
+        if (low != null) min = Math.max(lvrPercent(min) ?? low, low) / 100;
       } else if (ctype.includes('max')) {
-        max = additional ?? maxValue ?? max;
+        var high = lvrPercent(additional ?? maxValue);
+        if (high != null) max = Math.min(lvrPercent(max) ?? high, high) / 100;
       } else {
         min = minValue ?? min;
         max = maxValue ?? additional ?? max;
@@ -292,20 +354,24 @@
     return min != null || max != null ? { min: min, max: max } : null;
   }
 
-  function parseLvrBoundsFromRateItem(item) {
+  function parseLvrBoundsFromRateItem(item, includeText) {
     var fromConstraints = parseLvrBoundsFromConstraints(Array.isArray(item.constraints) ? item.constraints : []);
-    if (fromConstraints) return fromConstraints;
+    var bounds = fromConstraints || { min: null, max: null };
 
     var tiers = Array.isArray(item.tiers) ? item.tiers : [];
     for (var j = 0; j < tiers.length; j += 1) {
       var tier = tiers[j];
       var tierName = lower([tier.name, tier.unitOfMeasure, tier.rateApplicationMethod].filter(Boolean).join(' '));
-      if (!tierName.includes('lvr') && !tierName.includes('loan to value')) continue;
+      if (!LVR_SIGNAL_RE.test(tierName)) continue;
       var tmin = parseNumeric(tier.minimumValue);
       var tmax = parseNumeric(tier.maximumValue);
-      if (tmin != null || tmax != null) return { min: tmin, max: tmax };
+      if (tmin != null) bounds.min = Math.max(lvrPercent(bounds.min) ?? lvrPercent(tmin), lvrPercent(tmin)) / 100;
+      if (tmax != null) bounds.max = Math.min(lvrPercent(bounds.max) ?? lvrPercent(tmax), lvrPercent(tmax)) / 100;
     }
 
+    if (bounds.min != null || bounds.max != null) return bounds;
+
+    if (includeText === false) return { min: null, max: null };
     var extra = [item.additionalValue, item.additionalInfo].filter(Boolean).join(' ');
     if (!extra) return { min: null, max: null };
 
