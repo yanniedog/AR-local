@@ -11,7 +11,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Callable, ContextManager, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
 import app_payload_bank_rates
@@ -739,6 +739,8 @@ def build_and_publish_dual(
     executable_v4_root: Optional[Path] = None,
     public_rates_root: Optional[Path] = None,
     public_rates_receipt: Optional[Path] = None,
+    pre_promotion_guard: Callable[[], None] | None = None,
+    pre_promotion_fence: Callable[[], ContextManager] | None = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -803,10 +805,16 @@ def build_and_publish_dual(
         # selected-head promotion and both compatibility aliases.
         full_dir = state_dir / "v1-latest"
         _package_payload(data, full_dir, repo=repo, tag=DEFAULT_TAG)
+        guard_kwargs = ({'pre_promotion_guard': pre_promotion_guard, 'pre_promotion_fence': pre_promotion_fence}
+                        if pre_promotion_guard is not None or pre_promotion_fence is not None else {})
         revision = publish_revision_bundle(full_dir, state_dir=state_dir / "revision-history",
-                                           repo=repo, enabled=True)
-        published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date))
-        published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG) if need_latest else False
+                                           repo=repo, enabled=True, **guard_kwargs)
+        if pre_promotion_guard:
+            pre_promotion_guard()
+        published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date), **guard_kwargs)
+        if pre_promotion_guard and need_latest:
+            pre_promotion_guard()
+        published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG, **guard_kwargs) if need_latest else False
         if update_latest and not need_latest:
             # Historical promotion changes index ciphertext. Keep the operational
             # receipt bound to it without regressing the current rolling alias.

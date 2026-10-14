@@ -71,6 +71,7 @@
     },
     "Programme": {
       "type":"object","additionalProperties":false,
+      "allOf":[{"if":{"required":["feeSetId"]},"then":{"not":{"anyOf":[{"required":["fees"]},{"required":["feeCoverage"]}]}}}],
       "required":["schemaVersion","programmeId","productId","section","offerId","conditions","components","evidenceIds","freshness","reasonCodes","sourceBindings"],
       "properties": {
         "schemaVersion":{"const":1},"programmeId":{"$ref":"#/$defs/Id"},"productId":{"$ref":"#/$defs/Id"},"section":{"enum":["Mortgage","Savings","TD"]},"offerId":{"$ref":"#/$defs/Id"},
@@ -80,6 +81,7 @@
         "fees":{"type":"array","items":{"$ref":"#/$defs/Fee"},"maxItems":256},"feeCoverage":{"$ref":"#/$defs/FeeCoverage"},
         "feeSetId":{"$ref":"#/$defs/Id"},
         "metadata":{"$ref":"#/$defs/Metadata"},
+        "materialFootnotes":{"type":"array","items":{"type":"string","minLength":1,"maxLength":16384},"maxItems":64,"uniqueItems":true},
         "sourceBindings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["pointer","rateIndex"],"properties":{"pointer":{"type":"string","maxLength":4096},"rateIndex":{"type":"integer","minimum":1,"maximum":100000}}},"maxItems":256}
       }
     },
@@ -101,7 +103,7 @@
     },
     "Product": {
       "type":"object","additionalProperties":false,"required":["productId","productKey","providerId","providerName","name","section","aliases","status","programmeIds","referenceIds","reasonCodes"],
-      "properties":{"productId":{"$ref":"#/$defs/Id"},"productKey":{"type":"string","maxLength":4096},"providerId":{"$ref":"#/$defs/Id"},"providerName":{"type":"string","maxLength":1024},"name":{"type":"string","maxLength":1024},"section":{"enum":["Mortgage","Savings","TD"]},"status":{"enum":["current","legacy","unknown"]},"programmeIds":{"$ref":"#/$defs/Ids"},"referenceIds":{"$ref":"#/$defs/Ids"},"reasonCodes":{"$ref":"#/$defs/Reasons"},"suppressedProgrammeCount":{"type":"integer","minimum":0,"maximum":100000},"freshness":{"$ref":"#/$defs/Freshness"},"sourceEvidence":{"$ref":"#/$defs/Evidence"},"aliases":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string","maxLength":1024},"effectiveFrom":{"$ref":"#/$defs/Date"},"effectiveTo":{"$ref":"#/$defs/Date"}}},"maxItems":64}}
+      "properties":{"productId":{"$ref":"#/$defs/Id"},"productKey":{"type":"string","maxLength":4096},"providerId":{"$ref":"#/$defs/Id"},"providerName":{"type":"string","maxLength":1024},"name":{"type":"string","maxLength":1024},"section":{"enum":["Mortgage","Savings","TD"]},"status":{"enum":["current","legacy","unknown"]},"programmeIds":{"$ref":"#/$defs/Ids"},"referenceIds":{"$ref":"#/$defs/Ids"},"reasonCodes":{"$ref":"#/$defs/Reasons"},"suppressedProgrammeCount":{"type":"integer","minimum":0,"maximum":100000},"freshness":{"$ref":"#/$defs/Freshness"},"sourceEvidence":{"$ref":"#/$defs/Evidence"},"aliases":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string","maxLength":1024},"effectiveFrom":{"$ref":"#/$defs/Date"},"effectiveTo":{"$ref":"#/$defs/Date"},"firstObservedAt":{"$ref":"#/$defs/Date"},"lastObservedAt":{"$ref":"#/$defs/Date"}}},"maxItems":64}}
     },
     "Reference": {
       "type":"object","required":["referenceId","providerId","name","unit","freshness","evidenceIds"],

@@ -53,6 +53,13 @@ verify retained validators. Failed checks immediately remove current claims;
 retains its durable identity and appears in coverage. Collection limits are
 300 seconds and 64 MiB per ingest; each document has a 16 MiB, 30-second,
 five-redirect ceiling. Stricter existing admission limits win.
+Budget reservations and settlements survive workers and retries. Interrupted
+supervised work retains its full reservation; deferred generations remain in
+the durable queue without starving a newer ingest. Accepted captures resume
+deterministic interpretation from their original bytes and lease proof, including
+checks interrupted before pricing acknowledgement. Failed acquisitions remove
+current claims even when replay admission is exhausted. Acquisition, extraction,
+pricing and publication remain separate coverage states.
 
 The derived candidate root is immutable and generation/hash bound, with bounded
 programme/evidence chunks inside the existing evidence root. Its mutable
@@ -120,3 +127,25 @@ range/quote-required products remain outside complete-cost rankings.
 The three natural shadows, consumer release/hash readback, native acceptance and
 operator activation are pending until their real receipts exist. A local test
 pass must not be recorded as any of those outcomes.
+
+## Implementation validation checkpoint (2026-10-15)
+
+The final isolated producer pricing/storage/collector/publication suite passed
+264 tests, including rollback compatibility and frozen fee-code identities. A
+separate historical fee/default-compatibility suite passed 147 tests, with one
+case requiring actual free space above 3 GiB left unavailable. The complete
+producer suite was executed on Windows and recorded as failed: 6,198 passed,
+98 failed, 119 skipped and 58 fixture errors. It includes Linux-only contracts,
+real low-space refusals, and private-root fixture failures from an inside-checkout
+temporary directory. The source regressions it identified are fixed and pass
+the final focused suite with external temporary storage. The canonical full
+Ubuntu CI and Windows safety jobs remain exact-head merge gates; no guard was
+relaxed to reinterpret the local result as a pass.
+
+The consumer's canonical `cd mobile && npm run ci` passed 336 Jest suites /
+3,807 tests and 255 script tests, plus doctor, typecheck, lint, platform exports,
+compiled native checks and payload budgets. Its exact-head GitHub checks also
+passed. Actual producer gzip catalogue assets were read by the shipping app
+validator, preserving all 2,934 public discovery products and the three retained
+public arithmetic cases. These are code and transport results; installed-device,
+natural daily shadow, deployed Pi and public publication acceptance remain pending.

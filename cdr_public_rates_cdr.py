@@ -30,6 +30,77 @@ LENDING_ROLES = {"VARIABLE": "payable", "FIXED": "payable", "DISCOUNT": "discoun
                  "INTRODUCTORY": "discount"}
 DEPOSIT_ROLES = {"FIXED": "payable", "VARIABLE": "payable", "BASE": "reference",
                  "BONUS": "bonus", "BUNDLE_BONUS": "bonus", "INTRODUCTORY": "bonus"}
+MAX_RECORD_RATES = 512
+MAX_RECORD_FEES = 256
+MAX_PRODUCT_CONDITIONS = 64
+MAX_RATE_TIERS = 128
+MAX_RATE_CONDITIONS = 128
+MAX_MATERIAL_NOTES = 64
+MAX_MATERIAL_NOTE_UNITS = 16384
+MAX_COMPILED_PRODUCT_BYTES = 4 * 1024 * 1024
+MAX_PRICING_SOURCE_NODES = 32768
+MAX_PRICING_SOURCE_DEPTH = 16
+
+
+def _record_budget(record, rates_key):
+    """Bound all loops before semantic grouping or applicability compilation."""
+    limits = {rates_key: MAX_RECORD_RATES, 'fees': MAX_RECORD_FEES,
+              'constraints': MAX_PRODUCT_CONDITIONS, 'eligibility': MAX_PRODUCT_CONDITIONS}
+    for field, maximum in limits.items():
+        rows = record.get(field)
+        if rows is not None and (not isinstance(rows, list) or len(rows) > maximum):
+            return 'public_pricing_record_structure_unsupported' if not isinstance(rows, list) else 'public_pricing_record_budget_exceeded'
+    if _pricing_source_budget([record.get(field) for field in limits]):
+        return 'public_pricing_record_budget_exceeded'
+    for rate in record.get(rates_key) or []:
+        if not isinstance(rate, Mapping):
+            continue  # Original occurrence indices remain intact.
+        if any(isinstance(rate.get(field), str) and len(rate[field]) > maximum
+               for field, maximum in (('rate', 64), ('comparisonRate', 64), ('additionalValue', 1024))):
+            return 'public_pricing_record_budget_exceeded'
+        notes = rate.get('additionalInfo')
+        if isinstance(notes, str) and (len(notes) > MAX_MATERIAL_NOTE_UNITS
+                                       or len(notes.encode('utf-16-le')) // 2 > MAX_MATERIAL_NOTE_UNITS):
+            return 'public_pricing_record_budget_exceeded'
+        for field, maximum in (('tiers', MAX_RATE_TIERS), ('applicabilityConditions', MAX_RATE_CONDITIONS)):
+            rows = rate.get(field)
+            if rows is not None and (not isinstance(rows, list) or len(rows) > maximum):
+                return 'public_pricing_record_structure_unsupported' if not isinstance(rows, list) else 'public_pricing_record_budget_exceeded'
+    for fee in record.get('fees') or []:
+        if isinstance(fee, Mapping) and any(isinstance(fee.get(field), str) and len(fee[field]) > maximum
+                                          for field, maximum in (('name', 1024), ('additionalInfo', 4096),
+                                                                 ('additionalValue', 1024), ('amount', 64))):
+            return 'public_pricing_record_budget_exceeded'
+    return None
+
+
+def _pricing_source_budget(values):
+    """Avoid amplifying large nested source strings before the byte guard."""
+    stack, count = [(iter(values), 0)], 0
+    while stack:
+        iterator, depth = stack[-1]
+        try:
+            value = next(iterator)
+        except StopIteration:
+            stack.pop()
+            continue
+        count += 1
+        if count > MAX_PRICING_SOURCE_NODES:
+            return True
+        if isinstance(value, str) and len(value) > MAX_MATERIAL_NOTE_UNITS:
+            return True
+        if isinstance(value, (Mapping, list)):
+            if depth >= MAX_PRICING_SOURCE_DEPTH:
+                return True
+            if isinstance(value, Mapping) and any(len(str(key)) > 1024 for key in value):
+                return True
+            stack.append((iter(value.values() if isinstance(value, Mapping) else value), depth + 1))
+    return False
+
+
+def _material_notes(rates):
+    return sorted({rate['additionalInfo'] for rate in rates
+                   if isinstance(rate.get('additionalInfo'), str) and rate['additionalInfo'].strip()})
 
 
 def capture_pricing_source(source: bytes, *, source_url: str = "", checked_at: str = "", provider_id: str = "") -> str:
@@ -87,6 +158,8 @@ def _component(rate, role, offer_id, pointer, evidence_id, identity):
             value = decimal_text(rate["rate"])
             if abs(decimal_value(value)) > 1:
                 raise ValueError('CDR fraction units require a reviewed provider adapter')
+            if role in {'discount', 'bonus'} and decimal_value(value) < 0:
+                raise ValueError('CDR adjustments must be non-negative')
             result["value"] = value
         except (ValueError, TypeError):
             pass
@@ -147,6 +220,9 @@ def _rate_group(record, capture, product, section, rates, indices, semantics, ch
                  "freshness": {"state": "current" if checked_at and capture["sourceUrl"] else "unknown",
                                "reasonCodes": []}}
     programme['metadata'] = rate_metadata(rates[0])
+    notes = _material_notes(rates)
+    if notes:
+        programme['materialFootnotes'] = notes
     if checked_at:
         programme["freshness"].update(checkedAt=checked_at, lastSuccessAt=checked_at)
     for field, source in (("effectiveFrom", "effectiveFrom"), ("effectiveTo", "effectiveTo")):
@@ -178,6 +254,8 @@ def _rate_group(record, capture, product, section, rates, indices, semantics, ch
             try:
                 amount = decimal_value(decimal_text(rate['rate']))
                 reason = 'nonconforming_cdr_rate_unit' if abs(amount) > 1 else 'invalid_cdr_rate_value'
+                if role in {'discount', 'bonus'} and amount < 0:
+                    reason = 'negative_cdr_adjustment'
             except (ValueError, TypeError):
                 reason = 'invalid_cdr_rate_value'
             programme['reasonCodes'].append(reason)
@@ -207,7 +285,7 @@ def _rate_group(record, capture, product, section, rates, indices, semantics, ch
                 programme["components"].append(comparison)
         except (ValueError, TypeError):
             programme["reasonCodes"].append("unsupported_cdr_tiers")
-    if not set(programme["reasonCodes"]) & {"unsupported_cdr_rate_type", "conflicting_source_rates", "unsupported_cdr_tiers", "adjustment_base_unbound", "uninterpreted_material_condition", "uninterpreted_material_pricing", "non_string_cdr_rate", "nonconforming_cdr_rate_unit", "invalid_cdr_rate_value"}:
+    if not set(programme["reasonCodes"]) & {"unsupported_cdr_rate_type", "conflicting_source_rates", "unsupported_cdr_tiers", "adjustment_base_unbound", "uninterpreted_material_condition", "uninterpreted_material_pricing", "non_string_cdr_rate", "nonconforming_cdr_rate_unit", "invalid_cdr_rate_value", "negative_cdr_adjustment"}:
         if set(endpoint_formulas) == {"minimum", "maximum"}:
             programme["formula"] = {"op": "range", "minimum": endpoint_formulas["minimum"], "maximum": endpoint_formulas["maximum"]}
         elif set(endpoint_formulas) == {"minimum"}:
@@ -261,6 +339,11 @@ def compile_record(record: Mapping[str, Any], *, provider_name: str, section: st
     if source_url:
         product['sourceEvidence'] = _evidence(capture, pointer, checked_at)
     rates_key = "lendingRates" if section == "Mortgage" else "depositRates"
+    budget_reason = _record_budget(record, rates_key)
+    if budget_reason:
+        product['reasonCodes'] = [budget_reason]
+        validate_wire(product, 'Product')
+        return {'product': product, 'programmes': [], 'evidence': []}
     family = "lending" if section == "Mortgage" else "deposit"
     groups = defaultdict(lambda: ([], [], {}))
     legacy_ordinals = {}
@@ -273,19 +356,31 @@ def compile_record(record: Mapping[str, Any], *, provider_name: str, section: st
             group[1].append(index)
             group[2].update(semantics)
     programmes, evidence = [], []
+    if any(len(rates) > 256 or len(_material_notes(rates)) > MAX_MATERIAL_NOTES for rates, _, _ in groups.values()):
+        product['reasonCodes'] = ['public_pricing_record_budget_exceeded']
+        validate_wire(product, 'Product')
+        return {'product': product, 'programmes': [], 'evidence': []}
     for rates, indices, semantics in groups.values():
         programme, refs = _rate_group(record, capture, product, section, rates, indices, semantics, checked_at, legacy_ordinals)
         programmes.append(programme)
         evidence.extend(refs)
     _bind_structured_adjustments(programmes, record, section)
+    # CDR fee declarations here apply to the product. Their scope and semantic
+    # identity are product-bound, so compiling once does not weaken offer scope.
+    fees, fee_coverage, fee_evidence = compile_fees(
+        record, product_id=pid, offer_id=pid, source_sha256=source_sha256,
+        source_url=source_url, pointer=pointer, checked_at=checked_at,
+    )
+    evidence.extend(fee_evidence)
+    compiled_bytes = len(canonical_bytes(product))
     for programme in programmes:
-        fees, fee_coverage, fee_evidence = compile_fees(
-            record, product_id=pid, offer_id=programme["offerId"], source_sha256=source_sha256,
-            source_url=source_url, pointer=pointer, checked_at=checked_at,
-        )
         programme["fees"] = fees
         programme["feeCoverage"] = fee_coverage
-        evidence.extend(fee_evidence)
+        compiled_bytes += len(canonical_bytes(programme))
+        if compiled_bytes > MAX_COMPILED_PRODUCT_BYTES:
+            product['reasonCodes'] = ['public_pricing_compiled_product_budget_exceeded']
+            validate_wire(product, 'Product')
+            return {'product': product, 'programmes': [], 'evidence': []}
     product["programmeIds"] = sorted(programme["programmeId"] for programme in programmes)
     if not programmes:
         product["reasonCodes"].append("no_public_rates_disclosed")
@@ -314,7 +409,7 @@ def _bind_structured_adjustments(programmes, record, section):
     are never summed, and unbound/mutually ambiguous bases remain unresolved.
     """
     for programme in programmes:
-        if set(programme['reasonCodes']) & {'non_string_cdr_rate', 'nonconforming_cdr_rate_unit', 'invalid_cdr_rate_value',
+        if set(programme['reasonCodes']) & {'non_string_cdr_rate', 'nonconforming_cdr_rate_unit', 'invalid_cdr_rate_value', 'negative_cdr_adjustment',
                                           'uninterpreted_material_condition', 'uninterpreted_material_pricing',
                                           'unsupported_cdr_rate_type', 'conflicting_source_rates', 'unsupported_cdr_tiers'}:
             continue
@@ -330,16 +425,21 @@ def _bind_structured_adjustments(programmes, record, section):
         if len(candidates) != 1:
             continue
         base = candidates[0]
+        notes = sorted(set(base.get('materialFootnotes', []) + programme.get('materialFootnotes', [])))
+        if len(notes) > MAX_MATERIAL_NOTES:
+            programme['reasonCodes'].append('public_material_notes_budget_exceeded')
+            continue
         # Uninterpreted custom/material predicates cannot silently migrate.
         if any(c["field"] in {"custom", "qualification"} for c in base["conditions"]):
             continue
+        base_components = [c for c in base["components"] if c['role'] != 'comparison']
         components = [{**c, "scopeId": programme["offerId"],
                        "componentId": semantic_id("component", [programme["offerId"], c["componentId"]])}
-                      for c in base["components"]]
+                      for c in base_components]
         for component in components:
             if component["role"] == "payable":
                 component["role"] = "reference"
-        mapping = {old["componentId"]: new["componentId"] for old, new in zip(base["components"], components)}
+        mapping = {old["componentId"]: new["componentId"] for old, new in zip(base_components, components)}
         base_formula = _replace_component_ids(base["formula"], mapping)
         try:
             adjustment_formula, tier_conditions = _tier_formula(raw, section, adjustment, adjustment["evidenceIds"][0])
@@ -348,6 +448,8 @@ def _bind_structured_adjustments(programmes, record, section):
         programme["components"] = components + programme["components"]
         programme["conditions"] = list({c["conditionId"]: c for c in base["conditions"] + programme["conditions"] + tier_conditions}.values())
         programme["evidenceIds"] = sorted(set(base["evidenceIds"] + programme["evidenceIds"]))
+        if notes:
+            programme['materialFootnotes'] = notes
         programme["formula"] = {"op": "subtract" if section == "Mortgage" else "add",
                                 "operands": [base_formula, adjustment_formula]}
         programme["reasonCodes"] = [reason for reason in programme["reasonCodes"] if reason != "adjustment_base_unbound"]
@@ -363,6 +465,22 @@ def _bind_structured_adjustments(programmes, record, section):
                     {"phaseId": "ongoing", "startMonth": int(months), "formula": base_formula,
                      "conditions": [], "evidenceIds": base["evidenceIds"]}]
         validate_programme(programme)
+    if section != 'Mortgage':
+        # A disclosed base is a component when bonus/introductory pricing is
+        # related to it. Without the full qualification outcome it cannot be
+        # presented as the customer's total payable rate. Keep its evidence
+        # and the already-bound adjusted formulas, including ongoing phases.
+        for base in programmes:
+            raw_base = _source_rate(record, section, base)
+            if any(other is not base and any(c['role'] == 'bonus' for c in other['components'])
+                   and _compatible_base(raw_base, _source_rate(record, section, other), section)
+                   for other in programmes if _source_rate(record, section, other) is not None):
+                base.pop('formula', None)
+                base.pop('phases', None)
+                for component in base['components']:
+                    if component['role'] == 'payable':
+                        component['role'] = 'reference'
+                base['reasonCodes'] = sorted(set(base['reasonCodes'] + ['base_component_requires_adjustment_resolution']))
 
 
 def _source_rate(record, section, programme):

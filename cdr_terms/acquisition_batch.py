@@ -103,10 +103,13 @@ def pending_counts(store: EvidenceStore) -> dict:
 
 
 def has_work(store: EvidenceStore) -> bool:
-    from cdr_public_rates_collector import pending_candidate
-    return bool(AcquisitionQueue(store).next_due() or ProcessingQueue(store).has_work() or store.db.execute(
+    from cdr_public_rates_collector import configured, pending_candidate
+    include_public = configured()
+    return bool(AcquisitionQueue(store).next_due(include_public=include_public) or ProcessingQueue(store).has_work() or store.db.execute(
         "SELECT 1 FROM acquisition_events e WHERE sequence=(SELECT MAX(sequence) FROM acquisition_events "
-        "WHERE request_id=e.request_id) AND status='running' AND lease_expires_at<=? LIMIT 1", (utc_now(),)).fetchone()
+        "WHERE request_id=e.request_id) AND status='running' AND lease_expires_at<=? "
+        + ("AND NOT EXISTS (SELECT 1 FROM public_rate_request_bindings b WHERE b.request_id=e.request_id) " if not include_public else "")
+        + "LIMIT 1", (utc_now(),)).fetchone()
         or pending_candidate(store))
 
 
@@ -154,7 +157,26 @@ def _guard_reason(guard: Callable[[], str | None]) -> str | None:
 
 
 def _collect(store, registry_context, deadline, guard, limits, state):
+    from cdr_public_rates_collector import configured
+    include_public = configured()
     queue = AcquisitionQueue(store)
+
+    def admit(request, lease_id):
+        from cdr_public_rates_budget import BudgetDeferred, reserve
+        from .public_rates_store import PublicRateStore
+        if not PublicRateStore(store).bindings(request["document_id"], request["ingest_id"]):
+            return None
+        if limits.body_bytes - state["charged_bytes"] < 16 * 1024**2:
+            state["stop_reason"] = "registered_source_batch_byte_deferred"
+            return False
+        try:
+            # Source guards stay in acquire_document so operational deferrals
+            # keep their original exact check/lease acknowledgement contract.
+            return reserve(store, request["ingest_id"], kind="source", work_id=lease_id, deadline=deadline,
+                           body_bytes=16 * 1024**2)
+        except BudgetDeferred as error:
+            state["stop_reason"] = str(error)
+            return False
     while len(state["items"]) < limits.attempts:
         remaining = deadline - time.monotonic()
         if remaining < 1 or state["charged_bytes"] >= limits.body_bytes:
@@ -164,7 +186,7 @@ def _collect(store, registry_context, deadline, guard, limits, state):
         if reason:
             state["stop_reason"] = reason
             return
-        candidate = queue.next_due(fair=True)
+        candidate = queue.next_due(fair=True, include_public=include_public)
         if candidate:
             observations, hosts, proof = request_scope(store, candidate)
             if not observations and not hosts:
@@ -175,7 +197,7 @@ def _collect(store, registry_context, deadline, guard, limits, state):
                     state["dispositions"].append({"request_id": candidate["request_id"], "reason": proof["reason"],
                                                    "disposition_sha256": digest(proof)})
                 continue
-        request = queue.claim(fair=True)
+        request = queue.claim(fair=True, admit=admit, include_public=include_public)
         if request is None:
             return
         item = _fetch_one(store, queue, request, deadline, guard, limits.body_bytes - state["charged_bytes"])
@@ -189,6 +211,28 @@ def _collect(store, registry_context, deadline, guard, limits, state):
 
 
 def _fetch_one(store, queue, request, deadline, guard, byte_allowance):
+    admission = request.get("public_rate_admission")
+    if admission:
+        try:
+            with admission:
+                return _fetch_admitted(store, queue, request, min(deadline, admission.deadline), guard,
+                                       min(byte_allowance, admission.reserved_bytes))
+        finally:
+            check_id = digest([request["request_id"], request["lease_id"]])
+            check = store.db.execute("SELECT c.* FROM acquisition_checks c JOIN acquisition_events e USING(check_id) "
+                "WHERE c.check_id=? AND e.request_id=? AND e.lease_id=? AND e.status IN ('complete','retry_wait','blocked')",
+                (check_id, request["request_id"], request["lease_id"])).fetchone()
+            body_bytes = None
+            if check and check["status"] == "unchanged":
+                body_bytes = 0
+            elif check and check["status"] == "fetched":
+                body_bytes = store.db.execute("SELECT byte_size FROM document_versions WHERE document_version_id=?",
+                                              (check["document_version_id"],)).fetchone()[0]
+            admission.settle(body_bytes=body_bytes, check_id=check_id if check else None)
+    return _fetch_admitted(store, queue, request, deadline, guard, byte_allowance)
+
+
+def _fetch_admitted(store, queue, request, deadline, guard, byte_allowance):
     from .public_rates_store import PublicRateStore
     pricing = PublicRateStore(store)
     registered = pricing.bindings(request["document_id"], request["ingest_id"])

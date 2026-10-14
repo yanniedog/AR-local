@@ -35,7 +35,8 @@ enter the startup core. Older payloads remain readable without the capability.
 
 Product discovery records have `productId`, `productKey`, `providerId`,
 `providerName`, `name`, `section` (`Mortgage`, `Savings`, `TD`), `aliases`
-(`{name,effectiveFrom?,effectiveTo?}`), `status` (`current`, `legacy`, `unknown`),
+(`{name,effectiveFrom?,effectiveTo?,firstObservedAt?,lastObservedAt?}`),
+`status` (`current`, `legacy`, `unknown`),
 `programmeIds`, `referenceIds` and `reasonCodes`. Optional
 `suppressedProgrammeCount` records programmes retained internally but not
 published. `programmeIds` lists only programmes packaged in this catalogue.
@@ -43,6 +44,9 @@ Optional `freshness` and singular `sourceEvidence: Evidence` preserve the
 original public product-name check independently of executable pricing.
 IDs depend on semantic identity,
 never price or array position. Names and common ownership do not bind pricing.
+Alias observation dates describe retained public captures through the selected
+generation; they never invent the lender's effective naming period. Absent dates
+remain compatible with earlier catalogue editions.
 
 Each programme has `schemaVersion: 1`, `programmeId`, `productId`, `section`,
 `offerId`, `conditions`, `components`, optional `formula` and `phases`,
@@ -126,6 +130,12 @@ Programme `metadata` retains public `rateStructure`, optional `quotedTerm`
 This does not supply an undisclosed day-count basis or future reversion rate.
 Fixed mortgage schedules stop their known phase at the published fixed period.
 
+Optional programme `materialFootnotes` retains sorted, unique, verbatim public
+rate notes for structural review (at most 64 non-empty notes and 16,384 UTF-16
+units per note). It is an evidence fact and is not marketing text rendered by
+the app. Changes remain bound by the reviewed programme structure even when
+minimum/maximum endpoint grouping keeps the same stable offer identity.
+
 Public fees have `feeId`, product-wide `scopeId`, `name`, `role` (`upfront`,
 `recurring`, `package`, `switching`, `cashback`, `event`), optional `currency`,
 `amount`, `minimumAmount`, `maximumAmount`, `frequencyMonths`, `event`, plus
@@ -153,3 +163,27 @@ and explicit unapproved-pricing counts. The bounded internal candidate root
 uses generation/hash-bound programme and evidence chunks in the same evidence
 directory. Publication reads only authorised programmes and their required
 evidence; the 24 MiB public catalogue ceiling does not cap the retained archive.
+
+Validated-update receipts can suspend reviewed programmes whose semantic
+identity disappears or whose current structure differs from the reviewed
+policy. `programmeIds` selects the remaining tested subset;
+`suspendedProgrammeIds` and `suspensionReasonCodes` must exactly match the
+independently derived suspension set. The complete original shadow report and
+all operator, consumer, native and canary bindings remain mandatory even when
+zero programmes stay enabled. Discovery and coverage publish the precise
+suspension reasons instead of leaving previous prices labelled current.
+
+Internal status-only warning candidates add `warningSnapshot`, binding the
+original immutable candidate file/hash/generation/day, the target selected
+generation/day, and the exact committed source-event state/hash. Projection is
+reproduced before packaging; monetary values cannot change through this path.
+The receipt separately binds `warningSnapshotSha256`. All approved programmes
+are suspended while source processing is pending. Reference observations keep
+their original values and last-success dates under deferred freshness; source
+acquisition/extraction and cost completeness are explicitly pending/unknown.
+If the selected generation advances before pricing completes, the projection
+carries only prior dated discovery/reference evidence, no executable programme
+or old-generation chunk route. Product suppressed counts remain visible. Core,
+details and every published catalogue asset bind the actual target generation.
+The current selected generation and committed source state are rechecked under
+the shared snapshot fence immediately before publication selection changes.

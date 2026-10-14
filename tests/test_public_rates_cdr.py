@@ -108,6 +108,19 @@ def test_source_reordering_and_price_change_do_not_change_semantic_selection(nab
     assert revised['components'][0]['source']['rawValue'] == '0.0685'
 
 
+def test_range_grouping_retains_verbatim_material_notes_and_review_binding(nab_compiled):
+    from cdr_public_rates_publication import programme_structure_sha256
+    raw = json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']
+    original = high_lvr(nab_compiled)
+    notes = [raw['lendingRates'][index - 1]['additionalInfo'] for index in (7, 8)]
+    assert original['materialFootnotes'] == sorted(set(notes))
+    raw['lendingRates'][6]['additionalInfo'] += ' Only available to bank staff.'  # Structural review control.
+    revised = high_lvr(compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage', raw))
+    assert revised['programmeId'] == original['programmeId']
+    assert revised['formula']['op'] == original['formula']['op'] == 'range'
+    assert programme_structure_sha256(revised) != programme_structure_sha256(original)
+
+
 def test_duplicate_conflicting_scope_becomes_unresolved_not_rebound():
     raw = json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']
     raw['lendingRates'].append(deepcopy(raw['lendingRates'][0]))
@@ -152,6 +165,22 @@ def test_unknown_bonus_qualification_does_not_become_false_or_zero(goldens):
     assert result['status'] == 'unresolved'
     assert any(c['value'] == 'noFeesOrCharges' for c in result['conditions']['unknown'])
     assert 'payableRate' not in result
+
+
+def test_disclosed_bonus_base_is_reference_only_and_base_only_products_still_resolve(goldens):
+    compiled = compile_fixture('anz-progress-saver-cdr-20261014.json', 'ANZ', 'Savings')
+    base = next(p for p in compiled['programmes'] if p['sourceBindings'][0]['rateIndex'] == 1)
+    assert base['components'][0]['role'] == 'reference'
+    assert 'base_component_requires_adjustment_resolution' in base['reasonCodes']
+    adjusted = next(p for p in compiled['programmes'] if any(c['role'] == 'bonus' for c in p['components']))
+    assert resolve_public_rate(adjusted, goldens[1]['scenario'], goldens[1]['asOf'])['payableRate'] == '0.04'
+    for scenario_input in (goldens[1]['scenario'], {}):
+        result = resolve_public_rate(base, scenario_input, goldens[1]['asOf'])
+        assert result['status'] == 'unresolved' and 'payableRate' not in result
+    raw = json.loads((FIXTURES / 'anz-progress-saver-cdr-20261014.json').read_bytes())['data']
+    raw['depositRates'] = raw['depositRates'][:1]  # Structural adapter control using the actual public base.
+    only = compile_fixture('anz-progress-saver-cdr-20261014.json', 'ANZ', 'Savings', raw)['programmes'][0]
+    assert resolve_public_rate(only, goldens[1]['scenario'], goldens[1]['asOf'])['payableRate'] == '0.0001'
 
 
 def test_failed_and_stale_checks_require_explicit_historical_selection(goldens):
@@ -321,6 +350,15 @@ def test_unit_invalid_bonus_cannot_regain_a_formula_during_base_binding():
     assert next(c for c in programme['components'] if c['role'] == 'bonus')['source']['rawValue'] == '3.99'
 
 
+def test_negative_cdr_bonus_cannot_invert_the_published_adjustment_relationship():
+    raw = json.loads((FIXTURES / 'anz-progress-saver-cdr-20261014.json').read_bytes())['data']
+    next(rate for rate in raw['depositRates'] if rate['depositRateType'] == 'BONUS')['rate'] = '-0.00001'
+    result = compile_fixture('anz-progress-saver-cdr-20261014.json', 'ANZ', 'Savings', raw)
+    programme = next(p for p in result['programmes'] if any(c['role'] == 'bonus' for c in p['components']))
+    assert 'negative_cdr_adjustment' in programme['reasonCodes'] and 'formula' not in programme
+    assert 'value' not in next(c for c in programme['components'] if c['role'] == 'bonus')
+
+
 @pytest.mark.parametrize('material', ['Rates from the displayed interest rate', 'Minimum interest rate subject to assessment',
                                      'Maximum interest rate determined at our discretion', 'Negotiated reference rate before discounts',
                                      'Indicator rate less applicable discount', 'The rate depends on the borrower circumstances'])
@@ -340,3 +378,59 @@ def test_malformed_non_record_array_entries_cannot_shift_legacy_offer_binding():
     assert second['sourceBindings'][0]['pointer'] == '/data/depositRates/2'
     original = json.loads((FIXTURES / 'anz-term-deposit-cdr-20261014.json').read_bytes())['data']['depositRates'][1]
     assert second['components'][0]['source']['rawValue'] == original['rate']
+
+
+@pytest.mark.parametrize('field,limit,nested', [
+    ('lendingRates', 512, False), ('fees', 256, False), ('constraints', 64, False),
+    ('eligibility', 64, False), ('tiers', 128, True), ('applicabilityConditions', 128, True),
+])
+def test_pathological_public_record_counts_preserve_unresolved_discovery(field, limit, nested):
+    raw = json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']
+    target = raw['lendingRates'][0] if nested else raw
+    retained_item = (target.get(field) or [{}])[0]
+    target[field] = [retained_item] * (limit + 1)
+    result = compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage', raw)
+    assert result['product']['name'] == raw['name']
+    assert result['product']['sourceEvidence']['locator'] == '/data'
+    assert result['product']['reasonCodes'] == ['public_pricing_record_budget_exceeded']
+    assert not result['programmes']
+
+
+def test_product_fees_compile_once_for_the_actual_nab_offer_inventory(monkeypatch):
+    import cdr_public_rates_cdr as compiler
+    from unittest.mock import Mock
+    once = Mock(wraps=compiler.compile_fees)
+    monkeypatch.setattr(compiler, 'compile_fees', once)
+    result = compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage')
+    assert len(json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']['lendingRates']) == 172
+    assert len(result['programmes']) > 50
+    once.assert_called_once()
+    assert all(fee['scopeId'] == result['product']['productId'] for p in result['programmes'] for fee in p['fees'])
+
+
+def test_material_notes_utf16_limit_preserves_unresolved_public_discovery():
+    raw = json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']
+    raw['lendingRates'][0]['additionalInfo'] = '\U0001f30f' * 8193
+    result = compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage', raw)
+    assert result['product']['reasonCodes'] == ['public_pricing_record_budget_exceeded']
+    assert result['product']['sourceEvidence']['locator'] == '/data' and not result['programmes']
+
+
+def test_compiled_byte_ceiling_blocks_product_fee_amplification_before_storage():
+    """Real source with enlarged fee text is a resource fault, not pricing acceptance."""
+    raw = json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']
+    original_fee = raw['fees'][0]
+    raw['fees'] = [{**original_fee, 'name': original_fee['name'] + str(index) + 'x' * 900,
+                   'additionalInfo': 'subject to ' + 'x' * 3900} for index in range(128)]
+    assert len(json.dumps(raw).encode('utf-8')) < 16 * 1024 * 1024
+    result = compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage', raw)
+    assert result['product']['reasonCodes'] == ['public_pricing_compiled_product_budget_exceeded']
+    assert not result['programmes'] and result['product']['sourceEvidence']['locator'] == '/data'
+
+
+def test_nested_oversized_source_values_fail_before_semantic_offer_grouping():
+    raw = json.loads((FIXTURES / 'nab-tailored-cdr-20261013.json').read_bytes())['data']
+    raw['fees'][0]['fixedAmount'] = {'amount': 'x' * 65536}
+    result = compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage', raw)
+    assert result['product']['reasonCodes'] == ['public_pricing_record_budget_exceeded']
+    assert not result['programmes']

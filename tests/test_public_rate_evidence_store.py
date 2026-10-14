@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -46,7 +47,7 @@ def retained_product(store, *, generation="retained-public-fixture", observed_at
     return observation, result, source_inventory(inventory_from_compiled(compiled))
 
 
-def retain_reference_check(store, register, *, generation="retained-public-fixture", now=WHEN, fail=False, suffix=b""):
+def retain_reference_check(store, register, *, generation="retained-public-fixture", now=WHEN, fail=False, suffix=b"", acknowledge=True, unconditional=False):
     public = PublicRateStore(store)
     requests = public.queue_sources(register, ingest_id=generation, now=now)
     queue = AcquisitionQueue(store)
@@ -61,10 +62,12 @@ def retain_reference_check(store, register, *, generation="retained-public-fixtu
     else:
         store.record_check(document_id=request["document_id"], check_id=check_id, checked_at=now,
             status="fetched", body=body, media_type="application/pdf", http_status=200,
-            metadata={"final_url": context["sourceUrl"], "etag": '"retained-public-nab"'})
+            metadata={"final_url": context["sourceUrl"], "etag": '"retained-public-nab"',
+                      **({"unconditional_checked_at": now} if unconditional else {})})
     check = dict(store.db.execute("SELECT * FROM acquisition_checks WHERE check_id=?", (check_id,)).fetchone())
     queue.finish(request, check_id, now=now, terminal=fail)
-    public.record_check(request, check)
+    if acknowledge:
+        public.record_check(request, check)
     return request, check
 
 
@@ -128,7 +131,9 @@ def test_provider_inventory_change_retains_last_verified_reference_values(tmp_pa
         public.queue_sources(second, ingest_id="retained-public-fixture", now=WHEN)
         result = public.catalogue_inputs(second, ingest_id="retained-public-fixture", as_of=WHEN)
         assert len(result["referenceRates"]) == 106
-        assert all(rate["freshness"]["state"] == "deferred" for rate in result["referenceRates"])
+        # Exact source context, adapter and retained bytes share the original
+        # accepted check; changing coverage does not invent a new price/check.
+        assert all(rate["freshness"]["state"] == "current" for rate in result["referenceRates"])
 
 
 def test_304_has_retained_bytes_and_unconditional_refresh_omits_validators(tmp_path, monkeypatch):
@@ -215,7 +220,7 @@ def test_future_check_cannot_make_an_earlier_generation_current(tmp_path):
 
 
 def _scenario_adapter(monkeypatch, transform):
-    """Exercise observation history with hypothetical dates on retained bytes.
+    """Exercise hypothetical observation dates/routing/prices on retained bytes.
 
     These mutations are unit-test scenarios, not claims about lender changes.
     Public lender acceptance uses the unchanged captures in separate tests.
@@ -229,6 +234,79 @@ def _scenario_adapter(monkeypatch, transform):
         return result
 
     monkeypatch.setattr("cdr_public_rates_reference.extract_reference", adapted)
+
+
+def _unit_alternate_source_inventory(inventory):
+    """Controlled URL migration, not an asserted public lender endpoint."""
+    changed = deepcopy(inventory)
+    for source in changed['sources']:
+        source['url'] += ('&' if '?' in source['url'] else '?') + 'unit_source_document=alternate'
+    return changed
+
+
+def test_unit_unverified_new_source_registration_cannot_borrow_old_document_history(tmp_path):
+    with EvidenceStore(tmp_path / 'evidence') as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        original = public.register(inventory, observed_at=WHEN)
+        _, check = retain_reference_check(store, original)
+        original_count = store.db.execute('SELECT COUNT(*) FROM public_rate_observations').fetchone()[0]
+        original_body = capture('nab-indicator')[0]
+        original_sha = hashlib.sha256(original_body).hexdigest()
+        later = '2026-10-14T12:50:00Z'
+        generation = 'unit-unverified-source-migration'
+        retained_product(store, generation=generation, observed_at=later)
+        changed = public.register(_unit_alternate_source_inventory(inventory), observed_at=later)
+        public.queue_sources(changed, ingest_id=generation, now=later)
+        current = public.catalogue_inputs(changed, ingest_id=generation, as_of=later)
+        assert current['referenceRates'] == []
+        assert current['coverage'][0]['referenceSourceStatus'] == 'deferred'
+        historical = public.catalogue_inputs(original, ingest_id='retained-public-fixture', as_of=WHEN)
+        assert len(historical['referenceRates']) == 106
+        assert store.db.execute('SELECT COUNT(*) FROM public_rate_observations').fetchone()[0] == original_count
+        assert store.read_blob(original_sha) == original_body
+
+
+def test_unit_late_old_source_url_prices_cannot_inherit_new_document_verification(tmp_path, monkeypatch):
+    # Deliberate route/price controls prove context isolation; public lender
+    # acceptance remains bound to the unchanged captures in the source tests.
+    body, context = capture('nab-indicator')
+    original_url = context['url']
+    def price_by_route(result, extraction_context):
+        result['referenceRates'] = result['referenceRates'][:1]
+        if extraction_context['url'] == original_url:
+            result['referenceRates'][0]['value'] = '9.99'  # Unit old-route price.
+    _scenario_adapter(monkeypatch, price_by_route)
+    with EvidenceStore(tmp_path / 'evidence') as store:
+        old_generation, current_generation = 'unit-late-old-route', 'unit-current-public-route'
+        _, _, inventory = retained_product(store, generation=old_generation, observed_at='2026-10-14T11:48:00Z')
+        public = PublicRateStore(store)
+        original = public.register(inventory, observed_at='2026-10-14T11:48:00Z')
+        public.queue_sources(original, ingest_id=old_generation, now='2026-10-14T11:48:00Z')
+        queue = AcquisitionQueue(store)
+        late = queue.claim(now='2026-10-14T11:48:00Z')
+        retained_product(store, generation=current_generation)
+        changed = public.register(_unit_alternate_source_inventory(inventory), observed_at=WHEN)
+        retain_reference_check(store, changed, generation=current_generation, now=WHEN)
+        expected = public.catalogue_inputs(changed, ingest_id=current_generation, as_of=WHEN)['referenceRates'][0]
+        assert expected['value'] != '9.99' and expected['freshness']['state'] == 'current'
+        after = '2026-10-14T11:50:01Z'
+        old_body = body + b'\n% unit scenario: late old registered URL\n'
+        check_id = digest([late['request_id'], late['lease_id']])
+        store.record_check(document_id=late['document_id'], check_id=check_id, checked_at=after,
+                           status='fetched', body=old_body, media_type='application/pdf', http_status=200,
+                           metadata={'final_url': context['sourceUrl']})
+        queue.finish(late, check_id, now=after)
+        public.record_check(late, dict(store.db.execute('SELECT * FROM acquisition_checks WHERE check_id=?', (check_id,)).fetchone()))
+        current = public.catalogue_inputs(changed, ingest_id=current_generation, as_of=after)
+        assert len(current['referenceRates']) == 1
+        assert current['referenceRates'][0]['referenceId'] == expected['referenceId']
+        assert current['referenceRates'][0]['value'] == expected['value']
+        assert current['referenceRates'][0]['freshness']['state'] == 'current'
+        assert all(item['sha256'] == hashlib.sha256(body).hexdigest() for item in current['evidence'])
+        retained = public.catalogue_inputs(original, ingest_id=old_generation, as_of=after)
+        assert retained['referenceRates'][0]['value'] == '9.99'
+        assert store.read_blob(hashlib.sha256(old_body).hexdigest()) == old_body
 
 
 def test_announced_future_reference_is_retained_and_bounds_the_current_period(tmp_path, monkeypatch):
@@ -319,4 +397,178 @@ def test_contradictory_reference_rows_enter_review_without_current_claims(tmp_pa
         result = public.catalogue_inputs(register, ingest_id="retained-public-fixture", as_of=WHEN)
         assert result["referenceRates"] == []
         assert result["coverage"][0]["referenceSourceStatus"] == "failed"
+        assert result["coverage"][0]["sourceAcquisition"] == "fetched"
+        assert result["coverage"][0]["extraction"] == "unresolved"
         assert store.db.execute("SELECT reason_code FROM public_rate_review_queue").fetchone()[0] == "conflicting_reference_rows"
+
+
+def test_interpretation_commit_requeues_a_snapshot_consumed_while_parsing(tmp_path, monkeypatch):
+    from cdr_public_rates_reference import extract_reference
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        def interleaved(body, context):
+            pending = store.db.execute("SELECT * FROM public_rate_candidate_events ORDER BY sequence DESC LIMIT 1").fetchone()
+            assert pending["status"] == "dirty"
+            with store.db:
+                store.db.execute("INSERT INTO public_rate_candidate_events "
+                    "(event_id,ingest_id,register_id,status,observed_at) VALUES (?,?,?,?,?)",
+                    (digest([pending["event_id"], "unit_snapshot_consumed"]), pending["ingest_id"], register, "fresh", WHEN))
+            return extract_reference(body, context)
+        monkeypatch.setattr("cdr_public_rates_reference.extract_reference", interleaved)
+        retain_reference_check(store, register)
+        latest = store.db.execute("SELECT * FROM public_rate_candidate_events ORDER BY sequence DESC LIMIT 1").fetchone()
+        assert latest["status"] == "dirty"
+        assert len(public.catalogue_inputs(register, ingest_id="retained-public-fixture", as_of=WHEN)["referenceRates"]) == 106
+
+
+def test_accepted_capture_replays_after_parser_crash_without_a_new_network_check(tmp_path, monkeypatch):
+    from cdr_public_rates_reference import extract_reference
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        def interrupted(body, context):
+            raise TimeoutError("unit parser interruption")
+        monkeypatch.setattr("cdr_public_rates_reference.extract_reference", interrupted)
+        with pytest.raises(TimeoutError, match="interruption"):
+            retain_reference_check(store, register)
+        replay = public.pending_interpretations("retained-public-fixture")
+        assert len(replay) == 1
+        assert replay[0]["request"]["lease_id"]
+        count = store.db.execute("SELECT COUNT(*) FROM acquisition_checks").fetchone()[0]
+        monkeypatch.setattr("cdr_public_rates_reference.extract_reference", extract_reference)
+        public.record_check(replay[0]["request"], replay[0]["check"])
+        assert public.pending_interpretations("retained-public-fixture") == []
+        assert store.db.execute("SELECT COUNT(*) FROM acquisition_checks").fetchone()[0] == count
+        assert len(public.catalogue_inputs(register, ingest_id="retained-public-fixture", as_of=WHEN)["referenceRates"]) == 106
+
+
+def test_unaccepted_orphan_is_not_a_pending_interpretation(tmp_path):
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        request_id = public.queue_sources(register, ingest_id="retained-public-fixture", now=WHEN)[0]
+        request = dict(store.db.execute("SELECT * FROM acquisition_requests WHERE request_id=?", (request_id,)).fetchone())
+        body, context = capture("nab-indicator")
+        store.record_check(document_id=request["document_id"], check_id="unit-orphan", checked_at=WHEN,
+                           status="fetched", body=body, media_type="application/pdf", http_status=200)
+        binding = store.db.execute("SELECT binding_id FROM public_rate_sources WHERE register_id=?", (register,)).fetchone()[0]
+        with store.db:
+            store.db.execute("INSERT INTO public_rate_checks VALUES (?,?,?,?)", (binding, "unit-orphan", request["ingest_id"], request_id))
+        assert public.pending_interpretations(request["ingest_id"]) == []
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_accepted_check_before_pricing_ack_is_replayed_once(tmp_path, failed):
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        retain_reference_check(store, register, fail=failed, acknowledge=False)
+        assert store.db.execute("SELECT COUNT(*) FROM public_rate_checks").fetchone()[0] == 0
+        replay = public.pending_interpretations(None)
+        assert len(replay) == 1
+        before = store.db.execute("SELECT COUNT(*) FROM acquisition_checks").fetchone()[0]
+        public.record_check(replay[0]["request"], replay[0]["check"])
+        assert public.pending_interpretations(None) == []
+        assert public.pending_interpretations("retained-public-fixture") == []
+        assert store.db.execute("SELECT COUNT(*) FROM acquisition_checks").fetchone()[0] == before
+
+
+def test_unacknowledged_failed_check_removes_current_claim_even_when_replay_budget_is_exhausted(tmp_path):
+    from cdr_public_rates_budget import reserve
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        retain_reference_check(store, register)
+        generation, later = "interrupted-pricing-ack", "2026-10-14T12:50:00Z"
+        retained_product(store, generation=generation, observed_at=later)
+        retain_reference_check(store, register, generation=generation, now=later, fail=True, acknowledge=False)
+        # Two crashed supervised windows retain their whole reservations.
+        reserve(store, generation, kind="source")
+        reserve(store, generation, kind="source")
+        assert public.pending_interpretations(None) == []
+        assert len(public.pending_interpretations(generation)) == 1
+        catalogue = public.catalogue_inputs(register, ingest_id=generation, as_of=later)
+        assert all(rate["freshness"]["state"] == "failed" for rate in catalogue["referenceRates"])
+        assert all("http_error" in rate["freshness"]["reasonCodes"] for rate in catalogue["referenceRates"])
+        assert catalogue["coverage"][0]["referenceRatesCurrent"] == 0
+        assert catalogue["coverage"][0]["sourceAcquisition"] == "failed"
+        assert catalogue["coverage"][0]["extraction"] == "unavailable"
+
+
+def test_conditional_daily_200_responses_cannot_postpone_weekly_unconditional_refresh(tmp_path):
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        request, _ = retain_reference_check(store, register, unconditional=True)
+        document = request["document_id"]
+        assert not public.needs_unconditional(document, now=WHEN)
+        for day in (15, 18, 20):
+            when, generation = f"2026-10-{day}T11:50:00Z", f"conditional-{day}"
+            retained_product(store, generation=generation, observed_at=when)
+            retain_reference_check(store, register, generation=generation, now=when)
+        assert not public.needs_unconditional(document, now="2026-10-21T11:49:59Z")
+        assert public.needs_unconditional(document, now="2026-10-21T11:50:00Z")
+        refreshed, generation = "2026-10-21T11:50:00Z", "weekly-refresh"
+        retained_product(store, generation=generation, observed_at=refreshed)
+        retain_reference_check(store, register, generation=generation, now=refreshed, unconditional=True)
+        assert not public.needs_unconditional(document, now="2026-10-22T11:50:00Z")
+
+
+def test_late_older_ingest_failure_invalidates_newer_shared_source_before_ack(tmp_path):
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        register = public.register(inventory, observed_at=WHEN)
+        retain_reference_check(store, register)
+        retained_product(store, generation="older-in-flight", observed_at="2026-10-14T11:55:00Z")
+        public.queue_sources(register, ingest_id="older-in-flight", now="2026-10-14T11:55:00Z")
+        queue = AcquisitionQueue(store)
+        older = queue.claim(now="2026-10-14T11:55:00Z")
+        assert older["ingest_id"] == "older-in-flight"
+        generation, success = "selected-recapture", "2026-10-14T11:55:10Z"
+        retained_product(store, generation=generation, observed_at="2026-10-14T11:55:05Z")
+        retain_reference_check(store, register, generation=generation, now=success)
+        before = public.catalogue_inputs(register, ingest_id=generation, as_of="2026-10-14T11:55:15Z")
+        assert all(rate["freshness"]["state"] == "current" for rate in before["referenceRates"])
+        failed = "2026-10-14T11:55:20Z"
+        check_id = digest([older["request_id"], older["lease_id"], "late-failure"])
+        store.record_check(document_id=older["document_id"], check_id=check_id, checked_at="2026-10-14T11:55:00Z",
+                           status="failed", error_code="http_error", http_status=503)
+        queue.finish(older, check_id, now=failed, terminal=True)
+        # Crash before pricing acknowledgement: the accepted response alone
+        # invalidates the newer edition, with the true last successful date.
+        assert not store.db.execute("SELECT 1 FROM public_rate_checks WHERE check_id=?", (check_id,)).fetchone()
+        after = public.catalogue_inputs(register, ingest_id=generation, as_of=failed)
+        assert all(rate["freshness"]["state"] == "failed" for rate in after["referenceRates"])
+        assert all(datetime.fromisoformat(rate["freshness"]["lastSuccessAt"].replace("Z", "+00:00")) ==
+                   datetime.fromisoformat(success.replace("Z", "+00:00")) for rate in after["referenceRates"])
+        assert after["coverage"][0]["referenceRatesCurrent"] == 0
+        historical = public.catalogue_inputs(register, ingest_id=generation, as_of="2026-10-14T11:55:15Z")
+        assert all(rate["freshness"]["state"] == "current" for rate in historical["referenceRates"])
+        recovery = "2026-10-14T11:55:26Z"
+        retained_product(store, generation="verified-recovery", observed_at="2026-10-14T11:55:25Z")
+        retain_reference_check(store, register, generation="verified-recovery", now=recovery)
+        recovered = public.catalogue_inputs(register, ingest_id=generation, as_of=recovery)
+        assert all(rate["freshness"]["state"] == "current" for rate in recovered["referenceRates"])
+
+
+def test_shared_check_cannot_donate_a_different_adapter_interpretation(tmp_path):
+    with EvidenceStore(tmp_path / "evidence") as store:
+        _, _, inventory = retained_product(store)
+        public = PublicRateStore(store)
+        original = public.register(inventory, observed_at=WHEN)
+        retain_reference_check(store, original)
+        inventory["sources"][0]["adapterVersion"] = "2"
+        changed = public.register(inventory, observed_at=WHEN)
+        public.queue_sources(changed, ingest_id="retained-public-fixture", now=WHEN)
+        binding = dict(store.db.execute("SELECT * FROM public_rate_sources WHERE register_id=?", (changed,)).fetchone())
+        state = public.source_freshness(binding, ingest_id="retained-public-fixture", as_of=WHEN)
+        assert state["state"] == "deferred"
+        assert "source_extraction_pending" in state["reasonCodes"]

@@ -104,6 +104,30 @@ def test_approved_programmes_fees_and_public_evidence_are_bound(tmp_path, candid
     assert any(fee['amount'] == '12' for f in fee_sets.values() for fee in f['fees'] if 'amount' in fee)
 
 
+def test_reviewed_structure_suspension_keeps_discovery_and_other_verified_programmes(tmp_path, candidate, monkeypatch):
+    from cdr_public_rates_publication import ProgrammeSelection
+    import app_payload_public_rates as module
+    savings = next(p for p in candidate['programmes'] if p['section'] == 'Savings')
+    td = next(p for p in candidate['programmes'] if p['section'] == 'TD')
+    reason = 'public_pricing_structure_changed_requires_review'
+    selection = ProgrammeSelection({td['programmeId']}, suspensions={savings['programmeId']: {
+        'programmeId': savings['programmeId'], 'productId': savings['productId'], 'section': 'Savings', 'reasonCodes': [reason]}})
+    # Selection is an operational control here; the real gate is covered by
+    # its full shadow-report/receipt tests and no public rate is modified.
+    monkeypatch.setattr(module, '_authorised_programmes', lambda _data, _receipt: selection)
+    manifest = package(tmp_path, candidate, tmp_path / 'reviewed-selection-control.json')
+    decoded = validate_local_catalogue(manifest, tmp_path)
+    products = {p['productId']: p for p in decoded['products']}
+    assert products[savings['productId']]['programmeIds'] == []
+    assert reason in products[savings['productId']]['reasonCodes']
+    assert products[td['productId']]['programmeIds'] == [td['programmeId']]
+    coverage = next(row for row in decoded['index']['coverage'] if row['section'] == 'Savings'
+                    and row['providerId'] == products[savings['productId']]['providerId'])
+    assert coverage['publicationStatus'] == 'published_with_suspensions'
+    assert coverage['resolutionStatus'] == 'unresolved' and reason in coverage['reasonCodes']
+    assert coverage['sourceStatus'] == 'observed'
+
+
 @pytest.mark.parametrize('fault', ['generation', 'core', 'details', 'url'])
 def test_mixed_generation_and_foreign_asset_routes_fail_closed(tmp_path, candidate, fault):
     manifest = package(tmp_path, candidate)

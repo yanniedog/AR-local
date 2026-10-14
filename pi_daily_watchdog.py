@@ -234,6 +234,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     capture_budget = catch_up_timeout(now_utc)
     should_start = (not writable_error and current_day_due and capture_budget >= 60
                     and now_utc >= ready_at and not complete and not active)
+    if (not writable_error and _app_payload_enabled()
+            and os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1'):
+        # Recover accepted source-status intent after a killed acquisition
+        # callback, even when the deterministic collector budget is exhausted.
+        # The ordinary retry admission still owns all publication scheduling.
+        from cdr_public_rates_runtime import queue_source_warning
+        try:
+            queue_source_warning(Path(os.environ.get('AR_LOCAL_TERMS_ROOT', '')), repo_root=REPO_ROOT,
+                                 dry_run=args.dry_run)
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+            if not args.json:
+                print(f'pi_daily_watchdog: public source-status publication deferred reason={error}', file=sys.stderr)
     payload_pending = not writable_error and payload_publication_pending(REPO_ROOT)
     should_retry_payload = payload_pending and complete and not active
     catch_up_failed = False

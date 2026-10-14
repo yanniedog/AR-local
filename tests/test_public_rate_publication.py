@@ -17,8 +17,8 @@ HASH = "1" * 64
 COMMIT = "2" * 40
 
 
-def public_case(day):
-    source = copy.deepcopy(json.loads(GOLDEN.read_bytes())["cases"][1])
+def public_case(day, index=1):
+    source = copy.deepcopy(json.loads(GOLDEN.read_bytes())["cases"][index])
     source["asOf"] = day + "T12:10:00Z"
     source["programme"]["freshness"].update(checkedAt=day + "T11:00:00Z", lastSuccessAt=day + "T11:00:00Z")
     evidence = source.pop("publicSource")
@@ -52,6 +52,27 @@ def packet(tmp_path, monkeypatch):
     path = tmp_path / "approval.json"
     atomic_write_json(path, receipt)
     return candidate, report, receipt, path, identity
+
+
+def multi_packet(tmp_path, monkeypatch):
+    """Two retained real products; dates/attestations remain unit controls."""
+    candidate, report, receipt, path, first = packet(tmp_path, monkeypatch)
+    for cycle in report['cycles']:
+        cycle['cases'].append(public_case(cycle['runDate'], 2))
+    other = report['cycles'][-1]['cases'][-1]['programme']
+    candidate['programmes'].append(copy.deepcopy(other))
+    ids = [first, other['programmeId']]
+    report['cycles'][-1]['candidateSha256'] = sha256(candidate)
+    atomic_write_json(tmp_path / 'shadow.json', report)
+    policy = {'schemaVersion': 1, 'reviewedProgrammes': [
+        {'programmeId': case['programme']['programmeId'], 'shadowReportSha256': sha256(report),
+         'programmeStructureSha256': programme_structure_sha256(case['programme']), 'consumerCommit': COMMIT}
+        for case in report['cycles'][-1]['cases']]}
+    monkeypatch.setattr('cdr_public_rates_publication.reviewed_policy', lambda: (policy, sha256(policy)))
+    receipt.update(candidateSha256=sha256(candidate), policySha256=sha256(policy), programmeIds=ids,
+                   shadowReport={'file': 'shadow.json', 'sha256': sha256(report)})
+    atomic_write_json(path, receipt)
+    return candidate, report, receipt, path, ids
 
 
 def test_default_is_disabled_and_candidate_cannot_self_activate():
@@ -153,3 +174,65 @@ def test_source_reordering_does_not_change_the_reviewed_programme_structure():
     programme["components"].reverse()
     programme["conditions"].reverse()
     assert programme_structure_sha256(programme) == before
+
+
+@pytest.mark.parametrize('missing', [False, True])
+def test_updated_receipt_suspends_only_changed_or_missing_programmes(tmp_path, monkeypatch, missing):
+    candidate, _, receipt, path, ids = multi_packet(tmp_path, monkeypatch)
+    anchor = {key: receipt[key] for key in ('generationId', 'runDate', 'candidateSha256')}
+    changed = candidate['programmes'][0]
+    product = changed['productId']
+    if missing:
+        candidate['programmes'].pop(0)
+        reason = 'public_pricing_reviewed_programme_unavailable'
+    else:
+        changed['materialFootnotes'] = ['Additional eligibility requires source-adapter review.']
+        reason = 'public_pricing_structure_changed_requires_review'
+    receipt.update(candidateSha256=sha256(candidate), publicationMode='validated_update', approvedShadowCandidate=anchor,
+                   programmeIds=[ids[1]], suspendedProgrammeIds=[ids[0]], suspensionReasonCodes={ids[0]: [reason]})
+    atomic_write_json(path, receipt)
+    selection = authorised_programmes(candidate, path)
+    assert selection == {ids[1]}
+    assert selection.suspensions[ids[0]]['productId'] == product
+    assert selection.suspensions[ids[0]]['reasonCodes'] == [reason]
+
+
+def test_all_suspended_programmes_publish_unresolved_only_with_valid_original_approval(tmp_path, monkeypatch):
+    candidate, _, receipt, path, identity = packet(tmp_path, monkeypatch)
+    anchor = {key: receipt[key] for key in ('generationId', 'runDate', 'candidateSha256')}
+    candidate['programmes'][0]['materialFootnotes'] = ['Changed material rule control.']
+    receipt.update(candidateSha256=sha256(candidate), publicationMode='validated_update', approvedShadowCandidate=anchor,
+                   programmeIds=[], suspendedProgrammeIds=[identity],
+                   suspensionReasonCodes={identity: ['public_pricing_structure_changed_requires_review']})
+    atomic_write_json(path, receipt)
+    selection = authorised_programmes(candidate, path)
+    assert not selection and identity in selection.suspensions
+    receipt['operatorApprovalSha256'] = ''
+    atomic_write_json(path, receipt)
+    with pytest.raises(ValueError, match='consumer_acceptance'):
+        authorised_programmes(candidate, path)
+
+
+def test_suspension_codes_and_unrequested_shadow_cases_cannot_bypass_review(tmp_path, monkeypatch):
+    candidate, report, receipt, path, ids = multi_packet(tmp_path, monkeypatch)
+    anchor = {key: receipt[key] for key in ('generationId', 'runDate', 'candidateSha256')}
+    candidate['programmes'][0]['materialFootnotes'] = ['Changed rule control.']
+    receipt.update(candidateSha256=sha256(candidate), publicationMode='validated_update', approvedShadowCandidate=anchor,
+                   programmeIds=[ids[1]], suspendedProgrammeIds=[ids[0]], suspensionReasonCodes={ids[0]: ['invented_reason']})
+    atomic_write_json(path, receipt)
+    with pytest.raises(ValueError, match='suspension_must_match'):
+        authorised_programmes(candidate, path)
+    receipt['suspensionReasonCodes'][ids[0]] = ['public_pricing_structure_changed_requires_review']
+    report['cycles'][0]['cases'][0]['expected']['payableRate'] = '0.99'
+    atomic_write_json(tmp_path / 'shadow.json', report)
+    receipt['shadowReport']['sha256'] = sha256(report)
+    # Even a selected subset cannot skip corrupt evidence for a suspended case.
+    policy = {'schemaVersion': 1, 'reviewedProgrammes': [
+        {'programmeId': case['programme']['programmeId'], 'shadowReportSha256': sha256(report),
+         'programmeStructureSha256': programme_structure_sha256(case['programme']), 'consumerCommit': COMMIT}
+        for case in report['cycles'][-1]['cases']]}
+    receipt['policySha256'] = sha256(policy)
+    monkeypatch.setattr('cdr_public_rates_publication.reviewed_policy', lambda: (policy, sha256(policy)))
+    atomic_write_json(path, receipt)
+    with pytest.raises(ValueError, match='discrepancy'):
+        authorised_programmes(candidate, path)

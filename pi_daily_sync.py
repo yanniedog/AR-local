@@ -26,6 +26,7 @@ from ar_local_pi_runtime import (
 from ar_local_subprocess import run_checked
 import app_payload_observation_gate as gate
 from cdr_export_contract import contract_validation_cache, load_contract
+from cdr_file_lock import FileLock
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 from cdr_macro_refresh import refresh_macro_store
@@ -44,6 +45,7 @@ DASHBOARD_CONTROL_TIMEOUT_SEC = 120
 PUBLISH_PUBLISHED = "published"
 PUBLISH_WITHHELD = "withheld"
 PUBLISH_FAILED = "failed"
+PUBLISH_SUPERSEDED = "superseded"
 
 # The publication policy itself lives in app_payload_observation_gate so the
 # backfill path cannot drift away from it. Re-exported here because operators and
@@ -214,6 +216,13 @@ def payload_publication_pending(repo_root: Path) -> bool:
 def mark_payload_publication_pending(
     repo_root: Path, reason: str, pointer: Optional[dict] = None
 ) -> None:
+    # Late deterministic source checks use this existing lane concurrently with
+    # the publisher. Serialize read/merge/write so neither request is lost.
+    with FileLock(payload_publication_pending_path(repo_root).with_suffix('.lock')):
+        _mark_payload_publication_pending(repo_root, reason, pointer)
+
+
+def _mark_payload_publication_pending(repo_root: Path, reason: str, pointer: Optional[dict]) -> None:
     """Record an outstanding upload, including *which* observation it was.
 
     The marker used to carry only a reason and a timestamp, so the retry could not
@@ -226,6 +235,8 @@ def mark_payload_publication_pending(
     path = payload_publication_pending_path(repo_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = read_payload_publication_pending(repo_root)
+    if path.exists() and not previous:
+        raise ValueError('publication_pending_state_unreadable')
     record = {
         "reason": str(reason),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -260,6 +271,11 @@ def pending_publication_pointer(repo_root: Path) -> Optional[dict]:
 
 def clear_payload_publication_pending(repo_root: Path, pointer: Optional[dict] = None) -> None:
     """A successful upload settles only that observation, never other queued work."""
+    with FileLock(payload_publication_pending_path(repo_root).with_suffix('.lock')):
+        _clear_payload_publication_pending(repo_root, pointer)
+
+
+def _clear_payload_publication_pending(repo_root: Path, pointer: Optional[dict]) -> None:
     path = payload_publication_pending_path(repo_root)
     record = read_payload_publication_pending(repo_root)
     queued = list(record.get("queued_pointers") or [])
@@ -310,9 +326,17 @@ def current_publication_pointer(repo_root: Path) -> dict:
     latest_observation = _read_observation_pointer(
         runtime_state, "latest-observation.json"
     )
-    if latest_observation.get("observation_state") == "partial":
-        return latest_observation
-    return _read_observation_pointer(runtime_state, "latest-complete.json")
+    pointer = (latest_observation if latest_observation.get("observation_state") == "partial"
+               else _read_observation_pointer(runtime_state, "latest-complete.json"))
+    if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
+        from cdr_public_rates_runtime import enrich_publication_pointer
+        try:
+            return enrich_publication_pointer(repo_root, pointer)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            # Missing pricing evidence cannot fail the completed bank ingest.
+            # The publication worker fails closed and keeps its retry intent.
+            print(f'[pi_daily_sync] public pricing pointer unavailable: {error}', file=sys.stderr)
+    return pointer
 
 
 def _contract_from_completion(runtime_state: Path, completion: dict) -> dict:
@@ -419,6 +443,10 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             # not a publication failure that the watchdog should retry forever.
             return PUBLISH_WITHHELD
         payload_state = runtime_state / "app-payload"
+        pricing_kwargs = {}
+        if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
+            from cdr_public_rates_runtime import publication_kwargs
+            pricing_kwargs = publication_kwargs(repo_root, contract, pointer)
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
             exports,
@@ -427,6 +455,7 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             source_observation={key: contract[key] for key in (
                 "generation_id", "observation_date", "observation_state", "contract_digest", "source_path"
             ) if key in contract},
+            **pricing_kwargs,
         )
         pruned_v1 = sum(
             prune_payload_staging(payload_state / "v1" / folder, "manifest.json")
@@ -530,8 +559,19 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                 f"reason={publication_failure_reason} (retry pending)",
                 file=sys.stderr,
             )
+        elif rolling_confirmed and pricing_kwargs:
+            from cdr_public_rates_runtime import acknowledge_warning_publication
+            acknowledge_warning_publication(pricing_kwargs['public_rates_root'], manifest)
         return outcome
     except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
+        if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
+            from cdr_public_rates_runtime import PublicPricingSourcePending, SupersededCandidate
+            if isinstance(exc, PublicPricingSourcePending):
+                print(f'[pi_daily_sync] pricing publication deferred reason={exc}')
+                return PUBLISH_WITHHELD
+            if isinstance(exc, SupersededCandidate):
+                print('[pi_daily_sync] public pricing retry settled reason=public_pricing_candidate_superseded')
+                return PUBLISH_SUPERSEDED
         print(f"[pi_daily_sync] app_payload publish failed (non-fatal) error={exc!r} exit=0")
         return PUBLISH_FAILED
 
@@ -630,15 +670,18 @@ def main(argv: Optional[list[str]] = None) -> int:
                             return 0
                         pending_pointer = selected.get("pointer")
                     outcome = maybe_publish_app_payload(REPO_ROOT, pending_pointer)
-                    if outcome == PUBLISH_PUBLISHED:
+                    if outcome in {PUBLISH_PUBLISHED, PUBLISH_SUPERSEDED}:
                         clear_payload_publication_pending(REPO_ROOT, pending_pointer)
                         # A killed older publisher must not strand a newer finalized
                         # capture whose wrapper never reached publication intent.
                         current = current_publication_pointer(REPO_ROOT)
                         if current and current != pending_pointer:
                             mark_payload_publication_pending(REPO_ROOT, "newer_capture", current)
-                        queue_drive_backup("repair-publication")
-                        print("[pi_daily_sync] app_payload retry completed")
+                        if outcome == PUBLISH_PUBLISHED:
+                            queue_drive_backup("repair-publication")
+                            print("[pi_daily_sync] app_payload retry completed")
+                        else:
+                            print('[pi_daily_sync] superseded pricing retry removed; current candidate remains queued')
                     else:
                         # Withheld keeps the marker too: nothing reached the release,
                         # so the upload is still outstanding for the next attempt.
@@ -699,8 +742,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 # otherwise execute the exception path that used to create it.
                 mark_payload_publication_pending(REPO_ROOT, "publication_started", pointer)
                 outcome = maybe_publish_app_payload(REPO_ROOT, pointer or None)
-                if outcome == PUBLISH_PUBLISHED:
+                if outcome in {PUBLISH_PUBLISHED, PUBLISH_SUPERSEDED}:
                     clear_payload_publication_pending(REPO_ROOT, pointer)
+                    if outcome == PUBLISH_SUPERSEDED:
+                        current = current_publication_pointer(REPO_ROOT)
+                        if current and current != pointer:
+                            mark_payload_publication_pending(REPO_ROOT, 'public_pricing_source_changed', current)
                 elif outcome == PUBLISH_FAILED:
                     mark_payload_publication_pending(
                         REPO_ROOT, "publish_failed", pointer

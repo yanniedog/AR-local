@@ -122,6 +122,13 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
             base = bank_base_row(path, banks, record)
             observation_id = store.observe(provider=base["provider"], product_key=base["product_key"],
                                              record=payload, source_bytes=body, observed_at=observation_time, ingest_id=generation)
+            from cdr_public_rates_collector import retain_compile_input
+            try:
+                retain_compile_input(store, path, banks, base, body, observation_id)
+            except (OSError, ValueError, KeyError, TypeError):
+                # Source-context failure is reported by the separate public
+                # lane; it cannot invalidate the accepted original capture.
+                pass
             acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=captured_at))
             raw_versions = store.db.execute("SELECT v.document_version_id FROM applicability a JOIN document_versions v USING(document_id) "
                                             "WHERE a.observation_id=? AND a.relation='cdr_source' AND v.content_sha256=?",

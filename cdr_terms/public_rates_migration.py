@@ -148,4 +148,6 @@ CREATE INDEX IF NOT EXISTS public_rate_candidate_due ON public_rate_candidate_ev
 def install(db: sqlite3.Connection) -> None:
     """Idempotent additive migration; the store installs immutable triggers next."""
     db.executescript(SCHEMA)
+    from .public_rates_budget_migration import install as install_budget
+    install_budget(db)
 

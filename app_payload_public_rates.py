@@ -92,6 +92,10 @@ def package_catalogue(candidate: dict, *, out_dir: Path, release_base: str,
     if candidate.get('enabledProgrammeIds'):
         raise ValueError('captured candidate data cannot activate public programmes')
     enabled = _authorised_programmes(candidate, publication_receipt)
+    suspensions = getattr(enabled, 'suspensions', {})
+    suspension_by_product = {}
+    for item in suspensions.values():
+        suspension_by_product.setdefault(item['productId'], set()).update(item['reasonCodes'])
     if not enabled <= available_programmes:
         raise ValueError("enabled public programme is not in this candidate")
     programmes = _unique(deepcopy(selected_programmes(candidate, enabled)), 'programmeId')
@@ -118,9 +122,11 @@ def package_catalogue(candidate: dict, *, out_dir: Path, release_base: str,
             raise ValueError("public discovery programme belongs to another product")
         suppressed = set(product['programmeIds']) - enabled
         product['programmeIds'] = sorted(set(product['programmeIds']) & enabled)
-        product['suppressedProgrammeCount'] = len(suppressed)
-        if suppressed:
+        product['suppressedProgrammeCount'] = product.get('suppressedProgrammeCount', 0) + len(suppressed)
+        if product['suppressedProgrammeCount']:
             product['reasonCodes'] = sorted(set(product['reasonCodes']) | {'pricing_programme_not_enabled'})
+        if product['productId'] in suspension_by_product:
+            product['reasonCodes'] = sorted(set(product['reasonCodes']) | suspension_by_product[product['productId']])
         validate_wire(product, "Product")
     for item in references.values():
         validate_wire(item, "Reference")
@@ -142,6 +148,15 @@ def package_catalogue(candidate: dict, *, out_dir: Path, release_base: str,
     coverage = deepcopy(candidate["coverage"])
     for row in coverage:
         row["publicationStatus"] = "published"
+        affected = [product for product in products.values() if product['productId'] in suspension_by_product
+                    and product['providerId'] == row['providerId'] and product['section'] == row['section']]
+        if affected:
+            reasons = set().union(*(suspension_by_product[product['productId']] for product in affected))
+            row['reasonCodes'] = sorted(set(row['reasonCodes']) | reasons)
+            row['resolutionStatus'] = ('partial' if any(product['programmeIds'] for product in products.values()
+                                                      if product['providerId'] == row['providerId'] and product['section'] == row['section'])
+                                       else 'unresolved')
+            row['publicationStatus'] = 'published_with_suspensions'
     # Full discovery records and cryptographic programme IDs belong in bounded
     # shards. Repeating them in the index exceeds its compressed budget even
     # with one programme per product in the current public inventory.
@@ -157,8 +172,6 @@ def package_catalogue(candidate: dict, *, out_dir: Path, release_base: str,
 
 
 def _authorised_programmes(candidate, receipt_path):
-    if receipt_path is None:
-        return set()
     from cdr_public_rates_publication import authorised_programmes
     return authorised_programmes(candidate, receipt_path)
 
