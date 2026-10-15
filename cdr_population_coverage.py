@@ -10,9 +10,11 @@ def apply_population_coverage(export_root, run_date, providers):
         raise ValueError('population comparison exceeds metadata budget')
     report = json.loads(path.read_bytes())
     population = report.get('provider_population') or {}
-    if population.get('status') != 'WARN':
+    inherited = population.get('unresolved_prior') if population.get('status') == 'UNKNOWN' else None
+    if population.get('status') != 'WARN' and not inherited:
         return []
-    findings = population.get('findings')
+    findings = ([{**row,'code':'provider_population_disappeared'} for row in inherited]
+        if inherited else population.get('findings'))
     if report.get('run_date') != run_date or not isinstance(findings, list) or not findings:
         raise ValueError('population comparison is not attributable to this observation')
     warnings, seen = [], set()
@@ -29,5 +31,6 @@ def apply_population_coverage(export_root, run_date, providers):
                         population_disposition='UNVERIFIED_SOURCE_ABSENCE')
         seen.add(name)
         warnings.append({'provider':name,'provider_uid':provider['provider_uid'],
-            'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'})
+            'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
+            **({'last_nonempty':finding['last_nonempty']} if 'last_nonempty' in finding else {})})
     return warnings

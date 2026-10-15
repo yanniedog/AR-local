@@ -43,10 +43,16 @@ def population_recovery_requests(observation, providers):
     for finding in findings:
         provider = finding.get('provider') if isinstance(finding, dict) else None
         prior = finding.get('products_prev') if isinstance(finding, dict) else None
+        carried = (isinstance(finding, dict) and finding.get('carried_unresolved') is True
+            and any(isinstance(row, dict) and row.get('provider') == provider
+                and row.get('population_known') is False
+                and row.get('disposition') == 'UNVERIFIED_SOURCE_ABSENCE'
+                for row in baseline.get('unresolved_provider_populations', [])))
         diagnostic = (observation['status'].get('index_diagnostics') or {}).get(provider) or {}
         if (provider not in providers or provider in seen or finding.get('code') != 'provider_population_disappeared'
                 or finding.get('disposition') != 'UNVERIFIED_SOURCE_ABSENCE'
-                or finding.get('population_known') is not False or type(prior) is not int or prior <= 0
+                or finding.get('population_known') is not False or type(prior) is not int
+                or prior < 0 or (prior == 0 and not carried)
                 or type(finding.get('products_curr')) is not int or finding['products_curr'] != 0
                 or type(finding.get('rates_curr')) is not int or finding['rates_curr'] != 0
                 or diagnostic.get('pagination_complete') is not True

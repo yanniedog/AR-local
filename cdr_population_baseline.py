@@ -10,6 +10,7 @@ from cdr_population_sanity import population_report
 
 def finalized_population_report(current_db, prior_db, state_dir):
     """An unfinalized/path-only database is diagnostic evidence, not authority."""
+    unresolved = []
     try:
         day = prior_db.parent.parent.name
         marker_path = Path(state_dir) / f'{day}.done.json'
@@ -26,6 +27,10 @@ def finalized_population_report(current_db, prior_db, state_dir):
             export_path=contract['source_path'])
         observation = load_pointer_observation(Path(state_dir), pointer)
         contract = observation['contract']
+        unresolved = contract['coverage'].get('provider_population_unverified', [])
+        if not isinstance(unresolved, list) or any(not isinstance(row, dict)
+                or not isinstance(row.get('provider'), str) for row in unresolved):
+            raise ValueError('invalid prior population disposition')
         if observation['export_root'] != prior_db.parent.resolve() or contract['observation_date'] != day:
             raise ValueError('baseline does not bind this database')
         if prior_db.is_symlink() or safe_child(observation['export_root'], prior_db.name) != prior_db.resolve():
@@ -39,11 +44,19 @@ def finalized_population_report(current_db, prior_db, state_dir):
                 raise ValueError('baseline verification budget exhausted')
         if hash_file(prior_db, budget=budget) != records[0]['sha256']:
             raise ValueError('baseline database changed after finalization')
-        result = population_report(current_db, prior_db)
+        result = population_report(current_db, prior_db, unresolved_prior=unresolved)
+        if result['status'] == 'UNKNOWN' and unresolved:
+            result['unresolved_prior'] = unresolved
         if result['status'] in {'PASS','WARN'}:
             result['baseline'] = {'observation_date':day,'generation_id':contract['generation_id'],
                 'contract_digest':contract['contract_digest'],'database_sha256':records[0]['sha256'],
-                'ledger_event_digest':marker['ledger_event_digest']}
+                'ledger_event_digest':marker['ledger_event_digest'],
+                'unresolved_provider_populations':unresolved}
+            for finding in result['findings']:
+                if not finding.get('carried_unresolved'):
+                    finding['last_nonempty'] = {'observation_date':day,
+                        'products':finding['products_prev'],'rates':finding.get('rates_prev',0)}
         return result
     except (OSError, ValueError, KeyError, TypeError):
-        return {'status':'UNKNOWN','reason':'baseline_not_finalized_or_verified','findings':[]}
+        return {'status':'UNKNOWN','reason':'baseline_not_finalized_or_verified','findings':[],
+            **({'unresolved_prior':unresolved} if isinstance(unresolved,list) and unresolved else {})}

@@ -91,6 +91,77 @@ def test_changed_database_or_marker_cannot_be_a_recovery_baseline(tmp_path):
     assert finalized_population_report(current,db,state)['status']=='UNKNOWN'
 
 
+def next_export(tmp_path, day, *, include_provider):
+    from tests.test_irreplaceable_finalization import make_export
+    root=tmp_path/'runs'/day/'_exports';make_export(root,observation_date=day)
+    database(root/'local-cdr.sqlite',include_provider=include_provider)
+    status=json.loads((root/'ingest-status.json').read_bytes())
+    status['provider_states'][0]['provider_dir']='Westpac'
+    status['index_diagnostics']={'Westpac':{'pagination_complete':True,'unique_products':32 if include_provider else 0}}
+    (root/'ingest-status.json').write_text(json.dumps(status))
+    return root
+
+
+def finalize_next(root,state,day):
+    from cdr_finalization import finalize_observation
+    write_sanity_report(root,day,root.parent.parent,state_dir=state)
+    return finalize_observation(root,state,state/f'{day}.done.json',observation_date=day,
+        result={'run_date':day,'banks_counts':{'rates':7}})
+
+
+def test_repeated_zero_preserves_the_sealed_warning_and_recovery_identity(tmp_path):
+    from app_payload_observation_gate import publication_allowed
+    from cdr_observation_selection import selected_observation
+    from cdr_population_recovery import population_recovery_requests
+    previous,state=finalized_previous(tmp_path)
+    first=next_export(tmp_path,'2026-10-15',include_provider=False)
+    finalize_next(first,state,'2026-10-15')
+    second=next_export(tmp_path,'2026-10-16',include_provider=False)
+    finalize_next(second,state,'2026-10-16')
+    observation=selected_observation(state,'2026-10-16')
+    report=json.loads((second/'sanity-report.json').read_bytes())
+    finding=report['provider_population']['findings'][0]
+    assert finding['products_prev']==0 and finding['carried_unresolved'] is True
+    assert finding['last_nonempty']=={'observation_date':'2026-10-14','products':32,'rates':0}
+    assert publication_allowed(observation['contract'])==(False,'unverified_provider_population')
+    requests=population_recovery_requests(observation,{'Westpac':{'provider_uid':'provider-a',
+        'endpoint_url':'https://bank.example/cds-au/v1/banking/products'}})
+    assert len(requests)==1 and requests[0]['provider_dir']=='Westpac'
+
+
+def test_current_nonempty_data_can_clear_a_previous_population_warning(tmp_path):
+    from app_payload_observation_gate import publication_allowed
+    from cdr_observation_selection import selected_observation
+    previous,state=finalized_previous(tmp_path)
+    first=next_export(tmp_path,'2026-10-15',include_provider=False)
+    finalize_next(first,state,'2026-10-15')
+    second=next_export(tmp_path,'2026-10-16',include_provider=True)
+    finalize_next(second,state,'2026-10-16')
+    observation=selected_observation(state,'2026-10-16')
+    assert 'provider_population_unverified' not in observation['contract']['coverage']
+    assert publication_allowed(observation['contract'])==(True,'complete')
+
+
+def test_unknown_comparison_cannot_clear_a_known_previous_warning(tmp_path):
+    from app_payload_observation_gate import publication_allowed
+    from cdr_export_contract import load_contract
+    from cdr_finalization import finalize_observation
+    from cdr_population_baseline import finalized_population_report
+    previous,state=finalized_previous(tmp_path)
+    first=next_export(tmp_path,'2026-10-15',include_provider=False)
+    finalize_next(first,state,'2026-10-15')
+    second=next_export(tmp_path,'2026-10-16',include_provider=False)
+    (first/'local-cdr.sqlite-journal').write_bytes(b'retained journal')
+    report=finalized_population_report(second/'local-cdr.sqlite',first/'local-cdr.sqlite',state)
+    assert report['status']=='UNKNOWN' and report['unresolved_prior']
+    (second/'sanity-report.json').write_text(json.dumps({'run_date':'2026-10-16',
+        'compared_against':'2026-10-15','provider_population':report}))
+    completion=finalize_observation(second,state,state/'2026-10-16.done.json',observation_date='2026-10-16',
+        result={'run_date':'2026-10-16','banks_counts':{'rates':7}})
+    contract=load_contract(state/completion['export_contract_path'])
+    assert publication_allowed(contract)==(False,'unverified_provider_population')
+
+
 def test_missing_or_invalid_database_is_unknown_and_never_created(tmp_path):
     absent = tmp_path/'absent.sqlite'
     assert population_report(absent, absent)['status'] == 'UNKNOWN'

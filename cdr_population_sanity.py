@@ -39,7 +39,7 @@ def _read_counts(path):
             for table in ('bank_products', 'bank_rates'))
 
 
-def population_report(current_db: Path, prior_db: Path):
+def population_report(current_db: Path, prior_db: Path, *, unresolved_prior=()):
     """Read only the two observed databases; a failed comparison stays unknown."""
     if not current_db.is_file() or not prior_db.is_file():
         return {"status": "UNKNOWN", "reason": "comparison_database_missing", "findings": []}
@@ -47,6 +47,18 @@ def population_report(current_db: Path, prior_db: Path):
         current_products, current_rates = _read_counts(current_db)
         prior_products, prior_rates = _read_counts(prior_db)
         findings = disappeared_providers(current_products, prior_products, current_rates, prior_rates)
+        seen = {row['provider'] for row in findings}
+        for previous in unresolved_prior:
+            provider = previous['provider']
+            if provider in seen or current_products.get(provider, 0) > 0:
+                continue
+            findings.append({'severity':'HIGH','code':'provider_population_disappeared',
+                'provider':provider,'products_prev':prior_products.get(provider,0),'products_curr':0,
+                'rates_prev':prior_rates.get(provider,0),'rates_curr':current_rates.get(provider,0),
+                'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
+                'carried_unresolved':True,**({'last_nonempty':previous['last_nonempty']}
+                    if 'last_nonempty' in previous else {})})
+            seen.add(provider)
     except (OSError, sqlite3.Error):
         return {"status": "UNKNOWN", "reason": "comparison_database_unreadable", "findings": []}
     return {"status": "WARN" if findings else "PASS", "findings": findings,
