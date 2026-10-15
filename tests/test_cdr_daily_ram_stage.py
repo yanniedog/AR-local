@@ -150,6 +150,33 @@ def _failed_stage_paths(tmp_path):
     return runs, ram, raw, derived
 
 
+def test_configured_database_reaches_post_ingest_population_comparison(tmp_path,monkeypatch):
+    from unittest.mock import Mock
+    args,runs,state,ram=_configure(tmp_path,monkeypatch)
+    args.db=tmp_path/'configured.sqlite'
+    report=Mock(return_value=None)
+    monkeypatch.setattr(cdr_daily,'write_sanity_report',report)
+    assert cdr_daily.run_once(args)==1
+    report.assert_called_once_with(runs/DATE/'_exports',DATE,runs,
+                                  state_dir=state,db_path=args.db)
+
+
+def test_journal_distinguishes_ladder_and_population_baselines(tmp_path,monkeypatch,capsys):
+    args,runs,state,ram=_configure(tmp_path,monkeypatch)
+    report=tmp_path/'advisory.json'
+    report.write_text(json.dumps({'compared_against':'2026-08-14',
+        'provider_population_compared_against':'2026-08-13','counts':{'HIGH':2},'findings':[
+            {'severity':'HIGH','provider':'Ladder provider','worst_delta_bp':300},
+            {'severity':'HIGH','provider':'Missing provider','comparison_kind':'provider_population',
+                'compared_against':'2026-08-13'}]}))
+    monkeypatch.setattr(cdr_daily,'write_sanity_report',lambda *a,**kw:report)
+    assert cdr_daily.run_once(args)==1
+    output=capsys.readouterr()
+    assert 'ladder vs 2026-08-14; population vs 2026-08-13' in output.out
+    assert 'rate_ladder vs 2026-08-14: Ladder provider' in output.err
+    assert 'provider_population vs 2026-08-13: Missing provider' in output.err
+
+
 def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     tmp_path,
     monkeypatch,

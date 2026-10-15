@@ -1,0 +1,170 @@
+{
+  "collected_at": "2026-10-15T12:24:33.380736+00:00",
+  "records": [
+    {
+      "file": "westpac-prior-page1.json",
+      "observation_date": "2026-10-14",
+      "generation_id": "obs-2026-10-14-b8af8a9fd52242c2",
+      "export_contract_digest": "b650061a9c017f35dc46a770645aef88edb17722df3671860855d9938ebf5e9d",
+      "event_path": "/srv/ar-local/data/runs/2026-10-14/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261013T140433721024Z-eab1625f8ea7/events/00003216-cc0301380d92dce0.json",
+      "event_digest": "2628dc7620b4fab256e240600ebe9cf16882e22c0d419bdf00d7e1d2d092f721",
+      "event_file_sha256": "41f25b812810756367eeccf28ce098d586c5efbba5f8cb32e5f571778bcd79b9",
+      "body_sha256": "3299c55e55c6aaee9eff0e6f654ae672d710f1a9c3169af76b8df717a3594373",
+      "bytes": 20021,
+      "request": {
+        "headers": {
+          "accept": "application/json",
+          "user-agent": "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)",
+          "x-min-v": "5",
+          "x-v": "5"
+        },
+        "method": "GET",
+        "started_at": "2026-10-13T14:05:52.417650Z",
+        "url": "https://digital-api.westpac.com.au/cds-au/v1/banking/products"
+      },
+      "response_status": 200,
+      "contract_event_entry": {
+        "bytes": 1493,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261013T140433721024Z-eab1625f8ea7/events/00003216-cc0301380d92dce0.json",
+        "sha256": "41f25b812810756367eeccf28ce098d586c5efbba5f8cb32e5f571778bcd79b9"
+      },
+      "contract_body_entry": {
+        "bytes": 20021,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261013T140433721024Z-eab1625f8ea7/bodies/3299c55e55c6aaee9eff0e6f654ae672d710f1a9c3169af76b8df717a3594373.body",
+        "sha256": "3299c55e55c6aaee9eff0e6f654ae672d710f1a9c3169af76b8df717a3594373"
+      }
+    },
+    {
+      "file": "melbourne-page1.json",
+      "observation_date": "2026-10-15",
+      "generation_id": "obs-2026-10-15-21cf440935fcae4f",
+      "export_contract_digest": "d9ddeaf7a529c33b69070cccc8daf05eabda859acb8b61c1b0c0d52867601dc5",
+      "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000298-692964f508f980bd.json",
+      "event_digest": "40a69537f975ab9e27e70e80ee53bb8a0a9bd25195825662a5e1502777e38efc",
+      "event_file_sha256": "54377eb31652c28dc9c8e5ddfc05d8c4ff3d4f6987a8fc75746e1d1022d5dc31",
+      "body_sha256": "679589e61df0f22722af7bfc652b6d7666599a0df9af0d9c5217f17a5f31f199",
+      "bytes": 23087,
+      "request": {
+        "headers": {
+          "accept": "application/json",
+          "user-agent": "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)",
+          "x-min-v": "5",
+          "x-v": "5"
+        },
+        "method": "GET",
+        "started_at": "2026-10-14T14:04:47.514492Z",
+        "url": "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products"
+      },
+      "response_status": 200,
+      "contract_event_entry": {
+        "bytes": 1522,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000298-692964f508f980bd.json",
+        "sha256": "54377eb31652c28dc9c8e5ddfc05d8c4ff3d4f6987a8fc75746e1d1022d5dc31"
+      },
+      "contract_body_entry": {
+        "bytes": 23087,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/679589e61df0f22722af7bfc652b6d7666599a0df9af0d9c5217f17a5f31f199.body",
+        "sha256": "679589e61df0f22722af7bfc652b6d7666599a0df9af0d9c5217f17a5f31f199"
+      }
+    },
+    {
+      "file": "melbourne-invalid-page.json",
+      "observation_date": "2026-10-15",
+      "generation_id": "obs-2026-10-15-21cf440935fcae4f",
+      "export_contract_digest": "d9ddeaf7a529c33b69070cccc8daf05eabda859acb8b61c1b0c0d52867601dc5",
+      "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000334-4dec9e3029c589d8.json",
+      "event_digest": "98653490a0cf731353eba26f2c19b9e1d5072e03bcd50f4a23965a5f8abfd84f",
+      "event_file_sha256": "aa1e7f140e0ef4f492314ea7e953802cf1bf2dfda0d6ea496e45aacc629f7bbe",
+      "body_sha256": "8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e",
+      "bytes": 173,
+      "request": {
+        "headers": {
+          "accept": "application/json",
+          "user-agent": "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)",
+          "x-min-v": "5",
+          "x-v": "5"
+        },
+        "method": "GET",
+        "started_at": "2026-10-14T14:04:49.121102Z",
+        "url": "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products?page=2&page-size=25"
+      },
+      "response_status": 422,
+      "contract_event_entry": {
+        "bytes": 1537,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000334-4dec9e3029c589d8.json",
+        "sha256": "aa1e7f140e0ef4f492314ea7e953802cf1bf2dfda0d6ea496e45aacc629f7bbe"
+      },
+      "contract_body_entry": {
+        "bytes": 173,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e.body",
+        "sha256": "8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e"
+      }
+    },
+    {
+      "file": "geelong-index.json",
+      "observation_date": "2026-10-15",
+      "generation_id": "obs-2026-10-15-21cf440935fcae4f",
+      "export_contract_digest": "d9ddeaf7a529c33b69070cccc8daf05eabda859acb8b61c1b0c0d52867601dc5",
+      "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00001455-d31c9b5c2092030a.json",
+      "event_digest": "6d8538297149cb7092606ae35cedf1984b63dd878eaa94cf32a56eb75daca096",
+      "event_file_sha256": "8cd7a56c2e8e36a56b53f68caeace2454506286d2e5083982f9d597447e18f30",
+      "body_sha256": "83e81987d7e9c142c0977cd6c308bb18430e2acfc05aedb6c63277057c845100",
+      "bytes": 18682,
+      "request": {
+        "headers": {
+          "accept": "application/json",
+          "user-agent": "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)",
+          "x-min-v": "5",
+          "x-v": "5"
+        },
+        "method": "GET",
+        "started_at": "2026-10-14T14:05:17.260187Z",
+        "url": "https://online.geelongbank.com.au/OpenBanking/cds-au/v1/banking/products"
+      },
+      "response_status": 200,
+      "contract_event_entry": {
+        "bytes": 1530,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00001455-d31c9b5c2092030a.json",
+        "sha256": "8cd7a56c2e8e36a56b53f68caeace2454506286d2e5083982f9d597447e18f30"
+      },
+      "contract_body_entry": {
+        "bytes": 18682,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/83e81987d7e9c142c0977cd6c308bb18430e2acfc05aedb6c63277057c845100.body",
+        "sha256": "83e81987d7e9c142c0977cd6c308bb18430e2acfc05aedb6c63277057c845100"
+      }
+    },
+    {
+      "file": "westpac-empty.json",
+      "observation_date": "2026-10-15",
+      "generation_id": "obs-2026-10-15-21cf440935fcae4f",
+      "export_contract_digest": "d9ddeaf7a529c33b69070cccc8daf05eabda859acb8b61c1b0c0d52867601dc5",
+      "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00003199-8f8976b9cb978794.json",
+      "event_digest": "1c61004ea0ae35c6abcffcf9d865ab11789f6f9615e31b9ea993445c2fda224c",
+      "event_file_sha256": "64f68e35fbc06d3065a20fb9828d0f523634e811c6cafacaaee636193e3bf084",
+      "body_sha256": "25f1f2cdbb29cc2236883f6b1e132b6cf554687533f7614f1514166329d7e1fa",
+      "bytes": 146,
+      "request": {
+        "headers": {
+          "accept": "application/json",
+          "user-agent": "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)",
+          "x-min-v": "5",
+          "x-v": "5"
+        },
+        "method": "GET",
+        "started_at": "2026-10-14T14:06:01.464226Z",
+        "url": "https://digital-api.westpac.com.au/cds-au/v1/banking/products"
+      },
+      "response_status": 200,
+      "contract_event_entry": {
+        "bytes": 1485,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00003199-8f8976b9cb978794.json",
+        "sha256": "64f68e35fbc06d3065a20fb9828d0f523634e811c6cafacaaee636193e3bf084"
+      },
+      "contract_body_entry": {
+        "bytes": 146,
+        "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/25f1f2cdbb29cc2236883f6b1e132b6cf554687533f7614f1514166329d7e1fa.body",
+        "sha256": "25f1f2cdbb29cc2236883f6b1e132b6cf554687533f7614f1514166329d7e1fa"
+      }
+    }
+  ]
+}

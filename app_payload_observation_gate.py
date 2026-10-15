@@ -83,6 +83,9 @@ def publication_allowed(contract: Optional[Mapping[str, Any]]) -> Tuple[bool, st
     """Return ``(allowed, reason)`` for one observation's v1 publication."""
     if not isinstance(contract, Mapping) or not contract:
         return False, "missing_export_contract"
+    coverage = contract.get("coverage")
+    if isinstance(coverage, Mapping) and coverage.get("provider_population_unverified"):
+        return False, "unverified_provider_population"
     state = str(contract.get("observation_state") or "unknown")
     if state == "complete":
         return True, "complete"

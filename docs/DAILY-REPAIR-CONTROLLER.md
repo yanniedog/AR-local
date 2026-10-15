@@ -27,6 +27,15 @@ and safety failures block repair. No blind complete re-ingest, historical
 backfill, Drive queue, new schedules, or forced lock cleanup is authorized.
 The claim, result and final systemd outcome retain independent evidence.
 
+A verified selected same-day seeded successor may replace its own pending
+population-held publication pointer. Before replacement, a create-once receipt
+retains the exact prior pending record and source identities; it explicitly
+does not confirm publication. Intent for the successor is durable before upload,
+and interrupted intent is reconciled under the existing production lease.
+Unrelated queues, unknown ancestry and retry backoff are preserved. An ordinary
+index retry for an unresolved population also requires nonempty progress:
+another valid empty response cannot reserve a full capture.
+
 `pi-ingest-notification-test` is a manual-only, non-AI workflow. It verifies the
 existing Pi issue creator and canonical marker before posting one labelled test
 mention. Record the workflow/comment ID before checking Gmail. Verify automatic
