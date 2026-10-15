@@ -1,4 +1,6 @@
 """Route a contract-bound empty-population anomaly into the existing daily budget."""
+from datetime import date
+
 from cdr_compatibility import response_shape_error
 from cdr_observation_selection import read_bound_json
 
@@ -13,6 +15,14 @@ def population_recovery_requests(observation, providers):
         return []  # Legacy rate-ladder-only report.
     if not isinstance(population, dict) or population.get('status') not in {'PASS', 'WARN'}:
         raise ValueError('provider population comparison is unverified')
+    try:
+        current = date.fromisoformat(report['run_date'])
+        prior = date.fromisoformat(report['compared_against'])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('provider population comparison dates are invalid') from exc
+    if (current.isoformat() != report['run_date'] or prior.isoformat() != report['compared_against']
+            or report['run_date'] != contract['observation_date'] or prior >= current):
+        raise ValueError('provider population comparison is not for this observation')
     findings = population.get('findings')
     if not isinstance(findings, list) or len(findings) > len(providers):
         raise ValueError('provider population findings are invalid')

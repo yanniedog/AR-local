@@ -18,7 +18,8 @@ def bound_population(tmp_path, observation):
     finding = {'code':'provider_population_disappeared','provider':PROVIDER['provider_dir'],
         'disposition':'UNVERIFIED_SOURCE_ABSENCE','population_known':False,
         'products_prev':32,'products_curr':0,'rates_prev':379,'rates_curr':0}
-    value={'provider_population':{'status':'WARN','findings':[finding]}}
+    value={'run_date':DATE,'compared_against':'2026-09-06',
+        'provider_population':{'status':'WARN','findings':[finding]}}
     raw=json.dumps(value).encode();path=tmp_path/'sanity-report.json';path.write_bytes(raw)
     observation['export_root']=tmp_path
     observation['contract']['artifacts']=[{'path':'sanity-report.json','bytes':len(raw),
@@ -71,7 +72,8 @@ def test_complete_label_does_not_skip_contract_bound_empty_population(tmp_path,m
     assert not any(row['kind']=='capture' for row in recovery._history(state/'cdr-recovery-v1'/DATE,DATE))
 
 
-@pytest.mark.parametrize('fault',['unknown','contradiction','unknown_provider','not_zero','bad_index','duplicate'])
+@pytest.mark.parametrize('fault',['unknown','contradiction','unknown_provider','not_zero','bad_index','duplicate',
+    'stale_date','same_prior_date','future_prior_date','invalid_date','missing_date','noncanonical_date'])
 def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,monkeypatch,fault):
     _,observation=stage(monkeypatch,tmp_path);value,path=bound_population(tmp_path,observation)
     population=value['provider_population'];finding=population['findings'][0]
@@ -80,6 +82,12 @@ def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,mon
     elif fault=='unknown_provider':finding['provider']='unregistered'
     elif fault=='not_zero':finding['products_curr']=True
     elif fault=='bad_index':observation['status']['index_diagnostics'][PROVIDER['provider_dir']]['unique_products']=1
+    elif fault=='stale_date':value['run_date']='2026-09-06'
+    elif fault=='same_prior_date':value['compared_against']=DATE
+    elif fault=='future_prior_date':value['compared_against']='2026-09-08'
+    elif fault=='invalid_date':value['run_date']='2026-99-07'
+    elif fault=='missing_date':value.pop('compared_against')
+    elif fault=='noncanonical_date':value['compared_against']='20260906'
     else:population['findings'].append(copy.deepcopy(finding))
     raw=json.dumps(value).encode();path.write_bytes(raw)
     observation['contract']['artifacts'][0].update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
