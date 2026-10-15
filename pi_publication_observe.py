@@ -31,10 +31,14 @@ def bounded_publication_check(day, *, run=None):
         value = json.loads(completed.stdout)
         if not isinstance(value, dict) or type(value.get("publication_current")) is not bool:
             raise ValueError("invalid publication result")
+        issues = value.get("publication_issues")
+        current_issues_valid = issues == [] or (
+            issues == ["dates_index_calendar_gaps"]
+            and value.get("publication_continuous") is False)
         if value["publication_current"] and (
                 value.get("manifest_run_date") != day or value.get("dates_index_latest_date") != day
                 or value.get("manifest_error") is not None or value.get("dates_index_error") is not None
-                or value.get("publication_issues") != []):
+                or not current_issues_valid):
             raise ValueError("contradictory current result")
         return value
     except subprocess.TimeoutExpired:

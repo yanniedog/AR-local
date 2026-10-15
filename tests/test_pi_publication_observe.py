@@ -51,8 +51,31 @@ def test_successful_and_stale_results_survive_the_boundary():
         assert run.call_count == 1
 
 
+def test_current_publication_preserves_real_historical_gap_diagnostics():
+    from pi_payload_freshness import check_publication
+    from tests.test_pi_payload_freshness import documents
+
+    def fetch(url):
+        if 'dates-index' in url:
+            return {'schema_version': 1, 'dates': ['2026-10-12', DAY],
+                    'latest_date': DAY, 'count': 2}
+        return documents(DAY, DAY)(url)
+
+    value = check_publication(DAY, fetch=fetch)
+    assert value['publication_current'] is True
+    assert value['publication_continuous'] is False
+    assert value['publication_healthy'] is False
+    assert value['missing_dates'] == ['2026-10-13', '2026-10-14']
+    run = Mock(return_value=SimpleNamespace(returncode=0, stdout=json.dumps(value).encode()))
+    bounded = check.bounded_publication_check(DAY, run=run)
+    assert bounded == value
+    assert not observation_failed({'publication_due': True, 'publication': bounded})
+    run.assert_called_once()
+
+
 @pytest.mark.parametrize('fault', ['exit', 'oversize', 'invalid_json', 'array', 'missing_flag',
-    'not_bool', 'wrong_manifest_day', 'wrong_index_day', 'manifest_error', 'index_error', 'issues'])
+    'not_bool', 'wrong_manifest_day', 'wrong_index_day', 'manifest_error', 'index_error', 'issues',
+    'contradictory_continuity', 'mixed_historical_and_current_issues'])
 def test_invalid_or_contradictory_child_cannot_report_recovery(fault):
     value = current(); code = 0
     if fault == 'exit': code = 1
@@ -64,6 +87,11 @@ def test_invalid_or_contradictory_child_cannot_report_recovery(fault):
     elif fault == 'manifest_error': value['manifest_error'] = 'TimeoutError'
     elif fault == 'index_error': value['dates_index_error'] = 'TimeoutError'
     elif fault == 'issues': value['publication_issues'] = ['manifest_stale']
+    elif fault == 'contradictory_continuity':
+        value.update(publication_issues=['dates_index_calendar_gaps'], publication_continuous=True)
+    elif fault == 'mixed_historical_and_current_issues':
+        value.update(publication_issues=['dates_index_calendar_gaps', 'manifest_stale'],
+                     publication_continuous=False)
     raw = json.dumps(value).encode()
     if fault == 'oversize': raw = b'x' * (check.MAX_RESULT_BYTES+1)
     elif fault == 'invalid_json': raw = b'{broken'
