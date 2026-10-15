@@ -26,7 +26,7 @@ def test_ready_compiler_matches_reviewed_lvr_interval_consumer():
     from app_payload_bank_history_ready_asset import compiler_identity, _invoke
     # Independent pin exported from the matching AR-app LVR interval change.
     # Publication still requires that consumer to be released and verified.
-    expected = "19ab18920ab6400be627d32d3df9be39416b826c6b83d0c6f90ac9440ec15676"
+    expected = "0b0ebac36ab2f406d7ebcc1ad96769216937a9faa5604cbfaaad42598ab7b87b"
     assert compiler_identity()[1] == expected
     ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
     assert ready["compiler_sha256"] == expected

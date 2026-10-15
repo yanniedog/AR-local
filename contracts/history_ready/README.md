@@ -1,14 +1,18 @@
 # Ready history compiler
 
-## LVR interval consumer candidate (2026-10-14)
+## LVR interval consumer candidate (2026-10-15)
 
 The LVR interval change exports compiler SHA-256
-`19ab18920ab6400be627d32d3df9be39416b826c6b83d0c6f90ac9440ec15676`
+`0b0ebac36ab2f406d7ebcc1ad96769216937a9faa5604cbfaaad42598ab7b87b`
 from the matching AR-app source. The producer and consumer copies are identical;
 the retained-real fixture is regenerated from unchanged source observations.
 This is a reviewed-code compatibility candidate, not a commissioned APK.
 The consumer is AR-app PR #400, source commit
-`215c63f7a58e7f06fc5a92511281c4edfb482cff`.
+`74ba686fc796854a5868003117c2249f63b41856`.
+This integrates the redesigned consumer from current AR-app main. It supersedes
+the uncommissioned `19ab1892...` candidate in AR-local PR #932; the retained-real
+output changes only its compiler receipt, preserving its source observations
+and prepared semantics. Neither candidate pin is evidence of publication.
 Do not publish this compiler's prepared assets until the matching app consumer
 has been separately released and verified. The commissioned consumer evidence
 below remains the record for the previously published pin and is not evidence
