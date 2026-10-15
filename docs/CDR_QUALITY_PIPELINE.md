@@ -18,6 +18,12 @@ source evidence remains a disclosed gap; missing data is never manufactured.
 
 ## Daily owner
 
+Operator correction, 2026-10-15: the daily check is now **03:00
+Australia/Hobart**, superseding the earlier 18:00/20:00/04:00 timings.
+See [DAILY_REPAIR_0300.md](DAILY_REPAIR_0300.md) for the single-caller migration,
+conditional early-service admission and retained runtime approval holds. The
+older owner description below is historical; it does not create another caller.
+
 A Codex heartbeat at 04:00 Australia/Hobart owns review and repair across both
 repositories. It runs using the configured subscription/model and requires the
 desktop computer and Codex app to remain running. It starts by reading this
