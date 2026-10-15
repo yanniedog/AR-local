@@ -389,7 +389,8 @@ def _probe_due(root: Path, observation: dict, providers: dict, due: list[dict],
                                    product_id=str(request.get("product_id") or ""), deadline=deadline,
                                    version_offset=request.get("version_offset", 0),
                                    allow_partial_index=request["phase"] == "products_index")
-            if request.get("failure_category") == "provider_population_unverified":
+            if (request.get("failure_category") == "provider_population_unverified"
+                    or request.get('requires_nonempty_population') is True):
                 from cdr_population_recovery import population_probe_has_progress
                 if report.get("ok") and not population_probe_has_progress(report):
                     report.update(ok=False, failure_category="provider_population_still_unverified")
@@ -473,6 +474,9 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     reconsidered = reconsider_saved_selection(repo_root, state, run_date, observation)
     if reconsidered:
         return reconsidered
+    from pi_population_publication import reconcile_selected_population_pending
+    if reconcile_selected_population_pending(repo_root,run_date):
+        observation = selected_observation(state,run_date)
     # Re-entry above can finish an interrupted selection. Once it has no more
     # work, settle current or ambiguous uploads before spending probes. Older
     # queued publication failures must not starve today's seeded recovery.
@@ -498,6 +502,10 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     known = {row["request_key"] for row in requests}
     requests.extend(dict(row, request_key=_request_key(row)) for row in population_requests
                     if _request_key(row) not in known)
+    from cdr_population_recovery import guard_population_index_requests
+    requests = guard_population_index_requests(observation,providers,requests)
+    health['population_guarded_index_providers'] = sorted({row['provider_dir'] for row in requests
+        if row.get('requires_nonempty_population') is True})
     if not requests:
         return {"status": "unresolved_request_evidence_unavailable", **health}
     history = _history(root, run_date)

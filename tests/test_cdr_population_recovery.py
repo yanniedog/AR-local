@@ -56,6 +56,33 @@ def test_no_fresh_data_is_inferred_from_a_second_empty_source_response():
     assert not population_probe_has_progress({'ok':False,'data':prior})
 
 
+@pytest.mark.parametrize('comparison',['WARN','UNKNOWN'])
+@pytest.mark.parametrize('nonempty',[False,True])
+def test_ordinary_failed_index_keeps_population_no_progress_guard(tmp_path,monkeypatch,comparison,nonempty):
+    state,observation=stage(monkeypatch,tmp_path);value,path=bound_population(tmp_path,observation)
+    observation['contract']['coverage']={'provider_population_unverified':[{
+        'provider':PROVIDER['provider_dir'],'provider_uid':PROVIDER['provider_uid'],
+        'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]}
+    observation['status']['index_diagnostics'][PROVIDER['provider_dir']]['pagination_complete']=False
+    observation['status']['unresolved_requests']=[{'provider_dir':PROVIDER['provider_dir'],
+        'phase':'products_index','product_id':'','url':PROVIDER['endpoint_url'],'status':500}]
+    if comparison=='UNKNOWN':
+        value['provider_population']={'status':'UNKNOWN','findings':[]}
+        raw=json.dumps(value).encode();path.write_bytes(raw)
+        observation['contract']['artifacts'][0].update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+    before=copy.deepcopy(observation['status'])
+    body=json.loads((FIXTURES/('westpac-prior-page1.json' if nonempty else 'westpac-empty.json')).read_bytes())
+    monkeypatch.setattr(recovery,'probe_request',lambda *a,**kw:{'ok':True,'data':body,
+        'attempts':[{'status':200}],'body_sha256':'a'*64})
+    launch=Mock()
+    result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=launch)
+    assert result['status']==('capture_finished' if nonempty else 'upstream_gaps_remain')
+    assert launch.call_count==int(nonempty)
+    history=recovery._history(state/'cdr-recovery-v1'/DATE,DATE)
+    assert sum(r['kind']=='capture' for r in history)==int(nonempty)
+    assert observation['status']==before
+
+
 def test_complete_label_does_not_skip_contract_bound_empty_population(tmp_path,monkeypatch):
     state,observation=stage(monkeypatch,tmp_path);bound_population(tmp_path,observation)
     observation['contract']['observation_state']='complete'
@@ -144,7 +171,9 @@ def test_carried_warning_with_failed_index_preserves_bound_http_recovery(tmp_pat
     observation['status']['unresolved_requests']=[{'provider_dir':PROVIDER['provider_dir'],
         'phase':'products_index','product_id':'','url':PROVIDER['endpoint_url'],'status':500}]
     observation['pointer']={'schema_version':2,'generation_id':'g1','observation_date':DATE}
-    observation['contract']['coverage']={'provider_population_unverified':[{'provider':PROVIDER['provider_dir']}]}
+    observation['contract']['coverage']={'provider_population_unverified':[{
+        'provider':PROVIDER['provider_dir'],'provider_uid':PROVIDER['provider_uid'],
+        'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]}
     if pending_hold:
         pending={'run_date':DATE,'pointer':copy.deepcopy(observation['pointer'])}
         monkeypatch.setattr(pi_daily_sync,'payload_publication_pending',lambda _:True)
@@ -166,7 +195,9 @@ def test_pending_policy_hold_allows_only_matching_population_recovery(tmp_path,m
     import pi_daily_sync
     state,observation=stage(monkeypatch,tmp_path);bound_population(tmp_path,observation)
     observation['pointer']={'schema_version':2,'generation_id':'g1','observation_date':DATE}
-    observation['contract']['coverage']={'provider_population_unverified':[{'provider':PROVIDER['provider_dir']}]}
+    observation['contract']['coverage']={'provider_population_unverified':[{
+        'provider':PROVIDER['provider_dir'],'provider_uid':PROVIDER['provider_uid'],
+        'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]}
     pending={'run_date':DATE,'pointer':copy.deepcopy(observation['pointer'])}
     if fault=='other_generation':pending['pointer']['generation_id']='different'
     elif fault=='queued':pending['queued_pointers']=[dict(observation['pointer'])]

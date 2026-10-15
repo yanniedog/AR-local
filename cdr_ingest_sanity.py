@@ -160,10 +160,12 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path, *, st
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
-    findings.extend(population["findings"])
+    findings.extend(dict(row,comparison_kind='provider_population',compared_against=compared)
+                    for row in population["findings"])
     summary = {
         "run_date": run_date,
-        "compared_against": compared,
+        "compared_against": prev_db.parent.parent.name,
+        "provider_population_compared_against": compared,
         "thresholds_bp": {"low": LOW_BP, "high": HIGH_BP},
         "provider_population": population,
         "counts": {

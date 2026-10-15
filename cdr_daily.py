@@ -651,13 +651,16 @@ def run_once(args: argparse.Namespace) -> int:
             structural = counts.get("STRUCTURAL", 0)
             low = counts.get("LOW", 0)
             print(
-                f"sanity-check vs {report.get('compared_against')}: "
+                f"sanity-check ladder vs {report.get('compared_against')}; "
+                f"population vs {report.get('provider_population_compared_against') or 'unverified'}: "
                 f"HIGH={high} STRUCTURAL={structural} LOW={low}  ({report_path})"
             )
             for finding in report.get("findings", [])[:10]:
                 if finding["severity"] in ("HIGH", "STRUCTURAL"):
                     print(
-                        f"  {finding['severity']}: {finding['provider']} "
+                        f"  {finding['severity']}: {finding.get('comparison_kind','rate_ladder')} "
+                        f"vs {finding.get('compared_against',report.get('compared_against')) or 'unverified'}: "
+                        f"{finding['provider']} "
                         f"{finding.get('product_name','')[:50]} "
                         f"worst_delta={finding.get('worst_delta_bp', '-')}bp",
                         file=sys.stderr,

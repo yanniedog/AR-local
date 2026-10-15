@@ -98,6 +98,27 @@ def population_pending_recovery_allowed(pending, observation):
         and publication_allowed(observation['contract']) == (False, 'unverified_provider_population'))
 
 
+def guard_population_index_requests(observation,providers,requests):
+    """Annotate local work, retaining original queue identity and failure category."""
+    flags=(observation['contract'].get('coverage') or {}).get('provider_population_unverified') or []
+    if not isinstance(flags,list) or len(flags)>1024:
+        raise ValueError('invalid population coverage guard')
+    guarded=set()
+    for flag in flags:
+        if (not isinstance(flag,dict) or flag.get('population_known') is not False
+                or flag.get('disposition')!='UNVERIFIED_SOURCE_ABSENCE'):
+            raise ValueError('unverified population coverage guard')
+        identity=flag.get('provider_identity') or {'provider_uid':flag.get('provider_uid')}
+        matches=current_provider_matches(flag.get('provider'),identity,
+            [dict(row,provider_dir=name) for name,row in providers.items()])
+        if len(matches)>1:
+            raise ValueError('ambiguous population coverage guard')
+        guarded.update(row['provider_dir'] for row in matches)
+    return [dict(row,requires_nonempty_population=True)
+        if row.get('phase')=='products_index' and row['provider_dir'] in guarded else dict(row)
+        for row in requests]
+
+
 def population_probe_has_progress(report):
     """Another valid empty response cannot spend a capture reservation."""
     if not report.get('ok'):
