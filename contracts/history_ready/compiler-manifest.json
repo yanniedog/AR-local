@@ -1,6 +1,6 @@
 {
-  "sha256": "0b0ebac36ab2f406d7ebcc1ad96769216937a9faa5604cbfaaad42598ab7b87b",
-  "compiler_sha256": "0b0ebac36ab2f406d7ebcc1ad96769216937a9faa5604cbfaaad42598ab7b87b",
+  "sha256": "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7",
+  "compiler_sha256": "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7",
   "semantic_revision": "ar-history-ready-v1",
   "source_files": {
     "node_modules/@noble/hashes/_md.js": "4eaf0ae8f8191c50acdab7c3de7f335bf24845e4b562bdbc3e9f61cb7a873831",
@@ -24,7 +24,7 @@
     "src/data/historicalBankRateReadyWire.ts": "03d3152b0104347d32a182cbef7a37994029c77c00228b072f9365a383b72e26",
     "src/data/lvrRange.ts": "39df52743218b964f4747bd079f808a1c6fbc14912b523778efa7a7f9e2abd5d",
     "src/data/productFactsCore.ts": "d255a4a83b2ce7cf4443e2e5813973849a602677e39856d617b12f2083007c80",
-    "src/data/profile.ts": "c52a1a5b075e9a5f2f64fdeaa15e0f5d75c7c7c03bc3902caeb2b97b321bb981",
+    "src/data/profile.ts": "4e5581201f61a820aecce8db1773258980c35db242abaf230866c4fadadad4e8",
     "src/data/rateClassification.ts": "789cff61c6b4084408a9f2c4df6c045f31267c1fd048237ac1405648b01d7d7f",
     "src/data/rateNumbers.ts": "b83091ba3af768f1e298f2742ad3fdadcd0d0a575b7b37ba3691cfcf9e8ef6c9",
     "src/data/sectionIntegrity.ts": "58eea7e5d271452789b11010b060778f0f67cac20fab0e59ec569fdb97d2d0a4",
