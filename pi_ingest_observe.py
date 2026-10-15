@@ -4,20 +4,24 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 
-def observe(watchdog, now, read_selected):
+def observe(watchdog, now, read_selected, *, publication_check=None):
     from ar_local_ingest_schedule import latest_daily_due_utc, expected_run_date_for_due
     due = latest_daily_due_utc(now)
     day = expected_run_date_for_due(due)
-    publication = watchdog.check_publication(day)
+    publication_started = time.monotonic()
+    publication = (publication_check or watchdog.check_publication)(day)
+    publication_seconds = round(time.monotonic() - publication_started, 3)
     result = {"observation_only": True, "run_date": day,
               "capture_finalized": read_selected(day) is not None,
               "capture_due": now >= due + timedelta(minutes=30),
               "publication_due": now >= due + timedelta(minutes=90),
               "service_active": watchdog.service_active(),
               "payload_pending": watchdog.payload_publication_pending(watchdog.REPO_ROOT),
-              "publication": publication, "repair_started": False}
+              "publication": publication, "publication_check_seconds": publication_seconds,
+              "repair_started": False}
     return result
 
 
@@ -27,9 +31,11 @@ def main():
     import pi_daily_watchdog as watchdog
     from ar_local_pi_runtime import data_state_root
     from cdr_observation_selection import selected_observation
+    from pi_publication_observe import bounded_publication_check
     try:
         result = observe(watchdog, datetime.now(timezone.utc),
-                         lambda day: selected_observation(data_state_root(repo), day))
+                         lambda day: selected_observation(data_state_root(repo), day),
+                         publication_check=bounded_publication_check)
     except Exception as error:
         result = {"observation_only": True, "status": "UNKNOWN",
                   "error_category": type(error).__name__, "repair_started": False}
