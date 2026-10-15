@@ -3,6 +3,7 @@ from datetime import date
 
 from cdr_compatibility import response_shape_error
 from cdr_observation_selection import read_bound_json
+from cdr_population_identity import current_provider_matches,verified_prior_identity
 
 
 def population_recovery_requests(observation, providers):
@@ -34,7 +35,7 @@ def population_recovery_requests(observation, providers):
                 for key in ['contract_digest','database_sha256','ledger_event_digest'])):
         raise ValueError('provider population baseline lacks finalization proof')
     findings = population.get('findings')
-    if not isinstance(findings, list) or len(findings) > len(providers):
+    if not isinstance(findings, list) or len(findings) > 1024:
         raise ValueError('provider population findings are invalid')
     if (population['status'] == 'PASS') != (not findings):
         raise ValueError('provider population result contradicts its findings')
@@ -48,23 +49,37 @@ def population_recovery_requests(observation, providers):
                 and row.get('population_known') is False
                 and row.get('disposition') == 'UNVERIFIED_SOURCE_ABSENCE'
                 for row in baseline.get('unresolved_provider_populations', [])))
-        if (not isinstance(provider, str) or provider not in providers or provider in seen
+        identity = finding.get('provider_identity') if isinstance(finding,dict) else None
+        identity_verified = verified_prior_identity(identity,provider,report['run_date'])
+        if (not isinstance(provider, str) or provider in seen
+                or (provider not in providers and not identity_verified)
+                or (identity is not None and not identity_verified)
                 or finding.get('code') != 'provider_population_disappeared'
                 or finding.get('disposition') != 'UNVERIFIED_SOURCE_ABSENCE'
                 or finding.get('population_known') is not False or type(prior) is not int
                 or prior < 0 or (prior == 0 and not carried)
-                or type(finding.get('products_curr')) is not int or finding['products_curr'] != 0
-                or type(finding.get('rates_curr')) is not int or finding['rates_curr'] != 0):
+                or type(finding.get('products_curr')) is not int or finding['products_curr'] < 0
+                or type(finding.get('rates_curr')) is not int or finding['rates_curr'] < 0
+                or ((finding['products_curr'] or finding['rates_curr']) and not carried)):
             raise ValueError('population anomaly lacks a reconciled empty-index identity')
         seen.add(provider)
-        diagnostic = (observation['status'].get('index_diagnostics') or {}).get(provider) or {}
+        if finding['products_curr'] or finding['rates_curr']:
+            continue  # A partial return with an unresolved prior hold grants no new probe.
+        matches = current_provider_matches(provider,identity,
+            [dict(row,provider_dir=name) for name,row in providers.items()])
+        if not matches:
+            continue  # A prior identity is not authority to probe an unregistered holder.
+        if len(matches) != 1:
+            raise ValueError('population provider identity is ambiguous')
+        target = matches[0]['provider_dir']
+        diagnostic = (observation['status'].get('index_diagnostics') or {}).get(target) or {}
         if (not isinstance(diagnostic, dict) or diagnostic.get('pagination_complete') is not True
                 or type(diagnostic.get('unique_products')) is not int or diagnostic['unique_products'] != 0):
             # Retain carried holds but add no derived request on an incomplete
             # or nonempty index. The independent bound HTTP queue stays eligible.
             continue
-        requests.append({'provider_dir': provider, 'provider_uid': providers[provider].get('provider_uid'),
-            'phase': 'products_index', 'product_id': '', 'url': providers[provider]['endpoint_url'],
+        requests.append({'provider_dir': target, 'provider_uid': providers[target].get('provider_uid'),
+            'phase': 'products_index', 'product_id': '', 'url': providers[target]['endpoint_url'],
             'status': 200, 'failure_category': 'provider_population_unverified'})
     return requests
 

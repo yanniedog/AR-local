@@ -26,7 +26,7 @@ def disappeared_providers(current_products, prior_products, current_rates=None, 
     return findings
 
 
-def _read_counts(path):
+def _read_counts(path, run_date=None):
     deadline = time.monotonic() + 4
     if any((sidecar := path.with_name(path.name + suffix)).is_file() and sidecar.stat().st_size > 0
            for suffix in ('-wal', '-journal')):
@@ -35,29 +35,33 @@ def _read_counts(path):
         connection.execute('pragma query_only=on')
         connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
         return tuple(dict(connection.execute(
-            'select provider,count(*) from ' + table + ' group by provider'))
+            'select provider,count(*) from ' + table
+            + (' where run_date=?' if run_date is not None else '') + ' group by provider',
+            (run_date,) if run_date is not None else ()))
             for table in ('bank_products', 'bank_rates'))
 
 
-def population_report(current_db: Path, prior_db: Path, *, unresolved_prior=()):
+def population_report(current_db: Path, prior_db: Path, *, unresolved_prior=(),current_date=None,prior_date=None):
     """Read only the two observed databases; a failed comparison stays unknown."""
     if not current_db.is_file() or not prior_db.is_file():
         return {"status": "UNKNOWN", "reason": "comparison_database_missing", "findings": []}
     try:
-        current_products, current_rates = _read_counts(current_db)
-        prior_products, prior_rates = _read_counts(prior_db)
+        current_products, current_rates = _read_counts(current_db,current_date)
+        prior_products, prior_rates = _read_counts(prior_db,prior_date)
         findings = disappeared_providers(current_products, prior_products, current_rates, prior_rates)
         seen = {row['provider'] for row in findings}
         for previous in unresolved_prior:
             provider = previous['provider']
-            if provider in seen or current_products.get(provider, 0) > 0:
+            if provider in seen:
                 continue
             findings.append({'severity':'HIGH','code':'provider_population_disappeared',
-                'provider':provider,'products_prev':prior_products.get(provider,0),'products_curr':0,
+                'provider':provider,'products_prev':prior_products.get(provider,0),
+                'products_curr':current_products.get(provider,0),
                 'rates_prev':prior_rates.get(provider,0),'rates_curr':current_rates.get(provider,0),
                 'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
                 'carried_unresolved':True,**({'last_nonempty':previous['last_nonempty']}
-                    if 'last_nonempty' in previous else {})})
+                    if 'last_nonempty' in previous else {}),
+                **({'provider_identity':previous['provider_identity']} if 'provider_identity' in previous else {})})
             seen.add(provider)
     except (OSError, sqlite3.Error):
         return {"status": "UNKNOWN", "reason": "comparison_database_unreadable", "findings": []}

@@ -48,7 +48,8 @@ def finalized_population_report(current_db, state_dir, *, run_date):
                 raise ValueError('baseline verification budget exhausted')
         if hash_file(prior_db, budget=budget) != records[0]['sha256']:
             raise ValueError('baseline database changed after finalization')
-        result = population_report(current_db, prior_db, unresolved_prior=unresolved)
+        result = population_report(current_db, prior_db, unresolved_prior=unresolved,
+                                   current_date=run_date,prior_date=day)
         if result['status'] == 'UNKNOWN' and unresolved:
             result['unresolved_prior'] = unresolved
         if result['status'] in {'PASS','WARN'}:
@@ -57,6 +58,10 @@ def finalized_population_report(current_db, state_dir, *, run_date):
                 'ledger_event_digest':marker['ledger_event_digest'],
                 'unresolved_provider_populations':unresolved}
             for finding in result['findings']:
+                from cdr_population_identity import prior_provider_identity
+                if not finding.get('provider_identity'):
+                    finding['provider_identity'] = prior_provider_identity(observation,
+                        finding['provider'],result['baseline'])
                 if not finding.get('carried_unresolved'):
                     finding['last_nonempty'] = {'observation_date':day,
                         'products':finding['products_prev'],'rates':finding.get('rates_prev',0)}

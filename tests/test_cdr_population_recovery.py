@@ -130,11 +130,12 @@ def test_nonempty_index_and_all_failed_details_keep_independent_http_queue(tmp_p
 
 
 @pytest.mark.parametrize('pending_hold',[False,True])
-def test_carried_warning_with_failed_index_preserves_bound_http_recovery(tmp_path,monkeypatch,pending_hold):
+@pytest.mark.parametrize('captured_products',[0,1])
+def test_carried_warning_with_failed_index_preserves_bound_http_recovery(tmp_path,monkeypatch,pending_hold,captured_products):
     import pi_daily_sync
     state,observation=stage(monkeypatch,tmp_path);value,path=bound_population(tmp_path,observation)
     finding=value['provider_population']['findings'][0]
-    finding.update(products_prev=0,carried_unresolved=True)
+    finding.update(products_prev=0,products_curr=captured_products,carried_unresolved=True)
     value['provider_population']['baseline']['unresolved_provider_populations']=[{
         'provider':PROVIDER['provider_dir'],'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]
     raw=json.dumps(value).encode();path.write_bytes(raw)

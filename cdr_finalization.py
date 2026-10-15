@@ -94,6 +94,7 @@ def _coverage(
     )
     incomplete = (
         status.get("incomplete") is not False
+        or bool(population_unverified)
         or failures > 0
         or corrupt > 0
         or not provenance_complete

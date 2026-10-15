@@ -1,5 +1,6 @@
 """Carry unresolved population loss into canonical coverage without inventing HTTP failures."""
 import json
+from cdr_population_identity import current_provider_matches,verified_prior_identity
 
 
 def apply_population_coverage(export_root, run_date, providers):
@@ -27,17 +28,24 @@ def apply_population_coverage(export_root, run_date, providers):
     warnings, seen = [], set()
     for finding in findings:
         name = finding.get('provider') if isinstance(finding, dict) else None
-        matches = [p for p in providers if name in {p.get('provider_dir'),p.get('provider_uid')}]
-        if (not name or name in seen or len(matches) != 1
+        identity = finding.get('provider_identity') if isinstance(finding,dict) else None
+        matches = current_provider_matches(name,identity,providers)
+        if (not name or name in seen or len(matches) > 1
+                or (not matches and not verified_prior_identity(identity,name,run_date))
                 or finding.get('code') != 'provider_population_disappeared'
                 or finding.get('population_known') is not False
                 or finding.get('disposition') != 'UNVERIFIED_SOURCE_ABSENCE'):
             raise ValueError('population warning does not reconcile to a provider')
-        provider = matches[0]
-        provider.update(state='failed', population_known=False,
-                        population_disposition='UNVERIFIED_SOURCE_ABSENCE')
+        if matches:
+            provider = matches[0]
+            provider.update(state='failed', population_known=False,
+                            population_disposition='UNVERIFIED_SOURCE_ABSENCE')
+        else:
+            provider = identity  # Prior identity is disclosed, never a current attempt.
         seen.add(name)
         warnings.append({'provider':name,'provider_uid':provider['provider_uid'],
             'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
+            **({'provider_identity':identity} if identity else {}),
+            **({'current_register_membership':'absent'} if not matches else {}),
             **({'last_nonempty':finding['last_nonempty']} if 'last_nonempty' in finding else {})})
     return warnings

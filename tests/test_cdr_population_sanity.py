@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 
 from cdr_population_sanity import disappeared_providers, population_report
 from cdr_ingest_sanity import compare_ladders, write_sanity_report
@@ -33,10 +34,10 @@ def test_partial_or_unchanged_populations_do_not_become_total_disappearance():
 
 def database(path, *, include_provider, run_date=None):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute('create table bank_products(provider text, product_id text, run_date text)')
         connection.execute('create table bank_rates(provider text,product_id text,application_type text,'
-            'ribbon_rate_structure text,product_name text,dataset text,rate real)')
+            'ribbon_rate_structure text,product_name text,dataset text,rate real,run_date text)')
         # This fixture tests missing membership, not financial rate values.
         if include_provider:
             day=run_date or path.parent.parent.name
@@ -58,12 +59,15 @@ def test_unfinalized_baseline_cannot_authorize_population_recovery(tmp_path):
     assert before == {p:hashlib.sha256(p.read_bytes()).hexdigest() for p in (previous,current)}
 
 
-def finalized_previous(tmp_path):
+def finalized_previous(tmp_path, *, include_provider=True):
     from cdr_finalization import finalize_observation
     from tests.test_irreplaceable_finalization import make_export
     root=tmp_path/'runs/2026-10-14/_exports'
     make_export(root,observation_date='2026-10-14')
-    database(root/'local-cdr.sqlite',include_provider=True)
+    database(root/'local-cdr.sqlite',include_provider=include_provider)
+    status=json.loads((root/'ingest-status.json').read_bytes())
+    status['provider_states'][0]['provider_dir']='Westpac'
+    (root/'ingest-status.json').write_text(json.dumps(status))
     state=tmp_path/'state'
     finalize_observation(root,state,state/'2026-10-14.done.json',observation_date='2026-10-14',
         result={'run_date':'2026-10-14','banks_counts':{'rates':7}})
@@ -214,10 +218,10 @@ def test_selected_repaired_revision_is_the_prior_baseline(tmp_path):
     assert report['baseline']['database_sha256']==hashlib.sha256((revision/'local-cdr.sqlite').read_bytes()).hexdigest()
 
 
-def test_configured_database_is_used_instead_of_stale_default(tmp_path):
+def test_observation_database_is_preferred_over_persistent_custom_rows(tmp_path):
     previous,state=finalized_previous(tmp_path)
-    root=next_export(tmp_path,'2026-10-15',include_provider=True)
-    actual=tmp_path/'configured.sqlite';database(actual,include_provider=False)
+    root=next_export(tmp_path,'2026-10-15',include_provider=False)
+    actual=tmp_path/'configured.sqlite';database(actual,include_provider=True,run_date='2026-10-14')
     status=json.loads((root/'ingest-status.json').read_bytes())
     status['index_diagnostics']['Westpac']['unique_products']=0
     (root/'ingest-status.json').write_text(json.dumps(status))
@@ -278,7 +282,8 @@ def test_same_day_restoration_can_clear_carried_warning_with_fresh_nonempty_inde
     root=tmp_path/'runs/2026-10-15/_revisions/fixed/_exports'
     root.mkdir(parents=True)
     database(root/'local-cdr.sqlite',include_provider=True,run_date='2026-10-15')
-    (root/'ingest-status.json').write_text(json.dumps({'index_diagnostics':{
+    (root/'ingest-status.json').write_text(json.dumps({'provider_states':[{
+        'provider_uid':'provider-a','provider_dir':'Westpac'}],'index_diagnostics':{
         'Westpac':{'pagination_complete':True,'unique_products':32}}}))
     write_sanity_report(root,'2026-10-15',tmp_path/'runs',state_dir=state)
     report=json.loads((root/'provider-population-report.json').read_bytes())['provider_population']
