@@ -127,21 +127,65 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     return findings
 
 
-def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path, *, state_dir=None) -> Optional[Path]:
+def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path, *, state_dir=None,
+                        db_path=None) -> Optional[Path]:
     """Write sanity-report.json into exports_dir. Returns the path written, or
     None if there is no previous day to compare against (first ingest)."""
-    curr_db = exports_dir / "local-cdr.sqlite"
+    curr_db = Path(db_path) if db_path is not None else exports_dir / "local-cdr.sqlite"
     prev_db = _find_previous_export_db(runs_root, run_date)
+    from cdr_population_baseline import finalized_population_report
+    from cdr_atomic import atomic_write_json
+    population = finalized_population_report(curr_db,
+        state_dir if state_dir is not None else runs_root.parent / 'state', run_date=run_date)
+    # Zero normalized rows can mean that every detail failed. Only a complete
+    # empty index needs the additional hold; ordinary HTTP recovery stays valid.
+    try:
+        status_path = exports_dir / 'ingest-status.json'
+        if status_path.stat().st_size > 4*1024*1024:
+            raise ValueError('index diagnostics exceed metadata budget')
+        diagnostics = json.loads(status_path.read_bytes()).get('index_diagnostics') or {}
+    except (OSError, ValueError, AttributeError):
+        diagnostics = {}
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+    def nonempty_index(provider):
+        diagnostic = diagnostics.get(provider) or {}
+        return (isinstance(diagnostic, dict) and diagnostic.get('pagination_complete') is True
+            and type(diagnostic.get('unique_products')) is int and diagnostic['unique_products'] > 0)
+    if population.get('unresolved_prior'):
+        population['unresolved_prior'] = [row for row in population['unresolved_prior']
+                                         if not nonempty_index(row['provider'])]
+    if population['status'] in {'PASS','WARN'}:
+        retained = []
+        unverified_index = False
+        for finding in population['findings']:
+            diagnostic = diagnostics.get(finding['provider']) or {}
+            if not isinstance(diagnostic, dict):
+                diagnostic = {}
+            count = diagnostic.get('unique_products')
+            complete = diagnostic.get('pagination_complete') is True and type(count) is int
+            if complete and count > 0:
+                continue
+            if (complete and count == 0) or finding.get('carried_unresolved'):
+                retained.append(finding)
+            else:
+                unverified_index = True
+        population.update(findings=retained,
+            status='WARN' if retained else 'UNKNOWN' if unverified_index else 'PASS')
+        if unverified_index:
+            population['reason'] = 'current_index_unverified'
+    compared = (population.get('baseline') or {}).get('observation_date')
+    population_summary = {'run_date':run_date,'compared_against':compared,
+                          'provider_population':population}
+    # Seal bounded authority before the separate, non-blocking ladder advisory.
+    atomic_write_json(exports_dir / 'provider-population-report.json', population_summary)
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
-    from cdr_population_baseline import finalized_population_report
-    population = finalized_population_report(curr_db, prev_db,
-        state_dir if state_dir is not None else runs_root.parent / 'state')
     findings.extend(population["findings"])
     summary = {
         "run_date": run_date,
-        "compared_against": prev_db.parent.parent.name,
+        "compared_against": compared,
         "thresholds_bp": {"low": LOW_BP, "high": HIGH_BP},
         "provider_population": population,
         "counts": {

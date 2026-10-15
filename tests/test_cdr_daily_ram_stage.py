@@ -150,6 +150,17 @@ def _failed_stage_paths(tmp_path):
     return runs, ram, raw, derived
 
 
+def test_configured_database_reaches_post_ingest_population_comparison(tmp_path,monkeypatch):
+    from unittest.mock import Mock
+    args,runs,state,ram=_configure(tmp_path,monkeypatch)
+    args.db=tmp_path/'configured.sqlite'
+    report=Mock(return_value=None)
+    monkeypatch.setattr(cdr_daily,'write_sanity_report',report)
+    assert cdr_daily.run_once(args)==1
+    report.assert_called_once_with(runs/DATE/'_exports',DATE,runs,
+                                  state_dir=state,db_path=args.db)
+
+
 def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     tmp_path,
     monkeypatch,

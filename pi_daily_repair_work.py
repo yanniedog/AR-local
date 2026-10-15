@@ -23,8 +23,10 @@ def repair(watchdog, recovery, day, now, read_pending=None, *, execution_deadlin
                 or pointer.get("observation_date") != day or not isinstance(queued, list)
                 or queued or "selection_retry" in pending):
             return {"status": "blocked", "reason": "publication_scope_not_exclusively_today"}
-        outcome = watchdog.run_payload_retry(False)
-        return {"status": "publication_attempted", "outcome": outcome}
+        from cdr_population_recovery import population_pending_recovery_allowed
+        if not population_pending_recovery_allowed(pending, observation):
+            outcome = watchdog.run_payload_retry(False)
+            return {"status": "publication_attempted", "outcome": outcome}
     return recovery.run_same_day_recovery(watchdog.REPO_ROOT, now_utc=now,
                                          dry_run=False, launch=watchdog.run_recovery_ingest,
                                          daily_pass=True, execution_deadline=execution_deadline)

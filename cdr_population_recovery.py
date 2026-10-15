@@ -7,9 +7,9 @@ from cdr_observation_selection import read_bound_json
 
 def population_recovery_requests(observation, providers):
     contract = observation['contract']
-    if not any(row.get('path') == 'sanity-report.json' for row in contract.get('artifacts', [])):
+    if not any(row.get('path') == 'provider-population-report.json' for row in contract.get('artifacts', [])):
         return []  # Older generations did not produce this comparison evidence.
-    report = read_bound_json(observation['export_root'], contract, 'sanity-report.json', max_bytes=512*1024)
+    report = read_bound_json(observation['export_root'], contract, 'provider-population-report.json', max_bytes=512*1024)
     population = report.get('provider_population')
     if population is None:
         return []  # Legacy rate-ladder-only report.
@@ -49,6 +49,9 @@ def population_recovery_requests(observation, providers):
                 and row.get('disposition') == 'UNVERIFIED_SOURCE_ABSENCE'
                 for row in baseline.get('unresolved_provider_populations', [])))
         diagnostic = (observation['status'].get('index_diagnostics') or {}).get(provider) or {}
+        if (diagnostic.get('pagination_complete') is True
+                and type(diagnostic.get('unique_products')) is int and diagnostic['unique_products'] > 0):
+            continue  # Keep the existing bound detail queue eligible.
         if (provider not in providers or provider in seen or finding.get('code') != 'provider_population_disappeared'
                 or finding.get('disposition') != 'UNVERIFIED_SOURCE_ABSENCE'
                 or finding.get('population_known') is not False or type(prior) is not int
@@ -63,6 +66,20 @@ def population_recovery_requests(observation, providers):
             'phase': 'products_index', 'product_id': '', 'url': providers[provider]['endpoint_url'],
             'status': 200, 'failure_category': 'provider_population_unverified'})
     return requests
+
+
+def population_pending_recovery_allowed(pending, observation):
+    """Retain a matching withheld marker while permitting its prerequisite repair.
+
+    This grants no extra claim or budget and settles no outstanding upload.
+    """
+    from app_payload_observation_gate import publication_allowed
+    pointer = observation.get('pointer')
+    return (isinstance(pointer, dict) and bool(pointer)
+        and pending.get('pointer') == pointer
+        and pending.get('run_date') == observation['contract']['observation_date']
+        and pending.get('queued_pointers', []) == [] and 'selection_retry' not in pending
+        and publication_allowed(observation['contract']) == (False, 'unverified_provider_population'))
 
 
 def population_probe_has_progress(report):

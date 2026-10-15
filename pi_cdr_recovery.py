@@ -478,14 +478,19 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     # queued publication failures must not starve today's seeded recovery.
     from pi_daily_sync import payload_publication_pending, read_payload_publication_pending
 
-    if (payload_publication_pending(repo_root)
-            and not _pending_is_only_historical(read_payload_publication_pending(repo_root), run_date)):
+    from cdr_population_recovery import population_pending_recovery_allowed, population_recovery_requests
+    pending = read_payload_publication_pending(repo_root)
+    policy_pending = population_pending_recovery_allowed(pending, observation)
+    if (payload_publication_pending(repo_root) and not policy_pending
+            and not _pending_is_only_historical(pending, run_date)):
         return {"status": "pending_publication_must_settle", "publication_required": True,
                 "capture_attempted": False}
     health = _coverage_health(observation)
     providers = captured_provider_directories(observation["status"], provider_directories(observation["status"]))
-    from cdr_population_recovery import population_recovery_requests
     population_requests = population_recovery_requests(observation, providers)
+    if policy_pending and not population_requests:
+        return {'status':'pending_publication_must_settle','publication_required':True,
+                'capture_attempted':False}
     health["population_anomaly_providers"] = sorted(row["provider_dir"] for row in population_requests)
     if observation["contract"]["observation_state"] == "complete" and not population_requests:
         return {"status": "complete", **health}

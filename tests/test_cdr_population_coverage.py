@@ -17,7 +17,7 @@ def warning(export, *, provider='provider-a'):
         'status':'WARN','findings':[{'provider':provider,'code':'provider_population_disappeared',
             'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
             'products_prev':32,'products_curr':0,'rates_prev':379,'rates_curr':0}]}}
-    (export/'sanity-report.json').write_text(json.dumps(value))
+    (export/'provider-population-report.json').write_text(json.dumps(value))
 
 
 @pytest.mark.parametrize('http_failures',[0,1])
@@ -42,7 +42,7 @@ def test_loss_is_partial_and_publication_held_without_fabricating_http_failures(
 
 def test_unknown_comparison_does_not_invent_a_population_loss(tmp_path):
     export=tmp_path/'runs'/DAY/'_exports';make_export(export,observation_date=DAY)
-    (export/'sanity-report.json').write_text(json.dumps({'provider_population':{
+    (export/'provider-population-report.json').write_text(json.dumps({'provider_population':{
         'status':'UNKNOWN','reason':'comparison_database_unreadable','findings':[]}}))
     state=tmp_path/'state'
     completion=finalize_observation(export,state,state/f'{DAY}.done.json',observation_date=DAY,
@@ -51,6 +51,29 @@ def test_unknown_comparison_does_not_invent_a_population_loss(tmp_path):
     assert contract['observation_state']=='complete'
     assert 'provider_population_unverified' not in contract['coverage']
     assert publication_allowed(contract)==(True,'complete')
+
+
+@pytest.mark.parametrize('advisory',['malformed','large'])
+def test_unusable_legacy_advisory_does_not_abort_finalization_or_hide_bounded_hold(tmp_path,advisory):
+    export=tmp_path/'runs'/DAY/'_exports';make_export(export,observation_date=DAY)
+    warning(export)
+    (export/'sanity-report.json').write_text('{' if advisory=='malformed' else 'x'*(512*1024+1))
+    state=tmp_path/'state'
+    completion=finalize_observation(export,state,state/f'{DAY}.done.json',observation_date=DAY,
+        result={'run_date':DAY,'banks_counts':{'rates':7}})
+    contract=load_contract(state/completion['export_contract_path'])
+    assert publication_allowed(contract)==(False,'unverified_provider_population')
+
+
+@pytest.mark.parametrize('raw',[b'{',b'x'*(512*1024+1),b'[]'],ids=['malformed','oversized','array'])
+def test_unusable_population_comparison_grants_no_authority_and_remains_nonfatal(tmp_path,raw):
+    export=tmp_path/'runs'/DAY/'_exports';make_export(export,observation_date=DAY)
+    (export/'provider-population-report.json').write_bytes(raw)
+    state=tmp_path/'state'
+    completion=finalize_observation(export,state,state/f'{DAY}.done.json',observation_date=DAY,
+        result={'run_date':DAY,'banks_counts':{'rates':7}})
+    contract=load_contract(state/completion['export_contract_path'])
+    assert 'provider_population_unverified' not in contract['coverage']
 
 
 def test_unreconciled_provider_identity_stops_finalization(tmp_path):

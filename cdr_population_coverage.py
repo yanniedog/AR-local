@@ -3,13 +3,20 @@ import json
 
 
 def apply_population_coverage(export_root, run_date, providers):
-    path = export_root / 'sanity-report.json'
+    path = export_root / 'provider-population-report.json'
     if not path.is_file():
         return []
-    if path.stat().st_size > 512*1024:
-        raise ValueError('population comparison exceeds metadata budget')
-    report = json.loads(path.read_bytes())
+    try:
+        if path.is_symlink() or path.stat().st_size > 512*1024:
+            return []
+        report = json.loads(path.read_bytes())
+        if not isinstance(report, dict):
+            return []
+    except (OSError, ValueError):
+        return []  # Unusable evidence grants no new population authority.
     population = report.get('provider_population') or {}
+    if not isinstance(population, dict):
+        return []
     inherited = population.get('unresolved_prior') if population.get('status') == 'UNKNOWN' else None
     if population.get('status') != 'WARN' and not inherited:
         return []

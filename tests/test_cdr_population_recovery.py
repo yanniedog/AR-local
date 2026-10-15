@@ -22,9 +22,9 @@ def bound_population(tmp_path, observation):
         'provider_population':{'status':'WARN','findings':[finding],
             'baseline':{'observation_date':'2026-09-06','generation_id':'obs-2026-09-06-unit',
                 'contract_digest':'a'*64,'database_sha256':'b'*64,'ledger_event_digest':'c'*64}}}
-    raw=json.dumps(value).encode();path=tmp_path/'sanity-report.json';path.write_bytes(raw)
+    raw=json.dumps(value).encode();path=tmp_path/'provider-population-report.json';path.write_bytes(raw)
     observation['export_root']=tmp_path
-    observation['contract']['artifacts']=[{'path':'sanity-report.json','bytes':len(raw),
+    observation['contract']['artifacts']=[{'path':'provider-population-report.json','bytes':len(raw),
         'sha256':hashlib.sha256(raw).hexdigest()}]
     observation['status']['index_diagnostics']={PROVIDER['provider_dir']:{'pagination_complete':True,'unique_products':0}}
     return value,path
@@ -84,7 +84,7 @@ def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,mon
     elif fault=='contradiction':population['status']='PASS'
     elif fault=='unknown_provider':finding['provider']='unregistered'
     elif fault=='not_zero':finding['products_curr']=True
-    elif fault=='bad_index':observation['status']['index_diagnostics'][PROVIDER['provider_dir']]['unique_products']=1
+    elif fault=='bad_index':observation['status']['index_diagnostics'][PROVIDER['provider_dir']]['pagination_complete']=False
     elif fault=='stale_date':value['run_date']='2026-09-06'
     elif fault=='same_prior_date':value['compared_against']=DATE
     elif fault=='future_prior_date':value['compared_against']='2026-09-08'
@@ -115,6 +115,42 @@ def test_unknown_population_comparison_does_not_disable_independent_http_queue(t
     result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=launch)
     assert result['status']=='upstream_gaps_remain'
     assert len(seen)==1 and seen[0]['phase']=='product_detail'
+    launch.assert_not_called()
+
+
+def test_nonempty_index_and_all_failed_details_keep_independent_http_queue(tmp_path,monkeypatch):
+    state,observation=stage(monkeypatch,tmp_path);bound_population(tmp_path,observation)
+    observation['status']['index_diagnostics'][PROVIDER['provider_dir']]['unique_products']=32
+    assert population_recovery_requests(observation,{PROVIDER['provider_dir']:PROVIDER})==[]
+    seen=[]
+    monkeypatch.setattr(recovery,'_probe_due',lambda root,obs,providers,requests,*a,**kw:
+        (seen.extend(requests) or [],[]))
+    result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=Mock())
+    assert result['status']=='upstream_gaps_remain'
+    assert len(seen)==1 and seen[0]['phase']=='product_detail'
+
+
+@pytest.mark.parametrize('fault',[None,'other_generation','queued','selection_retry','no_hold'])
+def test_pending_policy_hold_allows_only_matching_population_recovery(tmp_path,monkeypatch,fault):
+    import pi_daily_sync
+    state,observation=stage(monkeypatch,tmp_path);bound_population(tmp_path,observation)
+    observation['pointer']={'schema_version':2,'generation_id':'g1','observation_date':DATE}
+    observation['contract']['coverage']={'provider_population_unverified':[{'provider':PROVIDER['provider_dir']}]}
+    pending={'run_date':DATE,'pointer':copy.deepcopy(observation['pointer'])}
+    if fault=='other_generation':pending['pointer']['generation_id']='different'
+    elif fault=='queued':pending['queued_pointers']=[dict(observation['pointer'])]
+    elif fault=='selection_retry':pending['selection_retry']={}
+    elif fault=='no_hold':observation['contract']['coverage']={}
+    monkeypatch.setattr(pi_daily_sync,'payload_publication_pending',lambda _:True)
+    monkeypatch.setattr(pi_daily_sync,'read_payload_publication_pending',lambda _:copy.deepcopy(pending))
+    before=copy.deepcopy(pending);seen=[]
+    monkeypatch.setattr(recovery,'_probe_due',lambda root,obs,providers,requests,*a,**kw:
+        (seen.extend(requests) or [],[]))
+    launch=Mock()
+    result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=launch)
+    assert result['status']==('upstream_gaps_remain' if fault is None else 'pending_publication_must_settle')
+    assert bool(seen)==(fault is None)
+    assert pending==before
     launch.assert_not_called()
 
 
