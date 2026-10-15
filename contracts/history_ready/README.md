@@ -1,5 +1,19 @@
 # Ready history compiler
 
+## LVR interval consumer candidate (2026-10-14)
+
+The LVR interval change exports compiler SHA-256
+`19ab18920ab6400be627d32d3df9be39416b826c6b83d0c6f90ac9440ec15676`
+from the matching AR-app source. The producer and consumer copies are identical;
+the retained-real fixture is regenerated from unchanged source observations.
+This is a reviewed-code compatibility candidate, not a commissioned APK.
+The consumer is AR-app PR #400, source commit
+`215c63f7a58e7f06fc5a92511281c4edfb482cff`.
+Do not publish this compiler's prepared assets until the matching app consumer
+has been separately released and verified. The commissioned consumer evidence
+below remains the record for the previously published pin and is not evidence
+that the new pin has shipped. See `docs/LVR_INTERVAL_CONTRACT.md`.
+
 `compiler.cjs` is a generated standalone artifact from the reviewed AR-app
 TypeScript source, including its exact access and feature classifiers. It is
 intentionally retained as one executable bundle rather than manually splitting

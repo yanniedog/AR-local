@@ -13,6 +13,8 @@ import math
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+from cdr_lvr import intersect_bounds, interval_tier, invalid_structured_bounds, minimum_inclusive, percent as lvr_percent
+
 _ISO_DURATION = re.compile(r"^P(\d+)([DMYW])$", re.IGNORECASE)
 _MONTH_RE = re.compile(r"(\d+)\s*(?:MONTH|MTH|MO)", re.IGNORECASE)
 _DAY_RE = re.compile(r"(\d+)\s*DAY", re.IGNORECASE)
@@ -342,10 +344,11 @@ def tier_for_boundary(percent: Any) -> str:
 # LVR/LTV encoded in free text with a BARE number (no % sign) and plain </>/<=/>=
 # operators — the %-anchored regexes above miss these. Real examples from the feed:
 # Cairns Bank "CLASSIC HOME LOAN VARIABLE <60 LVR IO", "... >90 LVR PI".
-_LVR_SIGNAL_RE = re.compile(r"\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b", re.IGNORECASE)
+_LVR_SIGNAL_RE = re.compile(r"(?<![a-z])(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)(?![a-z])", re.IGNORECASE)
+_LVR_LABEL = r"(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)"
 _LVR_NAME_RANGE = re.compile(
-    r"(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
-    r"|(?:lvr|ltv)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)",
+    rf"(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d{{1,3}}(?:\.\d+)?)\s*%?\s*{_LVR_LABEL}"
+    rf"|{_LVR_LABEL}\s*:?\s*(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d{{1,3}}(?:\.\d+)?)",
     re.IGNORECASE,
 )
 # Operator alternation: symbols, natural-language comparators, and bound words.
@@ -357,8 +360,8 @@ _LVR_OP = (
     r"|max(?:imum)?|min(?:imum)?|up[\s_-]*to"
 )
 _LVR_NAME_OP = re.compile(
-    rf"(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
-    rf"|(?:lvr|ltv)\s*:?\s*(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)",
+    rf"(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)\s*%?\s*{_LVR_LABEL}"
+    rf"|{_LVR_LABEL}\s*:?\s*(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)",
     re.IGNORECASE,
 )
 _LVR_TIER_ORDER = ("lvr_=60%", "lvr_60-70%", "lvr_70-80%", "lvr_80-85%", "lvr_85-90%", "lvr_90-95%")
@@ -415,11 +418,7 @@ def normalize_lvr_tier(context_text: str, min_lvr: Any, max_lvr: Any) -> str:
     lo_finite = isinstance(min_lvr, (int, float)) and math.isfinite(float(min_lvr))
 
     if hi_finite or lo_finite:
-        hi_raw = float(max_lvr if hi_finite else min_lvr)
-        hi = hi_raw
-        if 0 < hi <= 1:
-            hi = round(hi * 100, 4)
-        return tier_for_boundary(hi)
+        return interval_tier(min_lvr, max_lvr)
 
     txt = _lower(context_text)
 
@@ -503,26 +502,29 @@ def resolve_lvr_tier(
 ) -> Tuple[str, str]:
     """Return (lvr_tier slug, lvr_source) for a mortgage lending rate."""
     product_constraints = product_constraints or []
-    l_min, l_max = parse_lvr_bounds_from_rate_item(rate_item)
-    source = "none"
-
+    if invalid_structured_bounds(rate_item, product_constraints):
+        return "lvr_unspecified", "rate_structured"
+    l_min, l_max = parse_lvr_bounds_from_rate_item(rate_item, include_text=False)
+    source = "rate_structured" if l_min is not None or l_max is not None else "none"
+    product_bounds = parse_lvr_bounds_from_constraints(
+        [x for x in product_constraints if isinstance(x, Mapping)]
+    ) or (None, None)
+    inclusive = minimum_inclusive(rate_item, l_min, lvr_bounds_from_context)
+    # A named lower bound must survive a product-wide upper limit. The cap
+    # constrains the rate interval; it does not replace its lower boundary.
+    if source == "none" and _text_has_lvr_signal(context_text):
+        named_bounds = lvr_bounds_from_context(context_text)
+        if named_bounds is not None:
+            l_min, l_max, inclusive = named_bounds
+            source = "context_text"
+    if source == "none" and product_bounds != (None, None):
+        l_min, l_max = product_bounds
+        source = "product_constraints"
     if l_min is not None or l_max is not None:
-        source = "rate_structured"
-    elif product_constraints:
-        parsed = parse_lvr_bounds_from_constraints(
-            [x for x in product_constraints if isinstance(x, Mapping)]
-        )
-        if parsed is not None:
-            l_min, l_max = parsed
-            if l_min is not None or l_max is not None:
-                source = "product_constraints"
-
-    # Structured bounds (from the rate item or product constraints) are
-    # authoritative — resolve directly from them.
-    if l_min is not None or l_max is not None:
-        tier = normalize_lvr_tier(context_text, l_min, l_max)
-        if tier != "lvr_unspecified":
-            return tier, source
+        if product_bounds[0] is not None and (l_min is None or lvr_percent(product_bounds[0]) > lvr_percent(l_min)):
+            inclusive = True  # A stricter structured product minimum is inclusive.
+        l_min, l_max = intersect_bounds((l_min, l_max), product_bounds)
+        return interval_tier(l_min, l_max, inclusive=inclusive), source
 
     if context_text.strip() and _text_has_lvr_signal(context_text):
         # Operator-aware name parser FIRST: it handles lower-bound forms
@@ -545,8 +547,38 @@ def resolve_lvr_tier(
     return "lvr_unspecified", source
 
 
+def lvr_bounds_from_context(text: str, *, explicit_only: bool = False) -> Optional[Tuple[Optional[float], Optional[float], bool]]:
+    """Operator-aware text bounds; a bare named number is an upper boundary."""
+    txt = _lower(text)
+    if not _LVR_SIGNAL_RE.search(txt):
+        return None
+    match = _LVR_NAME_RANGE.search(txt)
+    if match:
+        lo, hi = float(match.group(1) or match.group(3)), float(match.group(2) or match.group(4))
+        return (lo, hi, not lo.is_integer())
+    suffix_bound = re.search(rf"(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:or more|or above|and above|or greater)\s*{_LVR_LABEL}", txt)
+    if suffix_bound:
+        return (float(suffix_bound[1]), None, True)
+    match = _LVR_NAME_OP.search(txt)
+    if not match:
+        return None
+    op = match.group(1) or match.group(3)
+    number = float(match.group(2) or match.group(4))
+    suffix = txt[match.end():]
+    if re.match(r"\s*%?\s*(?:or more|or above|and above|or greater)", suffix):
+        return (number, None, True)
+    if _is_lower_bound_op(op):
+        inclusive = re.sub(r"[\s_-]+", " ", (op or "").strip()) in {
+            ">=", "greater than or equal to", "at least", "from", "min", "minimum"
+        }
+        return (number, None, inclusive)
+    if explicit_only and not op:
+        return None
+    return (None, number, True)
+
+
 def parse_numeric(value: Any) -> Optional[float]:
-    if value is None or value == "":
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
         n = float(value)
@@ -568,25 +600,28 @@ def parse_lvr_bounds_from_constraints(constraints: List[Mapping[str, Any]]) -> O
         min_value = parse_numeric(c.get("minValue"))
         max_value = parse_numeric(c.get("maxValue"))
         if "min" in ctype:
-            min_lo = additional if additional is not None else (min_value if min_value is not None else min_lo)
+            candidate = additional if additional is not None else min_value
+            min_lo, _ = intersect_bounds((min_lo, None), (candidate, None))
         elif "max" in ctype:
-            max_hi = additional if additional is not None else (max_value if max_value is not None else max_hi)
+            candidate = additional if additional is not None else max_value
+            _, max_hi = intersect_bounds((None, max_hi), (None, candidate))
         else:
             if min_value is not None:
-                min_lo = min_value
+                min_lo, _ = intersect_bounds((min_lo, None), (min_value, None))
             if max_value is not None:
-                max_hi = max_value
+                _, max_hi = intersect_bounds((None, max_hi), (None, max_value))
             elif additional is not None:
-                max_hi = additional
+                _, max_hi = intersect_bounds((None, max_hi), (None, additional))
     return (min_lo, max_hi) if (min_lo is not None or max_hi is not None) else None
 
 
-def parse_lvr_bounds_from_rate_item(item: Mapping[str, Any]) -> Tuple[Optional[float], Optional[float]]:
+def parse_lvr_bounds_from_rate_item(item: Mapping[str, Any], *, include_text: bool = True) -> Tuple[Optional[float], Optional[float]]:
     conc = item.get("constraints")
+    structured = (None, None)
     if isinstance(conc, list):
         parsed = parse_lvr_bounds_from_constraints([x for x in conc if isinstance(x, Mapping)])
         if parsed is not None:
-            return parsed
+            structured = parsed
 
     tiers = item.get("tiers")
     if isinstance(tiers, list):
@@ -598,13 +633,22 @@ def parse_lvr_bounds_from_rate_item(item: Mapping[str, Any]) -> Tuple[Optional[f
                 str(tier.get("unitOfMeasure") or ""),
                 str(tier.get("rateApplicationMethod") or ""),
             )
-            if "lvr" not in tier_name and "loan to value" not in tier_name:
+            if not _LVR_SIGNAL_RE.search(tier_name):
                 continue
             t_min = parse_numeric(tier.get("minimumValue"))
             t_max = parse_numeric(tier.get("maximumValue"))
+            named = lvr_bounds_from_context(str(tier.get("name") or ""), explicit_only=t_min is not None or t_max is not None)
+            if named:
+                t_min = t_min if t_min is not None else named[0]
+                t_max = t_max if t_max is not None else named[1]
             if t_min is not None or t_max is not None:
-                return (t_min, t_max)
+                structured = intersect_bounds(structured, (t_min, t_max))
 
+    if structured != (None, None):
+        return structured
+
+    if not include_text:
+        return (None, None)
     extra = "|".join(
         str(item.get(part) or "")
         for part in ("additionalValue", "additionalInfo", "name")
@@ -613,6 +657,11 @@ def parse_lvr_bounds_from_rate_item(item: Mapping[str, Any]) -> Tuple[Optional[f
         return (None, None)
 
     txt = _lower(extra)
+    if not _text_has_lvr_signal(txt):
+        return (None, None)
+    named_bounds = lvr_bounds_from_context(txt)
+    if named_bounds is not None:
+        return named_bounds[:2]
     bp = _BOUNDS_PAIR.search(txt)
     if bp:
         lo, hi = float(bp.group(1)), float(bp.group(2))

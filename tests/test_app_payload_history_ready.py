@@ -22,12 +22,11 @@ def test_committed_ready_fixture_reproduces_from_retained_observations():
     assert actual == fixture
 
 
-def test_ready_compiler_matches_both_reviewed_shipping_consumers():
+def test_ready_compiler_matches_reviewed_lvr_interval_consumer():
     from app_payload_bank_history_ready_asset import compiler_identity, _invoke
-    # Independent consumer pin: AR-app e2e3753 (universal) and 4fd25f6 (ARM).
-    # Updating the artifact and generated fixture together must not silently
-    # adopt semantics that the commissioned apps cannot consume.
-    expected = "5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e"
+    # Independent pin exported from the matching AR-app LVR interval change.
+    # Publication still requires that consumer to be released and verified.
+    expected = "19ab18920ab6400be627d32d3df9be39416b826c6b83d0c6f90ac9440ec15676"
     assert compiler_identity()[1] == expected
     ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
     assert ready["compiler_sha256"] == expected
