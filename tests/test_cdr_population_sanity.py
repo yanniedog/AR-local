@@ -42,7 +42,7 @@ def database(path, *, include_provider):
             connection.executemany('insert into bank_products values(?)', [('Westpac',)]*32)
 
 
-def test_report_reads_immutable_sources_and_surfaces_whole_provider_absence(tmp_path):
+def test_unfinalized_baseline_cannot_authorize_population_recovery(tmp_path):
     previous = tmp_path/'2026-10-14/_exports/local-cdr.sqlite'
     current = tmp_path/'2026-10-15/_exports/local-cdr.sqlite'
     database(previous, include_provider=True); database(current, include_provider=False)
@@ -50,11 +50,45 @@ def test_report_reads_immutable_sources_and_surfaces_whole_provider_absence(tmp_
     assert compare_ladders(current, previous) == []  # No common current ladder to compare.
     report_path = write_sanity_report(current.parent, '2026-10-15', tmp_path)
     report = json.loads(report_path.read_text())
-    assert report['counts']['HIGH'] == 1
-    assert report['provider_population']['status'] == 'WARN'
-    assert report['findings'][0]['population_known'] is False
-    assert report['findings'][0]['products_prev'] == 32
+    assert report['counts']['HIGH'] == 0
+    assert report['provider_population']['status'] == 'UNKNOWN'
+    assert report['provider_population']['reason'] == 'baseline_not_finalized_or_verified'
     assert before == {p:hashlib.sha256(p.read_bytes()).hexdigest() for p in (previous,current)}
+
+
+def finalized_previous(tmp_path):
+    from cdr_finalization import finalize_observation
+    from tests.test_irreplaceable_finalization import make_export
+    root=tmp_path/'runs/2026-10-14/_exports'
+    make_export(root,observation_date='2026-10-14')
+    database(root/'local-cdr.sqlite',include_provider=True)
+    state=tmp_path/'state'
+    finalize_observation(root,state,state/'2026-10-14.done.json',observation_date='2026-10-14',
+        result={'run_date':'2026-10-14','banks_counts':{'rates':7}})
+    return root,state
+
+
+def test_finalized_hash_bound_baseline_can_establish_disappearance(tmp_path):
+    previous,state=finalized_previous(tmp_path)
+    current=tmp_path/'runs/2026-10-15/_exports/local-cdr.sqlite'
+    database(current,include_provider=False)
+    path=write_sanity_report(current.parent,'2026-10-15',tmp_path/'runs',state_dir=state)
+    report=json.loads(path.read_bytes());population=report['provider_population']
+    assert population['status']=='WARN'
+    assert population['baseline']['observation_date']=='2026-10-14'
+    assert population['baseline']['database_sha256']==hashlib.sha256((previous/'local-cdr.sqlite').read_bytes()).hexdigest()
+    assert population['findings'][0]['products_prev']==32
+
+
+def test_changed_database_or_marker_cannot_be_a_recovery_baseline(tmp_path):
+    from cdr_population_baseline import finalized_population_report
+    previous,state=finalized_previous(tmp_path)
+    current=tmp_path/'current.sqlite';database(current,include_provider=False)
+    db=previous/'local-cdr.sqlite'
+    with sqlite3.connect(db) as connection:connection.execute("insert into bank_products values('changed')")
+    assert finalized_population_report(current,db,state)['status']=='UNKNOWN'
+    (state/'2026-10-14.done.json').write_text('{}')
+    assert finalized_population_report(current,db,state)['status']=='UNKNOWN'
 
 
 def test_missing_or_invalid_database_is_unknown_and_never_created(tmp_path):

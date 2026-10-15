@@ -19,7 +19,9 @@ def bound_population(tmp_path, observation):
         'disposition':'UNVERIFIED_SOURCE_ABSENCE','population_known':False,
         'products_prev':32,'products_curr':0,'rates_prev':379,'rates_curr':0}
     value={'run_date':DATE,'compared_against':'2026-09-06',
-        'provider_population':{'status':'WARN','findings':[finding]}}
+        'provider_population':{'status':'WARN','findings':[finding],
+            'baseline':{'observation_date':'2026-09-06','generation_id':'obs-2026-09-06-unit',
+                'contract_digest':'a'*64,'database_sha256':'b'*64,'ledger_event_digest':'c'*64}}}
     raw=json.dumps(value).encode();path=tmp_path/'sanity-report.json';path.write_bytes(raw)
     observation['export_root']=tmp_path
     observation['contract']['artifacts']=[{'path':'sanity-report.json','bytes':len(raw),
@@ -72,12 +74,13 @@ def test_complete_label_does_not_skip_contract_bound_empty_population(tmp_path,m
     assert not any(row['kind']=='capture' for row in recovery._history(state/'cdr-recovery-v1'/DATE,DATE))
 
 
-@pytest.mark.parametrize('fault',['unknown','contradiction','unknown_provider','not_zero','bad_index','duplicate',
-    'stale_date','same_prior_date','future_prior_date','invalid_date','missing_date','noncanonical_date'])
+@pytest.mark.parametrize('fault',['invalid_status','contradiction','unknown_provider','not_zero','bad_index','duplicate',
+    'stale_date','same_prior_date','future_prior_date','invalid_date','missing_date','noncanonical_date',
+    'no_baseline','wrong_baseline_date','invalid_baseline_hash'])
 def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,monkeypatch,fault):
     _,observation=stage(monkeypatch,tmp_path);value,path=bound_population(tmp_path,observation)
     population=value['provider_population'];finding=population['findings'][0]
-    if fault=='unknown':population['status']='UNKNOWN'
+    if fault=='invalid_status':population['status']='invalid'
     elif fault=='contradiction':population['status']='PASS'
     elif fault=='unknown_provider':finding['provider']='unregistered'
     elif fault=='not_zero':finding['products_curr']=True
@@ -88,11 +91,31 @@ def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,mon
     elif fault=='invalid_date':value['run_date']='2026-99-07'
     elif fault=='missing_date':value.pop('compared_against')
     elif fault=='noncanonical_date':value['compared_against']='20260906'
+    elif fault=='no_baseline':population.pop('baseline')
+    elif fault=='wrong_baseline_date':population['baseline']['observation_date']=DATE
+    elif fault=='invalid_baseline_hash':population['baseline']['database_sha256']='not a digest'
     else:population['findings'].append(copy.deepcopy(finding))
     raw=json.dumps(value).encode();path.write_bytes(raw)
     observation['contract']['artifacts'][0].update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
     with pytest.raises(ValueError):
         population_recovery_requests(observation,{PROVIDER['provider_dir']:PROVIDER})
+
+
+def test_unknown_population_comparison_does_not_disable_independent_http_queue(tmp_path,monkeypatch):
+    state,observation=stage(monkeypatch,tmp_path);value,path=bound_population(tmp_path,observation)
+    value['provider_population']={'status':'UNKNOWN','reason':'comparison_database_unreadable','findings':[]}
+    raw=json.dumps(value).encode();path.write_bytes(raw)
+    observation['contract']['artifacts'][0].update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+    assert population_recovery_requests(observation,{PROVIDER['provider_dir']:PROVIDER})==[]
+    seen=[]
+    def probe(root,obs,providers,requests,*args,**kwargs):
+        seen.extend(requests);return [],[]
+    monkeypatch.setattr(recovery,'_probe_due',probe)
+    launch=Mock()
+    result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=launch)
+    assert result['status']=='upstream_gaps_remain'
+    assert len(seen)==1 and seen[0]['phase']=='product_detail'
+    launch.assert_not_called()
 
 
 @pytest.mark.parametrize('empty',[True,False])

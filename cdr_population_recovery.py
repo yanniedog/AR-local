@@ -13,6 +13,8 @@ def population_recovery_requests(observation, providers):
     population = report.get('provider_population')
     if population is None:
         return []  # Legacy rate-ladder-only report.
+    if isinstance(population, dict) and population.get('status') == 'UNKNOWN':
+        return []  # No derived authority; independent bound HTTP failures stay eligible.
     if not isinstance(population, dict) or population.get('status') not in {'PASS', 'WARN'}:
         raise ValueError('provider population comparison is unverified')
     try:
@@ -23,6 +25,14 @@ def population_recovery_requests(observation, providers):
     if (current.isoformat() != report['run_date'] or prior.isoformat() != report['compared_against']
             or report['run_date'] != contract['observation_date'] or prior >= current):
         raise ValueError('provider population comparison is not for this observation')
+    baseline = population.get('baseline')
+    if (not isinstance(baseline, dict) or baseline.get('observation_date') != report['compared_against']
+            or not isinstance(baseline.get('generation_id'), str)
+            or not baseline['generation_id'].startswith('obs-'+report['compared_against']+'-')
+            or any(not isinstance(baseline.get(key), str) or len(baseline[key]) != 64
+                or any(c not in '0123456789abcdef' for c in baseline[key])
+                for key in ['contract_digest','database_sha256','ledger_event_digest'])):
+        raise ValueError('provider population baseline lacks finalization proof')
     findings = population.get('findings')
     if not isinstance(findings, list) or len(findings) > len(providers):
         raise ValueError('provider population findings are invalid')

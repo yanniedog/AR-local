@@ -65,6 +65,9 @@ def _coverage(
         for item in (status.get("provider_states") or [])
         if isinstance(item, Mapping)
     ]
+    from cdr_population_coverage import apply_population_coverage
+    population_unverified = apply_population_coverage(export_root,
+        str(manifest.get('run_date') or ''), provider_states)
     register_attempts = [
         dict(item)
         for item in (status.get("register_attempts") or [])
@@ -125,6 +128,9 @@ def _coverage(
             "rate_tiers_by_classification",
         ],
     }
+    if population_unverified:
+        coverage['provider_population_unverified'] = population_unverified
+        coverage['unavailable_populations'].append('provider_population')
     return observation_state, coverage, provider_states, register_attempts
 
 

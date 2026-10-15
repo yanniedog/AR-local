@@ -639,7 +639,7 @@ def run_once(args: argparse.Namespace) -> int:
     # cdr_ingest_sanity.py module docstring for the 2026-05-20/26
     # CommBank repricing-window incident that motivated this guard.
     try:
-        report_path = write_sanity_report(target_export_root, date, persistent_runs_root)
+        report_path = write_sanity_report(target_export_root, date, persistent_runs_root, state_dir=state_dir)
     except Exception as exc:  # never let the guard fail the ingest
         print(f"sanity-check: error writing report: {type(exc).__name__}: {exc}", file=sys.stderr)
     else:

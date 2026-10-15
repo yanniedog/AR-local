@@ -127,7 +127,7 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     return findings
 
 
-def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Optional[Path]:
+def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path, *, state_dir=None) -> Optional[Path]:
     """Write sanity-report.json into exports_dir. Returns the path written, or
     None if there is no previous day to compare against (first ingest)."""
     curr_db = exports_dir / "local-cdr.sqlite"
@@ -135,8 +135,9 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Op
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
-    from cdr_population_sanity import population_report
-    population = population_report(curr_db, prev_db)
+    from cdr_population_baseline import finalized_population_report
+    population = finalized_population_report(curr_db, prev_db,
+        state_dir if state_dir is not None else runs_root.parent / 'state')
     findings.extend(population["findings"])
     summary = {
         "run_date": run_date,
