@@ -227,6 +227,37 @@ def test_configured_database_is_used_instead_of_stale_default(tmp_path):
     assert report['provider_population']['findings'][0]['products_curr']==0
 
 
+def test_custom_output_keeps_a_finalized_database_for_next_day_baseline(tmp_path):
+    from cdr_finalization import finalize_observation
+    from cdr_outputs import build_outputs
+    from cdr_population_baseline import finalized_population_report
+    from tests.test_cdr_product_facts import captured
+    from tests.test_irreplaceable_finalization import make_export
+    day='2026-10-14';run=tmp_path/'runs'/day;root=run/'_exports'
+    make_export(root,observation_date=day)
+    product=captured()[0]
+    path=run/'banks'/product['dataset']/product['provider']/'captured/id/product-detail.json'
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({'data':product['record']}))
+    custom=tmp_path/'configured.sqlite'
+    result=build_outputs(run,db_path=custom)
+    assert custom.is_file() and (root/'local-cdr.sqlite').is_file()
+    with sqlite3.connect(custom) as db:
+        rows=db.execute('select provider,count(*) from bank_products group by provider').fetchall()
+    with sqlite3.connect(root/'local-cdr.sqlite') as db:
+        assert db.execute('select provider,count(*) from bank_products group by provider').fetchall()==rows
+    assert rows and rows[0][1]>0
+    state=tmp_path/'state'
+    finalize_observation(root,state,state/f'{day}.done.json',observation_date=day,result=result)
+    # Subsequent changes to the custom output do not alter finalized evidence.
+    with sqlite3.connect(custom) as db:db.execute('delete from bank_products')
+    current=tmp_path/'runs/2026-10-15/_exports/local-cdr.sqlite'
+    database(current,include_provider=False)
+    report=finalized_population_report(current,state,run_date='2026-10-15')
+    assert report['status']=='WARN' and report['findings'][0]['provider']==rows[0][0]
+    assert report['findings'][0]['products_prev']==rows[0][1]
+
+
 def test_population_sidecar_survives_ladder_advisory_failure(tmp_path,monkeypatch):
     import cdr_ingest_sanity as sanity
     previous,state=finalized_previous(tmp_path)

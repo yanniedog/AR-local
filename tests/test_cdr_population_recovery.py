@@ -74,7 +74,7 @@ def test_complete_label_does_not_skip_contract_bound_empty_population(tmp_path,m
     assert not any(row['kind']=='capture' for row in recovery._history(state/'cdr-recovery-v1'/DATE,DATE))
 
 
-@pytest.mark.parametrize('fault',['invalid_status','contradiction','unknown_provider','not_zero','bad_index','duplicate',
+@pytest.mark.parametrize('fault',['invalid_status','contradiction','unknown_provider','not_zero','duplicate',
     'stale_date','same_prior_date','future_prior_date','invalid_date','missing_date','noncanonical_date',
     'no_baseline','wrong_baseline_date','invalid_baseline_hash'])
 def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,monkeypatch,fault):
@@ -84,7 +84,6 @@ def test_semantically_invalid_bound_report_cannot_add_recovery_work(tmp_path,mon
     elif fault=='contradiction':population['status']='PASS'
     elif fault=='unknown_provider':finding['provider']='unregistered'
     elif fault=='not_zero':finding['products_curr']=True
-    elif fault=='bad_index':observation['status']['index_diagnostics'][PROVIDER['provider_dir']]['pagination_complete']=False
     elif fault=='stale_date':value['run_date']='2026-09-06'
     elif fault=='same_prior_date':value['compared_against']=DATE
     elif fault=='future_prior_date':value['compared_against']='2026-09-08'
@@ -128,6 +127,37 @@ def test_nonempty_index_and_all_failed_details_keep_independent_http_queue(tmp_p
     result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=Mock())
     assert result['status']=='upstream_gaps_remain'
     assert len(seen)==1 and seen[0]['phase']=='product_detail'
+
+
+@pytest.mark.parametrize('pending_hold',[False,True])
+def test_carried_warning_with_failed_index_preserves_bound_http_recovery(tmp_path,monkeypatch,pending_hold):
+    import pi_daily_sync
+    state,observation=stage(monkeypatch,tmp_path);value,path=bound_population(tmp_path,observation)
+    finding=value['provider_population']['findings'][0]
+    finding.update(products_prev=0,carried_unresolved=True)
+    value['provider_population']['baseline']['unresolved_provider_populations']=[{
+        'provider':PROVIDER['provider_dir'],'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]
+    raw=json.dumps(value).encode();path.write_bytes(raw)
+    observation['contract']['artifacts'][0].update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+    observation['status']['index_diagnostics'][PROVIDER['provider_dir']].update(pagination_complete=False,unique_products=0)
+    observation['status']['unresolved_requests']=[{'provider_dir':PROVIDER['provider_dir'],
+        'phase':'products_index','product_id':'','url':PROVIDER['endpoint_url'],'status':500}]
+    observation['pointer']={'schema_version':2,'generation_id':'g1','observation_date':DATE}
+    observation['contract']['coverage']={'provider_population_unverified':[{'provider':PROVIDER['provider_dir']}]}
+    if pending_hold:
+        pending={'run_date':DATE,'pointer':copy.deepcopy(observation['pointer'])}
+        monkeypatch.setattr(pi_daily_sync,'payload_publication_pending',lambda _:True)
+        monkeypatch.setattr(pi_daily_sync,'read_payload_publication_pending',lambda _:copy.deepcopy(pending))
+    assert population_recovery_requests(observation,{PROVIDER['provider_dir']:PROVIDER})==[]
+    seen=[]
+    monkeypatch.setattr(recovery,'_probe_due',lambda root,obs,providers,requests,*a,**kw:
+        (seen.extend(requests) or [],[]))
+    launch=Mock()
+    result=recovery.run_same_day_recovery(tmp_path,now_utc=NOW,dry_run=False,daily_pass=True,launch=launch)
+    assert result['status']=='upstream_gaps_remain'
+    assert len(seen)==1 and seen[0]['phase']=='products_index' and seen[0]['status']==500
+    assert result['population_anomaly_providers']==[]
+    launch.assert_not_called()
 
 
 @pytest.mark.parametrize('fault',[None,'other_generation','queued','selection_retry','no_hold'])

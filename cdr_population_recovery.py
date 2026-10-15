@@ -48,20 +48,21 @@ def population_recovery_requests(observation, providers):
                 and row.get('population_known') is False
                 and row.get('disposition') == 'UNVERIFIED_SOURCE_ABSENCE'
                 for row in baseline.get('unresolved_provider_populations', [])))
-        diagnostic = (observation['status'].get('index_diagnostics') or {}).get(provider) or {}
-        if (diagnostic.get('pagination_complete') is True
-                and type(diagnostic.get('unique_products')) is int and diagnostic['unique_products'] > 0):
-            continue  # Keep the existing bound detail queue eligible.
-        if (provider not in providers or provider in seen or finding.get('code') != 'provider_population_disappeared'
+        if (not isinstance(provider, str) or provider not in providers or provider in seen
+                or finding.get('code') != 'provider_population_disappeared'
                 or finding.get('disposition') != 'UNVERIFIED_SOURCE_ABSENCE'
                 or finding.get('population_known') is not False or type(prior) is not int
                 or prior < 0 or (prior == 0 and not carried)
                 or type(finding.get('products_curr')) is not int or finding['products_curr'] != 0
-                or type(finding.get('rates_curr')) is not int or finding['rates_curr'] != 0
-                or diagnostic.get('pagination_complete') is not True
-                or type(diagnostic.get('unique_products')) is not int or diagnostic['unique_products'] != 0):
+                or type(finding.get('rates_curr')) is not int or finding['rates_curr'] != 0):
             raise ValueError('population anomaly lacks a reconciled empty-index identity')
         seen.add(provider)
+        diagnostic = (observation['status'].get('index_diagnostics') or {}).get(provider) or {}
+        if (not isinstance(diagnostic, dict) or diagnostic.get('pagination_complete') is not True
+                or type(diagnostic.get('unique_products')) is not int or diagnostic['unique_products'] != 0):
+            # Retain carried holds but add no derived request on an incomplete
+            # or nonempty index. The independent bound HTTP queue stays eligible.
+            continue
         requests.append({'provider_dir': provider, 'provider_uid': providers[provider].get('provider_uid'),
             'phase': 'products_index', 'product_id': '', 'url': providers[provider]['endpoint_url'],
             'status': 200, 'failure_category': 'provider_population_unverified'})

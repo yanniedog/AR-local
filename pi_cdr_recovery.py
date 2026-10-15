@@ -488,9 +488,6 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
     health = _coverage_health(observation)
     providers = captured_provider_directories(observation["status"], provider_directories(observation["status"]))
     population_requests = population_recovery_requests(observation, providers)
-    if policy_pending and not population_requests:
-        return {'status':'pending_publication_must_settle','publication_required':True,
-                'capture_attempted':False}
     health["population_anomaly_providers"] = sorted(row["provider_dir"] for row in population_requests)
     if observation["contract"]["observation_state"] == "complete" and not population_requests:
         return {"status": "complete", **health}
