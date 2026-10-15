@@ -135,10 +135,14 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Op
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
+    from cdr_population_sanity import population_report
+    population = population_report(curr_db, prev_db)
+    findings.extend(population["findings"])
     summary = {
         "run_date": run_date,
         "compared_against": prev_db.parent.parent.name,
         "thresholds_bp": {"low": LOW_BP, "high": HIGH_BP},
+        "provider_population": population,
         "counts": {
             "HIGH": sum(1 for f in findings if f["severity"] == "HIGH"),
             "STRUCTURAL": sum(1 for f in findings if f["severity"] == "STRUCTURAL"),

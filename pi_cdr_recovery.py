@@ -389,6 +389,10 @@ def _probe_due(root: Path, observation: dict, providers: dict, due: list[dict],
                                    product_id=str(request.get("product_id") or ""), deadline=deadline,
                                    version_offset=request.get("version_offset", 0),
                                    allow_partial_index=request["phase"] == "products_index")
+            if request.get("failure_category") == "provider_population_unverified":
+                from cdr_population_recovery import population_probe_has_progress
+                if report.get("ok") and not population_probe_has_progress(report):
+                    report.update(ok=False, failure_category="provider_population_still_unverified")
             report.pop("data", None)
             if report.get("ok") and report.get("partial_index"):
                 from cdr_partial_index import partial_probe_has_progress
@@ -479,11 +483,19 @@ def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callabl
         return {"status": "pending_publication_must_settle", "publication_required": True,
                 "capture_attempted": False}
     health = _coverage_health(observation)
-    if observation["contract"]["observation_state"] == "complete":
-        return {"status": "complete", **health}
     providers = captured_provider_directories(observation["status"], provider_directories(observation["status"]))
+    from cdr_population_recovery import population_recovery_requests
+    population_requests = population_recovery_requests(observation, providers)
+    health["population_anomaly_providers"] = sorted(row["provider_dir"] for row in population_requests)
+    if observation["contract"]["observation_state"] == "complete" and not population_requests:
+        return {"status": "complete", **health}
     root = state / "cdr-recovery-v1" / run_date
     requests = _requests(observation, providers, root)
+    # Derived, contract-bound anomaly requests are separate from recorded HTTP
+    # failures. Do not rewrite their original failure totals or queue artifact.
+    known = {row["request_key"] for row in requests}
+    requests.extend(dict(row, request_key=_request_key(row)) for row in population_requests
+                    if _request_key(row) not in known)
     if not requests:
         return {"status": "unresolved_request_evidence_unavailable", **health}
     history = _history(root, run_date)
