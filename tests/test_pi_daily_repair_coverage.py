@@ -50,6 +50,21 @@ def test_daily_owner_selects_single_bounded_daily_pass():
         dry_run=False, launch=w.run_recovery_ingest, daily_pass=True, execution_deadline=None)
 
 
+def test_daily_owner_routes_matching_policy_hold_to_normal_bounded_recovery():
+    from types import SimpleNamespace
+    pointer={'schema_version':2,'observation_date':DATE,'generation_id':'selected'}
+    observation={'pointer':pointer,'contract':{'observation_date':DATE,
+        'coverage':{'provider_population_unverified':[{'provider':'Provider'}]}}}
+    w=SimpleNamespace(REPO_ROOT='repo',run_payload_retry=Mock(),run_recovery_ingest=Mock())
+    r=Mock();r.recovery_block_reason.return_value='';r.selected_observation.return_value=observation
+    pending={'run_date':DATE,'pointer':pointer}
+    repair(w,r,DATE,NOW,read_pending=lambda _:pending,execution_deadline=1100)
+    w.run_payload_retry.assert_not_called()
+    r.run_same_day_recovery.assert_called_once_with('repo',now_utc=NOW,dry_run=False,
+        launch=w.run_recovery_ingest,daily_pass=True,execution_deadline=1100)
+    assert pending=={'run_date':DATE,'pointer':pointer}
+
+
 @pytest.mark.parametrize("failure", ["missing_identity", "deadline"])
 def test_unattempted_provider_is_not_reported_as_probed(monkeypatch, tmp_path, failure):
     stage(monkeypatch, tmp_path)

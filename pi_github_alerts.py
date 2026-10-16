@@ -169,7 +169,8 @@ class AlertStore:
         finally:
             Path(temporary).unlink(missing_ok=True)
 
-    def observe(self, key: str, title: str, category: str, *, healthy: bool):
+    def observe(self, key: str, title: str, category: str, *, healthy: bool,
+                recovery_started_at: datetime | None = None, record_failure: bool = False):
         if not re.fullmatch(r"[a-z0-9:-]{1,100}", key):
             raise ValueError("invalid incident key")
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,80}", category):
@@ -180,12 +181,27 @@ class AlertStore:
             state = self.read(); rows = state["incidents"]; row = rows.get(key)
             if row is None and healthy:
                 return
+            if row is not None and healthy and recovery_started_at is not None:
+                # Compare while holding the state lock: an older successful
+                # invocation cannot clear a failure recorded after it started.
+                try:
+                    failed = datetime.fromisoformat(row["last_failure_at"])
+                    if (failed.tzinfo is None or recovery_started_at.tzinfo is None
+                            or recovery_started_at <= failed):
+                        return
+                except (KeyError, TypeError, ValueError):
+                    return
             if row is None:
                 digest = hashlib.sha256((self.repository + ":" + key).encode()).hexdigest()
                 row = rows[key] = {"marker": f"<!-- ar-local-pi-incident:{digest} -->",
                                   "first_seen": utc(), "revision": 0, "delivered_revision": 0}
             changed = row.get("active") != (not healthy) or (not healthy and row.get("category") != category)
             if not changed:
+                if not healthy and record_failure:
+                    # A repeated failure advances the chronology fence without
+                    # creating a new delivery revision or duplicate issue.
+                    row["last_failure_at"] = utc()
+                    self.write(state)
                 return
             row.update(title=title, active=not healthy, changed_at=utc(), revision=row["revision"] + 1)
             if healthy:

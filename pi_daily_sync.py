@@ -40,7 +40,9 @@ DASHBOARD_CONTROL_TIMEOUT_SEC = 120
 
 # Outcomes of maybe_publish_app_payload. "withheld" is a deliberate policy no-op
 # (nothing was eligible to publish), so it neither raises a pending retry nor
-# clears one an earlier day left behind; only a confirmed upload clears it.
+# clears one an earlier day left behind; only a confirmed upload settles it.
+# A verified same-day population successor can replace its own withheld intent,
+# preserving the superseded record in an immutable policy receipt.
 PUBLISH_PUBLISHED = "published"
 PUBLISH_WITHHELD = "withheld"
 PUBLISH_FAILED = "failed"
@@ -212,7 +214,7 @@ def payload_publication_pending(repo_root: Path) -> bool:
 
 
 def mark_payload_publication_pending(
-    repo_root: Path, reason: str, pointer: Optional[dict] = None
+    repo_root: Path, reason: str, pointer: Optional[dict] = None, *, allow_policy_supersession: bool = False
 ) -> None:
     """Record an outstanding upload, including *which* observation it was.
 
@@ -234,10 +236,16 @@ def mark_payload_publication_pending(
         record["run_date"] = str(pointer.get("observation_date") or "")
         record["pointer"] = pointer
     if previous.get("pointer"):
-        queued = list(previous.get("queued_pointers") or [])
-        if pointer and pointer != previous["pointer"] and pointer not in queued:
-            queued.append(pointer)
-        record = {**previous, "queued_pointers": queued}
+        from pi_population_publication import supersede_population_pending
+        replacement = (supersede_population_pending(data_state_root(repo_root),previous,pointer,record)
+                       if allow_policy_supersession else None)
+        if replacement is not None:
+            record = replacement
+        else:
+            queued = list(previous.get("queued_pointers") or [])
+            if pointer and pointer != previous["pointer"] and pointer not in queued:
+                queued.append(pointer)
+            record = {**previous, "queued_pointers": queued}
     atomic_replace_json(path, record)
 
 
@@ -697,7 +705,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 pointer = current_publication_pointer(REPO_ROOT)
                 # Commit retry intent BEFORE expensive work; SIGKILL/timeout cannot
                 # otherwise execute the exception path that used to create it.
-                mark_payload_publication_pending(REPO_ROOT, "publication_started", pointer)
+                mark_payload_publication_pending(REPO_ROOT, "publication_started", pointer,
+                                                  allow_policy_supersession=True)
                 outcome = maybe_publish_app_payload(REPO_ROOT, pointer or None)
                 if outcome == PUBLISH_PUBLISHED:
                     clear_payload_publication_pending(REPO_ROOT, pointer)
