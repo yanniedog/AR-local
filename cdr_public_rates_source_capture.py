@@ -1,8 +1,7 @@
-"""Bind original CDR bytes to registered public endpoint and actual capture time."""
+"""Bind original CDR bytes to their public endpoint without inventing check time."""
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -29,5 +28,7 @@ def pricing_capture_for_path(source: bytes, path: Path, banks_root: Path, base: 
         register_brand_id=brand.get("data_holder_brand_id") or brand.get("dataHolderBrandId"),
         authority=parsed.hostname or "public-cdr-unknown", display_name=base["provider"],
     )[0]
-    checked = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat().replace("+00:00", "Z")
-    return capture_pricing_source(source, source_url=source_url, checked_at=checked, provider_id=identity)
+    # Recovery copies, imports and local touches can advance mtime without any
+    # source request. This context contains no resource-bound HTTP receipt, so
+    # retain the bytes and identity while leaving successful check time unknown.
+    return capture_pricing_source(source, source_url=source_url, provider_id=identity)

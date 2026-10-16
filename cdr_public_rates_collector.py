@@ -35,6 +35,30 @@ def configured() -> bool:
     return os.environ.get(COLLECT_ENV, "") == "1"
 
 
+def _source_clock_projection(store: EvidenceStore, observation_id: str):
+    # Collector contexts, including older mtime-based inputs, contain no bound
+    # per-resource verification receipt. Correct derived views without rewriting
+    # immutable observations, discovery rows, programme blobs or source evidence.
+    unbound = store.db.execute("SELECT 1 FROM public_rate_compile_inputs WHERE observation_id=?",
+                              (observation_id,)).fetchone() is not None
+
+    def project(value):
+        if not unbound:
+            return value
+        if isinstance(value, list):
+            return [project(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {key: project(item) for key, item in value.items() if key not in {"checkedAt", "lastSuccessAt"}}
+        if isinstance(result.get("freshness"), dict):
+            fresh = result["freshness"]
+            fresh["state"] = "unknown"
+            fresh["reasonCodes"] = sorted(set(fresh.get("reasonCodes", []) + ["successful_source_check_unavailable"]))
+        return result
+
+    return project
+
+
 def _section(record: dict) -> str | None:
     category = record.get("productCategory")
     return {"RESIDENTIAL_MORTGAGES": "Mortgage", "TERM_DEPOSITS": "TD",
@@ -80,12 +104,12 @@ def _pending_product(context: dict) -> dict:
     from cdr_public_rates_cdr import ADAPTER_VERSION
     evidence = {"evidenceId": semantic_id("evidence", [context["sourceSha256"], context["pointer"]]),
                 "url": context["sourceUrl"], "sha256": context["sourceSha256"], "locator": context["pointer"],
-                "checkedAt": context["checkedAt"], "extractionVersion": ADAPTER_VERSION}
+                "extractionVersion": ADAPTER_VERSION}
+    freshness = {"state": "unknown", "reasonCodes": ["pricing_compilation_deferred"]}
     return {"productId": context["productId"], "productKey": context["productKey"], "providerId": context["providerId"],
             "providerName": context["providerName"], "name": context["name"], "section": context["section"], "aliases": [],
             "status": "unknown", "programmeIds": [], "referenceIds": [], "reasonCodes": ["pricing_compilation_deferred"],
-            "freshness": {"state": "deferred", "checkedAt": context["checkedAt"], "lastSuccessAt": context["checkedAt"],
-                          "reasonCodes": ["pricing_compilation_deferred"]}, "sourceEvidence": evidence}
+            "freshness": freshness, "sourceEvidence": evidence}
 
 
 def _compile_pending(store: EvidenceStore, generation: str, checkpoint) -> None:
@@ -100,7 +124,7 @@ def _compile_pending(store: EvidenceStore, generation: str, checkpoint) -> None:
         record = inner_record(json.loads(body))
         checkpoint()
         item = compile_record(record, provider_name=context["providerName"], section=context["section"],
-            source_url=context["sourceUrl"], source_sha256=entry["source_sha256"], checked_at=context["checkedAt"],
+            source_url=context["sourceUrl"], source_sha256=entry["source_sha256"],
             product_key=context["productKey"], pointer=context["pointer"], provider_id=context["providerId"])
         checkpoint()
         public.record_compiled(entry["observation_id"], item)
@@ -222,6 +246,7 @@ def compiled_generation(store: EvidenceStore, generation: str, *, include_progra
     evidence = {}
     for row in rows:
         checkpoint()
+        project = _source_clock_projection(store, row["observation_id"])
         product = json.loads(row["discovery_json"])
         # Retain dated public names when the same stable product changes names.
         observed_names = store.db.execute("SELECT json_extract(v.discovery_json,'$.name') name, "
@@ -244,12 +269,12 @@ def compiled_generation(store: EvidenceStore, generation: str, *, include_progra
             product["reasonCodes"] = sorted(set(product["reasonCodes"] + ["historical_public_product_not_in_selected_ingest"]))
             if "freshness" in product:
                 product["freshness"] = {**product["freshness"], "state": "stale", "reasonCodes": ["product_source_not_in_selected_ingest"]}
-        result["products"].append(product)
+        result["products"].append(project(product))
         if include_programmes:
             result["programmes"].extend(_programmes_for_observation(store, row["observation_id"], historical=bool(row.get("historical"))))
         if include_evidence:
             for source in store.db.execute("SELECT evidence_json FROM public_rate_source_evidence WHERE observation_id=?", (row["observation_id"],)):
-                item = json.loads(source[0])
+                item = project(json.loads(source[0]))
                 evidence[item["evidenceId"]] = item
     result["evidence"] = list(evidence.values())
     for context in pending:
@@ -263,13 +288,14 @@ def compiled_generation(store: EvidenceStore, generation: str, *, include_progra
 
 
 def _programmes_for_observation(store: EvidenceStore, observation_id: str, *, historical: bool):
+    project = _source_clock_projection(store, observation_id)
     rows = store.db.execute("SELECT * FROM public_rate_programme_versions WHERE observation_id=? ORDER BY programme_id", (observation_id,))
     for row in rows:
         value = json.loads(store.read_blob(row["body_sha256"]))
         if historical:
             value["freshness"] = {**value["freshness"], "state": "stale", "reasonCodes": ["product_source_not_in_selected_ingest"]}
             value["reasonCodes"] = sorted(set(value["reasonCodes"] + ["historical_public_product_not_in_selected_ingest"]))
-        yield value
+        yield project(value)
 
 
 def write_candidate(store: EvidenceStore, *, generation: str, run_date: str, register_id: str,
@@ -360,8 +386,9 @@ def _write_candidate(store, *, generation, run_date, register_id, as_of, admissi
     def evidence():
         seen = {item["evidenceId"] for item in reference["evidence"]}
         for selection in compiled["_selection"]:
+            project = _source_clock_projection(store, selection["observationId"])
             for row in store.db.execute("SELECT evidence_json FROM public_rate_source_evidence WHERE observation_id=? ORDER BY evidence_id", (selection["observationId"],)):
-                value = json.loads(row[0])
+                value = project(json.loads(row[0]))
                 if value["evidenceId"] not in seen:
                     seen.add(value["evidenceId"])
                     yield value

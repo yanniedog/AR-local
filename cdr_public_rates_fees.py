@@ -20,8 +20,11 @@ def compile_fees(record, *, product_id, offer_id, source_sha256, source_url, poi
             continue
         locator = f"{pointer}/fees/{index}"
         eid = semantic_id("evidence", [source_sha256, locator])
-        evidence.append({"evidenceId": eid, "url": source_url, "sha256": source_sha256,
-                         "locator": locator, "checkedAt": checked_at, "extractionVersion": "structured-cdr-public-fees-v1"})
+        item = {"evidenceId": eid, "url": source_url, "sha256": source_sha256,
+                "locator": locator, "extractionVersion": "structured-cdr-public-fees-v1"}
+        if checked_at:
+            item["checkedAt"] = checked_at
+        evidence.append(item)
         fee, gaps = _fee(raw, product_id, locator, eid)
         fees.append(fee)
         reasons.extend(gaps)

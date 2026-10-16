@@ -221,7 +221,9 @@ def test_partial_compilation_resumes_original_context_after_raw_stage_cleanup(tm
         assert collector.pending_candidate(store) is None
         after = [row[0] for row in store.db.execute('SELECT context_json FROM public_rate_compile_inputs ORDER BY observation_id')]
         assert before == after
-        assert all(json.loads(context)['checkedAt'] == WHEN for context in after)
+        # This capture has original bytes and an observation time, but no
+        # resource-specific successful HTTP receipt. Replay must not add one.
+        assert all(json.loads(context)['checkedAt'] == '' for context in after)
         assert store.db.execute('SELECT COUNT(*) FROM analysis_jobs').fetchone()[0] == 0
 
 
