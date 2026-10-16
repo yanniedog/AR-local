@@ -181,7 +181,8 @@ def remote_snapshot():
     units, facets = {}, []
 
     class Observer:
-        def observe(self, key, title, category, *, healthy):
+        def observe(self, key, title, category, *, healthy, recovery_started_at=None):
+            # Alert recovery context is accepted without persisting or exposing it.
             if re.fullmatch(r"[a-z0-9:-]{1,100}", key) and re.fullmatch(r"[A-Z_]{1,80}", category):
                 facets.append({"key": key, "category": category, "healthy": healthy is True})
 
