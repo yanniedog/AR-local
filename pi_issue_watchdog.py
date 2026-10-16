@@ -26,7 +26,8 @@ def unit_state(name):
         raise ValueError("unexpected monitored unit")
     response = subprocess.run(
         ["systemctl", "show", name, "-p", "LoadState", "-p", "ActiveState",
-         "-p", "Result", "-p", "ExecMainPID", "-p", "ExecMainStatus", "-p", "ExecMainStartTimestamp"],
+         "-p", "Result", "-p", "ExecMainPID", "-p", "ExecMainStatus", "-p", "ExecMainStartTimestamp",
+         "-p", "ExecMainExitTimestamp"],
         env={**os.environ, "TZ": "UTC", "LC_ALL": "C"},
         capture_output=True, text=True, timeout=5, check=True)
     if len(response.stdout) > 16384:
@@ -34,17 +35,38 @@ def unit_state(name):
     row = dict(line.split("=", 1) for line in response.stdout.splitlines() if "=" in line)
     if row.get("LoadState") != "loaded":
         raise ValueError("monitored unit unavailable")
-    value = row.get("ExecMainStartTimestamp", "")
-    row["started_at"] = None
-    for format in ("%a %Y-%m-%d %H:%M:%S UTC", "%a %Y-%m-%d %H:%M:%S.%f UTC"):
-        try:
-            row["started_at"] = datetime.strptime(value, format).replace(tzinfo=timezone.utc)
-            break
-        except ValueError:
-            continue
+    for field, name in (("ExecMainStartTimestamp", "started_at"), ("ExecMainExitTimestamp", "finished_at")):
+        row[name] = None
+        for format in ("%a %Y-%m-%d %H:%M:%S UTC", "%a %Y-%m-%d %H:%M:%S.%f UTC"):
+            try:
+                row[name] = datetime.strptime(row.get(field, ""), format).replace(tzinfo=timezone.utc)
+                break
+            except ValueError:
+                continue
     # An unavailable start identity cannot prove recovery or quiet deferral,
     # but must not discard an actual OnFailure trigger before it is persisted.
     return row
+
+
+def watchdog_recovery(store, row, due, now):
+    """Resolve only a dated watchdog failure followed by a proven successful run.
+
+    Watchdog execution and capture completeness are independent. This does not
+    resolve the ingest incident, infer past-day recovery, or run a service.
+    """
+    started, finished = row.get("started_at"), row.get("finished_at")
+    try:
+        if (row.get("ActiveState") != "inactive" or row.get("Result") != "success"
+                or str(row.get("ExecMainStatus")) != "0" or int(row.get("ExecMainPID", 0)) <= 0
+                or not isinstance(started, datetime) or started.tzinfo is None
+                or not isinstance(finished, datetime) or finished.tzinfo is None
+                or not due <= started <= finished <= now):
+            return
+    except (ValueError, TypeError):
+        return
+    date = expected_run_date_for_due(due)
+    store.observe("ingest-watchdog:" + date, "Pi ingest watchdog failed: " + date,
+                  "INGEST_WATCHDOG_FAILED", healthy=True, recovery_started_at=started)
 
 
 def read_json(root, relative, *, maximum=1024 * 1024):
@@ -119,6 +141,7 @@ def ingest_checks(store, state_root, now, units=None):
     scheduled_missed = started is None or started < due
     store.observe("ingest-schedule:" + date, "Pi scheduled ingest missed: " + date,
                   "SCHEDULED_INGEST_NOT_STARTED", healthy=not scheduled_missed)
+    watchdog_recovery(store, units[UNITS[2]], due, now)
     active = [r for r in units.values() if r.get("ActiveState") in {"active", "activating"}]
     if active:
         stale = any(r.get("started_at") and now - r["started_at"] > timedelta(hours=6) for r in active)
@@ -145,7 +168,8 @@ def failure_event(store, unit, now):
         key, title, category = "ingest-watchdog:" + date, "Pi ingest watchdog failed: " + date, "INGEST_WATCHDOG_FAILED"
     else:
         key, title, category = "ingest:" + date, "Pi ingest needs attention: " + date, "INGEST_SERVICE_FAILED"
-    store.observe(key, title, category, healthy=False)
+    store.observe(key, title, category, healthy=False,
+                  **({"record_failure": True} if unit == UNITS[2] else {}))
     return {"status": "FAILURE_EVENT_RECORDED", "category": category}
 
 

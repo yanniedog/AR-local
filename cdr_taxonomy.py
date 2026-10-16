@@ -183,7 +183,17 @@ def classify_bank_rate_row(
             parts.append(f"{tm}M" if tm in _TERM_STANDARD else "OTHER_TERM")
 
         lvr = str(ribbon.get("lvr_tier") or "lvr_unspecified").strip()
-        parts.append(_LVR_MAP.get(lvr, "LVR_UNSP"))
+        token = _LVR_MAP.get(lvr)
+        if token is None:
+            match = re.fullmatch(r"lvr_(>=|>)?(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?%", lvr)
+            upper = re.fullmatch(r"lvr_=(\d+(?:\.\d+)?)%", lvr)
+            if match:
+                lower = match[2].replace('.', 'p')
+                prefix = 'GE' if match[1] == '>=' else 'GT' if match[1] == '>' else ''
+                token = f"LVR_{prefix}{lower}" + (f"_{match[3].replace('.', 'p')}" if match[3] else '')
+            elif upper:
+                token = f"LVR_LE{upper[1].replace('.', 'p')}"
+        parts.append(token or "LVR_UNSP")
 
     elif pc == "SAVINGS":
         acct = str(ribbon.get("account_type") or "").strip()

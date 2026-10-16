@@ -127,18 +127,47 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     return findings
 
 
-def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Optional[Path]:
+def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path, *, state_dir=None,
+                        db_path=None) -> Optional[Path]:
     """Write sanity-report.json into exports_dir. Returns the path written, or
     None if there is no previous day to compare against (first ingest)."""
     curr_db = exports_dir / "local-cdr.sqlite"
+    if not curr_db.is_file() and db_path is not None:
+        curr_db = Path(db_path)  # Legacy/custom-only callers are date-scoped below.
     prev_db = _find_previous_export_db(runs_root, run_date)
+    from cdr_population_baseline import finalized_population_report
+    from cdr_atomic import atomic_write_json
+    population = finalized_population_report(curr_db,
+        state_dir if state_dir is not None else runs_root.parent / 'state', run_date=run_date)
+    # Nonempty current index evidence can resolve this uncertainty. Missing or
+    # failed indexes and holders absent from the register retain the first hold.
+    try:
+        status_path = exports_dir / 'ingest-status.json'
+        if status_path.stat().st_size > 4*1024*1024:
+            raise ValueError('index diagnostics exceed metadata budget')
+        current_status = json.loads(status_path.read_bytes())
+        if not isinstance(current_status,dict):
+            current_status = {}
+    except (OSError, ValueError, AttributeError):
+        current_status = {}
+    from cdr_population_identity import retain_population_uncertainty
+    population = retain_population_uncertainty(population,current_status)
+    compared = (population.get('baseline') or {}).get('observation_date')
+    population_summary = {'run_date':run_date,'compared_against':compared,
+                          'provider_population':population}
+    # Seal bounded authority before the separate, non-blocking ladder advisory.
+    atomic_write_json(exports_dir / 'provider-population-report.json', population_summary)
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
+    findings.extend(dict(row,comparison_kind='provider_population',compared_against=compared)
+                    for row in population["findings"])
     summary = {
         "run_date": run_date,
         "compared_against": prev_db.parent.parent.name,
+        "provider_population_compared_against": compared,
         "thresholds_bp": {"low": LOW_BP, "high": HIGH_BP},
+        "provider_population": population,
         "counts": {
             "HIGH": sum(1 for f in findings if f["severity"] == "HIGH"),
             "STRUCTURAL": sum(1 for f in findings if f["severity"] == "STRUCTURAL"),

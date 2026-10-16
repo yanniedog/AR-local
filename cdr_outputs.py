@@ -601,7 +601,12 @@ def build_outputs(
     }
     write_json(out_dir / f"banks-{run_date}.json", banks)
     write_sector_workbooks(out_dir, run_date, banks)
-    rebuild_run_db(db_path or (out_dir / "local-cdr.sqlite"), run_date, banks)
+    # Every finalized observation needs its own immutable normalized database,
+    # including when --db also requests a mutable/custom output location.
+    export_db = out_dir / "local-cdr.sqlite"
+    rebuild_run_db(export_db, run_date, banks)
+    if db_path is not None and db_path.resolve() != export_db:
+        rebuild_run_db(db_path, run_date, banks)
     write_dashboard_cache(out_dir, run_date, banks)
     return {"run_date": run_date, "out_dir": str(out_dir), "banks": summary_counts(banks)}
 

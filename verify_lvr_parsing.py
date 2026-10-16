@@ -55,8 +55,8 @@ def main() -> int:
     # Lower-bound name with a % must NOT be mis-read as an upper bound by the
     # %-bounds heuristics — named_lvr_tier runs first (Codex PR #146).
     tier3, _ = resolve_lvr_tier("Investment over 80% LVR", {}, [])
-    if tier3 != "lvr_80-85%":
-        failures.append(f"lower-bound 'over 80% LVR': got {tier3!r}, expected lvr_80-85%")
+    if tier3 != "lvr_>80%":
+        failures.append(f"lower-bound 'over 80% LVR': got {tier3!r}, expected lvr_>80%")
 
     if failures:
         print("FAIL verify_lvr_parsing:")

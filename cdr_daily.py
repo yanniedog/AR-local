@@ -639,7 +639,8 @@ def run_once(args: argparse.Namespace) -> int:
     # cdr_ingest_sanity.py module docstring for the 2026-05-20/26
     # CommBank repricing-window incident that motivated this guard.
     try:
-        report_path = write_sanity_report(target_export_root, date, persistent_runs_root)
+        report_path = write_sanity_report(target_export_root, date, persistent_runs_root,
+                                         state_dir=state_dir, db_path=args.db)
     except Exception as exc:  # never let the guard fail the ingest
         print(f"sanity-check: error writing report: {type(exc).__name__}: {exc}", file=sys.stderr)
     else:
@@ -650,13 +651,16 @@ def run_once(args: argparse.Namespace) -> int:
             structural = counts.get("STRUCTURAL", 0)
             low = counts.get("LOW", 0)
             print(
-                f"sanity-check vs {report.get('compared_against')}: "
+                f"sanity-check ladder vs {report.get('compared_against')}; "
+                f"population vs {report.get('provider_population_compared_against') or 'unverified'}: "
                 f"HIGH={high} STRUCTURAL={structural} LOW={low}  ({report_path})"
             )
             for finding in report.get("findings", [])[:10]:
                 if finding["severity"] in ("HIGH", "STRUCTURAL"):
                     print(
-                        f"  {finding['severity']}: {finding['provider']} "
+                        f"  {finding['severity']}: {finding.get('comparison_kind','rate_ladder')} "
+                        f"vs {finding.get('compared_against',report.get('compared_against')) or 'unverified'}: "
+                        f"{finding['provider']} "
                         f"{finding.get('product_name','')[:50]} "
                         f"worst_delta={finding.get('worst_delta_bp', '-')}bp",
                         file=sys.stderr,

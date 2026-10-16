@@ -1,0 +1,434 @@
+[
+  {
+    "request": {
+      "failure_category": "endpoint_not_found",
+      "phase": "products_index",
+      "product_id": "",
+      "provider_dir": "Aussie Home Loans",
+      "provider_uid": "legacy-prd:226112a4639dcad35d13cfecdbdaec52c79b35126dd9b1da804cbb197f177751",
+      "status": 404,
+      "url": "https://aussie.openportal.com.au/cds-au/v1/banking/products"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000037-79765e1fb5776d90.json",
+    "event_digest": "c7f3c8f4501b945bcd37c25fcfd08f3d9991d86aa256a60de741fe69ca3f7273",
+    "body_sha256": "34e189227465eefbe6918277b57b663751d6f8a16379bc7273263e00d154ce08",
+    "body": "\n                {\n                    \"errors\": [\n                        {\n                            \"code\": \"404\",\n                            \"title\": \"Not found\",\n                            \"detail\": \"Resource not found\",\n                            \"meta\": {}\n                        }\n                    ]\n                }\n            ",
+    "version": 6,
+    "contract_body_entry": {
+      "bytes": 347,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/34e189227465eefbe6918277b57b663751d6f8a16379bc7273263e00d154ce08.body",
+      "sha256": "34e189227465eefbe6918277b57b663751d6f8a16379bc7273263e00d154ce08"
+    },
+    "current_category": "endpoint_not_found",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "term_deposit",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/term_deposit"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000323-dbb27a5dee62fffb.json",
+    "event_digest": "136a8a64f6977c86162fd69eb06fb001b3536f511d285452fef5c9029444c721",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "nzd_term_deposit",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/nzd_term_deposit"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000371-088352d6836a2421.json",
+    "event_digest": "e1975bb1d40346f6400311678cf2114bb6b68ab26265a63e1940c85ac0e063d6",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "usd_term_deposit",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/usd_term_deposit"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000375-9d947845fdb7f653.json",
+    "event_digest": "ced035fece09769a4ec7db5d642794b5bb7d4e9dd4fb7fa00fe2e592592ab48c",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "gbp_term_deposit",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/gbp_term_deposit"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000377-cda64960506ad002.json",
+    "event_digest": "9b10ef049f455bb8ce38f82d15f80502fa356bd0174ade71a50542733a663ac3",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "eur_term_deposit",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/eur_term_deposit"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000386-86234bea909e8aee.json",
+    "event_digest": "9e2daeab4645202920c42ad1e0f0753a0da5900eb0c2039a0253e12a88ce1ceb",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "eur_fccy_account",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/eur_fccy_account"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000390-24549f57d7eaf262.json",
+    "event_digest": "a2ba543b82fca18c2971fcd10f763f26e6e4dc5dbf84b442eb4fc90132ddaa6f",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "usd_fccy_account",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/usd_fccy_account"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000391-03873f2bbefc858b.json",
+    "event_digest": "387a16d2ac59ff115edc9954e29df3ae69e9f38bdba7be7bf5c042216cce16d6",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "gbp_fccy_account",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422,
+      "url": "https://openbank.api.banksyd.com.au/cds-au/v1/banking/products/gbp_fccy_account"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000405-5a90e4b97c3e6ee4.json",
+    "event_digest": "4528b808e98e5396f678f2643956f350f3db56b5d576ad2a0ea0f2f8c5ce4659",
+    "body_sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f",
+    "body": "{\"errors\":[{\"code\":\"PCUA008\",\"title\":\"Expected Error Encountered\",\"detail\":\"data/data/depositRates/0 should have required property 'applicationType'\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 216,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f.body",
+      "sha256": "8c58cddebe38af52a39b14117e65a100954b0cf26c8d87927c667a74e262405f"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_rejection",
+      "phase": "products_index",
+      "product_id": "",
+      "provider_dir": "Bank of Melbourne",
+      "provider_uid": "legacy-prd:d8d579f5016e5282f7e3ec987bc79637462456e8385aae9ddeab6229a1eb608b",
+      "status": 422,
+      "url": "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products?page=2&page-size=25"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00000334-4dec9e3029c589d8.json",
+    "event_digest": "98653490a0cf731353eba26f2c19b9e1d5072e03bcd50f4a23965a5f8abfd84f",
+    "body_sha256": "8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e",
+    "body": " { \"errors\":[ { \"code\": 422, \"title\": \"Invalid Page\", \"detail\": \"Page requested is out of page range\", \"meta\": { \"urn\" : \"urn:au-cds:error:cds-all:Field/InvalidPage\" } } ] }",
+    "version": 5,
+    "contract_body_entry": {
+      "bytes": 173,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e.body",
+      "sha256": "8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e"
+    },
+    "current_category": "upstream_rejection",
+    "current_retryable": false,
+    "current_negotiate": true
+  },
+  {
+    "request": {
+      "failure_category": "public_endpoint_auth_required",
+      "phase": "products_index",
+      "product_id": "",
+      "provider_dir": "DDH Graham",
+      "provider_uid": "legacy-prd:b108f137850b675d19580de7edfd48022efb4bdef98734b00560bf3056cbb299",
+      "status": 401,
+      "url": "https://api.cds.ddhgraham.com.au/cds-au/v1/banking/products"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00001162-d0c167b234705760.json",
+    "event_digest": "424f35344e1dcaf5876ea0933d8934da68c831791c4df05aaf4e2dc2a3c2b8d3",
+    "body_sha256": "fc6cd986fbef03494dfbd487f1ac228403b57526de4f8dd27395f0f8decd63f5",
+    "body": "{\"errors\":[{\"code\":\"EBAU001\",\"title\":\"Error while fetching token\",\"detail\":\"Error while fetching the authorisation token for the given tenantId\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 5,
+    "contract_body_entry": {
+      "bytes": 211,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/fc6cd986fbef03494dfbd487f1ac228403b57526de4f8dd27395f0f8decd63f5.body",
+      "sha256": "fc6cd986fbef03494dfbd487f1ac228403b57526de4f8dd27395f0f8decd63f5"
+    },
+    "current_category": "upstream_dependency_failure",
+    "current_retryable": true,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "product_inactive",
+      "phase": "product_detail",
+      "product_id": "CA-INVPI-2YRF",
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "status": 400,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/CA-INVPI-2YRF"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00001354-039995e39969e9f7.json",
+    "event_digest": "649be2ece01480aafa9d68063cf852d4c3e70cc5b907b8b26354bfd6ed90e325",
+    "body_sha256": "89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d",
+    "body": "{\r\n  \"errors\": [\r\n    {\r\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\r\n      \"title\": \"Expected Error Encountered\",\r\n      \"detail\": \"The Open Banking Product is inactive. (2.6141)\"\r\n    }\r\n  ]\r\n}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 215,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d.body",
+      "sha256": "89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d"
+    },
+    "current_category": "product_inactive",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "product_inactive",
+      "phase": "product_detail",
+      "product_id": "BP-INVPI-1YRF-LVR95",
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "status": 400,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/BP-INVPI-1YRF-LVR95"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00001498-7a114de6f247e94c.json",
+    "event_digest": "f3768d08382c9ff9e2d63e72388a2090e0a42a47d9d4aaf234cf81a963e6cd8e",
+    "body_sha256": "89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d",
+    "body": "{\r\n  \"errors\": [\r\n    {\r\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\r\n      \"title\": \"Expected Error Encountered\",\r\n      \"detail\": \"The Open Banking Product is inactive. (2.6141)\"\r\n    }\r\n  ]\r\n}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 215,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d.body",
+      "sha256": "89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d"
+    },
+    "current_category": "product_inactive",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "product_inactive",
+      "phase": "product_detail",
+      "product_id": "BP-INVPI-1YRF-LVR80",
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "status": 400,
+      "url": "https://netbank.communityfirst.com.au/cf-OpenBanking/cds-au/v1/banking/products/BP-INVPI-1YRF-LVR80"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00001507-174fcd126571991e.json",
+    "event_digest": "2f4626a9e20bdb0e28c96d252f92bf5e437a2666972e6936ff37ff7c29c88711",
+    "body_sha256": "89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d",
+    "body": "{\r\n  \"errors\": [\r\n    {\r\n      \"code\": \"urn:au-cds:error:cds-all:GeneralError/Expected\",\r\n      \"title\": \"Expected Error Encountered\",\r\n      \"detail\": \"The Open Banking Product is inactive. (2.6141)\"\r\n    }\r\n  ]\r\n}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 215,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d.body",
+      "sha256": "89cf0312df95379ecb4d42e305e7b4d358e8324c1f880b03286b860d4352eb6d"
+    },
+    "current_category": "product_inactive",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "98f3781e-102c-ee11-9966-002248e1d7d5",
+      "provider_dir": "ME Bank - ME Go",
+      "provider_uid": "legacy-prd:75412f027e7f847106a4514d6da00f14628001ae2aef52f94ddf7ed4436ae81f",
+      "status": 500,
+      "url": "https://api.cds.mebank.com.au/cds-au/v1/banking/products/98f3781e-102c-ee11-9966-002248e1d7d5"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00002176-c17cd3181415362d.json",
+    "event_digest": "1f65907d2b91b0549b6c16b56718562be1804df3fcfc0b3152f04a4f4b8782ef",
+    "body_sha256": "a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0",
+    "body": "{\"errors\":[{\"code\":\"PCBS021\",\"title\":\"Expected Error Encountered\",\"detail\":\"Validation failed with Invalid data received for DepositRateTiers ApplicabilityConditions additionalValue of Type::MIN_DEPOSIT_AMOUNT. Value must be in AmountString format\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 315,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0.body",
+      "sha256": "a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_rejection",
+      "phase": "product_detail",
+      "product_id": "L23_Disc_HL**4",
+      "provider_dir": "SWSbank",
+      "provider_uid": "legacy-prd:dd4cd2948335ee856978e01edad5597340da4038a4f4f251ed1282d879e4705a",
+      "status": 400,
+      "url": "https://online.swsbank.com.au/openbanking/cds-au/v1/banking/products/L23_Disc_HL%2A%2A4"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00002955-8793c1edf698af9e.json",
+    "event_digest": "20c8364f8e2efc29d3bd2a6000aa6b466b7c73910e8913f15b3975f26860d28a",
+    "body_sha256": "bf0a648ed143ab4681b38868e966845b3ec98403f1a31a9c02de3d014da8b67b",
+    "body": "<!DOCTYPE html>\r\n<html>\r\n    <head>\r\n        <title>Runtime Error</title>\r\n        <meta name=\"viewport\" content=\"width=device-width\" />\r\n        <style>\r\n         body {font-family:\"Verdana\";font-weight:normal;font-size: .7em;color:black;} \r\n         p {font-family:\"Verdana\";font-weight:normal;color:black;margin-top: -5px}\r\n         b {font-family:\"Verdana\";font-weight:bold;color:black;margin-top: -5px}\r\n         H1 { font-family:\"Verdana\";font-weight:normal;font-size:18pt;color:red }\r\n         H2 { font-family:\"Verdana\";font-weight:normal;font-size:14pt;color:maroon }\r\n         pre {font-family:\"Consolas\",\"Lucida Console\",Monospace;font-size:11pt;margin:0;padding:0.5em;line-height:14pt}\r\n         .marker {font-weight: bold; color: black;text-decoration: none;}\r\n         .version {color: gray;}\r\n         .error {margin-bottom: 10px;}\r\n         .expandable { text-decoration:underline; font-weight:bold; color:navy; cursor:pointer; }\r\n         @media screen and (max-width: 639px) {\r\n          pre { width: 440px; overflow: auto; white-space: pre-wrap; word-wrap: break-word; }\r\n         }\r\n         @media screen and (max-width: 479px) {\r\n          pre { width: 280px; }\r\n         }\r\n        </style>\r\n    </head>\r\n\r\n    <body bgcolor=\"white\">\r\n\r\n            <span><H1>Server Error in '/openbanking' Application.<hr width=100% size=1 color=silver></H1>\r\n\r\n            <h2> <i>Runtime Error</i> </h2></span>\r\n\r\n            <font face=\"Arial, Helvetica, Geneva, SunSans-Regular, sans-serif \">\r\n\r\n            <b> Description: </b>An application error occurred on the server. The current custom error settings for this application prevent the details of the application error from being viewed remotely (for security reasons). It could, however, be viewed by browsers running on the local server machine.\r\n            <br><br>\r\n\r\n            <b>Details:</b> To enable the details of this specific error message to be viewable on remote machines, please create a &lt;customErrors&gt; tag within a &quot;web.config&quot; configuration file located in the root directory of the current web application. This &lt;customErrors&gt; tag should then have its &quot;mode&quot; attribute set to &quot;Off&quot;.<br><br>\r\n\r\n            <table width=100% bgcolor=\"#ffffcc\">\r\n               <tr>\r\n                  <td>\r\n                      <code><pre>\r\n\r\n&lt;!-- Web.Config Configuration File --&gt;\r\n\r\n&lt;configuration&gt;\r\n    &lt;system.web&gt;\r\n        &lt;customErrors mode=&quot;Off&quot;/&gt;\r\n    &lt;/system.web&gt;\r\n&lt;/configuration&gt;</pre>                      </code>\r\n\r\n                  </td>\r\n               </tr>\r\n            </table>\r\n\r\n            <br>\r\n\r\n            <b>Notes:</b> The current error page you are seeing can be replaced by a custom error page by modifying the &quot;defaultRedirect&quot; attribute of the application&#39;s &lt;customErrors&gt; configuration tag to point to a custom error page URL.<br><br>\r\n\r\n            <table width=100% bgcolor=\"#ffffcc\">\r\n               <tr>\r\n                  <td>\r\n                      <code><pre>\r\n\r\n&lt;!-- Web.Config Configuration File --&gt;\r\n\r\n&lt;configuration&gt;\r\n    &lt;system.web&gt;\r\n        &lt;customErrors mode=&quot;RemoteOnly&quot; defaultRedirect=&quot;mycustompage.htm&quot;/&gt;\r\n    &lt;/system.web&gt;\r\n&lt;/configuration&gt;</pre>                      </code>\r\n\r\n                  </td>\r\n               </tr>\r\n            </table>\r\n\r\n            <br>\r\n\r\n            </font>\r\n\r\n    </body>\r\n</html>\r\n",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 3501,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/bf0a648ed143ab4681b38868e966845b3ec98403f1a31a9c02de3d014da8b67b.body",
+      "sha256": "bf0a648ed143ab4681b38868e966845b3ec98403f1a31a9c02de3d014da8b67b"
+    },
+    "current_category": "upstream_rejection",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "1c906e88-5c03-ee11-8f6e-00224814d330",
+      "provider_dir": "Bank of Queensland Limited",
+      "provider_uid": "legacy-prd:bd616870cb02cc215be57de414b6645f10f9c8e9420bd957be84893b4f282b36",
+      "status": 500,
+      "url": "https://api.cds.boq.com.au/cds-au/v1/banking/products/1c906e88-5c03-ee11-8f6e-00224814d330"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00003310-98bda84315057664.json",
+    "event_digest": "1a8f2643927683478ad9e207acb1697a23153e0bf54cbfb7953e3ae213985711",
+    "body_sha256": "a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0",
+    "body": "{\"errors\":[{\"code\":\"PCBS021\",\"title\":\"Expected Error Encountered\",\"detail\":\"Validation failed with Invalid data received for DepositRateTiers ApplicabilityConditions additionalValue of Type::MIN_DEPOSIT_AMOUNT. Value must be in AmountString format\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 315,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0.body",
+      "sha256": "a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  },
+  {
+    "request": {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "19906e88-5c03-ee11-8f6e-00224814d330",
+      "provider_dir": "Bank of Queensland Limited",
+      "provider_uid": "legacy-prd:bd616870cb02cc215be57de414b6645f10f9c8e9420bd957be84893b4f282b36",
+      "status": 500,
+      "url": "https://api.cds.boq.com.au/cds-au/v1/banking/products/19906e88-5c03-ee11-8f6e-00224814d330"
+    },
+    "event_path": "/srv/ar-local/data/runs/2026-10-15/_exports/attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/events/00003311-f60585400033d4c6.json",
+    "event_digest": "ff3963132d27ad4b4d3b071d2ae91714c093233370a169dd324efb231f065d2d",
+    "body_sha256": "a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0",
+    "body": "{\"errors\":[{\"code\":\"PCBS021\",\"title\":\"Expected Error Encountered\",\"detail\":\"Validation failed with Invalid data received for DepositRateTiers ApplicabilityConditions additionalValue of Type::MIN_DEPOSIT_AMOUNT. Value must be in AmountString format\",\"meta\":{\"urn\":\"urn:au-cds:error:cds-all:GeneralError/Expected\"}}]}",
+    "version": 7,
+    "contract_body_entry": {
+      "bytes": 315,
+      "path": "attempt-evidence/raw-attempt-journals-v1/ingest-20261014T140437529949Z-b8124d056c2e/bodies/a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0.body",
+      "sha256": "a00eb3116118087871e429e5256e0f1f1c6d4a30dfaafeed36edaddacc3bf7a0"
+    },
+    "current_category": "upstream_schema_invalid",
+    "current_retryable": false,
+    "current_negotiate": false
+  }
+]
