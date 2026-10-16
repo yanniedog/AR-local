@@ -221,10 +221,14 @@ def mark_payload_publication_pending(
     # Late deterministic source checks use this existing lane concurrently with
     # the publisher. Serialize read/merge/write so neither request is lost.
     with FileLock(payload_publication_pending_path(repo_root).with_suffix('.lock')):
-        _mark_payload_publication_pending(repo_root, reason, pointer)
+        _mark_payload_publication_pending(
+            repo_root, reason, pointer, allow_policy_supersession=allow_policy_supersession
+        )
 
 
-def _mark_payload_publication_pending(repo_root: Path, reason: str, pointer: Optional[dict]) -> None:
+def _mark_payload_publication_pending(
+    repo_root: Path, reason: str, pointer: Optional[dict], *, allow_policy_supersession: bool = False
+) -> None:
     """Record an outstanding upload, including *which* observation it was.
 
     The marker used to carry only a reason and a timestamp, so the retry could not
