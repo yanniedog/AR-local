@@ -1,5 +1,24 @@
 # Ready history compiler
 
+## Reconciled public pricing consumer candidate (2026-10-16)
+
+AR-app PR #402 source `39bab712c3c602fb29a2ff9d3180bd3e26997a3b`
+exports compiler SHA-256
+`51e28fd661d3c273ea9b07aefe7c04c2f90c53e16d48111b9a8814d8d9572ae7`.
+The compiler and manifest are copied together without changing their bytes.
+Compared with the preceding LVR candidate, the bounded interval parser also
+accepts explicit `<` and `<=` upper comparators. Strict maxima remain exclusive;
+lower-bound and empty-interval guards remain in force. The independent consumer
+pin regression requires this artifact and continues to reject the preceding pins.
+
+The retained-real fixture is regenerated through the producer catalogue builder
+from the unchanged original observations. Every prepared fact, product, source
+receipt and unavailable date remains identical; only the compiler receipt changes.
+This is source and fixture compatibility with the reconciled draft consumer.
+It does not commission an APK, publish a payload, establish native acceptance or
+satisfy the natural-shadow, independent reproduction and operator/canary gates.
+Collection/publication flags remain absent and the reviewed programme list empty.
+
 ## LVR interval consumer candidate (2026-10-15)
 
 The LVR interval change exports compiler SHA-256
