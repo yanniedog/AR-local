@@ -34,7 +34,11 @@ PID or surviving cgroup members and the native lease is absent. Today's daily
 unit must have reached successful whole-unit terminal completion after its
 main exit. Its existing non-optional post-start `verify_local.py` command and
 source SHA are explicitly bound by `pi_daily_repair_admission.py`. The unrelated
-deploy-drift monitor is not that post-ingest validation gate.
+deploy-drift monitor is not that post-ingest validation gate. Admission requires
+the exact reviewed post-start shell command and its successful execution record
+after this run's main exit and before whole-unit inactivity. Installed command
+text alone, unexecuted records and records from an earlier run cannot supply
+that proof. Actual installed command metadata still requires native acceptance.
 
 Before 03:30, recovery and publication admission additionally require the exact
 fixed service cgroup, current invocation and unexpired permanent date claim,

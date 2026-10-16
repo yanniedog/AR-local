@@ -2,6 +2,7 @@
 from datetime import datetime, time as daytime, timedelta, timezone
 import json
 import hashlib
+from itertools import islice
 import os
 from pathlib import Path
 import re
@@ -63,19 +64,20 @@ def natural_clearance(repo_root, now, *, include_ingest_lock=True, cgroup_root=P
                 return "natural_cgroup_identity_unverified"
             path = cgroup_root / group.lstrip("/")
             if path.exists():
-                entries = list(path.rglob("cgroup.procs"))
+                entries = list(islice(path.rglob("cgroup.procs"), 257))
                 if not entries or len(entries) > 256:
                     return "natural_cgroup_membership_unverified"
                 if any(entry.read_text().strip() for entry in entries):
                     return "natural_cgroup_has_processes"
-        units[INGEST_UNITS[0]]["automatic_validation_contract_verified"] = validation_installed()
+        daily = units[INGEST_UNITS[0]]
+        daily["automatic_validation_contract_verified"] = validation_installed(daily)
         return validate_terminal(units, now, time.monotonic())
     except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
         return "natural_terminal_state_unavailable"
 
 
-def validation_installed():
-    """Bind successful unit completion to its existing non-optional verifier."""
+def validation_installed(daily):
+    """Bind this run's successful post-start execution to the exact verifier."""
     result = subprocess.run(["busctl", "--system", "--json=short", "--timeout=5", "get-property",
         "org.freedesktop.systemd1", "/org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2eservice",
         "org.freedesktop.systemd1.Service", "ExecStartPost"],
@@ -83,12 +85,28 @@ def validation_installed():
     value = json.loads(result.stdout)
     if not isinstance(value, dict) or value.get("type") != "a(sasbttttuii)" or not isinstance(value.get("data"), list):
         return False
-    command = str(VALIDATOR) + ' --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%F)" --history-mode=compact --history-timeout-seconds=90'
-    matches = [row for row in value["data"] if len(row) == 10 and row[0] == "/bin/sh"
-        and row[1][:2] == ["/bin/sh", "-c"] and len(row[1]) == 3
-        and row[1][2].endswith("/usr/bin/python3 " + command) and row[2] is False]
-    return (len(matches) == 1 and not VALIDATOR.is_symlink()
-            and hashlib.sha256(VALIDATOR.read_bytes()).hexdigest() == VALIDATOR_SHA256)
+    command = ('for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 '
+        'http://127.0.0.1:8808/api/latest && break; sleep 3; done; /usr/bin/python3 '
+        + str(VALIDATOR) + ' --base-url=http://127.0.0.1:8808/ --require-banks-rates '
+        '--expect-run-date "$(date +%F)" --history-mode=compact --history-timeout-seconds=90')
+    if any(not isinstance(row, list) or len(row) != 10 for row in value["data"]):
+        return False
+    matches = [row for row in value["data"] if row[0] == "/bin/sh"
+        and row[1] == ["/bin/sh", "-c", command] and row[2] is False]
+    if len(matches) != 1 or VALIDATOR.is_symlink():
+        return False
+    row = matches[0]
+    try:
+        # systemd's ExecStartPost record exposes each command's monotonic
+        # start/exit (fields 4/6), waitid code (8) and exit status (9).
+        ended = int(daily["ExecMainExitTimestampMonotonic"])
+        inactive = int(daily["InactiveEnterTimestampMonotonic"])
+        completed = (all(type(row[index]) is int for index in (4, 6, 8, 9))
+            and 0 < ended <= row[4] <= row[6] <= inactive
+            and row[8] == 1 and row[9] == 0)
+        return completed and hashlib.sha256(VALIDATOR.read_bytes()).hexdigest() == VALIDATOR_SHA256
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
 
 
 def claimed_service(now, *, environ=None, cgroup_path=Path("/proc/self/cgroup"), claims=CLAIMS):

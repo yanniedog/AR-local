@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import shlex
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -124,24 +125,47 @@ def test_lease_presence_and_unavailable_unit_metadata_fail_closed(tmp_path, monk
     assert admission.natural_clearance(tmp_path, NOW) == "natural_terminal_state_unavailable"
 
 
-@pytest.mark.parametrize("change,allowed", [("none", True), ("ignore_errors", False), ("different_command", False), ("different_source", False), ("duplicate", False), ("malformed", False)])
+@pytest.mark.parametrize("change,allowed", [("none", True), ("ignore_errors", False),
+    ("different_command", False), ("different_source", False), ("duplicate", False), ("malformed", False),
+    ("short_circuit", False), ("no_op", False), ("commented", False), ("unexecuted", False),
+    ("previous_run", False), ("reversed_exit", False), ("late_exit", False), ("signal", False),
+    ("failed_exit", False), ("string_timestamp", False), ("boolean_timestamp", False),
+    ("short_row", False), ("non_list_row", False), ("non_list_argv", False), ("non_string_argv", False)])
 def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch, change, allowed):
     import hashlib
     verifier = tmp_path / "verify_local.py"
     verifier.write_text("authentic test verifier source")
     monkeypatch.setattr(admission, "VALIDATOR", verifier)
     monkeypatch.setattr(admission, "VALIDATOR_SHA256", hashlib.sha256(verifier.read_bytes()).hexdigest())
-    command = ('curl preflight; /usr/bin/python3 ' + str(verifier)
-        + ' --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%F)" --history-mode=compact --history-timeout-seconds=90')
-    row = ["/bin/sh", ["/bin/sh", "-c", command], False, 0, 0, 0, 0, 0, 0, 0]
+    # Bind the positive control to the deployed unit template, independently
+    # of the admission implementation's expected command.
+    unit = Path(__file__).resolve().parents[1] / "deploy/pi/ar-local-daily.service"
+    line = next(line for line in unit.read_text().splitlines() if line.startswith("ExecStartPost=/bin/sh"))
+    command = shlex.split(line.split("=", 1)[1])[2].replace("{{AR_LOCAL_REPO}}", str(tmp_path)).replace("%%", "%")
+    row = ["/bin/sh", ["/bin/sh", "-c", command], False, 1, 6000000000, 2, 7000000000, 123, 1, 0]
     value = {"type": "a(sasbttttuii)", "data": [row]}
     if change == "ignore_errors": row[2] = True
     if change == "different_command": row[1][2] += " || true"
     if change == "different_source": verifier.write_text("changed verifier source")
     if change == "duplicate": value["data"].append(deepcopy(row))
     if change == "malformed": value = {"type": "string", "data": []}
+    if change == "short_circuit": row[1][2] = "false && " + command
+    if change == "no_op": row[1][2] = ": " + command
+    if change == "commented": row[1][2] = "true # " + command
+    if change == "unexecuted": row[4] = row[6] = row[8] = 0
+    if change == "previous_run": row[4], row[6] = 3000000000, 4000000000
+    if change == "reversed_exit": row[6] = row[4] - 1
+    if change == "late_exit": row[6] = 9000000000
+    if change == "signal": row[8] = 2
+    if change == "failed_exit": row[9] = 1
+    if change == "string_timestamp": row[4] = str(row[4])
+    if change == "boolean_timestamp": row[4] = True
+    if change == "short_row": value["data"].append([])
+    if change == "non_list_row": value["data"].append(None)
+    if change == "non_list_argv": row[1] = {"command": command}
+    if change == "non_string_argv": row[1][2] = None
     monkeypatch.setattr(admission.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=json.dumps(value)))
-    assert admission.validation_installed() is allowed
+    assert admission.validation_installed(terminal_units()[admission.INGEST_UNITS[0]]) is allowed
 
 
 @pytest.mark.parametrize("state,reason", [("missing", ""), ("empty", ""),
@@ -164,7 +188,24 @@ def test_inactive_main_does_not_hide_surviving_or_ambiguous_cgroup(tmp_path, mon
     def run(command, **kwargs):
         return SimpleNamespace(stdout="\n".join(key + "=" + str(value) for key, value in units[command[2]].items()))
     monkeypatch.setattr(admission.subprocess, "run", run)
-    monkeypatch.setattr(admission, "validation_installed", lambda: True)
+    monkeypatch.setattr(admission, "validation_installed", lambda daily: True)
     monkeypatch.setattr(admission, "data_state_root", lambda _: tmp_path / "state")
     monkeypatch.setattr(admission.time, "monotonic", lambda: MONO)
     assert admission.natural_clearance(tmp_path, NOW, cgroup_root=tmp_path / "cgroups") == reason
+
+
+def test_cgroup_membership_limit_bounds_discovery_before_reading_entries(tmp_path, monkeypatch):
+    group = tmp_path / "system.slice" / admission.INGEST_UNITS[0]
+    group.mkdir(parents=True)
+    units = terminal_units()
+    def run(command, **kwargs):
+        return SimpleNamespace(stdout="\n".join(key + "=" + str(value) for key, value in units[command[2]].items()))
+    def entries(path, pattern):
+        assert path == group and pattern == "cgroup.procs"
+        for _ in range(257):
+            yield group / "cgroup.procs"
+        raise AssertionError("cgroup traversal exceeded its fail-closed entry limit")
+    monkeypatch.setattr(admission.subprocess, "run", run)
+    monkeypatch.setattr(admission, "data_state_root", lambda _: tmp_path / "state")
+    monkeypatch.setattr(Path, "rglob", entries)
+    assert admission.natural_clearance(tmp_path, NOW, cgroup_root=tmp_path) == "natural_cgroup_membership_unverified"
