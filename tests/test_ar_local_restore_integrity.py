@@ -142,7 +142,7 @@ def test_restore_detects_index_corruption_missed_by_quick_check(tmp_path: Path):
 
 
 @pytest.mark.parametrize("orphan", [False, True])
-@pytest.mark.parametrize("wal_state", ["fresh", "reused", "uncommitted_tail"])
+@pytest.mark.parametrize("wal_state", ["fresh", "reused", "uncommitted_tail", "truncated_tail", "corrupt_tail"])
 def test_restore_reads_retained_wal_only_in_private_copy(tmp_path: Path, orphan: bool, wal_state: str):
     _write_finalized_observation(tmp_path)
     database = tmp_path / "state/secondary.sqlite"
@@ -160,14 +160,23 @@ def test_restore_reads_retained_wal_only_in_private_copy(tmp_path: Path, orphan:
             writer.execute("PRAGMA wal_checkpoint(RESTART)")
             writer.execute("INSERT INTO parent VALUES (2)")
             writer.commit()
-        if wal_state == "uncommitted_tail":
+        committed_wal_size = Path(f"{database}-wal").stat().st_size
+        if wal_state in {"uncommitted_tail", "truncated_tail", "corrupt_tail"}:
             writer.execute("PRAGMA cache_size=1")
-            writer.executemany("INSERT INTO child VALUES (99)", [()] * 1000)
+            writer.execute("PRAGMA cache_spill=1")
+            writer.executemany("INSERT INTO child VALUES (99)", [()] * 10000)
         assert Path(f"{database}-wal").stat().st_size > 0
         # Capture the retained DB/WAL pair before SQLite's close/checkpoint.
         # An active Windows write lock makes SHM unreadable; historical capture
         # does not require that transient lock map to recover committed state.
         retained = {path: path.read_bytes() for path in (database, Path(f"{database}-wal"))}
+        wal = Path(f"{database}-wal")
+        if wal_state in {"uncommitted_tail", "truncated_tail", "corrupt_tail"}:
+            assert len(retained[wal]) > committed_wal_size
+        if wal_state == "truncated_tail":
+            retained[wal] = retained[wal][:-19]
+        if wal_state == "corrupt_tail":
+            retained[wal] = retained[wal][:-1] + bytes([retained[wal][-1] ^ 0xFF])
     for path, content in retained.items():
         path.write_bytes(content)
     before = _file_hashes(tmp_path)
@@ -179,6 +188,8 @@ def test_restore_reads_retained_wal_only_in_private_copy(tmp_path: Path, orphan:
         assert any(item.startswith("sqlite_foreign_key_check:") for item in report["findings"])
     record = next(item for item in report["sqlite"] if item["path"] == "state/secondary.sqlite")
     assert record["source_sqlite"]["recovery_policy"] == "sqlite_native_committed_view"
+    with _restore_database_view(database) as (connection, _):
+        assert connection.execute("SELECT COUNT(*) FROM child").fetchone()[0] == 1
     assert _file_hashes(tmp_path) == before
 
 
