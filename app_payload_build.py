@@ -11,7 +11,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Callable, ContextManager, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
 import app_payload_bank_rates
@@ -223,6 +223,8 @@ def build_payload(
     executable_v2_root: Optional[Path] = None,
     executable_v3_root: Optional[Path] = None,
     executable_v4_root: Optional[Path] = None,
+    public_rates_root: Optional[Path] = None,
+    public_rates_receipt: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
     if executable_v4_root is not None:
@@ -235,6 +237,7 @@ def build_payload(
         dashboard_dir=dashboard_dir,
         include_history=is_rolling_tag(tag),
         contract_coverage=contract_coverage,
+        public_rates_enabled=public_rates_root is not None,
     )
     if source_observation:
         data['source_observation'] = dict(source_observation)
@@ -243,6 +246,8 @@ def build_payload(
     data['executable_v2_root'] = executable_v2_root
     data['executable_v3_root'] = executable_v3_root
     data['executable_v4_root'] = executable_v4_root
+    data['public_rates_root'] = public_rates_root
+    data['public_rates_receipt'] = public_rates_receipt
     return _package_payload(data, out_dir, repo=repo, tag=tag)
 
 
@@ -333,6 +338,7 @@ def _compute_payload(
     include_history: bool = True,
     state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
+    public_rates_enabled: bool = False,
 ) -> Dict[str, Any]:
     """Parse the run's exports into the (tag-independent) payload data.
 
@@ -349,12 +355,15 @@ def _compute_payload(
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
+    from cdr_public_rates_legacy import annotate_legacy_rates
+    if public_rates_enabled:
+        annotate_legacy_rates(products, rates)
     coverage = _stable_payload_coverage(
         banks, latest, run_date, contract_coverage=contract_coverage
     )
     from cdr_quality_accounting import payload_accounting
 
-    coverage["payload_accounting"] = payload_accounting(products, rates)
+    coverage["payload_accounting"] = payload_accounting(products, rates, public_rates_enabled=public_rates_enabled)
     # Preserve legacy counts while explicitly separating observed products from
     # attempt-state success; the two populations are not interchangeable.
     coverage["counts"]["providers_with_products"] = coverage["payload_accounting"]["providers_with_products"]
@@ -365,7 +374,7 @@ def _compute_payload(
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
     for section in VALID_SECTIONS:
-        section_rows = [r for r in rates if r.get("dataset") == section and section_filter(section, r)]
+        section_rows = [r for r in rates if r.get("dataset") == section and section_filter(section, r, require_absolute=public_rates_enabled)]
         for r in section_rows:
             providers_seen.add(str(r.get("provider") or ""))
         compact_rows = [compact({k: r.get(k) for k in CORE_RATE_FIELDS}) for r in section_rows]
@@ -515,6 +524,8 @@ def _package_payload(
         executable_v2_root=data.get('executable_v2_root'),
         executable_v3_root=data.get('executable_v3_root'),
         executable_v4_root=data.get('executable_v4_root'),
+        public_rates_root=data.get('public_rates_root'),
+        public_rates_receipt=data.get('public_rates_receipt'),
         # The release uploader applies ARE2; Cloudflare authenticates and opens
         # that transport before the app receives these exact gzip domain bytes.
     )
@@ -542,6 +553,8 @@ def _package(
     executable_v2_root: Optional[Path] = None,
     executable_v3_root: Optional[Path] = None,
     executable_v4_root: Optional[Path] = None,
+    public_rates_root: Optional[Path] = None,
+    public_rates_receipt: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     if direct_delivery and enc_key:
@@ -610,6 +623,13 @@ def _package(
             out_dir, ASSET_KIND, run_date, history_wire, release_base, enc_key)}
     if source_observation:
         manifest["source_observation"] = dict(source_observation)
+    if public_rates_root is not None:
+        if enc_key:
+            raise ValueError('Public rate catalogue requires an unencrypted verified evidence channel')
+        from app_payload_public_rates import load_candidate, package_catalogue
+        candidate = load_candidate(public_rates_root, source_observation=source_observation, run_date=run_date)
+        manifest['public_rate_catalogue'] = package_catalogue(candidate, out_dir=out_dir, release_base=release_base,
+            core_sha256=files['core']['sha256'], details_sha256=files['details']['sha256'], publication_receipt=public_rates_receipt)
     if executable_v2_root is not None:
         if enc_key:
             raise ValueError('Eligibility v2 requires an unencrypted verified channel')
@@ -717,6 +737,10 @@ def build_and_publish_dual(
     executable_v2_root: Optional[Path] = None,
     executable_v3_root: Optional[Path] = None,
     executable_v4_root: Optional[Path] = None,
+    public_rates_root: Optional[Path] = None,
+    public_rates_receipt: Optional[Path] = None,
+    pre_promotion_guard: Callable[[], None] | None = None,
+    pre_promotion_fence: Callable[[], ContextManager] | None = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -754,6 +778,8 @@ def build_and_publish_dual(
         raise ValueError('Terms publication requires immutable revisions and a shipped consumer')
     if (executable_root is not None or executable_v2_root is not None or executable_v3_root is not None or executable_v4_root is not None) and not revisions:
         raise ValueError('Executable publication requires immutable revisions and a shipped consumer')
+    if public_rates_root is not None and not revisions:
+        raise ValueError('Public rate publication requires immutable revisions and a shipped consumer')
     if revisions and state_dir is None:
         raise ValueError("revision publication requires persistent state_dir")
     data = _app_payload("_compute_payload")(
@@ -761,6 +787,7 @@ def build_and_publish_dual(
         include_history=need_latest or revisions,
         state_dir=state_dir,
         contract_coverage=contract_coverage,
+        public_rates_enabled=public_rates_root is not None,
     )
     if source_observation:
         data["source_observation"] = dict(source_observation)
@@ -770,16 +797,24 @@ def build_and_publish_dual(
     data['executable_v2_root'] = executable_v2_root
     data['executable_v3_root'] = executable_v3_root
     data['executable_v4_root'] = executable_v4_root
+    data['public_rates_root'] = public_rates_root
+    data['public_rates_receipt'] = public_rates_receipt
 
     if revisions:
         # The caller holds the production lock through archive verification,
         # selected-head promotion and both compatibility aliases.
         full_dir = state_dir / "v1-latest"
         _package_payload(data, full_dir, repo=repo, tag=DEFAULT_TAG)
+        guard_kwargs = ({'pre_promotion_guard': pre_promotion_guard, 'pre_promotion_fence': pre_promotion_fence}
+                        if pre_promotion_guard is not None or pre_promotion_fence is not None else {})
         revision = publish_revision_bundle(full_dir, state_dir=state_dir / "revision-history",
-                                           repo=repo, enabled=True)
-        published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date))
-        published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG) if need_latest else False
+                                           repo=repo, enabled=True, **guard_kwargs)
+        if pre_promotion_guard:
+            pre_promotion_guard()
+        published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date), **guard_kwargs)
+        if pre_promotion_guard and need_latest:
+            pre_promotion_guard()
+        published_latest = publish_payload(revision.archive_dir, repo=repo, tag=DEFAULT_TAG, **guard_kwargs) if need_latest else False
         if update_latest and not need_latest:
             # Historical promotion changes index ciphertext. Keep the operational
             # receipt bound to it without regressing the current rolling alias.

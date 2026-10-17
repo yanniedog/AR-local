@@ -66,3 +66,7 @@ tests/fixtures/activity-v4/blobs/** -diff
 contracts/history_ready/compiler.cjs -text
 contracts/history_ready/compiler-manifest.json -text
 tests/fixtures/history-ready-real.json -text
+
+# Public original responses and cross-language pricing contracts are hash-bound.
+tests/fixtures/public_rates/** -text whitespace=cr-at-eol
+contracts/public_rates/** -text whitespace=cr-at-eol

@@ -245,7 +245,8 @@ def fetch_document(url: str, *, policy: FetchPolicy,
 
 
 def acquire_document(store: EvidenceStore, document_id: str, *, check_id: str,
-                     policy: FetchPolicy | None = None) -> dict[str, Any]:
+                     policy: FetchPolicy | None = None,
+                     force_refresh: bool = False) -> dict[str, Any]:
     """One attempt per durable key; retry with a new key to preserve failures."""
     previous_check = store.db.execute("SELECT * FROM acquisition_checks WHERE check_id=?", (check_id,)).fetchone()
     if previous_check:
@@ -264,10 +265,17 @@ def acquire_document(store: EvidenceStore, document_id: str, *, check_id: str,
         for field, header in (("etag", "If-None-Match"), ("last_modified", "If-Modified-Since")):
             if metadata.get(field):
                 headers[header] = metadata[field]
+    if force_refresh:
+        # A reviewed caller can periodically verify cached validators. Never
+        # accept a 304 after deliberately omitting its conditional request.
+        headers = {}
+        validator_url = None
     checked_at = utc_now()
     try:
         result = fetch_document(row["source_url"], policy=policy or FetchPolicy(),
                                 conditional=headers, conditional_url=validator_url)
+        if force_refresh and result["status"] == "fetched":
+            result["metadata"]["unconditional_checked_at"] = checked_at
         if result["status"] == "unchanged":
             if not previous:
                 raise FetchFailure("unchanged_without_retained_version", 304)

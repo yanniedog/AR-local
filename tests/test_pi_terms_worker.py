@@ -236,7 +236,7 @@ def acquisition_receipt(operation, result='NO_WORK'):
 def test_acquisition_proceeds_without_auth_or_model_calls(setup, monkeypatch):
     from cdr_terms.acquisitions_queue import AcquisitionQueue
     (setup[1] / 'auth.json').unlink()
-    monkeypatch.setattr(AcquisitionQueue, 'next_due', lambda *_: {'due': 'protocol-only'})
+    monkeypatch.setattr(AcquisitionQueue, 'next_due', lambda *_args, **_kwargs: {'due': 'protocol-only'})
     calls = []
     def supervised(command, output, limits, **kwargs):
         calls.append(command)
@@ -256,7 +256,7 @@ def test_acquisition_is_independent_of_subscription_quota_cooldown(setup, monkey
     from cdr_terms.acquisitions_queue import AcquisitionQueue
     atomic_write_json(setup[0] / worker.STATE_NAME, {
         'schema_version': 1, 'failures': 1, 'reason': 'quota', 'retry_after': (NOW + timedelta(hours=5)).isoformat()})
-    monkeypatch.setattr(AcquisitionQueue, 'next_due', lambda *_: {'due': 'protocol-only'})
+    monkeypatch.setattr(AcquisitionQueue, 'next_due', lambda *_args, **_kwargs: {'due': 'protocol-only'})
     calls = []
     def supervised(command, output, limits, **kwargs):
         calls.append(command)
@@ -285,7 +285,7 @@ def test_empty_acquisition_child_does_no_network_or_model_call(tmp_path, monkeyp
 
 def test_changed_acquisition_receipt_cannot_advance_interpreter(setup, monkeypatch):
     from cdr_terms.acquisitions_queue import AcquisitionQueue
-    monkeypatch.setattr(AcquisitionQueue, 'next_due', lambda *_: {'due': 'protocol-only'})
+    monkeypatch.setattr(AcquisitionQueue, 'next_due', lambda *_args, **_kwargs: {'due': 'protocol-only'})
     def supervised(command, output, limits, **kwargs):
         transport.write_receipt(output.parent / 'acquisition.json', {
             'schema_version': 1, 'result': 'NO_WORK', 'codex_called': False, 'network_called': False,

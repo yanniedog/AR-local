@@ -1,6 +1,6 @@
 {
-  "sha256": "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7",
-  "compiler_sha256": "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7",
+  "sha256": "51e28fd661d3c273ea9b07aefe7c04c2f90c53e16d48111b9a8814d8d9572ae7",
+  "compiler_sha256": "51e28fd661d3c273ea9b07aefe7c04c2f90c53e16d48111b9a8814d8d9572ae7",
   "semantic_revision": "ar-history-ready-v1",
   "source_files": {
     "node_modules/@noble/hashes/_md.js": "4eaf0ae8f8191c50acdab7c3de7f335bf24845e4b562bdbc3e9f61cb7a873831",
@@ -22,7 +22,7 @@
     "src/data/historicalBankRateReady.ts": "c9f0ce155c112922a2aa667d4a2b792499835ecd8fc6854c990711d9aaeee99d",
     "src/data/historicalBankRateReadyCompiler.ts": "78668c855e459e71a2a28a2289d0761b2853a05f0874fde97c72c2d4d1c4bfea",
     "src/data/historicalBankRateReadyWire.ts": "03d3152b0104347d32a182cbef7a37994029c77c00228b072f9365a383b72e26",
-    "src/data/lvrRange.ts": "39df52743218b964f4747bd079f808a1c6fbc14912b523778efa7a7f9e2abd5d",
+    "src/data/lvrRange.ts": "c71e79a91c36727c555c0117f2aa34094afadd3722032360429d73df9a787405",
     "src/data/productFactsCore.ts": "d255a4a83b2ce7cf4443e2e5813973849a602677e39856d617b12f2083007c80",
     "src/data/profile.ts": "4e5581201f61a820aecce8db1773258980c35db242abaf230866c4fadadad4e8",
     "src/data/rateClassification.ts": "789cff61c6b4084408a9f2c4df6c045f31267c1fd048237ac1405648b01d7d7f",
@@ -31,6 +31,6 @@
     "src/lib/calendarDate.ts": "4287d8f3c32c2993af5d4608c086f4a95dddbe9972c5d0a73e8295880d8aeefe",
     "src/lib/jsonContentHash.ts": "fb3021d570d30ff8753f844750973ce7a10c0c75582d73f21f9db0adbf9a6581",
     "src/lib/jsonContentHashPortable.ts": "8e5848e8bb803666d692d136d6ec412b91b864f25da45592a4c4d38e963c6974",
-    "src/types.ts": "bac5aa71bb71176fe52bfb69e7902432abd755c9d1b97727dfd3aa9d49e9297e"
+    "src/types.ts": "486111cb1bafe1b447af87d88079f3167c75aad75b585faa8d404d77823269ea"
   }
 }

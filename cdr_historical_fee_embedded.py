@@ -47,6 +47,14 @@ FEATURE_EVIDENCE_PROJECTION_SOURCES = {
     **SOURCE_LABEL_PROJECTION_SOURCES,
     'app_payload_details.py': '255f9358ecb0d8f7f602a32c0d5d6ebd9201107c660a20ed6243e306b80f81f0',
 }
+# Additive reviewed identity for the optional public-pricing rate filter.
+# Reversing only its False-default keyword/guard reproduces the frozen common
+# module hash; the details module and all four fee functions are unchanged.
+# This new pair does not replace any historical receipt or source-label pin.
+PUBLIC_PRICING_PROJECTION_SOURCES = {
+    **FEATURE_EVIDENCE_PROJECTION_SOURCES,
+    'app_payload_common.py': '9913ae8b1a0324ad5037e542bbc7486412fa4cb273e1f82015bf4b16abae4671',
+}
 DIRECT_FIELDS = frozenset(('amount', 'currency', 'additionalValue', 'balanceRate', 'transactionRate',
                           'accruedRate', 'accrualFrequency', 'feeCap', 'feeCapPeriod', 'feeMethodUType',
                           'fixedAmount', 'variable', 'rateBased', 'discounts'))
@@ -55,13 +63,12 @@ SOURCE_FIELDS = DIRECT_FIELDS | {'feeType', 'name', 'additionalInfo'}
 
 
 def verify_projection():
-    observed = {}
-    for name, expected in PROJECTION_SOURCES.items():
-        actual = sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n'))
-        if actual not in {expected, CURRENT_PROJECTION_SOURCES[name], SOURCE_LABEL_PROJECTION_SOURCES[name],
-                          FEATURE_EVIDENCE_PROJECTION_SOURCES[name]}:
-            raise ValueError('fee_projection_changed_requires_review')
-        observed[name] = actual
+    observed = {name: sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n'))
+                for name in PROJECTION_SOURCES}
+    reviewed = (PROJECTION_SOURCES, CURRENT_PROJECTION_SOURCES, SOURCE_LABEL_PROJECTION_SOURCES,
+                FEATURE_EVIDENCE_PROJECTION_SOURCES, PUBLIC_PRICING_PROJECTION_SOURCES)
+    if not any(observed == identity for identity in reviewed):
+        raise ValueError('fee_projection_changed_requires_review')
     return observed
 
 

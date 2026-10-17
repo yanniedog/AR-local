@@ -11,6 +11,7 @@ __pycache__/
 runs/*.*
 
 node_modules/
+.venv/
 
 # Env / secrets (never commit)
 .env

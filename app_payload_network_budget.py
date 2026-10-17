@@ -51,6 +51,12 @@ def _asset_cap(key: str) -> int:
         return DETAILS_MAX_BYTES
     if key == "search_index":
         return SEARCH_INDEX_MAX_BYTES
+    if key == "public_rate_catalogue_index":
+        from app_payload_public_rates import INDEX_COMPRESSED
+        return INDEX_COMPRESSED
+    if key.startswith("public_rate_catalogue_shard_"):
+        from app_payload_public_rates import SHARD_COMPRESSED
+        return SHARD_COMPRESSED
     if key == "bank_rate_history_ready":
         from app_payload_bank_history_ready_asset import ASSET_MAX_BYTES
         return ASSET_MAX_BYTES
@@ -101,6 +107,7 @@ def validate_payload_network_budget(
         "deferred_bank_history": sizes.get("bank_rate_history_catalogue", 0),
         "deferred_bank_history_packed": sizes.get("bank_rate_history_catalogue_packed", 0),
         "deferred_bank_history_ready": sizes.get("bank_rate_history_ready", 0),
+        "deferred_public_rate_catalogue": sum(value for key, value in sizes.items() if key.startswith("public_rate_catalogue_")),
         "all_declared_assets": total,
     }
     return {

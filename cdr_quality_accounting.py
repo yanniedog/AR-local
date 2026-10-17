@@ -52,22 +52,27 @@ def product_rows_digest(products: list[dict]) -> str:
     return canonical_digest(sorted(rows))
 
 
-def exclusion_reason(row: Mapping[str, Any]) -> str | None:
+def exclusion_reason(row: Mapping[str, Any], *, public_rates_enabled: bool = False) -> str | None:
     section = row.get("dataset")
     if section not in SECTIONS:
         return "unsupported_section"
     if category_excludes_section(row.get("category"), str(section), row=row):
         return "out_of_section_category"
-    if section_filter(str(section), dict(row)):
+    if section_filter(str(section), dict(row), require_absolute=public_rates_enabled):
         return None
     if row.get("rate") is None or str(row.get("rate")).strip() in {"", "null", "None"}:
         return "no_rate"
-    if section == "Mortgage" and row.get("rate_type") == "DISCOUNT":
+    from cdr_public_rates_legacy import ADJUSTMENTS
+    if public_rates_enabled and row.get("rate_type") in ADJUSTMENTS or section == 'Mortgage' and row.get('rate_type') == 'DISCOUNT':
         return "discount_not_absolute_rate"
+    if public_rates_enabled and row.get('public_rate_disposition') in {'from', 'range'}:
+        return "published_bound_not_exact_rate"
+    if public_rates_enabled and row.get('public_rate_disposition') == 'unsupported':
+        return "unvalidated_public_rate"
     return "inapplicable_rate_family"
 
 
-def payload_accounting(products: list[dict], rates: list[dict]) -> dict:
+def payload_accounting(products: list[dict], rates: list[dict], *, public_rates_enabled: bool = False) -> dict:
     """Account for every source row using the exact shipping section filter."""
     sections = {}
     visible_keys: set[str] = set()
@@ -75,8 +80,8 @@ def payload_accounting(products: list[dict], rates: list[dict]) -> dict:
     for section in (*SECTIONS, "Other"):
         source = [r for r in rates if (r.get("dataset") == section if section != "Other"
                                       else r.get("dataset") not in SECTIONS)]
-        reasons = Counter(exclusion_reason(r) for r in source)
-        visible = [r for r in source if exclusion_reason(r) is None]
+        reasons = Counter(exclusion_reason(r, public_rates_enabled=public_rates_enabled) for r in source)
+        visible = [r for r in source if exclusion_reason(r, public_rates_enabled=public_rates_enabled) is None]
         visible_keys.update(str(r.get("product_key") or "") for r in visible)
         excluded = {str(k): n for k, n in reasons.items() if k is not None}
         exclusions.update(excluded)
@@ -94,7 +99,7 @@ def payload_accounting(products: list[dict], rates: list[dict]) -> dict:
         "excluded_rates": sum(exclusions.values()), "exclusions": dict(sorted(exclusions.items())),
         "published_products": len(visible_keys), "products_without_published_rates": len(product_keys - visible_keys),
         "providers_with_products": len({p.get("provider") for p in products} - {None, ""}),
-        "providers_with_published_rates": len({r.get("provider") for r in rates if exclusion_reason(r) is None} - {None, ""}),
+        "providers_with_published_rates": len({r.get("provider") for r in rates if exclusion_reason(r, public_rates_enabled=public_rates_enabled) is None} - {None, ""}),
         "sections": sections,
     }
 
