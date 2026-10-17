@@ -56,17 +56,37 @@ for name in \
   ar_local_operation_lock.py \
   ar_local_rollback_record.py \
   ar_local_restore_verification.py \
+  ar_local_ingest_schedule.py \
   pi_backup_foundation.py \
   pi_ingest_terminal.py \
   cdr_atomic.py \
   cdr_export_contract.py \
   cdr_file_lock.py \
-  cdr_ledger_v2.py
+  cdr_ledger_v2.py \
+  cdr_attempt_evidence_promotion.py \
+  cdr_compatibility.py \
+  cdr_contracts.py \
+  cdr_http_policy.py \
+  cdr_ingest_support.py \
+  cdr_journal_evidence.py \
+  cdr_observation.py \
+  cdr_observation_db.py \
+  cdr_observation_db_build.py \
+  cdr_observation_db_schema.py \
+  cdr_partial_index.py \
+  cdr_product_accounting.py \
+  cdr_product_classification.py \
+  cdr_provider_identity_registry.py \
+  cdr_public_projection.py \
+  cdr_quality_sqlite.py \
+  cdr_raw_attempt_journal.py \
+  cdr_upstream_dependency.py \
+  laptop_backup_daily_verify.py
 do
   sudo install -o root -g root -m 0644 "$repo/$name" "$trusted/$name"
 done
 sudo install -d -o root -g root -m 0755 "$trusted/contracts"
-for name in export-contract-v2.schema.json pi-backup-boot-proof-v1.schema.json pi-deployment-acceptance-v1.schema.json pi-preservation-snapshot-v1.schema.json pi-restore-acceptance-v1.schema.json pi-rollback-acceptance-v1.schema.json; do
+for name in export-contract-v2.schema.json observation-v1.schema.json product-accounting-v1.schema.json pi-backup-boot-proof-v1.schema.json pi-deployment-acceptance-v1.schema.json pi-preservation-snapshot-v1.schema.json pi-restore-acceptance-v1.schema.json pi-rollback-acceptance-v1.schema.json; do
   sudo install -o root -g root -m 0644 "$repo/contracts/$name" "$trusted/contracts/$name"
 done
 (
@@ -80,13 +100,35 @@ done
     ar_local_operation_lock.py \
     ar_local_rollback_record.py \
     ar_local_restore_verification.py \
+    ar_local_ingest_schedule.py \
     pi_backup_foundation.py \
     pi_ingest_terminal.py \
     cdr_atomic.py \
     cdr_export_contract.py \
     cdr_file_lock.py \
     cdr_ledger_v2.py \
+    cdr_attempt_evidence_promotion.py \
+    cdr_compatibility.py \
+    cdr_contracts.py \
+    cdr_http_policy.py \
+    cdr_ingest_support.py \
+    cdr_journal_evidence.py \
+    cdr_observation.py \
+    cdr_observation_db.py \
+    cdr_observation_db_build.py \
+    cdr_observation_db_schema.py \
+    cdr_partial_index.py \
+    cdr_product_accounting.py \
+    cdr_product_classification.py \
+    cdr_provider_identity_registry.py \
+    cdr_public_projection.py \
+    cdr_quality_sqlite.py \
+    cdr_raw_attempt_journal.py \
+    cdr_upstream_dependency.py \
+    laptop_backup_daily_verify.py \
     contracts/export-contract-v2.schema.json \
+    contracts/observation-v1.schema.json \
+    contracts/product-accounting-v1.schema.json \
     contracts/pi-backup-boot-proof-v1.schema.json \
     contracts/pi-deployment-acceptance-v1.schema.json \
     contracts/pi-preservation-snapshot-v1.schema.json \
