@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 import zlib
 from datetime import date
 from pathlib import Path
@@ -47,7 +48,10 @@ def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
     """Include every contract plus legacy primary/revision/archive/failed export."""
     sources, errors, seen = [], [], set()
     state = data_root / "state"
+    started = time.monotonic()
+    print("[cdr-audit] inventory contracts start", flush=True)
     for path in sorted((state / "export-contracts-v2").glob("*/*.json")):
+        print(f"[cdr-audit] inventory contract {path}", flush=True)
         try:
             contract = load_contract(path)
             root = contained(data_root, contract["source_path"])
@@ -56,10 +60,20 @@ def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
             seen.add(root)
         except (OSError, ValueError, KeyError) as exc:
             errors.append({"code": "INVALID_CONTRACT", "path": str(path), "detail": str(exc)})
+    print(f"[cdr-audit] inventory contracts complete sources={len(sources)} errors={len(errors)} "
+          f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
+    started = time.monotonic()
+    print("[cdr-audit] inventory discovery start tree=runs", flush=True)
     candidates = set((data_root / "runs").rglob("_exports"))
+    print(f"[cdr-audit] inventory discovery complete tree=runs candidates={len(candidates)} "
+          f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     archive = data_root / "runs-archive"
     if archive.is_dir():
+        started = time.monotonic()
+        print("[cdr-audit] inventory discovery start tree=runs-archive", flush=True)
         candidates.update(archive.rglob("_exports"))
+        print(f"[cdr-audit] inventory discovery complete tree=runs-archive candidates={len(candidates)} "
+              f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     for root in sorted(candidates):
         if root in seen:
             continue
