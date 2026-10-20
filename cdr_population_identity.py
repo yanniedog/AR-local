@@ -51,6 +51,9 @@ def retain_population_uncertainty(population, status):
         matches = current_provider_matches(finding['provider'],finding.get('provider_identity'),providers)
         if len(matches) != 1:
             return False
+        endpoint = (finding.get('provider_identity') or {}).get('endpoint_url')
+        if endpoint is not None and matches[0].get('endpoint_url') != endpoint:
+            return False
         name = matches[0].get('provider_dir') or finding['provider']
         diagnostic = diagnostics.get(name) or {}
         return (isinstance(diagnostic, dict) and diagnostic.get('pagination_complete') is True

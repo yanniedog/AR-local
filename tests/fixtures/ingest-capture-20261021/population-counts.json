@@ -1,0 +1,154 @@
+{
+  "scope": "Retained 20/21 October counts and identities for three providers; no database or future observation.",
+  "limitations": "Counts were read date-filtered in immutable/query-only mode with unchanged file stat. Original database descriptors were read from verified contracts; database bytes were not rehashed or downloaded. These metadata excerpts cannot independently recompute the original full contract digest.",
+  "provenance": [
+    {
+      "file": "evidence\\oct18-0300\\quality-oct21-20261020T161103Z.json",
+      "sha256": "6493fe741f57aa66681e79a8c38cc2a9976359ff30e5708408d25ea817297fef"
+    },
+    {
+      "file": "evidence\\oct18-0300\\bootstrap-metadata-bounded-20261020T170912Z.json",
+      "sha256": "2290d4edacce8541463c1f8963c0ba0e01588f4a8a4805ef46db7f837e76aacb"
+    }
+  ],
+  "observations": [
+    {
+      "observation_date": "2026-10-20",
+      "pointer": {
+        "export_path": "runs/2026-10-20/_exports",
+        "generation_id": "obs-2026-10-20-21d8ab77051cc8f6",
+        "ledger_event_digest": "d2696070fc4814ed34e901035691e5e57dd70a72abbbce2d63b3a851872c80ef",
+        "marker_path": "2026-10-20.done.json",
+        "observation_date": "2026-10-20",
+        "observation_state": "partial",
+        "schema_version": 2
+      },
+      "database": {
+        "bytes": 1056460800,
+        "path": "local-cdr.sqlite",
+        "sha256": "7202927a9edc051a410a84b7a21670fc3ce2d0613f8ca347dc257ab11bf660de"
+      },
+      "contract_digest": "b68ee801e40c2d7685bae2393eb0fb3f07ad521cfe1a595ff76ea3b462487eba",
+      "ledger_event_digest": "d2696070fc4814ed34e901035691e5e57dd70a72abbbce2d63b3a851872c80ef",
+      "provider_states": [
+        {
+          "brand_name": "BankSA",
+          "endpoint_url": "https://digital-api.banksa.com.au/cds-au/v1/banking/products",
+          "failure_categories": {},
+          "failure_records": 0,
+          "identity_status": "derived_legacy",
+          "legal_entity_name": null,
+          "provider_dir": "BankSA",
+          "provider_uid": "legacy-prd:e8afdb80008c534c6b2a9a82cbd5eec3c4ab52e334807350bd8158202b6eb3a3",
+          "state": "complete"
+        },
+        {
+          "brand_name": "Credit Union SA",
+          "endpoint_url": "https://openbanking.api.creditunionsa.com.au/cds-au/v1/banking/products",
+          "failure_categories": {},
+          "failure_records": 0,
+          "identity_status": "derived_legacy",
+          "legal_entity_name": null,
+          "provider_dir": "Credit Union SA",
+          "provider_uid": "legacy-prd:2b962fcb4f5365f12527f855d5d3718be509a224cfa946cbd1ef4b2474b170db",
+          "state": "complete"
+        },
+        {
+          "brand_name": "Westpac",
+          "endpoint_url": "https://digital-api.westpac.com.au/cds-au/v1/banking/products",
+          "failure_categories": {
+            "upstream_rejection": 1
+          },
+          "failure_records": 1,
+          "identity_status": "derived_legacy",
+          "legal_entity_name": null,
+          "provider_dir": "Westpac",
+          "provider_uid": "legacy-prd:01e89341d1b42ef1651dbe25ccc71a7e637dd458a06fb637bbad3736e500e98a",
+          "state": "partial"
+        }
+      ],
+      "population_report_present": false,
+      "counts": {
+        "BankSA": {
+          "products": 20,
+          "rates": 290
+        },
+        "Credit Union SA": {
+          "products": 34,
+          "rates": 79
+        },
+        "Westpac": {
+          "products": 24,
+          "rates": 270
+        }
+      }
+    },
+    {
+      "observation_date": "2026-10-21",
+      "pointer": {
+        "export_path": "runs/2026-10-21/_exports",
+        "generation_id": "obs-2026-10-21-22a4d9134b7b3d20",
+        "ledger_event_digest": "02e6a2464bf20121df65ac178c70a55000c82e4a230b3877c6a7ed4c5380fead",
+        "marker_path": "2026-10-21.done.json",
+        "observation_date": "2026-10-21",
+        "observation_state": "partial",
+        "schema_version": 2
+      },
+      "database": {
+        "bytes": 1062612992,
+        "path": "local-cdr.sqlite",
+        "sha256": "2baa1f322b0137e96173bd48a4bda3877819d36c7688fd8f59e194ef0db63760"
+      },
+      "contract_digest": "a318d7f5d62dcff91a137be3f02f653297137262f4cd1b6832d636dac036f8a5",
+      "ledger_event_digest": "02e6a2464bf20121df65ac178c70a55000c82e4a230b3877c6a7ed4c5380fead",
+      "provider_states": [
+        {
+          "brand_name": "BankSA",
+          "endpoint_url": "https://digital-api.banksa.com.au/cds-au/v1/banking/products",
+          "failure_categories": {},
+          "failure_records": 0,
+          "identity_status": "derived_legacy",
+          "legal_entity_name": null,
+          "provider_dir": "BankSA",
+          "provider_uid": "legacy-prd:e8afdb80008c534c6b2a9a82cbd5eec3c4ab52e334807350bd8158202b6eb3a3",
+          "state": "complete"
+        },
+        {
+          "brand_name": "Credit Union SA",
+          "endpoint_url": "https://openbanking.api.creditunionsa.com.au/cds-au/v1/banking/products",
+          "failure_categories": {},
+          "failure_records": 0,
+          "identity_status": "derived_legacy",
+          "legal_entity_name": null,
+          "provider_dir": "Credit Union SA",
+          "provider_uid": "legacy-prd:2b962fcb4f5365f12527f855d5d3718be509a224cfa946cbd1ef4b2474b170db",
+          "state": "complete"
+        },
+        {
+          "brand_name": "Westpac",
+          "endpoint_url": "https://digital-api.westpac.com.au/cds-au/v1/banking/products",
+          "failure_categories": {
+            "upstream_rejection": 1
+          },
+          "failure_records": 1,
+          "identity_status": "derived_legacy",
+          "legal_entity_name": null,
+          "provider_dir": "Westpac",
+          "provider_uid": "legacy-prd:01e89341d1b42ef1651dbe25ccc71a7e637dd458a06fb637bbad3736e500e98a",
+          "state": "partial"
+        }
+      ],
+      "population_report_present": false,
+      "counts": {
+        "Credit Union SA": {
+          "products": 32,
+          "rates": 74
+        },
+        "Westpac": {
+          "products": 15,
+          "rates": 78
+        }
+      }
+    }
+  ]
+}
