@@ -22,9 +22,22 @@ def observed(day):
         'contract_digest':row['contract_digest'], 'database_sha256':row['database']['sha256'],
         'ledger_event_digest':row['ledger_event_digest']}
     counts = tuple({p:r[key] for p,r in row['counts'].items()} for key in ('products','rates'))
-    observation = {'status':{'provider_states':row['provider_states']},
+    observation = {'status':{'provider_states':row['provider_states'],
+                            'index_diagnostics':row.get('index_diagnostics',{})},
         'contract':{'observation_date':day,'artifacts':[row['database']]}}
     return observation, baseline, counts
+
+
+def observed_hold(day, provider):
+    """An unresolved control-state input, not a claimed historical hold receipt."""
+    from cdr_population_identity import prior_provider_identity
+    observation,baseline,counts = observed(day)
+    identity = prior_provider_identity(observation,provider,baseline)
+    identity['endpoint_url'] = next(row['endpoint_url'] for row in observation['status']['provider_states']
+                                    if row['provider_dir']==provider)
+    return {'provider':provider,'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
+        'provider_identity':identity,'last_nonempty':{'observation_date':day,
+            'products':counts[0][provider],'rates':counts[1][provider]}}
 
 
 def replay(monkeypatch, *, latest=None, budget=lambda:None, failure=None):
@@ -45,6 +58,47 @@ def test_actual_counts_expose_loss_without_reclassifying_partial_populations():
         ('BankSA',20,290)]
     assert result['findings'][0]['population_known'] is False
     assert result['findings'][0]['disposition']=='UNVERIFIED_SOURCE_ABSENCE'
+
+
+def test_retained_22oct_zero_index_exposes_westpac_while_banksa_returns():
+    observation,_,current = observed('2026-10-22')
+    findings = compare_population_counts(current,observed('2026-10-21')[2])['findings']
+    assert [(r['provider'],r['products_prev'],r['rates_prev']) for r in findings]==[('Westpac',15,78)]
+    assert current[0]['BankSA']==20 and current[1]['BankSA']==290
+    assert current[0]['Credit Union SA']==32 and current[1]['Credit Union SA']==74
+    westpac = next(r for r in observation['status']['provider_states'] if r['provider_dir']=='Westpac')
+    assert westpac['failure_records']==0 and westpac['state']=='complete'
+    assert observation['status']['index_diagnostics']['Westpac']['pagination_complete'] is True
+    assert observation['status']['index_diagnostics']['Westpac']['unique_products']==0
+
+
+def test_partial_return_then_zero_retains_the_original_unresolved_baseline(tmp_path):
+    from cdr_population_baseline import _with_history
+    original = observed_hold('2026-10-20','Westpac')
+    partial = compare_population_counts(observed('2026-10-21')[2],observed('2026-10-20')[2],[original])
+    partial = retain_population_uncertainty(partial,observed('2026-10-21')[0]['status'])
+    assert partial['status']=='WARN'  # Actual retained 21-Oct index was incomplete.
+    result = compare_population_counts(observed('2026-10-22')[2],observed('2026-10-21')[2],partial['findings'])
+    result['baseline']=dict(observed('2026-10-21')[1],unresolved_provider_populations=partial['findings'])
+    report = _with_history(result,observed('2026-10-21'),observed('2026-10-22')[2],tmp_path,
+                           '2026-10-22',lambda **kw:None,None)
+    row = report['findings'][0]
+    assert row['products_prev']==15 and row['rates_prev']==78
+    assert row['products_curr']==row['rates_curr']==0 and row['carried_unresolved'] is True
+    assert row['last_nonempty']==original['last_nonempty']
+    assert row['provider_identity']==original['provider_identity']
+    assert row['last_nonempty']=={'observation_date':'2026-10-20','products':24,'rates':270}
+
+
+def test_retained_banksa_return_resolves_only_its_hold_without_copying_old_rates():
+    original = observed_hold('2026-10-20','BankSA')
+    current = observed('2026-10-22')[2]
+    before = copy.deepcopy(current)
+    report = compare_population_counts(current,observed('2026-10-21')[2],[original])
+    assert {r['provider'] for r in report['findings']}=={'BankSA','Westpac'}
+    report = retain_population_uncertainty(report,observed('2026-10-22')[0]['status'])
+    assert [r['provider'] for r in report['findings']]==['Westpac']
+    assert current==before
 
 
 def test_legacy_zero_baseline_does_not_erase_verified_last_nonempty(monkeypatch):

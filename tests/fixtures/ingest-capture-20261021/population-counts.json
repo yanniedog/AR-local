@@ -1,5 +1,5 @@
 {
-  "scope": "Retained 20/21 October counts and identities for three providers; no database or future observation.",
+  "scope": "Retained 20-22 October counts and provider identities; no database or future observation.",
   "limitations": "Counts were read date-filtered in immutable/query-only mode with unchanged file stat. Original database descriptors were read from verified contracts; database bytes were not rehashed or downloaded. These metadata excerpts cannot independently recompute the original full contract digest.",
   "provenance": [
     {
@@ -9,6 +9,22 @@
     {
       "file": "evidence\\oct18-0300\\bootstrap-metadata-bounded-20261020T170912Z.json",
       "sha256": "2290d4edacce8541463c1f8963c0ba0e01588f4a8a4805ef46db7f837e76aacb"
+    },
+    {
+      "file": "evidence\\oct18-0300\\quality-oct22-20261021T160232Z.json",
+      "sha256": "49e4ba49441858a8e57bd78beae24ca51a371395e7afb0be99b903c81619415d"
+    },
+    {
+      "file": "evidence\\oct18-0300\\rows-oct22-20261021T160612Z.json",
+      "sha256": "214972b86ed1fb715de5fbf392990ecf03b0694a06285d58690d05668611e8b1"
+    },
+    {
+      "file": "evidence\\oct18-0300\\roster-oct22-20261021T160324Z.json",
+      "sha256": "326212be0c0454461d09eabdb03bf9ec68967146e4fee543d8bb110572724baa"
+    },
+    {
+      "file": "evidence\\oct18-0300\\roster-oct21-20261020T161313Z.json",
+      "sha256": "d264369bf85a276a4cc563fbb23e82e795bc22fa60800efcfca52315275d7d38"
     }
   ],
   "observations": [
@@ -147,6 +163,164 @@
         "Westpac": {
           "products": 15,
           "rates": 78
+        }
+      },
+      "index_diagnostics": {
+        "BankSA": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 0,
+          "declared_total_records": 0,
+          "identical_duplicate_records": 0,
+          "pages": 1,
+          "pagination_complete": true,
+          "raw_records": 0,
+          "schema_version": 1,
+          "unique_products": 0
+        },
+        "Credit Union SA": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 3,
+          "declared_total_records": 48,
+          "identical_duplicate_records": 3,
+          "pages": 3,
+          "pagination_complete": true,
+          "raw_records": 48,
+          "schema_version": 1,
+          "unique_products": 45
+        },
+        "Thriday": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 0,
+          "declared_total_records": 0,
+          "identical_duplicate_records": 0,
+          "pages": 1,
+          "pagination_complete": true,
+          "raw_records": 0,
+          "schema_version": 1,
+          "unique_products": 0
+        },
+        "Westpac": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 3,
+          "declared_total_records": 65,
+          "identical_duplicate_records": 0,
+          "pages": 2,
+          "pagination_complete": false,
+          "raw_records": 25,
+          "schema_version": 1,
+          "unique_products": 25
+        }
+      }
+    },
+    {
+      "observation_date": "2026-10-22",
+      "pointer": {
+        "schema_version": 2,
+        "observation_date": "2026-10-22",
+        "generation_id": "obs-2026-10-22-347431f4c212eec5",
+        "observation_state": "partial",
+        "ledger_event_digest": "f980b7c10c77e0b75acfd3009d1b9aa8444cd4bf12cebe52d17d185e30eae489"
+      },
+      "pointer_origin": "Retained selected identities only; no marker/export path or runtime record is synthesized.",
+      "database": {
+        "bytes": 1097400320,
+        "path": "local-cdr.sqlite",
+        "sha256": "70021a42ac95d424848ca49c1b2439dcd4069789390cb04ce5b5ce1f959ac7fa"
+      },
+      "contract_digest": "b297f695dada80522fe7be82f795cde1a52d2541d89a2356923edc91755b8719",
+      "ledger_event_digest": "f980b7c10c77e0b75acfd3009d1b9aa8444cd4bf12cebe52d17d185e30eae489",
+      "provider_states": [
+        {
+          "brand_name": "BankSA",
+          "endpoint_url": "https://digital-api.banksa.com.au/cds-au/v1/banking/products",
+          "failure_records": 0,
+          "legal_entity_name": null,
+          "provider_dir": "BankSA",
+          "provider_uid": "legacy-prd:e8afdb80008c534c6b2a9a82cbd5eec3c4ab52e334807350bd8158202b6eb3a3",
+          "state": "complete"
+        },
+        {
+          "brand_name": "Credit Union SA",
+          "endpoint_url": "https://openbanking.api.creditunionsa.com.au/cds-au/v1/banking/products",
+          "failure_records": 0,
+          "legal_entity_name": null,
+          "provider_dir": "Credit Union SA",
+          "provider_uid": "legacy-prd:2b962fcb4f5365f12527f855d5d3718be509a224cfa946cbd1ef4b2474b170db",
+          "state": "complete"
+        },
+        {
+          "brand_name": "Thriday",
+          "endpoint_url": "https://public.cdr.thriday.com.au/cds-au/v1/banking/products",
+          "failure_records": 1,
+          "legal_entity_name": null,
+          "provider_dir": "Thriday",
+          "provider_uid": "legacy-prd:23901fcec27dc2a1760487e9f3ec09c9781fab3d4521d926e89820d6564e5fba",
+          "state": "partial"
+        },
+        {
+          "brand_name": "Westpac",
+          "endpoint_url": "https://digital-api.westpac.com.au/cds-au/v1/banking/products",
+          "failure_records": 0,
+          "legal_entity_name": null,
+          "provider_dir": "Westpac",
+          "provider_uid": "legacy-prd:01e89341d1b42ef1651dbe25ccc71a7e637dd458a06fb637bbad3736e500e98a",
+          "state": "complete"
+        }
+      ],
+      "index_diagnostics": {
+        "BankSA": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 2,
+          "declared_total_records": 40,
+          "identical_duplicate_records": 0,
+          "pages": 2,
+          "pagination_complete": true,
+          "raw_records": 40,
+          "schema_version": 1,
+          "unique_products": 40
+        },
+        "Credit Union SA": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 3,
+          "declared_total_records": 48,
+          "identical_duplicate_records": 3,
+          "pages": 3,
+          "pagination_complete": true,
+          "raw_records": 48,
+          "schema_version": 1,
+          "unique_products": 45
+        },
+        "Thriday": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": null,
+          "declared_total_records": null,
+          "identical_duplicate_records": 0,
+          "pages": 1,
+          "pagination_complete": false,
+          "raw_records": 0,
+          "schema_version": 1,
+          "unique_products": 0
+        },
+        "Westpac": {
+          "conflicting_duplicate_records": 0,
+          "declared_total_pages": 0,
+          "declared_total_records": 0,
+          "identical_duplicate_records": 0,
+          "pages": 1,
+          "pagination_complete": true,
+          "raw_records": 0,
+          "schema_version": 1,
+          "unique_products": 0
+        }
+      },
+      "counts": {
+        "BankSA": {
+          "products": 20,
+          "rates": 290
+        },
+        "Credit Union SA": {
+          "products": 32,
+          "rates": 74
         }
       }
     }

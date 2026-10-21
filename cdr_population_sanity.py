@@ -51,16 +51,20 @@ def compare_population_counts(current, prior, unresolved_prior=()):
     seen = {row['provider'] for row in findings}
     for previous in unresolved_prior:
         provider = previous['provider']
+        continuation = {'carried_unresolved':True,
+            **({'last_nonempty':previous['last_nonempty']} if 'last_nonempty' in previous else {}),
+            **({'provider_identity':previous['provider_identity']} if 'provider_identity' in previous else {})}
         if provider in seen:
+            # A partial return did not resolve the earlier hold. A new zero
+            # must retain its original provenance and endpoint restrictions.
+            next(row for row in findings if row['provider']==provider).update(continuation)
             continue
         findings.append({'severity':'HIGH','code':'provider_population_disappeared',
             'provider':provider,'products_prev':prior_products.get(provider,0),
             'products_curr':current_products.get(provider,0),
             'rates_prev':prior_rates.get(provider,0),'rates_curr':current_rates.get(provider,0),
             'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
-            'carried_unresolved':True,**({'last_nonempty':previous['last_nonempty']}
-                if 'last_nonempty' in previous else {}),
-            **({'provider_identity':previous['provider_identity']} if 'provider_identity' in previous else {})})
+            **continuation})
         seen.add(provider)
     return {"status": "WARN" if findings else "PASS", "findings": findings,
         "semantics": "Unconfirmed absence; do not infer retirement, fill history, or claim complete provider coverage."}
