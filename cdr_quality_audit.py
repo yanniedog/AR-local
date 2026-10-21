@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import time
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -44,7 +45,11 @@ def collect_sources(data_root: Path, index: AuditIndex, run_date: str, scrub: bo
     results, cached = [], 0
     for source in sources:
         try:
+            started = time.monotonic()
+            print(f"[cdr-audit] fingerprint start {source['key']}", flush=True)
             fingerprint = stat_fingerprint(source)
+            print(f"[cdr-audit] fingerprint complete {source['key']} "
+                  f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
             result = (verified_cache.get(data_root, source, run_date) if verified_cache else
                       index.get(source["key"], fingerprint) if not scrub and source["run_date"] != run_date else None)
             if result is None:
