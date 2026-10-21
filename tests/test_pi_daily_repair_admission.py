@@ -141,7 +141,7 @@ def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch
     # of the admission implementation's expected command.
     unit = Path(__file__).resolve().parents[1] / "deploy/pi/ar-local-daily.service"
     line = next(line for line in unit.read_text().splitlines() if line.startswith("ExecStartPost=/bin/sh"))
-    command = shlex.split(line.split("=", 1)[1])[2].replace("{{AR_LOCAL_REPO}}", str(tmp_path)).replace("%%", "%")
+    command = shlex.split(line.split("=", 1)[1])[2].replace("{{AR_LOCAL_REPO}}/verify_local.py", str(verifier)).replace("%%", "%")
     row = ["/bin/sh", ["/bin/sh", "-c", command], False, 1, 6000000000, 2, 7000000000, 123, 1, 0]
     value = {"type": "a(sasbttttuii)", "data": [row]}
     if change == "ignore_errors": row[2] = True
