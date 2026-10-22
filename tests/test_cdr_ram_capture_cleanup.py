@@ -243,6 +243,8 @@ def test_all_finalized_early_returns_cleanup_after_successful_retry(completed, m
 @pytest.mark.parametrize("automatic_pi", [False, True])
 @requires_lookup_limits
 def test_original_failed_capture_seals_stage_and_successful_retry_releases_it(tmp_path, monkeypatch, automatic_pi, source_generation_clock):
+    from types import SimpleNamespace
+    import cdr_capture_stage_capacity as stage
     import cdr_terms.ingest as ingest
     ram, runs, state, archive = [tmp_path / name for name in ("ram", "runs", "state", "archive")]
     stale_export = ram / 'exports' / DAY / 'unrelated-older-stage.txt'
@@ -251,6 +253,10 @@ def test_original_failed_capture_seals_stage_and_successful_retry_releases_it(tm
     monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(archive))
     monkeypatch.setattr(cdr_daily, "local_date", lambda: DAY)
     monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: automatic_pi)
+    # This cleanup control requires admitted RAM; capacity fallback is tested
+    # separately, including runtimes without os.statvfs (such as Windows).
+    monkeypatch.setattr(stage.os, "statvfs", lambda _: SimpleNamespace(
+        f_bavail=2 * 1024 ** 3, f_frsize=1, f_favail=200000), raising=False)
     monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *_: None)
     monkeypatch.setattr(cdr_daily, "write_sanity_report", lambda *_: None)
     monkeypatch.setattr(cdr_daily, "_emit_day_manifest", lambda *_: None)
@@ -300,7 +306,7 @@ def test_uncheckpointed_archive_is_preserved_without_sidecar_changes(completed):
 def test_completion_verifier_counts_actual_reads_in_the_shared_budget(completed, monkeypatch):
     finalized, _, options, *_ = completed
     actual = {"bytes": 0, "opens": 0}
-    original_open = Path.open
+    original_open, original_fdopen = Path.open, os.fdopen
     class CountedReader:
         def __init__(self, stream):
             self.stream = stream
@@ -321,6 +327,15 @@ def test_completion_verifier_counts_actual_reads_in_the_shared_budget(completed,
             return CountedReader(stream)
         return stream
     monkeypatch.setattr(Path, "open", counted)
+    # Guarded regular-file reads use descriptors; observe their actual bytes
+    # independently of the budget callbacks, alongside ordinary path reads.
+    def counted_descriptor(descriptor, mode="r", *args, **kwargs):
+        stream = original_fdopen(descriptor, mode, *args, **kwargs)
+        if mode == "rb":
+            actual["opens"] += 1
+            return CountedReader(stream)
+        return stream
+    monkeypatch.setattr(os, "fdopen", counted_descriptor)
     budget = cleanup.CleanupBudget()
     assert verify_completion_marker(finalized, options["state_dir"], DAY, budget=budget.check)
     assert budget.bytes_read == actual["bytes"] > 0
