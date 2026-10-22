@@ -366,7 +366,8 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "DAILY_KILL_MODE": "control-group",
         "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_START_TIMEOUT": "6h 15min",
+        "WATCHDOG_START_TIMEOUT": "1min",
+        "WATCHDOG_EXEC_JSON": '{"type":"a(sasbttttuii)","data":[["/usr/bin/python3",["/usr/bin/python3","-B","/srv/ar-local/AR-local/pi_ingest_observe.py"],false,0,0,0,0,0,0,0]]}',
         "MANUAL_KILL_MODE": "control-group",
         "MANUAL_START_TIMEOUT": "6h 15min",
     }
