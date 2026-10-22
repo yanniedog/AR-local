@@ -1,39 +1,67 @@
 """Recover a date's selection from immutable decisions, never filename order."""
 import hashlib
-import json
 from datetime import date
 from pathlib import Path
 
 from cdr_atomic import canonical_json_bytes
-from cdr_export_contract import load_contract
+from cdr_export_contract import load_contract, read_json
 from cdr_ledger_v2 import verify_event
 from cdr_observation_selection import safe_child
 
 
-def historical_contract(state: Path, run_date: str) -> dict | None:
+def _snapshot_paths(state, run_date, kind, paths, maximum):
+    values = [Path(path) for path in paths]
+    root = (state/kind/run_date).resolve()
+    if len(values) > maximum or len({path.resolve() for path in values}) != len(values) or any(path.suffix != '.json'
+            or path.resolve().parent != root for path in values):
+        raise ValueError('Historical snapshot paths escape their canonical date or budget')
+    return values
+
+
+def historical_contract(state: Path, run_date: str, *, paths=None, decision_paths=None,
+                        budget=None) -> dict | None:
     from app_payload_observation_gate import contract_for_run_date
 
+    if budget is not None:
+        budget()
     if date.fromisoformat(run_date).isoformat() != run_date:
         raise ValueError('Invalid observation date')
-    paths = list((state / 'export-contracts-v2' / run_date).glob('*.json'))
+    snapshot = paths is not None
+    paths = (list((state / 'export-contracts-v2' / run_date).glob('*.json')) if paths is None
+             else _snapshot_paths(state,run_date,'export-contracts-v2',paths,8))
+    if decision_paths is not None:
+        decision_paths = _snapshot_paths(state,run_date,'observation-selections-v1',decision_paths,16)
     if len(paths) <= 1:
+        if snapshot:
+            contract = (load_contract(safe_child(state, paths[0].relative_to(state).as_posix()),
+                                     budget=budget) if paths else None)
+            if contract and contract['observation_date'] != run_date:
+                raise ValueError('Historical snapshot contract belongs to another date')
+            return contract
         return contract_for_run_date(state, run_date)
     contracts, events = {}, {}
     for path in paths:
-        contract = load_contract(safe_child(state, path.relative_to(state).as_posix()))
+        if budget is not None:
+            budget()
+        contract = load_contract(safe_child(state, path.relative_to(state).as_posix()),budget=budget)
         generation = contract['generation_id']
         if contract['observation_date'] != run_date or generation in contracts:
             raise ValueError('Ambiguous historical contracts')
-        event = json.loads(safe_child(state, f'ledger-v2/events/{run_date}/{generation}.json').read_bytes())
+        event_path = safe_child(state, f'ledger-v2/events/{run_date}/{generation}.json')
+        event = read_json(event_path,budget=budget)
         if not isinstance(event, dict):
             raise ValueError('Invalid historical event')
-        verify_event(state, event)
+        verify_event(state, event,budget=budget)
         if event['contract_digest'] != contract['contract_digest']:
             raise ValueError('Historical event/contract mismatch')
         contracts[generation], events[generation] = contract, event['event_digest']
     decisions, decision_states = {}, {}
-    for path in (state / 'observation-selections-v1' / run_date).glob('*.json'):
-        decision = json.loads(safe_child(state, path.relative_to(state).as_posix()).read_bytes())
+    decision_paths = ((state / 'observation-selections-v1' / run_date).glob('*.json')
+                      if decision_paths is None else decision_paths)
+    for path in decision_paths:
+        if budget is not None:
+            budget()
+        decision = read_json(safe_child(state, path.relative_to(state).as_posix()),budget=budget)
         if (not isinstance(decision, dict)
                 or hashlib.sha256(canonical_json_bytes(decision)).hexdigest() != path.stem
                 or decision.get('schema_version') != 1 or decision.get('observation_date') != run_date
