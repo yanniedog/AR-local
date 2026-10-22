@@ -833,11 +833,18 @@ def _sidecar_paths(path: Path) -> tuple[Path, Path, Path]:
 
 
 def _connect_immutable(path: Path) -> sqlite3.Connection:
+    from cdr_sqlite_budget import install_progress_deadline
+
     uri = f"file:{quote(path.resolve().as_posix(), safe='/:')}?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
-    connection.execute("PRAGMA query_only=ON")
-    connection.execute("PRAGMA foreign_keys=ON")
-    connection.execute("PRAGMA trusted_schema=OFF")
+    try:
+        install_progress_deadline(connection)
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA trusted_schema=OFF")
+    except BaseException:
+        connection.close()
+        raise
     return connection
 
 

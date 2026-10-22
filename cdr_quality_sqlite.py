@@ -8,10 +8,18 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from cdr_export_contract import hash_file
+from cdr_sqlite_budget import install_progress_deadline
 
 
 def database_files(path: Path) -> list[Path]:
-    return [p for p in [path, *(Path(str(path) + s) for s in ("-wal", "-shm", "-journal"))] if p.is_file()]
+    candidates = [path, *(Path(str(path) + s) for s in ("-wal", "-shm", "-journal"))]
+    if any(p.is_symlink() for p in candidates):
+        raise ValueError("SQLite source cannot be linked")
+    if not path.is_file():
+        raise ValueError("SQLite source database is missing or not a regular file")
+    if any(p.exists() and not p.is_file() for p in candidates):
+        raise ValueError("SQLite source journal is not a regular file")
+    return [p for p in candidates if p.is_file()]
 
 
 def identities(path: Path) -> dict:
@@ -30,6 +38,7 @@ def database_view(path: Path, *, validate_copy=None):
         if validate_copy is not None:
             validate_copy(path)
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
+            install_progress_deadline(db)
             yield db, {"source_sha256": hash_file(path), "journal_mode": "no_retained_journal"}
     else:
         with tempfile.TemporaryDirectory(prefix="cdr-audit-sqlite-") as temp:
@@ -48,6 +57,7 @@ def database_view(path: Path, *, validate_copy=None):
             # Opening this writable private copy allows SQLite to apply a
             # retained WAL or roll back a hot rollback journal safely.
             with closing(sqlite3.connect(root / path.name)) as db:
+                install_progress_deadline(db)
                 yield db, {"source_sha256": hashes[path.name], "journal_mode": "private_copy_recovery",
                            "source_files": hashes}
     if identities(path) != before:
