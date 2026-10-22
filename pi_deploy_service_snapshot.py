@@ -5,7 +5,104 @@ import json
 import shlex
 import sys
 
-from pi_observer_unit_contract import COMMAND_TYPE, watchdog_snapshot_ok
+from pi_observer_unit_contract import (
+    COMMAND_TYPE, canonical_remote_repo, command_matches, native_property,
+    unprivileged_user, watchdog_snapshot_ok,
+)
+
+INGEST_UNITS = {"DAILY": "ar-local-daily.service", "MANUAL": "ar-local-ingest-now.service"}
+QUEUE = "/usr/local/lib/shared-pi-queue/pi_shared_queue.py"
+QUEUE_STOP = ["/usr/bin/python3", "/usr/local/lib/shared-pi-queue/pi_shared_queue_stop_hook.py"]
+BASE_STOP = ["/usr/bin/systemctl", "start", "ar-local-dashboard.service"]
+
+
+def _ingest_definition_script(prefix, unit):
+    if INGEST_UNITS.get(prefix) != unit:
+        raise ValueError("unknown ingest definition")
+    encoded = "".join(char if char.isalnum() else f"_{ord(char):02x}" for char in unit)
+    script = []
+    for field, prop in (("TYPE", "Type"), ("RESTART", "Restart"),
+                        ("SEND_SIGKILL", "SendSIGKILL"), ("STOP_TIMEOUT", "TimeoutStopUSec")):
+        variable = (prefix + "_" + field).lower()
+        script.append(f"{variable}=$(systemctl show {unit} -p {prop} --value 2>/dev/null); "
+                      f"printf '{prefix}_{field}=%s\\n' \"${variable}\"; ")
+    for field, prop in (("EXEC_JSON", "ExecStartEx"), ("STOP_POST_JSON", "ExecStopPostEx"), ("USER_JSON", "User")):
+        variable = (prefix + "_" + field).lower()
+        script.append(f"{variable}=$(busctl --system --json=short --timeout=10 get-property "
+                      f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/{encoded} "
+                      f"org.freedesktop.systemd1.Service {prop} 2>/dev/null | tr '\\n' ' '); "
+                      f"printf '{prefix}_{field}=%s\\n' \"${variable}\"; ")
+    return "".join(script)
+
+
+def _producer_argv(repo, prefix):
+    argv = ["/usr/bin/python3", repo + "/pi_daily_sync.py", "--banks-only"]
+    if prefix == "MANUAL":
+        argv.append("--force")
+    return [*argv, "--skip-git-sync"]
+
+
+def _queued_argv(producer):
+    return ["/usr/bin/python3", QUEUE, "run", "--project", "ar-local", "--resource", "ar-local",
+            "--mode", "exclusive", "--cpu-slots", "3", "--wait-timeout", "21600",
+            "--max-runtime", "21600", "--", *producer]
+
+
+def _dry_ingest_definition(prefix, repo):
+    return {
+        prefix + "_TYPE": "oneshot", prefix + "_RESTART": "no", prefix + "_SEND_SIGKILL": "yes",
+        prefix + "_STOP_TIMEOUT": "45s", prefix + "_USER_JSON": json.dumps({"type": "s", "data": "ar-local"}),
+        prefix + "_EXEC_JSON": json.dumps({"type": COMMAND_TYPE, "data": [[
+            "/usr/bin/python3", _producer_argv(repo, prefix), [], 0, 0, 0, 0, 0, 0, 0]]}),
+        prefix + "_STOP_POST_JSON": json.dumps({"type": COMMAND_TYPE, "data": [[
+            BASE_STOP[0], BASE_STOP, ["privileged"], 0, 0, 0, 0, 0, 0, 0]]}),
+    }
+
+
+def _base_stop_matches(commands):
+    # Only the checked-in +systemctl dashboard cleanup has this modifier.
+    # Do not weaken the shared unprivileged start/queue/observer matcher.
+    if not isinstance(commands, list) or len(commands) != 1:
+        return False
+    row = commands[0]
+    if not isinstance(row, list) or len(row) != 10 or row[2] != ["privileged"]:
+        return False
+    return command_matches([[row[0], row[1], [], *row[3:]]], BASE_STOP)
+
+
+def ingest_definition_ok(snap, prefix):
+    """Attest producer role and fences; zero timestamps do not prove a run.
+
+    The commissioned queue needs 6h wait + 6h execution + 1h for inherited
+    hooks. Its exact stop hook retains the claim through bounded cleanup.
+    A direct producer never borrows the queued profile's larger deadline.
+    """
+    try:
+        if prefix not in INGEST_UNITS:
+            return False
+        repo = canonical_remote_repo(snap.get("AR_REPO_PHYSICAL"))
+        user, uid = snap.get("DAILY_USER"), snap.get("DAILY_USER_UID")
+        if (not unprivileged_user(user, uid)
+                or native_property(snap.get(prefix + "_USER_JSON"), "s") != user
+                or any(snap.get(prefix + "_" + field) != value for field, value in (
+                    ("TYPE", "oneshot"), ("RESTART", "no"),
+                    ("KILL_MODE", "control-group"), ("SEND_SIGKILL", "yes")))):
+            return False
+        commands = native_property(snap.get(prefix + "_EXEC_JSON"), COMMAND_TYPE)
+        producer = _producer_argv(repo, prefix)
+        if command_matches(commands, producer):
+            start, stop = "6h 15min", "45s"
+            if not _base_stop_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE)):
+                return False
+        elif command_matches(commands, _queued_argv(producer)):
+            start, stop = "13h", "15min"
+            if not command_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE), QUEUE_STOP):
+                return False
+        else:
+            return False
+        return snap.get(prefix + "_START_TIMEOUT") == start and snap.get(prefix + "_STOP_TIMEOUT") == stop
+    except (ValueError, TypeError):
+        return False
 
 
 def _snapshot_script(ar, site, data, remote):
@@ -15,8 +112,10 @@ def _snapshot_script(ar, site, data, remote):
     q_data = shlex.quote(data)
     q_remote_main = shlex.quote(f"{remote}/main")
     return (
-        f"set +e; "
-        f"ar_physical=$(CDPATH= cd {q_ar} 2>/dev/null && pwd -P); "
+        "set +e; "
+        + _ingest_definition_script("DAILY", INGEST_UNITS["DAILY"])
+        + _ingest_definition_script("MANUAL", INGEST_UNITS["MANUAL"])
+        + f"ar_physical=$(CDPATH= cd {q_ar} 2>/dev/null && pwd -P); "
         f"git -C {q_ar} fetch {q_remote} 2>/dev/null; "
         f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
         f"ar_o=$(git -C {q_ar} rev-parse {q_remote_main} 2>/dev/null); "
@@ -74,6 +173,8 @@ def _snapshot_script(ar, site, data, remote):
 
 def _dry_snapshot(ar):
     return {
+            **_dry_ingest_definition("DAILY", ar.rstrip("/")),
+            **_dry_ingest_definition("MANUAL", ar.rstrip("/")),
             "AR_HEAD": "dry",
             "AR_REPO_PHYSICAL": ar.rstrip("/"),
             "DAILY_USER": "ar-local", "DAILY_USER_UID": "1000",
@@ -134,18 +235,18 @@ def remote_snapshot(*, ar, site, data, remote, run, parse, dry_run=False):
 
 def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
     expected = {
-        "DAILY_KILL_MODE": "control-group",
-        "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",
         "WATCHDOG_START_TIMEOUT": "1min",
-        "MANUAL_KILL_MODE": "control-group",
-        "MANUAL_START_TIMEOUT": "6h 15min",
     }
     ok = True
     for field, value in expected.items():
         actual = snap.get(field, "")
         print(f"pi_deploy_verify: {field}: {actual}")
         if actual != value:
+            ok = False
+    for prefix in INGEST_UNITS:
+        if not ingest_definition_ok(snap, prefix):
+            print(f"pi_deploy_verify: {prefix}: command, user or bounded lifecycle differs", file=sys.stderr)
             ok = False
     if not watchdog_snapshot_ok(snap):
         print("pi_deploy_verify: watchdog command, user or idle runtime evidence differs", file=sys.stderr)

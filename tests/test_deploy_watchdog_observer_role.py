@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import pi_deploy_verify as verify
+from tests.pi_ingest_service_fixtures import ingest_definition_fields
 
 
 EXEC = {"type": "a(sasasttttuii)", "data": [["/usr/bin/python3",
@@ -16,6 +17,7 @@ EXEC = {"type": "a(sasasttttuii)", "data": [["/usr/bin/python3",
 
 def snapshot(**changes):
     value = {
+        **ingest_definition_fields(),
         "DAILY_KILL_MODE": "control-group", "DAILY_START_TIMEOUT": "6h 15min",
         "MANUAL_KILL_MODE": "control-group", "MANUAL_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group", "WATCHDOG_START_TIMEOUT": "1min",

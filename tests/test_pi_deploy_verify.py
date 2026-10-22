@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import pi_deploy_verify  # noqa: E402
+from tests.pi_ingest_service_fixtures import ingest_definition_fields
 
 
 def test_app_payload_changes_require_pi_deploy():
@@ -348,6 +349,7 @@ def test_every_trusted_backup_gate_input_requires_pi_deploy(path):
 
 def _service_snapshot(**overrides: str) -> dict[str, str]:
     snapshot = {
+        **ingest_definition_fields(),
         "DASHBOARD_WD": "/srv/ar-local/AR-local",
         "DASHBOARD_EXEC": "/usr/bin/python3 /srv/ar-local/AR-local/cdr_dashboard_server.py --runs /srv/ar-local/data/runs",
         "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data",
