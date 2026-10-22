@@ -20,13 +20,15 @@ def identities(path: Path) -> dict:
 
 
 @contextmanager
-def database_view(path: Path):
-    """Legacy finalized partitions may retain WAL. Recover only a verified copy."""
+def database_view(path: Path, *, validate_copy=None):
+    """Recover retained journals only in a verified copy, after optional policy checks."""
     files = database_files(path)
     if any(p.is_symlink() for p in files):
         raise ValueError("SQLite source cannot be linked")
     before = identities(path)
     if len(files) == 1:
+        if validate_copy is not None:
+            validate_copy(path)
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
             yield db, {"source_sha256": hash_file(path), "journal_mode": "no_retained_journal"}
     else:
@@ -41,6 +43,8 @@ def database_view(path: Path):
                     raise ValueError("SQLite source changed while copying")
             if identities(path) != before:
                 raise ValueError("SQLite journal inventory changed while copying")
+            if validate_copy is not None:
+                validate_copy(root / path.name)
             # Opening this writable private copy allows SQLite to apply a
             # retained WAL or roll back a hot rollback journal safely.
             with closing(sqlite3.connect(root / path.name)) as db:

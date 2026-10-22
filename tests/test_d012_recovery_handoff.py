@@ -75,6 +75,16 @@ def _frozen_source(relative: str) -> bytes:
             "6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43"
         )
         return payload
+    if path == "laptop_backup_daily_verify.py":
+        # Restore verification now supplies a private journal-recovery view.
+        # Retired D-012 authority maps still bind these exact 381e578f bytes,
+        # including in shallow CI; never rewrite their historical source hash.
+        archive = ROOT / "tests/fixtures/d012-retired-daily-verify-fe0a1894.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == (
+            "fe0a189467adee07f7ee577b53edd220fb598564a86afb0e26fed06dd111803e"
+        )
+        return payload
     if path in {"laptop_backup_transport.py", "laptop_pull_backup.py"}:
         assert "D-015-USER-SESSION-NO-UAC" in HANDOFF.read_text(encoding="utf-8")
         archive = (ROOT / "tests/fixtures/d012-retired-sources-ec008b26.json.gz").read_bytes()

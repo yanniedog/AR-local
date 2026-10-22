@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 from typing import Mapping
 
@@ -92,11 +92,18 @@ def _validate_promoted_product_evidence(
     validate_journal_evidence(accounting, status.get("provider_states"), journal)
 
 
-def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
-    with closing(sqlite3.connect(
-        f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True
-    )) as connection:
-        user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+def daily_reconciliation_bounded(
+    database: Path, *, connection: sqlite3.Connection | None = None
+) -> dict[str, object]:
+    def view():
+        # Restore callers supply an already verified private journal-recovery
+        # view; ordinary immutable receiver validation keeps its existing I/O.
+        return nullcontext(connection) if connection is not None else closing(sqlite3.connect(
+            f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True
+        ))
+
+    with view() as database_connection:
+        user_version = int(database_connection.execute("PRAGMA user_version").fetchone()[0])
     if user_version == OBSERVATION_SCHEMA_VERSION:
         observation, accounting = load_verified_observation(database.parent)
         _validate_promoted_product_evidence(database.parent, accounting)
@@ -123,9 +130,7 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
     if not isinstance(banks, dict):
         raise ValueError("daily banks export is not a JSON object")
     exported = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
-    with closing(sqlite3.connect(
-        f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True
-    )) as connection:
+    with view() as connection:
         schema_sql = {
             str(name): hashlib.sha256(str(sql).encode("utf-8")).hexdigest()
             for name, sql in connection.execute(
