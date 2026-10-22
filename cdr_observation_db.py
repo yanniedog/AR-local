@@ -833,9 +833,10 @@ def _sidecar_paths(path: Path) -> tuple[Path, Path, Path]:
 
 
 def _connect_immutable(path: Path) -> sqlite3.Connection:
+    from ar_local_restore_io import database_path
     from cdr_sqlite_budget import install_progress_deadline
 
-    uri = f"file:{quote(path.resolve().as_posix(), safe='/:')}?mode=ro&immutable=1"
+    uri = f"file:{quote(database_path(path).resolve().as_posix(), safe='/:')}?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
     try:
         install_progress_deadline(connection)
@@ -899,6 +900,10 @@ def _verify_connection(connection: sqlite3.Connection, path: Path, expected_side
         _fail("projection counts do not reconcile")
     return DatabaseVerification(path, "", schema_sha, accounting_sha, projections_sha, rebuilt_sidecar, counts)
 def _database_sha256(path: Path) -> str:
+    from ar_local_restore_io import database_path, hash_file
+    private = database_path(path)
+    if private != path:
+        return hash_file(private)
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):

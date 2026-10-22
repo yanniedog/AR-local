@@ -54,6 +54,11 @@ from ar_local_restore_verification import (
     verify_restored_manifest_files,
     verify_restored_state,
 )
+from ar_local_restore_io import (
+    checkpoint, copy_file as restore_copy_file, copy_tree as restore_copy_tree,
+    hash_file as restore_hash_file, read_bytes as restore_read_bytes,
+    regular_identity, walk as restore_walk,
+)
 from ar_local_rollback_record import record_rollback_acceptance
 from cdr_sqlite_budget import RESTORE_BUDGET_SECONDS, audit_budget, check_deadline, sqlite_budget
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
@@ -378,7 +383,7 @@ def create_snapshot(
     return receipt
 
 
-def verify_snapshot(snapshot: Path) -> dict[str, object]:
+def verify_snapshot(snapshot: Path, *, evidence: dict | None = None) -> dict[str, object]:
     findings: list[str] = []
     if snapshot.is_symlink() or not snapshot.is_dir():
         return {"ok": False, "findings": ["invalid_snapshot_root"], "manifest": {}}
@@ -386,23 +391,38 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
     if manifest_path.is_symlink():
         return {"ok": False, "findings": ["invalid_manifest_symlink"], "manifest": {}}
     try:
-        manifest = _json(manifest_path)
+        body = restore_read_bytes(manifest_path)
+        manifest = json.loads(body.decode('utf-8'))
+        if not isinstance(manifest, dict):
+            raise ValueError('snapshot manifest must be a JSON object')
+        manifest_sha = hashlib.sha256(body).hexdigest()
+        if evidence is not None:
+            evidence.update(manifest=manifest, manifest_sha256=manifest_sha)
+        checkpoint()
+    except TimeoutError:
+        raise
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {"ok": False, "findings": [f"invalid_manifest:{exc}"], "manifest": {}}
     try:
+        checkpoint()
         schema = _json(SNAPSHOT_SCHEMA_PATH)
         validator = Draft202012Validator(schema, format_checker=FormatChecker())
         for error in sorted(validator.iter_errors(manifest), key=lambda item: list(item.path)):
+            checkpoint()
             location = ".".join(str(part) for part in error.path) or "$"
             findings.append(f"manifest_schema_invalid:{location}:{error.message}")
+    except TimeoutError:
+        raise
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         findings.append(f"manifest_schema_unavailable:{exc}")
     entries = manifest.get("files")
     if not isinstance(entries, list):
         return {"ok": False, "findings": ["invalid_manifest_files"], "manifest": manifest}
     expected_paths: set[str] = set()
+    source_identities = {}
     root = snapshot.resolve()
     for index, entry in enumerate(entries):
+        checkpoint()
         if not isinstance(entry, Mapping):
             findings.append(f"invalid_entry:{index}")
             continue
@@ -421,17 +441,21 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
         ):
             findings.append(f"invalid_entry:{index}")
             continue
-        path = (root / relative).resolve()
-        if not path.is_relative_to(root):
+        path = root / relative
+        if not path.resolve().is_relative_to(root):
             findings.append(f"path_escape:{relative.as_posix()}")
             continue
         expected_paths.add(relative.as_posix())
         if not path.is_file() or path.is_symlink():
             findings.append(f"missing:{relative.as_posix()}")
-        elif path.stat().st_size != size or sha256_file(path) != digest:
-            findings.append(f"changed:{relative.as_posix()}")
-    snapshot_paths = list(snapshot.rglob("*"))
+        else:
+            before = regular_identity(path)
+            if before[3] != size or restore_hash_file(path, expected=before) != digest:
+                findings.append(f"changed:{relative.as_posix()}")
+            source_identities[relative.as_posix()] = before
+    snapshot_paths = list(restore_walk(snapshot))
     for path in snapshot_paths:
+        checkpoint()
         if path.is_symlink():
             findings.append(f"symlink:{path.relative_to(snapshot).as_posix()}")
         elif not path.is_dir() and not path.is_file():
@@ -445,7 +469,9 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
     }
     for extra in sorted(actual_paths - expected_paths):
         findings.append(f"unmanifested:{extra}")
-    return {"ok": not findings, "findings": findings, "manifest": manifest}
+    checkpoint()
+    return {"ok": not findings, "findings": findings, "manifest": manifest,
+            "manifest_sha256": manifest_sha, "source_identities": source_identities}
 
 
 def _verify_restored_state(data_root: Path) -> dict[str, object]:
@@ -458,6 +484,63 @@ def _verify_restored_manifest_files(
     return verify_restored_manifest_files(manifest, destination)
 
 
+def _prepare_restore_destination(policy, scratch_root, snapshot_id):
+    checkpoint()
+    configured = scratch_root.expanduser()
+    if not configured.is_absolute():
+        raise ValueError("scratch restore root must be absolute")
+    scratch_root = configured.resolve(strict=False)
+    if configured != scratch_root or configured.is_symlink():
+        raise ValueError("scratch restore root must be a canonical non-symlink path")
+    for forbidden in (policy.mountpoint.resolve(), policy.backup_dir.resolve()):
+        checkpoint()
+        if scratch_root == forbidden or forbidden in scratch_root.parents or scratch_root in forbidden.parents:
+            raise ValueError("scratch restore must be outside backup storage")
+    scratch_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    checkpoint()
+    if not scratch_root.is_dir() or scratch_root.is_symlink():
+        raise ValueError("scratch restore root is not a real directory")
+    destination = scratch_root / f"restore-{snapshot_id}-{uuid.uuid4().hex[:8]}"
+    destination.mkdir()
+    return destination
+
+
+def _restore_payload(verified, snapshot, destination, deadline):
+    snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])
+    if shutil.disk_usage(destination.parent).free < snapshot_bytes + 1024**3:
+        raise ValueError("scratch storage lacks restore headroom")
+    restore_copy_tree(snapshot / "data", destination / "data", expected=verified['source_identities'])
+    result = _verify_restored_state(destination / "data")
+    macro_source = snapshot / "macro/local-macro.sqlite"
+    macro_target = destination / "macro/local-macro.sqlite"
+    macro_target.parent.mkdir(parents=True)
+    restore_copy_file(macro_source, macro_target,
+        expected=verified['source_identities']['macro/local-macro.sqlite'])
+    restored_files = _verify_restored_manifest_files(verified["manifest"], destination)
+    result["restored_files"] = restored_files
+    checkpoint()
+    if not restored_files["ok"]:
+        result["ok"] = False
+        result["findings"].extend(restored_files["findings"])
+    with audit_budget(deadline), closing(
+        sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True)
+    ) as connection, sqlite_budget(connection):
+        macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
+        macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        macro_counts = {
+            name: connection.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
+            for name in sorted(REQUIRED_MACRO_TABLES & macro_tables)
+        }
+    result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
+    missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
+    expected_macro_counts = verified["manifest"].get("macro_backup", {}).get("table_counts")
+    if macro_quick != "ok" or missing_macro or macro_counts != expected_macro_counts:
+        result["ok"] = False
+        result["findings"].append(f"macro_validation_failed:{','.join(missing_macro)}")
+    checkpoint()
+    return result
+
+
 def restore_drill(
     policy: BackupPolicy,
     snapshot_id: str,
@@ -465,6 +548,14 @@ def restore_drill(
     operator: str,
     exact_commands: list[str] | None = None,
 ) -> dict[str, object]:
+    if (not isinstance(snapshot_id, str) or snapshot_id in {'', '.', '..'}
+            or any(char in snapshot_id for char in '/\\:\x00')
+            or Path(snapshot_id).is_absolute() or Path(snapshot_id).drive
+            or Path(snapshot_id).name != snapshot_id
+            or snapshot_id.endswith((' ', '.'))
+            or snapshot_id.split('.')[0].upper() in {'CON', 'PRN', 'AUX', 'NUL',
+                *(f'COM{n}' for n in range(1, 10)), *(f'LPT{n}' for n in range(1, 10))}):
+        raise ValueError('snapshot id must be one unambiguous path component')
     if not exact_commands or any(
         not isinstance(command, str) or not command.strip()
         for command in exact_commands
@@ -473,75 +564,28 @@ def restore_drill(
     started_at = utc_now()
     deadline = time.monotonic() + RESTORE_BUDGET_SECONDS
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
-    verified = verify_snapshot(snapshot)
-    if not verified["ok"]:
-        raise ValueError(f"snapshot verification failed: {verified['findings']}")
-    configured_scratch = scratch_root.expanduser()
-    if not configured_scratch.is_absolute():
-        raise ValueError("scratch restore root must be absolute")
-    scratch_root = configured_scratch.resolve(strict=False)
-    if configured_scratch != scratch_root or configured_scratch.is_symlink():
-        raise ValueError("scratch restore root must be a canonical non-symlink path")
-    for forbidden in (policy.mountpoint.resolve(), policy.backup_dir.resolve()):
-        if scratch_root == forbidden or forbidden in scratch_root.parents or scratch_root in forbidden.parents:
-            raise ValueError("scratch restore must be outside backup storage")
-    scratch_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not scratch_root.is_dir() or scratch_root.is_symlink():
-        raise ValueError("scratch restore root is not a real directory")
-    destination = scratch_root / f"restore-{snapshot_id}-{uuid.uuid4().hex[:8]}"
-    destination.mkdir(parents=True)
+    verified: dict = {"manifest": {}}
+    destination = None
     failure: Exception | None = None
     result: dict[str, object] = {"ok": False, "findings": []}
     try:
-        check_deadline(deadline)
-        snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])
-        if shutil.disk_usage(scratch_root).free < snapshot_bytes + 1024**3:
-            raise ValueError("scratch storage lacks restore headroom")
-        shutil.copytree(snapshot / "data", destination / "data")
         with audit_budget(deadline):
-            result = _verify_restored_state(destination / "data")
-        macro_source = snapshot / "macro/local-macro.sqlite"
-        macro_target = destination / "macro/local-macro.sqlite"
-        macro_target.parent.mkdir(parents=True)
-        shutil.copy2(macro_source, macro_target)
-        restored_files = _verify_restored_manifest_files(
-            verified["manifest"], destination
-        )
-        result["restored_files"] = restored_files
-        check_deadline(deadline)
-        if not restored_files["ok"]:
-            result["ok"] = False
-            result["findings"].extend(restored_files["findings"])
-        with audit_budget(deadline), closing(
-            sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True)
-        ) as connection, sqlite_budget(connection):
-            macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
-            macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            macro_counts = {
-                name: connection.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
-                for name in sorted(REQUIRED_MACRO_TABLES & macro_tables)
-            }
-        result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
-        missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
-        expected_macro_counts = verified["manifest"].get("macro_backup", {}).get(
-            "table_counts"
-        )
-        if macro_quick != "ok" or missing_macro or macro_counts != expected_macro_counts:
-            result["ok"] = False
-            result["findings"].append(
-                f"macro_validation_failed:{','.join(missing_macro)}"
-            )
+            verified.update(verify_snapshot(snapshot, evidence=verified))
+            if not verified["ok"]:
+                raise ValueError(f"snapshot verification failed: {verified['findings']}")
+            destination = _prepare_restore_destination(policy, scratch_root, snapshot_id)
+            result = _restore_payload(verified, snapshot, destination, deadline)
     except Exception as exc:
         failure = exc
         result = {"ok": False, "findings": [f"restore_exception:{type(exc).__name__}"]}
     finally:
         try:
-            _remove_tree(destination)
+            if destination is not None:
+                _remove_tree(destination)
         except OSError as exc:
             result["ok"] = False
             result["findings"].append(f"scratch_cleanup_failed:{type(exc).__name__}")
-    manifest_sha = sha256_file(snapshot / "manifest.json")
-    receipt = {**policy.plan_identity(), "schema_version": 1, "restore_acceptance_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": destination.exists(), "exact_commands": exact_commands, "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
+    receipt = {**policy.plan_identity(), "schema_version": 1, "restore_acceptance_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": verified.get('manifest_sha256'), "scratch_path": str(destination) if destination else None, "scratch_retained": destination is not None and destination.exists(), "exact_commands": exact_commands, "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
     receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
     receipt_path = policy.backup_dir / "receipts" / receipt_name
     atomic_create_json(receipt_path, receipt)

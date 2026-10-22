@@ -1,13 +1,12 @@
 """Read retained SQLite journals through a private copy, never source recovery writes."""
 from __future__ import annotations
 
-import shutil
 import sqlite3
 import tempfile
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 
-from cdr_export_contract import hash_file
+from ar_local_restore_io import copy_stream, database_copy, pinned_reader, regular_identity
 from cdr_sqlite_budget import install_progress_deadline
 
 
@@ -24,7 +23,7 @@ def database_files(path: Path) -> list[Path]:
 
 
 def identities(path: Path) -> dict:
-    return {p.name: [p.stat().st_size, p.stat().st_mtime_ns, p.stat().st_ctime_ns, p.stat().st_ino]
+    return {p.name: regular_identity(p)
             for p in database_files(path)}
 
 
@@ -37,31 +36,28 @@ def database_view(path: Path, *, validate_copy=None):
     if any(p.is_symlink() for p in files):
         raise ValueError("SQLite source cannot be linked")
     before = identities(path)
-    if len(files) == 1:
-        if validate_copy is not None:
-            validate_copy(path)
-        with closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
-            install_progress_deadline(db)
-            yield db, {"source_sha256": hash_file(path), "journal_mode": "no_retained_journal"}
-    else:
+    # SQLite reopens pathnames itself. Never let it re-resolve a preserved
+    # source after a precheck: pin every inventoried inode and copy from those
+    # descriptors, including the no-journal case.
+    with ExitStack() as held:
+        readers = {source: held.enter_context(pinned_reader(source, expected=before[source.name]))
+                   for source in files}
         with tempfile.TemporaryDirectory(prefix="cdr-audit-sqlite-") as temp:
             root = Path(temp)
             hashes = {}
             for source in files:
                 target = root / source.name
-                shutil.copyfile(source, target)
-                hashes[source.name] = hash_file(target)
-                if hash_file(source) != hashes[source.name]:
-                    raise ValueError("SQLite source changed while copying")
+                hashes[source.name] = copy_stream(*readers[source], target)
             if identities(path) != before:
                 raise ValueError("SQLite journal inventory changed while copying")
             if validate_copy is not None:
                 validate_copy(root / path.name)
             # Opening this writable private copy allows SQLite to apply a
             # retained WAL or roll back a hot rollback journal safely.
-            with closing(sqlite3.connect(root / path.name)) as db:
+            with database_copy(path, root / path.name), closing(sqlite3.connect(root / path.name)) as db:
                 install_progress_deadline(db)
-                yield db, {"source_sha256": hashes[path.name], "journal_mode": "private_copy_recovery",
+                mode = "no_retained_journal" if len(files) == 1 else "private_copy_recovery"
+                yield db, {"source_sha256": hashes[path.name], "journal_mode": mode,
                            "source_files": hashes}
     if identities(path) != before:
         raise ValueError("SQLite source changed during audit")

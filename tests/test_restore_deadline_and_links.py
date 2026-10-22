@@ -22,7 +22,9 @@ LONG_QUERY = "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHER
 
 
 def _control_database(path: Path) -> None:
-    with sqlite3.connect(path) as connection:
+    # A connection context commits but does not close; close the real fixture
+    # handle too so Windows can exercise a subsequent native pathname swap.
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.executescript("CREATE TABLE evidence(id INTEGER PRIMARY KEY, value TEXT); CREATE INDEX evidence_value ON evidence(value);")
         connection.executemany("INSERT INTO evidence VALUES (?, ?)", ((i, str(i)) for i in range(5000)))
 
@@ -229,7 +231,7 @@ def test_restore_timeout_writes_failure_receipt_cleans_copy_and_keeps_last_pass(
     before = {path.relative_to(snapshot).as_posix(): path.read_bytes() for path in snapshot.rglob("*") if path.is_file()}
     previous, clock = latest.read_bytes(), [0.0]
     monkeypatch.setattr(budget.time, "monotonic", lambda: clock[0])
-    original_verify, original_copy, original_connect = backup.verify_snapshot, backup.shutil.copytree, sqlite3.connect
+    original_verify, original_copy, original_connect = backup.verify_snapshot, backup.restore_copy_tree, sqlite3.connect
     if expire_during != "database":
         monkeypatch.setattr(backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []})
 
@@ -255,7 +257,7 @@ def test_restore_timeout_writes_failure_receipt_cleans_copy_and_keeps_last_pass(
         return connection
 
     monkeypatch.setattr(backup, "verify_snapshot", verify)
-    monkeypatch.setattr(backup.shutil, "copytree", copy)
+    monkeypatch.setattr(backup, "restore_copy_tree", copy)
     monkeypatch.setattr(sqlite3, "connect", connect)
     with pytest.raises(RuntimeError, match="receipt="):
         backup.restore_drill(policy, "control-snapshot", tmp_path / "scratch", "pytest", ["restore-drill"])

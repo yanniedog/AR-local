@@ -952,14 +952,14 @@ def test_restore_drill_rejects_post_copy_data_corruption(
     (snapshot / "manifest.json").write_text(
         json.dumps(valid_snapshot_manifest(files)), encoding="utf-8"
     )
-    original_copytree = backup.shutil.copytree
+    original_copytree = backup.restore_copy_tree
 
     def corrupt_copy(source, destination, *args, **kwargs):
         result = original_copytree(source, destination, *args, **kwargs)
         (Path(destination) / "evidence.bin").write_bytes(b"bad!")
         return result
 
-    monkeypatch.setattr(backup.shutil, "copytree", corrupt_copy)
+    monkeypatch.setattr(backup, "restore_copy_tree", corrupt_copy)
     monkeypatch.setattr(
         backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []}
     )
@@ -1126,7 +1126,7 @@ def test_restore_drill_records_exception_without_replacing_last_pass(monkeypatch
     def fail_copy(*_args, **_kwargs):
         raise OSError("simulated restore I/O failure")
 
-    monkeypatch.setattr(backup.shutil, "copytree", fail_copy)
+    monkeypatch.setattr(backup, "restore_copy_tree", fail_copy)
     with pytest.raises(RuntimeError, match="receipt="):
         backup.restore_drill(policy, snapshot_id, tmp_path / "scratch", "pytest", ["restore"])
     failure_receipts = list((policy.backup_dir / "receipts").glob("*.restore.*.json"))

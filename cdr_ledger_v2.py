@@ -35,11 +35,11 @@ def event_digest(event: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(material)).hexdigest()
 
 
-def _read_head(root: Path) -> Optional[dict[str, Any]]:
+def _read_head(root: Path, *, budget: ReadBudget | None = None) -> Optional[dict[str, Any]]:
     path = root / "head.json"
     if not path.is_file():
         return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json(path, budget=budget, max_bytes=65536) if budget is not None else json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, Mapping):
         raise ValueError("ledger-v2 head must be a JSON object")
     if not _DIGEST.fullmatch(str(payload.get("event_digest") or "")):
@@ -386,27 +386,36 @@ def verify_reachable_generation(
     return event
 
 
-def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str, Any]:
+def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True, budget: ReadBudget | None = None) -> dict[str, Any]:
     state_dir = state_dir.expanduser().resolve()
     root = ledger_root(state_dir)
     findings: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     events: dict[str, dict[str, Any]] = {}
     events_by_generation: dict[tuple[str, str], dict[str, Any]] = {}
-    for path in sorted((root / "events").glob("*/*.json")):
+    paths = []
+    for path in (root / "events").glob("*/*.json"):
+        if budget is not None:
+            budget(entries=1)
+        paths.append(path)
+    for path in sorted(paths):
         try:
-            event = json.loads(path.read_text(encoding="utf-8"))
-            verify_event(state_dir, event)
+            event = read_json(path, budget=budget, max_bytes=65536) if budget is not None else json.loads(path.read_text(encoding="utf-8"))
+            verify_event(state_dir, event, budget=budget)
             events[str(event["event_digest"])] = event
             events_by_generation[
                 (str(event["observation_date"]), str(event["generation_id"]))
             ] = event
+        except TimeoutError:
+            raise
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
             findings.append(
                 {"path": path.relative_to(root).as_posix(), "issue": "INVALID_EVENT", "detail": str(error)}
             )
     try:
-        head = _read_head(root)
+        head = _read_head(root, budget=budget)
+    except TimeoutError:
+        raise
     except (OSError, ValueError, json.JSONDecodeError) as error:
         head = None
         findings.append(
@@ -415,6 +424,8 @@ def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str
     reached: set[str] = set()
     cursor = str((head or {}).get("event_digest") or "") or None
     while cursor is not None:
+        if budget is not None:
+            budget(entries=1)
         if cursor in reached:
             findings.append({"event_digest": cursor, "issue": "CHAIN_LOOP"})
             break
@@ -425,6 +436,8 @@ def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str
             break
         cursor = event.get("previous_event_digest")
     for digest, event in events.items():
+        if budget is not None:
+            budget(entries=1)
         if (
             event.get("event_type") == "revision_finalized"
             and event.get("parent_event_digest") is None
@@ -449,6 +462,8 @@ def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str
         while ancestry_event is not None and ancestry_event.get(
             "parent_generation_id"
         ):
+            if budget is not None:
+                budget(entries=1)
             ancestry_key = (
                 str(ancestry_event["observation_date"]),
                 str(ancestry_event["parent_generation_id"]),
@@ -468,7 +483,9 @@ def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str
                 break
         try:
             if verify_artifacts:
-                _verify_artifacts(state_dir, event)
+                _verify_artifacts(state_dir, event, budget=budget)
+        except TimeoutError:
+            raise
         except (OSError, ValueError, KeyError) as error:
             findings.append(
                 {
@@ -478,6 +495,8 @@ def verify_ledger(state_dir: Path, *, verify_artifacts: bool = True) -> dict[str
                     "detail": str(error),
                 }
             )
+    if budget is not None:
+        budget()
     return {
         "ok": not findings,
         "checked_events": len(events),

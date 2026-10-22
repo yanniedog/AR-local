@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterable, Mapping, Optional
 from cdr_atomic import atomic_write_bytes, atomic_write_json, canonical_json_bytes
 from cdr_file_lock import FileLock
 from cdr_http_policy import DEFAULT_HTTP_POLICY, RedirectEvidence, sanitize_url
+from ar_local_restore_io import checkpoint, glob_paths, optional_read_bytes, optional_read_json
 
 
 SCHEMA_VERSION = 1
@@ -182,7 +183,9 @@ class RawAttemptJournal:
         if not self.current_path.is_file():
             return self._initial()
         try:
-            current = json.loads(self.current_path.read_text(encoding="utf-8"))
+            current = optional_read_json(self.current_path)
+        except TimeoutError:
+            raise
         except (OSError, json.JSONDecodeError) as error:
             raise AttemptJournalError("attempt journal current pointer is unreadable") from error
         if not isinstance(current, dict):
@@ -210,7 +213,9 @@ class RawAttemptJournal:
         previous_digest: Optional[str],
     ) -> dict[str, Any]:
         try:
-            event = json.loads(path.read_text(encoding="utf-8"))
+            event = optional_read_json(path)
+        except TimeoutError:
+            raise
         except (OSError, json.JSONDecodeError) as error:
             raise AttemptJournalError(f"attempt event {path.name} is unreadable") from error
         if not isinstance(event, dict):
@@ -293,7 +298,9 @@ class RawAttemptJournal:
         if not key_path.is_file():
             return None
         try:
-            pointer = json.loads(key_path.read_text(encoding="utf-8"))
+            pointer = optional_read_json(key_path)
+        except TimeoutError:
+            raise
         except (OSError, json.JSONDecodeError) as error:
             raise AttemptJournalError("attempt key pointer is unreadable") from error
         if not isinstance(pointer, dict) or pointer.get("attempt_key_hash") != key_hash:
@@ -318,7 +325,9 @@ class RawAttemptJournal:
         if len(candidates) != 1:
             raise AttemptJournalError(f"attempt event predecessor {sequence - 1} is missing or ambiguous")
         try:
-            previous = json.loads(candidates[0].read_text(encoding="utf-8"))
+            previous = optional_read_json(candidates[0])
+        except TimeoutError:
+            raise
         except (OSError, json.JSONDecodeError) as error:
             raise AttemptJournalError("attempt predecessor is unreadable") from error
         digest = previous.get("event_digest") if isinstance(previous, dict) else None
@@ -332,7 +341,8 @@ class RawAttemptJournal:
         observed_at: Optional[datetime] = None
         sequence_count = int(current["sequence"])
         for sequence in range(1, sequence_count + 1):
-            candidates = sorted(self.events.glob(f"{sequence:08d}-*.json"))
+            checkpoint()
+            candidates = sorted(glob_paths(self.events, f"{sequence:08d}-*.json"))
             if len(candidates) != 1:
                 raise AttemptJournalError(f"attempt sequence {sequence} is missing or ambiguous")
             event = self._validate_event(
@@ -342,7 +352,9 @@ class RawAttemptJournal:
             )
             key_path = self.keys / f"{event['attempt_key_hash']}.json"
             try:
-                pointer = json.loads(key_path.read_text(encoding="utf-8"))
+                pointer = optional_read_json(key_path)
+            except TimeoutError:
+                raise
             except (OSError, json.JSONDecodeError) as error:
                 raise AttemptJournalError(f"attempt key for sequence {sequence} is unreadable") from error
             if pointer != self._pointer_for(event, candidates[0].name):
@@ -376,19 +388,22 @@ class RawAttemptJournal:
                 raise AttemptJournalError(f"attempt body path for sequence {sequence} is invalid")
             body_path = self.root / "bodies" / f"{body_name}.body"
             try:
-                body = body_path.read_bytes()
+                body = optional_read_bytes(body_path)
+            except TimeoutError:
+                raise
             except OSError as error:
                 raise AttemptJournalError(f"attempt body for sequence {sequence} is unreadable") from error
             if len(body) != response.get("body_bytes") or hashlib.sha256(body).hexdigest() != body_name:
                 raise AttemptJournalError(f"attempt body for sequence {sequence} does not match its event")
+            checkpoint()
             previous_digest = str(event["event_digest"])
         if current.get("head_digest") != previous_digest:
             raise AttemptJournalError("attempt journal head does not match the committed event chain")
         if current.get("updated_at") != head_completed_at:
             raise AttemptJournalError("attempt journal timestamp does not match its head event")
-        if len(list(self.events.glob("*.json"))) != sequence_count:
+        if len(glob_paths(self.events, "*.json")) != sequence_count:
             raise AttemptJournalError("attempt journal contains uncommitted event files")
-        if len(list(self.keys.glob("*.json"))) != sequence_count:
+        if len(glob_paths(self.keys, "*.json")) != sequence_count:
             raise AttemptJournalError("attempt journal contains unbound key pointers")
         if observed_at is None:
             return None
@@ -587,7 +602,8 @@ class RawAttemptJournal:
             previous: Optional[str] = None
             records = []
             for sequence in range(1, int(current["sequence"]) + 1):
-                candidates = sorted(self.events.glob(f"{sequence:08d}-*.json"))
+                checkpoint()
+                candidates = sorted(glob_paths(self.events, f"{sequence:08d}-*.json"))
                 if len(candidates) != 1:
                     raise AttemptJournalError(
                         f"attempt sequence {sequence} is missing or ambiguous"
