@@ -52,8 +52,8 @@ def compare_population_counts(current, prior, unresolved_prior=()):
     for previous in unresolved_prior:
         provider = previous['provider']
         continuation = {'carried_unresolved':True,
-            **({'last_nonempty':previous['last_nonempty']} if 'last_nonempty' in previous else {}),
-            **({'provider_identity':previous['provider_identity']} if 'provider_identity' in previous else {})}
+            **{key:previous[key] for key in ('last_nonempty','provider_identity','historical_baseline','historical_absence')
+               if key in previous}}
         if provider in seen:
             # A partial return did not resolve the earlier hold. A new zero
             # must retain its original provenance and endpoint restrictions.

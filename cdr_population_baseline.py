@@ -5,26 +5,26 @@ from datetime import date, timedelta
 from pathlib import Path
 import time
 
-from cdr_export_contract import hash_file
+from cdr_export_contract import hash_file, read_json
 from cdr_observation_selection import load_pointer_observation, safe_child
 from cdr_population_sanity import _read_counts, compare_population_counts
 
 
-def _baseline_observation(state, pointer):
+def _baseline_observation(state, pointer, budget=None):
     marker_path = safe_child(state, pointer['marker_path'])
     if marker_path.stat().st_size > 65536:
         raise ValueError('baseline marker exceeds metadata budget')
-    marker = json.loads(marker_path.read_bytes())
+    marker = read_json(marker_path, budget=budget, max_bytes=65536)
     contract_path = safe_child(state, marker['export_contract_path'])
     if contract_path.stat().st_size > 16*1024*1024:
         raise ValueError('baseline contract exceeds metadata budget')
-    return load_pointer_observation(state, pointer)
+    return load_pointer_observation(state, pointer, budget=budget)
 
 
 def _verified_baseline(state, pointer, budget, observation=None, *, deadline=None):
     budget()
     if observation is None:
-        observation = _baseline_observation(state, pointer)
+        observation = _baseline_observation(state, pointer, budget)
     marker = observation['marker']
     contract = observation['contract']
     prior_db = observation['export_root'] / 'local-cdr.sqlite'
@@ -45,7 +45,7 @@ def _verified_baseline(state, pointer, budget, observation=None, *, deadline=Non
 
 
 def _with_history(result, latest, current_counts, state, run_date, budget, deadline):
-    from cdr_population_history import LOOKBACK_DAYS, bootstrap_verified, historical_findings
+    from cdr_population_history import BOOTSTRAP_SEMANTICS_VERSION, LOOKBACK_DAYS, bootstrap_verified, historical_findings
     from cdr_population_identity import prior_provider_identity
     observation, baseline, prior_counts = latest
     for finding in result['findings']:
@@ -56,17 +56,24 @@ def _with_history(result, latest, current_counts, state, run_date, budget, deadl
             finding['last_nonempty'] = {'observation_date':baseline['observation_date'],
                 'products':finding['products_prev'],'rates':finding.get('rates_prev',0)}
     yesterday = (date.fromisoformat(run_date)-timedelta(days=1)).isoformat()
-    bootstrapped = baseline['observation_date'] == yesterday and bootstrap_verified(observation)
+    bootstrapped = baseline['observation_date'] == yesterday and bootstrap_verified(observation,budget=budget)
     budget()
     if bootstrapped:
         result['bootstrap_history'] = {'status':'COMPLETE', 'lookback_days':LOOKBACK_DAYS,
+            'semantics_version':BOOTSTRAP_SEMANTICS_VERSION,
             'inherited_from':dict(baseline)}
         return result
     findings, history = historical_findings(current_counts,latest,state,run_date,
         lambda p:_verified_baseline(state,p,budget,deadline=deadline),budget)
     result['bootstrap_history'] = history
-    seen = {row['provider'] for row in result['findings']}
-    result['findings'].extend(row for row in findings if row['provider'] not in seen)
+    existing = {row['provider']:row for row in result['findings']}
+    for row in findings:
+        previous = existing.get(row['provider'])
+        if previous is None:
+            result['findings'].append(row)
+        elif row.get('historical_absence') and not previous.get('carried_unresolved'):
+            previous.update({key:row[key] for key in
+                ('provider_identity','historical_baseline','historical_absence','last_nonempty')})
     if history['status'] != 'COMPLETE' and not result['findings']:
         return {'status':'UNKNOWN', 'reason':'population_bootstrap_incomplete',
                 'findings':[], 'bootstrap_history':history}
@@ -87,11 +94,11 @@ def finalized_population_report(current_db, state_dir, *, run_date):
         path = state / 'observation-pointers-v2/latest-observation.json'
         if path.is_symlink() or path.stat().st_size > 65536:
             raise ValueError('invalid baseline pointer')
-        pointer = json.loads(path.read_bytes())
+        pointer = read_json(path, budget=budget, max_bytes=65536)
         day = pointer['observation_date']
         if date.fromisoformat(day).isoformat() != day:
             raise ValueError('invalid baseline date')
-        observation = _baseline_observation(state, pointer)
+        observation = _baseline_observation(state, pointer, budget)
         contract = observation['contract']
         unresolved = contract['coverage'].get('provider_population_unverified', [])
         if not isinstance(unresolved, list) or any(not isinstance(row, dict)

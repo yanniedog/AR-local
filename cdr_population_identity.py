@@ -41,26 +41,48 @@ def current_provider_matches(provider, identity, providers):
         if isinstance(row,dict) and provider in {row.get('provider_dir'),row.get('provider_uid'),row.get('brand_name')}]
 
 
-def retain_population_uncertainty(population, status):
-    """Only a complete nonempty current index resolves this source uncertainty."""
+def population_finding_resolved(finding, status):
+    """Only the same holder's complete nonempty index resolves its absence."""
     providers = status.get('provider_states') or []
     diagnostics = status.get('index_diagnostics') or {}
     if not isinstance(providers, list) or not isinstance(diagnostics, dict):
         providers,diagnostics = [],{}
-    def nonempty(finding):
-        matches = current_provider_matches(finding['provider'],finding.get('provider_identity'),providers)
-        if len(matches) != 1:
-            return False
-        endpoint = (finding.get('provider_identity') or {}).get('endpoint_url')
-        if endpoint is not None and matches[0].get('endpoint_url') != endpoint:
-            return False
-        name = matches[0].get('provider_dir') or finding['provider']
-        diagnostic = diagnostics.get(name) or {}
-        return (isinstance(diagnostic, dict) and diagnostic.get('pagination_complete') is True
-            and type(diagnostic.get('unique_products')) is int and diagnostic['unique_products'] > 0)
+    matches = current_provider_matches(finding['provider'],finding.get('provider_identity'),providers)
+    if len(matches) != 1:
+        return False
+    endpoint = (finding.get('provider_identity') or {}).get('endpoint_url')
+    if endpoint is not None and matches[0].get('endpoint_url') != endpoint:
+        return False
+    name = matches[0].get('provider_dir') or finding['provider']
+    diagnostic = diagnostics.get(name) or {}
+    return (isinstance(diagnostic, dict) and diagnostic.get('pagination_complete') is True
+        and type(diagnostic.get('unique_products')) is int and diagnostic['unique_products'] > 0)
+
+
+def verified_historical_absence(finding, run_date, compared_against):
+    """A reconstructed hold needs a separate, exact-holder zero-day proof."""
+    absence = finding.get('historical_absence')
+    identity = finding.get('provider_identity')
+    if (not isinstance(absence,dict)
+            or not verified_prior_identity(identity,finding.get('provider'),run_date)):
+        return False
+    zero_identity = absence.get('provider_identity')
+    if not verified_prior_identity(zero_identity,finding.get('provider'),run_date):
+        return False
+    source,zero_source = identity['source_observation'],zero_identity['source_observation']
+    return (identity.get('identity_status') == zero_identity.get('identity_status') == 'verified_prior_register'
+        and bool(identity.get('provider_uid')) and identity['provider_uid'] == zero_identity.get('provider_uid')
+        and isinstance(identity.get('endpoint_url'),str) and bool(identity['endpoint_url'])
+        and identity['endpoint_url'] == zero_identity.get('endpoint_url')
+        and source['observation_date'] < zero_source['observation_date'] <= compared_against
+        and all(type(absence.get(key)) is int and absence[key] == 0 for key in ('products','rates')))
+
+
+def retain_population_uncertainty(population, status):
+    """Only a complete nonempty current index resolves this source uncertainty."""
     if population.get('unresolved_prior'):
-        population['unresolved_prior'] = [row for row in population['unresolved_prior'] if not nonempty(row)]
+        population['unresolved_prior'] = [row for row in population['unresolved_prior'] if not population_finding_resolved(row,status)]
     if population['status'] in {'PASS','WARN'}:
-        population['findings'] = [row for row in population['findings'] if not nonempty(row)]
+        population['findings'] = [row for row in population['findings'] if not population_finding_resolved(row,status)]
         population['status'] = 'WARN' if population['findings'] else 'PASS'
     return population

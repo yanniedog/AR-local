@@ -326,7 +326,7 @@ def verify_event(state_dir: Path, event: Mapping[str, Any], *, budget: ReadBudge
     _validate_event(event)
     root = ledger_root(state_dir)
     event_path = root / "events" / str(event["observation_date"]) / f"{event['generation_id']}.json"
-    stored = read_json(event_path, budget=budget)
+    stored = read_json(event_path, budget=budget,max_bytes=65536)
     _validate_event(stored)
     if stored != event:
         raise ValueError("ledger event does not match stored event")
