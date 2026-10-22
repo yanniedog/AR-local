@@ -38,6 +38,8 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
+from pi_deploy_service_snapshot import pi_ingest_service_fences_ok, remote_snapshot
+
 from ar_local_pi_runtime import (
     PI_DATA_ROOT,
     PI_DASHBOARD_PORT,
@@ -88,6 +90,9 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "deploy/pi/",
     "pi_daily_sync.py",
     "pi_deploy_verify.py",
+    "pi_deploy_service_snapshot.py",
+    "pi_observer_unit_contract.py",
+    "pi_observer_unit_verify.py",
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
     "pi_backup_foundation.py",
@@ -368,107 +373,8 @@ def _snap_has_dirty_repos(snap: dict[str, str], *, context: str = "") -> bool:
 
 
 def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
-    """One SSH round-trip for SHAs, dirty trees, and dashboard state."""
-    remote = pi_remote()
-    ar = pi_ar_repo()
-    site = pi_site_repo()
-    data = pi_data_root()
-    q_remote = shell_quote(remote)
-    q_ar = shell_quote(ar)
-    q_site = shell_quote(site)
-    q_data = shell_quote(data)
-    q_remote_main = shell_quote(f"{remote}/main")
-    script = (
-        f"set +e; "
-        f"git -C {q_ar} fetch {q_remote} 2>/dev/null; "
-        f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
-        f"ar_o=$(git -C {q_ar} rev-parse {q_remote_main} 2>/dev/null); "
-        f"ar_d=$(git -C {q_ar} status --porcelain | tr '\\n' ';'); "
-        f"git -C {q_site} fetch {q_remote} 2>/dev/null; "
-        f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
-        f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
-        f"site_d=$(git -C {q_site} status --porcelain | tr '\\n' ';'); "
-        f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
-        f"dash_wd=$(systemctl show ar-local-dashboard.service -p WorkingDirectory --value 2>/dev/null); "
-        f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
-        f"daily_wd=$(systemctl show ar-local-daily.service -p WorkingDirectory --value 2>/dev/null); "
-        f"daily_exec=$(systemctl show ar-local-daily.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
-        f"daily_timer_enabled=$(systemctl is-enabled ar-local-daily.timer 2>/dev/null); "
-        f"daily_timer_active=$(systemctl is-active ar-local-daily.timer 2>/dev/null); "
-        f"watchdog_timer_enabled=$(systemctl is-enabled ar-local-daily-watchdog.timer 2>/dev/null); "
-        f"watchdog_timer_active=$(systemctl is-active ar-local-daily-watchdog.timer 2>/dev/null); "
-        f"capacity_timer_enabled=$(systemctl is-enabled ar-local-capacity-monitor.timer 2>/dev/null); "
-        f"capacity_timer_active=$(systemctl is-active ar-local-capacity-monitor.timer 2>/dev/null); "
-        f"daily_kill_mode=$(systemctl show ar-local-daily.service -p KillMode --value 2>/dev/null); "
-        f"daily_start_timeout=$(systemctl show ar-local-daily.service -p TimeoutStartUSec --value 2>/dev/null); "
-        f"watchdog_kill_mode=$(systemctl show ar-local-daily-watchdog.service -p KillMode --value 2>/dev/null); "
-        f"watchdog_exec=$(busctl --system --json=short --timeout=10 get-property "
-        f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2dwatchdog_2eservice "
-        f"org.freedesktop.systemd1.Service ExecStart 2>/dev/null | tr '\\n' ' '); "
-        f"watchdog_start_timeout=$(systemctl show ar-local-daily-watchdog.service -p TimeoutStartUSec --value 2>/dev/null); "
-        f"manual_kill_mode=$(systemctl show ar-local-ingest-now.service -p KillMode --value 2>/dev/null); "
-        f"manual_start_timeout=$(systemctl show ar-local-ingest-now.service -p TimeoutStartUSec --value 2>/dev/null); "
-        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null); "
-        f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null); "
-        f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
-        f"df_site=$(df -P {q_site} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
-        f"df_data=$(df -P {q_data} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
-        f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
-        f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\"; "
-        f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
-        f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
-        f"printf 'DAILY_KILL_MODE=%s\\nDAILY_START_TIMEOUT=%s\\nWATCHDOG_KILL_MODE=%s\\nWATCHDOG_START_TIMEOUT=%s\\nMANUAL_KILL_MODE=%s\\nMANUAL_START_TIMEOUT=%s\\n' \"$daily_kill_mode\" \"$daily_start_timeout\" \"$watchdog_kill_mode\" \"$watchdog_start_timeout\" \"$manual_kill_mode\" \"$manual_start_timeout\"; "
-        f"printf 'WATCHDOG_EXEC_JSON=%s\\n' \"$watchdog_exec\"; "
-        f"printf 'CAPACITY_TIMER_ENABLED=%s\\nCAPACITY_TIMER_ACTIVE=%s\\n' \"$capacity_timer_enabled\" \"$capacity_timer_active\"; "
-        f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
-    )
-    code, stdout, _ = run_ssh(script, dry_run=dry_run)
-    if dry_run:
-        return {
-            "AR_HEAD": "dry",
-            "AR_ORIGIN": "dry",
-            "SITE_HEAD": "dry",
-            "SITE_ORIGIN": "dry",
-            "AR_DIRTY": "",
-            "SITE_DIRTY": "",
-            "DASHBOARD": "active",
-            "DASHBOARD_WD": "dry",
-            "DASHBOARD_EXEC": "dry",
-            "DAILY_WD": "dry",
-            "DAILY_EXEC": "dry",
-            "DAILY_TIMER_ENABLED": "enabled",
-            "DAILY_TIMER_ACTIVE": "active",
-            "WATCHDOG_TIMER_ENABLED": "enabled",
-            "WATCHDOG_TIMER_ACTIVE": "active",
-            "CAPACITY_TIMER_ENABLED": "enabled",
-            "CAPACITY_TIMER_ACTIVE": "active",
-            "DAILY_KILL_MODE": "control-group",
-            "DAILY_START_TIMEOUT": "6h 15min",
-            "WATCHDOG_KILL_MODE": "control-group",
-            "WATCHDOG_START_TIMEOUT": "1min",
-            "WATCHDOG_EXEC_JSON": json.dumps({"type": "a(sasbttttuii)", "data": [
-                ["/usr/bin/python3", ["/usr/bin/python3", "-B", f"{ar}/pi_ingest_observe.py"],
-                 False, 0, 0, 0, 0, 0, 0, 0]]}),
-            "MANUAL_KILL_MODE": "control-group",
-            "MANUAL_START_TIMEOUT": "6h 15min",
-            "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
-            "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
-            "DF_AR": "dry",
-            "DF_SITE": "dry",
-            "DF_DATA": "dry",
-        }
-    snap = _parse_kv_lines(stdout)
-    required = ("AR_HEAD", "AR_ORIGIN", "SITE_HEAD", "SITE_ORIGIN", "DASHBOARD")
-    if all(snap.get(k) for k in required):
-        return snap
-    if code != 0:
-        return None
-    missing = [k for k in required if not snap.get(k)]
-    print(
-        f"pi_deploy_verify: incomplete Pi snapshot (missing {', '.join(missing)}); remote output:\n{stdout[:500]}",
-        file=sys.stderr,
-    )
-    return None
+    return remote_snapshot(ar=pi_ar_repo(), site=pi_site_repo(), data=pi_data_root(),
+                           remote=pi_remote(), run=run_ssh, parse=_parse_kv_lines, dry_run=dry_run)
 
 
 def pi_tree_clean(repo_path: str, *, dry_run: bool = False) -> bool:
@@ -565,45 +471,6 @@ def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
         print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
     return ok
 
-
-def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_KILL_MODE": "control-group",
-        "DAILY_START_TIMEOUT": "6h 15min",
-        "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_START_TIMEOUT": "1min",
-        "MANUAL_KILL_MODE": "control-group",
-        "MANUAL_START_TIMEOUT": "6h 15min",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
-    # The short timeout belongs only to the observation-only watchdog. Reject
-    # legacy repair commands, shell wrappers, extra commands and missing readback.
-    # Typed D-Bus argv preserves argument boundaries and the ignore-failure bit;
-    # systemctl's human-readable command string cannot prove either property.
-    observer_exec = snap.get("WATCHDOG_EXEC_JSON", "")
-    observer_ok = False
-    try:
-        document = json.loads(observer_exec) if len(observer_exec) <= 16384 else None
-        commands = document.get("data") if isinstance(document, dict) else None
-        expected_argv = ["/usr/bin/python3", "-B", f"{pi_ar_repo().rstrip('/')}/pi_ingest_observe.py"]
-        observer_ok = (isinstance(document, dict) and document.get("type") == "a(sasbttttuii)"
-                       and isinstance(commands, list) and len(commands) == 1
-                       and isinstance(commands[0], list) and len(commands[0]) == 10
-                       and commands[0][0] == expected_argv[0] and commands[0][1] == expected_argv
-                       and commands[0][2] is False)
-    except (ValueError, TypeError):
-        pass
-    if not observer_ok:
-        print("pi_deploy_verify: watchdog is not the fixed observation-only command", file=sys.stderr)
-        ok = False
-    if not ok:
-        print("pi_deploy_verify: ingest process fencing is not active", file=sys.stderr)
-    return ok
 
 
 def http_smoke(

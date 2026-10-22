@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
+# Use this installer's reviewed guard before package, checkout or unit mutation.
+# A running observer may still use an older command/deadline: defer, never stop it.
+observer_guard="$(CDPATH= cd "$(dirname "$0")/../.." && pwd -P)/pi_observer_unit_verify.py"
+sudo /usr/bin/python3 -B "$observer_guard" --idle-only
 portable_root="${1:-/srv/ar-local}"
 repo_dir="${2:-$portable_root/AR-local}"
 site_dir="${3:-$portable_root/australianrates}"
@@ -118,8 +122,9 @@ for pair in "ar-local-daily-watchdog:ar-local-daily-watchdog-observe.conf" "ar-l
   sudo install -m 0644 "$tmp_dir/$source" "/etc/systemd/system/$unit.service.d/zz-daily-observe-20261012.conf"
 done
 # The repair unit is manual-only: never enable it or create a timer.
+sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" --idle-only
 sudo systemctl daemon-reload
-sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" "$repo_dir"
+sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" "$repo_dir" --user "$run_user"
 sudo systemctl enable ar-local-dashboard.service
 sudo systemctl enable ar-local-boot-recovery.service
 sudo systemctl enable --now ar-local-daily.timer
