@@ -5,46 +5,19 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from contextlib import closing
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 from ar_local_backup_policy import canonical_json_bytes, sha256_file
+from cdr_quality_sqlite import database_view
 
 
 RESTORE_ACCEPTANCE_SCHEMA = (
     Path(__file__).resolve().parent / "contracts/pi-restore-acceptance-v1.schema.json"
 )
-REQUIRED_DAILY_TABLES = {
-    "schema_meta",
-    "runs",
-    "bank_products",
-    "bank_rates",
-    "bank_items",
-    "bank_product_facts",
-    "bank_product_changes",
-}
-DAILY_SCHEMA_VERSION = "8"
-REQUIRED_DAILY_COLUMNS = {
-    "runs": {"run_date", "generated_at", "banks_counts_json"},
-    "bank_products": {"run_date", "provider", "product_id", "product_key"},
-    "bank_rates": {"run_date", "product_key", "rate", "comparison_rate"},
-    "bank_items": {"run_date", "item_group", "product_key"},
-    "bank_product_facts": {
-        "run_date",
-        "product_key",
-        "fact_id",
-        "canonical_key",
-    },
-    "bank_product_changes": {
-        "run_date",
-        "event_id",
-        "product_id",
-        "event_type",
-    },
-}
 
 
 def _json(path: Path) -> dict[str, object]:
@@ -54,13 +27,71 @@ def _json(path: Path) -> dict[str, object]:
     return payload
 
 
-def _immutable_connection(path: Path) -> sqlite3.Connection:
-    """Open preserved SQLite evidence without creating WAL/SHM sidecars."""
+def _sqlite_health(connection: sqlite3.Connection) -> dict[str, object]:
+    quick = [str(row[0]) for row in connection.execute("PRAGMA quick_check")]
+    integrity = [str(row[0]) for row in connection.execute("PRAGMA integrity_check")]
+    foreign_key = connection.execute("PRAGMA foreign_key_check").fetchone()
+    return {
+        "quick_check": "ok" if quick == ["ok"] else quick,
+        "integrity_check": "ok" if integrity == ["ok"] else integrity,
+        "foreign_key_check": "ok" if foreign_key is None else "failed",
+    }
 
-    return sqlite3.connect(
-        f"file:{path.as_posix()}?mode=ro&immutable=1",
-        uri=True,
-    )
+
+def _sqlite_findings(health: Mapping[str, object], path: Path) -> list[str]:
+    return [f"sqlite_{name}:{path}" for name, result in health.items() if result != "ok"]
+
+
+def _retained_journal_policy(path: Path) -> dict[str, str]:
+    policy: dict[str, str] = {}
+    wal, journal = Path(f"{path}-wal"), Path(f"{path}-journal")
+    for retained in (wal, journal):
+        if retained.is_symlink():
+            raise ValueError("retained SQLite journals cannot be linked")
+        if not retained.exists() or retained.stat().st_size == 0:
+            continue
+        with retained.open("rb") as stream:
+            header = stream.read(32)
+            if retained == journal and retained.stat().st_size >= 16:
+                stream.seek(-16, 2)
+                trailer = stream.read(16)
+                if trailer[-8:] == bytes.fromhex("d9d505f920a163d7"):
+                    raise ValueError("retained SQLite super-journal references require separate recovery")
+        if retained == wal:
+            if (len(header) < 32 or header[:4] not in {b"7\x7f\x06\x82", b"7\x7f\x06\x83"}
+                    or int.from_bytes(header[4:8], "big") != 3007000):
+                raise ValueError("retained SQLite WAL header is malformed")
+            sizes = (int.from_bytes(header[8:12], "big"),)
+            policy["wal"] = "sqlite_native_committed_view"
+        elif len(header) >= 28 and header[:8] == bytes(8):
+            policy["rollback"] = "non_hot_zero_header_preserved"
+            continue
+        else:
+            if len(header) < 28 or header[:8] != bytes.fromhex("d9d505f920a163d7"):
+                raise ValueError("retained SQLite rollback journal header is malformed")
+            sizes = (int.from_bytes(header[20:24], "big"), int.from_bytes(header[24:28], "big"))
+            policy["rollback"] = "sqlite_native_committed_view"
+        if any(size < 512 or size > 65536 or size & (size - 1) for size in sizes):
+            raise ValueError("retained SQLite journal page or sector size is invalid")
+    if policy.get("wal") and policy.get("rollback") == "sqlite_native_committed_view":
+        raise ValueError("simultaneous active WAL and rollback journals are ambiguous")
+    return policy
+
+
+@contextmanager
+def _restore_database_view(path: Path):
+    policy: dict[str, str] = {}
+
+    def validate_copy(copy: Path) -> None:
+        policy.update(_retained_journal_policy(copy))
+
+    with database_view(path, validate_copy=validate_copy) as (connection, snapshot):
+        # Native recovery runs only in database_view's verified private copy.
+        # SQLite selects committed state; recycled/uncommitted tail bytes stay
+        # preserved in source_files rather than being claimed as replayed rows.
+        connection.execute("PRAGMA schema_version").fetchone()
+        yield connection, {**snapshot, "retained_journals": policy,
+                           "recovery_policy": "sqlite_native_committed_view"}
 
 
 def _daily_export_reconciliation(database: Path) -> dict[str, object]:
@@ -70,7 +101,7 @@ def _daily_export_reconciliation(database: Path) -> dict[str, object]:
     banks = _json(banks_files[0])
     run_date = banks_files[0].stem.removeprefix("banks-")
     expected = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
-    with closing(_immutable_connection(database)) as connection:
+    with _restore_database_view(database) as (connection, _):
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
             "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
@@ -173,75 +204,49 @@ def _pointer_matches_marker(
 
 
 def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, object], list[str]]:
-    findings: list[str] = []
-    with closing(_immutable_connection(path)) as connection:
-        quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
-        tables = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-    record: dict[str, object] = {
-        "path": path.relative_to(data_root).as_posix(),
-        "quick_check": quick_check,
-    }
-    if quick_check != "ok":
-        findings.append(f"sqlite_quick_check:{path}")
-    missing = sorted(REQUIRED_DAILY_TABLES - tables)
-    if missing:
-        findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
-        return record, findings
-    with closing(_immutable_connection(path)) as connection:
-        schema_version = connection.execute(
-            "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone()
-        if not schema_version or schema_version[0] != DAILY_SCHEMA_VERSION:
-            findings.append(f"daily_schema_version_mismatch:{path}")
-        for table, columns in REQUIRED_DAILY_COLUMNS.items():
-            actual_columns = {
-                row[0]
-                for row in connection.execute("SELECT name FROM pragma_table_info(?)", (table,))
-            }
-            if not set(columns).issubset(actual_columns):
-                findings.append(f"daily_columns_missing:{path}:{table}")
-    try:
-        record["export_reconciliation"] = _daily_export_reconciliation(path)
-    except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
-        findings.append(f"daily_export_mismatch:{path}:{exc}")
+    from cdr_observation_db import SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION
+    from laptop_backup_daily_verify import daily_reconciliation_bounded
+
+    record: dict[str, object] = {"path": path.relative_to(data_root).as_posix()}
+    with _restore_database_view(path) as (connection, snapshot):
+        user_version = connection.execute("PRAGMA user_version").fetchone()[0]
+        health = {} if user_version == OBSERVATION_SCHEMA_VERSION else _sqlite_health(connection)
+        record.update(health, source_sqlite=snapshot)
+        findings = _sqlite_findings(health, path)
+        try:
+            reconciliation = daily_reconciliation_bounded(path, connection=connection)
+            schema_version = reconciliation["schema_version"]
+            if user_version not in {0, int(schema_version)}:
+                raise ValueError("SQLite user_version disagrees with its schema metadata")
+            record.update(schema_version=schema_version, export_reconciliation=reconciliation)
+            if user_version == OBSERVATION_SCHEMA_VERSION:
+                # Canonical validation includes these checks; do not scan twice.
+                record.update(quick_check="ok", integrity_check="ok", foreign_key_check="ok")
+        except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
+            findings.append(f"daily_export_mismatch:{path}:{exc}")
     return record, findings
 
 
 def verify_restored_state(data_root: Path) -> dict[str, object]:
     from cdr_export_contract import load_contract
     from cdr_ledger_v2 import verify_ledger
-
     findings: list[str] = []
     sqlite_results: list[dict[str, object]] = []
     daily_databases: list[Path] = []
     for path in sorted(data_root.rglob("*.sqlite")):
         try:
-            with closing(_immutable_connection(path)) as connection:
-                result = connection.execute("PRAGMA quick_check").fetchone()[0]
-                schema_version = None
-                if path.name == "local-cdr.sqlite":
-                    daily_databases.append(path.resolve())
-                    row = connection.execute(
-                        "SELECT value FROM schema_meta WHERE key = 'version'"
-                    ).fetchone()
-                    schema_version = row[0] if row else None
-            sqlite_results.append(
-                {
-                    "path": path.relative_to(data_root).as_posix(),
-                    "quick_check": result,
-                    **({"schema_version": schema_version} if path.name == "local-cdr.sqlite" else {}),
-                }
-            )
-            if result != "ok":
-                findings.append(f"sqlite_quick_check:{path}")
-            if path.name == "local-cdr.sqlite" and schema_version is None:
-                findings.append(f"daily_schema_version_missing:{path}")
-        except sqlite3.Error:
+            if path.name == "local-cdr.sqlite":
+                daily_databases.append(path.resolve())
+                record, database_findings = _verify_daily_database(path, data_root)
+                sqlite_results.append(record)
+                findings.extend(database_findings)
+            else:
+                with _restore_database_view(path) as (connection, snapshot):
+                    health = _sqlite_health(connection)
+                sqlite_results.append({"path": path.relative_to(data_root).as_posix(), **health,
+                                       "source_sqlite": snapshot})
+                findings.extend(_sqlite_findings(health, path))
+        except (OSError, ValueError, sqlite3.Error):
             findings.append(f"sqlite_unreadable:{path}")
     if not daily_databases:
         findings.append("daily_database_missing")
@@ -286,9 +291,13 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
     if selected is not None:
         selected_database = data_root / str(selected["database_path"])
         try:
-            selected_record, selected_findings = _verify_daily_database(
-                selected_database, data_root
-            )
+            previous = next((item for item in sqlite_results if item["path"] == selected["database_path"]), {})
+            if previous.get("export_reconciliation"):
+                # Already verified with the current or exact legacy validator;
+                # pointer verification subsequently binds its exact file hash.
+                selected_record, selected_findings = previous, []
+            else:
+                selected_record, selected_findings = _verify_daily_database(selected_database, data_root)
             findings.extend(selected_findings)
             sqlite_results = [
                 selected_record
@@ -296,7 +305,7 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
                 else item
                 for item in sqlite_results
             ]
-        except sqlite3.Error:
+        except (OSError, ValueError, sqlite3.Error):
             findings.append(f"sqlite_unreadable:{selected_database}")
     return {
         "ok": not findings,

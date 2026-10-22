@@ -691,6 +691,7 @@ def _write_finalized_observation(data_root: Path, run_date: str = "2026-08-24") 
         "product_facts": [],
         "product_changes": [],
         "failures": [],
+        "holder_attempts": [],
     }
     cdr_outputs.rebuild_run_db(exports / "local-cdr.sqlite", run_date, banks)
     (exports / f"banks-{run_date}.json").write_text(
@@ -852,7 +853,7 @@ def test_restored_state_accepts_fully_bound_latest_observation(tmp_path: Path) -
     )
 
 
-def test_restored_state_preserves_older_schema_without_current_reconciliation(
+def test_restored_state_rejects_known_version_without_its_schema(
     tmp_path: Path,
 ) -> None:
     historical = tmp_path / "runs/2026-08-23/_exports"
@@ -867,13 +868,13 @@ def test_restored_state_preserves_older_schema_without_current_reconciliation(
     ledger_report = verify_ledger(tmp_path / "state")
     assert ledger_report["ok"], ledger_report
     report = backup._verify_restored_state(tmp_path)
-    assert report["ok"], report["findings"]
+    assert not report["ok"]
+    assert any(item.startswith("daily_export_mismatch:") for item in report["findings"])
     historical_record = next(
         item
         for item in report["sqlite"]
         if item["path"].startswith("runs/2026-08-23/")
     )
-    assert historical_record["schema_version"] == "7"
     assert "export_reconciliation" not in historical_record
 
 
