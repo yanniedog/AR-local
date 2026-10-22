@@ -12,10 +12,11 @@ from cdr_sqlite_budget import install_progress_deadline
 
 
 def database_files(path: Path) -> list[Path]:
+    """Inventory regular evidence, including sidecars without an optional primary."""
     candidates = [path, *(Path(str(path) + s) for s in ("-wal", "-shm", "-journal"))]
     if any(p.is_symlink() for p in candidates):
         raise ValueError("SQLite source cannot be linked")
-    if not path.is_file():
+    if path.exists() and not path.is_file():
         raise ValueError("SQLite source database is missing or not a regular file")
     if any(p.exists() and not p.is_file() for p in candidates):
         raise ValueError("SQLite source journal is not a regular file")
@@ -31,6 +32,8 @@ def identities(path: Path) -> dict:
 def database_view(path: Path, *, validate_copy=None):
     """Recover retained journals only in a verified copy, after optional policy checks."""
     files = database_files(path)
+    if path not in files:
+        raise ValueError("SQLite source database is missing or not a regular file")
     if any(p.is_symlink() for p in files):
         raise ValueError("SQLite source cannot be linked")
     before = identities(path)

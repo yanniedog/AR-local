@@ -41,6 +41,8 @@ def test_rejects_dangling_database_or_journal_before_open(tmp_path, monkeypatch,
 
     monkeypatch.setattr(sqlite3, "connect", unexpected_open)
     with pytest.raises(ValueError, match="cannot be linked"):
+        database_files(database)
+    with pytest.raises(ValueError, match="cannot be linked"):
         with database_view(database):
             pytest.fail("linked database accepted")
     assert linked.is_symlink()
@@ -52,19 +54,45 @@ def test_rejects_dangling_database_or_journal_before_open(tmp_path, monkeypatch,
     assert f"sqlite_unreadable:{database}" in report["findings"]
 
 
-def test_missing_database_does_not_create_an_empty_recovery_copy(tmp_path):
+def test_missing_database_does_not_create_an_empty_recovery_copy(tmp_path, monkeypatch):
+    database = tmp_path / "absent.sqlite"
+    # Discovery checks both supported filenames; only one needs to exist.
+    assert database_files(database) == []
+    monkeypatch.setattr(sqlite3, "connect", lambda *_args, **_kwargs: pytest.fail("missing source opened"))
     with pytest.raises(ValueError, match="missing or not a regular file"):
-        with database_view(tmp_path / "absent.sqlite"):
+        with database_view(database):
             pytest.fail("missing source accepted")
     assert list(tmp_path.iterdir()) == []
 
 
-def test_non_regular_journal_is_rejected(tmp_path):
+@pytest.mark.parametrize("suffix", ["-wal", "-shm", "-journal"])
+def test_orphan_journal_without_primary_is_rejected_before_open(tmp_path, monkeypatch, suffix):
+    database = tmp_path / "absent.sqlite"
+    companion = Path(f"{database}{suffix}")
+    original = b"unparsed structural journal control\n"
+    companion.write_bytes(original)
+    monkeypatch.setattr(sqlite3, "connect", lambda *_args, **_kwargs: pytest.fail("orphan source opened"))
+    # Preservation inventories the exact orphan bytes; opening still refuses.
+    assert database_files(database) == [companion]
+    with pytest.raises(ValueError, match="missing or not a regular file"):
+        with database_view(database):
+            pytest.fail("orphan source accepted")
+    assert not database.exists()
+    assert companion.read_bytes() == original
+
+
+@pytest.mark.parametrize("suffix", ["", "-wal", "-shm", "-journal"])
+def test_non_regular_database_or_journal_is_rejected(tmp_path, monkeypatch, suffix):
     database = tmp_path / "preserved.sqlite"
-    _control_database(database)
-    Path(f"{database}-wal").mkdir()
-    with pytest.raises(ValueError, match="journal is not a regular file"):
+    if suffix:
+        _control_database(database)
+    Path(f"{database}{suffix}").mkdir()
+    monkeypatch.setattr(sqlite3, "connect", lambda *_args, **_kwargs: pytest.fail("nonregular source opened"))
+    with pytest.raises(ValueError, match="not a regular file"):
         database_files(database)
+    with pytest.raises(ValueError, match="not a regular file"):
+        with database_view(database):
+            pytest.fail("nonregular source accepted")
 
 
 @pytest.mark.parametrize("phase", ["quick_check", "integrity_check", "foreign_key_check"])
