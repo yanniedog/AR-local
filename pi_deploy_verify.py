@@ -402,6 +402,9 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"daily_kill_mode=$(systemctl show ar-local-daily.service -p KillMode --value 2>/dev/null); "
         f"daily_start_timeout=$(systemctl show ar-local-daily.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"watchdog_kill_mode=$(systemctl show ar-local-daily-watchdog.service -p KillMode --value 2>/dev/null); "
+        f"watchdog_exec=$(busctl --system --json=short --timeout=10 get-property "
+        f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2dwatchdog_2eservice "
+        f"org.freedesktop.systemd1.Service ExecStart 2>/dev/null | tr '\\n' ' '); "
         f"watchdog_start_timeout=$(systemctl show ar-local-daily-watchdog.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"manual_kill_mode=$(systemctl show ar-local-ingest-now.service -p KillMode --value 2>/dev/null); "
         f"manual_start_timeout=$(systemctl show ar-local-ingest-now.service -p TimeoutStartUSec --value 2>/dev/null); "
@@ -415,6 +418,7 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
         f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
         f"printf 'DAILY_KILL_MODE=%s\\nDAILY_START_TIMEOUT=%s\\nWATCHDOG_KILL_MODE=%s\\nWATCHDOG_START_TIMEOUT=%s\\nMANUAL_KILL_MODE=%s\\nMANUAL_START_TIMEOUT=%s\\n' \"$daily_kill_mode\" \"$daily_start_timeout\" \"$watchdog_kill_mode\" \"$watchdog_start_timeout\" \"$manual_kill_mode\" \"$manual_start_timeout\"; "
+        f"printf 'WATCHDOG_EXEC_JSON=%s\\n' \"$watchdog_exec\"; "
         f"printf 'CAPACITY_TIMER_ENABLED=%s\\nCAPACITY_TIMER_ACTIVE=%s\\n' \"$capacity_timer_enabled\" \"$capacity_timer_active\"; "
         f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
     )
@@ -441,7 +445,10 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "DAILY_KILL_MODE": "control-group",
             "DAILY_START_TIMEOUT": "6h 15min",
             "WATCHDOG_KILL_MODE": "control-group",
-            "WATCHDOG_START_TIMEOUT": "6h 15min",
+            "WATCHDOG_START_TIMEOUT": "1min",
+            "WATCHDOG_EXEC_JSON": json.dumps({"type": "a(sasbttttuii)", "data": [
+                ["/usr/bin/python3", ["/usr/bin/python3", "-B", f"{ar}/pi_ingest_observe.py"],
+                 False, 0, 0, 0, 0, 0, 0, 0]]}),
             "MANUAL_KILL_MODE": "control-group",
             "MANUAL_START_TIMEOUT": "6h 15min",
             "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
@@ -564,7 +571,7 @@ def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
         "DAILY_KILL_MODE": "control-group",
         "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_START_TIMEOUT": "6h 15min",
+        "WATCHDOG_START_TIMEOUT": "1min",
         "MANUAL_KILL_MODE": "control-group",
         "MANUAL_START_TIMEOUT": "6h 15min",
     }
@@ -574,6 +581,26 @@ def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
         print(f"pi_deploy_verify: {field}: {actual}")
         if actual != value:
             ok = False
+    # The short timeout belongs only to the observation-only watchdog. Reject
+    # legacy repair commands, shell wrappers, extra commands and missing readback.
+    # Typed D-Bus argv preserves argument boundaries and the ignore-failure bit;
+    # systemctl's human-readable command string cannot prove either property.
+    observer_exec = snap.get("WATCHDOG_EXEC_JSON", "")
+    observer_ok = False
+    try:
+        document = json.loads(observer_exec) if len(observer_exec) <= 16384 else None
+        commands = document.get("data") if isinstance(document, dict) else None
+        expected_argv = ["/usr/bin/python3", "-B", f"{pi_ar_repo().rstrip('/')}/pi_ingest_observe.py"]
+        observer_ok = (isinstance(document, dict) and document.get("type") == "a(sasbttttuii)"
+                       and isinstance(commands, list) and len(commands) == 1
+                       and isinstance(commands[0], list) and len(commands[0]) == 10
+                       and commands[0][0] == expected_argv[0] and commands[0][1] == expected_argv
+                       and commands[0][2] is False)
+    except (ValueError, TypeError):
+        pass
+    if not observer_ok:
+        print("pi_deploy_verify: watchdog is not the fixed observation-only command", file=sys.stderr)
+        ok = False
     if not ok:
         print("pi_deploy_verify: ingest process fencing is not active", file=sys.stderr)
     return ok
