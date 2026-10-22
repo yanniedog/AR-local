@@ -149,7 +149,7 @@ def test_historical_authority_requires_an_original_registered_endpoint():
         history._historical_finding(finding,old,baseline,latest)
 
 
-@pytest.mark.parametrize('limit',[0,2])
+@pytest.mark.parametrize('limit',[0,12])
 def test_expired_budget_retains_only_already_verified_findings(monkeypatch,limit):
     calls = []
     def budget():
@@ -165,7 +165,8 @@ def test_expired_budget_retains_only_already_verified_findings(monkeypatch,limit
 def test_only_complete_bound_bootstrap_stamp_ends_rescan(tmp_path,state,expected):
     observation = observed('2026-10-21')[0]
     report = {'run_date':'2026-10-21','provider_population':{'status':state,
-        'bootstrap_history':{'status':'COMPLETE','lookback_days':7}}}
+        'bootstrap_history':{'status':'COMPLETE','lookback_days':7,
+                             'semantics_version':history.BOOTSTRAP_SEMANTICS_VERSION}}}
     raw = json.dumps(report).encode()
     (tmp_path/'provider-population-report.json').write_bytes(raw)
     observation['export_root']=tmp_path
@@ -257,7 +258,7 @@ def test_expired_shared_budget_cannot_return_inherited_complete(monkeypatch):
     latest = observed('2026-10-20')
     result = compare_population_counts(observed('2026-10-21')[2],latest[2])
     result['baseline']=latest[1]
-    monkeypatch.setattr(history,'bootstrap_verified',lambda observation:True)
+    monkeypatch.setattr(history,'bootstrap_verified',lambda observation,**kw:True)
     def expired(**kw):raise ValueError('expired during report read')
     with pytest.raises(ValueError,match='expired'):
         _with_history(result,latest,observed('2026-10-21')[2],Path('.'),'2026-10-21',expired,0)

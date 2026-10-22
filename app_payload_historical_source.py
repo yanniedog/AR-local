@@ -29,9 +29,10 @@ def historical_contract(state: Path, run_date: str, *, paths=None, decision_path
     snapshot = paths is not None
     paths = (list((state / 'export-contracts-v2' / run_date).glob('*.json')) if paths is None
              else _snapshot_paths(state,run_date,'export-contracts-v2',paths,8))
-    if decision_paths is not None:
-        decision_paths = _snapshot_paths(state,run_date,'observation-selections-v1',decision_paths,16)
-    if len(paths) <= 1:
+    decision_paths = (list((state / 'observation-selections-v1' / run_date).glob('*.json'))
+                      if decision_paths is None else
+                      _snapshot_paths(state,run_date,'observation-selections-v1',decision_paths,16))
+    if len(paths) <= 1 and not decision_paths:
         if snapshot:
             contract = (load_contract(safe_child(state, paths[0].relative_to(state).as_posix()),
                                      budget=budget) if paths else None)
@@ -48,7 +49,7 @@ def historical_contract(state: Path, run_date: str, *, paths=None, decision_path
         if contract['observation_date'] != run_date or generation in contracts:
             raise ValueError('Ambiguous historical contracts')
         event_path = safe_child(state, f'ledger-v2/events/{run_date}/{generation}.json')
-        event = read_json(event_path,budget=budget)
+        event = read_json(event_path,budget=budget,max_bytes=65536)
         if not isinstance(event, dict):
             raise ValueError('Invalid historical event')
         verify_event(state, event,budget=budget)
@@ -56,12 +57,10 @@ def historical_contract(state: Path, run_date: str, *, paths=None, decision_path
             raise ValueError('Historical event/contract mismatch')
         contracts[generation], events[generation] = contract, event['event_digest']
     decisions, decision_states = {}, {}
-    decision_paths = ((state / 'observation-selections-v1' / run_date).glob('*.json')
-                      if decision_paths is None else decision_paths)
     for path in decision_paths:
         if budget is not None:
             budget()
-        decision = read_json(safe_child(state, path.relative_to(state).as_posix()),budget=budget)
+        decision = read_json(safe_child(state, path.relative_to(state).as_posix()),budget=budget,max_bytes=65536)
         if (not isinstance(decision, dict)
                 or hashlib.sha256(canonical_json_bytes(decision)).hexdigest() != path.stem
                 or decision.get('schema_version') != 1 or decision.get('observation_date') != run_date

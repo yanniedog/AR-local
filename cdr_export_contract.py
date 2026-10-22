@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import stat
 from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -71,12 +73,25 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _budgeted_chunks(path: Path, budget: ReadBudget):
+def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = None):
     """Cooperative checks bound work between reads, not an OS-blocked read."""
     budget(entries=1)
-    expected_size = path.stat().st_size
-    remaining = expected_size
-    with path.open("rb") as stream:
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if path.is_symlink():
+        raise ValueError("bounded verification requires a regular unlinked file")
+    descriptor = os.open(path, flags)
+    try:
+        source = os.fstat(descriptor)
+        if not stat.S_ISREG(source.st_mode):
+            raise ValueError("bounded verification requires a regular file")
+        if max_bytes is not None and source.st_size > max_bytes:
+            raise ValueError("verification JSON exceeds bounded read limit")
+        stream = os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    expected_size = remaining = source.st_size
+    with stream:
         while remaining:
             amount = min(1024 * 1024, remaining)
             budget(reserve_bytes=amount)
@@ -87,16 +102,22 @@ def _budgeted_chunks(path: Path, budget: ReadBudget):
             remaining -= len(chunk)
             yield chunk
         budget()
-        if path.stat().st_size != expected_size:
+        after = path.lstat()
+        if (not stat.S_ISREG(after.st_mode) or after.st_size != expected_size
+                or (after.st_dev,after.st_ino) != (source.st_dev,source.st_ino)):
             raise ValueError("artifact size changed during bounded verification")
 
 
-def read_json(path: Path, *, budget: ReadBudget | None = None) -> Any:
+def read_bytes(path: Path, *, budget: ReadBudget, max_bytes: int) -> bytes:
+    return b"".join(_budgeted_chunks(path, budget, max_bytes=max_bytes))
+
+
+def read_json(path: Path, *, budget: ReadBudget | None = None, max_bytes: int = 32*1024*1024) -> Any:
     if budget is None:
         return json.loads(path.read_text(encoding="utf-8"))
-    if path.stat().st_size > 32 * 1024 * 1024:
+    if path.stat().st_size > max_bytes:
         raise ValueError("verification JSON exceeds bounded read limit")
-    payload = json.loads(b"".join(_budgeted_chunks(path, budget)).decode("utf-8"))
+    payload = json.loads(read_bytes(path, budget=budget, max_bytes=max_bytes).decode("utf-8"))
     budget()
     return payload
 
@@ -336,7 +357,7 @@ def write_contract(state_dir: Path, contract: Mapping[str, Any]) -> Path:
 
 
 def load_contract(path: Path, *, budget: ReadBudget | None = None) -> dict[str, Any]:
-    contract = read_json(path, budget=budget)
+    contract = read_json(path, budget=budget,max_bytes=16*1024*1024)
     # Budgeted verification retains its complete accounting and schema reads.
     cache = _VALIDATED_CONTRACTS.get() if budget is None else None
     content_digest = hashlib.sha256(canonical_json_bytes(contract)).hexdigest() if cache is not None else None

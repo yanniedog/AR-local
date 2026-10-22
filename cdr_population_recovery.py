@@ -3,7 +3,7 @@ from datetime import date
 
 from cdr_compatibility import response_shape_error
 from cdr_observation_selection import read_bound_json
-from cdr_population_identity import current_provider_matches,verified_prior_identity
+from cdr_population_identity import current_provider_matches,verified_historical_absence,verified_prior_identity
 
 
 def population_recovery_requests(observation, providers):
@@ -52,12 +52,16 @@ def population_recovery_requests(observation, providers):
         identity = finding.get('provider_identity') if isinstance(finding,dict) else None
         identity_verified = verified_prior_identity(identity,provider,report['run_date'])
         historical = finding.get('historical_baseline') if isinstance(finding,dict) else None
+        gap = historical is not None and verified_historical_absence(finding,report['run_date'],report['compared_against'])
         if historical is not None:
             last = finding.get('last_nonempty') or {}
             if (not identity_verified or historical != identity['source_observation']
                     or historical['observation_date'] > report['compared_against']
                     or last.get('observation_date') != historical['observation_date']
-                    or last.get('products') != prior or last.get('rates') != finding.get('rates_prev')):
+                    or type(last.get('products')) is not int or last['products'] <= 0
+                    or type(last.get('rates')) is not int or last['rates'] < 0
+                    or (not gap and (last['products'] != prior or last['rates'] != finding.get('rates_prev')))
+                    or ('historical_absence' in finding and not gap)):
                 raise ValueError('historical population baseline differs from its verified source')
         if (not isinstance(provider, str) or provider in seen
                 or (provider not in providers and not identity_verified)
@@ -65,10 +69,10 @@ def population_recovery_requests(observation, providers):
                 or finding.get('code') != 'provider_population_disappeared'
                 or finding.get('disposition') != 'UNVERIFIED_SOURCE_ABSENCE'
                 or finding.get('population_known') is not False or type(prior) is not int
-                or prior < 0 or (prior == 0 and not carried)
+                or prior < 0 or (prior == 0 and not carried and not gap)
                 or type(finding.get('products_curr')) is not int or finding['products_curr'] < 0
                 or type(finding.get('rates_curr')) is not int or finding['rates_curr'] < 0
-                or ((finding['products_curr'] or finding['rates_curr']) and not carried)):
+                or ((finding['products_curr'] or finding['rates_curr']) and not carried and not gap)):
             raise ValueError('population anomaly lacks a reconciled empty-index identity')
         seen.add(provider)
         if finding['products_curr'] or finding['rates_curr']:
