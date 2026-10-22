@@ -6,14 +6,27 @@ Normal `ar-local-daily.service` and unrelated health timers are unchanged.
 
 The sole daily Codex controller may call
 `sudo systemctl start --wait ar-local-queue-task-daily-repair.service` once at
-20:00 Australia/Hobart. There is deliberately no repair timer or install target.
+03:00 Australia/Hobart after the approved single-caller migration is actually
+installed and verified. `DAILY_REPAIR_0300.md` supersedes the former 20:00
+schedule; source documentation alone does not install or activate that migration.
+There is deliberately no repair timer or install target.
 Do not call the former repair-capable watchdog command from a timer.
 
 Before any repair, the service verifies its own cgroup, MainPID, restart policy,
-and systemd timeouts, then exclusively creates a permanent Hobart-date claim in
-`/var/lib/ar-local-daily-repair/`. A crash, failed admission, timeout, or failed
-repair consumes that date. Do not delete a claim or retry after an ambiguous
-response. Existing shared-Pi admission and producer locking still apply.
+and systemd timeouts and checks whole-run natural/manual ingest clearance before
+exclusively creating a permanent Hobart-date claim in
+`/var/lib/ar-local-daily-repair/`. Once created, that Pi claim is consumed by a
+crash, later failed admission, timeout, or failed repair. If a competing ingest
+appears after the claim, the worker refuses repair and retains the claim.
+Do not delete a claim or retry after an ambiguous response. Existing shared-Pi
+admission and producer locking still apply.
+
+The Windows controller has its own permanent scheduled-date claim, taken in the
+03:00 minute before observation. A Pi check that defers read-only before creating
+the Pi claim may only be observed within that same bounded controller session.
+It does not authorize another wake-up, catch-up, alternate caller or manual retry.
+If clearance and the remaining execution budget do not fit, the controller ends
+with that scheduled date consumed. Neither claim is reset by these distinctions.
 
 The kernel limits startup to 61 seconds, execution to 1100 seconds and stop
 grace to 10 seconds, with another 10 seconds reserved for the stop hook. The repair process tree is

@@ -19,6 +19,27 @@ INGEST_UNITS = ("ar-local-daily.service", "ar-local-ingest-now.service")
 VALIDATOR = Path("/srv/ar-local/canary/drive-restore-715-20260913/code/verify_local.py")
 VALIDATOR_SHA256 = "22eafb96b3f5abeff9d0ac4e875d3949e5d79cd411c03f127a601ce720c4fdcc"
 PROPERTIES = "LoadState,ActiveState,MainPID,ControlPID,ControlGroup,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,InactiveEnterTimestampMonotonic"
+UNIT_PATHS = {
+    INGEST_UNITS[0]: "/org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2eservice",
+    INGEST_UNITS[1]: "/org/freedesktop/systemd1/unit/ar_2dlocal_2dingest_2dnow_2eservice",
+}
+
+
+def _terminal_times(row):
+    values = []
+    for key in ("ExecMainStartTimestampMonotonic", "ExecMainExitTimestampMonotonic",
+                "InactiveEnterTimestampMonotonic"):
+        value = row[key]
+        if not (type(value) is int or isinstance(value, str) and re.fullmatch(r"[0-9]+", value)):
+            raise ValueError("unverified unit timestamp")
+        values.append(int(value) / 1_000_000)
+    return tuple(values)
+
+
+def _manual_requires_validation(daily_times, manual_times):
+    # A queued manual capture can start before the daily run yet finish later.
+    # Its late post-start validation must not be hidden by older daily proof.
+    return manual_times[1] > daily_times[1] or manual_times[2] > daily_times[2]
 
 
 def daily_window(now):
@@ -34,9 +55,8 @@ def validate_terminal(units, now, monotonic):
             return "natural_run_or_validation_not_terminal"
     try:
         daily = units[INGEST_UNITS[0]]
-        started = int(daily["ExecMainStartTimestampMonotonic"]) / 1_000_000
-        ended = int(daily["ExecMainExitTimestampMonotonic"]) / 1_000_000
-        verified = int(daily["InactiveEnterTimestampMonotonic"]) / 1_000_000
+        daily_times = _terminal_times(daily)
+        started, ended, verified = daily_times
         source_day = (now - timedelta(seconds=monotonic - started)).astimezone(HOBART).date()
         if not 0 < started <= ended <= verified <= monotonic or source_day != now.astimezone(HOBART).date():
             return "current_day_terminal_validation_unverified"
@@ -45,6 +65,18 @@ def validate_terminal(units, now, monotonic):
     if (daily.get("Result") != "success" or daily.get("ExecMainStatus") != "0"
             or daily.get("automatic_validation_contract_verified") is not True):
         return "automatic_validation_failed"
+    try:
+        manual = units[INGEST_UNITS[1]]
+        manual_times = _terminal_times(manual)
+        if manual_times != (0, 0, 0):
+            if not 0 < manual_times[0] <= manual_times[1] <= manual_times[2] <= monotonic:
+                return "manual_terminal_validation_unverified"
+            if (_manual_requires_validation(daily_times, manual_times)
+                    and (manual.get("Result") != "success" or manual.get("ExecMainStatus") != "0"
+                         or manual.get("automatic_validation_contract_verified") is not True)):
+                return "manual_automatic_validation_failed"
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return "manual_terminal_validation_unverified"
     return ""
 
 
@@ -71,15 +103,20 @@ def natural_clearance(repo_root, now, *, include_ingest_lock=True, cgroup_root=P
                     return "natural_cgroup_has_processes"
         daily = units[INGEST_UNITS[0]]
         daily["automatic_validation_contract_verified"] = validation_installed(daily)
+        manual = units[INGEST_UNITS[1]]
+        if _manual_requires_validation(_terminal_times(daily), _terminal_times(manual)):
+            manual["automatic_validation_contract_verified"] = validation_installed(manual, unit=INGEST_UNITS[1])
         return validate_terminal(units, now, time.monotonic())
-    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError, subprocess.SubprocessError):
         return "natural_terminal_state_unavailable"
 
 
-def validation_installed(daily):
+def validation_installed(daily, *, unit=INGEST_UNITS[0]):
     """Bind this run's successful post-start execution to the exact verifier."""
+    if unit not in UNIT_PATHS:
+        return False
     result = subprocess.run(["busctl", "--system", "--json=short", "--timeout=5", "get-property",
-        "org.freedesktop.systemd1", "/org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2eservice",
+        "org.freedesktop.systemd1", UNIT_PATHS[unit],
         "org.freedesktop.systemd1.Service", "ExecStartPost"],
         check=True, capture_output=True, text=True, timeout=6)
     value = json.loads(result.stdout)

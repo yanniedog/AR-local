@@ -39,6 +39,12 @@ the exact reviewed post-start shell command and its successful execution record
 after this run's main exit and before whole-unit inactivity. Installed command
 text alone, unexecuted records and records from an earlier run cannot supply
 that proof. Actual installed command metadata still requires native acceptance.
+If a manual ingest's main exit or whole-unit terminal time is later than the
+corresponding daily-run time, that manual invocation must independently prove
+successful main completion and its own exact executed post-start verifier.
+An older daily success cannot supply that proof. A manual invocation that has
+never started, or an older terminal manual attempt superseded by the successful
+daily run, does not replace the mandatory current-day daily validation.
 
 Before 03:30, recovery and publication admission additionally require the exact
 fixed service cgroup, current invocation and unexpired permanent date claim,
