@@ -9,9 +9,9 @@ import pytest
 import pi_deploy_verify as verify
 
 
-EXEC = {"type": "a(sasbttttuii)", "data": [["/usr/bin/python3",
+EXEC = {"type": "a(sasasttttuii)", "data": [["/usr/bin/python3",
         ["/usr/bin/python3", "-B", "/srv/ar-local/AR-local/pi_ingest_observe.py"],
-        False, 0, 0, 0, 0, 0, 0, 0]]}
+        [], 0, 0, 0, 0, 0, 0, 0]]}
 
 
 def snapshot(**changes):
@@ -20,6 +20,10 @@ def snapshot(**changes):
         "MANUAL_KILL_MODE": "control-group", "MANUAL_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group", "WATCHDOG_START_TIMEOUT": "1min",
         "WATCHDOG_EXEC_JSON": json.dumps(EXEC),
+        "AR_REPO_PHYSICAL": "/srv/ar-local/AR-local", "DAILY_USER": "ar-local", "DAILY_USER_UID": "1000",
+        "WATCHDOG_USER_JSON": json.dumps({"type": "s", "data": "ar-local"}),
+        "WATCHDOG_ACTIVE_STATE": "inactive", "WATCHDOG_SUB_STATE": "dead",
+        "WATCHDOG_MAIN_PID": "0", "WATCHDOG_CONTROL_PID": "0",
     }
     value.update(changes)
     return value
@@ -59,7 +63,7 @@ def test_short_timeout_does_not_certify_an_unknown_or_mutating_command(change):
     elif change == "duplicate_command":
         value["data"].append(copy.deepcopy(command))
     elif change == "ignore_failure":
-        command[2] = True
+        command[2] = ["ignore-failure"]
     elif change == "short_tuple":
         command.pop()
     elif change == "wrong_type":
@@ -89,7 +93,9 @@ def test_snapshot_transports_role_readback_and_dry_run_has_same_policy(monkeypat
     dry = verify.pi_remote_snapshot(dry_run=True)
     assert verify.pi_ingest_service_fences_ok(dry)
     assert "busctl --system --json=short --timeout=10 get-property" in captured[0]
-    assert "org.freedesktop.systemd1.Service ExecStart" in captured[0]
+    assert "org.freedesktop.systemd1.Service ExecStartEx" in captured[0]
+    assert "org.freedesktop.systemd1.Service User" in captured[0]
+    assert "ar_physical=$(CDPATH= cd /srv/ar-local/AR-local 2>/dev/null && pwd -P)" in captured[0]
     assert "WATCHDOG_EXEC_JSON=%s" in captured[0]
 
 
