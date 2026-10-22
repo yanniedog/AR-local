@@ -52,7 +52,10 @@ EXPECTED_GENERATION_ENV = "AR_LOCAL_CDR_RECOVERY_GENERATION"
 
 def recovery_window(now: datetime) -> bool:
     local = now.astimezone(HOBART)
-    return daytime(3, 30) <= local.time() < daytime(22)
+    if daytime(3, 30) <= local.time() < daytime(22):
+        return True
+    from pi_daily_repair_admission import early_daily_allowed
+    return early_daily_allowed(now)
 
 
 def capture_timeout(now: datetime) -> float:
@@ -139,7 +142,7 @@ def assert_recovery_start_safe(repo_root: Path) -> None:
     """Called inside the existing DailyIngestLock, before pausing the dashboard."""
     now = datetime.now(timezone.utc)
     if not recovery_window(now) or capture_timeout(now) < 60:
-        raise RuntimeError("Same-day recovery is allowed only from 03:30 until the 22:00 Hobart cutoff")
+        raise RuntimeError("Same-day recovery requires the daytime window or verified 03:00 daily service")
     reason = recovery_block_reason(repo_root, include_ingest_lock=False)
     if reason:
         raise RuntimeError(f"Same-day recovery deferred: {reason}; the watchdog will recheck")

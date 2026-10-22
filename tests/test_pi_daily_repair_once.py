@@ -13,16 +13,16 @@ from pi_ingest_observe import observe
 
 
 def test_concurrent_claims_allow_one_and_failure_never_reopens_day(tmp_path):
-    now = datetime(2026, 10, 12, 9, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 11, 16, tzinfo=timezone.utc)
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda n: gate.claim_day(tmp_path, now, str(n)), range(8)))
     assert sum(status == "claimed" for _, status in results) == 1
     assert gate.claim_day(tmp_path, now, "retry")[1] == "already_attempted_today"
 
 
-@pytest.mark.parametrize("utc,allowed", [("2026-10-12T08:59:00+00:00", False),
-    ("2026-10-12T09:00:00+00:00", True), ("2026-10-12T11:00:00+00:00", False),
-    ("2027-06-01T09:59:00+00:00", False), ("2027-06-01T10:00:00+00:00", True)])
+@pytest.mark.parametrize("utc,allowed", [("2026-10-11T15:59:00+00:00", False),
+    ("2026-10-11T16:00:00+00:00", True), ("2026-10-11T18:00:00+00:00", False),
+    ("2027-05-31T16:59:00+00:00", False), ("2027-05-31T17:00:00+00:00", True)])
 def test_window_is_hobart_with_daylight_saving(tmp_path, utc, allowed):
     assert (gate.claim_day(tmp_path, datetime.fromisoformat(utc), "id")[0] is not None) == allowed
 
