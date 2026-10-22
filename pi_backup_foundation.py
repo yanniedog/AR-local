@@ -12,6 +12,7 @@ import shlex
 import sqlite3
 import stat
 import sys
+import time
 import uuid
 from contextlib import closing
 from datetime import datetime, timezone
@@ -54,6 +55,7 @@ from ar_local_restore_verification import (
     verify_restored_state,
 )
 from ar_local_rollback_record import record_rollback_acceptance
+from cdr_sqlite_budget import RESTORE_BUDGET_SECONDS, audit_budget, check_deadline, sqlite_budget
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
 SNAPSHOT_SCHEMA_PATH = Path(__file__).resolve().parent / "contracts/pi-preservation-snapshot-v1.schema.json"
@@ -469,6 +471,7 @@ def restore_drill(
     ):
         raise ValueError("restore drill requires at least one exact command")
     started_at = utc_now()
+    deadline = time.monotonic() + RESTORE_BUDGET_SECONDS
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     verified = verify_snapshot(snapshot)
     if not verified["ok"]:
@@ -490,11 +493,13 @@ def restore_drill(
     failure: Exception | None = None
     result: dict[str, object] = {"ok": False, "findings": []}
     try:
+        check_deadline(deadline)
         snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])
         if shutil.disk_usage(scratch_root).free < snapshot_bytes + 1024**3:
             raise ValueError("scratch storage lacks restore headroom")
         shutil.copytree(snapshot / "data", destination / "data")
-        result = _verify_restored_state(destination / "data")
+        with audit_budget(deadline):
+            result = _verify_restored_state(destination / "data")
         macro_source = snapshot / "macro/local-macro.sqlite"
         macro_target = destination / "macro/local-macro.sqlite"
         macro_target.parent.mkdir(parents=True)
@@ -503,12 +508,13 @@ def restore_drill(
             verified["manifest"], destination
         )
         result["restored_files"] = restored_files
+        check_deadline(deadline)
         if not restored_files["ok"]:
             result["ok"] = False
             result["findings"].extend(restored_files["findings"])
-        with closing(
+        with audit_budget(deadline), closing(
             sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True)
-        ) as connection:
+        ) as connection, sqlite_budget(connection):
             macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
             macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             macro_counts = {
