@@ -16,6 +16,7 @@ from cdr_attempt_evidence_promotion import (
 from cdr_journal_evidence import validate_journal_evidence
 from cdr_observation import load_verified_observation
 from cdr_observation_db import SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION
+from ar_local_restore_io import checkpoint, database_path, hash_file as restore_hash_file, read_budget, read_json as restore_read_json
 
 
 HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
@@ -60,11 +61,20 @@ HISTORICAL_EXPORT_POPULATIONS = {
 
 
 def _sha256_file(path: Path) -> str:
+    private = database_path(path) if path.name == 'local-cdr.sqlite' else path
+    if private != path or read_budget() is not None:
+        return restore_hash_file(private)
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(4 * 1024**2), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _read_json(path: Path):
+    if read_budget() is not None:
+        return restore_read_json(path)
+    return json.loads(path.read_text(encoding='utf-8'))
 
 
 def _validate_promoted_product_evidence(
@@ -74,19 +84,23 @@ def _validate_promoted_product_evidence(
     if status_path.is_symlink() or not status_path.is_file():
         raise ValueError("canonical observation lacks promoted ingest evidence")
     try:
-        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status = _read_json(status_path)
+    except TimeoutError:
+        raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("promoted ingest status is unreadable") from error
     pointer = status.get("raw_attempt_journal") if isinstance(status, Mapping) else None
     if not isinstance(pointer, Mapping):
         raise ValueError("promoted ingest evidence pointer is absent")
     try:
+        checkpoint()
         journal = verify_promoted_attempt_evidence(
             export_root,
             pointer,
             expected_head_digest=str(accounting["raw_attempt_journal_digest"]),
             expected_session_id=str(accounting["accounting_id"]),
         )
+        checkpoint()
     except AttemptEvidencePromotionError as error:
         raise ValueError(str(error)) from error
     validate_journal_evidence(accounting, status.get("provider_states"), journal)
@@ -126,7 +140,7 @@ def daily_reconciliation_bounded(
     if len(banks_files) != 1:
         raise ValueError("daily export must contain exactly one banks JSON")
     date = banks_files[0].stem.removeprefix("banks-")
-    banks = json.loads(banks_files[0].read_text(encoding="utf-8"))
+    banks = _read_json(banks_files[0])
     if not isinstance(banks, dict):
         raise ValueError("daily banks export is not a JSON object")
     exported = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
@@ -174,7 +188,7 @@ def daily_reconciliation_bounded(
     ):
         raise ValueError("daily export population counts do not reconcile")
     legacy_manifest = database.parent / "dashboard-cache/latest.json"
-    manifest = json.loads(legacy_manifest.read_text(encoding="utf-8"))
+    manifest = _read_json(legacy_manifest)
     if (
         not isinstance(manifest, dict)
         or manifest.get("run_date") != date

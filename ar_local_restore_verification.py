@@ -12,7 +12,8 @@ from typing import Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from ar_local_backup_policy import canonical_json_bytes, sha256_file
+from ar_local_backup_policy import canonical_json_bytes
+from ar_local_restore_io import checkpoint, hash_file as sha256_file, read_budget, read_json, walk
 from cdr_quality_sqlite import database_view
 from cdr_sqlite_budget import (
     RESTORE_BUDGET_SECONDS, SQLITE_BUDGET_SECONDS, audit_budget, check_deadline,
@@ -26,10 +27,16 @@ RESTORE_ACCEPTANCE_SCHEMA = (
 
 
 def _json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json(path)
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object: {path}")
     return payload
+
+
+def _load_contract(path):
+    from cdr_export_contract import load_contract
+    budget = read_budget()
+    return load_contract(path) if budget is None else load_contract(path, budget=budget)
 
 
 def _sqlite_health(connection: sqlite3.Connection) -> dict[str, object]:
@@ -52,6 +59,7 @@ def _retained_journal_policy(path: Path) -> dict[str, str]:
     policy: dict[str, str] = {}
     wal, journal = Path(f"{path}-wal"), Path(f"{path}-journal")
     for retained in (wal, journal):
+        checkpoint()
         if retained.is_symlink():
             raise ValueError("retained SQLite journals cannot be linked")
         if not retained.exists() or retained.stat().st_size == 0:
@@ -63,6 +71,7 @@ def _retained_journal_policy(path: Path) -> dict[str, str]:
                 trailer = stream.read(16)
                 if trailer[-8:] == bytes.fromhex("d9d505f920a163d7"):
                     raise ValueError("retained SQLite super-journal references require separate recovery")
+        checkpoint()
         if retained == wal:
             if (len(header) < 32 or header[:4] not in {b"7\x7f\x06\x82", b"7\x7f\x06\x83"}
                     or int.from_bytes(header[4:8], "big") != 3007000):
@@ -160,7 +169,7 @@ def _completion_marker_valid(
         contract_path = (state_dir / relative).resolve()
         if not contract_path.is_relative_to(state_dir.resolve()):
             return False
-        contract = load_contract(contract_path)
+        contract = _load_contract(contract_path)
         if contract.get("completion_marker_path") != marker_relative.as_posix():
             return False
         if contract.get("generation_id") != marker.get("generation_id"):
@@ -178,8 +187,10 @@ def _completion_marker_valid(
             / f"{contract['generation_id']}.json"
         )
         event = _json(event_path)
-        verify_event_artifacts(state_dir, event)
+        verify_event_artifacts(state_dir, event, budget=read_budget())
         return event.get("event_digest") == marker.get("ledger_event_digest")
+    except TimeoutError:
+        raise
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return False
 
@@ -194,7 +205,7 @@ def _pointer_matches_marker(
         contract_path = (state_dir / relative).resolve()
         if relative.is_absolute() or ".." in relative.parts or not contract_path.is_relative_to(state_dir.resolve()):
             return False
-        contract = load_contract(contract_path)
+        contract = _load_contract(contract_path)
         expected = {
             "schema_version": 2,
             "observation_date": marker["run_date"],
@@ -205,6 +216,8 @@ def _pointer_matches_marker(
             "export_path": contract["source_path"],
         }
         return dict(pointer) == expected
+    except TimeoutError:
+        raise
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return False
 
@@ -236,15 +249,20 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
 
 
 def verify_restored_state(data_root: Path) -> dict[str, object]:
-    from cdr_export_contract import load_contract
-    from cdr_ledger_v2 import verify_ledger
     deadline = current_deadline()
     if deadline is None:
         deadline = time.monotonic() + RESTORE_BUDGET_SECONDS
+    with audit_budget(deadline):
+        return _verify_restored_state_in_budget(data_root, deadline)
+
+
+def _verify_restored_state_in_budget(data_root: Path, deadline: float) -> dict[str, object]:
+    from cdr_export_contract import load_contract
+    from cdr_ledger_v2 import verify_ledger
     findings: list[str] = []
     sqlite_results: list[dict[str, object]] = []
     daily_databases: list[Path] = []
-    for path in sorted(data_root.rglob("*.sqlite")):
+    for path in (path for path in walk(data_root) if path.name.endswith('.sqlite')):
         check_deadline(deadline)
         try:
             with audit_budget(min(deadline, time.monotonic() + SQLITE_BUDGET_SECONDS)):
@@ -268,20 +286,26 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
         findings.append("daily_database_missing")
 
     state = data_root / "state"
-    contract_paths = sorted((state / "export-contracts-v2").glob("*/*.json"))
+    contracts_root = state / 'export-contracts-v2'
+    contract_paths = sorted(path for path in walk(contracts_root)
+        if path.suffix == '.json' and len(path.relative_to(contracts_root).parts) == 2) if contracts_root.is_dir() else []
     if not contract_paths:
         findings.append("export_contract_missing")
     for path in contract_paths:
         check_deadline(deadline)
         try:
-            load_contract(path)
+            load_contract(path, budget=read_budget())
+        except TimeoutError:
+            raise
         except (OSError, ValueError, json.JSONDecodeError):
             findings.append(f"invalid_contract:{path.relative_to(data_root)}")
     if (state / "ledger-v2").exists():
         try:
-            ledger = verify_ledger(state)
+            ledger = verify_ledger(state, budget=read_budget())
             if not ledger.get("ok"):
                 findings.append("ledger_verification_failed")
+        except TimeoutError:
+            raise
         except (OSError, ValueError, json.JSONDecodeError):
             ledger = {"ok": False}
             findings.append("ledger_unreadable")
@@ -289,7 +313,9 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
         ledger = {"ok": False, "reason": "missing"}
         findings.append("ledger_missing")
 
-    pointer_paths = sorted((state / "observation-pointers-v2").glob("*.json"))
+    pointers_root = state / 'observation-pointers-v2'
+    pointer_paths = sorted(path for path in walk(pointers_root)
+        if path.suffix == '.json' and path.parent == pointers_root) if pointers_root.is_dir() else []
     latest_pointer = state / "observation-pointers-v2/latest-observation.json"
     if not pointer_paths:
         findings.append("observation_pointer_missing")
@@ -398,6 +424,8 @@ def _verify_pointer(
                 / f"{value['generation_id']}.json"
             ),
         }
+    except TimeoutError:
+        raise
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return [f"pointer_invalid:{pointer.name}"], None
 
@@ -446,7 +474,8 @@ def _restored_entries(
 ) -> tuple[list[dict[str, object]], list[str]]:
     entries: list[dict[str, object]] = []
     findings: list[str] = []
-    for path in sorted(root.rglob("*")):
+    for path in walk(root):
+        checkpoint()
         relative = path.relative_to(root).as_posix()
         if path.is_symlink():
             findings.append(f"restored_symlink:{relative}")

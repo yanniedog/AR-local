@@ -28,6 +28,8 @@ def _frozen_source(relative: str) -> bytes:
     retired_verifiers = {
         "pi_backup_foundation.py": ("backup-foundation", "847fcc1b132dc231581cb53f8855d1abdc6abc366fbf7c6b7aa616627cd4c73b"),
         "cdr_observation_db.py": ("observation-db", "f530f29b3edf767f1383e098268bf06415489bd4d52a054fc4e9b03d9ba5d5c6"),
+        "cdr_observation.py": ("observation", "7d387e47e267b043926011edc9f073490310d83ff11a6e35bb93325aa9eb8403"),
+        "cdr_journal_evidence.py": ("journal-evidence", "0ad5be96f1e051e10acdd0ceafd7bbda07faeedf6eeaf86445e8776005d7b353"),
     }
     if path in retired_verifiers:
         # Live restore deadlines must not rewrite retired D-012 source maps.

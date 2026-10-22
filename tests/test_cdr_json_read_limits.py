@@ -15,10 +15,39 @@ from cdr_export_contract import read_json
 def test_oversize_refused_before_payload_read_or_utf8_decode(tmp_path, monkeypatch, budget):
     path = tmp_path / 'control.json'
     path.write_bytes(b'\xff' * 8)
-    monkeypatch.setattr(os, 'fdopen', lambda *_args, **_kwargs: pytest.fail('Oversize payload was opened for reading'))
-    monkeypatch.setattr(Path, 'read_text', lambda *_args, **_kwargs: pytest.fail('Unbounded text read'))
-    with pytest.raises(ValueError, match='bounded read limit'):
-        read_json(path, budget=budget, max_bytes=7)
+    with monkeypatch.context() as observed:
+        _forbid_payload_reads(observed)
+        with pytest.raises(ValueError, match='bounded read limit'):
+            read_json(path, budget=budget, max_bytes=7)
+    assert path.read_bytes() == b'\xff' * 8
+
+
+def _forbid_payload_reads(monkeypatch):
+    def consumed(*_args, **_kwargs):
+        raise AssertionError('Oversize payload read transport was used')
+    for owner, name in [(os, 'fdopen'), (os, 'read'), (Path, 'open'), (Path, 'read_bytes'), (Path, 'read_text')]:
+        monkeypatch.setattr(owner, name, consumed)
+
+
+@pytest.mark.parametrize('transport', ['path_bytes', 'os_read'])
+def test_oversize_observer_catches_unsafe_read_then_reject_controls(tmp_path, monkeypatch, transport):
+    path = tmp_path / 'control.json'
+    path.write_bytes(b'\xff' * 8)
+    def unsafe():
+        if transport == 'path_bytes':
+            body = path.read_bytes()
+        else:
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0))
+            try:
+                body = os.read(descriptor, 8)
+            finally:
+                os.close(descriptor)
+        if len(body) > 7:
+            raise ValueError('verification JSON exceeds bounded read limit')
+    with monkeypatch.context() as observed:
+        _forbid_payload_reads(observed)
+        with pytest.raises(AssertionError, match='read transport'):
+            unsafe()
     assert path.read_bytes() == b'\xff' * 8
 
 
