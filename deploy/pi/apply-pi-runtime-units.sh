@@ -48,11 +48,16 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Reloading a definition cannot replace an already running legacy invocation.
+# Defer without stopping it, before installing files and again around reload.
+sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" --idle-only
 run_user="$(systemctl show ar-local-daily.service -p User --value)"
 [ -n "$run_user" ] || {
   echo "apply-pi-runtime-units: daily service user is unavailable" >&2
   exit 1
 }
+run_uid="$(id -u "$run_user")"
+[ "$run_uid" -gt 0 ] || { echo "Observer service user must be non-root" >&2; exit 1; }
 run_group="$(systemctl show ar-local-daily.service -p Group --value)"
 [ -n "$run_group" ] || run_group="$(id -gn "$run_user")"
 run_home="$(getent passwd "$run_user" | cut -d: -f6)"
@@ -128,8 +133,9 @@ for pair in "ar-local-daily-watchdog:ar-local-daily-watchdog-observe.conf" "ar-l
   sudo install -m 0644 "$tmp_dir/$source" "/etc/systemd/system/$unit.service.d/zz-daily-observe-20261012.conf"
 done
 # The repair unit is manual-only: never enable it or create a timer.
+sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" --idle-only
 sudo systemctl daemon-reload
-sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" "$repo_dir"
+sudo /usr/bin/python3 -B "$repo_dir/pi_observer_unit_verify.py" "$repo_dir" --user "$run_user"
 sudo systemctl enable ar-local-dashboard.service ar-local-boot-recovery.service
 sudo systemctl enable --now \
   ar-local-daily.timer \

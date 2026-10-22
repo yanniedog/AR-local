@@ -367,7 +367,11 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",
         "WATCHDOG_START_TIMEOUT": "1min",
-        "WATCHDOG_EXEC_JSON": '{"type":"a(sasbttttuii)","data":[["/usr/bin/python3",["/usr/bin/python3","-B","/srv/ar-local/AR-local/pi_ingest_observe.py"],false,0,0,0,0,0,0,0]]}',
+        "WATCHDOG_EXEC_JSON": '{"type":"a(sasasttttuii)","data":[["/usr/bin/python3",["/usr/bin/python3","-B","/srv/ar-local/AR-local/pi_ingest_observe.py"],[],0,0,0,0,0,0,0]]}',
+        "AR_REPO_PHYSICAL": "/srv/ar-local/AR-local", "DAILY_USER": "ar-local", "DAILY_USER_UID": "1000",
+        "WATCHDOG_USER_JSON": '{"type":"s","data":"ar-local"}',
+        "WATCHDOG_ACTIVE_STATE": "inactive", "WATCHDOG_SUB_STATE": "dead",
+        "WATCHDOG_MAIN_PID": "0", "WATCHDOG_CONTROL_PID": "0",
         "MANUAL_KILL_MODE": "control-group",
         "MANUAL_START_TIMEOUT": "6h 15min",
     }
