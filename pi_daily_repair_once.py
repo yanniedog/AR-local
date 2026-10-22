@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 from zoneinfo import ZoneInfo
+from pi_daily_repair_admission import daily_window, natural_clearance
 
 UNIT = "ar-local-queue-task-daily-repair.service"
 STATE = Path("/var/lib/ar-local-daily-repair")
@@ -24,7 +25,7 @@ def validate_supervisor(details, group, pid):
 
 def claim_day(state, now, invocation):
     local = now.astimezone(ZoneInfo("Australia/Hobart"))
-    if not 20 <= local.hour < 22:
+    if not daily_window(now):
         return None, "outside_daily_repair_window"
     day = local.date().isoformat()
     receipt = state / (day + ".json")
@@ -54,7 +55,16 @@ def main():
                             check=True, capture_output=True, text=True, timeout=5)
     details = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
     validate_supervisor(details, group, os.getpid())
-    receipt, status = claim_day(STATE, datetime.now(timezone.utc), os.environ["INVOCATION_ID"])
+    now = datetime.now(timezone.utc)
+    repo = Path(os.environ.get("AR_LOCAL_CODE_ROOT", Path(__file__).resolve().parent))
+    if not daily_window(now):
+        print(json.dumps({"status": "outside_daily_repair_window"}), flush=True)
+        return 0
+    reason = natural_clearance(repo, now)
+    if reason:
+        print(json.dumps({"status": "deferred_read_only", "reason": reason}), flush=True)
+        return 0
+    receipt, status = claim_day(STATE, now, os.environ["INVOCATION_ID"])
     print(json.dumps({"status": status}), flush=True)
     if receipt is None:
         return 0
