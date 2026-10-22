@@ -107,7 +107,10 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(f"Observer unit verification failed; no activation authorized: {exc}", file=sys.stderr)
         return 1
-    print("Effective watchdog and boot observation commands verified; no units started.")
+    if args.idle_only:
+        print("Watchdog and boot observer idle metadata verified; no units started.")
+    else:
+        print("Effective watchdog and boot observation commands verified; no units started.")
     return 0
 
 

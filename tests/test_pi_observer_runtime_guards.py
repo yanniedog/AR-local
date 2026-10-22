@@ -97,6 +97,15 @@ def test_busy_cli_returns_defer_status_without_stopping_an_observer(monkeypatch)
     assert guard.main(["--idle-only"]) == 75
 
 
+def test_idle_cli_success_receipt_does_not_claim_command_or_user_verification(monkeypatch, capsys):
+    monkeypatch.setattr(guard, "verify_idle", lambda: None)
+    monkeypatch.setattr(guard, "verify", lambda *_args: pytest.fail("idle-only must not verify commands or user"))
+    assert guard.main(["--idle-only"]) == 0
+    output = capsys.readouterr().out
+    assert output == "Watchdog and boot observer idle metadata verified; no units started.\n"
+    assert "commands verified" not in output and "users verified" not in output
+
+
 def test_remote_physical_path_matches_symlinked_installer_readback(monkeypatch):
     value = snapshot(AR_HEAD="1"*40, AR_ORIGIN="1"*40, SITE_HEAD="2"*40, SITE_ORIGIN="2"*40, DASHBOARD="active")
     commands = []
