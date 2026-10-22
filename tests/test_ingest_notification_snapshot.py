@@ -183,6 +183,41 @@ def test_remote_collects_only_ingest_with_memory_observer(monkeypatch):
     assert "private" not in json.dumps(result) and "not-returned" not in json.dumps(result)
 
 
+@pytest.mark.parametrize("capture_status", ["PARTIAL", "COMPLETE"])
+def test_remote_observer_accepts_real_watchdog_recovery_without_hiding_capture(monkeypatch, capture_status):
+    import signal
+    import pi_issue_watchdog as watch
+
+    monkeypatch.setattr(signal, "alarm", lambda _: None, raising=False)
+    units = {unit: {"ActiveState": "inactive", "Result": "success", "ExecMainStatus": "0",
+                    "started_at": DUE, "private": "not-returned"} for unit in snapshot.UNITS}
+    units[snapshot.UNITS[2]].update(ExecMainPID="123", started_at=DUE + timedelta(minutes=1),
+                                  finished_at=DUE + timedelta(minutes=2))
+    monkeypatch.setattr(watch, "unit_state", lambda name: units[name])
+    original_checks = watch.ingest_checks
+
+    def fixed_time_checks(store, root, now, *, units):
+        return original_checks(store, root, NOW, units=units)
+
+    monkeypatch.setattr(watch, "ingest_checks", fixed_time_checks)
+    monkeypatch.setattr(watch, "completion", lambda *_: capture_status)
+    monkeypatch.setattr(watch, "read_json", lambda *a, **k: {})
+    monkeypatch.setattr(watch, "configured_store", lambda: pytest.fail("spool must not be created"))
+    monkeypatch.setattr(watch, "backup_check", lambda *a, **k: pytest.fail("Drive must not be checked"))
+    monkeypatch.setattr(watch, "deliver", lambda *a, **k: pytest.fail("notification must not be sent"))
+
+    result = snapshot.remote_snapshot()
+
+    assert result["ingest"] == {"status": capture_status, "date": DAY}
+    assert result["health_facets"] == [
+        {"key": "ingest-schedule:" + DAY, "category": "SCHEDULED_INGEST_NOT_STARTED", "healthy": True},
+        {"key": "ingest-watchdog:" + DAY, "category": "INGEST_WATCHDOG_FAILED", "healthy": True},
+        {"key": "ingest:" + DAY, "category": "INGEST_" + capture_status, "healthy": capture_status == "COMPLETE"},
+    ]
+    serialized = json.dumps(result)
+    assert "recovery_started_at" not in serialized and "not-returned" not in serialized
+
+
 def test_public_timeout_is_not_healthy(monkeypatch):
     def run(*args, **kwargs):
         raise subprocess.TimeoutExpired("unused", 35, output="private")

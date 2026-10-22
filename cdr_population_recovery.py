@@ -51,6 +51,14 @@ def population_recovery_requests(observation, providers):
                 for row in baseline.get('unresolved_provider_populations', [])))
         identity = finding.get('provider_identity') if isinstance(finding,dict) else None
         identity_verified = verified_prior_identity(identity,provider,report['run_date'])
+        historical = finding.get('historical_baseline') if isinstance(finding,dict) else None
+        if historical is not None:
+            last = finding.get('last_nonempty') or {}
+            if (not identity_verified or historical != identity['source_observation']
+                    or historical['observation_date'] > report['compared_against']
+                    or last.get('observation_date') != historical['observation_date']
+                    or last.get('products') != prior or last.get('rates') != finding.get('rates_prev')):
+                raise ValueError('historical population baseline differs from its verified source')
         if (not isinstance(provider, str) or provider in seen
                 or (provider not in providers and not identity_verified)
                 or (identity is not None and not identity_verified)
@@ -71,6 +79,9 @@ def population_recovery_requests(observation, providers):
             continue  # A prior identity is not authority to probe an unregistered holder.
         if len(matches) != 1:
             raise ValueError('population provider identity is ambiguous')
+        if (isinstance(identity, dict) and identity.get('endpoint_url') is not None
+                and matches[0].get('endpoint_url') != identity['endpoint_url']):
+            continue  # A changed endpoint cannot inherit historical probe authority.
         target = matches[0]['provider_dir']
         diagnostic = (observation['status'].get('index_diagnostics') or {}).get(target) or {}
         if (not isinstance(diagnostic, dict) or diagnostic.get('pagination_complete') is not True
