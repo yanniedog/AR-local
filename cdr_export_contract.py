@@ -113,8 +113,10 @@ def read_bytes(path: Path, *, budget: ReadBudget, max_bytes: int) -> bytes:
 
 
 def read_json(path: Path, *, budget: ReadBudget | None = None, max_bytes: int = 32*1024*1024) -> Any:
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes < 0:
+        raise ValueError("JSON read limit must be a nonnegative integer")
     if budget is None:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(read_bytes(path, budget=lambda **_charges: None, max_bytes=max_bytes).decode("utf-8"))
     if path.stat().st_size > max_bytes:
         raise ValueError("verification JSON exceeds bounded read limit")
     payload = json.loads(read_bytes(path, budget=budget, max_bytes=max_bytes).decode("utf-8"))
