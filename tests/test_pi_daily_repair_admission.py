@@ -49,6 +49,67 @@ def test_previous_date_terminal_evidence_cannot_admit_today():
     assert admission.validate_terminal(terminal_units(), NOW + timedelta(days=1), MONO + 86400)
 
 
+def newer_manual(units):
+    manual = units[admission.INGEST_UNITS[1]]
+    manual.update(ExecMainStartTimestampMonotonic="8500000000",
+                  ExecMainExitTimestampMonotonic="9000000000",
+                  InactiveEnterTimestampMonotonic="9500000000")
+    return manual
+
+
+@pytest.mark.parametrize("key,value", [("Result", "exit-code"), ("ExecMainStatus", "1"),
+    ("automatic_validation_contract_verified", False), ("automatic_validation_contract_verified", None)])
+def test_later_manual_run_cannot_reuse_successful_daily_validation(key, value):
+    units = terminal_units()
+    newer_manual(units)[key] = value
+    assert admission.validate_terminal(units, NOW, MONO) == "manual_automatic_validation_failed"
+
+
+def test_successful_later_manual_validation_and_queued_manual_are_admitted():
+    units = terminal_units()
+    manual = newer_manual(units)
+    assert admission.validate_terminal(units, NOW, MONO) == ""
+    # A manual run queued before the daily capture is still a newer writer
+    # when its actual capture finishes after that daily capture.
+    manual["ExecMainStartTimestampMonotonic"] = "1000000000"
+    manual["automatic_validation_contract_verified"] = False
+    assert admission.validate_terminal(units, NOW, MONO) == "manual_automatic_validation_failed"
+    manual["automatic_validation_contract_verified"] = True
+    assert admission.validate_terminal(units, NOW, MONO) == ""
+
+
+def test_later_manual_post_start_failure_is_not_hidden_by_daily_validation():
+    units = terminal_units()
+    manual = units[admission.INGEST_UNITS[1]]
+    manual.update(ExecMainStartTimestampMonotonic="1000000000",
+                  ExecMainExitTimestampMonotonic="4000000000",
+                  InactiveEnterTimestampMonotonic="9500000000",
+                  automatic_validation_contract_verified=False)
+    assert admission.validate_terminal(units, NOW, MONO) == "manual_automatic_validation_failed"
+
+
+@pytest.mark.parametrize("never_started", [False, True])
+def test_later_verified_daily_supersedes_old_manual_failure_or_no_manual_run(never_started):
+    units = terminal_units()
+    manual = units[admission.INGEST_UNITS[1]]
+    stamps = ("0", "0", "0") if never_started else ("1000000000", "1500000000", "1900000000")
+    manual.update(zip(("ExecMainStartTimestampMonotonic", "ExecMainExitTimestampMonotonic",
+                       "InactiveEnterTimestampMonotonic"), stamps))
+    manual.update(Result="exit-code", ExecMainStatus="1", automatic_validation_contract_verified=False)
+    assert admission.validate_terminal(units, NOW, MONO) == ""
+
+
+@pytest.mark.parametrize("key,value", [("ExecMainStartTimestampMonotonic", "0"),
+    ("ExecMainExitTimestampMonotonic", ""), ("ExecMainExitTimestampMonotonic", None),
+    ("ExecMainExitTimestampMonotonic", True), ("ExecMainExitTimestampMonotonic", 9.5),
+    ("ExecMainExitTimestampMonotonic", "-1"), ("InactiveEnterTimestampMonotonic", "11000000000"),
+    ("InactiveEnterTimestampMonotonic", "8000000000"), ("InactiveEnterTimestampMonotonic", "9" * 400)])
+def test_ambiguous_or_nonterminal_manual_timestamps_fail_closed(key, value):
+    units = terminal_units()
+    newer_manual(units)[key] = value
+    assert admission.validate_terminal(units, NOW, MONO) == "manual_terminal_validation_unverified"
+
+
 @pytest.mark.parametrize("date", ["2026-10-16", "2027-04-04", "2027-10-03"])
 @pytest.mark.parametrize("clock,allowed", [("02:59", False), ("03:00", True), ("03:29", True), ("04:59", True), ("05:00", False)])
 def test_hobart_window_has_two_hour_width_across_dst(date, clock, allowed):
@@ -131,7 +192,8 @@ def test_lease_presence_and_unavailable_unit_metadata_fail_closed(tmp_path, monk
     ("previous_run", False), ("reversed_exit", False), ("late_exit", False), ("signal", False),
     ("failed_exit", False), ("string_timestamp", False), ("boolean_timestamp", False),
     ("short_row", False), ("non_list_row", False), ("non_list_argv", False), ("non_string_argv", False)])
-def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch, change, allowed):
+@pytest.mark.parametrize("unit_name", admission.INGEST_UNITS)
+def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch, change, allowed, unit_name):
     import hashlib
     verifier = tmp_path / "verify_local.py"
     verifier.write_text("authentic test verifier source")
@@ -139,7 +201,7 @@ def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch
     monkeypatch.setattr(admission, "VALIDATOR_SHA256", hashlib.sha256(verifier.read_bytes()).hexdigest())
     # Bind the positive control to the deployed unit template, independently
     # of the admission implementation's expected command.
-    unit = Path(__file__).resolve().parents[1] / "deploy/pi/ar-local-daily.service"
+    unit = Path(__file__).resolve().parents[1] / "deploy/pi" / unit_name
     line = next(line for line in unit.read_text().splitlines() if line.startswith("ExecStartPost=/bin/sh"))
     command = shlex.split(line.split("=", 1)[1])[2].replace("{{AR_LOCAL_REPO}}/verify_local.py", str(verifier)).replace("%%", "%")
     row = ["/bin/sh", ["/bin/sh", "-c", command], False, 1, 6000000000, 2, 7000000000, 123, 1, 0]
@@ -164,8 +226,38 @@ def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch
     if change == "non_list_row": value["data"].append(None)
     if change == "non_list_argv": row[1] = {"command": command}
     if change == "non_string_argv": row[1][2] = None
-    monkeypatch.setattr(admission.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=json.dumps(value)))
-    assert admission.validation_installed(terminal_units()[admission.INGEST_UNITS[0]]) is allowed
+    expected_path = {"ar-local-daily.service": "/org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2eservice",
+                     "ar-local-ingest-now.service": "/org/freedesktop/systemd1/unit/ar_2dlocal_2dingest_2dnow_2eservice"}
+    def run(command, **kwargs):
+        assert command[6] == expected_path[unit_name]
+        return SimpleNamespace(stdout=json.dumps(value))
+    monkeypatch.setattr(admission.subprocess, "run", run)
+    assert admission.validation_installed(terminal_units()[unit_name], unit=unit_name) is allowed
+
+
+def test_unknown_unit_cannot_supply_validation(monkeypatch):
+    run = Mock()
+    monkeypatch.setattr(admission.subprocess, "run", run)
+    assert not admission.validation_installed({}, unit="unrelated.service")
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("verified,reason", [(True, ""), (False, "manual_automatic_validation_failed")])
+def test_clearance_queries_later_manual_units_own_executed_verifier(tmp_path, monkeypatch, verified, reason):
+    units = terminal_units()
+    newer_manual(units)
+    def run(command, **kwargs):
+        return SimpleNamespace(stdout="\n".join(key + "=" + str(value) for key, value in units[command[2]].items()))
+    calls = []
+    def validation(row, *, unit=admission.INGEST_UNITS[0]):
+        calls.append(unit)
+        return True if unit == admission.INGEST_UNITS[0] else verified
+    monkeypatch.setattr(admission.subprocess, "run", run)
+    monkeypatch.setattr(admission, "validation_installed", validation)
+    monkeypatch.setattr(admission, "data_state_root", lambda _: tmp_path / "state")
+    monkeypatch.setattr(admission.time, "monotonic", lambda: MONO)
+    assert admission.natural_clearance(tmp_path, NOW, cgroup_root=tmp_path / "cgroups") == reason
+    assert calls == list(admission.INGEST_UNITS)
 
 
 @pytest.mark.parametrize("state,reason", [("missing", ""), ("empty", ""),
