@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping
@@ -13,6 +14,10 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from ar_local_backup_policy import canonical_json_bytes, sha256_file
 from cdr_quality_sqlite import database_view
+from cdr_sqlite_budget import (
+    RESTORE_BUDGET_SECONDS, SQLITE_BUDGET_SECONDS, audit_budget, check_deadline,
+    current_deadline, sqlite_budget,
+)
 
 
 RESTORE_ACCEPTANCE_SCHEMA = (
@@ -28,9 +33,10 @@ def _json(path: Path) -> dict[str, object]:
 
 
 def _sqlite_health(connection: sqlite3.Connection) -> dict[str, object]:
-    quick = [str(row[0]) for row in connection.execute("PRAGMA quick_check")]
-    integrity = [str(row[0]) for row in connection.execute("PRAGMA integrity_check")]
-    foreign_key = connection.execute("PRAGMA foreign_key_check").fetchone()
+    with sqlite_budget(connection):
+        quick = [str(row[0]) for row in connection.execute("PRAGMA quick_check")]
+        integrity = [str(row[0]) for row in connection.execute("PRAGMA integrity_check")]
+        foreign_key = connection.execute("PRAGMA foreign_key_check").fetchone()
     return {
         "quick_check": "ok" if quick == ["ok"] else quick,
         "integrity_check": "ok" if integrity == ["ok"] else integrity,
@@ -222,6 +228,8 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
             if user_version == OBSERVATION_SCHEMA_VERSION:
                 # Canonical validation includes these checks; do not scan twice.
                 record.update(quick_check="ok", integrity_check="ok", foreign_key_check="ok")
+        except TimeoutError:
+            raise
         except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
             findings.append(f"daily_export_mismatch:{path}:{exc}")
     return record, findings
@@ -230,24 +238,32 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
 def verify_restored_state(data_root: Path) -> dict[str, object]:
     from cdr_export_contract import load_contract
     from cdr_ledger_v2 import verify_ledger
+    deadline = current_deadline()
+    if deadline is None:
+        deadline = time.monotonic() + RESTORE_BUDGET_SECONDS
     findings: list[str] = []
     sqlite_results: list[dict[str, object]] = []
     daily_databases: list[Path] = []
     for path in sorted(data_root.rglob("*.sqlite")):
+        check_deadline(deadline)
         try:
-            if path.name == "local-cdr.sqlite":
-                daily_databases.append(path.resolve())
-                record, database_findings = _verify_daily_database(path, data_root)
-                sqlite_results.append(record)
-                findings.extend(database_findings)
-            else:
-                with _restore_database_view(path) as (connection, snapshot):
-                    health = _sqlite_health(connection)
-                sqlite_results.append({"path": path.relative_to(data_root).as_posix(), **health,
-                                       "source_sqlite": snapshot})
-                findings.extend(_sqlite_findings(health, path))
+            with audit_budget(min(deadline, time.monotonic() + SQLITE_BUDGET_SECONDS)):
+                if path.name == "local-cdr.sqlite":
+                    daily_databases.append(path.resolve())
+                    record, database_findings = _verify_daily_database(path, data_root)
+                    sqlite_results.append(record)
+                    findings.extend(database_findings)
+                else:
+                    with _restore_database_view(path) as (connection, snapshot):
+                        health = _sqlite_health(connection)
+                    sqlite_results.append({"path": path.relative_to(data_root).as_posix(), **health,
+                                           "source_sqlite": snapshot})
+                    findings.extend(_sqlite_findings(health, path))
+        except TimeoutError:
+            raise
         except (OSError, ValueError, sqlite3.Error):
             findings.append(f"sqlite_unreadable:{path}")
+        check_deadline(deadline)
     if not daily_databases:
         findings.append("daily_database_missing")
 
@@ -256,6 +272,7 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
     if not contract_paths:
         findings.append("export_contract_missing")
     for path in contract_paths:
+        check_deadline(deadline)
         try:
             load_contract(path)
         except (OSError, ValueError, json.JSONDecodeError):
@@ -280,6 +297,7 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
         findings.append("latest_observation_pointer_missing")
     selected: dict[str, object] | None = None
     for pointer in pointer_paths:
+        check_deadline(deadline)
         pointer_findings, observation = _verify_pointer(
             pointer, latest_pointer, state, data_root, daily_databases
         )
@@ -297,7 +315,8 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
                 # pointer verification subsequently binds its exact file hash.
                 selected_record, selected_findings = previous, []
             else:
-                selected_record, selected_findings = _verify_daily_database(selected_database, data_root)
+                with audit_budget(min(deadline, time.monotonic() + SQLITE_BUDGET_SECONDS)):
+                    selected_record, selected_findings = _verify_daily_database(selected_database, data_root)
             findings.extend(selected_findings)
             sqlite_results = [
                 selected_record
@@ -305,8 +324,11 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
                 else item
                 for item in sqlite_results
             ]
+        except TimeoutError:
+            raise
         except (OSError, ValueError, sqlite3.Error):
             findings.append(f"sqlite_unreadable:{selected_database}")
+    check_deadline(deadline)
     return {
         "ok": not findings,
         "findings": findings,

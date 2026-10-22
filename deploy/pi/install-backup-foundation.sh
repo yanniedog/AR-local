@@ -79,6 +79,7 @@ for name in \
   cdr_provider_identity_registry.py \
   cdr_public_projection.py \
   cdr_quality_sqlite.py \
+  cdr_sqlite_budget.py \
   cdr_raw_attempt_journal.py \
   cdr_upstream_dependency.py \
   laptop_backup_daily_verify.py
@@ -123,6 +124,7 @@ done
     cdr_provider_identity_registry.py \
     cdr_public_projection.py \
     cdr_quality_sqlite.py \
+    cdr_sqlite_budget.py \
     cdr_raw_attempt_journal.py \
     cdr_upstream_dependency.py \
     laptop_backup_daily_verify.py \

@@ -25,6 +25,19 @@ def _frozen_source(relative: str) -> bytes:
     # D-015 retires the UAC route. Preserve its exact source evidence while the
     # two explicitly authorized user-session implementation files evolve.
     path = relative.replace("\\", "/")
+    retired_verifiers = {
+        "pi_backup_foundation.py": ("backup-foundation", "847fcc1b132dc231581cb53f8855d1abdc6abc366fbf7c6b7aa616627cd4c73b"),
+        "cdr_observation_db.py": ("observation-db", "f530f29b3edf767f1383e098268bf06415489bd4d52a054fc4e9b03d9ba5d5c6"),
+    }
+    if path in retired_verifiers:
+        # Live restore deadlines must not rewrite retired D-012 source maps.
+        # Exact Git bytes at both f7f89a93 and 381e578f share these identities;
+        # archived copies also preserve the proof in shallow CI checkouts.
+        name, digest = retired_verifiers[path]
+        archive = ROOT / f"tests/fixtures/d012-retired-{name}-{digest[:8]}.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == digest
+        return payload
     if path == "laptop_backup_dispatcher.py":
         # Windows liveness probes now use process handles. The retired D-012
         # record must still verify the original dispatcher, including in CI's
