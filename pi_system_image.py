@@ -23,6 +23,7 @@ from pathlib import Path
 from pi_system_capture import ENV, metadata, run, sha, utc, workspace, write
 from pi_system_raw_restore import external_files, restore_raw
 from pi_system_filesystems import fat_options
+from pi_system_sparse import allocation_bound
 
 SECTOR = 512
 BOOT_START = 8192
@@ -177,11 +178,11 @@ def check_unmounted_filesystems(loop, image, descriptor):
     return {"result": "PASS", "mode": "read-only after unmount; only inode-proved image loop partitions"}
 
 
-def verify_tree(tree, manifest, *, transforms=None):
+def verify_tree(tree, manifest, *, transforms=None, scratch=None):
     transforms = transforms or {}
     # SQLite keeps large full-path inventories bounded in RAM.
     import sqlite3
-    index = Path(manifest).parent / ("restore-check-" + uuid.uuid4().hex + ".sqlite")
+    index = Path(scratch if scratch is not None else Path(manifest).parent) / ("restore-check-" + uuid.uuid4().hex + ".sqlite")
     descriptor = os.open(index, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     os.close(descriptor)
     database = sqlite3.connect(index)
@@ -215,8 +216,18 @@ def verify_tree(tree, manifest, *, transforms=None):
 
 
 def extract(archive, target):
-    run(["/usr/bin/tar", "--extract", "--acls", "--xattrs", "--xattrs-include=*", "--numeric-owner",
-         "--same-owner", "--sparse", "--warning=no-unknown-keyword", "--file=" + str(archive), "--use-compress-program=/usr/bin/zstd -d", "-C", target])
+    child = subprocess.Popen(["/usr/bin/zstd", "--decompress", "--stdout", str(archive)], stdout=subprocess.PIPE, env=ENV)
+    try:
+        run(["/usr/bin/tar", "--extract", "--acls", "--xattrs", "--xattrs-include=*", "--numeric-owner",
+             "--same-owner", "--sparse", "--warning=no-unknown-keyword", "--file=-", "-C", target], stdin=child.stdout)
+        child.stdout.close()
+        if child.wait():
+            raise RuntimeError("archive decompressor failed")
+    finally:
+        child.stdout.close()
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=30)
 
 
 def restore_metadata(tree, manifest):
@@ -309,14 +320,18 @@ def build(args):
     if sha(work / "external-restore-map.jsonl") != capture["external_restore_map_sha256"]:
         raise ValueError("external restore map hash differs")
     root_mib, entry_count = image_size(work / "root.manifest.jsonl")
+    physical_bound = root_mib * 1024 ** 2
     include_raw = getattr(args, "include_restored_raw", None)
-    if include_raw:
+    if capture["raw_restore_required"]:
         raw_bytes, raw_entries = 0, 0
         for _, row in external_files(work / "external-restore-map.jsonl"):
             raw_bytes += row["size"]
             raw_entries += 1
         root_mib += (raw_bytes * 13 // 10 + raw_entries * 1024 + 1024 ** 2 - 1) // (1024 ** 2)
         entry_count += raw_entries
+        physical_bound += raw_entries * 1024
+        if include_raw:
+            physical_bound += raw_bytes * 13 // 10
     serial = secrets.token_hex(4).upper()
     identifiers = {"disk_id": format(secrets.randbelow(2 ** 32 - 1) + 1, "08x"),
                    "root_uuid": str(uuid.uuid4()), "boot_uuid": serial[:4] + "-" + serial[4:]}
@@ -324,7 +339,7 @@ def build(args):
     if identifiers["disk_id"] == original["disk_id"] or identifiers["root_uuid"] == original["root_uuid"]:
         raise ValueError("new image identifiers must not collide with original host")
     image = work / "recovery.img"
-    required_free = (ROOT_START + root_mib * 2048) * SECTOR * 2 + 10 * 1024 ** 3
+    required_free = physical_bound * 2 + 10 * 1024 ** 3
     if shutil.disk_usage(work).free < required_free:
         raise ValueError("insufficient measured free space for image, lossless compressed image and reserve")
     descriptor = os.open(image, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -334,6 +349,7 @@ def build(args):
     receipt = {"schema": "ar-local-system-image-v1", "result": "RUNNING", "started_at": utc(),
                "identifiers": identifiers, "boot_test": "NOT_TESTED", "raw_restore_required": capture["raw_restore_required"],
                "capture_sha256": sha(work / "capture.json")}
+    receipt["reserved_external_raw_capacity"] = capture["raw_restore_required"] and not include_raw
     write(work / "image-intent.json", receipt)
     try:
         os.ftruncate(descriptor, (ROOT_START + root_mib * 2048) * SECTOR)
@@ -396,6 +412,7 @@ def build(args):
         if errors:
             receipt.update(result="FAIL", cleanup_errors=errors)
         receipt["finished_at"] = utc()
+        receipt["allocated_image_bytes"] = image.stat().st_blocks * 512
         write(work / "image-result.json", receipt)
     if receipt["result"] != "FILESYSTEM_RESTORE_VERIFIED":
         raise RuntimeError("image cleanup or verification failed")
@@ -415,6 +432,7 @@ def image_part(work, image, offset, length, number, image_fingerprint, global_di
             raise ValueError("ambiguous incomplete compressed part")
         output.rename(work / (output.name + ".incomplete-" + uuid.uuid4().hex))
     digest = hashlib.sha256()
+    nonzero_bound = 0
     child = destination = None
     if not completed:
         destination = output.open("xb")
@@ -429,6 +447,7 @@ def image_part(work, image, offset, length, number, image_fingerprint, global_di
                     raise ValueError("regular image truncated during compression")
                 digest.update(block)
                 global_digest.update(block)
+                nonzero_bound += allocation_bound(block)
                 if child:
                     child.stdin.write(block)
                 remaining -= len(block)
@@ -438,7 +457,7 @@ def image_part(work, image, offset, length, number, image_fingerprint, global_di
                 raise RuntimeError("image part compression failed")
             destination.flush()
             os.fsync(destination.fileno())
-        elif digest.hexdigest() != completed["image_bytes_sha256"]:
+        elif digest.hexdigest() != completed["image_bytes_sha256"] or completed["reassembled_allocation_bound"] != nonzero_bound:
             raise ValueError("image bytes differ from completed compression prefix")
     finally:
         if child and child.poll() is None:
@@ -462,7 +481,8 @@ def image_part(work, image, offset, length, number, image_fingerprint, global_di
             child.terminate()
             child.wait(timeout=30)
     receipt = {"path": output.name, "offset": offset, "length": length, "image_fingerprint": image_fingerprint,
-               "sha256": sha(output), "bytes": output.stat().st_size, "image_bytes_sha256": digest.hexdigest()}
+               "sha256": sha(output), "bytes": output.stat().st_size, "image_bytes_sha256": digest.hexdigest(),
+               "reassembled_allocation_bound": nonzero_bound}
     write(receipt_path, receipt)
     return receipt
 
@@ -491,6 +511,7 @@ def compress(args):
     result = {"schema": "ar-local-system-recovery-set-v1", "result": "IMAGE_AND_FILESYSTEM_VERIFIED",
               "compression": "zstd-lossless-no-encryption", "image_sha256": digest.hexdigest(), "image_bytes": info.st_size,
               "compressed_parts": parts, "compressed_bytes": sum(part["bytes"] for part in parts),
+              "reassembled_allocation_bound": sum(part["reassembled_allocation_bound"] for part in parts),
               "image_result_sha256": sha(work / "image-result.json"), "external_restore_map_sha256": capture["external_restore_map_sha256"],
               "catalog_sha256": settings["external_recovery"]["catalog_sha256"], "raw_restore_required": receipt["raw_restore_required"],
               "boot_test": "NOT_TESTED", "offsite_readback": "NOT_PERFORMED"}

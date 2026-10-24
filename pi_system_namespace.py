@@ -6,6 +6,7 @@ Execute only independently hash-reviewed, root-owned read-only staged copies.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -16,11 +17,25 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
-BUNDLE = ("pi_system_namespace.py", "pi_system_capture.py", "pi_system_image.py", "pi_system_raw_restore.py", "pi_system_filesystems.py")
+BUNDLE = ("pi_system_namespace.py", "pi_system_capture.py", "pi_system_image.py", "pi_system_raw_restore.py", "pi_system_filesystems.py", "pi_system_sparse.py")
 ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
 UNIT = re.compile(r"[A-Za-z0-9@_.:-]+\.(?:service|timer)")
 PACKAGE_UNITS = {"apt-daily.service", "apt-daily.timer", "apt-daily-upgrade.service", "apt-daily-upgrade.timer"}
 PACKAGE_LOCKS = ("/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock", "/var/lib/apt/lists/lock", "/var/cache/apt/archives/lock")
+
+
+def runtime_directories():
+    result = {}
+    for name in ("dev", "proc", "sys", "run", "tmp"):
+        path = Path("/") / name
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError("runtime source root must be a real directory")
+        result[name] = {"mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
+                        "mtime_ns": info.st_mtime_ns,
+                        "xattrs": {key: base64.b64encode(os.getxattr(path, key, follow_symlinks=False)).decode("ascii")
+                                   for key in os.listxattr(path, follow_symlinks=False)}}
+    return result
 
 
 def trusted_file(path):
@@ -94,6 +109,7 @@ def package_lockset(plan):
         status = hashlib.sha256(Path("/var/lib/dpkg/status").read_bytes()).hexdigest()
         yield {"schema": "ar-local-package-quiescence-v1", "result": "NATIVE_PACKAGE_LOCKS_HELD",
                "units": before, "locks": identities, "dpkg_status_sha256": status,
+               "runtime_directories_before_mask": runtime_directories(),
                "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip()}
         if writer_states({"application_writers": units}) != before or hashlib.sha256(Path("/var/lib/dpkg/status").read_bytes()).hexdigest() != status:
             raise ValueError("package writer state changed during capture phase")
@@ -102,7 +118,7 @@ def package_lockset(plan):
             os.close(descriptor)
 
 
-def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=None, package_receipt=None):
+def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=None, package_receipt=None, probe=False):
     arguments = ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts",
                  "--tmpfs", "/", "--dir", "/source", "--dir", "/scratch", "--dir", "/code"]
     for runtime in ("/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"):
@@ -113,8 +129,14 @@ def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=N
         arguments += ["--ro-bind", "/", "/source/root", "--ro-bind", "/boot/firmware", "/source/boot"]
         for runtime in ("dev", "proc", "sys", "run", "tmp"):
             arguments += ["--tmpfs", "/source/root/" + runtime]
-    arguments += ["--bind", str(work), "/scratch", "--ro-bind", str(bundle), "/code",
-                  "--cap-drop", "ALL"]
+    arguments += ["--bind", str(work), "/scratch"]
+    # The script directory is necessarily importable without site packages.
+    # Expose only hash-qualified filenames, never unreviewed siblings capable
+    # of shadowing stdlib imports such as subprocess.py or hashlib.py.
+    files = (*BUNDLE, "pi_system_probe.py", "pi_system_guard_files.py") if probe else BUNDLE
+    for name in files:
+        arguments += ["--ro-bind", str(bundle / name), "/code/" + name]
+    arguments += ["--cap-drop", "ALL"]
     for capability in ("CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_CHOWN", "CAP_FOWNER", "CAP_FSETID", "CAP_SETFCAP", "CAP_MKNOD"):
         arguments += ["--cap-add", capability]
     if phase == "build":
@@ -126,7 +148,8 @@ def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=N
     if package_receipt:
         arguments += ["--ro-bind", str(package_receipt), "/package-proof.json"]
     arguments += ["--remount-ro", "/", "--clearenv", "--setenv", "PATH", ENV["PATH"],
-                  "--setenv", "LANG", ENV["LANG"], "--setenv", "SQLITE_TMPDIR", "/scratch", "--chdir", "/", "--"]
+                  "--setenv", "LANG", ENV["LANG"], "--setenv", "SQLITE_TMPDIR", "/scratch", "--chdir", "/", "--",
+                  "/usr/bin/setpriv", "--no-new-privs", "--"]
     if phase in {"build", "compress"}:
         arguments += ["/usr/bin/python3", "-E", "-s", "-S", "-B", "/code/pi_system_image.py", "--command", phase, *additional, "--workspace", "/scratch"]
         if restored_raw:

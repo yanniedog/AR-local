@@ -15,6 +15,7 @@ import stat
 from pathlib import Path
 
 import zstandard
+from pi_system_sparse import allocation_bound, enable_sparse, sparse_write
 
 
 def digest(path):
@@ -113,24 +114,34 @@ def reassemble(mirror, receipt_path, receipt_sha256, workspace):
     if (not workspace.is_absolute() or workspace.resolve() != workspace or workspace.exists()
             or mirror == workspace or mirror in workspace.parents or workspace in mirror.parents):
         raise ValueError("new canonical private workspace outside mirror required")
-    if shutil.disk_usage(workspace.parent).free < offset + 1024 ** 3:
+    allocation = receipt.get("reassembled_allocation_bound", offset)
+    if type(allocation) is not int or not 0 <= allocation <= ((offset + 65535) // 65536 + len(parts)) * 65536:
+        raise ValueError("invalid sparse image allocation bound")
+    if shutil.disk_usage(workspace.parent).free < allocation + 1024 ** 3:
         raise ValueError("insufficient measured space for restored image")
     if os.name == "nt":
         windows_private_directory(workspace)
     else:
         workspace.mkdir(mode=0o700)
+        os.chmod(workspace, 0o700)
     image = workspace / "recovery.img"
     descriptor = os.open(image, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        enable_sparse(descriptor)
+    except BaseException:
+        os.close(descriptor)
+        raise
     whole = hashlib.sha256()
+    allocated = 0
     with os.fdopen(descriptor, "wb") as output:
         for row in parts:
-            decoded, length = hashlib.sha256(), 0
+            decoded, length, part_allocated = hashlib.sha256(), 0, 0
             with (mirror / row["path"]).open("rb") as source:
                 header = zstandard.get_frame_parameters(source.read(18))
                 if header.window_size > 128 * 1024 ** 2:
                     raise ValueError("image zstd window exceeds bounded restore memory")
                 source.seek(0)
-                with zstandard.ZstdDecompressor().stream_reader(source) as reader:
+                with zstandard.ZstdDecompressor(max_window_size=128 * 1024 ** 2).stream_reader(source) as reader:
                     while True:
                         block = reader.read(1024 * 1024)
                         if not block:
@@ -138,11 +149,18 @@ def reassemble(mirror, receipt_path, receipt_sha256, workspace):
                         length += len(block)
                         if length > row["length"]:
                             raise ValueError("decompressed image exceeds declared frame length")
-                        output.write(block)
+                        sparse_write(output, block)
+                        part_allocated += allocation_bound(block)
+                        if "reassembled_allocation_bound" in receipt and allocated + part_allocated > allocation:
+                            raise ValueError("decompressed image exceeds sparse allocation bound")
                         decoded.update(block)
                         whole.update(block)
             if length != row["length"] or decoded.hexdigest() != row["image_bytes_sha256"]:
                 raise ValueError("restored image frame length/hash differs")
+            if "reassembled_allocation_bound" in row and row["reassembled_allocation_bound"] != part_allocated:
+                raise ValueError("restored sparse frame allocation differs")
+            allocated += part_allocated
+        output.truncate(offset)
         output.flush()
         os.fsync(output.fileno())
     if whole.hexdigest() != receipt["image_sha256"] or digest(image) != whole.hexdigest():

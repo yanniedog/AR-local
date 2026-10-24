@@ -61,3 +61,28 @@ def test_changed_or_misordered_recovery_bytes_never_get_acceptance(tmp_path, cha
     with pytest.raises(ValueError):
         restore.reassemble(mirror, receipt_path, digest, work)
     assert not (work / "image-restore-result.json").exists()
+
+
+def test_sparse_windows_or_posix_regular_image_reconstructs_zero_capacity_by_hash(tmp_path):
+    from pi_system_sparse import allocation_bound
+    mirror = tmp_path / "sparse-mirror"
+    mirror.mkdir()
+    content = b"\0" * (8 * 1024 ** 2) + bytes(range(256)) * 256 + b"\0" * (8 * 1024 ** 2)
+    frame = mirror / "recovery.img.part000001.zst"
+    frame.write_bytes(zstandard.ZstdCompressor(level=15).compress(content))
+    bound = sum(allocation_bound(content[start:start + 1024 ** 2]) for start in range(0, len(content), 1024 ** 2))
+    part = {"path": frame.name, "offset": 0, "length": len(content), "bytes": frame.stat().st_size,
+            "sha256": restore.digest(frame), "image_bytes_sha256": hashlib.sha256(content).hexdigest(), "reassembled_allocation_bound": bound}
+    body = {"schema": "ar-local-system-recovery-set-v1", "result": "IMAGE_AND_FILESYSTEM_VERIFIED", "compression": "zstd-lossless-no-encryption",
+            "compressed_parts": [part], "image_bytes": len(content), "image_sha256": part["image_bytes_sha256"], "raw_restore_required": True,
+            "reassembled_allocation_bound": bound}
+    receipt = mirror / "recovery-set.json"
+    receipt.write_text(json.dumps(body))
+    result = restore.reassemble(mirror, receipt, restore.digest(receipt), tmp_path / "new-sparse")
+    assert result["image_sha256"] == hashlib.sha256(content).hexdigest()
+    assert (tmp_path / "new-sparse/recovery.img").read_bytes() == content
+    body["reassembled_allocation_bound"] = 0
+    receipt.write_text(json.dumps(body))
+    with pytest.raises(ValueError, match="allocation"):
+        restore.reassemble(mirror, receipt, restore.digest(receipt), tmp_path / "understated")
+    assert not (tmp_path / "understated/image-restore-result.json").exists()

@@ -231,6 +231,10 @@ def test_namespace_hides_host_processes_devices_network_and_source_from_privileg
     assert ("CAP_SYS_ADMIN" in argv) == (phase == "build")
     assert ("/dev/loop-control" in argv) == (phase == "build")
     assert "/dev/nvme0n1" not in argv and "/dev/mmcblk0" not in argv and "/dev/sda" not in argv
+    assert ["--ro-bind", "/protected/code", "/code"] not in [argv[index:index + 3] for index in range(len(argv))]
+    exposed = {argv[index + 2] for index, value in enumerate(argv[:-2]) if value == "--ro-bind" and argv[index + 2].startswith("/code/")}
+    assert exposed == {"/code/" + name for name in namespace.BUNDLE}
+    assert "/code/subprocess.py" not in argv and "/code/hashlib.py" not in argv
 
 
 def test_archive_part_checkpoint_is_reused_and_rejects_changed_bytes(monkeypatch, tmp_path):
@@ -453,6 +457,7 @@ def test_native_package_lock_descriptors_are_held_through_phase_and_released(mon
     monkeypatch.setattr(namespace, "Path", mapped)
     monkeypatch.setattr(namespace, "PACKAGE_LOCKS", locks)
     monkeypatch.setattr(namespace, "writer_states", lambda plan: {unit: "inactive" for unit in plan["application_writers"]})
+    monkeypatch.setattr(namespace, "runtime_directories", lambda: {name: {"mode": 0o1777 if name == "tmp" else 0o755} for name in capture.RUNTIME})
     monkeypatch.setattr(namespace.subprocess, "check_output", lambda *args, **kwargs: "")
     descriptors = []
     monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace(LOCK_EX=1, LOCK_NB=4, lockf=lambda descriptor, flags: descriptors.append(descriptor)))
@@ -465,6 +470,44 @@ def test_native_package_lock_descriptors_are_held_through_phase_and_released(mon
         with pytest.raises(OSError):
             os.fstat(descriptor)
     assert all(Path(path).read_bytes() == b"original lock bytes unchanged" for path in locks)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="actual POSIX sticky mode and xattrs")
+def test_premask_runtime_directory_metadata_survives_private_mask_defaults(tmp_path, monkeypatch):
+    source, work = tmp_path / "host", tmp_path / "work"
+    frozen = work / "frozen/root"
+    source.mkdir()
+    frozen.mkdir(parents=True)
+    for name in capture.RUNTIME:
+        (source / name).mkdir(mode=0o755)
+        (frozen / name).mkdir(mode=0o700)
+    (source / "tmp").chmod(0o1777)
+    os.setxattr(source / "tmp", "user.capture-test", b"exact attribute")
+    real_path = Path
+    monkeypatch.setattr(namespace, "Path", lambda value: source if value == "/" else real_path(value))
+    rows = namespace.runtime_directories()
+    capture.restore_runtime_directories(work, {"runtime_directories_before_mask": rows})
+    assert (frozen / "tmp").stat().st_mode & 0o7777 == 0o1777
+    assert os.getxattr(frozen / "tmp", "user.capture-test") == b"exact attribute"
+    for name in capture.RUNTIME:
+        original, restored = (source / name).stat(), (frozen / name).stat()
+        assert (restored.st_uid, restored.st_gid, restored.st_mtime_ns) == (original.st_uid, original.st_gid, original.st_mtime_ns)
+
+
+def test_restore_verifier_uses_private_scratch_with_readonly_metadata_input(tmp_path, portable_metadata):
+    tree, readonly, scratch = tmp_path / "tree", tmp_path / "metadata", tmp_path / "scratch"
+    tree.mkdir()
+    readonly.mkdir()
+    scratch.mkdir()
+    (tree / "file").write_bytes(b"exact actual file-only proof")
+    manifest = readonly / "root.manifest.jsonl"
+    capture.tree_manifest(tree, manifest)
+    readonly.chmod(0o555)
+    try:
+        assert image.verify_tree(tree, manifest, scratch=scratch)["result"] == "PASS"
+        assert [path.name for path in readonly.iterdir()] == [manifest.name]
+    finally:
+        readonly.chmod(0o755)
 
 
 def test_new_filesystem_uuid_is_read_back_from_only_owned_loop_partition(monkeypatch, tmp_path):

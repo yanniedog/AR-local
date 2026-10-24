@@ -126,6 +126,8 @@ def inventory(root, *, skip=(), sort_path, starts=(".",)):
 
 
 def raw_index(work, catalog_path, catalog_sha, index_path):
+    if Path(catalog_path).stat().st_size > 32 * 1024 ** 2:
+        raise ValueError("raw catalog exceeds bounded 32MiB parser budget")
     if sha(catalog_path) != catalog_sha:
         raise ValueError("raw cloud catalog hash differs")
     catalog = json.loads(Path(catalog_path).read_text())
@@ -152,7 +154,7 @@ def raw_index(work, catalog_path, catalog_sha, index_path):
         raise ValueError("raw index record count differs")
     database.commit()
     return database, {"catalog_sha256": catalog_sha, "file_index": descriptor,
-                      "catalog": catalog, "index_records": count}
+                      "index_records": count}
 
 
 def external_match(path, info, name, database, previous=None):
@@ -322,6 +324,24 @@ def repair_hardlinks(work, phase, tree):
     database.close()
 
 
+def restore_runtime_directories(work, packages):
+    rows = packages["runtime_directories_before_mask"]
+    if set(rows) != RUNTIME:
+        raise ValueError("complete root-parent runtime directory metadata required")
+    root = work / "frozen/root"
+    for name, row in rows.items():
+        path = root / name
+        if not path.is_dir() or path.is_symlink() or path.resolve() != path:
+            raise ValueError("runtime metadata target must remain a private staged directory")
+        os.chown(path, row["uid"], row["gid"], follow_symlinks=False)
+        os.chmod(path, row["mode"], follow_symlinks=False)
+        for key in set(os.listxattr(path, follow_symlinks=False)) - set(row["xattrs"]):
+            os.removexattr(path, key, follow_symlinks=False)
+        for key, value in row["xattrs"].items():
+            os.setxattr(path, key, base64.b64decode(value, validate=True), follow_symlinks=False)
+        os.utime(path, ns=(path.stat().st_atime_ns, row["mtime_ns"]), follow_symlinks=False)
+
+
 def copy_phase(work, settings, phase):
     for tree in ("root", "boot"):
         destination = work / "frozen" / tree
@@ -345,20 +365,21 @@ def copy_phase(work, settings, phase):
 def capacity_preflight(work, phase):
     """Measure indexed source bytes before copying any payload into staging."""
     database = sqlite3.connect(work / "inventory.sqlite")
-    source_bytes, entries, metadata_bytes = 0, 0, 0
+    source_bytes, entries, metadata_bytes, external_entries = 0, 0, 0, 0
     for tree, name, serialized in database.execute("SELECT tree,path,value FROM entries WHERE phase=?", (phase,)):
         row = json.loads(serialized)
+        metadata_bytes += len(serialized.encode("ascii")) + len(os.fsencode(name))
         if row.get("external") or row.get("volatile_socket"):
+            external_entries += bool(row.get("external"))
             continue
         entries += 1
-        metadata_bytes += len(serialized.encode("ascii")) + len(os.fsencode(name))
         info = row["source"]
         if stat.S_ISREG(info[2]):
             first = database.execute("SELECT MIN(path) FROM links WHERE phase=? AND tree=? AND dev=? AND ino=?", (phase, tree, info[0], info[1])).fetchone()[0] if info[8] > 1 else name
             if name == first:
                 source_bytes += info[3]
     database.close()
-    image_bound = source_bytes * 13 // 10 + max(3 * 1024 ** 3, entries * 1024) + 512 * 1024 ** 2
+    image_bound = source_bytes * 13 // 10 + max(3 * 1024 ** 3, (entries + external_entries) * 1024) + 512 * 1024 ** 2
     archive_bound = source_bytes + metadata_bytes * 3 + entries * 4096
     reserve = max(10 * 1024 ** 3, (source_bytes + image_bound) // 20)
     needed = source_bytes + archive_bound + image_bound * 2 + reserve
@@ -402,6 +423,7 @@ def baseline(args):
     omitted = source_listing(work, settings, "baseline")
     capacity_preflight(work, "baseline")
     copy_phase(work, settings, "baseline")
+    restore_runtime_directories(work, packages)
     write(work / "baseline.json", {"result": "BASELINE_NOT_RECOVERABLE", "finished_at": utc(), "external_files": omitted})
 
 
@@ -416,6 +438,7 @@ def package_proof(path):
             or not receipt.get("units") or any(state not in {"inactive", "failed"} for state in receipt["units"].values())):
         raise ValueError("protected root-parent package lock proof required")
     return {"proof_sha256": sha(path), "dpkg_status_sha256": receipt["dpkg_status_sha256"],
+            "runtime_directories_before_mask": receipt["runtime_directories_before_mask"],
             "units": receipt["units"], "locks": receipt["locks"], "boot_id": receipt["boot_id"]}
 
 
@@ -479,6 +502,7 @@ def prepare(args):
     capacity_preflight(work, "prepared")
     remove_obsolete_stage_entries(work, current="prepared")
     copy_phase(work, settings, "prepared")
+    restore_runtime_directories(work, packages)
     database = sqlite3.connect(work / "inventory.sqlite")
     database.execute("INSERT INTO entries SELECT 'final',tree,path,value FROM entries WHERE phase='prepared'")
     database.commit()
@@ -546,6 +570,7 @@ def finalize(args):
     source_listing(work, settings, "final", starts=scopes)
     remove_obsolete_stage_entries(work, previous="prepared")
     copy_phase(work, settings, "final")
+    restore_runtime_directories(work, packages)
     boot_after = tree_manifest(settings["boot"], work / "boot-source-after.jsonl")
     if boot_before != boot_after:
         raise ValueError("boot partition changed during final capture")
