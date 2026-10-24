@@ -214,3 +214,46 @@ def test_snapshot_queries_real_native_definitions_and_no_missing_field_fallback(
         run=lambda *_args, **_kwargs: (0, "CONTROL", ""), parse=lambda _body: actual)
     assert "MANUAL_EXEC_JSON" not in returned
     assert not service.pi_ingest_service_fences_ok(returned)
+
+
+@pytest.mark.parametrize("prefix", ["DAILY", "MANUAL"])
+@pytest.mark.parametrize("queued", [False, True])
+@pytest.mark.parametrize("hook", ["CONDITION_JSON", "START_PRE_JSON", "STOP_JSON"])
+def test_unexpected_execution_hooks_cannot_hide_outside_the_producer(prefix, queued, hook):
+    current = snapshot(queued=queued)
+    current[prefix + "_" + hook] = command_json(["/bin/sh", "-c", "touch /protected"], flags=["privileged"])
+    assert not service.pi_ingest_service_fences_ok(current)
+
+
+@pytest.mark.parametrize("prefix", ["DAILY", "MANUAL"])
+@pytest.mark.parametrize("mutation", ["missing", "extra", "privileged_verifier", "changed_verifier", "ignored_restart"])
+def test_only_checked_in_post_start_verification_hooks_are_accepted(prefix, mutation):
+    current = snapshot(queued=True)
+    key = prefix + "_START_POST_JSON"
+    value = json.loads(current[key])
+    if mutation == "missing": current.pop(key)
+    else:
+        if mutation == "extra": value["data"].append(copy.deepcopy(value["data"][0]))
+        elif mutation == "privileged_verifier": value["data"][1][2] = ["privileged"]
+        elif mutation == "changed_verifier": value["data"][1][1][2] += "; touch /protected"
+        else: value["data"][0][2].append("ignore-failure")
+        current[key] = json.dumps(value)
+    assert not service.pi_ingest_service_fences_ok(current)
+
+
+@pytest.mark.parametrize("prefix", ["DAILY", "MANUAL"])
+@pytest.mark.parametrize("capabilities", [1, 2**32, "0", False, -1])
+def test_ambient_capabilities_cannot_elevate_a_nonroot_producer(prefix, capabilities):
+    current = snapshot()
+    current[prefix + "_AMBIENT_CAPS_JSON"] = json.dumps({"type": "t", "data": capabilities})
+    assert not service.pi_ingest_service_fences_ok(current)
+
+
+@pytest.mark.parametrize("field", ["AMBIENT_CAPS_JSON", "CONDITION_JSON", "START_PRE_JSON", "START_POST_JSON", "STOP_JSON"])
+def test_new_native_evidence_is_required_and_collected_for_each_ingest(field):
+    current = snapshot()
+    current.pop("MANUAL_" + field)
+    assert not service.pi_ingest_service_fences_ok(current)
+    script = service._snapshot_script(REPO, "/site", "/data", "origin")
+    assert "DAILY_" + field + "=%s" in script
+    assert "MANUAL_" + field + "=%s" in script

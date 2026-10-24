@@ -14,6 +14,15 @@ INGEST_UNITS = {"DAILY": "ar-local-daily.service", "MANUAL": "ar-local-ingest-no
 QUEUE = "/usr/local/lib/shared-pi-queue/pi_shared_queue.py"
 QUEUE_STOP = ["/usr/bin/python3", "/usr/local/lib/shared-pi-queue/pi_shared_queue_stop_hook.py"]
 BASE_STOP = ["/usr/bin/systemctl", "start", "ar-local-dashboard.service"]
+EMPTY_HOOKS = ("CONDITION_JSON", "START_PRE_JSON", "STOP_JSON")
+
+
+def _post_start_shell(repo):
+    return ('for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 '
+            'http://127.0.0.1:8808/api/latest && break; sleep 3; done; '
+            f'/usr/bin/python3 {repo}/verify_local.py --base-url=http://127.0.0.1:8808/ '
+            '--require-banks-rates --expect-run-date "$(date +%F)" '
+            '--history-mode=compact --history-timeout-seconds=90')
 
 
 def _ingest_definition_script(prefix, unit):
@@ -26,7 +35,10 @@ def _ingest_definition_script(prefix, unit):
         variable = (prefix + "_" + field).lower()
         script.append(f"{variable}=$(systemctl show {unit} -p {prop} --value 2>/dev/null); "
                       f"printf '{prefix}_{field}=%s\\n' \"${variable}\"; ")
-    for field, prop in (("EXEC_JSON", "ExecStartEx"), ("STOP_POST_JSON", "ExecStopPostEx"), ("USER_JSON", "User")):
+    for field, prop in (("EXEC_JSON", "ExecStartEx"), ("STOP_POST_JSON", "ExecStopPostEx"),
+                        ("USER_JSON", "User"), ("AMBIENT_CAPS_JSON", "AmbientCapabilities"),
+                        ("CONDITION_JSON", "ExecConditionEx"), ("START_PRE_JSON", "ExecStartPreEx"),
+                        ("START_POST_JSON", "ExecStartPostEx"), ("STOP_JSON", "ExecStopEx")):
         variable = (prefix + "_" + field).lower()
         script.append(f"{variable}=$(busctl --system --json=short --timeout=10 get-property "
                       f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/{encoded} "
@@ -50,6 +62,12 @@ def _queued_argv(producer):
 
 def _dry_ingest_definition(prefix, repo):
     return {
+        **{prefix + "_" + field: json.dumps({"type": COMMAND_TYPE, "data": []}) for field in EMPTY_HOOKS},
+        prefix + "_AMBIENT_CAPS_JSON": json.dumps({"type": "t", "data": 0}),
+        prefix + "_START_POST_JSON": json.dumps({"type": COMMAND_TYPE, "data": [
+            ["/usr/bin/systemctl", ["/usr/bin/systemctl", "try-restart", "ar-local-dashboard.service"],
+             ["privileged"], 0, 0, 0, 0, 0, 0, 0],
+            ["/bin/sh", ["/bin/sh", "-c", _post_start_shell(repo)], [], 0, 0, 0, 0, 0, 0, 0]]}),
         prefix + "_TYPE": "oneshot", prefix + "_RESTART": "no", prefix + "_SEND_SIGKILL": "yes",
         prefix + "_STOP_TIMEOUT": "45s", prefix + "_USER_JSON": json.dumps({"type": "s", "data": "ar-local"}),
         prefix + "_EXEC_JSON": json.dumps({"type": COMMAND_TYPE, "data": [[
@@ -59,7 +77,7 @@ def _dry_ingest_definition(prefix, repo):
     }
 
 
-def _base_stop_matches(commands):
+def _base_stop_matches(commands, expected=BASE_STOP):
     # Only the checked-in +systemctl dashboard cleanup has this modifier.
     # Do not weaken the shared unprivileged start/queue/observer matcher.
     if not isinstance(commands, list) or len(commands) != 1:
@@ -67,7 +85,19 @@ def _base_stop_matches(commands):
     row = commands[0]
     if not isinstance(row, list) or len(row) != 10 or row[2] != ["privileged"]:
         return False
-    return command_matches([[row[0], row[1], [], *row[3:]]], BASE_STOP)
+    return command_matches([[row[0], row[1], [], *row[3:]]], expected)
+
+
+def _additional_hooks_ok(snap, prefix, repo):
+    capabilities = native_property(snap.get(prefix + "_AMBIENT_CAPS_JSON"), "t")
+    if type(capabilities) is not int or capabilities != 0:
+        return False
+    if any(native_property(snap.get(prefix + "_" + field), COMMAND_TYPE) != [] for field in EMPTY_HOOKS):
+        return False
+    post = native_property(snap.get(prefix + "_START_POST_JSON"), COMMAND_TYPE)
+    return (isinstance(post, list) and len(post) == 2
+            and _base_stop_matches(post[:1], ["/usr/bin/systemctl", "try-restart", "ar-local-dashboard.service"])
+            and command_matches(post[1:], ["/bin/sh", "-c", _post_start_shell(repo)]))
 
 
 def ingest_definition_ok(snap, prefix):
@@ -89,6 +119,8 @@ def ingest_definition_ok(snap, prefix):
                     ("KILL_MODE", "control-group"), ("SEND_SIGKILL", "yes")))):
             return False
         commands = native_property(snap.get(prefix + "_EXEC_JSON"), COMMAND_TYPE)
+        if not _additional_hooks_ok(snap, prefix, repo):
+            return False
         producer = _producer_argv(repo, prefix)
         if command_matches(commands, producer):
             start, stop = "6h 15min", "45s"
