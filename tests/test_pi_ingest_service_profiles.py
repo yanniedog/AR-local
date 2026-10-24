@@ -205,8 +205,8 @@ def test_snapshot_queries_real_native_definitions_and_no_missing_field_fallback(
     for prefix, encoded in (("DAILY", "daily"), ("MANUAL", "ingest_2dnow")):
         assert "/org/freedesktop/systemd1/unit/ar_2dlocal_2d" + encoded + "_2eservice" in script
         for field in ("EXEC_JSON", "STOP_POST_JSON", "USER_JSON", "TYPE", "RESTART", "SEND_SIGKILL", "STOP_TIMEOUT"):
-            assert prefix + "_" + field + "=%s" in script
-    assert "org.freedesktop.systemd1.Service ExecStopPostEx" in script
+            assert prefix + "_" + field in script
+    assert "ExecStopPostEx" in script and 'ThreadPoolExecutor(max_workers=4)' in script
     actual = snapshot(queued=True)
     actual.pop("MANUAL_EXEC_JSON")
     actual.update(AR_HEAD="a", AR_ORIGIN="a", SITE_HEAD="b", SITE_ORIGIN="b", DASHBOARD="active")
@@ -255,5 +255,5 @@ def test_new_native_evidence_is_required_and_collected_for_each_ingest(field):
     current.pop("MANUAL_" + field)
     assert not service.pi_ingest_service_fences_ok(current)
     script = service._snapshot_script(REPO, "/site", "/data", "origin")
-    assert "DAILY_" + field + "=%s" in script
-    assert "MANUAL_" + field + "=%s" in script
+    assert "DAILY_" + field in script
+    assert "MANUAL_" + field in script

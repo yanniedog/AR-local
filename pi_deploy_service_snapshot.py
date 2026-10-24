@@ -17,10 +17,11 @@ BASE_STOP = ["/usr/bin/systemctl", "start", "ar-local-dashboard.service"]
 EMPTY_HOOKS = ("CONDITION_JSON", "START_PRE_JSON", "STOP_JSON")
 
 
-def _post_start_shell(repo):
+def _post_start_shell(repo, *, working_directory=False):
+    verifier = '"$PWD/verify_local.py"' if working_directory else shlex.quote(repo + '/verify_local.py')
     return ('for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 '
             'http://127.0.0.1:8808/api/latest && break; sleep 3; done; '
-            f'/usr/bin/python3 {repo}/verify_local.py --base-url=http://127.0.0.1:8808/ '
+            f'/usr/bin/python3 {verifier} --base-url=http://127.0.0.1:8808/ '
             '--require-banks-rates --expect-run-date "$(date +%F)" '
             '--history-mode=compact --history-timeout-seconds=90')
 
@@ -29,22 +30,34 @@ def _ingest_definition_script(prefix, unit):
     if INGEST_UNITS.get(prefix) != unit:
         raise ValueError("unknown ingest definition")
     encoded = "".join(char if char.isalnum() else f"_{ord(char):02x}" for char in unit)
-    script = []
+    jobs = []
     for field, prop in (("TYPE", "Type"), ("RESTART", "Restart"),
                         ("SEND_SIGKILL", "SendSIGKILL"), ("STOP_TIMEOUT", "TimeoutStopUSec")):
-        variable = (prefix + "_" + field).lower()
-        script.append(f"{variable}=$(systemctl show {unit} -p {prop} --value 2>/dev/null); "
-                      f"printf '{prefix}_{field}=%s\\n' \"${variable}\"; ")
+        jobs.append((prefix + '_' + field, ['systemctl', 'show', unit, '-p', prop, '--value']))
     for field, prop in (("EXEC_JSON", "ExecStartEx"), ("STOP_POST_JSON", "ExecStopPostEx"),
                         ("USER_JSON", "User"), ("AMBIENT_CAPS_JSON", "AmbientCapabilities"),
                         ("CONDITION_JSON", "ExecConditionEx"), ("START_PRE_JSON", "ExecStartPreEx"),
                         ("START_POST_JSON", "ExecStartPostEx"), ("STOP_JSON", "ExecStopEx")):
-        variable = (prefix + "_" + field).lower()
-        script.append(f"{variable}=$(busctl --system --json=short --timeout=10 get-property "
-                      f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/{encoded} "
-                      f"org.freedesktop.systemd1.Service {prop} 2>/dev/null | tr '\\n' ' '); "
-                      f"printf '{prefix}_{field}=%s\\n' \"${variable}\"; ")
-    return "".join(script)
+        jobs.append((prefix + '_' + field, ['busctl', '--system', '--json=short', '--timeout=3',
+                     'get-property', 'org.freedesktop.systemd1',
+                     '/org/freedesktop/systemd1/unit/' + encoded, 'org.freedesktop.systemd1.Service', prop]))
+    # Four bounded read-only subprocesses at once: <=12 seconds per unit even
+    # when every DBus read stalls. Preserve native Ex flags, never parse the
+    # lossy human-readable systemctl ExecStart representation.
+    code = '''import concurrent.futures,json,subprocess
+jobs=json.loads(%r)
+def read(job):
+    key,argv=job
+    try:
+        p=subprocess.run(argv,capture_output=True,text=True,timeout=4,shell=False)
+        value=p.stdout.replace('\\n',' ').strip() if p.returncode==0 else ''
+    except (OSError,subprocess.SubprocessError):
+        value=''
+    return key+'='+value
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    for line in pool.map(read,jobs): print(line)
+''' % json.dumps(jobs)
+    return '/usr/bin/python3 -I -c ' + shlex.quote(code) + '; '
 
 
 def _producer_argv(repo, prefix):
@@ -97,7 +110,8 @@ def _additional_hooks_ok(snap, prefix, repo):
     post = native_property(snap.get(prefix + "_START_POST_JSON"), COMMAND_TYPE)
     return (isinstance(post, list) and len(post) == 2
             and _base_stop_matches(post[:1], ["/usr/bin/systemctl", "try-restart", "ar-local-dashboard.service"])
-            and command_matches(post[1:], ["/bin/sh", "-c", _post_start_shell(repo)]))
+            and any(command_matches(post[1:], ["/bin/sh", "-c", _post_start_shell(repo, working_directory=wd)])
+                    for wd in (False, True)))
 
 
 def ingest_definition_ok(snap, prefix):
@@ -148,11 +162,11 @@ def _snapshot_script(ar, site, data, remote):
         + _ingest_definition_script("DAILY", INGEST_UNITS["DAILY"])
         + _ingest_definition_script("MANUAL", INGEST_UNITS["MANUAL"])
         + f"ar_physical=$(CDPATH= cd {q_ar} 2>/dev/null && pwd -P); "
-        f"git -C {q_ar} fetch {q_remote} 2>/dev/null; "
+        f"timeout 12s git -C {q_ar} fetch {q_remote} 2>/dev/null; "
         f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
         f"ar_o=$(git -C {q_ar} rev-parse {q_remote_main} 2>/dev/null); "
         f"ar_d=$(git -C {q_ar} status --porcelain | tr '\\n' ';'); "
-        f"git -C {q_site} fetch {q_remote} 2>/dev/null; "
+        f"timeout 12s git -C {q_site} fetch {q_remote} 2>/dev/null; "
         f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
         f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
         f"site_d=$(git -C {q_site} status --porcelain | tr '\\n' ';'); "
@@ -170,11 +184,11 @@ def _snapshot_script(ar, site, data, remote):
         f"daily_kill_mode=$(systemctl show ar-local-daily.service -p KillMode --value 2>/dev/null); "
         f"daily_start_timeout=$(systemctl show ar-local-daily.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"watchdog_kill_mode=$(systemctl show ar-local-daily-watchdog.service -p KillMode --value 2>/dev/null); "
-        f"watchdog_exec=$(busctl --system --json=short --timeout=10 get-property "
+        f"watchdog_exec=$(busctl --system --json=short --timeout=3 get-property "
         f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2dwatchdog_2eservice "
         f"org.freedesktop.systemd1.Service ExecStartEx 2>/dev/null | tr '\\n' ' '); "
         f"watchdog_start_timeout=$(systemctl show ar-local-daily-watchdog.service -p TimeoutStartUSec --value 2>/dev/null); "
-        f"watchdog_user=$(busctl --system --json=short --timeout=10 get-property "
+        f"watchdog_user=$(busctl --system --json=short --timeout=3 get-property "
         f"org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2dwatchdog_2eservice "
         f"org.freedesktop.systemd1.Service User 2>/dev/null | tr '\\n' ' '); "
         f"daily_user=$(systemctl show ar-local-daily.service -p User --value 2>/dev/null); "

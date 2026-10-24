@@ -2,6 +2,7 @@
 import hashlib
 import json
 import stat
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -110,20 +111,19 @@ def test_recovery_requires_all_evidence_and_checks_each_hash(monkeypatch):
 
 
 def test_no_adapter_means_no_claim_or_worker(monkeypatch):
-    monkeypatch.setattr(ci, "ACTIVATION_INTEGRATION_READY", True)
-    monkeypatch.setattr(ci, "validate_plan", lambda plan: (_ for _ in ()).throw(FileNotFoundError("adapter missing")))
+    monkeypatch.setattr(ci, "load_runtime", lambda: (_ for _ in ()).throw(FileNotFoundError("adapter missing")))
     monkeypatch.setattr(ci.os, "open", lambda *args: pytest.fail("no root write before admission"))
     monkeypatch.setattr(ci, "run", lambda *args, **kwargs: pytest.fail("no worker before admission"))
     with pytest.raises(FileNotFoundError, match="adapter missing"):
         ci.activate("a" * 64)
 
 
-def test_sandbox_has_fixed_executable_no_new_privileges_and_empty_capabilities():
+def test_root_bootstrap_and_retained_queue_have_only_fixed_executable_arguments():
     argv = ci.activation_argv("a" * 64)
-    assert argv[argv.index("--") + 1:] == ["/usr/bin/python3", "-I", str(ci.ADAPTER), "a" * 64]
-    for property in ("User=pi", "Group=pi", "NoNewPrivileges=yes", "CapabilityBoundingSet=",
-                     "AmbientCapabilities=", "ProtectSystem=strict", "ProtectHome=yes",
-                     "PrivateDevices=yes", "ProtectControlGroups=yes", "RestrictNamespaces=yes"):
+    assert argv[-8:] == ['/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', ci.CONTROL, '--worker', 'a' * 64]
+    assert '/usr/local/lib/shared-pi-queue/pi_shared_queue.py' in argv
+    for property in ("User=pi", "Group=pi", "NoNewPrivileges=no", "ProtectSystem=strict", "ProtectHome=yes",
+                     "ProtectControlGroups=yes", "KillMode=control-group", "TimeoutStopSec=900"):
         assert "--property=" + property in argv
 
 
@@ -146,13 +146,13 @@ def test_interactive_login_is_denied(argv):
 
 
 def test_replayed_plan_does_not_launch_worker(monkeypatch, tmp_path):
-    monkeypatch.setattr(ci, "ACTIVATION_INTEGRATION_READY", True)
     # Exercise POSIX exclusive-creation semantics on Windows without claiming
     # to test its unavailable O_NOFOLLOW support. Linux ownership tests differ.
     if not hasattr(ci.os, "O_NOFOLLOW"):
         monkeypatch.setattr(ci.os, "O_NOFOLLOW", 0, raising=False)
     plan_id = "a" * 64
-    monkeypatch.setattr(ci, "validate_plan", lambda value: {"target_commit": "b" * 40})
+    monkeypatch.setattr(ci, 'load_runtime', lambda: {'pi_ci_activate': SimpleNamespace(
+        plan_context=lambda value: {'plan': {'target_commit': 'b' * 40}}, require_code_only_profile=lambda _: None)})
     monkeypatch.setattr(ci, "require_root_path", lambda *args, **kwargs: None)
     monkeypatch.setattr(ci, "STATE", tmp_path)
     (tmp_path / (plan_id + ".claimed.json")).write_text("retained ambiguous transaction")
@@ -197,11 +197,65 @@ def test_status_does_not_claim_verified_deployment_or_expose_environment(monkeyp
     assert all("Environment" not in " ".join(argv) for argv in calls)
 
 
-def test_foundation_activation_stays_blocked_before_plan_adapter_or_write(monkeypatch):
-    monkeypatch.setattr(ci, "validate_plan", lambda *args: pytest.fail("foundation cannot admit activation"))
+def test_uncommissioned_installation_cannot_admit_worker_or_write(monkeypatch):
+    monkeypatch.setattr(ci, 'trusted_bytes', lambda *args: b'{"schema":"ar-local-ci-runtime-v1"}')
     monkeypatch.setattr(ci, "run", lambda *args, **kwargs: pytest.fail("foundation cannot launch worker"))
-    with pytest.raises(RuntimeError, match="per-service NoNewPrivileges"):
+    with pytest.raises(ValueError, match="complete commissioned"):
         ci.activate("a" * 64)
+
+
+@pytest.mark.parametrize('version', [True, False, 1.0, '1', None])
+def test_root_approvals_require_exact_integer_schema_version(monkeypatch, version):
+    plan, now, files, install = approved_plan(monkeypatch)
+    plan['schema_version'] = version
+    with pytest.raises(ValueError, match='deployment plan'):
+        ci.validate_plan(install(plan), now=now)
+    recovery = {'schema_version': version, 'result': 'PASS', 'evidence': {}}
+    with pytest.raises(ValueError, match='recovery approval'):
+        ci.validate_recovery(encoded(recovery))
+
+
+def test_installer_entrypoint_rejects_before_payload_import_or_install(tmp_path):
+    import os
+    import shutil
+    import subprocess
+    if os.name != 'posix' or not Path('/usr/bin/python3').exists() or not shutil.which('bash'):
+        pytest.skip('actual POSIX bash installer entrypoint is qualified on Linux')
+    source = Path(__file__).resolve().parents[1] / 'deploy/pi/install-ci-access.sh'
+    fixture = tmp_path / 'install-ci-access.sh'
+    fixture.write_bytes(source.read_bytes())
+    (tmp_path / 'pi_ci_access.py').write_text("raise RuntimeError('PAYLOAD_IMPORTED_UNSAFELY')\n")
+    # Missing/unprotected staging approval guarantees the pure trust validator
+    # rejects. Even a regression skipping it encounters the sentinel exception
+    # before any installation command; no real destination can be modified.
+    response = subprocess.run(['bash', str(fixture), '--install', str(tmp_path / 'recovery.json'),
+        'a' * 64, str(tmp_path / 'staging.json'), 'b' * 64], capture_output=True, text=True, timeout=15)
+    assert response.returncode != 0
+    assert 'staged files must be read-only and exclusively root controlled' in response.stderr
+    assert 'PAYLOAD_IMPORTED_UNSAFELY' not in response.stdout + response.stderr
+    assert 'Explicit installation requires root' not in response.stderr
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='native POSIX umask authority publication')
+def test_authority_is_public_readonly_under_umask_0077_without_real_worker(tmp_path, monkeypatch):
+    state = tmp_path / 'state'; state.mkdir(); (state / 'authority').mkdir()
+    monkeypatch.setattr(ci, 'STATE', state)
+    plan = {'target_commit': 'a' * 40, 'expires_at': '2026-10-24T20:00:00+00:00',
+            'runtime_profile_sha256': 'b' * 64, 'adapter_sha256': 'c' * 64}
+    monkeypatch.setattr(ci, 'load_runtime', lambda: {'pi_ci_activate': SimpleNamespace(
+        plan_context=lambda _: {'plan': plan}, require_code_only_profile=lambda _: None)})
+    monkeypatch.setattr(ci, 'require_root_path', lambda *args, **kwargs: None)
+    monkeypatch.setattr(ci, 'trusted_bytes', lambda *args: b'reviewed installed control')
+    calls = []
+    monkeypatch.setattr(ci, 'run', lambda argv, **kwargs: calls.append(argv) or SimpleNamespace(returncode=0))
+    previous = os.umask(0o077)
+    try: result = ci.activate('d' * 64)
+    finally: os.umask(previous)
+    authority = state / 'authority' / ('d' * 64 + '.json')
+    assert stat.S_IMODE(authority.stat().st_mode) == 0o444
+    observed = json.loads(authority.read_bytes())
+    assert observed['plan'] == 'd' * 64 and observed['scope'] == 'activate-immutable-d027'
+    assert result['result'] == 'WORKER_COMPLETED' and len(calls) == 1
 
 
 @pytest.fixture

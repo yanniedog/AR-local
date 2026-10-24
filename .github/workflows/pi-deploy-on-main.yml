@@ -28,6 +28,10 @@ on:
         description: "Immutable GitHub release containing canary-acceptance.json"
         required: true
         type: string
+      approved_plan:
+        description: "SHA-256 of the independently root-approved immutable Pi plan"
+        required: true
+        type: string
       confirm_deploy:
         description: "Explicit production activation confirmation"
         required: true
@@ -71,6 +75,8 @@ jobs:
           APPROVED_COMMIT: ${{ vars.AR_PI_CANARY_APPROVED_COMMIT }}
           APPROVED_MANIFEST_SHA256: ${{ vars.AR_PI_CANARY_MANIFEST_SHA256 }}
           APPROVED_RELEASE_TAG: ${{ vars.AR_PI_CANARY_RELEASE_TAG }}
+          ROOT_PLAN: ${{ inputs.approved_plan }}
+          APPROVED_ROOT_PLAN: ${{ vars.AR_PI_APPROVED_PLAN }}
         run: |
           set -euo pipefail
           [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
@@ -80,6 +86,8 @@ jobs:
           test "$TARGET_COMMIT" = "$APPROVED_COMMIT"
           test "$CANARY_MANIFEST_SHA256" = "$APPROVED_MANIFEST_SHA256"
           test "$CANARY_RELEASE_TAG" = "$APPROVED_RELEASE_TAG"
+          [[ "$ROOT_PLAN" =~ ^[0-9a-f]{64}$ ]]
+          test "$ROOT_PLAN" = "$APPROVED_ROOT_PLAN"
           test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
           git fetch origin main
           test "$(git rev-parse origin/main)" = "$TARGET_COMMIT"
@@ -175,19 +183,17 @@ jobs:
           PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
           PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
           PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
-          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
           chmod 600 ~/.ssh/pi_deploy_key
-          USER="${PI_SSH_USER:-pi}"
           printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           cat >> ~/.ssh/config <<EOF
           Host ar-local-pi5
             HostName ${PI_SSH_HOST}
-            User ${USER}
+            User ar-local-ci
             IdentityFile ~/.ssh/pi_deploy_key
             BatchMode yes
             ConnectTimeout 60
@@ -207,12 +213,15 @@ jobs:
           AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
           AR_PI_SITE_REPO: /srv/ar-local/australianrates
           AR_PI_EXPECTED_COMMIT: ${{ inputs.target_commit }}
+          AR_PI_APPROVED_PLAN: ${{ inputs.approved_plan }}
+          AR_PI_CANARY_MANIFEST_SHA256: ${{ inputs.canary_manifest_sha256 }}
+          AR_PI_CANARY_RELEASE_TAG: ${{ inputs.canary_release_tag }}
         run: |
           export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10/}"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python pi_deploy_verify.py --deploy --expected-commit "$AR_PI_EXPECTED_COMMIT" --dry-run
+            python pi_deploy_verify.py --restricted-ci --deploy --expected-commit "$AR_PI_EXPECTED_COMMIT" --dry-run
           else
-            python pi_deploy_verify.py --deploy --expected-commit "$AR_PI_EXPECTED_COMMIT"
+            python pi_deploy_verify.py --restricted-ci --deploy --expected-commit "$AR_PI_EXPECTED_COMMIT"
           fi
 
       - name: Deploy result
