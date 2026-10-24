@@ -15,6 +15,63 @@ class Blocked(RuntimeError):
     pass
 
 
+def packet_runtime_seconds(packet, *, allow_legacy=False):
+    """One immutable chosen runtime; legacy caps are for terminal recovery only."""
+    mode = packet.get("mode")
+    if mode not in ("PROBE", "RUN_ARCHIVE"):
+        raise Blocked("fixed commissioning or archive mode required")
+    cap = 120 if mode == "PROBE" else 21600
+    try:
+        created = datetime.fromisoformat(packet["created_at"])
+        expiry = datetime.fromisoformat(packet["expires_at"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise Blocked("runtime requires bounded UTC packet timestamps") from error
+    if (created.utcoffset() != timezone.utc.utcoffset(created)
+            or expiry.utcoffset() != timezone.utc.utcoffset(expiry)
+            or not 0 < (expiry-created).total_seconds() <= cap):
+        raise Blocked("runtime exceeds the packet mode or UTC validity window")
+    if "runtime_seconds" not in packet:
+        if allow_legacy:
+            return cap
+        raise Blocked("new acquisition requires explicit packet runtime")
+    value = packet["runtime_seconds"]
+    if type(value) is not int or not 15 <= value <= cap or value != int((expiry-created).total_seconds()):
+        raise Blocked("chosen runtime differs from the immutable packet validity window")
+    return value
+
+
+def parse_runtime_microseconds(value):
+    """Parse native systemd whole-second h/min/s evidence without float rounding."""
+    if not isinstance(value, str) or not 1 <= len(value) <= 80:
+        raise Blocked("bounded native runtime evidence required")
+    tokens = list(re.finditer(r"([0-9]+)(h|min|s)", value))
+    if not tokens or "".join(match.group(0) for match in tokens) != value.replace(" ", ""):
+        raise Blocked("invalid native runtime format")
+    factors = {"h": 3600, "min": 60, "s": 1}
+    total, previous = 0, 3601
+    for match in tokens:
+        factor = factors[match.group(2)]
+        if factor >= previous:
+            raise Blocked("duplicate or unordered native runtime units")
+        previous = factor
+        total += int(match.group(1)) * factor
+    if not 0 < total <= 21600:
+        raise Blocked("native runtime exceeds the fixed six-hour cap")
+    return total * 1000000
+
+
+def validate_commissioning_packet(probe, nonce, current):
+    """An old terminal receipt cannot qualify newly installed root controls."""
+    if (probe.get("schema") != current.get("schema") or probe.get("mode") != "PROBE"
+            or probe.get("nonce") != nonce or probe.get("unit") != "ar-local-plain-backup-"+nonce+".service"):
+        raise Blocked("referenced commissioning packet identity differs")
+    packet_runtime_seconds(probe)  # Missing runtime is never new commissioning authority.
+    for key in ("root_control_manifest_sha256", "source_closure_sha256", "queue_closure_sha256",
+                "bwrap_sha256", "setpriv_sha256", "parent_sha256", "resources_sha256", "broker_sha256"):
+        if not current.get(key) or probe.get(key) != current[key]:
+            raise Blocked("commissioning packet does not qualify the current exact controls")
+
+
 def validate_packet(packet, nonce, now):
     if (not NONCE.fullmatch(nonce or "") or packet.get("schema") != "ar-local-plain-backup-packet-v1"
             or packet.get("nonce") != nonce or packet.get("unit") != "ar-local-plain-backup-" + nonce + ".service"
@@ -27,8 +84,11 @@ def validate_packet(packet, nonce, now):
     if (expiry.utcoffset() != timezone.utc.utcoffset(expiry) or created.utcoffset() != timezone.utc.utcoffset(created)
             or not 0 < (expiry-created).total_seconds() <= 21600 or not created <= now < expiry):
         raise Blocked("backup authority expired, not yet active, or exceeds six hours")
+    packet_runtime_seconds(packet)
+    if (expiry-now).total_seconds() < 15:
+        raise Blocked("insufficient remaining packet window for immediate acquisition")
     for key in ("queue_closure_sha256", "source_closure_sha256", "parent_sha256", "resources_sha256", "bwrap_sha256",
-                "credential_sha256", "global_hold_sha256", "broker_sha256", "setpriv_sha256", "reconcile_wrapper_sha256", "reconcile_original_sha256", "reconcile_callback_sha256"):
+                "credential_sha256", "global_hold_sha256", "broker_sha256", "setpriv_sha256", "reconcile_wrapper_sha256", "reconcile_original_sha256", "reconcile_callback_sha256", "root_control_manifest_sha256"):
         if not re.fullmatch("[0-9a-f]{64}", str(packet.get(key, ""))):
             raise Blocked("independently reviewed source/control binding missing")
 

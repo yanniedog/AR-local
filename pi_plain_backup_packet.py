@@ -220,25 +220,29 @@ def build(mode,nonce,coupled_nonce=None):
         'parent_sha256':plan['control']['parent.py'],'resources_sha256':plan['control']['pi_plain_drive_resources.py'],
         'broker_sha256':plan['control']['broker.py'],'bwrap_sha256':plan['bwrap_sha256'],
         'setpriv_sha256':plan['setpriv_sha256'],'reconcile_wrapper_sha256':plan['wrapper_sha256'],
-        'reconcile_original_sha256':plan['expected_reclaim_sha256'],'reconcile_callback_sha256':plan['control']['reconcile.py']}
+        'reconcile_original_sha256':plan['expected_reclaim_sha256'],'reconcile_callback_sha256':plan['control']['reconcile.py'],
+        'root_control_manifest_sha256':receipt['root_control_manifest_sha256']}
+    packet['runtime_seconds']=int((expires-now).total_seconds())
+    # These imported controls were hash-verified by bootstrap before this point.
+    sys.path.insert(0,str(ROOT))
+    from pi_plain_backup_core import validate_packet, validate_commissioning_packet
+    from plan import service_plan
     if mode=='RUN_ARCHIVE':
         if not coupled_nonce or not re.fullmatch('[a-f0-9]{32}',coupled_nonce) or coupled_nonce==nonce:
             raise RuntimeError('distinct actual commissioning nonce required')
         packet['coupled_probe_nonce']=coupled_nonce
+        prior_packet=json.loads(protected(STATE/coupled_nonce/'packet.json',65536))
+        validate_commissioning_packet(prior_packet,coupled_nonce,packet)
         complete=json.loads(protected(HANDOFF/coupled_nonce/'completion.json',65536))
         coupled=json.loads(protected(HANDOFF/coupled_nonce/'coupled-probe.json',65536))
         if (complete.get('operation_mode')!='PROBE' or complete.get('stop_post_verified') is not True
                 or complete.get('resource_acceptance')!='PASS' or complete.get('readback')!=60
                 or coupled.get('boot_id')!=boot or coupled.get('result')!='PROBE_PASS'
                 or any(coupled.get(key)!=packet[key] for key in ('source_closure_sha256','queue_closure_sha256',
-                    'bwrap_sha256','setpriv_sha256','parent_sha256','resources_sha256','broker_sha256'))):
+                    'bwrap_sha256','setpriv_sha256','parent_sha256','resources_sha256','broker_sha256','root_control_manifest_sha256'))):
             raise RuntimeError('actual same-closure coupled commissioning proof required')
     config=credential_original(pi.pw_uid,pi.pw_gid);packet['credential_sha256']=digest(config)
-    # Both imported modules are already hash-verified installed root controls.
-    sys.path.insert(0,str(ROOT))
-    from pi_plain_backup_core import validate_packet
-    from plan import service_plan
-    validate_packet(packet,nonce,now);service=service_plan(nonce,mode=mode)
+    validate_packet(packet,nonce,now);service=service_plan(nonce,mode=mode,packet=packet)
     private=STATE/nonce;public=HANDOFF/nonce;work=WORK/nonce
     if any(path.exists() for path in (private,public,work)):raise RuntimeError('fresh unused nonce required')
     directory(HANDOFF,0o750,pi.pw_gid);directory(WORK,0o755)
@@ -256,6 +260,7 @@ def build(mode,nonce,coupled_nonce=None):
     # complete packet/config/private sandbox exists. This does not launch it.
     publish(public/'approval.json',canonical(authority),0o640,pi.pw_gid)
     return {'result':'PACKET_PREPARED_NOT_STARTED','mode':mode,'nonce':nonce,'expires_at':expires.isoformat(),
+        'runtime_inputs':service['runtime_inputs'],
         'service_plan':str(private/'service-plan.json'),'source_closure_sha256':packet['source_closure_sha256']}
 
 
