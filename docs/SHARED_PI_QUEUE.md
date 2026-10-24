@@ -99,7 +99,7 @@ returns; ambiguous ownership blocks admission. Do not delete state to bypass
 that protection. Inspect the recorded unit and its complete cgroup first.
 
 Install the exact tested `pi_shared_queue.py`, `pi_shared_queue_store.py`,
-`pi_shared_queue_policy.py`, `pi_shared_queue_native.py` and `pi_shared_task.py` under root-owned
+`pi_shared_queue_policy.py`, `pi_shared_queue_native.py`, `pi_shared_queue_post_hooks.py` and `pi_shared_task.py` under root-owned
 `/usr/local/lib/shared-pi-queue/`. The `pi-shared-task` entry point executes the
 installed launcher. Create the user-owned 0700 state directory. Preserve old
 files and service overrides before replacement.

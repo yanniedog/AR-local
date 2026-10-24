@@ -257,7 +257,8 @@ def test_transport_uses_fixed_executable_and_clean_environment(monkeypatch, tmp_
     monkeypatch.setenv('LD_PRELOAD', 'untrusted-library')
     monkeypatch.setenv('RCLONE_CONFIG_PASS', 'untrusted-hook')
     monkeypatch.setattr(remote_transport, 'protected_file', lambda *_: None)
-    monkeypatch.setattr(remote_transport, 'Path', lambda *_: SimpleNamespace(resolve=lambda **kwargs: '/usr/bin/rclone'))
+    monkeypatch.setattr(remote_transport, 'Path', lambda value: SimpleNamespace(resolve=lambda **kwargs: '/usr/bin/rclone')
+                        if str(value) == '/usr/bin/rclone' else Path(value))
     observed = {}
     class Child:
         returncode = 0
@@ -270,10 +271,13 @@ def test_transport_uses_fixed_executable_and_clean_environment(monkeypatch, tmp_
     transport.guard = lambda: None
     transport.executable = '/usr/bin/rclone'
     transport.config = tmp_path / 'private.conf'
+    transport.remote = 'approved:plaintext-recovery'
     transport.root_folder_id = 'root-folder-id-for-protocol-test'
-    assert transport.command('source', 'destination')
+    local = tmp_path / 'source'; local.write_bytes(b'protocol fixture')
+    assert transport.upload('catalogs/' + 'a' * 64 + '.json', local)
     assert observed['args'][0] == '/usr/bin/rclone'
     assert '--immutable' in observed['args'] and '--ignore-existing' in observed['args']
+    assert observed['args'][-3:] == ['--', str(local), transport.remote + '/catalogs/' + 'a' * 64 + '.json']
     assert observed['args'][observed['args'].index('--drive-root-folder-id') + 1] == transport.root_folder_id
     assert 'LD_PRELOAD' not in observed['env'] and 'RCLONE_CONFIG_PASS' not in observed['env']
 
@@ -287,3 +291,49 @@ def test_exact_exclusion_paths_and_digest_are_offsite(tmp_path, layout):
     assert catalog['excluded_paths'] == ['runs/2026-10-24/raw/omitted.key']
     expected = hashlib.sha256(b'"runs/2026-10-24/raw/omitted.key"\n').hexdigest()
     assert catalog['excluded_sha256'] == receipt['excluded_sha256'] == expected
+
+
+def test_retained_export_stage_full_cloud_restore_and_exact_original_preservation(tmp_path, layout):
+    data, lease = layout
+    stage = data / '.daily-export-stage/2026-09-19/_exports'
+    stage.mkdir(parents=True)
+    (stage / 'retained.bin').write_bytes(bytes(range(256)) * 19)
+    with sqlite3.connect(stage / 'retained.sqlite') as db:
+        db.execute('CREATE TABLE captured_bytes (value BLOB)')
+        db.execute('INSERT INTO captured_bytes VALUES (?)', (b'retained exact export',))
+    before = {p.relative_to(data).as_posix(): p.read_bytes() for p in data.rglob('*') if p.is_file()}
+    with pytest.raises(ValueError, match='transient data path is not empty'):
+        source.freeze(data, tmp_path / 'legacy', controls=[], guard=lambda: None, inherited_lease=lease)
+    with pytest.raises(ValueError, match='inherited host admission'):
+        source.freeze(data, tmp_path / 'unadmitted', controls=[], guard=lambda: None,
+            include_retained_export_stage=True)
+    drive = Drive()
+    result = pipeline.run(data, tmp_path / 'manual', drive, controls=[], inherited_lease=lease, guard=lambda: None)
+    catalog = json.loads(drive.objects[result['catalog_path']])
+    assert catalog['schema'] == 'ar-local-plain-catalog-v1'
+    assert catalog['scope']['policy_version'] == 2
+    assert catalog['scope']['retained_export_stage_policy'] == 'include-if-present'
+    assert '.daily-export-stage' in catalog['scope']['included']
+    assert result['files_verified'] == 7 and result['databases_verified'] == 2
+    rows = [json.loads(line) for line in drive.objects[result['file_index']['path']].splitlines()[1:]]
+    retained = [row for row in rows if row['source_relative'].startswith('.daily-export-stage/')]
+    assert len(retained) == 3
+    assert any(row['sqlite_original'] for row in retained)
+    exact = next(row for row in retained if row['logical_path'].endswith('/retained.bin'))
+    assert exact['representation'] == 'exact_source_bytes'
+    assert exact['sha256'] == hashlib.sha256((stage / 'retained.bin').read_bytes()).hexdigest()
+    # run() has fully downloaded, decompressed, compared metadata and hashed
+    # every cloud member, including both SQLite representations.
+    assert sum(pack['verification']['files_verified'] for pack in catalog['packs']) == 7
+    assert {p.relative_to(data).as_posix(): p.read_bytes() for p in data.rglob('*') if p.is_file()} == before
+
+
+def test_retained_stage_hardlink_rejected_before_cloud_io(tmp_path, layout):
+    data, lease = layout
+    stage = data / '.daily-export-stage/2026-10-24'
+    stage.mkdir(parents=True)
+    os.link(data / 'runs/2026-10-24/raw/bytes.bin', stage / 'alias.bin')
+    drive = Drive()
+    with pytest.raises(ValueError, match='unsafe backup source'):
+        pipeline.run(data, tmp_path / 'manual', drive, controls=[], inherited_lease=lease, guard=lambda: None)
+    assert drive.reads == drive.uploads == []

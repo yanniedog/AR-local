@@ -29,7 +29,14 @@ read-only source view. Verification never clears or adopts that holder's lock.
 
 The existing source freezer preserves every retained raw attempt, failed
 observation, revision, database, state/log and predeploy namespace in its explicit
-scope. Unknown top-level namespaces fail closed. Existing credential/cache and
+scope. The explicit manual plaintext pipeline also preserves a nonempty
+`.daily-export-stage` as private frozen copies, including retained export bytes
+and consistent plus original SQLite representations. Its catalog scope records
+policy version 2 and `retained_export_stage_policy: include-if-present`; catalog,
+file-index and pack schemas remain unchanged. Routine legacy snapshots retain
+their version 1 empty-stage requirement. The coupled probe checks this same
+read-only source scope before reporting success, without freezing or cloud calls.
+Unknown top-level namespaces fail closed. Existing credential/cache and
 telemetry exclusions remain explicit; this is a CDR recovery archive, not a
 whole-filesystem image. Mutable SQLite input is copied privately, including the
 original database/journal bytes, before deriving its consistent committed copy.
@@ -92,9 +99,17 @@ source-relative path, logical member, pack ID, bytes/hash and metadata. An
 `exact_source_bytes` representation can justify omitting a duplicate file from
 the system image only after comparing its actual bytes/metadata. A
 `sqlite_committed_view` is derived and cannot justify such an omission; its
-`sqlite-original` counterpart preserves the exact original components. External
-control files remain in their packs and are not included in this CDR data index.
+`sqlite-original` counterpart preserves the exact original components. This raw
+pipeline rejects external control files before reading or freezing sources;
+only the root-attested CDR data tree is admitted. Full operating-system controls
+belong in the separately approved system image.
 Never infer whole-directory image exclusions from one covered descendant.
+
+Pack paths must be canonical, contain no backslashes and remain unique under
+case folding across the disk-backed index. Signed PAX timestamps preserve the
+original nanosecond value, including times before the Unix epoch. Every transfer
+constructs its own fixed-direction local/allowlisted-remote endpoints; there is
+no public arbitrary copy command.
 
 After independently accepted native execution, keep the catalog digest/path,
 source scope and exclusions, resource receipt, broker restoration proof and

@@ -183,12 +183,17 @@ def _regular_tree(root: Path, guard: Callable[[], None], *, data: Path, omit):
 
 
 def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[], None],
-           prior: dict | None = None, max_freeze_seconds: int = 1200, inherited_lease=None) -> dict:
+           prior: dict | None = None, max_freeze_seconds: int = 1200, inherited_lease=None,
+           include_retained_export_stage: bool = False) -> dict:
     """Freeze mutable bytes under ingest lock; immutable files remain direct inputs.
 
     Cached hashes require the complete POSIX file identity, including ctime.
     Restore proofs re-hash actual downloaded bytes. Initial hashes read every file.
     """
+    if type(include_retained_export_stage) is not bool:
+        raise ValueError("retained export-stage policy must be an explicit boolean")
+    if include_retained_export_stage and inherited_lease is None:
+        raise ValueError("retained export staging requires explicit inherited host admission")
     started = time.monotonic()
     def check() -> None:
         guard()
@@ -213,7 +218,7 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
         lease = inherited_lease.hold(data)
     with index, previous_index or nullcontext(), lease:
         check()
-        scope = build_data_scope(data)
+        scope = build_data_scope(data, include_retained_export_stage=include_retained_export_stage)
         result["scope"] = scope.manifest()
         def sources():
             for root in scope.included:

@@ -90,6 +90,10 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
     pipeline; no routine uploader is enabled or acknowledged by this function.
     """
     data, operation = Path(data), Path(operation)
+    # This raw-data protocol grants only the attested data root. Filesystem and
+    # operating-system controls belong to the separately approved image set.
+    if controls:
+        raise ValueError('raw recovery does not admit external control files')
     canonical_directory(data)
     if not callable(guard):
         raise ValueError('bounded operation guard required')
@@ -108,7 +112,8 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
     try:
         # Hold proof stays valid throughout the entire backup, not only freeze.
         with inherited_lease.hold(data):
-            manifest = freeze(data, frozen, controls=controls, guard=guard, inherited_lease=inherited_lease)
+            manifest = freeze(data, frozen, controls=controls, guard=guard,
+                inherited_lease=inherited_lease, include_retained_export_stage=True)
             index = PackIndex(operation / 'packs.sqlite', manifest['files'], guard, data=data)
             verify_direct_sources(manifest, guard)
             catalog = operation / 'catalog.json'
@@ -149,7 +154,7 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
                 raise ValueError('verified pack file total differs from full source manifest')
             verify_direct_sources(manifest, guard)
             index.verify_directories(guard)
-            if build_data_scope(data).manifest() != manifest['scope']:
+            if build_data_scope(data, include_retained_export_stage=True).manifest() != manifest['scope']:
                 raise ValueError('source namespace scope changed during backup')
             catalog_id = digest(catalog, guard)
             remote = 'catalogs/' + catalog_id + '.json'
@@ -188,7 +193,6 @@ def main(argv=None):
     parser.add_argument('--drive-root-folder-id', required=True)
     parser.add_argument('--attestation-fd', type=int, required=True)
     parser.add_argument('--deadline', required=True)
-    parser.add_argument('--control-file', action='append', type=Path, default=[])
     args = parser.parse_args(argv)
     deadline = datetime.fromisoformat(args.deadline.replace('Z', '+00:00'))
     remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
@@ -211,7 +215,7 @@ def main(argv=None):
     guard()
     lease.verify(args.data_root)
     transport = Rclone(args.rclone_config, args.remote, args.drive_root_folder_id, guard)
-    result = run(args.data_root, args.operation, transport, controls=args.control_file,
+    result = run(args.data_root, args.operation, transport, controls=[],
         inherited_lease=lease, guard=guard)
     print(json.dumps(result, sort_keys=True))
     return 0
