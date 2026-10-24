@@ -92,9 +92,17 @@ source-relative path, logical member, pack ID, bytes/hash and metadata. An
 `exact_source_bytes` representation can justify omitting a duplicate file from
 the system image only after comparing its actual bytes/metadata. A
 `sqlite_committed_view` is derived and cannot justify such an omission; its
-`sqlite-original` counterpart preserves the exact original components. External
-control files remain in their packs and are not included in this CDR data index.
+`sqlite-original` counterpart preserves the exact original components. This raw
+pipeline rejects external control files before reading or freezing sources;
+only the root-attested CDR data tree is admitted. Full operating-system controls
+belong in the separately approved system image.
 Never infer whole-directory image exclusions from one covered descendant.
+
+Pack paths must be canonical, contain no backslashes and remain unique under
+case folding across the disk-backed index. Signed PAX timestamps preserve the
+original nanosecond value, including times before the Unix epoch. Every transfer
+constructs its own fixed-direction local/allowlisted-remote endpoints; there is
+no public arbitrary copy command.
 
 After independently accepted native execution, keep the catalog digest/path,
 source scope and exclusions, resource receipt, broker restoration proof and

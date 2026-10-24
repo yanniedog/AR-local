@@ -43,15 +43,27 @@ class Rclone:
             raise ValueError('unsupported recovery object path')
         return self.remote + '/' + relative
 
-    def command(self, source, destination, missing=False):
+    def _copyto(self, direction, relative, local, *, missing=False):
+        if direction not in ('upload', 'download'):
+            raise ValueError('fixed recovery transfer direction required')
+        remote = self.path(relative)
+        local = Path(local)
+        if not local.is_absolute() or local != local.resolve() or local.is_symlink():
+            raise ValueError('canonical absolute local recovery object required')
+        if direction == 'upload' and not local.is_file():
+            raise ValueError('regular local recovery upload required')
+        if direction == 'download' and local.exists():
+            raise ValueError('new local recovery download required')
+        source, destination = (str(local), remote) if direction == 'upload' else (remote, str(local))
         self.guard()
         protected_file(Path(self.executable).resolve(strict=True))
         env = dict(PATH='/usr/bin:/bin', LC_ALL='C', GOMAXPROCS='2',
             GOMEMLIMIT='192MiB', GOGC='50', HOME='/nonexistent')
-        args = [self.executable, '--config', str(self.config), 'copyto', source, destination,
+        args = [self.executable, '--config', str(self.config), 'copyto',
             '--drive-root-folder-id', self.root_folder_id,
             '--immutable', '--ignore-existing', '--checksum', '--transfers', '1', '--checkers', '1',
-            '--bwlimit', '8M', '--retries', '1', '--low-level-retries', '2', '--contimeout', '30s', '--timeout', '60s']
+            '--bwlimit', '8M', '--retries', '1', '--low-level-retries', '2', '--contimeout', '30s', '--timeout', '60s',
+            '--', source, destination]
         with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
             child = subprocess.Popen(args, stdout=out, stderr=err, env=env)
             try:
@@ -77,7 +89,7 @@ class Rclone:
     def download(self, relative, destination):
         if destination.exists() or destination.is_symlink():
             raise ValueError('download requires new private destination')
-        return self.command(self.path(relative), str(destination), missing=True)
+        return self._copyto('download', relative, destination, missing=True)
 
     def upload(self, relative, source):
-        return self.command(str(source), self.path(relative))
+        return self._copyto('upload', relative, source)
