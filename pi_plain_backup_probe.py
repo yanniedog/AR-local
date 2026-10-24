@@ -26,15 +26,20 @@ def main(argv=None):
     import pi_plain_backup_transport
     import zstandard
     from ar_local_backup_scope import build_data_scope
+    from pi_drive_backup_source import validate_retained_export_stage
     protected_file(args.rclone_config)
     info=args.rclone_config.stat()
     if stat.S_IMODE(info.st_mode)!=0o440 or args.operation.exists():
         raise RuntimeError('probe config mode or NEW operation contract differs')
     scope=build_data_scope(args.data_root,include_retained_export_stage=True).manifest()
+    retained=validate_retained_export_stage(args.data_root,lambda:lease.verify(args.data_root))
+    if build_data_scope(args.data_root,include_retained_export_stage=True).manifest()!=scope:
+        raise ValueError('probe source namespace scope changed')
     lease.verify(args.data_root)
     print(json.dumps({'schema':'ar-local-plain-backup-coupled-probe-v1',
         'result':'PROBE_PASS','scope':'NO_BACKUP_NO_DRIVE_WRITES','attestation_verified':True,
         'producer_dependencies_imported':True,'new_operation':True,'data_scope':scope,
+        'retained_stage_validation':retained,
         'zstandard_version':zstandard.__version__},sort_keys=True))
     return 0
 

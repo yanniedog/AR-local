@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import sqlite3
@@ -24,6 +25,60 @@ from pi_drive_backup_write import CreatedWriter
 SCHEMA = "ar-local-drive-backup-v1"
 DB_SUFFIXES = {".sqlite", ".sqlite3", ".db"}
 EXCLUDED_NAMES = {".git", ".ssh", "__pycache__", "node_modules", "netdata", "rclone.conf"}
+
+
+class SourceFreezeDeadline(RuntimeError):
+    """Stable, secret-free classification for a bounded inventory timeout."""
+
+
+def directory_identity(path: Path) -> list[int]:
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or path.is_symlink():
+        raise ValueError("retained source directory is not a real directory")
+    return [info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_mtime_ns, info.st_ctime_ns]
+
+
+class RetainedDirectories:
+    """Private disk index, including empty directories, with bounded SQLite cache."""
+    def __init__(self, index, *, create=True):
+        self.index = index
+        if create:
+            index.db.execute("CREATE TABLE retained_directories (path TEXT PRIMARY KEY, identity TEXT NOT NULL)")
+        elif index.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='retained_directories'").fetchone() is None:
+            raise ValueError("retained source directory proof is missing")
+
+    def record(self, path, identity):
+        self.index.db.execute("INSERT INTO retained_directories VALUES(?,?)", (str(path), json.dumps(identity)))
+        self.index._flush_batch()
+
+    def verify(self, guard):
+        cursor = self.index.db.execute("SELECT path,identity FROM retained_directories")
+        try:
+            for name, value in cursor:
+                guard()
+                if directory_identity(Path(name)) != json.loads(value):
+                    raise ValueError("retained source directory membership changed")
+        finally:
+            cursor.close()
+
+
+def freeze_deadline(data, inherited_lease, max_freeze_seconds, include_retained_export_stage):
+    now = time.monotonic()
+    if max_freeze_seconds is not None:
+        if (type(max_freeze_seconds) not in (int, float) or not math.isfinite(max_freeze_seconds)
+                or max_freeze_seconds <= 0):
+            raise ValueError("positive finite source freeze duration required")
+        return now + max_freeze_seconds
+    from pi_plain_backup_attestation import AttestedHostLease
+    if not include_retained_export_stage or not isinstance(inherited_lease, AttestedHostLease):
+        raise ValueError("operation-bound freeze requires typed manual host admission")
+    inherited_lease.verify(data)
+    deadline = inherited_lease.context["deadline_monotonic"]
+    if (type(deadline) not in (int, float) or not math.isfinite(deadline)
+            or not 0 < deadline - now <= 21600):
+        raise ValueError("attested freeze deadline must remain within six hours")
+    return deadline
 
 
 def digest(path: Path, guard: Callable[[], None] = lambda: None) -> str:
@@ -162,8 +217,11 @@ def _journal_identity(source: Path) -> dict:
             if (path := Path(str(source) + suffix)).exists()}
 
 
-def _regular_tree(root: Path, guard: Callable[[], None], *, data: Path, omit):
+def _regular_tree(root: Path, guard: Callable[[], None], *, data: Path, omit, on_directory=None):
     """Walk a directory at a time; never materialize the retained file tree."""
+    before = directory_identity(root) if on_directory is not None else None
+    if on_directory is not None:
+        on_directory(root, before)
     with os.scandir(root) as entries:
         for entry in entries:
             guard()
@@ -176,14 +234,39 @@ def _regular_tree(root: Path, guard: Callable[[], None], *, data: Path, omit):
             if entry.is_symlink():
                 raise ValueError(f"symlink in backup scope: {path}")
             if entry.is_dir(follow_symlinks=False):
-                yield from _regular_tree(path, guard, data=data, omit=omit)
+                yield from _regular_tree(path, guard, data=data, omit=omit, on_directory=on_directory)
             else:
                 regular(path)
                 yield path
+    if before is not None and directory_identity(root) != before:
+        raise ValueError("retained source directory membership changed during traversal")
+
+
+def validate_retained_export_stage(data: Path, guard, *, max_entries=100000, max_seconds=60):
+    """Read-only bounded descendant metadata validation; never opens payload bytes."""
+    deadline = time.monotonic() + max_seconds
+    entries = files = directories = 0
+    def check():
+        nonlocal entries
+        guard()
+        entries += 1
+        if entries > max_entries or time.monotonic() >= deadline:
+            raise RuntimeError("retained-stage probe metadata bound reached")
+    def record(_path, _identity):
+        nonlocal directories
+        check()
+        directories += 1
+    check()
+    root = data / ".daily-export-stage"
+    if root.exists():
+        for _path in _regular_tree(root, check, data=data, omit=lambda _: None, on_directory=record):
+            files += 1
+    return {"result": "PASS", "files_checked": files, "directories_checked": directories,
+            "metadata_entries_checked": entries, "scope": "RETAINED_EXPORT_STAGE_ONLY"}
 
 
 def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[], None],
-           prior: dict | None = None, max_freeze_seconds: int = 1200, inherited_lease=None,
+           prior: dict | None = None, max_freeze_seconds: float | None = 1200, inherited_lease=None,
            include_retained_export_stage: bool = False) -> dict:
     """Freeze mutable bytes under ingest lock; immutable files remain direct inputs.
 
@@ -194,13 +277,14 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
         raise ValueError("retained export-stage policy must be an explicit boolean")
     if include_retained_export_stage and inherited_lease is None:
         raise ValueError("retained export staging requires explicit inherited host admission")
-    started = time.monotonic()
+    deadline = freeze_deadline(data, inherited_lease, max_freeze_seconds, include_retained_export_stage)
     def check() -> None:
         guard()
-        if time.monotonic() - started > max_freeze_seconds:
-            raise RuntimeError("source freeze deadline exceeded")
+        if time.monotonic() >= deadline:
+            raise SourceFreezeDeadline("source freeze deadline exceeded")
     stage.mkdir(parents=True, exist_ok=True)
     index = ManifestIndex(stage / "manifest-index.sqlite")
+    retained = RetainedDirectories(index) if include_retained_export_stage else None
     previous = (prior or {}).get("files", [])
     previous_index = None
     if not isinstance(previous, DiskRows):
@@ -222,7 +306,8 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
         result["scope"] = scope.manifest()
         def sources():
             for root in scope.included:
-                for path in _regular_tree(root, check, data=data, omit=index.exclude):
+                record = retained.record if retained is not None and root.name == ".daily-export-stage" else None
+                for path in _regular_tree(root, check, data=data, omit=index.exclude, on_directory=record):
                     relative = path.relative_to(data)
                     if excluded(relative):
                         index.exclude(relative.as_posix())
@@ -276,6 +361,8 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
                         "sqlite_original": True, "mode": oct(stat.S_IMODE(component.stat().st_mode)),
                         "uid": component.stat().st_uid, "gid": component.stat().st_gid})
             index.append(row)
+        if retained is not None:
+            retained.verify(check)
     index.db.commit()
     if previous_index:
         previous_index.close()
@@ -286,11 +373,14 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
 def verify_direct_sources(manifest: dict, guard: Callable[[], None] = lambda: None) -> None:
     for row in manifest["files"]:
         guard()
-        if row["direct"] and fingerprint(Path(row["source_path"])) != row["source_identity"]:
+        retained = row["logical_path"].removeprefix("sqlite-original/").startswith("data/.daily-export-stage/")
+        if (row["direct"] or retained) and fingerprint(Path(row["source_path"])) != row["source_identity"]:
             raise RuntimeError("immutable source changed during upload; snapshot is not accepted")
         if row["direct"] and row.get("journal_identity") is not None:
             if _journal_identity(Path(row["source_path"])) != row["journal_identity"]:
                 raise RuntimeError("immutable SQLite journal changed during upload")
+    if manifest.get("scope", {}).get("retained_export_stage_policy") == "include-if-present":
+        RetainedDirectories(manifest["files"].index, create=False).verify(guard)
 
 
 def restore_relative(path: str) -> Path:
