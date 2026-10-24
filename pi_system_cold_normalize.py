@@ -268,6 +268,8 @@ def normalize(root, manifest, output, recovery_sha, *, boot=None):
             or lease != {"pid": str(owner.get("pid")), "boot_id": owner.get("boot_id"),
                          "role": "shared-pi-host-task:" + owner.get("id", ""), "recovery": "manual"}):
         raise ValueError("captured native lease and active image custody are not bound")
+    if any(row.get("boot_id") != owner["boot_id"] for row in queue["jobs"]):
+        raise ValueError("captured queue contains missing or foreign boot custody")
     control_sha = control_binding(root, nonce, active[nonce])
     boot_policy = boot_swappiness(root, Path(boot) if boot is not None else BOOT_ROOT)
     audit_name = "var/lib/ar-local-recovery-normalization/" + recovery_sha
@@ -279,8 +281,8 @@ def normalize(root, manifest, output, recovery_sha, *, boot=None):
         raise ValueError("existing offline normalization is preserved; never retry")
     moved = [QUEUE, LEASE, *prefixes]
     legacy = "var/lib/ar-local-drive-reclaim/current.json"
-    if safe(root, legacy).exists():
-        moved.append(legacy)
+    if safe(root, legacy).exists() or safe(root, legacy).is_symlink():
+        raise ValueError("unbound legacy reclaim custody must be preserved and reviewed")
     def retired(name):
         return any(name == prefix or name.startswith(prefix + "/") for prefix in moved)
     # Hash-match every selected original before the first transformation.
@@ -320,6 +322,8 @@ def normalize(root, manifest, output, recovery_sha, *, boot=None):
     receipt = {"schema": "ar-local-offline-custody-normalization-v1", "scope": "NEW_OFFLINE_IMAGE_ONLY",
                "captured_manifest_sha256": sha(manifest), "recovery_set_sha256": recovery_sha,
                "retired_paths": moved, "original_file_sha256": before, "original_queue_jobs": len(queue["jobs"]),
+               "captured_boot_id": owner["boot_id"], "retired_queue_jobs":
+                   [{"id": row["id"], "boot_id": row["boot_id"], "state": row["state"]} for row in queue["jobs"]],
                "queue_after_sha256": sha(queue_path), "retired_active_nonces": sorted(active),
                "captured_control_closure_sha256": control_sha, "persistent_boot_policy": boot_policy,
                "automatic_work_started": False, "persistent_schedules": "UNCHANGED", "boot_test": "NOT_TESTED", "recorded_at": utc()}

@@ -286,7 +286,7 @@ def test_captured_custody_hash_change_refuses_before_any_normalization_write(tmp
     assert (root / normalize.LEASE).exists() and path.exists()
 
 
-@pytest.mark.parametrize("change", ["foreign-lease", "owner-ticks", "source-code", "authority-closure", "boot-override", "persistent-override", "credential"])
+@pytest.mark.parametrize("change", ["foreign-lease", "owner-ticks", "source-code", "authority-closure", "boot-override", "persistent-override", "credential", "legacy-custody", "foreign-job-boot", "missing-job-boot"])
 def test_ambiguous_cold_boot_custody_or_policy_refuses_before_transform(tmp_path, monkeypatch, change):
     root, manifest, _, nonce, _ = custody_fixture(tmp_path, monkeypatch)
     if change == "foreign-lease":
@@ -306,9 +306,19 @@ def test_ambiguous_cold_boot_custody_or_policy_refuses_before_transform(tmp_path
         (normalize.BOOT_ROOT / "cmdline.txt").write_text("root=PARTUUID=12345678-02 sysctl.vm.swappiness=0\n")
     elif change == "persistent-override":
         (root / "etc/sysctl.d/99-custom.conf").write_text("vm.swappiness=0\n")
-    else:
+    elif change == "credential":
         (root / "etc/credstore").mkdir()
         (root / "etc/credstore/sysctl.extra").write_text("vm.swappiness=0\n")
+    elif change == "legacy-custody":
+        path = root / "var/lib/ar-local-drive-reclaim/current.json"
+        path.parent.mkdir(); path.write_text('{"unknown":"preserve"}')
+    else:
+        path = root / normalize.QUEUE
+        queue = json.loads(path.read_bytes())
+        additional = {**queue["jobs"][0], "id": "other-captured-request", "state": "waiting"}
+        if change == "foreign-job-boot": additional["boot_id"] = "foreign-boot"
+        else: additional.pop("boot_id")
+        queue["jobs"].append(additional); path.write_text(json.dumps(queue))
     # Even if the changed bytes belonged to the accepted source manifest, an
     # ambiguous owner/policy must not be normalized into an apparently clean OS.
     manifest.unlink(); capture.tree_manifest(root, manifest)
@@ -316,6 +326,26 @@ def test_ambiguous_cold_boot_custody_or_policy_refuses_before_transform(tmp_path
         normalize.normalize(root, manifest, tmp_path / "must-not-transform.jsonl", "d" * 64)
     assert not (root / "var/lib/ar-local-recovery-normalization").exists()
     assert (root / normalize.LEASE).exists() and not (root / normalize.BOOT_POLICY).exists()
+    if change == "legacy-custody":
+        assert (root / "var/lib/ar-local-drive-reclaim/current.json").read_bytes() == b'{"unknown":"preserve"}'
+
+
+def test_same_boot_waiting_requests_are_audited_without_fabricated_completion(tmp_path, monkeypatch):
+    root, manifest, _, _, owner = custody_fixture(tmp_path, monkeypatch)
+    path = root / normalize.QUEUE
+    queue = json.loads(path.read_bytes())
+    queue["jobs"].append({**owner, "id": "old-waiting", "state": "waiting"})
+    queue["jobs"].append({**owner, "id": "old-quarantined", "state": "quarantined"})
+    original = json.dumps(queue).encode(); path.write_bytes(original)
+    manifest.unlink(); capture.tree_manifest(root, manifest)
+    normalize.normalize(root, manifest, tmp_path / "normalized.jsonl", "d" * 64)
+    audit = root / "var/lib/ar-local-recovery-normalization" / ("d" * 64)
+    receipt = json.loads((audit / "receipt.json").read_bytes())
+    assert len(receipt["retired_queue_jobs"]) == 3
+    assert all(item["boot_id"] == owner["boot_id"] for item in receipt["retired_queue_jobs"])
+    assert (audit / "original" / normalize.QUEUE).read_bytes() == original
+    assert json.loads(path.read_bytes())["next_sequence"] == 8
+    assert not any("result" in item for item in receipt["retired_queue_jobs"])
 
 
 def test_cold_predecessor_requires_root_completion_resources_and_quarantined_copy(monkeypatch):
