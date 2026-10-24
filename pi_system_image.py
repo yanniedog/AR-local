@@ -161,6 +161,22 @@ def require_partition(loop, number, image, descriptor):
     return partition
 
 
+def verify_filesystem_identity(loop, number, image, descriptor, expected_uuid):
+    partition = require_partition(loop, number, image, descriptor)
+    value = subprocess.check_output(["/usr/sbin/blkid", "-p", "-s", "UUID", "-o", "value", str(partition)], env=ENV, text=True).strip()
+    if value != expected_uuid:
+        raise ValueError("new loop filesystem UUID differs from boot configuration")
+    return {"uuid": value, "partition": number, "result": "PASS"}
+
+
+def check_unmounted_filesystems(loop, image, descriptor):
+    boot = require_partition(loop, 1, image, descriptor)
+    run(["/usr/sbin/fsck.vfat", "-n", boot])
+    root = require_partition(loop, 2, image, descriptor)
+    run(["/usr/sbin/e2fsck", "-f", "-n", root])
+    return {"result": "PASS", "mode": "read-only after unmount; only inode-proved image loop partitions"}
+
+
 def verify_tree(tree, manifest, *, transforms=None):
     transforms = transforms or {}
     # SQLite keeps large full-path inventories bounded in RAM.
@@ -329,6 +345,8 @@ def build(args):
         root_part = require_partition(loop, 2, image, descriptor)
         run(["/usr/sbin/mkfs.ext4", "-F", "-U", identifiers["root_uuid"], "-L", "rootfs", "-m", "0",
              "-N", str(entry_count * 11 // 10 + 65536), root_part])
+        receipt["filesystem_identities"] = {tree: verify_filesystem_identity(loop, number, image, descriptor, identifiers[key])
+            for tree, number, key in (("root", 2, "root_uuid"), ("boot", 1, "boot_uuid"))}
         for tree, number in (("root", 2), ("boot", 1)):
             mount = work / ("image-" + tree)
             mount.mkdir()
@@ -367,6 +385,8 @@ def build(args):
         if loop and not errors:
             try:
                 require_loop(loop, image, descriptor)
+                if receipt["result"] == "FILESYSTEM_RESTORE_VERIFIED":
+                    receipt["filesystem_check"] = check_unmounted_filesystems(loop, image, descriptor)
                 run(["/usr/sbin/losetup", "--detach", loop])
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 errors.append(str(error))

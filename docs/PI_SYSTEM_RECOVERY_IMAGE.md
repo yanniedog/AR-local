@@ -153,7 +153,11 @@ format/mount, and uses only that new loop's FAT/ext4 partitions. New filesystem
 and partition identifiers avoid collisions with the original disk; only the
 in-image `fstab`/`cmdline.txt` are rewritten. Full restored file hashes, ownership,
 mode, nanosecond mtime, binary ACL/xattrs, symlinks, hardlinks and special-node
-types must match. FAT comparisons use its actual source mount semantics;
+types must match. UUIDs are independently read back from the owned loop's
+new superblocks. After unmount, read-only `fsck.vfat -n` and `e2fsck -f -n`
+must pass on those proved partitions before detaching. These fixed tools must
+be present and fit the guarded phase budget during native commissioning.
+FAT comparisons use its actual source mount semantics;
 unsupported metadata mismatches are failures. An uncertain loop/cleanup keeps
 failure evidence for manual reconciliation, never detaches an unproved device.
 Interrupted capture/build is not automatically restarted over existing outputs.
