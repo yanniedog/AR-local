@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -23,7 +24,8 @@ def probe_scope(tmp_path, monkeypatch):
     config.write_bytes(b'generic protocol fixture')
     verify = []
     monkeypatch.setattr(attestation, 'inherited_from_attestation_fd',
-        lambda *a, **k: SimpleNamespace(verify=lambda root: verify.append(root)))
+        lambda *a, **k: SimpleNamespace(verify=lambda root: verify.append(root),
+            context={'deadline_monotonic':time.monotonic()+120}))
     monkeypatch.setattr(attestation, 'protected_file', lambda *_: None)
     original_stat = Path.stat
     monkeypatch.setattr(Path, 'stat', lambda path, *a, **k:
@@ -116,3 +118,17 @@ def test_probe_rechecks_top_level_scope_after_descendant_validation(probe_scope,
     with pytest.raises(ValueError, match='unclassified'):
         probe.main(argv)
     assert 'PROBE_PASS' not in capsys.readouterr().out and not operation.exists()
+
+
+def test_probe_explicit_measured_entry_budget_keeps_helper_legacy_default(probe_scope, monkeypatch):
+    data, _operation, argv, _ = probe_scope
+    import pi_drive_backup_source as source
+    original=source.validate_retained_export_stage
+    observed=[]
+    def validate(*args, **kwargs):
+        observed.append(kwargs)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(source,'validate_retained_export_stage',validate)
+    assert probe.main(argv)==0
+    assert observed==[{'max_entries':500000}]
+    assert original.__kwdefaults__=={'max_entries':100000,'max_seconds':60}
