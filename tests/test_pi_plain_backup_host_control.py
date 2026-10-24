@@ -26,9 +26,10 @@ def packet():
         'data_root':'/srv/ar-local/data',
         'credential_source':'/var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf',
         'created_at':NOW.isoformat(),'expires_at':(NOW+timedelta(hours=2)).isoformat(),
+        'runtime_seconds':7200,
         'mode':'RUN_ARCHIVE','uid':1000,'gid':1000,'remote':'approved:plaintext-recovery','drive_root_folder_id':'approved-folder-012345'}
     for key in ('queue_closure_sha256','source_closure_sha256','parent_sha256','resources_sha256','bwrap_sha256',
-        'credential_sha256','global_hold_sha256','broker_sha256','setpriv_sha256','reconcile_wrapper_sha256','reconcile_original_sha256','reconcile_callback_sha256'):
+        'credential_sha256','global_hold_sha256','broker_sha256','setpriv_sha256','reconcile_wrapper_sha256','reconcile_original_sha256','reconcile_callback_sha256','root_control_manifest_sha256'):
         result[key]='b'*64
     return result
 
@@ -167,7 +168,7 @@ def test_service_and_sandbox_commands_have_fixed_privilege_boundary_and_new_oper
     assert argv[argv.index('--bind')+1].endswith('/sandbox')
     assert argv[argv.index('--operation')+1].endswith('/sandbox/archive')
     assert argv[argv.index('--attestation-fd')+1]=='3'
-    profile=plan.service_plan(NONCE)
+    profile=plan.service_plan(NONCE,packet=p)
     assert profile['properties']['ExecStopPost'].endswith('recover '+NONCE)
     assert profile['properties']['ExecStopPost'].startswith('+/usr/bin/python3 -I -B ')
     assert profile['properties']['NoNewPrivileges']=='no'

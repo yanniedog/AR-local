@@ -13,11 +13,18 @@ A root-created one-shot `ar-local-plain-backup-<32hex>.service` runs the shared
 queue as `pi`. The queue MainPID directly spawns the root-owned trusted parent,
 which imports only protected standard-library control code and calls fixed sudo
 verbs. It never imports producer code while privilege gain remains possible.
-`pi_plain_backup_plan.service_plan` returns the exact service and sudo command
-plan, without executing it. PROBE uses runtime120s, CPU100%, IOWeight10, TasksMax64
-and stop45s. RUN_ARCHIVE has the existing six-hour ceiling. Queue waiting and
-execution timers remain separate; admission retains the natural-ingest window.
-The producer also enforces its stricter 00:25-03:30 Hobart cleanup margin.
+`pi_plain_backup_plan.service_plan(nonce, packet=runtime_inputs, mode=mode)`
+returns the exact service and sudo command plan, without executing it. Capture
+and hash-verify the core module before loading the pure plan locally. Both sides
+use the same frozen packet timestamps and `runtime_seconds`: the whole-second
+floor of expiry minus creation, capped at120s for PROBE or six hours for
+RUN_ARCHIVE. Packet expiry retains the stricter 00:25-03:30 Hobart cleanup margin.
+Native runtime and queue lease must match this chosen duration exactly.
+New manual operations use immediate admission (`--wait-timeout 0`): an occupied
+queue or a delayed dispatch that crosses the ingest boundary closes the nonce
+through ordinary cleanup. A new packet is required for another attempt. CPU100%,
+IOWeight10, TasksMax64 and stop45s remain unchanged; queue admission still adds
+its separate60s stop grace before the00:30 ingest start.
 
 Install reviewed bytes only after independent review, under root-protected
 ancestors (no symlinks or group/other write):
@@ -166,7 +173,12 @@ Successful root completion and full resource acceptance produce coupled-probe.js
 with PROBE_PASS and scope NO_BACKUP_NO_DRIVE_WRITES, never backup PASS.
 
 Use a new nonce for RUN_ARCHIVE only after that actual coupled proof qualifies
-its exact closure. Archive producer acceptance, offsite full restore acceptance,
+its exact closure. New packets and coupled proofs pin the complete root-control
+manifest. RUN also checks the referenced protected PROBE packet's canonical
+runtime and matching manifest; a proof from earlier controls cannot commission
+this runtime policy. Historical terminal packets remain recoverable with their
+original fixed runtime caps, and their coupled proof bytes are preserved. They
+cannot authorize a new RUN. Archive producer acceptance, offsite full restore acceptance,
 filesystem image acceptance, deployment and public payload acceptance remain
 separate claims. This source has only mocked/Windows-focused validation so far;
 Linux CI and actual coupled commissioning remain mandatory before archive use.
