@@ -10,6 +10,9 @@ from pi_system_guard_host import ImageHost, ROOT, WORK
 
 def sandbox_command(packet):
     phase, work = packet["phase"], WORK / packet["workspace_id"]
+    if phase in {"fetch", "restore", "rejoin"}:
+        from pi_system_guard_cold import command
+        return command(packet)
     if phase == "upload":
         from pi_system_guard_export import EXPORT, UPLOAD
         args = ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
@@ -48,6 +51,12 @@ def sandbox_command(packet):
 def main(nonce):
     host = ImageHost(nonce)
     packet = host.packet(nonce)
+    if packet["phase"] in {"fetch", "restore", "rejoin"}:
+        from pi_system_guard_cold import controls, setup
+        controls(packet)
+        setup(packet)
+        args = sandbox_command(packet)
+        os.execve(args[0], args, {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
     if packet["phase"] in {"PROBE", "upload"}:
         if packet["phase"] == "PROBE":
             (WORK / packet["workspace_id"]).mkdir(mode=0o700)

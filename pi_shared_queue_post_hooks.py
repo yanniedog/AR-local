@@ -26,7 +26,7 @@ CI_CONTROL = Path("/usr/local/sbin/ar-local-ci-control")
 CI_RUNTIME = Path("/etc/ar-local/ci-runtime.json")
 QUEUE_ROOT = Path("/usr/local/lib/shared-pi-queue")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
-IMAGE_PHASES = frozenset({"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload"})
+IMAGE_PHASES = frozenset({"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload", "fetch", "restore", "rejoin"})
 
 
 def retained_stop(unit):
@@ -126,6 +126,8 @@ def _image_approval(unit, nonce, *, current=False, now=None):
             or value.get("phase") not in IMAGE_PHASES or value.get("mode") not in ("PROBE", "RUN_ARCHIVE")
             or (value["phase"] == "PROBE") != (value["mode"] == "PROBE")
             or value["phase"] == "upload" and value.get("manual_image_drive_write") is not True
+            or value["phase"] == "fetch" and value.get("manual_image_drive_read") is not True
+            or value["phase"] == "fetch" and value.get("manual_image_drive_write") is not None
             or not _hashes(value, ("source_closure_sha256", "parent_sha256", "resources_sha256",
                                   "broker_sha256", "queue_argv_sha256"))):
         raise ValueError("image recovery approval differs")
@@ -319,7 +321,7 @@ def completion_proved(job, *, native_identity=None):
             return (value.get('schema') == 'ar-local-system-recovery-root-completion-v1'
                 and value.get('phase') == authority['phase']
                 and value.get('source_closure_sha256') == authority['source_closure_sha256']
-                and value.get('credential_custody') in ('NOT_EXPOSED', 'QUARANTINED')
+                and value.get('credential_custody') == ('QUARANTINED' if authority['phase'] in ('upload','fetch') else 'NOT_EXPOSED')
                 and type(value.get('stop_post_verified')) is bool
                 and value.get('owned_loop_terminal') is True and value.get('writers_restored') is True)
         return (value.get('schema') == 'ar-local-plain-backup-root-completion-v1'

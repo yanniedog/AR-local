@@ -15,7 +15,7 @@ WORK = Path("/var/lib/ar-local-system-recovery")
 EXPORT = Path("/var/lib/ar-local-system-recovery-export")
 UPLOAD = Path("/var/lib/ar-local-system-recovery-upload")
 TOOLS = {"pi_system_image_restore.py", "pi_system_sparse.py", "pi_system_raw_restore.py", "pi_system_image.py",
-         "pi_system_capture.py", "pi_system_filesystems.py", "pi_system_image_rejoin.py", "pi_system_image_rejoin_launch.py", "pi_system_namespace.py",
+         "pi_system_capture.py", "pi_system_filesystems.py", "pi_system_image_rejoin.py", "pi_system_image_rejoin_launch.py", "pi_system_namespace.py", "pi_system_cold_normalize.py",
          "pi_plain_backup_restore.py", "pi_drive_backup_manifest.py", "pi_laptop_backup_source.py"}
 
 

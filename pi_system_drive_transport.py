@@ -94,15 +94,14 @@ def put_verified(store, relative, source, expected, size, guard):
     return "CREATED_READBACK_VERIFIED"
 
 
-def upload_plan(input_root, plan, store, work, guard):
-    root, work = Path(input_root), Path(work)
+def validate_plan(plan):
     if (plan.get("schema") != "ar-local-system-image-upload-plan-v1" or not re.fullmatch(r"[a-f0-9]{64}", plan["recovery_set_sha256"])
             or not re.fullmatch(r"[a-f0-9]{64}", plan.get("raw_catalog_sha256", "")) or type(plan.get("raw_restore_required")) is not bool
             or not isinstance(plan.get("objects"), list) or not 1 <= len(plan["objects"]) <= 8300):
         raise ValueError("sealed fixed image upload plan required")
     identity = plan["recovery_set_sha256"]
     prefix = "system-images/sets/" + identity + "/"
-    seen, results = set(), []
+    seen = set()
     for row in plan["objects"]:
         name, target = row["source"], row["path"]
         allowed = (name in METADATA or name == "recovery-set.json" or re.fullmatch(r"recovery\.img\.part[0-9]{6}\.zst", name)
@@ -118,6 +117,14 @@ def upload_plan(input_root, plan, store, work, guard):
         seen.add(name)
     if "recovery-set.json" not in seen or not METADATA <= seen or not any(name.startswith("recovery.img.part") for name in seen):
         raise ValueError("complete image metadata set required")
+    return plan
+
+
+def upload_plan(input_root, plan, store, work, guard):
+    root, work = Path(input_root), Path(work)
+    validate_plan(plan)
+    identity = plan["recovery_set_sha256"]
+    results = []
     for row in plan["objects"]:
         results.append({**row, "result": put_verified(store, row["path"], root / row["source"], row["sha256"], row["bytes"], guard)})
     catalog = {"schema": "ar-local-offsite-system-image-v1", "recovery_set_sha256": identity,

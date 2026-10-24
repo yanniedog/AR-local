@@ -33,6 +33,7 @@ def command(bundle, work, metadata, raw, accepted):
     argv = argv_for(bundle, work, "build", [], restored_raw=raw)
     index = argv.index("--cap-drop")
     argv[index:index] = ["--ro-bind", str(bundle / "pi_system_image_rejoin.py"), "/code/pi_system_image_rejoin.py",
+                         "--ro-bind", str(bundle / "pi_system_cold_normalize.py"), "/code/pi_system_cold_normalize.py",
                          "--ro-bind", str(metadata), "/input"]
     index = argv.index("/usr/bin/python3")
     argv[index:] = ["/usr/bin/python3", "-E", "-s", "-S", "-B", "/code/pi_system_image_rejoin.py", "--recovery-set-sha256", accepted]
@@ -55,7 +56,7 @@ def main(argv=None):
     if hashlib.sha256(raw).hexdigest() != args.source_approval_sha256:
         raise ValueError("independently approved recovery source hash differs")
     approved = json.loads(raw)["files"]
-    names = {"pi_system_" + name + ".py" for name in ("namespace", "capture", "image", "raw_restore", "filesystems", "sparse", "image_rejoin", "image_rejoin_launch")}
+    names = {"pi_system_" + name + ".py" for name in ("namespace", "capture", "image", "raw_restore", "filesystems", "sparse", "image_rejoin", "image_rejoin_launch", "cold_normalize")}
     if set(approved) != names:
         raise ValueError("complete offline recovery closure required")
     verified = {}

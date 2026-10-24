@@ -19,6 +19,7 @@ IMAGE_FILES = {"broker.py", "parent.py", "launch.py", "reconcile.py", "prepare.p
                "pi_system_guard_writers.py", "pi_system_guard_export.py", "pi_system_guard_files.py", "pi_system_guard_plan.py", "pi_system_guard_packet.py", "pi_system_guard_install.py",
                "pi_system_capture.py", "pi_system_image.py", "pi_system_namespace.py", "pi_system_filesystems.py", "pi_system_raw_restore.py",
                "pi_system_sparse.py", "pi_system_image_restore.py", "pi_system_image_rejoin.py", "pi_system_image_rejoin_launch.py", "pi_system_probe.py", "pi_system_drive_transport.py", "pi_system_upload_worker.py",
+               "pi_system_cold.py", "pi_system_cold_worker.py", "pi_system_guard_cold.py", "pi_system_cold_normalize.py",
                "pi_plain_backup_transport.py", "pi_plain_backup_attestation.py", "pi_plain_backup_restore.py", "pi_drive_backup_manifest.py", "pi_laptop_backup_source.py"}
 PLAIN_FILES = {"pi_plain_backup_core.py", "pi_plain_backup_linux.py", "pi_plain_drive_resources.py", "pi_shared_queue_post_hooks.py"}
 
@@ -94,8 +95,8 @@ def main():
         return 0
     if name == "prepare.py":
         from pi_system_guard_packet import prepare
-        if len(sys.argv) not in (4, 5):
-            raise RuntimeError("fixed phase, nonce, workspace and optional commissioning nonce required")
+        if len(sys.argv) not in (4, 5, 6):
+            raise RuntimeError("fixed phase, nonce, workspace, optional commissioning and cold predecessor required")
         print(json.dumps(prepare(*sys.argv[1:]), sort_keys=True))
         return 0
     if name == "parent.py":

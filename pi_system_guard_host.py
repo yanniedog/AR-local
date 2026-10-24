@@ -26,6 +26,7 @@ BASE_CAPS = {0, 1, 2, 3, 4, 27, 31}  # CHOWN,DAC_OVERRIDE,DAC_READ_SEARCH,FOWNER
 SHOW_FIELDS = "Id,LoadState,ActiveState,SubState,MainPID,ControlPID,InvocationID,ControlGroup,User,NoNewPrivileges,Type,KillMode,NeedDaemonReload,CPUQuotaPerSecUSec,TasksMax,IOWeight,RuntimeMaxUSec"
 TOOLS = {"baseline": {"rsync"}, "prepare": {"rsync"}, "finalize": {"rsync"},
          "archive": {"zstd"}, "compress": {"zstd"},
+         "rejoin": {"losetup", "blkid", "mount", "umount", "fsck.vfat", "e2fsck"},
          "build": {"losetup", "mkfs.vfat", "mkfs.ext4", "blkid", "mount", "umount", "tar", "zstd", "fsck.vfat", "e2fsck"}}
 
 
@@ -112,6 +113,9 @@ class ImageHost(PlainHost):
         if digest(Path("/etc/ar-local/drive-write-hold.json")) != packet["global_hold_sha256"]:
             raise Blocked("global Drive hold changed outside this specific manual authority")
         self._recovery_controls(packet)
+        if packet["phase"] in {"fetch", "restore", "rejoin"}:
+            from pi_system_guard_cold import controls
+            controls(packet)
         self.space_guard(packet)
         if packet["phase"] != "PROBE":
             prior = packet.get("coupled_probe_nonce", "")
@@ -186,7 +190,7 @@ class ImageHost(PlainHost):
             return item["uids"] == [0] * 4 and item["gids"] == [0] * 4 and item["argv"] in (launch, identity(os.getpid())["argv"])
         if memory["uid"] != 0:
             monitor = self.process_identity(os.getpid())
-            return (phase == "upload" and item["uids"] == [packet["uid"]] * 4 and item["gids"] == [packet["gid"]] * 4
+            return (phase in {"upload", "fetch"} and item["uids"] == [packet["uid"]] * 4 and item["gids"] == [packet["gid"]] * 4
                     and memory["uid"] == packet["uid"] and memory["nnp"] == 1 and memory["capabilities"] == 0
                     and item["namespaces"]["pid"] != monitor["namespaces"]["pid"]
                     and item["namespaces"]["mnt"] != monitor["namespaces"]["mnt"]
@@ -216,7 +220,7 @@ class ImageHost(PlainHost):
         if (item["namespaces"]["pid"] == monitor["namespaces"]["pid"] or item["namespaces"]["mnt"] == monitor["namespaces"]["mnt"]
                 or item["namespaces"]["user"] != monitor["namespaces"]["user"] or memory["nnp"] != 1):
             return False
-        mask = sum(1 << bit for bit in BASE_CAPS | ({21} if phase in {"build", "PROBE"} else set()))
+        mask = 0 if phase == "restore" else sum(1 << bit for bit in BASE_CAPS | ({21} if phase in {"build", "PROBE", "rejoin"} else set()))
         if any(value & ~mask for value in item["caps"].values()):
             return False
         if item["exe"] == python:
@@ -249,7 +253,7 @@ class ImageHost(PlainHost):
             raise Blocked("image worker failed its unchanged resource budgets")
 
     def quarantine_credential(self, packet):
-        if packet["phase"] == "upload":
+        if packet["phase"] in {"upload", "fetch"}:
             return super().quarantine_credential(packet)
 
     def complete(self, packet, expected, *, result, readback):
@@ -267,9 +271,16 @@ class ImageHost(PlainHost):
         body = {"schema": "ar-local-system-recovery-root-completion-v1", "nonce": self.nonce, "phase": packet["phase"],
                 "source_closure_sha256": packet["source_closure_sha256"], **{key: expected[key] for key in ("owner_pid", "owner_ticks", "boot_id", "job_id", "unit", "invocation")},
                 "result": result, "readback": 60, "untrusted_processes_gone": True,
-                "credential_custody": "QUARANTINED" if packet["phase"] == "upload" else "NOT_EXPOSED",
+                "credential_custody": "QUARANTINED" if packet["phase"] in {"upload", "fetch"} else "NOT_EXPOSED",
                 "stop_post_verified": self.stop_post_verified, "resource_acceptance": "PASS" if accepted else "FAIL_OR_NOT_RUN"}
         body.update(owned_loop_terminal=True, writers_restored=True)
+        cold_result = None
+        if packet["phase"] in {"fetch", "restore", "rejoin"}:
+            body["cold_plan_sha256"] = packet["cold_plan_sha256"]
+            body["cold_vendor_sha256"] = packet["cold_vendor_sha256"]
+            if accepted and packet["phase"] != "fetch":
+                from pi_system_guard_cold import terminal_result
+                body["cold_result_sha256"], cold_result = terminal_result(packet)
         target = self.public / "completion.json"
         if target.exists():
             old = root_json(target)
@@ -278,6 +289,24 @@ class ImageHost(PlainHost):
             body["stop_post_verified"] = body["stop_post_verified"] or old.get("stop_post_verified") is True
         atomic(target, body, replace=target.exists(), mode=0o640)
         os.chown(target, 0, packet["gid"])
+        if packet["phase"] == "rejoin" and accepted and body["stop_post_verified"]:
+            from pi_system_guard_cold import input_plan
+            plan = input_plan(packet)
+            proof = {"schema": "ar-local-system-cold-recovery-proof-v1", "result": "COLD_FULL_RECOVERY_VERIFIED",
+                     "nonce": self.nonce, "workspace_id": packet["workspace_id"], "boot_id": self.boot(),
+                     "source_closure_sha256": packet["source_closure_sha256"], "cold_plan_sha256": packet["cold_plan_sha256"],
+                     "cold_vendor_sha256": packet["cold_vendor_sha256"],
+                     "raw_catalog_sha256": plan["raw_catalog_sha256"], "image_catalog_sha256": plan["image_catalog_sha256"],
+                     "recovery_set_sha256": packet["recovery_set_sha256"], "joined_result_sha256": body["cold_result_sha256"],
+                     "joined_image_sha256": cold_result["joined_image_sha256"], "root_completion_verified": True,
+                     "offline_normalization": cold_result["offline_normalization"],
+                     "owned_loop_terminal": True, "writers_restored": True, "cloud_writes": False, "boot_test": "NOT_TESTED"}
+            target = self.public / "cold-recovery-proof.json"
+            if target.exists() and root_json(target) != proof:
+                raise Blocked("existing cold recovery proof differs")
+            if not target.exists():
+                atomic(target, proof, mode=0o640)
+                os.chown(target, 0, packet["gid"])
         if packet["phase"] == "PROBE" and accepted and body["stop_post_verified"]:
             native = root_json(WORK / packet["workspace_id"] / "probe-result.json")
             if (native.get("result") != "IMAGE_PRIVATE_FIXTURE_PROBE_PASS" or native.get("native_filesystems_verified") is not True
@@ -296,7 +325,11 @@ class ImageHost(PlainHost):
     def owned_loop_terminal(self, packet):
         import errno
         import fcntl
-        work = WORK / packet["workspace_id"]
+        if packet["phase"] == "rejoin":
+            from pi_system_guard_cold import image_work
+            work = image_work(packet)
+        else:
+            work = WORK / packet["workspace_id"]
         intent = work / "loop-attach-intent.json"
         if not intent.exists():
             return True

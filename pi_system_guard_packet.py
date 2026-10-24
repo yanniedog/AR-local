@@ -22,7 +22,7 @@ def expiry_for(phase, now):
     return min(now + timedelta(seconds=120 if phase == "PROBE" else 21600), cutoff.astimezone(timezone.utc) - timedelta(seconds=1))
 
 
-def prepare(phase, nonce, workspace_id, coupled_probe=None):
+def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None):
     import pwd
     if phase not in PHASES or any(not re.fullmatch(r"[a-f0-9]{32}", item) for item in (nonce, workspace_id)):
         raise RuntimeError("fixed phase and fresh nonce/workspace required")
@@ -59,7 +59,25 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None):
         proof = json.loads(protected(HANDOFF / coupled_probe / "coupled-probe.json"))
         if proof.get("result") != "IMAGE_PROBE_PASS" or proof.get("source_closure_sha256") != closure_hash or proof.get("boot_id") != Path("/proc/sys/kernel/random/boot_id").read_text().strip():
             raise RuntimeError("actual same-boot image commissioning proof differs")
-        if phase == "baseline":
+        if phase in {"fetch", "restore", "rejoin"}:
+            from pi_system_guard_cold import vendors, predecessor, result_path
+            from pi_system_cold import validate_plan
+            cold_raw = protected(INPUTS / workspace_id / "cold-plan.json", maximum=16384)
+            validate_plan(json.loads(cold_raw))
+            vendor = vendors()
+            packet.update(cold_plan_sha256=sha(cold_raw), cold_vendor=vendor,
+                          cold_vendor_sha256=sha(json.dumps(vendor, sort_keys=True, separators=(",", ":")).encode()))
+            if phase != "fetch":
+                if not re.fullmatch("[a-f0-9]{32}", previous_phase or ""):
+                    raise RuntimeError("actual completed cold predecessor nonce required")
+                packet["previous_phase_nonce"] = previous_phase
+                if phase == "rejoin":
+                    prior = json.loads(protected(result_path(packet), readonly=False))
+                    packet["recovery_set_sha256"] = prior["recovery_set_sha256"]
+            elif previous_phase is not None:
+                raise RuntimeError("cold fetch has no predecessor argument")
+            predecessor(packet)
+        elif phase == "baseline":
             if (WORK / workspace_id).exists():
                 raise RuntimeError("baseline requires a new workspace")
             catalog = protected(INPUTS / workspace_id / "raw-catalog.json")
@@ -68,10 +86,14 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None):
             packet["raw_catalog_sha256"] = sha(catalog)
         elif not (WORK / workspace_id / "workspace.json").is_file():
             raise RuntimeError("durable capture workspace required")
-    if phase == "upload":
-        from pi_system_guard_export import plan_for
-        packet.update(manual_image_drive_write=True, remote=receipt["plan"]["remote"], drive_root_folder_id=receipt["plan"]["drive_root_folder_id"])
-        packet["upload_plan_sha256"] = sha(encoded(plan_for(workspace_id)))
+    if phase in {"upload", "fetch"}:
+        packet.update(remote=receipt["plan"]["remote"], drive_root_folder_id=receipt["plan"]["drive_root_folder_id"])
+        if phase == "upload":
+            from pi_system_guard_export import plan_for
+            packet["manual_image_drive_write"] = True
+            packet["upload_plan_sha256"] = sha(encoded(plan_for(workspace_id)))
+        else:
+            packet["manual_image_drive_read"] = True
         # The owner stages a read-only operation COPY using the qualified plain
         # credential-custody procedure. This builder never changes the original.
         credential = HANDOFF / nonce / "credentials-copy.conf"
@@ -82,7 +104,7 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None):
         packet["credential_sha256"] = sha(raw)
     validate(packet, nonce, now)
     private, public = STATE / nonce, HANDOFF / nonce
-    if private.exists() or (public.exists() and (phase != "upload" or set(path.name for path in public.iterdir()) != {"credentials-copy.conf"})):
+    if private.exists() or (public.exists() and (phase not in {"upload", "fetch"} or set(path.name for path in public.iterdir()) != {"credentials-copy.conf"})):
         raise RuntimeError("fresh unused operation nonce required")
     directory(private, 0o700)
     directory(public, 0o750, account.pw_gid)
@@ -92,6 +114,8 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None):
                                                "source_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256", "queue_argv_sha256")}
     if phase == "upload":
         authority["manual_image_drive_write"] = True
+    if phase == "fetch":
+        authority["manual_image_drive_read"] = True
     authority["schema"] = "ar-local-system-recovery-authority-v1"
     publish(public / "approval.json", encoded(authority), 0o440, account.pw_gid)
     return {"result": "IMAGE_PHASE_PREPARED_NOT_STARTED", "phase": phase, "nonce": nonce, "service_plan": str(private / "service-plan.json"),

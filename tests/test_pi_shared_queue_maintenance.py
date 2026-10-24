@@ -164,6 +164,24 @@ def test_image_authority_has_distinct_scope_phase_and_upload_permission(monkeypa
     with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
 
 
+def test_image_cold_fetch_requires_explicit_read_and_quarantined_credential(monkeypatch):
+    authority,rows=image_fixture(monkeypatch)
+    authority.update(phase='fetch',manual_image_drive_read=True)
+    publish_authority(authority,rows)
+    assert hooks.approval(IMAGE_UNIT)==authority
+    j=job(IMAGE_UNIT);terminal=image_terminal(j,authority)
+    rows[hooks.IMAGE_HANDOFF/NONCE/'completion.json']=canonical(terminal)
+    assert not hooks.completion_proved(j)
+    terminal['credential_custody']='QUARANTINED'
+    rows[hooks.IMAGE_HANDOFF/NONCE/'completion.json']=canonical(terminal)
+    assert hooks.completion_proved(j)
+    authority['manual_image_drive_write']=True;publish_authority(authority,rows)
+    with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
+    authority.pop('manual_image_drive_write');authority['manual_image_drive_read']=False
+    publish_authority(authority,rows)
+    with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
+
+
 def test_image_stop_hook_uses_distinct_fixed_no_site_root_broker(monkeypatch):
     authority,rows=image_fixture(monkeypatch);start=['/usr/bin/python3','queue','image'];authority['queue_argv_sha256']=sha(canonical(start));publish_authority(authority,rows)
     stop=['/usr/bin/python3','-I','-S','-B',str(hooks.IMAGE_ROOT/'broker.py'),'recover',NONCE]

@@ -68,7 +68,7 @@ def context(host, packet, owner):
             "deadline_monotonic": issued + min(120 if packet["phase"] == "PROBE" else 21600, seconds),
             "monitor": current, "queue": owner, "upload_plan_sha256": packet.get("upload_plan_sha256"),
             "remote": packet.get("remote"), "drive_root_folder_id": packet.get("drive_root_folder_id"),
-            "credential_sha256": packet.get("credential_sha256")}
+            "credential_sha256": packet.get("credential_sha256"), "cold_plan_sha256": packet.get("cold_plan_sha256")}
 
 
 def fork_worker(host, packet, descriptor):

@@ -4,7 +4,7 @@ import re
 
 from pi_plain_backup_core import Blocked, finish
 
-PHASES = {"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload"}
+PHASES = {"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload", "fetch", "restore", "rejoin"}
 
 
 def validate(packet, nonce, now):
@@ -41,6 +41,17 @@ def validate(packet, nonce, now):
         raise Blocked("specific image-object write authority absent")
     if packet["phase"] == "upload" and any(not re.fullmatch(r"[a-f0-9]{64}", packet.get(key, "")) for key in ("upload_plan_sha256", "credential_sha256")):
         raise Blocked("sealed image upload/credential binding absent")
+    if packet["phase"] in {"fetch", "restore", "rejoin"}:
+        if any(not re.fullmatch("[a-f0-9]{64}", packet.get(key, "")) for key in ("cold_plan_sha256", "cold_vendor_sha256")):
+            raise Blocked("independently pinned cold plan/runtime binding absent")
+        if packet["phase"] == "fetch" and (packet.get("manual_image_drive_read") is not True
+                or packet.get("manual_image_drive_write") is not None
+                or not re.fullmatch("[a-f0-9]{64}", packet.get("credential_sha256", ""))):
+            raise Blocked("specific readonly cold Drive credential authority absent")
+        if packet["phase"] != "fetch" and not re.fullmatch("[a-f0-9]{32}", packet.get("previous_phase_nonce", "")):
+            raise Blocked("actual completed cold predecessor required")
+        if packet["phase"] == "rejoin" and not re.fullmatch("[a-f0-9]{64}", packet.get("recovery_set_sha256", "")):
+            raise Blocked("independent restored recovery set identity required")
 
 
 def acquire(host, nonce):

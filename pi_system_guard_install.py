@@ -18,9 +18,9 @@ ROOT = Path("/usr/local/lib/ar-local-system-recovery")
 PLAIN = Path("/usr/local/lib/ar-local-plain-backup")
 ALIASES = {"broker.py", "parent.py", "launch.py", "reconcile.py", "prepare.py", "start.py"}
 MODULES = {"pi_system_guard_" + name + ".py" for name in (
-    "policy", "host", "resources", "launch", "parent", "reconcile", "writers", "export", "files", "plan", "packet", "install", "start")}
+    "policy", "host", "resources", "launch", "parent", "reconcile", "writers", "export", "files", "plan", "packet", "install", "start", "cold")}
 MODULES |= {"pi_system_" + name + ".py" for name in (
-    "capture", "image", "namespace", "filesystems", "raw_restore", "sparse", "image_restore", "image_rejoin", "image_rejoin_launch", "probe", "drive_transport", "upload_worker")}
+    "capture", "image", "namespace", "filesystems", "raw_restore", "sparse", "image_restore", "image_rejoin", "image_rejoin_launch", "probe", "drive_transport", "upload_worker", "cold", "cold_worker", "cold_normalize")}
 MODULES |= {"pi_plain_backup_transport.py", "pi_plain_backup_attestation.py"}
 MODULES |= {"pi_plain_backup_restore.py", "pi_drive_backup_manifest.py", "pi_laptop_backup_source.py"}
 PLAIN_FILES = {"pi_plain_backup_core.py", "pi_plain_backup_linux.py", "pi_plain_drive_resources.py", "pi_shared_queue_post_hooks.py"}

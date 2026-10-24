@@ -16,6 +16,7 @@ from pi_system_image import (attach_image, check_unmounted_filesystems, require_
                              require_namespace, require_partition, restore_metadata,
                              verify_filesystem_identity, verify_tree)
 from pi_system_raw_restore import restore_raw
+from pi_system_cold_normalize import normalize
 
 
 def inputs(work, metadata, accepted):
@@ -84,7 +85,11 @@ def rejoin(work, metadata, accepted, raw):
         result["raw_restore"] = restore_raw(work / "joined-root", raw, metadata / "external-restore-map.jsonl",
                                              recovery["catalog_sha256"], metadata / "root.manifest.jsonl", full)
         restore_metadata(work / "joined-root", full)
-        result["root_verify"] = verify_tree(work / "joined-root", full, transforms=component["transforms"]["root"])
+        result["root_verify_before_normalization"] = verify_tree(work / "joined-root", full, transforms=component["transforms"]["root"])
+        normalized = work / "joined-root.normalized.manifest.jsonl"
+        result["offline_normalization"] = normalize(work / "joined-root", full, normalized, accepted, boot=work / "joined-boot")
+        restore_metadata(work / "joined-root", normalized)
+        result["root_verify"] = verify_tree(work / "joined-root", normalized, transforms=component["transforms"]["root"])
         result["boot_verify"] = verify_tree(work / "joined-boot", metadata / "boot.manifest.jsonl", transforms=component["transforms"]["boot"], scratch=work)
         result.update(result="FULL_OS_AND_EXACT_RAW_RESTORE_VERIFIED", raw_restore_required=False)
     except BaseException as error:

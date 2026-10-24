@@ -155,6 +155,75 @@ catalog is published last after every object passes complete readback.
 
 ## Keyless recovery and acceptance
 
+### Guarded cold download, restore and rejoin
+
+Use a separate NEW cold workspace. Its protected input
+`/var/lib/ar-local-system-recovery-inputs/COLDWORKSPACE32/cold-plan.json` has
+exactly `schema: ar-local-system-cold-plan-v1`, `raw_catalog_sha256`,
+`raw_catalog_bytes`, `image_catalog_sha256` and `image_catalog_bytes`.
+The operator obtains these identities from the separately accepted raw/image
+publication evidence; a Pi fetch result cannot choose its own accepted catalog.
+Preparation binds the actual qualified incumbent zstandard vendor file hashes,
+without changing or reinstalling that raw producer.
+
+```text
+/usr/bin/python3 -I -S -B /usr/local/lib/ar-local-system-recovery/prepare.py fetch FETCH32 COLDWORKSPACE32 ACCEPTED-PROBE32
+/usr/bin/python3 -I -S -B /usr/local/lib/ar-local-system-recovery/start.py FETCH32
+/usr/bin/python3 -I -S -B /usr/local/lib/ar-local-system-recovery/prepare.py restore RESTORE32 COLDWORKSPACE32 ACCEPTED-PROBE32 FETCH32
+/usr/bin/python3 -I -S -B /usr/local/lib/ar-local-system-recovery/start.py RESTORE32
+/usr/bin/python3 -I -S -B /usr/local/lib/ar-local-system-recovery/prepare.py rejoin REJOIN32 COLDWORKSPACE32 ACCEPTED-PROBE32 RESTORE32
+/usr/bin/python3 -I -S -B /usr/local/lib/ar-local-system-recovery/start.py REJOIN32
+```
+
+These are sequential independent host queue claims, each requiring the previous
+actual root completion, same source/runtime/plan identity, resource acceptance,
+policy60, writer/loop cleanup and privileged stop proof. Do not submit the next
+phase while its predecessor is running or uncertain. Each uses the existing
+whole-cgroup640MiB/zero-swap-out guard and independent policy restoration.
+
+Fetch has specific read authority, an operation credential COPY and a Pi UID,
+NNP, zero-capability child. Only fixed content-addressed raw/image paths can be
+read. No Drive write verb is exposed by this phase. Verified complete objects
+can resume under a fresh fetch nonce; differing objects and failed partials are
+preserved. The root finalizer quarantines the credential copy before acceptance.
+After successful fetch cleanup, the next root phase seals the derived mirror
+under root ownership and repeats every catalog/object hash before trusting it.
+Restore runs as root with all capabilities dropped and no network or credential,
+creates NEW raw/reassembled-image workspaces and verifies real raw/SQLite/frame
+contents. Capacity includes the mirror, exact raw restore, sparse image allocation
+and later raw insertion; no original or historical backup is deleted for space.
+
+Rejoin uses the fixed owned-loop namespace and only the new regular image file.
+It first proves the complete unmodified OS plus exact raw files. Because capture
+occurs inside a running guard, the captured image contains an active queue/native
+lease and control intent whose scratch workspace is excluded. Only this NEW
+offline image retires that captured custody: owner PID/ticks/boot/job/unit/
+invocation and packet/authority/intent/source closure must correlate exactly.
+Foreign or ambiguous ownership refuses recovery. Original queue, lease and
+nonterminal control/handoff bytes and full metadata are moved into private
+`/var/lib/ar-local-recovery-normalization/RECOVERY-SHA/original/`; terminal raw
+backup controls remain unchanged. A valid empty v1 queue preserves its sequence.
+No captured ACTIVE job receives a fabricated successful runtime completion.
+
+The same journal records original absence of a NEW offline-only
+`/etc/sysctl.d/zzzz-ar-local-recovery-swappiness.conf` containing explicit60,
+plus hashes of the captured persistent sysctl configurations, fixed service and
+boot command line. Conflicting settings, matching globs, later basenames,
+unqualified service overrides/drop-ins/credential commands and persistent
+`sysctl.extra` credentials refuse normalization. The transient captured `/proc`
+value is never boot evidence. Existing source-host files and schedules are
+unchanged. This is a structural persistent-policy proof; physical boot remains
+`NOT_TESTED`.
+
+Every intentional offline transform, added audit file and explicit policy is
+included in a new expected manifest. Complete metadata/content verification,
+readonly filesystem checks and owned-loop cleanup run afterwards. Only an
+accepted privileged stop publishes `cold-recovery-proof.json` with the bound
+raw/image catalog identities, joined image SHA, normalization manifest/receipt
+hashes and root cleanup/resource proof. A downloaded component image or Pi
+worker verdict alone cannot satisfy full recovery acceptance. Failed new images
+remain private evidence and must not be automatically retried or flashed.
+
 Download the image catalog's exact frames and metadata, plus its bound raw
 catalog/packs/index. Restore tools are content-addressed and included in the
 image object catalog; copy verified tools to their recorded source filenames.
@@ -175,7 +244,7 @@ image, and the accepted recovery-set SHA. A reviewed private namespace must
 expose only these files, individual approved code/runtime mounts, loop-control
 and the same restricted build capabilities. It has no physical disk or resize
 argument. The provided `pi_system_image_rejoin_launch.py` constructs that namespace
-after independently approved immutable root staging and exact8-file source
+after independently approved immutable root staging and exact9-file source
 approval; use it on the Linux recovery host:
 
 ```text
