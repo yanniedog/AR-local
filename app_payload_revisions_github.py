@@ -13,6 +13,7 @@ from app_payload_secure_upload import secure_upload, publication_key, validate_u
 from release_transport import OVERHEAD
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -170,13 +171,25 @@ class GitHubRevisionStore:
         # A successful upload can precede public download visibility. Retry only
         # missing (HTTP 404) bytes, with fresh uncached URLs on every read. A
         # collision, corrupt response or transport error must fail immediately.
-        for delay in (0, 1, 2, 4):
-            if delay:
-                time.sleep(delay)
-            observed = self.read(tag, name, max(size, 1), require_encrypted=True)
-            if observed is not None:
-                return observed
-        return None
+        missing = 0
+        try:
+            for delay in (0, 1, 2, 4):
+                if delay:
+                    time.sleep(delay)
+                observed = self.read(tag, name, max(size, 1), require_encrypted=True)
+                if observed is not None:
+                    return observed
+                missing += 1
+            return None
+        finally:
+            if missing:
+                # One bounded diagnostic, including unsuccessful readbacks;
+                # payload bytes, credentials and provider responses stay private.
+                try:
+                    logging.getLogger(__name__).warning(
+                        "archive_visibility_missing_responses=%d", missing)
+                except Exception:
+                    pass  # A diagnostic sink cannot replace the readback result.
 
     def replace_index(self, tag: str, path: Path, expected: bytes | None) -> None:
         if expected is None:
