@@ -206,6 +206,29 @@ def test_native_observer_failure_is_independent_of_resource_sampler():
         observer.close()
 
 
+def test_notify_service_submission_ack_does_not_wait_for_queue_ready_or_repeat(monkeypatch, tmp_path):
+    import pi_shared_queue_post_hooks as hooks
+    import pi_system_guard_start as launch
+    body, plan = packet(), service.service_plan(NONCE, "PROBE")
+    body["queue_argv_sha256"] = plan["queue_argv_sha256"]
+    host = SimpleNamespace(packet=lambda nonce: body, now=lambda: NOW, value=lambda: 60,
+                           intent=lambda nonce: None, _show=lambda unit: {"LoadState": "not-found"})
+    monkeypatch.setattr(launch, "ImageHost", lambda nonce: host)
+    monkeypatch.setattr(launch, "STATE", tmp_path)
+    (tmp_path / NONCE).mkdir()
+    monkeypatch.setattr(launch, "protected", lambda path: json.dumps(plan).encode())
+    monkeypatch.setattr(hooks, "approval", lambda *args, **kwargs: {"schema": "ar-local-system-recovery-authority-v1", "phase": "PROBE"})
+    def once(path, raw):
+        with path.open("xb") as stream: stream.write(raw)
+    monkeypatch.setattr(launch, "publish", once)
+    effects = []
+    monkeypatch.setattr(launch.subprocess, "run", lambda argv, **kwargs: effects.append((argv, kwargs)))
+    assert launch.start(NONCE)["result"] == "IMAGE_PHASE_SUBMITTED_NOT_ACCEPTED"
+    assert "--no-block" in effects[0][0] and effects[0][1]["timeout"] == 15
+    with pytest.raises(FileExistsError): launch.start(NONCE)
+    assert len(effects) == 1
+
+
 def writer_fixture(monkeypatch, tmp_path):
     state, events, saved = {"custom.service": "active", "custom.timer": "inactive"}, [], {}
     host = SimpleNamespace(private=tmp_path, boot=lambda: "same", remaining_timeout=lambda limit: min(limit, 4))

@@ -27,7 +27,7 @@ def start(nonce):
         raise RuntimeError("fresh native unit and unowned policy60 required")
     receipt = STATE / nonce / "start-intent.json"
     publish(receipt, encoded({"result": "START_REQUESTED", "nonce": nonce, "unit": plan["unit"], "phase": packet["phase"]}))
-    argv = ["/usr/bin/systemd-run", "--unit=" + plan["unit"], "--collect"]
+    argv = ["/usr/bin/systemd-run", "--no-block", "--unit=" + plan["unit"], "--collect"]
     argv += ["--property=" + name + "=" + value for name, value in sorted(plan["properties"].items())]
     argv += ["--", *plan["argv"]]
     subprocess.run(argv, check=True, timeout=15, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
