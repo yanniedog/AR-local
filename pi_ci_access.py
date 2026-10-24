@@ -2,12 +2,13 @@
 """Fixed CI login protocol and root-owned deployment admission.
 
 Installed copies must be root-owned. No repository code is imported at runtime.
-The activation adapter is a separate, reviewed integration, deliberately absent
-from this package: the existing D-027 worker cannot run under NoNewPrivileges.
+Root imports only the independently approved installed coordinator closure.
+Candidate code executes only in an unprivileged, read-only namespace.
 """
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -18,17 +19,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 CONTROL = "/usr/local/sbin/ar-local-ci-control"
-ADAPTER = Path("/usr/local/lib/ar-local-ci/activate_adapter.py")
+ADAPTER = Path("/usr/local/lib/ar-local-ci/pi_ci_activate.py")
+RUNTIME = Path('/etc/ar-local/ci-runtime.json')
+LIBRARY = Path('/usr/local/lib/ar-local-ci')
 PLANS = Path("/etc/ar-local/ci-plans")
 STATE = Path("/var/lib/ar-local-ci")
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX40 = re.compile(r"[0-9a-f]{40}")
 ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "HOME": "/nonexistent"}
 UNITS = ("ar-local-dashboard.service", "ar-local-daily.service", "ar-local-daily.timer")
-# Foundation only: enabling this requires a separately reviewed integration,
-# including NNP on every service that can execute the writable production tree.
-# A sandboxed worker must not plant code later executed with unrestricted sudo.
-ACTIVATION_INTEGRATION_READY = False
+# Commissioning binds the immutable production source and retained queue closure.
+RUNTIME_MODULES = ('pi_ci_release', 'pi_ci_resources', 'pi_ci_activate', 'pi_ci_snapshot')
 
 
 def parse_command(command: str) -> dict:
@@ -37,6 +38,9 @@ def parse_command(command: str) -> dict:
     match = re.fullmatch(r"activate ([0-9a-f]{64})", command)
     if match:
         return {"action": "activate", "plan": match[1]}
+    match = re.fullmatch(r"check ([0-9a-f]{64})", command)
+    if match:
+        return {"action": "check", "plan": match[1]}
     raise ValueError("only status or activate <approved-plan-sha256> is permitted")
 
 
@@ -45,7 +49,7 @@ def request_from_json(body: str) -> dict:
     if value == {"action": "status"}:
         return value
     if (isinstance(value, dict) and set(value) == {"action", "plan"}
-            and value["action"] == "activate" and isinstance(value["plan"], str)
+            and value["action"] in {'activate', 'check'} and isinstance(value["plan"], str)
             and HEX64.fullmatch(value["plan"])):
         return value
     raise ValueError("invalid CI request")
@@ -91,7 +95,8 @@ def require_digest(body: bytes, digest: str) -> None:
 def validate_recovery(body: bytes) -> dict:
     """An operator approval binding real retained evidence, never a Drive probe."""
     value = json.loads(body)
-    if not isinstance(value, dict) or value.get("schema_version") != 1 or value.get("result") != "PASS":
+    if (not isinstance(value, dict) or type(value.get("schema_version")) is not int
+            or value["schema_version"] != 1 or value.get("result") != "PASS"):
         raise ValueError("offsite recovery approval is unavailable")
     required = {"raw_archive", "system_image", "restore_proof", "boot_structure_proof"}
     evidence = value.get("evidence")
@@ -113,7 +118,8 @@ def validate_plan(plan_id: str, *, now: datetime | None = None) -> dict:
     plan = json.loads(body)
     required = {"schema_version", "scope", "target_commit", "previous_commit", "expires_at",
                 "sealed_manifest_sha256", "recovery_approval_sha256", "adapter_sha256"}
-    if (not isinstance(plan, dict) or set(plan) != required or plan["schema_version"] != 1
+    if (not isinstance(plan, dict) or set(plan) != required or type(plan["schema_version"]) is not int
+            or plan["schema_version"] != 1
             or plan["scope"] != "activate-sealed-d027"
             or not isinstance(plan["target_commit"], str) or not HEX40.fullmatch(plan["target_commit"])
             or not isinstance(plan["previous_commit"], str) or not HEX40.fullmatch(plan["previous_commit"])):
@@ -139,6 +145,8 @@ def run(argv: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess:
 
 
 def status() -> dict:
+    if RUNTIME.exists() or RUNTIME.is_symlink():
+        return load_runtime()['pi_ci_snapshot'].snapshot()
     result = {}
     for unit in UNITS:
         response = run(["/usr/bin/systemctl", "show", unit,
@@ -149,6 +157,44 @@ def status() -> dict:
     return {"result": "OBSERVED", "units": result, "deployment_acceptance": "NOT_ASSESSED"}
 
 
+def load_runtime():
+    """Import only the complete root-owned, independently approved installed closure."""
+    profile = json.loads(trusted_bytes(RUNTIME))
+    expected = {name + '.py' for name in (*RUNTIME_MODULES, 'pi_ci_worker')}
+    if (profile.get('schema') != 'ar-local-ci-runtime-v1' or set(profile.get('modules', {})) != expected
+            or profile.get('queue_contract') != 'ci-retained-v1' or not profile.get('queue_files')):
+        raise ValueError('complete commissioned immutable activation profile is unavailable')
+    bodies = {}
+    for name, digest in profile['modules'].items():
+        bodies[name] = trusted_bytes(LIBRARY / name)
+        require_digest(bodies[name], digest)
+    queue = Path('/usr/local/lib/shared-pi-queue')
+    required_queue = {'pi_shared_queue.py', 'pi_shared_queue_policy.py', 'pi_shared_queue_store.py',
+                      'pi_shared_queue_native.py', 'pi_shared_queue_post_hooks.py', 'pi_shared_queue_stop_hook.py'}
+    if not required_queue <= set(profile['queue_files']):
+        raise ValueError('complete retained queue source closure is required')
+    for name, digest in profile['queue_files'].items():
+        if not re.fullmatch(r'pi_shared_queue(?:_[a-z_]+)?\.py', name):
+            raise ValueError('unsupported installed queue source name')
+        require_digest(trusted_bytes(queue / name), digest)
+    result = {}
+    for name in RUNTIME_MODULES:
+        spec = importlib.util.spec_from_file_location(name, LIBRARY / (name + '.py'))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        # Execute exactly the verified bytes, never reopen an import via cwd/PATH.
+        exec(compile(bodies[name + '.py'], str(LIBRARY / (name + '.py')), 'exec'), module.__dict__)
+        result[name] = module
+    return result
+
+
+def check_plan(plan_id):
+    context = load_runtime()['pi_ci_activate'].plan_context(plan_id)
+    return dict(result='APPROVED_PLAN', plan=plan_id, target_commit=context['plan']['target_commit'],
+                canary_manifest_sha256=context['plan']['canary_manifest_sha256'],
+                canary_release_tag=context['plan']['canary_release_tag'], mutated=False)
+
+
 def activation_argv(plan_id: str) -> list[str]:
     # No executable, path, environment, service name or systemd property comes
     # from SSH input or from the plan. The root-approved adapter receives one ID.
@@ -156,24 +202,27 @@ def activation_argv(plan_id: str) -> list[str]:
         raise ValueError("invalid plan identity")
     return ["/usr/bin/systemd-run", "--wait", "--pipe", "--collect",
             "--unit=ar-local-ci-activate-" + plan_id,
-            "--property=User=pi", "--property=Group=pi", "--property=NoNewPrivileges=yes",
+            "--property=User=pi", "--property=Group=pi", "--property=NoNewPrivileges=no",
+            '--property=Type=notify', '--property=NotifyAccess=main', '--property=CPUQuota=200%',
+            '--property=TimeoutStartSec=960', '--property=TimeoutStopSec=900', '--property=SendSIGKILL=yes',
             "--property=ProtectSystem=strict", "--property=ProtectHome=yes",
-            "--property=PrivateTmp=yes", "--property=PrivateDevices=yes",
-            "--property=ProtectKernelTunables=yes", "--property=ProtectKernelModules=yes",
-            "--property=ProtectControlGroups=yes", "--property=RestrictNamespaces=yes",
-            "--property=CapabilityBoundingSet=", "--property=AmbientCapabilities=",
-            "--property=KillMode=control-group", "--property=RuntimeMaxSec=1800",
-            "--property=ReadWritePaths=/srv/ar-local/AR-local /srv/ar-local/data /var/lib/ar-local-ci/worker",
+            "--property=PrivateTmp=yes", "--property=ProtectControlGroups=yes",
+            "--property=RestrictNamespaces=no",
+            "--property=KillMode=control-group", "--property=RuntimeMaxSec=1800", '--property=LimitAS=2G',
+            '--property=MemoryHigh=768M', '--property=MemoryMax=1G', '--property=MemorySwapMax=0',
+            "--property=ReadWritePaths=/srv/ar-local /var/lib/ar-local-ci /var/lib/shared-pi-queue",
+            '--property=ExecStopPost=+/usr/bin/python3 -I /usr/local/sbin/ar-local-ci-control --finalize ' + plan_id,
             "--property=WorkingDirectory=/", "--setenv=HOME=/nonexistent",
             "--setenv=PATH=/usr/sbin:/usr/bin:/sbin:/bin", "--",
-            "/usr/bin/python3", "-I", str(ADAPTER), plan_id]
+            '/usr/bin/python3', '/usr/local/lib/shared-pi-queue/pi_shared_queue.py', 'run',
+            '--project', 'ar-local', '--resource', 'ar-local', '--resource', 'host', '--mode', 'exclusive',
+            '--cpu-slots', '2', '--wait-timeout', '900', '--max-runtime', '1800', '--',
+            '/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', CONTROL, '--worker', plan_id]
 
 
 def activate(plan_id: str) -> dict:
-    if not ACTIVATION_INTEGRATION_READY:
-        raise RuntimeError("activation integration unavailable: verify per-service NoNewPrivileges and root-owned controls first")
-    # Missing adapter blocks before creating a claim or changing any Pi state.
-    plan = validate_plan(plan_id)
+    context = load_runtime()['pi_ci_activate'].plan_context(plan_id)
+    plan = context['plan']
     require_root_path(STATE, directory=True)
     claim = STATE / (plan_id + ".claimed.json")
     descriptor = os.open(claim, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -182,13 +231,31 @@ def activate(plan_id: str) -> dict:
                    "claimed_at": datetime.now(timezone.utc).isoformat()}, stream)
         stream.flush()
         os.fsync(stream.fileno())
+    argv = activation_argv(plan_id)
+    start = argv[argv.index('--') + 1:]
+    authority = {'schema': 'ar-local-ci-authority-v1', 'plan': plan_id,
+        'unit': 'ar-local-ci-activate-' + plan_id + '.service', 'expires_at': plan['expires_at'],
+        'target_commit': plan['target_commit'], 'scope': 'activate-immutable-d027',
+        'runtime_profile_sha256': plan['runtime_profile_sha256'], 'adapter_sha256': plan['adapter_sha256'],
+        'control_sha256': hashlib.sha256(trusted_bytes(Path(CONTROL))).hexdigest(),
+        'queue_argv_sha256': hashlib.sha256(json.dumps(start, separators=(',', ':')).encode()).hexdigest()}
+    path = STATE / 'authority' / (plan_id + '.json')
+    require_root_path(path.parent, directory=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o444)
+    with os.fdopen(fd, 'w') as stream:
+        json.dump(authority, stream, sort_keys=True); stream.flush(); os.fsync(stream.fileno())
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
     directory = os.open(STATE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(directory)
     finally:
         os.close(directory)
     # A timeout/error consumes this plan. Never replay an ambiguous transaction.
-    response = run(activation_argv(plan_id), timeout=1860)
+    response = run(argv, timeout=3700)
     if response.returncode:
         raise RuntimeError("activation worker failed; plan consumed; operator must inspect retained receipts")
     # Worker exit 0 is not adequate proof of deployed code/data/public acceptance.
@@ -201,18 +268,38 @@ def login_main(argv: list[str]) -> int:
     request = parse_command(argv[1])
     response = subprocess.run(["/usr/bin/sudo", "-n", "--", CONTROL],
                               input=json.dumps(request), env=ENV, cwd="/", text=True,
-                              timeout=1900, shell=False, close_fds=True)
+                              timeout=3800, shell=False, close_fds=True)
     return response.returncode
 
 
 def control_main() -> int:
+    if (os.geteuid() == 0 and len(sys.argv) == 4 and sys.argv[1] == '--stage'
+            and HEX64.fullmatch(sys.argv[2])):
+        modules = load_runtime()
+        context = modules['pi_ci_activate'].plan_context(sys.argv[2])
+        parent = context['stage'].parent
+        require_root_path(parent.parent, directory=True)
+        parent.mkdir(mode=0o700)
+        import time
+        deadline = time.monotonic() + 1200
+        def guard():
+            if time.monotonic() >= deadline:
+                raise RuntimeError('bounded root staging deadline reached')
+        modules['pi_ci_release'].stage_input(Path(sys.argv[3]), context['stage'], context['release'], guard)
+        print(json.dumps({'result': 'STAGED', 'plan': sys.argv[2]}), flush=True)
+        return 0
+    if os.geteuid() == 0 and len(sys.argv) == 3 and sys.argv[1] in {'--worker', '--finalize'} and HEX64.fullmatch(sys.argv[2]):
+        module = load_runtime()['pi_ci_activate']
+        result = module.main([sys.argv[2]]) if sys.argv[1] == '--worker' else module.finalize(sys.argv[2])
+        return result
     if os.geteuid() != 0 or len(sys.argv) != 1 or os.environ.get("SUDO_USER") != "ar-local-ci":
         raise ValueError("control requires the dedicated CI sudo entry without arguments")
     body = sys.stdin.buffer.read(4097)
     if len(body) > 4096:
         raise ValueError("request too large")
     request = request_from_json(body.decode("utf-8"))
-    result = status() if request["action"] == "status" else activate(request["plan"])
+    result = (status() if request['action'] == 'status' else check_plan(request['plan'])
+              if request['action'] == 'check' else activate(request['plan']))
     print(json.dumps(result, sort_keys=True), flush=True)
     return 0
 
