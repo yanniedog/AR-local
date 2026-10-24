@@ -33,6 +33,7 @@ IDLE = ('ar-local-daily.service', 'ar-local-ingest-now.service', 'ar-local-daily
         'ar-local-runtime-health.service', 'ar-local-deploy-watchdog.service', 'ar-local-capacity-monitor.service')
 PROFILE_UNITS = ('ar-local-dashboard.service', *IDLE, *TIMERS, 'ar-local-daily.timer')
 NATIVE_PROPERTIES = ('ExecStartEx', 'ExecConditionEx', 'ExecStartPreEx', 'ExecStartPostEx', 'ExecStopEx', 'ExecStopPostEx')
+HUMAN_EXEC_PROPERTIES = {'ExecStart', 'ExecCondition', 'ExecStartPre', 'ExecStartPost', 'ExecStop', 'ExecStopPost'}
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8', 'HOME': '/nonexistent',
        'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_OPTIONAL_LOCKS': '0',
        'PYTHONDONTWRITEBYTECODE': '1'}
@@ -117,6 +118,7 @@ def plan_context(plan_id, *, now=None, allow_expired=False):
 def check_profile(profile):
     if profile.get('schema') != 'ar-local-ci-runtime-v1' or set(profile.get('unit_properties', {})) != set(PROFILE_UNITS):
         raise ValueError('complete fixed runtime profile required')
+    require_core_paths(profile)
     git_configuration = profile.get('git_configuration')
     if (not isinstance(git_configuration, dict) or set(git_configuration) != {'path', 'sha256'}
             or git_configuration['path'] != '/etc/gitconfig'):
@@ -140,8 +142,7 @@ def check_profile(profile):
     for unit, expected in profile['unit_properties'].items():
         required = {'FragmentPath', 'DropInPaths', 'NeedDaemonReload'}
         if unit.endswith('.service'):
-            required |= {'User', 'Group', 'WorkingDirectory', 'ExecStart', 'ExecStartPre', 'ExecStartPost',
-                         'ExecStop', 'ExecStopPost', 'Environment', 'EnvironmentFiles', 'NoNewPrivileges',
+            required |= {'User', 'Group', 'WorkingDirectory', 'Environment', 'EnvironmentFiles', 'NoNewPrivileges',
                          'CapabilityBoundingSet', 'AmbientCapabilities'}
         else:
             required |= {'Unit', 'TimersCalendar', 'TimersMonotonic', 'AccuracyUSec', 'RandomizedDelayUSec', 'Persistent'}
@@ -174,14 +175,31 @@ def check_profile(profile):
                 raise ValueError('native command or privilege flags differ from approved profile')
 
 
+def require_core_paths(profile):
+    """An accepted production tree must be the tree the core services execute."""
+    scripts = {'ar-local-dashboard.service': 'cdr_dashboard_server.py',
+               'ar-local-daily.service': 'pi_daily_sync.py',
+               'ar-local-ingest-now.service': 'pi_daily_sync.py'}
+    for unit, script in scripts.items():
+        properties = profile.get('unit_properties', {}).get(unit, {})
+        native = profile.get('unit_native', {}).get(unit, {}).get('ExecStartEx')
+        if properties.get('WorkingDirectory') != str(PRODUCTION):
+            raise ValueError('core service must use the canonical immutable production working directory')
+        commands = execution_definition(native)
+        if len(commands) != 1 or commands[0][1].count(str(PRODUCTION / script)) != 1:
+            raise ValueError('core service must execute the canonical immutable production script')
+
+
 def unit_properties_definition(unit, values):
     """Schedules are configuration; next-elapse instants are runtime state."""
     result = dict(values)
+    if unit.endswith('.service') and HUMAN_EXEC_PROPERTIES & set(result):
+        raise ValueError('human execution properties include transient state; bind typed native Ex definitions instead')
     if unit.endswith('.timer'):
         for prop in ('TimersCalendar', 'TimersMonotonic'):
             raw = result[prop]
             if not isinstance(raw, str): raise ValueError('native timer definition must be text')
-            pattern = re.compile(r'\{\s*(OnCalendar|On(?:Active|Boot|Startup|UnitActive|UnitInactive)USec)=(.*?)\s*;\s*next_elapse=[^{}]*\}', re.DOTALL)
+            pattern = re.compile(r'\{\s*(OnCalendar|On(?:Active|Boot|Startup|UnitActive|UnitInactive)USec)=([^{}]*?)\s*;\s*next_elapse=[^{}]*\}', re.DOTALL)
             rows = pattern.findall(raw)
             if pattern.sub('', raw).strip(): raise ValueError('unknown native timer definition format')
             if any((key == 'OnCalendar') != (prop == 'TimersCalendar') for key, _ in rows):

@@ -213,6 +213,35 @@ def test_timer_configuration_ignores_only_next_elapse_and_binds_monotonic_cadenc
         activate.unit_properties_definition('fixed.timer', {**value, 'TimersCalendar': 'ignored unknown schedule'})
 
 
+def test_service_profile_uses_typed_native_execution_instead_of_human_pid_records():
+    assert activate.unit_properties_definition('fixed.service', {'User': 'pi'}) == {'User': 'pi'}
+    with pytest.raises(ValueError, match='transient state'):
+        activate.unit_properties_definition('fixed.service', {'ExecStart': '{ path=/usr/bin/python3 ; pid=42 ; status=0 }'})
+
+
+def test_core_services_execute_the_tree_whose_release_is_accepted():
+    profile = {'unit_properties': {}, 'unit_native': {}}
+    for unit, script in [('ar-local-dashboard.service', 'cdr_dashboard_server.py'),
+                         ('ar-local-daily.service', 'pi_daily_sync.py'),
+                         ('ar-local-ingest-now.service', 'pi_daily_sync.py')]:
+        profile['unit_properties'][unit] = {'WorkingDirectory': str(activate.PRODUCTION)}
+        # Both direct and fixed queue-wrapped forms retain the exact script token.
+        argv = ['/usr/bin/python3', str(activate.PRODUCTION / script)]
+        if unit != 'ar-local-dashboard.service':
+            argv = ['/usr/bin/python3', '/usr/local/lib/shared-pi-queue/pi_shared_queue.py', 'run', '--', *argv]
+        profile['unit_native'][unit] = {'ExecStartEx': {'type': 'a(sasasttttuii)',
+            'data': [[argv[0], argv, [], 0, 0, 0, 0, 0, 0, 0]]}}
+    activate.require_core_paths(profile)
+    stale = copy.deepcopy(profile)
+    stale['unit_properties']['ar-local-dashboard.service']['WorkingDirectory'] = '/srv/old-release'
+    with pytest.raises(ValueError, match='production working directory'): activate.require_core_paths(stale)
+    for script in ['/srv/old-release/cdr_dashboard_server.py',
+                   '/bin/sh -c ' + str(activate.PRODUCTION / 'cdr_dashboard_server.py')]:
+        stale = copy.deepcopy(profile)
+        stale['unit_native']['ar-local-dashboard.service']['ExecStartEx']['data'][0][1][-1] = script
+        with pytest.raises(ValueError, match='production script'): activate.require_core_paths(stale)
+
+
 def test_code_only_deploy_refuses_existing_or_still_loaded_predecessor_archive_pin(tmp_path, monkeypatch):
     pin = tmp_path / 'archive-pin.conf'; monkeypatch.setattr(activate, 'ARCHIVE_PIN', pin)
     context = {'profile': {}}

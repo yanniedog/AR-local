@@ -188,7 +188,15 @@ hashes, `git_configuration` binding protected `/etc/gitconfig` by SHA-256,
 `unit_properties` for every fixed code consumer/timer in `PROFILE_UNITS`, and
 `unit_native` for every service's six native Ex command properties. Native
 execution flags are retained; only execution timestamps/status counters are
-normalized. Root validates loaded definitions and root-controlled fragments and
+normalized. Service properties omit human-readable `ExecStart`/hook records
+because those contain changing PIDs/timestamps; all six typed native Ex fields
+bind their executable/argv/privilege flags instead. Timer profiles require both
+`TimersCalendar` and `TimersMonotonic`; only the changing `next_elapse` suffix is
+ignored, while calendar expressions and monotonic base intervals remain exact.
+Dashboard, daily and manual ingest must use the canonical production working
+directory and an exact production script argv token. A service still executing
+an older external checkout cannot satisfy the immutable release profile.
+Root validates loaded definitions and root-controlled fragments and
 drop-ins. Missing/unknown command hooks, drift or pending daemon reload block.
 
 Root-owned production requires protected Git `safe.directory` configuration for
