@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -158,12 +159,24 @@ class GitHubRevisionStore:
             except (RevisionError, subprocess.SubprocessError):
                 # A timed-out upload may have completed. Never clobber immutable
                 # bytes; accept only independently downloaded byte equality.
-                if self.read(tag, path.name, max(len(local), 1), require_encrypted=True) == local:
+                if self._read_uploaded_archive(tag, path.name, len(local)) == local:
                     continue
                 raise
-            verified = self.read(tag, path.name, max(len(local), 1), require_encrypted=True)
+            verified = self._read_uploaded_archive(tag, path.name, len(local))
             if verified != local:
                 raise RevisionError(f"public archive verification failed: {tag}/{path.name}")
+
+    def _read_uploaded_archive(self, tag: str, name: str, size: int) -> bytes | None:
+        # A successful upload can precede public download visibility. Retry only
+        # missing (HTTP 404) bytes, with fresh uncached URLs on every read. A
+        # collision, corrupt response or transport error must fail immediately.
+        for delay in (0, 1, 2, 4):
+            if delay:
+                time.sleep(delay)
+            observed = self.read(tag, name, max(size, 1), require_encrypted=True)
+            if observed is not None:
+                return observed
+        return None
 
     def replace_index(self, tag: str, path: Path, expected: bytes | None) -> None:
         if expected is None:
