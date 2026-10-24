@@ -143,7 +143,9 @@ def process_memory(pid):
             values=dict(line.split(':',1) for line in (path/'smaps_rollup').read_text().splitlines() if ':' in line)
             if poll.poll(0):return None
             return {'rss':int(values['Rss'].split()[0])*1024,'swap':int(values['Swap'].split()[0])*1024,
-                'uid':int(status['Uid'].split()[0]),'nnp':int(status['NoNewPrivs'].strip()),
+                'uid':int(status['Uid'].split()[0]),
+                'uids':[int(item) for item in status['Uid'].split()],
+                'gids':[int(item) for item in status['Gid'].split()],'nnp':int(status['NoNewPrivs'].strip()),
                 'capabilities':sum(int(status[name].strip(),16) for name in ('CapEff','CapPrm','CapInh','CapAmb','CapBnd'))}
         except (FileNotFoundError,ProcessLookupError):
             if poll.poll(250):return None
@@ -255,9 +257,10 @@ def supervise(host,packet,owner):
                 # including wrapper, parent, sudo and the root monitor itself.
                 rss+=memory['rss'];swapped+=memory['swap']
                 if trusted:continue  # Only producer privilege tests are exempt.
-                if memory['uid']==0:
+                if memory.get('uids')==[0]*4:
                     if not host.trusted_namespace_process(item,child,packet):raise RuntimeError('unexpected privileged process in backup scope')
-                elif memory['uid']!=packet['uid'] or memory['nnp']!=1 or memory['capabilities']!=0:
+                elif (memory.get('uids')!=[packet['uid']]*4 or memory.get('gids')!=[packet['gid']]*4
+                        or memory['nnp']!=1 or memory['capabilities']!=0):
                     raise RuntimeError('producer privilege fences differ')
             sample=sample_host();gap=now-last
             result.update(samples=result['samples']+1,peak_rss_bytes=max(result['peak_rss_bytes'],rss),
