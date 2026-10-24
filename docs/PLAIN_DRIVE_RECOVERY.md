@@ -29,7 +29,14 @@ read-only source view. Verification never clears or adopts that holder's lock.
 
 The existing source freezer preserves every retained raw attempt, failed
 observation, revision, database, state/log and predeploy namespace in its explicit
-scope. Unknown top-level namespaces fail closed. Existing credential/cache and
+scope. The explicit manual plaintext pipeline also preserves a nonempty
+`.daily-export-stage` as private frozen copies, including retained export bytes
+and consistent plus original SQLite representations. Its catalog scope records
+policy version 2 and `retained_export_stage_policy: include-if-present`; catalog,
+file-index and pack schemas remain unchanged. Routine legacy snapshots retain
+their version 1 empty-stage requirement. The coupled probe checks this same
+read-only source scope before reporting success, without freezing or cloud calls.
+Unknown top-level namespaces fail closed. Existing credential/cache and
 telemetry exclusions remain explicit; this is a CDR recovery archive, not a
 whole-filesystem image. Mutable SQLite input is copied privately, including the
 original database/journal bytes, before deriving its consistent committed copy.

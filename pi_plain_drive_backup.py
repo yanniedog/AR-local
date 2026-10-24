@@ -112,7 +112,8 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
     try:
         # Hold proof stays valid throughout the entire backup, not only freeze.
         with inherited_lease.hold(data):
-            manifest = freeze(data, frozen, controls=controls, guard=guard, inherited_lease=inherited_lease)
+            manifest = freeze(data, frozen, controls=controls, guard=guard,
+                inherited_lease=inherited_lease, include_retained_export_stage=True)
             index = PackIndex(operation / 'packs.sqlite', manifest['files'], guard, data=data)
             verify_direct_sources(manifest, guard)
             catalog = operation / 'catalog.json'
@@ -153,7 +154,7 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
                 raise ValueError('verified pack file total differs from full source manifest')
             verify_direct_sources(manifest, guard)
             index.verify_directories(guard)
-            if build_data_scope(data).manifest() != manifest['scope']:
+            if build_data_scope(data, include_retained_export_stage=True).manifest() != manifest['scope']:
                 raise ValueError('source namespace scope changed during backup')
             catalog_id = digest(catalog, guard)
             remote = 'catalogs/' + catalog_id + '.json'
