@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import tarfile
 from contextlib import closing
+from decimal import Decimal
 
 import pytest
 import zstandard
@@ -26,7 +27,7 @@ def metadata(logical, data, *, sqlite=False, original=False):
                 mtime_ns=1700000000123456789, uid=0, gid=0, sqlite=sqlite, sqlite_original=original)
 
 
-def make_recovery(tmp_path, *, mutate=None):
+def make_recovery(tmp_path, *, mutate=None, mtime_ns=1700000000123456789):
     mirror = (tmp_path / 'downloaded').resolve(); mirror.mkdir()
     source = tmp_path / 'fixture.sqlite'
     connection = sqlite3.connect(source)
@@ -47,6 +48,8 @@ def make_recovery(tmp_path, *, mutate=None):
     connection.close()
     rows = [metadata(name, data, sqlite=name == 'data/state/control.sqlite',
                      original=name.startswith('sqlite-original/')) for name, data in sorted(values.items())]
+    for row in rows:
+        row['mtime_ns'] = mtime_ns
     identity_sha = hashlib.sha256(encoded({'group': 'control', 'schema': restore.PACK_SCHEMA}) + b'\n')
     for row in rows:
         identity_sha.update(encoded(row) + b'\n')
@@ -60,8 +63,8 @@ def make_recovery(tmp_path, *, mutate=None):
         for row in rows:
             header = tarfile.TarInfo(row['logical_path'])
             header.size, header.mode, header.uid, header.gid = row['size'], int(row['mode'], 8), row['uid'], row['gid']
-            seconds, nanos = divmod(row['mtime_ns'], 10**9)
-            header.mtime = seconds; header.pax_headers = {'mtime': f'{seconds}.{nanos:09d}'}
+            header.mtime = row['mtime_ns'] // 10**9
+            header.pax_headers = {'mtime': format(Decimal(row['mtime_ns']) / 10**9, '.9f')}
             if mutate:
                 mutate(row, header)
             tar.addfile(header, io.BytesIO(values[row['logical_path']]) if header.isfile() else None)
@@ -115,6 +118,18 @@ def test_complete_restore_keeps_original_sqlite_wal_and_committed_view_separate(
         assert database.execute('SELECT payload FROM fixture_bytes').fetchone()[0] == b'generic recovery protocol'
     assert {p.relative_to(mirror): p.read_bytes() for p in mirror.rglob('*') if p.is_file()} == before
     assert json.loads((work / 'excluded-paths.jsonl').read_text()) == 'state/private.key'
+
+
+@pytest.mark.parametrize('mtime_ns', [-1000000000, -1500000000, -1000000001])
+def test_pre_epoch_pax_metadata_restores_with_original_signed_time(tmp_path, mtime_ns):
+    mirror, catalog, values = make_recovery(tmp_path, mtime_ns=mtime_ns)
+    result = run(tmp_path, mirror, catalog)
+    assert result['result'] == 'FILES_RESTORED_VERIFIED'
+    for name, original in values.items():
+        target = tmp_path / 'restored/logical' / name
+        assert target.read_bytes() == original
+        if os.name == 'posix':
+            assert target.stat().st_mtime_ns == mtime_ns
 
 
 def test_existing_workspace_never_overwritten(tmp_path):

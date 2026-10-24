@@ -346,11 +346,13 @@ def restore_pack(root, descriptor, db, work, guard):
                 manifest_rows(manifest, descriptor, db, guard)
                 for (raw,) in db.execute('SELECT value FROM files ORDER BY logical'):
                     row = json.loads(raw); member = tar.next()
-                    seconds, nanos = divmod(row['mtime_ns'], 10**9)
+                    stamp = row['mtime_ns']
+                    seconds, nanos = divmod(abs(stamp), 10**9)
+                    expected_mtime = f'{"-" if stamp < 0 else ""}{seconds}.{nanos:09d}'
                     if (member is None or member.name != row['logical_path']
                             or (member.size, member.mode, member.uid, member.gid) !=
                             (row['size'], int(row['mode'], 8), row['uid'], row['gid'])
-                            or member.pax_headers.get('mtime') != f'{seconds}.{nanos:09d}'
+                            or member.pax_headers.get('mtime') != expected_mtime
                             or set(member.pax_headers) - {'mtime', 'path'}):
                         raise ValueError('recovery member path/order/metadata differs')
                     target = private_file(work, 'logical/' + row['logical_path'])
