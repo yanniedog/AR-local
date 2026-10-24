@@ -163,3 +163,62 @@ supervised harmless canaries: compatible jobs overlap; conflicting jobs execute
 in order; a dead wrapper with a live child retains its slot; a live native AR
 lease defers host work. Verify SSH and the Pi dashboard throughout. Source CI,
 merge, installed hashes and natural-cycle acceptance are separate evidence.
+
+
+## Qualified maintenance post-hooks
+
+The retained-stop classification includes the fixed32-hex plaintext/image unit
+and fixed64-hex immutable CI activation unit. Names only select a verification
+route; they cannot authorize admission or release. None is added to the ingest
+`FIXED_AR_UNITS` contract or its dashboard-stop semantics.
+
+A plaintext authority retains its existing fixed broker/caps policy. An image
+operation uses a distinct root-protected authority under
+`/var/lib/ar-local-system-recovery-handoff/<nonce>`, with exact phase, source
+closure and root parent/resources/broker hashes. A nonce with both image and
+plain authorities is rejected. Its only stop callback is the fixed image broker
+with Python `-I -S -B`; extra native command hooks are rejected. Completion must
+match the exact queue job/boot/invocation/PID/ticks and image source/phase, prove
+swappiness60, credential custody, owned loop terminal, restored writers and no
+untrusted processes. A plain completion cannot release an image operation.
+
+CI authority is root-published under `/var/lib/ar-local-ci/authority/<plan>.json`
+for scope `activate-immutable-d027`. It pins the complete installed root runtime
+and queue source closure plus one fixed queue command and privileged stop hook.
+The loaded native profile requires Pi ownership, trusted bootstrap NNPfalse,
+TypeNotify/MainPID ownership, CPU200%,1800 seconds execution after READY,
+960 seconds startup for900 seconds queue wait, memory/swap limits and exact
+sandbox/environment/writable-path settings. Only this fully qualified CI route
+may use a900-second stop grace for its independent root restoration; arbitrary
+units and ordinary queue jobs retain their previous limits.
+
+Before spawning, the existing native guard rotates only its own manual lease
+to a durable successor inode under the recovery lock, so the original lock
+context cannot unlink it when the wrapper exits. CI's root coordinator binds
+that successor, and the independent finalizer proves code/timer restoration,
+whole worker termination and exact retained inode. Its root completion may say
+PASS, ROLLED_BACK, FAILED_BEFORE_SWITCH or ABORTED_RESTORED; only PASS carries an
+accepted release digest. Queue release additionally requires an empty invocation
+cgroup. Native unlink under the recovery lock rechecks the exact root terminal
+inode; missing or ambiguous proofs retain admission. An already absent native
+path permits idempotent queue reconciliation after a proven terminal cleanup.
+
+Image recovery uses an optional fixed root-protected registry at
+`/etc/ar-local/system-recovery-reconcile.json`. It selects only the fixed image
+callback and pins both callback bytes and the existing loaded recovery wrapper.
+The existing callback attempts image recovery even if its plain/canary pass
+fails. The plain/canary pass has29 seconds and the image child has five seconds,
+inside the same existing40-second callback allocation and90-second outer service
+budget. The image adapter owns its finite/nonblocking journal cleanup and source
+bootstrap. This adds no timer, new schedule, manager reload, start or enable.
+
+These source changes are not a runtime upgrade. Both installed copies of the
+post-hook module (queue and root control) and the changed root reconcile callback
+must be updated together through a separately reviewed, hash-bound commissioning
+transition: preserve incumbent bytes, qualify all new source, publish the new
+seven-control manifest and its wrapper-manifest binding, and update installation
+receipt control/queue hashes with explicit patch provenance. The original
+qualified bundle remains historical evidence. Until the complete transition is
+verified, a mixed source closure must fail closed; do not suppress bootstrap
+hash checks or manufacture a coupled-probe certificate. Root operators retain
+ownership of actual commissioning and kernel/resource/native acceptance.
