@@ -60,7 +60,7 @@ network permission; this package does not narrow them.
 ## Offsite recovery prerequisite
 
 The operator must first verify the complete raw archive and filesystem recovery
-image in Drive and actual restore/boot proof. The new recovery set uses lossless
+image in Drive and full filesystem restore and boot-configuration structural proof. Actual physical boot is a separate proof category and stays `NOT_TESTED` until observed; it is not required for installing this CI account foundation. The new recovery set uses lossless
 compression **without encryption**, following the operator's explicit choice;
 there is no new recovery key or password requirement. Preserve private Drive
 permissions. Keep existing encrypted fallback backups and their existing keys
@@ -81,7 +81,7 @@ The approval's schema is:
     "raw_archive": {"path": "/root/recovery/raw-archive-receipt.json", "sha256": "ACTUAL_SHA256"},
     "system_image": {"path": "/root/recovery/image-receipt.json", "sha256": "ACTUAL_SHA256"},
     "restore_proof": {"path": "/root/recovery/restore-receipt.json", "sha256": "ACTUAL_SHA256"},
-    "boot_proof": {"path": "/root/recovery/boot-receipt.json", "sha256": "ACTUAL_SHA256"}
+    "boot_structure_proof": {"path": "/root/recovery/boot-structure-receipt.json", "sha256": "ACTUAL_SHA256"}
   }
 }
 ```

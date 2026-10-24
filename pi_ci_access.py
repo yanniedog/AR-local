@@ -93,7 +93,7 @@ def validate_recovery(body: bytes) -> dict:
     value = json.loads(body)
     if not isinstance(value, dict) or value.get("schema_version") != 1 or value.get("result") != "PASS":
         raise ValueError("offsite recovery approval is unavailable")
-    required = {"raw_archive", "system_image", "restore_proof", "boot_proof"}
+    required = {"raw_archive", "system_image", "restore_proof", "boot_structure_proof"}
     evidence = value.get("evidence")
     if not isinstance(evidence, dict) or set(evidence) != required:
         raise ValueError("complete offsite recovery evidence is required")

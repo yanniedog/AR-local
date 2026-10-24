@@ -22,7 +22,7 @@ def digest(body):
 def approved_plan(monkeypatch):
     now = datetime(2026, 10, 24, 3, tzinfo=timezone.utc)
     proofs = {name: encoded({"retained_receipt": name}) for name in
-              ("raw_archive", "system_image", "restore_proof", "boot_proof")}
+              ("raw_archive", "system_image", "restore_proof", "boot_structure_proof")}
     recovery = encoded({"schema_version": 1, "result": "PASS", "evidence": {
         name: {"path": "/root/recovery/" + name + ".json", "sha256": digest(body)}
         for name, body in proofs.items()}})
@@ -102,7 +102,7 @@ def test_changed_plan_or_evidence_is_rejected(monkeypatch, suffix):
 def test_recovery_requires_all_evidence_and_checks_each_hash(monkeypatch):
     plan, now, files, install = approved_plan(monkeypatch)
     plan_id = install(plan)
-    files[Path("/root/recovery/boot_proof.json")] = b"changed proof"
+    files[Path("/root/recovery/boot_structure_proof.json")] = b"changed proof"
     with pytest.raises(ValueError, match="digest differs"):
         ci.validate_plan(plan_id, now=now)
     with pytest.raises(ValueError, match="complete offsite"):
