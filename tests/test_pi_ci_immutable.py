@@ -199,6 +199,20 @@ def test_native_command_flags_preserved_while_runtime_timestamps_may_advance():
     with pytest.raises(ValueError): activate.execution_definition(changed)
 
 
+def test_timer_configuration_ignores_only_next_elapse_and_binds_monotonic_cadence():
+    value = {'TimersCalendar': '{ OnCalendar=*-*-* 00:30:00 ; next_elapse=Sat 2026-10-24 00:30:00 AEDT }',
+             'TimersMonotonic': '{ OnBootUSec=15s ; next_elapse=15s }\n{ OnUnitInactiveUSec=30s ; next_elapse=2h }',
+             'Persistent': 'yes'}
+    later = {**value, 'TimersCalendar': value['TimersCalendar'].replace('24', '25'),
+             'TimersMonotonic': value['TimersMonotonic'].replace('next_elapse=2h', 'next_elapse=3h')}
+    before = activate.unit_properties_definition('fixed.timer', value)
+    assert before == activate.unit_properties_definition('fixed.timer', later)
+    changed = {**later, 'TimersMonotonic': later['TimersMonotonic'].replace('OnUnitInactiveUSec=30s', 'OnUnitInactiveUSec=90s')}
+    assert before != activate.unit_properties_definition('fixed.timer', changed)
+    with pytest.raises(ValueError, match='unknown native timer'):
+        activate.unit_properties_definition('fixed.timer', {**value, 'TimersCalendar': 'ignored unknown schedule'})
+
+
 def test_code_only_deploy_refuses_existing_or_still_loaded_predecessor_archive_pin(tmp_path, monkeypatch):
     pin = tmp_path / 'archive-pin.conf'; monkeypatch.setattr(activate, 'ARCHIVE_PIN', pin)
     context = {'profile': {}}

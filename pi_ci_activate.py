@@ -144,14 +144,14 @@ def check_profile(profile):
                          'ExecStop', 'ExecStopPost', 'Environment', 'EnvironmentFiles', 'NoNewPrivileges',
                          'CapabilityBoundingSet', 'AmbientCapabilities'}
         else:
-            required |= {'Unit', 'TimersCalendar', 'AccuracyUSec', 'RandomizedDelayUSec', 'Persistent'}
+            required |= {'Unit', 'TimersCalendar', 'TimersMonotonic', 'AccuracyUSec', 'RandomizedDelayUSec', 'Persistent'}
         if not required <= set(expected) or expected['NeedDaemonReload'] != 'no':
             raise ValueError('runtime profile omits a mandatory execution or schedule property')
         if not expected or any(k in {'ActiveState', 'SubState', 'MainPID', 'InvocationID', 'ControlGroup'} for k in expected):
             raise ValueError('runtime profile must bind effective definitions rather than transient state')
         if any(key in expected.get('Environment', '') for key in ('GIT_CONFIG_NOSYSTEM=', 'GIT_CONFIG_SYSTEM=')):
             raise ValueError('service overrides protected system Git configuration')
-        if observed[unit] != expected:
+        if unit_properties_definition(unit, observed[unit]) != unit_properties_definition(unit, expected):
             raise ValueError('effective service definition differs from approved runtime profile')
         # Fragment/drop-in paths are evidence only; never executed or installed.
         paths = [expected['FragmentPath'], *shlex.split(expected['DropInPaths'])]
@@ -172,6 +172,22 @@ def check_profile(profile):
         for prop in NATIVE_PROPERTIES:
             if execution_definition(observed[unit, prop]) != execution_definition(native[unit][prop]):
                 raise ValueError('native command or privilege flags differ from approved profile')
+
+
+def unit_properties_definition(unit, values):
+    """Schedules are configuration; next-elapse instants are runtime state."""
+    result = dict(values)
+    if unit.endswith('.timer'):
+        for prop in ('TimersCalendar', 'TimersMonotonic'):
+            raw = result[prop]
+            if not isinstance(raw, str): raise ValueError('native timer definition must be text')
+            pattern = re.compile(r'\{\s*(OnCalendar|On(?:Active|Boot|Startup|UnitActive|UnitInactive)USec)=(.*?)\s*;\s*next_elapse=[^{}]*\}', re.DOTALL)
+            rows = pattern.findall(raw)
+            if pattern.sub('', raw).strip(): raise ValueError('unknown native timer definition format')
+            if any((key == 'OnCalendar') != (prop == 'TimersCalendar') for key, _ in rows):
+                raise ValueError('native timer base differs from property type')
+            result[prop] = sorted((key, value.strip()) for key, value in rows)
+    return result
 
 
 def execution_definition(value):
