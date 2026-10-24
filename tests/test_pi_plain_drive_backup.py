@@ -257,7 +257,8 @@ def test_transport_uses_fixed_executable_and_clean_environment(monkeypatch, tmp_
     monkeypatch.setenv('LD_PRELOAD', 'untrusted-library')
     monkeypatch.setenv('RCLONE_CONFIG_PASS', 'untrusted-hook')
     monkeypatch.setattr(remote_transport, 'protected_file', lambda *_: None)
-    monkeypatch.setattr(remote_transport, 'Path', lambda *_: SimpleNamespace(resolve=lambda **kwargs: '/usr/bin/rclone'))
+    monkeypatch.setattr(remote_transport, 'Path', lambda value: SimpleNamespace(resolve=lambda **kwargs: '/usr/bin/rclone')
+                        if str(value) == '/usr/bin/rclone' else Path(value))
     observed = {}
     class Child:
         returncode = 0
@@ -270,10 +271,13 @@ def test_transport_uses_fixed_executable_and_clean_environment(monkeypatch, tmp_
     transport.guard = lambda: None
     transport.executable = '/usr/bin/rclone'
     transport.config = tmp_path / 'private.conf'
+    transport.remote = 'approved:plaintext-recovery'
     transport.root_folder_id = 'root-folder-id-for-protocol-test'
-    assert transport.command('source', 'destination')
+    local = tmp_path / 'source'; local.write_bytes(b'protocol fixture')
+    assert transport.upload('catalogs/' + 'a' * 64 + '.json', local)
     assert observed['args'][0] == '/usr/bin/rclone'
     assert '--immutable' in observed['args'] and '--ignore-existing' in observed['args']
+    assert observed['args'][-3:] == ['--', str(local), transport.remote + '/catalogs/' + 'a' * 64 + '.json']
     assert observed['args'][observed['args'].index('--drive-root-folder-id') + 1] == transport.root_folder_id
     assert 'LD_PRELOAD' not in observed['env'] and 'RCLONE_CONFIG_PASS' not in observed['env']
 
