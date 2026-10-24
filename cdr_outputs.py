@@ -32,6 +32,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "last_updated",
         "source_file",
         "details_json",
+        "public_pricing_source_json",
     ],
     "bank_rates": [
         "run_date",
@@ -66,6 +67,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "taxonomy_path",
         "account_class",
         "details_json",
+        "public_rate_disposition",
     ],
     "bank_items": [
         "run_date",
@@ -176,6 +178,8 @@ def schema_columns_compatible(con: sqlite3.Connection) -> bool:
         if run_cols != set(TABLE_COLUMNS["runs"]):
             return False
     return (
+        table_column_names(con, "bank_products") >= set(TABLE_COLUMNS["bank_products"])
+        and
         bank_rates_column_names(con) >= set(TABLE_COLUMNS["bank_rates"])
         and table_column_names(con, "bank_product_facts") >= set(TABLE_COLUMNS["bank_product_facts"])
         and table_column_names(con, "bank_product_changes") >= set(TABLE_COLUMNS["bank_product_changes"])
@@ -213,6 +217,7 @@ def ensure_db(con: sqlite3.Connection) -> None:
           last_updated TEXT,
           source_file TEXT NOT NULL,
           details_json TEXT NOT NULL
+          , public_pricing_source_json TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS bank_rates (
           run_date TEXT NOT NULL,
@@ -247,6 +252,7 @@ def ensure_db(con: sqlite3.Connection) -> None:
           taxonomy_path TEXT,
           account_class TEXT,
           details_json TEXT NOT NULL
+          , public_rate_disposition TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS bank_items (
           run_date TEXT NOT NULL,
@@ -325,6 +331,9 @@ def needs_schema_reset(con: sqlite3.Connection) -> bool:
     if not table_exists(con, "bank_products"):
         return False
     migrate_bank_rates_columns(con)
+    existing_products = table_column_names(con, "bank_products")
+    if 'public_pricing_source_json' not in existing_products:
+        con.execute("ALTER TABLE bank_products ADD COLUMN public_pricing_source_json TEXT DEFAULT ''")
     if schema_columns_compatible(con):
         return False
     return True

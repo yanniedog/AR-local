@@ -1,2 +1,4 @@
 # Optional low-priority document interpretation runtime; never installed by ingest.
 pypdf==6.19.0
+# Required by public lender PDFs with embedded CFF Type1 fonts.
+fonttools==4.66.1

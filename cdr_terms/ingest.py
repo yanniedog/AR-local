@@ -54,6 +54,22 @@ def _complete_capture(store: EvidenceStore, path: Path, receipt: Mapping[str, An
             raise ValueError("completed_terms_capture_identity_changed")
 
 
+def _capture_public_pricing(store: EvidenceStore, run_root: Path, receipt: dict) -> None:
+    from cdr_public_rates_collector import capture_public_rates, configured
+    if not configured():
+        return
+    # This derived lane cannot change the accepted original capture or queue an
+    # interpretation job. Its own failure remains visible in a separate receipt.
+    target = store.root / "public-rate-capture-receipts" / (digest(receipt["generation_id"]) + ".json")
+    target.parent.mkdir(exist_ok=True)
+    try:
+        result = capture_public_rates(store, run_root, receipt)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        result = {"schemaVersion": 1, "generationId": receipt["generation_id"], "status": "capture_failed",
+                  "reasonCode": str(error), "networkCalled": False, "modelCalled": False, "publication": "disabled"}
+    atomic_write_json(target, result)
+
+
 def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, *,
                       forbidden_roots: list[Path], observed_at: str | None = None,
                       state_dir: Path | None = None,
@@ -79,6 +95,7 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
             if timing and (receipt["observed_at"] != timing[0] or receipt.get("source_provenance") != timing[1]):
                 raise ValueError("source_observation_legacy_capture_requires_explicit_review")
             _complete_capture(store, receipt_path, receipt)
+            _capture_public_pricing(store, run_root, receipt)
             return receipt
         observation_time, provenance, contract_body = timing or source_time(finalized, state_dir=state_dir, observed_at=observed_at)
         if contract_body is not None:
@@ -105,6 +122,13 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
             base = bank_base_row(path, banks, record)
             observation_id = store.observe(provider=base["provider"], product_key=base["product_key"],
                                              record=payload, source_bytes=body, observed_at=observation_time, ingest_id=generation)
+            from cdr_public_rates_collector import retain_compile_input
+            try:
+                retain_compile_input(store, path, banks, base, body, observation_id)
+            except (OSError, ValueError, KeyError, TypeError):
+                # Source-context failure is reported by the separate public
+                # lane; it cannot invalidate the accepted original capture.
+                pass
             acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=captured_at))
             raw_versions = store.db.execute("SELECT v.document_version_id FROM applicability a JOIN document_versions v USING(document_id) "
                                             "WHERE a.observation_id=? AND a.relation='cdr_source' AND v.content_sha256=?",
@@ -129,6 +153,7 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
         receipt_path.parent.mkdir(exist_ok=True, mode=0o700)
         atomic_write_json(receipt_path, receipt, create_once=True)
         _complete_capture(store, receipt_path, receipt)
+        _capture_public_pricing(store, run_root, receipt)
         return receipt
 
 

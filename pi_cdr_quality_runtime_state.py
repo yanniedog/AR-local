@@ -117,12 +117,27 @@ def _pending_helpers(repo: Path) -> tuple[str, str, bool]:
     entry, body = read_digest(repo / "pi_daily_sync.py", capture=True, max_bytes=MAX_BYTES)
     tree = ast.parse(body.decode("utf-8-sig"))
     names = ("mark_payload_publication_pending", "clear_payload_publication_pending")
-    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names}
-    if set(functions) != set(names):
+    implementations = {name: "_" + name for name in names}
+    recognized = set(names) | set(implementations.values())
+    definitions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in recognized]
+    functions = {node.name: node for node in definitions}
+    if not set(names) <= set(functions) or len(functions) != len(definitions):
         raise ValueError("predecessor publication helpers are unavailable")
+    groups = []
+    for name in names:
+        group = [functions[name]]
+        delegate = implementations[name]
+        # Only the checked-in direct delegate is recognized. Imports, aliases,
+        # unrelated functions and unused private bodies cannot grant capability.
+        if any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == delegate
+               for node in ast.walk(functions[name])):
+            if delegate not in functions:
+                raise ValueError("predecessor publication helpers are unavailable")
+            group.append(functions[delegate])
+        groups.append(group)
     capable = all(any(isinstance(node, ast.Constant) and node.value == "queued_pointers"
-                      for node in ast.walk(functions[name])) for name in names)
-    normalized = "\n".join(ast.dump(functions[name], include_attributes=False) for name in names)
+                      for function in group for node in ast.walk(function)) for group in groups)
+    normalized = "\n".join(ast.dump(function, include_attributes=False) for group in groups for function in group)
     return entry.sha256, hashlib.sha256(normalized.encode()).hexdigest(), capable
 
 
