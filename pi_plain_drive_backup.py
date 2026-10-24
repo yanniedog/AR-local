@@ -18,7 +18,7 @@ import time as clock
 from ar_local_backup_scope import build_data_scope
 from pi_drive_backup_manifest import close_manifest, encoded
 from pi_drive_backup_read import discard_created_cache
-from pi_drive_backup_source import canonical_directory, digest, freeze, validate_layout, verify_direct_sources
+from pi_drive_backup_source import SourceFreezeDeadline, canonical_directory, digest, freeze, validate_layout, verify_direct_sources
 from pi_plain_backup_packs import SCHEMA, PackIndex, build_pack, verify_pack, write_manifest
 
 
@@ -113,7 +113,7 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
         # Hold proof stays valid throughout the entire backup, not only freeze.
         with inherited_lease.hold(data):
             manifest = freeze(data, frozen, controls=controls, guard=guard,
-                inherited_lease=inherited_lease, include_retained_export_stage=True)
+                inherited_lease=inherited_lease, include_retained_export_stage=True, max_freeze_seconds=None)
             index = PackIndex(operation / 'packs.sqlite', manifest['files'], guard, data=data)
             verify_direct_sources(manifest, guard)
             catalog = operation / 'catalog.json'
@@ -221,10 +221,17 @@ def main(argv=None):
     return 0
 
 
+def failure_receipt(error):
+    result = {'result': 'FAIL', 'error_type': type(error).__name__}
+    if isinstance(error, SourceFreezeDeadline):
+        result['error_code'] = 'source_freeze_deadline'
+    return result
+
+
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except Exception as error:
         # No provider stderr, raw payloads, credentials, tokens or config bytes.
-        print(json.dumps({'result': 'FAIL', 'error_type': type(error).__name__}))
+        print(json.dumps(failure_receipt(error)))
         raise SystemExit(1)
