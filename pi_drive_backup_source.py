@@ -183,7 +183,7 @@ def _regular_tree(root: Path, guard: Callable[[], None], *, data: Path, omit):
 
 
 def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[], None],
-           prior: dict | None = None, max_freeze_seconds: int = 1200) -> dict:
+           prior: dict | None = None, max_freeze_seconds: int = 1200, inherited_lease=None) -> dict:
     """Freeze mutable bytes under ingest lock; immutable files remain direct inputs.
 
     Cached hashes require the complete POSIX file identity, including ctime.
@@ -204,7 +204,14 @@ def freeze(data: Path, stage: Path, *, controls: list[Path], guard: Callable[[],
             previous_index.append(row)
         previous = previous_index.rows()
     result = {"schema": SCHEMA, "files": index.rows(), "excluded": index.rows("excluded")}
-    with index, previous_index or nullcontext(), production_lock(data / "state/daily-ingest.lock", "drive-backup-freeze"):
+    if inherited_lease is None:
+        lease = production_lock(data / "state/daily-ingest.lock", "drive-backup-freeze")
+    else:
+        from pi_plain_backup_attestation import AttestedHostLease
+        if not isinstance(inherited_lease, AttestedHostLease):
+            raise ValueError("typed verified inherited host lease required")
+        lease = inherited_lease.hold(data)
+    with index, previous_index or nullcontext(), lease:
         check()
         scope = build_data_scope(data)
         result["scope"] = scope.manifest()
