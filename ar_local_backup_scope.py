@@ -31,14 +31,18 @@ class DataSnapshotScope:
     included: tuple[Path, ...]
     excluded: tuple[dict[str, object], ...]
     secret_locations: tuple[Path, ...]
+    include_retained_export_stage: bool = False
 
     def manifest(self) -> dict[str, object]:
-        return {
-            "policy_version": 1,
+        result = {
+            "policy_version": 2 if self.include_retained_export_stage else 1,
             "included": [path.relative_to(self.root).as_posix() for path in self.included],
             "excluded": list(self.excluded),
             "unknown_roots_allowed": False,
         }
+        if self.include_retained_export_stage:
+            result["retained_export_stage_policy"] = "include-if-present"
+        return result
 
 
 def _top_level_metadata(path: Path, reason: str, *, contents_copied: bool) -> dict[str, object]:
@@ -65,7 +69,9 @@ def _top_level_metadata(path: Path, reason: str, *, contents_copied: bool) -> di
     }
 
 
-def build_data_scope(data_root: Path) -> DataSnapshotScope:
+def build_data_scope(data_root: Path, *, include_retained_export_stage: bool = False) -> DataSnapshotScope:
+    if type(include_retained_export_stage) is not bool:
+        raise ValueError("retained export-stage policy must be an explicit boolean")
     configured = data_root.expanduser()
     if not configured.is_absolute():
         raise ValueError("production data root must be absolute")
@@ -91,6 +97,11 @@ def build_data_scope(data_root: Path) -> DataSnapshotScope:
     excluded: list[dict[str, object]] = []
     for name in TRANSIENT_EMPTY_DIRS:
         path = root / name
+        if include_retained_export_stage:
+            _top_level_metadata(path, "retained export staging is preserved", contents_copied=True)
+            if name in children:
+                included.append(path)
+            continue
         metadata = _top_level_metadata(
             path,
             "transient ingest/export staging must be empty before preservation",
@@ -108,6 +119,7 @@ def build_data_scope(data_root: Path) -> DataSnapshotScope:
         included=tuple(included),
         excluded=tuple(excluded),
         secret_locations=tuple(root / relative for relative in NETDATA_SECRET_RELATIVES),
+        include_retained_export_stage=include_retained_export_stage,
     )
 
 
