@@ -14,9 +14,11 @@ import tempfile
 import time
 import uuid
 
+from pi_shared_queue_post_hooks import retained_stop, completion_proved, verify_plain_service
+
 FIXED_AR_UNITS = frozenset({'ar-local-daily.service', 'ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'})
 MAX_BYTES = 1024 * 1024
-UNIT = re.compile(r'(?:ar-local-(?:daily|daily-watchdog|ingest-now)|ar-local-payload-[a-zA-Z0-9_.-]+|ar-local-queue-task-[a-zA-Z0-9_.-]+|shared-pi-task-[a-zA-Z0-9_.-]+)\.service\Z')
+UNIT = re.compile(r'(?:ar-local-(?:daily|daily-watchdog|ingest-now)|ar-local-plain-backup-[0-9a-f]{32}|ar-local-payload-[a-zA-Z0-9_.-]+|ar-local-queue-task-[a-zA-Z0-9_.-]+|shared-pi-task-[a-zA-Z0-9_.-]+)\.service\Z')
 
 
 NAME = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
@@ -147,6 +149,8 @@ class Supervisor:
         unit = group.rsplit('/', 1)[-1]
         if not UNIT.fullmatch(unit):
             raise ValueError('queue run requires a dedicated supported systemd service')
+        if retained_stop(unit):
+            verify_plain_service(unit)
         details = self.show(unit)
         invocation = details.get('InvocationID', '')
         if details.get('MainPID') != str(pid) or details.get('ControlGroup') != group or not re.fullmatch('[0-9a-f]{32}', invocation):
@@ -399,6 +403,10 @@ class Store:
             try:
                 ownership = self.supervisor.ownership(job)
                 if ownership == 'gone':
+                    if retained_stop(job['unit']) and not completion_proved(job):
+                        trustworthy = False
+                        retained.append(job)
+                        continue
                     bridged = 'host' in job['resources']
                     if bridged:
                         from pi_shared_queue_native import clear_native_manual
