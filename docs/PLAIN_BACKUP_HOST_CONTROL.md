@@ -203,10 +203,15 @@ and3328MiB admission reserve. Swappiness stays60 during installation.
 The installation plan additionally stages `plan.py` and `build-packet.py` beside
 the seven broker controls; the packet builder validates their installed hashes
 against root-private installation.json before importing either reviewed control.
-The existing original credential is Pi-owned0600 under root0700 custody. The
-builder checks its canonical path, protected ancestors, UID/GID/mode/link/size,
-stable read-only descriptor and unchanged leaf identity, preserves it exactly,
-and creates only the separate root:pi0440 operation copy.
+The existing original credential is Pi-owned0600. Its fixed legacy custody is
+Pi:Pi0700 `/var/lib/ar-local-drive-backup`, root:root0700 `credentials`, and
+Pi:Pi0700 `dedicated-20260913-ready3`; all earlier ancestors remain root-protected.
+Only these two exact private directories permit Pi ownership. The builder opens
+each directory relative to the preceding held descriptor with O_NOFOLLOW,
+checks its ownership/mode, reads the bounded leaf through that final directory
+FD, then rechecks every directory entry/inode and the complete leaf identity.
+It preserves the original and creates only a separate root:Pi0440 operation copy.
+No credential bytes are parsed as executable code or written to diagnostics.
 
 ```
 /usr/bin/python3 -I -B /usr/local/lib/ar-local-plain-backup/build-packet.py PROBE <fresh32hex>
@@ -220,3 +225,60 @@ when the operator is ready to launch that exact reviewed one-shot service. After
 actual coupled/root-resource/stop-post proof, an explicitly authorized separate
 `RUN_ARCHIVE <fresh32hex> <successfulProbe32hex>` packet may be prepared. Neither
 packet creation nor installer success is backup acceptance.
+
+
+## One-time repair of an uncommissioned initial installation
+
+An initial installation made under UMask0077 could leave newly created public
+control/source directories0700, and its first packet could reject the actual
+legacy credential custody above. A failed packet before nonce creation is not a
+backup attempt. Preserve that failure and qualify this correction before a new
+nonce. The corrected initial installer and packet builder explicitly fchmod and
+fchown **only their newly created directories** through held no-follow FDs.
+Existing directory permission mismatches require review; they are never silently
+relaxed. Private state stays0700; new control/source paths use0755, handoff and
+per-operation workspace custody use root:Pi0750, and the producer's private
+sandbox staysPi:Pi0700.
+
+Do not reapply the initial installer: its retained installation history makes
+that ambiguous. A separately reviewed, hash-bound preparation repair may use
+this exact file/mode plan, inside one sole admitted host/ar-local queue job with
+the installation resource limits, swappiness60 and no active native nonce,
+intent, archive, legacy reclaim journal or occupied competing claim:
+
+1. Verify all incumbent control, queue, producer/runtime and dispatcher bytes
+   against the original installation receipt and qualified bundle. Preserve the
+   original receipt, builder and directory inventory in a new root-private
+   recovery directory before any change; do not overwrite an earlier repair.
+2. Derive the finite directories **only** from the installed manifest's producer
+   relative paths. The allowed mode repair set is
+   `/usr/local/lib/ar-local-plain-backup`, its `source` directory and those
+   manifest-derived package subdirectories. Require root:root, no symlinks and
+   incumbent mode0700 or0755; open/identity-check every path, then set only these
+   specific held directory FDs to0755. No recursive chmod/chown or arbitrary path
+   is allowed. Producer/runtime file bytes and modes stay unchanged.
+3. Stage the exact CI-qualified `pi_plain_backup_packet.py` bytes in root-private
+   custody. Preserve the original fixed `build-packet.py` and atomically replace
+   only `/usr/local/lib/ar-local-plain-backup/build-packet.py` with these reviewed
+   bytes, root:root0644. Keep broker, parent, callbacks, seven-control manifest,
+   wrapper manifest, queue modules and all original credential paths unchanged.
+4. Atomically publish a copy of `installation.json` changing only
+   `plan.control["build-packet.py"]` to the new exact builder SHA. Add an
+   `operational_preparation_patch` audit object recording reviewed source commit,
+   old/new builder SHA, original receipt SHA and exact before/after directory
+   identities/modes. Preserve the historical bundle ID, installer SHA and source
+   commit as original installation provenance, not as a claim that the original
+   bundle contained this repair. The separately preserved receipt retains its
+   exact original bytes. The root seven-control and wrapper manifests remain
+   byte-identical because neither includes the packet builder.
+5. Verify the new builder/receipt binding, all unchanged source hashes, exact
+   modes/read access as Pi, whole-job resources and swappiness60. Record repair
+   success as **PREPARATION_ONLY_NOT_COMMISSIONED**. It does not authorize a unit
+   launch, VM change, backup, Drive write, timer action or deployment. Qualify a
+   new bounded coupled PROBE separately; do not reuse the blocked nonce.
+
+The existing `pi-shared-task` wrapper defaults IOWeight500/TasksMax128 and cannot
+meet the installer's strict IOWeight10/TasksMax64. Preparation/repair uses an
+explicit reviewed root-created manual queue unit with those strict values,
+TypeNotify/UserPi/CPU100%, bounded runtime and control-group kill. No timer or
+manager reload is part of this preparation repair.
