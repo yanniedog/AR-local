@@ -322,6 +322,24 @@ def repair_hardlinks(work, phase, tree):
     database.close()
 
 
+def restore_runtime_directories(work, packages):
+    rows = packages["runtime_directories_before_mask"]
+    if set(rows) != RUNTIME:
+        raise ValueError("complete root-parent runtime directory metadata required")
+    root = work / "frozen/root"
+    for name, row in rows.items():
+        path = root / name
+        if not path.is_dir() or path.is_symlink() or path.resolve() != path:
+            raise ValueError("runtime metadata target must remain a private staged directory")
+        os.chown(path, row["uid"], row["gid"], follow_symlinks=False)
+        os.chmod(path, row["mode"], follow_symlinks=False)
+        for key in set(os.listxattr(path, follow_symlinks=False)) - set(row["xattrs"]):
+            os.removexattr(path, key, follow_symlinks=False)
+        for key, value in row["xattrs"].items():
+            os.setxattr(path, key, base64.b64decode(value, validate=True), follow_symlinks=False)
+        os.utime(path, ns=(path.stat().st_atime_ns, row["mtime_ns"]), follow_symlinks=False)
+
+
 def copy_phase(work, settings, phase):
     for tree in ("root", "boot"):
         destination = work / "frozen" / tree
@@ -402,6 +420,7 @@ def baseline(args):
     omitted = source_listing(work, settings, "baseline")
     capacity_preflight(work, "baseline")
     copy_phase(work, settings, "baseline")
+    restore_runtime_directories(work, packages)
     write(work / "baseline.json", {"result": "BASELINE_NOT_RECOVERABLE", "finished_at": utc(), "external_files": omitted})
 
 
@@ -416,6 +435,7 @@ def package_proof(path):
             or not receipt.get("units") or any(state not in {"inactive", "failed"} for state in receipt["units"].values())):
         raise ValueError("protected root-parent package lock proof required")
     return {"proof_sha256": sha(path), "dpkg_status_sha256": receipt["dpkg_status_sha256"],
+            "runtime_directories_before_mask": receipt["runtime_directories_before_mask"],
             "units": receipt["units"], "locks": receipt["locks"], "boot_id": receipt["boot_id"]}
 
 
@@ -479,6 +499,7 @@ def prepare(args):
     capacity_preflight(work, "prepared")
     remove_obsolete_stage_entries(work, current="prepared")
     copy_phase(work, settings, "prepared")
+    restore_runtime_directories(work, packages)
     database = sqlite3.connect(work / "inventory.sqlite")
     database.execute("INSERT INTO entries SELECT 'final',tree,path,value FROM entries WHERE phase='prepared'")
     database.commit()
@@ -546,6 +567,7 @@ def finalize(args):
     source_listing(work, settings, "final", starts=scopes)
     remove_obsolete_stage_entries(work, previous="prepared")
     copy_phase(work, settings, "final")
+    restore_runtime_directories(work, packages)
     boot_after = tree_manifest(settings["boot"], work / "boot-source-after.jsonl")
     if boot_before != boot_after:
         raise ValueError("boot partition changed during final capture")

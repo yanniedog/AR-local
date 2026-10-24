@@ -6,6 +6,7 @@ Execute only independently hash-reviewed, root-owned read-only staged copies.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -21,6 +22,20 @@ ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
 UNIT = re.compile(r"[A-Za-z0-9@_.:-]+\.(?:service|timer)")
 PACKAGE_UNITS = {"apt-daily.service", "apt-daily.timer", "apt-daily-upgrade.service", "apt-daily-upgrade.timer"}
 PACKAGE_LOCKS = ("/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock", "/var/lib/apt/lists/lock", "/var/cache/apt/archives/lock")
+
+
+def runtime_directories():
+    result = {}
+    for name in ("dev", "proc", "sys", "run", "tmp"):
+        path = Path("/") / name
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError("runtime source root must be a real directory")
+        result[name] = {"mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
+                        "mtime_ns": info.st_mtime_ns,
+                        "xattrs": {key: base64.b64encode(os.getxattr(path, key, follow_symlinks=False)).decode("ascii")
+                                   for key in os.listxattr(path, follow_symlinks=False)}}
+    return result
 
 
 def trusted_file(path):
@@ -94,6 +109,7 @@ def package_lockset(plan):
         status = hashlib.sha256(Path("/var/lib/dpkg/status").read_bytes()).hexdigest()
         yield {"schema": "ar-local-package-quiescence-v1", "result": "NATIVE_PACKAGE_LOCKS_HELD",
                "units": before, "locks": identities, "dpkg_status_sha256": status,
+               "runtime_directories_before_mask": runtime_directories(),
                "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip()}
         if writer_states({"application_writers": units}) != before or hashlib.sha256(Path("/var/lib/dpkg/status").read_bytes()).hexdigest() != status:
             raise ValueError("package writer state changed during capture phase")

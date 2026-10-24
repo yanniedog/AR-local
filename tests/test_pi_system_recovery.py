@@ -466,6 +466,7 @@ def test_native_package_lock_descriptors_are_held_through_phase_and_released(mon
     monkeypatch.setattr(namespace, "Path", mapped)
     monkeypatch.setattr(namespace, "PACKAGE_LOCKS", locks)
     monkeypatch.setattr(namespace, "writer_states", lambda plan: {unit: "inactive" for unit in plan["application_writers"]})
+    monkeypatch.setattr(namespace, "runtime_directories", lambda: {name: {"mode": 0o1777 if name == "tmp" else 0o755} for name in capture.RUNTIME})
     monkeypatch.setattr(namespace.subprocess, "check_output", lambda *args, **kwargs: "")
     descriptors = []
     monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace(LOCK_EX=1, LOCK_NB=4, lockf=lambda descriptor, flags: descriptors.append(descriptor)))
@@ -478,6 +479,28 @@ def test_native_package_lock_descriptors_are_held_through_phase_and_released(mon
         with pytest.raises(OSError):
             os.fstat(descriptor)
     assert all(Path(path).read_bytes() == b"original lock bytes unchanged" for path in locks)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="actual POSIX sticky mode and xattrs")
+def test_premask_runtime_directory_metadata_survives_private_mask_defaults(tmp_path, monkeypatch):
+    source, work = tmp_path / "host", tmp_path / "work"
+    frozen = work / "frozen/root"
+    source.mkdir()
+    frozen.mkdir(parents=True)
+    for name in capture.RUNTIME:
+        (source / name).mkdir(mode=0o755)
+        (frozen / name).mkdir(mode=0o700)
+    (source / "tmp").chmod(0o1777)
+    os.setxattr(source / "tmp", "user.capture-test", b"exact attribute")
+    real_path = Path
+    monkeypatch.setattr(namespace, "Path", lambda value: source if value == "/" else real_path(value))
+    rows = namespace.runtime_directories()
+    capture.restore_runtime_directories(work, {"runtime_directories_before_mask": rows})
+    assert (frozen / "tmp").stat().st_mode & 0o7777 == 0o1777
+    assert os.getxattr(frozen / "tmp", "user.capture-test") == b"exact attribute"
+    for name in capture.RUNTIME:
+        original, restored = (source / name).stat(), (frozen / name).stat()
+        assert (restored.st_uid, restored.st_gid, restored.st_mtime_ns) == (original.st_uid, original.st_gid, original.st_mtime_ns)
 
 
 def test_new_filesystem_uuid_is_read_back_from_only_owned_loop_partition(monkeypatch, tmp_path):
