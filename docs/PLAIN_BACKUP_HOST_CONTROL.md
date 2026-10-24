@@ -282,3 +282,51 @@ meet the installer's strict IOWeight10/TasksMax64. Preparation/repair uses an
 explicit reviewed root-created manual queue unit with those strict values,
 TypeNotify/UserPi/CPU100%, bounded runtime and control-group kill. No timer or
 manager reload is part of this preparation repair.
+
+
+## Setuid sudo admission and bounded failure evidence
+
+The native sudo monitor retains the invoking Pi real UID while its effective,
+saved and filesystem UIDs are root. The broker records all four kernel UID/GID
+fields and admits only that observed matrix for the exact fixed sudo command:
+Pi/root/root/root UIDs, all-root GIDs, NNPfalse, root-protected sudo executable,
+full argv equality, bounded pidfd/start-tick proof and the same admitted cgroup.
+The root Python broker remains all-root UID/GID; the fixed Pi parent and queue
+owner remain all-Pi UID/GID. A mixed credential process cannot pass as an
+unprivileged producer. Qualified sudo intermediates remain pinned snapshots and
+count toward every whole-cgroup RSS/swap limit. The fixed setpriv transition may
+have all-root UIDs while its GIDs have already atomically changed to Pi; only its
+exact bound executable/argv and ancestry can receive this transient exception.
+
+A failed root call writes at most one root-private0600
+`failure-<acquire|finish|recover>.json` under its existing protected nonce. The
+bounded record contains only schema, nonce, fixed action/stage, exception class
+and timestamp. No exception message, argv, environment, provider body, raw ingest
+or credential bytes are stored. Bootstrap failures remain sanitized stdout
+labels because an unqualified closure must not write nonce state. Telemetry
+failure cannot overwrite an earlier record or mask the primary error. The
+trusted parent preserves acquire's primary failure if its normal finish also
+fails and forwards only bounded structured labels; independent stop-post and
+existing recovery retain their original ownership/terminal gates.
+
+This changes four members of the same seven-file bootstrap closure:
+`broker.py` (`pi_plain_backup_entry.py`), `parent.py`
+(`pi_plain_backup_parent.py`), `pi_plain_backup_linux.py` and
+`pi_plain_drive_resources.py`. Packet, worker attestation and public completion
+schemas are unchanged. Kernel identity snapshots gain internal `uids`/`gids`
+arrays, and failure records use `ar-local-plain-backup-root-failure-v1`.
+Commissioning requires the exact new four source hashes, root-control manifest,
+wrapper-manifest root-control binding and installation receipt control hashes,
+with preserved incumbent bytes and explicit patch provenance. A known terminal
+NOT_ACQUIRED nonce is historical evidence; let normal admitted queue
+reconciliation release its proven claim. Do not manually erase it or reuse the
+nonce. Actual coupled qualification is still required before archive authority.
+
+
+Root broker imports execute the captured, hash-verified source snapshots directly
+in a fixed dependency order. They never use timestamp bytecode caches or add the
+whole control directory to Python's module search path. The Pi parent likewise
+executes only the manifest-bound post-hook snapshot and verifies its own source
+binding before using it. Existing unqualified root module cache entries fail
+closed. This prevents a stale timestamp-valid `.pyc` or an unrelated sibling
+module from substituting for the reviewed source during a control upgrade.
