@@ -74,6 +74,13 @@ This installation proves the next scheduled daily invocation is configured to
 load the repair; only a separately observed natural run proves that it executed.
 No manual source recapture is authorized by this procedure.
 
+The source pin is deliberately fail-closed. A later producer checkout activation
+must remove this drop-in in its reviewed cutover transaction before changing the
+pin, then verify the ordinary daily command. A rollback to the protected
+predecessor may restore this exact package/drop-in only with the matching pin.
+Record this dependency in the private takeover so a later deployment cannot
+leave the scheduled daily command pointing at a superseded source hash.
+
 ## Rollback
 
 Refuse installation if a same-named drop-in/package already exists with different
