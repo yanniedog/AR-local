@@ -113,8 +113,12 @@ def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=N
         arguments += ["--ro-bind", "/", "/source/root", "--ro-bind", "/boot/firmware", "/source/boot"]
         for runtime in ("dev", "proc", "sys", "run", "tmp"):
             arguments += ["--tmpfs", "/source/root/" + runtime]
-    arguments += ["--bind", str(work), "/scratch", "--ro-bind", str(bundle), "/code",
-                  "--cap-drop", "ALL"]
+    arguments += ["--bind", str(work), "/scratch"]
+    # The child imports its script directory without site packages. Bind only
+    # approved filenames, so an unreviewed sibling cannot shadow the stdlib.
+    for name in BUNDLE:
+        arguments += ["--ro-bind", str(bundle / name), "/code/" + name]
+    arguments += ["--cap-drop", "ALL"]
     for capability in ("CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_CHOWN", "CAP_FOWNER", "CAP_FSETID", "CAP_SETFCAP", "CAP_MKNOD"):
         arguments += ["--cap-add", capability]
     if phase == "build":

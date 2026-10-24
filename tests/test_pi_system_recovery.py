@@ -233,6 +233,19 @@ def test_namespace_hides_host_processes_devices_network_and_source_from_privileg
     assert "/dev/nvme0n1" not in argv and "/dev/mmcblk0" not in argv and "/dev/sda" not in argv
 
 
+def test_root_child_cannot_import_unreviewed_stdlib_shadowing_siblings(tmp_path):
+    bundle = tmp_path / "reviewed-staging"
+    bundle.mkdir()
+    # The unrelated sibling is deliberately present beside the approved bytes.
+    (bundle / "subprocess.py").write_text("raise RuntimeError('unreviewed sibling executed')")
+    (bundle / "hashlib.py").write_text("raise RuntimeError('unreviewed sibling executed')")
+    argv = namespace.argv_for(bundle, Path("/var/lib/ar-local-system-recovery/test"), "build", [])
+    bindings = [argv[index + 1:index + 3] for index, value in enumerate(argv[:-2]) if value == "--ro-bind"]
+    assert [str(bundle), "/code"] not in bindings
+    assert {target for source, target in bindings if target.startswith("/code/")} == {"/code/" + name for name in namespace.BUNDLE}
+    assert all("subprocess.py" not in source and "hashlib.py" not in source for source, target in bindings)
+
+
 def test_archive_part_checkpoint_is_reused_and_rejects_changed_bytes(monkeypatch, tmp_path):
     calls = []
     def compress(tree, manifest, output):
