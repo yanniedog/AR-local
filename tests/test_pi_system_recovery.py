@@ -465,3 +465,28 @@ def test_native_package_lock_descriptors_are_held_through_phase_and_released(mon
         with pytest.raises(OSError):
             os.fstat(descriptor)
     assert all(Path(path).read_bytes() == b"original lock bytes unchanged" for path in locks)
+
+
+def test_new_filesystem_uuid_is_read_back_from_only_owned_loop_partition(monkeypatch, tmp_path):
+    checks = []
+    def partition(loop, number, image_path, descriptor):
+        checks.append((loop, number, image_path, descriptor))
+        return Path(loop + "p" + str(number))
+    monkeypatch.setattr(image, "require_partition", partition)
+    monkeypatch.setattr(image.subprocess, "check_output", lambda argv, **kwargs: "AABB-CCDD\n")
+    assert image.verify_filesystem_identity("/dev/loop9", 1, tmp_path / "new-image", 10, "AABB-CCDD")["result"] == "PASS"
+    assert checks == [("/dev/loop9", 1, tmp_path / "new-image", 10)]
+    with pytest.raises(ValueError, match="UUID differs"):
+        image.verify_filesystem_identity("/dev/loop9", 1, tmp_path / "new-image", 10, "wrong")
+
+
+def test_readonly_filesystem_checks_reprove_each_loop_partition(monkeypatch, tmp_path):
+    checked, commands = [], []
+    def partition(loop, number, *args):
+        checked.append(number)
+        return Path(loop + "p" + str(number))
+    monkeypatch.setattr(image, "require_partition", partition)
+    monkeypatch.setattr(image, "run", lambda argv: commands.append(argv))
+    assert image.check_unmounted_filesystems("/dev/loop9", tmp_path / "new-image", 10)["result"] == "PASS"
+    assert checked == [1, 2]
+    assert commands == [["/usr/sbin/fsck.vfat", "-n", Path("/dev/loop9p1")], ["/usr/sbin/e2fsck", "-f", "-n", Path("/dev/loop9p2")]]
