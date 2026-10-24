@@ -77,6 +77,8 @@ class ImageHost(PlainHost):
         raise Blocked("fixed image parent absent")
 
     def _controls(self, packet):
+        if packet.get("root_control_manifest_sha256") != digest(ROOT / "root-control-manifest.json"):
+            raise Blocked("image packet does not bind its own current root control manifest")
         authority = approval(packet["unit"], current=True)
         if (authority["schema"] != "ar-local-system-recovery-authority-v1" or authority["phase"] != packet["phase"]
                 or authority["source_closure_sha256"] != packet["source_closure_sha256"]):
@@ -121,11 +123,10 @@ class ImageHost(PlainHost):
             prior = packet.get("coupled_probe_nonce", "")
             if not re.fullmatch(r"[a-f0-9]{32}", prior) or prior == self.nonce:
                 raise Blocked("distinct native image commissioning proof required")
+            from pi_system_guard_policy import validate_commissioning
+            previous = root_json(STATE / prior / "packet.json")
             proof = root_json(HANDOFF / prior / "coupled-probe.json")
-            if (proof.get("result") != "IMAGE_PROBE_PASS" or proof.get("boot_id") != self.boot()
-                    or proof.get("source_closure_sha256") != packet["source_closure_sha256"]
-                    or proof.get("root_completion_verified") is not True):
-                raise Blocked("native image closure has no accepted coupled probe")
+            validate_commissioning(packet, prior, previous, proof, self.boot())
 
     def _recovery_controls(self, packet):
         registry = Path("/etc/ar-local/system-recovery-reconcile.json")
@@ -269,6 +270,7 @@ class ImageHost(PlainHost):
                     and [item["stage"] for item in observations] == ["before_restore", "after_restore"]
                     and all(item.get("violation") is None for item in observations) and observations[-1].get("readback") == 60)
         body = {"schema": "ar-local-system-recovery-root-completion-v1", "nonce": self.nonce, "phase": packet["phase"],
+                "root_control_manifest_sha256": packet["root_control_manifest_sha256"],
                 "source_closure_sha256": packet["source_closure_sha256"], **{key: expected[key] for key in ("owner_pid", "owner_ticks", "boot_id", "job_id", "unit", "invocation")},
                 "result": result, "readback": 60, "untrusted_processes_gone": True,
                 "credential_custody": "QUARANTINED" if packet["phase"] in {"upload", "fetch"} else "NOT_EXPOSED",
@@ -314,7 +316,8 @@ class ImageHost(PlainHost):
                     or native.get("scope") != "NO_REAL_PI_SOURCE_NO_DRIVE_WRITES"):
                 raise Blocked("actual native private image restore result absent")
             proof = {"schema": "ar-local-system-recovery-coupled-probe-v1", "result": "IMAGE_PROBE_PASS", "boot_id": self.boot(),
-                     "nonce": self.nonce, "source_closure_sha256": packet["source_closure_sha256"], "root_completion_verified": True}
+                     "nonce": self.nonce, "source_closure_sha256": packet["source_closure_sha256"],
+                     "root_control_manifest_sha256": packet["root_control_manifest_sha256"], "root_completion_verified": True}
             target = self.public / "coupled-probe.json"
             if target.exists() and root_json(target) != proof:
                 raise Blocked("existing image commissioning proof differs")

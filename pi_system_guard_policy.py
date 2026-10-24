@@ -2,9 +2,21 @@
 from datetime import datetime, time, timedelta, timezone
 import re
 
-from pi_plain_backup_core import Blocked, finish
+from pi_plain_backup_core import Blocked, finish, packet_runtime_seconds, validate_commissioning_packet
 
 PHASES = {"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload", "fetch", "restore", "rejoin"}
+
+
+def validate_commissioning(packet, nonce, previous, proof, boot):
+    """Image manifest identity is independent from the incumbent PlainRoot map."""
+    validate_commissioning_packet(previous, nonce, packet)
+    if (previous.get("phase") != "PROBE"
+            or proof.get("schema") != "ar-local-system-recovery-coupled-probe-v1"
+            or proof.get("nonce") != nonce or proof.get("result") != "IMAGE_PROBE_PASS"
+            or proof.get("source_closure_sha256") != packet["source_closure_sha256"]
+            or proof.get("root_control_manifest_sha256") != packet["root_control_manifest_sha256"]
+            or proof.get("root_completion_verified") is not True or proof.get("boot_id") != boot):
+        raise Blocked("actual same-boot current-manifest image PROBE required")
 
 
 def validate(packet, nonce, now):
@@ -21,6 +33,9 @@ def validate(packet, nonce, now):
     if (created.utcoffset() != timezone.utc.utcoffset(created) or expiry.utcoffset() != timezone.utc.utcoffset(expiry)
             or not 0 < (expiry - created).total_seconds() <= limit or not created <= now < expiry):
         raise Blocked("bounded image authority expired or not active")
+    packet_runtime_seconds(packet)
+    if (expiry-now).total_seconds() < 15:
+        raise Blocked("insufficient image window for immediate admission")
     from zoneinfo import ZoneInfo
     start, end = created.astimezone(ZoneInfo("Australia/Hobart")), expiry.astimezone(ZoneInfo("Australia/Hobart"))
     date = start.date()
@@ -32,7 +47,7 @@ def validate(packet, nonce, now):
         date += timedelta(days=1)
     hashes = ("source_closure_sha256", "queue_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256",
               "bwrap_sha256", "setpriv_sha256", "backend_approval_sha256", "queue_argv_sha256",
-              "reconcile_registry_sha256", "reconcile_wrapper_sha256", "global_hold_sha256", "sudo_sha256")
+              "reconcile_registry_sha256", "reconcile_wrapper_sha256", "global_hold_sha256", "sudo_sha256", "root_control_manifest_sha256")
     if any(not re.fullmatch(r"[a-f0-9]{64}", str(packet.get(key, ""))) for key in hashes):
         raise Blocked("independent image/control source binding missing")
     if any(type(packet.get(key)) is not int or packet[key] <= 0 for key in ("uid", "gid")):

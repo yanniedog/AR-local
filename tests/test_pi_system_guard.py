@@ -25,15 +25,17 @@ def packet(phase="PROBE"):
     value = {"schema": "ar-local-system-recovery-packet-v1", "manual_system_recovery": True, "phase": phase,
              "mode": "PROBE" if phase == "PROBE" else "RUN_ARCHIVE", "nonce": NONCE, "workspace_id": "b" * 32,
              "unit": "ar-local-plain-backup-" + NONCE + ".service", "uid": 1000, "gid": 1000,
-             "created_at": NOW.isoformat(), "expires_at": (NOW + timedelta(seconds=120)).isoformat()}
+             "created_at": NOW.isoformat(), "expires_at": (NOW + timedelta(seconds=120)).isoformat(), "runtime_seconds": 120}
     for key in ("source_closure_sha256", "queue_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256", "bwrap_sha256",
-                "setpriv_sha256", "backend_approval_sha256", "queue_argv_sha256", "reconcile_registry_sha256", "reconcile_wrapper_sha256", "global_hold_sha256", "sudo_sha256"):
+                "setpriv_sha256", "backend_approval_sha256", "queue_argv_sha256", "reconcile_registry_sha256", "reconcile_wrapper_sha256", "global_hold_sha256", "sudo_sha256", "root_control_manifest_sha256"):
         value[key] = "c" * 64
     return value
 
 
 def test_image_service_fixed_root_helper_and_plain_whitelist_unchanged():
-    plan = service.service_plan(NONCE, "build")
+    body = packet("build")
+    body.update(expires_at=(NOW + timedelta(hours=6)).isoformat(), runtime_seconds=21600)
+    plan = service.service_plan(NONCE, "build", packet=body)
     assert plan["argv"][-7:] == ["--", "/usr/bin/python3", "-I", "-S", "-B", service.ROOT + "/parent.py", NONCE]
     assert plan["properties"]["ExecStopPost"] == "+/usr/bin/python3 -I -S -B " + service.ROOT + "/broker.py recover " + NONCE
     assert plan["properties"]["RuntimeMaxSec"] == "21600"
@@ -54,7 +56,7 @@ def test_image_packet_rejects_scope_or_binding_change(field, value):
 def test_quiet_window_cannot_be_crossed_with_both_endpoints_outside():
     body = packet("baseline")
     start = datetime(2026, 10, 24, 13, 0, tzinfo=timezone.utc)  # Hobart00:00.
-    body.update(created_at=start.isoformat(), expires_at=(start + timedelta(hours=4)).isoformat())
+    body.update(created_at=start.isoformat(), expires_at=(start + timedelta(hours=4)).isoformat(), runtime_seconds=14400)
     with pytest.raises(policy.Blocked, match="quiet"):
         policy.validate(body, NONCE, start)
 
@@ -244,7 +246,8 @@ def test_native_observer_failure_is_independent_of_resource_sampler():
 def test_notify_service_submission_ack_does_not_wait_for_queue_ready_or_repeat(monkeypatch, tmp_path):
     import pi_shared_queue_post_hooks as hooks
     import pi_system_guard_start as launch
-    body, plan = packet(), service.service_plan(NONCE, "PROBE")
+    body = packet()
+    plan = service.service_plan(NONCE, "PROBE", packet=body)
     body["queue_argv_sha256"] = plan["queue_argv_sha256"]
     host = SimpleNamespace(packet=lambda nonce: body, now=lambda: NOW, value=lambda: 60,
                            intent=lambda nonce: None, _show=lambda unit: {"LoadState": "not-found"})

@@ -59,13 +59,14 @@ class NativeObserver:
 
 
 def context(host, packet, owner):
+    from pi_plain_backup_core import packet_runtime_seconds
     current = host.process_identity(os.getpid())
     issued = time.monotonic()
     seconds = (datetime.fromisoformat(packet["expires_at"]) - host.now()).total_seconds()
     return {"schema": "ar-local-system-recovery-attestation-v1", "nonce": packet["nonce"],
             "phase": packet["phase"], "boot_id": host.boot(), "source_closure_sha256": packet["source_closure_sha256"],
             "workspace_id": packet["workspace_id"], "uid": packet["uid"], "gid": packet["gid"],
-            "deadline_monotonic": issued + min(120 if packet["phase"] == "PROBE" else 21600, seconds),
+            "deadline_monotonic": issued + min(packet_runtime_seconds(packet), seconds),
             "monitor": current, "queue": owner, "upload_plan_sha256": packet.get("upload_plan_sha256"),
             "remote": packet.get("remote"), "drive_root_folder_id": packet.get("drive_root_folder_id"),
             "credential_sha256": packet.get("credential_sha256"), "cold_plan_sha256": packet.get("cold_plan_sha256")}

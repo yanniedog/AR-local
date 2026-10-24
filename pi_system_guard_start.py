@@ -17,7 +17,7 @@ def start(nonce):
     packet = host.packet(nonce)
     validate(packet, nonce, host.now())
     plan = json.loads(protected(STATE / nonce / "service-plan.json"))
-    if plan != service_plan(nonce, packet["phase"]) or plan["queue_argv_sha256"] != packet["queue_argv_sha256"]:
+    if plan != service_plan(nonce, packet["phase"], packet=packet) or plan["queue_argv_sha256"] != packet["queue_argv_sha256"]:
         raise RuntimeError("native service plan differs from fixed source")
     from pi_shared_queue_post_hooks import approval
     authority = approval(packet["unit"], current=True)

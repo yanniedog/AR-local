@@ -78,6 +78,20 @@ accepted work. The Pi parent may invoke only fixed root acquire/finish helpers;
 the privileged stop hook invokes fixed recover. Existing Pi NOPASSWD access, if
 present, is not cryptographically restricted by this conversational procedure.
 
+New image packets freeze six nonsecret runtime inputs: nonce, unit, mode,
+UTC creation/expiry and integer `runtime_seconds`. The duration must equal the
+floor of expiry minus creation, with a minimum15 seconds and mode caps120/21600;
+it cannot be an arbitrary override. The queue argv, native RuntimeMax and root
+job admission bind the same exact duration. New phases use wait0: a busy or
+delayed claim must fail closed and finish normal cleanup before another fresh
+nonce is prepared. The absolute expiry is also enforced by the worker context.
+Preparation and admission require the protected referenced PROBE packet and
+privileged coupled proof to match the current image root-manifest digest,
+complete source closure and boot. This digest belongs to the image controller;
+it is independent from the incumbent plaintext controller's manifest. Historical
+plaintext terminal recovery retains its original proof bytes and does not
+qualify a new acquisition.
+
 The actual PROBE creates new private generic files with an ACL, binary xattr,
 hardlink, symlink and FIFO. It creates a new sparse regular image, attaches only
 its inode-proved loop, formats private FAT/ext4 partitions, restores and verifies

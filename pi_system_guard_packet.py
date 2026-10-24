@@ -8,7 +8,7 @@ import re
 from pi_system_guard_files import directory, encoded, protected, publish, sha
 from pi_system_guard_host import HANDOFF, ROOT, STATE, WORK
 from pi_system_guard_plan import service_plan
-from pi_system_guard_policy import PHASES, validate
+from pi_system_guard_policy import PHASES, validate, validate_commissioning
 
 INPUTS = Path("/var/lib/ar-local-system-recovery-inputs")
 
@@ -27,7 +27,8 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None)
     if phase not in PHASES or any(not re.fullmatch(r"[a-f0-9]{32}", item) for item in (nonce, workspace_id)):
         raise RuntimeError("fixed phase and fresh nonce/workspace required")
     receipt = json.loads(protected(ROOT / "installation.json"))
-    closure = json.loads(protected(ROOT / "root-control-manifest.json"))
+    closure_raw = protected(ROOT / "root-control-manifest.json")
+    closure = json.loads(closure_raw)
     for path, checksum in closure.items():
         if sha(protected(Path(path), readonly=Path(path).parent == ROOT)) != checksum:
             raise RuntimeError("qualified image control closure changed")
@@ -36,13 +37,16 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None)
         raise RuntimeError("image installation receipt differs")
     account = pwd.getpwnam("pi")
     now = datetime.now(timezone.utc)
-    service = service_plan(nonce, phase)
+    expiry = expiry_for(phase, now)
+    budget = {"nonce": nonce, "unit": "ar-local-plain-backup-" + nonce + ".service",
+              "mode": "PROBE" if phase == "PROBE" else "RUN_ARCHIVE", "created_at": now.isoformat(),
+              "expires_at": expiry.isoformat(), "runtime_seconds": int((expiry-now).total_seconds())}
+    service = service_plan(nonce, phase, packet=budget)
     queue = Path("/usr/local/lib/shared-pi-queue")
     names = {"pi_shared_queue.py", "pi_shared_queue_store.py", "pi_shared_queue_policy.py", "pi_shared_queue_native.py", "pi_shared_queue_post_hooks.py"}
     queue_closure = {name: sha(protected(queue / name, readonly=False)) for name in names}
-    packet = {"schema": "ar-local-system-recovery-packet-v1", "phase": phase,
-              "mode": "PROBE" if phase == "PROBE" else "RUN_ARCHIVE", "nonce": nonce, "workspace_id": workspace_id,
-              "manual_system_recovery": True, "unit": service["unit"], "created_at": now.isoformat(), "expires_at": expiry_for(phase, now).isoformat(),
+    packet = {**budget, "schema": "ar-local-system-recovery-packet-v1", "phase": phase, "workspace_id": workspace_id,
+              "manual_system_recovery": True, "root_control_manifest_sha256": sha(closure_raw),
               "uid": account.pw_uid, "gid": account.pw_gid, "source_closure_sha256": closure_hash,
               "queue_closure": queue_closure, "queue_closure_sha256": sha(json.dumps(queue_closure, sort_keys=True, separators=(",", ":")).encode()),
               "queue_argv_sha256": service["queue_argv_sha256"], "backend_approval_sha256": sha(protected(ROOT / "backend-approval.json")),
@@ -56,9 +60,9 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None)
         if not coupled_probe or not re.fullmatch(r"[a-f0-9]{32}", coupled_probe) or coupled_probe == nonce:
             raise RuntimeError("same-closure native coupled commissioning proof required")
         packet["coupled_probe_nonce"] = coupled_probe
+        previous = json.loads(protected(STATE / coupled_probe / "packet.json"))
         proof = json.loads(protected(HANDOFF / coupled_probe / "coupled-probe.json"))
-        if proof.get("result") != "IMAGE_PROBE_PASS" or proof.get("source_closure_sha256") != closure_hash or proof.get("boot_id") != Path("/proc/sys/kernel/random/boot_id").read_text().strip():
-            raise RuntimeError("actual same-boot image commissioning proof differs")
+        validate_commissioning(packet, coupled_probe, previous, proof, Path("/proc/sys/kernel/random/boot_id").read_text().strip())
         if phase in {"fetch", "restore", "rejoin"}:
             from pi_system_guard_cold import vendors, predecessor, result_path
             from pi_system_cold import validate_plan
@@ -119,4 +123,5 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None)
     authority["schema"] = "ar-local-system-recovery-authority-v1"
     publish(public / "approval.json", encoded(authority), 0o440, account.pw_gid)
     return {"result": "IMAGE_PHASE_PREPARED_NOT_STARTED", "phase": phase, "nonce": nonce, "service_plan": str(private / "service-plan.json"),
+            "runtime_inputs": service["runtime_inputs"],
             "source_closure_sha256": closure_hash, "expires_at": packet["expires_at"]}
