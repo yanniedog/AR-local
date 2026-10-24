@@ -104,6 +104,7 @@ def normalized_kernel(evidence,boot,bwrap,setpriv):
             or set(o.get('caps',{}))!={'CapInh','CapPrm','CapEff','CapBnd','CapAmb'}
             or any(value!='0000000000000000' for value in o['caps'].values())
             or not all(type(host.get(name)) is int and host[name]>0 for name in ('user','pid','mnt'))
+            or not all(type(names.get(name)) is int and names[name]>0 for name in ('user','pid','mnt'))
             or names.get('user')!=host['user'] or names.get('pid')==host['pid'] or names.get('mnt')==host['mnt']):
         raise RuntimeError('actual qualified kernel confinement evidence differs')
     return {'schema':'ar-local-plain-backup-sandbox-probe-v1','result':'PASS','boot_id':boot,

@@ -91,3 +91,8 @@ def process_memory(pid):return {'rss':640*1024**2 if pid==1 else 1,'swap':0}
     monkeypatch.setattr(install.Path,'read_text',lambda self,*a,**kw:'60' if str(self).endswith('swappiness') else original(self,*a,**kw))
     with pytest.raises(RuntimeError,match='aggregate_rss_early_stop'):guard.sample()
     assert guard.receipt['peak_rss_bytes']>=640*1024**2
+
+@pytest.mark.parametrize('name',['pid','mnt'])
+def test_kernel_receipt_requires_actual_positive_private_namespace_inode(name):
+    data=evidence();del data['observed']['namespaces'][name]
+    with pytest.raises(RuntimeError):packet.normalized_kernel(data,'boot','bwrap','setpriv')
