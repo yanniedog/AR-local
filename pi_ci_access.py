@@ -189,7 +189,9 @@ def load_runtime():
 
 
 def check_plan(plan_id):
-    context = load_runtime()['pi_ci_activate'].plan_context(plan_id)
+    module = load_runtime()['pi_ci_activate']
+    context = module.plan_context(plan_id)
+    module.require_code_only_profile(context)
     return dict(result='APPROVED_PLAN', plan=plan_id, target_commit=context['plan']['target_commit'],
                 canary_manifest_sha256=context['plan']['canary_manifest_sha256'],
                 canary_release_tag=context['plan']['canary_release_tag'], mutated=False)
@@ -221,7 +223,9 @@ def activation_argv(plan_id: str) -> list[str]:
 
 
 def activate(plan_id: str) -> dict:
-    context = load_runtime()['pi_ci_activate'].plan_context(plan_id)
+    module = load_runtime()['pi_ci_activate']
+    context = module.plan_context(plan_id)
+    module.require_code_only_profile(context)
     plan = context['plan']
     require_root_path(STATE, directory=True)
     claim = STATE / (plan_id + ".claimed.json")

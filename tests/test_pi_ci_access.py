@@ -152,7 +152,7 @@ def test_replayed_plan_does_not_launch_worker(monkeypatch, tmp_path):
         monkeypatch.setattr(ci.os, "O_NOFOLLOW", 0, raising=False)
     plan_id = "a" * 64
     monkeypatch.setattr(ci, 'load_runtime', lambda: {'pi_ci_activate': SimpleNamespace(
-        plan_context=lambda value: {'plan': {'target_commit': 'b' * 40}})})
+        plan_context=lambda value: {'plan': {'target_commit': 'b' * 40}}, require_code_only_profile=lambda _: None)})
     monkeypatch.setattr(ci, "require_root_path", lambda *args, **kwargs: None)
     monkeypatch.setattr(ci, "STATE", tmp_path)
     (tmp_path / (plan_id + ".claimed.json")).write_text("retained ambiguous transaction")
@@ -242,7 +242,8 @@ def test_authority_is_public_readonly_under_umask_0077_without_real_worker(tmp_p
     monkeypatch.setattr(ci, 'STATE', state)
     plan = {'target_commit': 'a' * 40, 'expires_at': '2026-10-24T20:00:00+00:00',
             'runtime_profile_sha256': 'b' * 64, 'adapter_sha256': 'c' * 64}
-    monkeypatch.setattr(ci, 'load_runtime', lambda: {'pi_ci_activate': SimpleNamespace(plan_context=lambda _: {'plan': plan})})
+    monkeypatch.setattr(ci, 'load_runtime', lambda: {'pi_ci_activate': SimpleNamespace(
+        plan_context=lambda _: {'plan': plan}, require_code_only_profile=lambda _: None)})
     monkeypatch.setattr(ci, 'require_root_path', lambda *args, **kwargs: None)
     monkeypatch.setattr(ci, 'trusted_bytes', lambda *args: b'reviewed installed control')
     calls = []

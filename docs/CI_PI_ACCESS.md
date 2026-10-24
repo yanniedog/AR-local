@@ -204,6 +204,17 @@ filesystem; no cross-filesystem or symlink activation fallback exists.
 
 ## Approved plan, staging and transaction
 
+The October24 narrow archive readback launcher is pinned to predecessor e350.
+Code-only CI explicitly refuses activation while its known daily drop-in exists
+or the approved loaded command still contains `pi_payload_archive_launcher.py`.
+The initial full-producer upgrade therefore requires the owner's separately
+reviewed atomic cutover: retire only the exact hash-bound drop-in, verify the
+ordinary daily command, exchange the source and perform a manager-qualified
+reload; restore that exact drop-in only together with its matching predecessor
+on rollback. See `PAYLOAD_ARCHIVE_READBACK_RUNTIME.md`. This helper never removes
+the pin or performs a blind global daemon reload. Routine immutable code-only
+CI becomes available after that special migration and native commissioning.
+
 Root-controlled `/etc/ar-local/ci-plans/PLAN.json` is addressed by its exact byte
 SHA-256. Schema version is exactly integer2; scope is `activate-immutable-d027`.
 Fields are `target_commit`, `previous_commit`, timezone-aware `expires_at` (at

@@ -26,6 +26,7 @@ RUNTIME = Path('/etc/ar-local/ci-runtime.json')
 PRODUCTION = Path('/srv/ar-local/AR-local')
 DATA = Path('/srv/ar-local/data')
 QUEUE = Path('/usr/local/lib/shared-pi-queue')
+ARCHIVE_PIN = Path('/etc/systemd/system/ar-local-daily.service.d/zzz-archive-readback-20261024.conf')
 TIMERS = ('ar-local-daily-watchdog.timer', 'ar-local-runtime-health.timer',
           'ar-local-deploy-watchdog.timer', 'ar-local-capacity-monitor.timer')
 IDLE = ('ar-local-daily.service', 'ar-local-ingest-now.service', 'ar-local-daily-watchdog.service',
@@ -40,6 +41,14 @@ ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8', 'HOME': '/non
 def command(argv, *, timeout=30):
     return subprocess.run(list(map(str, argv)), env=ENV, cwd='/', stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, check=True, timeout=timeout, shell=False, close_fds=True)
+
+
+def require_code_only_profile(context):
+    """The narrow predecessor pin needs its own reviewed unit cutover first."""
+    commands = context['profile'].get('unit_native', {}).get('ar-local-daily.service', {}).get('ExecStartEx', {})
+    if (ARCHIVE_PIN.exists() or ARCHIVE_PIN.is_symlink()
+            or 'pi_payload_archive_launcher.py' in json.dumps(commands)):
+        raise ValueError('pinned archive launcher requires the owner-reviewed atomic retire/exchange/reload cutover; code-only CI activation refused')
 
 
 def properties(unit, fields):
@@ -590,6 +599,7 @@ def main(argv=None):
     if os.geteuid() != 0:
         raise ValueError('root coordinator required')
     context = plan_context(args.plan)
+    require_code_only_profile(context)
     binding = queue_binding(args.plan)
     remaining = (datetime.fromisoformat(context['plan']['expires_at']) - datetime.now(timezone.utc)).total_seconds()
     if remaining < 1800:

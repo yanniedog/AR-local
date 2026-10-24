@@ -199,6 +199,20 @@ def test_native_command_flags_preserved_while_runtime_timestamps_may_advance():
     with pytest.raises(ValueError): activate.execution_definition(changed)
 
 
+def test_code_only_deploy_refuses_existing_or_still_loaded_predecessor_archive_pin(tmp_path, monkeypatch):
+    pin = tmp_path / 'archive-pin.conf'; monkeypatch.setattr(activate, 'ARCHIVE_PIN', pin)
+    context = {'profile': {}}
+    activate.require_code_only_profile(context)
+    pin.write_bytes(b'protected exact predecessor launcher')
+    with pytest.raises(ValueError, match='atomic retire/exchange/reload'):
+        activate.require_code_only_profile(context)
+    pin.unlink()
+    context['profile'] = {'unit_native': {'ar-local-daily.service': {'ExecStartEx': {
+        'type': 'a(sasasttttuii)', 'data': [['python3', ['python3', '/protected/pi_payload_archive_launcher.py'], []]]}}}}
+    with pytest.raises(ValueError, match='atomic retire/exchange/reload'):
+        activate.require_code_only_profile(context)
+
+
 def test_real_worker_launcher_has_private_pid_ro_sources_and_fixed_privilege_drop(tmp_path, monkeypatch, portable_writes):
     work = tmp_path / 'transaction'; work.mkdir()
     source = tmp_path / 'sealed-source'; source.mkdir()
