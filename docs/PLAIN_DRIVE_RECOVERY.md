@@ -44,7 +44,13 @@ content change rejects acceptance. These proofs stream from disk with the
 existing bounded SQLite cache rather than retaining the tree in memory.
 The probe additionally validates retained-stage descendant metadata with the
 same excluded-namespace, symlink and unique-regular-file checks, limited to
-100,000 metadata checks or 60 seconds within its existing operation deadline.
+500,000 metadata checks or 60 seconds within its existing operation deadline.
+That probe-only entry budget allows approximately three times the measured
+168,438-check retained tree, which completed metadata-only validation in 10.33s.
+The source validator's legacy 100,000-check default remains unchanged. The probe
+checks its absolute monotonic deadline for every entry, verifies the complete
+sealed lease before and after validation and at 100ms checkpoints during it, and
+retains the independent Root monitor and existing 120-second probe limit.
 It reads no retained payload bytes and does not claim a complete archive proof.
 
 Legacy source freezes keep their 1,200-second default. The typed manual plaintext
