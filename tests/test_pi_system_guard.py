@@ -116,6 +116,18 @@ def test_install_and_bootstrap_exact_closures_agree():
         assert (root / name).is_file()
 
 
+def test_root_output_refuses_untrusted_ancestors_before_mkdir_or_publication(tmp_path):
+    from pi_system_guard_files import directory, publish
+    unsafe = tmp_path / "user-controlled"
+    unsafe.mkdir()
+    unsafe.chmod(0o777)
+    with pytest.raises(RuntimeError, match="ancestry"):
+        directory(unsafe / "must-not-create", 0o755)
+    with pytest.raises(RuntimeError, match="ancestry"):
+        publish(unsafe / "must-not-write", b"reviewed bytes")
+    assert list(unsafe.iterdir()) == []
+
+
 def test_root_module_registry_exposes_only_verified_names_without_search_path(tmp_path, monkeypatch):
     import sys
     search = list(sys.path)
@@ -150,6 +162,29 @@ def test_timestamp_valid_unapproved_pyc_cannot_replace_verified_source_snapshot(
         assert loaded.VALUE == "new"
     finally:
         sys.modules.pop(name, None)
+
+
+def test_existing_callback_uses_verified_snapshot_and_excludes_shadowing_siblings(tmp_path, monkeypatch):
+    import py_compile
+    import sys
+    import pi_plain_backup_reconcile as callback
+    name = "pi_shared_queue_post_hooks"
+    monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.setattr(callback, "ROOT", tmp_path)
+    path = tmp_path / (name + ".py")
+    path.write_bytes(b"VALUE='stale___'\n")
+    previous = path.stat()
+    py_compile.compile(str(path), doraise=True)
+    path.write_bytes(b"VALUE='approved'\n")
+    os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+    (tmp_path / "fractions.py").write_text("raise RuntimeError('unreviewed stdlib sibling')")
+    search = list(sys.path)
+    callback.load_hook_bytes(path.read_bytes())
+    assert sys.modules[name].VALUE == "approved" and sys.path == search
+    monkeypatch.delitem(sys.modules, name)
+    monkeypatch.delitem(sys.modules, "fractions", raising=False)
+    callback.load_hook_bytes(b"import fractions\nVALUE=str(fractions.Fraction(1,2))\n")
+    assert sys.modules[name].VALUE == "1/2" and sys.path == search
 
 
 def test_callback_deadline_caps_subprocess_effects(monkeypatch):
@@ -227,6 +262,27 @@ def test_notify_service_submission_ack_does_not_wait_for_queue_ready_or_repeat(m
     assert "--no-block" in effects[0][0] and effects[0][1]["timeout"] == 15
     with pytest.raises(FileExistsError): launch.start(NONCE)
     assert len(effects) == 1
+
+
+def test_reconciler_covers_terminal_failure_before_acquire_intent(monkeypatch, tmp_path):
+    import sys
+    import pi_system_guard_reconcile as recovery
+    state = tmp_path / "state"
+    state.mkdir()
+    private = state / NONCE
+    private.mkdir()
+    host = SimpleNamespace(private=private, public=tmp_path / "handoff", intent=lambda nonce: None)
+    monkeypatch.setattr(linux, "STATE", state)
+    monkeypatch.setattr(linux, "ImageHost", lambda nonce: host)
+    monkeypatch.setattr(recovery, "retained_units", lambda: {packet()["unit"]})
+    monkeypatch.setattr(recovery.os, "O_NOFOLLOW", 0, raising=False)
+    monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace(LOCK_EX=1, LOCK_NB=2, flock=lambda *args: None))
+    effects = []
+    monkeypatch.setattr(policy, "finish", lambda host, nonce, recovery: effects.append((nonce, recovery)))
+    assert recovery.one_pass() == 0 and effects == [(NONCE, True)]
+    monkeypatch.setattr(recovery, "retained_units", lambda: set())
+    effects.clear()
+    assert recovery.one_pass() == 0 and not effects
 
 
 def writer_fixture(monkeypatch, tmp_path):

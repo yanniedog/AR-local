@@ -29,6 +29,8 @@ def admission(descriptor=3):
         raise RuntimeError("image upload requires NNP and every capability dropped")
     if any(Path("/proc/self/ns/" + key).stat().st_ino == context["monitor"]["namespaces"][key] for key in ("pid", "mnt")):
         raise RuntimeError("private PID and mount namespaces required")
+    if Path("/proc/self/ns/user").stat().st_ino != context["monitor"]["namespaces"]["user"]:
+        raise RuntimeError("upload must retain the approved host UID mapping")
     if not os.statvfs("/").f_flag & os.ST_RDONLY or not os.statvfs("/input").f_flag & os.ST_RDONLY:
         raise RuntimeError("image upload root/input views must be read-only")
     credential = Path("/credential.conf")

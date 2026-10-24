@@ -24,7 +24,18 @@ PACKAGE_UNITS = {"apt-daily.service", "apt-daily.timer", "apt-daily-upgrade.serv
 PACKAGE_LOCKS = ("/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock", "/var/lib/apt/lists/lock", "/var/cache/apt/archives/lock")
 
 
+def runtime_mounts(mountinfo):
+    observed = {}
+    for line in mountinfo.splitlines():
+        left, right = line.split(" - ", 1)
+        observed[left.split()[4]] = right.split()[0]
+    expected = {"/dev": {"devtmpfs", "tmpfs"}, "/proc": {"proc"}, "/sys": {"sysfs"}, "/run": {"tmpfs"}, "/tmp": {"tmpfs"}}
+    if any(observed.get(name) not in kinds for name, kinds in expected.items()):
+        raise ValueError("runtime exclusions require actual pseudo/tmpfs mounts; persistent data needs separate coverage")
+
+
 def runtime_directories():
+    runtime_mounts(Path("/proc/self/mountinfo").read_text())
     result = {}
     for name in ("dev", "proc", "sys", "run", "tmp"):
         path = Path("/") / name

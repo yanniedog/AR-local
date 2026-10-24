@@ -309,10 +309,21 @@ class ImageHost(PlainHost):
         if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or image.resolve() != image
                 or (info.st_dev, info.st_ino) != (value["device"], value["inode"])):
             raise Blocked("owned image inode changed before terminal proof")
+        proof_path = work / "loop-terminal.json"
+        proof = {"schema": "ar-local-system-owned-loop-terminal-v1", "boot_id": self.boot(),
+                 "device": info.st_dev, "inode": info.st_ino, "loop": value["loop"],
+                 "intent_sha256": hashlib.sha256(intent.read_bytes()).hexdigest()}
+        if proof_path.exists() and root_json(proof_path) == proof:
+            # Later fixed compression/upload phases never attach a loop. A
+            # previously detached minor may now legitimately belong elsewhere.
+            return True
+        def terminal():
+            atomic(proof_path, proof, replace=proof_path.exists())
+            return True
         name = "loop" + match[1]
         kernel = Path("/sys/class/block") / name
         if not kernel.exists():
-            return True
+            return terminal()
         node = self.private / name
         if not node.exists():
             os.mknod(node, stat.S_IFBLK | 0o600, os.makedev(7, int(match[1])))
@@ -326,7 +337,7 @@ class ImageHost(PlainHost):
                 fcntl.ioctl(descriptor, 0x4C05, status, True)
             except OSError as error:
                 if error.errno == errno.ENXIO:
-                    return True
+                    return terminal()
                 raise
             dev, inode, _, offset, limit = struct.unpack_from("<QQQQQ", status)
             if (dev, inode) != (info.st_dev, info.st_ino) or offset or limit:
@@ -341,7 +352,7 @@ class ImageHost(PlainHost):
                 fcntl.ioctl(descriptor, 0x4C05, bytearray(232), True)
             except OSError as error:
                 if error.errno == errno.ENXIO:
-                    return True
+                    return terminal()
                 raise
             raise Blocked("owned image loop remains attached")
         finally:

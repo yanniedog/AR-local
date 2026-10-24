@@ -6,6 +6,15 @@ from pathlib import Path
 import stat
 
 
+def root_parents(path):
+    if not path.is_absolute() or path.resolve() != path:
+        raise RuntimeError("canonical root target required before any mutation")
+    for parent in path.parents:
+        item = parent.lstat()
+        if not stat.S_ISDIR(item.st_mode) or item.st_uid != 0 or item.st_mode & 0o022 or stat.S_ISLNK(item.st_mode):
+            raise RuntimeError("target ancestry is not exclusively root controlled")
+
+
 def protected(path, maximum=16 * 1024 ** 2, *, readonly=True):
     path = Path(path)
     if path.resolve(strict=True) != path:
@@ -30,6 +39,7 @@ def protected(path, maximum=16 * 1024 ** 2, *, readonly=True):
 
 def directory(path, mode, gid=0):
     path = Path(path)
+    root_parents(path)
     if not path.exists():
         path.mkdir(mode=mode)
         descriptor = os.open(path, os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -54,6 +64,8 @@ def sha(body):
 
 
 def publish(path, body, mode=0o400, gid=0):
+    path = Path(path)
+    root_parents(path)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     try:
         view = memoryview(body)

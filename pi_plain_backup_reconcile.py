@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import time
+import types
 
 ROOT=Path('/usr/local/lib/ar-local-plain-backup')
 STATE=Path('/var/lib/ar-local-plain-backup-control')
@@ -31,14 +32,30 @@ def protected(path):
     return path.read_bytes()
 
 
+def load_hook_bytes(raw):
+    """Import the captured verified hook without directory or pyc searches."""
+    name='pi_shared_queue_post_hooks'
+    if name in sys.modules:
+        raise RuntimeError('unqualified root callback module cache exists')
+    path=str(ROOT/(name+'.py'));module=types.ModuleType(name)
+    module.__file__=path;module.__package__='';sys.modules[name]=module
+    try:exec(compile(raw,path,'exec'),module.__dict__)
+    except BaseException:
+        sys.modules.pop(name,None)
+        raise
+
+
 def bootstrap():
     if sys.platform!='linux' or os.geteuid()!=0 or Path(__file__).resolve()!=ROOT/'reconcile.py':
         raise RuntimeError('fixed installed Linux root callback required')
     manifest=json.loads(protected(ROOT/'root-control-manifest.json'))
+    bodies={}
     for name in ('reconcile.py','broker.py','pi_shared_queue_post_hooks.py'):
-        if hashlib.sha256(protected(ROOT/name)).hexdigest()!=manifest.get(name):
+        raw=protected(ROOT/name)
+        if hashlib.sha256(raw).hexdigest()!=manifest.get(name):
             raise RuntimeError('root reconciliation source binding differs')
-    sys.path.insert(0,str(ROOT))
+        bodies[name]=raw
+    load_hook_bytes(bodies['pi_shared_queue_post_hooks.py'])
 
 
 def inactive(unit,run):

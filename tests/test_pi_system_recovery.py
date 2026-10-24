@@ -497,6 +497,7 @@ def test_premask_runtime_directory_metadata_survives_private_mask_defaults(tmp_p
     os.setxattr(source / "tmp", "user.capture-test", b"exact attribute")
     real_path = Path
     monkeypatch.setattr(namespace, "Path", lambda value: source if value == "/" else real_path(value))
+    monkeypatch.setattr(namespace, "runtime_mounts", lambda mountinfo: None)
     rows = namespace.runtime_directories()
     capture.restore_runtime_directories(work, {"runtime_directories_before_mask": rows})
     assert (frozen / "tmp").stat().st_mode & 0o7777 == 0o1777
@@ -504,6 +505,14 @@ def test_premask_runtime_directory_metadata_survives_private_mask_defaults(tmp_p
     for name in capture.RUNTIME:
         original, restored = (source / name).stat(), (frozen / name).stat()
         assert (restored.st_uid, restored.st_gid, restored.st_mtime_ns) == (original.st_uid, original.st_gid, original.st_mtime_ns)
+
+
+def test_runtime_exclusion_never_silently_discards_persistent_tmp():
+    lines = [f"1 0 0:1 / /{name} rw - {kind} source rw" for name, kind in
+             (("dev", "devtmpfs"), ("proc", "proc"), ("sys", "sysfs"), ("run", "tmpfs"), ("tmp", "tmpfs"))]
+    namespace.runtime_mounts("\n".join(lines))
+    with pytest.raises(ValueError, match="persistent"):
+        namespace.runtime_mounts("\n".join(lines[:-1]))
 
 
 def test_restore_verifier_uses_private_scratch_with_readonly_metadata_input(tmp_path, portable_metadata):

@@ -1,8 +1,9 @@
 # File-level Pi system recovery set
 
-This source implements an unencrypted, losslessly compressed recovery image.
-It does not install a service, grant sudo, change a timer, upload to Drive, or
-flash a disk. Runtime commissioning remains required. The existing plaintext
+This backend implements an unencrypted, losslessly compressed recovery image.
+Its protected phase adapter and create-only Drive transport are described in
+[the guard procedure](PI_SYSTEM_RECOVERY_GUARD.md). Runtime commissioning remains
+required; source changes alone install or activate nothing. The existing plaintext
 backup broker runs an unprivileged raw producer; it must not be reused unchanged
 to launch this root image builder.
 
@@ -17,7 +18,7 @@ No new encryption key or recovery password is introduced.
 ## Protected execution boundary
 
 The fixed bundle is `pi_system_namespace.py`, `pi_system_capture.py`,
-`pi_system_image.py`, `pi_system_filesystems.py`, and
+`pi_system_image.py`, `pi_system_filesystems.py`, `pi_system_sparse.py`, and
 `pi_system_raw_restore.py`. Record the exact reviewed commit and independent
 SHA-256 for every file. Using trusted system utilities, stage those bytes as
 root-owned read-only regular files in a new protected directory whose entire
@@ -26,12 +27,12 @@ bytes with those independently recorded hashes **before executing Python**.
 The launcher's self-check cannot make executing a malicious checkout safe.
 Do not run a checkout or a Pi-writable staging script through sudo.
 
-Create a protected read-only approval JSON with `files` mapping all five
+Create a protected read-only approval JSON with `files` mapping all six
 filenames to those SHA-256 values. Retain its independently recorded hash too.
 The protected entry command is:
 
 ```text
-/usr/bin/python3 -I -S /protected/reviewed-bundle/pi_system_namespace.py PHASE --host-workspace /var/lib/ar-local-system-recovery/UNIQUE-NONCE --source-approval /protected/source-approval.json --source-approval-sha256 APPROVAL-SHA256
+/usr/bin/python3 -I -S -B /protected/reviewed-bundle/pi_system_namespace.py PHASE --host-workspace /var/lib/ar-local-system-recovery/UNIQUE-NONCE --source-approval /protected/source-approval.json --source-approval-sha256 APPROVAL-SHA256
 ```
 
 This is the worker entry point, not an admission bypass. Before native use, a
@@ -128,7 +129,10 @@ archives are allowed.
 The root tree includes private configuration, credentials, untracked work and
 all persistent project data. Runtime `dev`, `proc`, `sys`, `run`, `tmp`, the
 separately captured `boot/firmware`, and exactly this new workspace have their
-contents excluded. Volatile sockets have explicit map entries. An unexpected
+contents excluded only after the parent proves actual pseudo/tmpfs mounts;
+persistent `/tmp` requires separate coverage and refuses this default. Their
+original mode/owner/nsmtime/ACL/xattrs are preserved before masking. Volatile
+sockets have explicit map entries. An unexpected
 persistent mount refuses until separately covered. Exact individual files under
 CDR `runs`/`runs-archive` may be externalized only when current hash, size, owner,
 mode and nanosecond mtime match the catalog's `exact_source_bytes` record.
