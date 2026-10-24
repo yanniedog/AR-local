@@ -315,3 +315,23 @@ def test_untrusted_input_is_only_read_beneath_held_fds_and_never_executed(tmp_pa
         with pytest.raises((ValueError, OSError)): release.stage_input(source, target, value, lambda: None)
         assert target.stat().st_mode & 0o777 == 0o700
     assert outside.read_bytes() == b'never copy this unapproved data'
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='native POSIX directory umask semantics')
+def test_materialized_nested_release_is_traversable_with_umask_0077(tmp_path, monkeypatch):
+    import stat
+    value, files = descriptor()
+    files['package/nested/module.py'] = b'VALUE = 42\n'
+    value['files']['package/nested/module.py'] = {'sha256': digest(files['package/nested/module.py']), 'bytes': 11, 'mode': 0o444}
+    source = tmp_path / 'source'; source.mkdir()
+    for name, body in files.items():
+        path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(body)
+    monkeypatch.setattr(release, 'protected', lambda path, **kwargs: path)
+    actual = release.verify_tree
+    monkeypatch.setattr(release, 'verify_tree', lambda root, value, guard: actual(root, value, guard, trusted=False))
+    destination = tmp_path / 'release'
+    previous = os.umask(0o077)
+    try: release.materialize(source, destination, value, lambda: None)
+    finally: os.umask(previous)
+    for directory, _, _ in os.walk(destination): assert stat.S_IMODE(Path(directory).stat().st_mode) == 0o755
+    assert (destination / 'package/nested/module.py').read_bytes() == b'VALUE = 42\n'

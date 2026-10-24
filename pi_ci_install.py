@@ -109,13 +109,14 @@ def install(bodies, profile, release):
     def create(path, body, mode=0o444):
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
         with os.fdopen(fd, 'wb') as output:
-            output.write(body); output.flush(); os.fsync(output.fileno())
+            output.write(body); output.flush(); os.fchmod(output.fileno(), mode); os.fsync(output.fileno())
         release.sync_directory(path.parent)
     create(backup, old, 0o400)
     for name, body in bodies.items():
         if name != 'pi_ci_access.py': create(LIB / name, body)
     for name, path in state_paths.items():
         path.mkdir(mode=0o755 if name in ('completed', 'authority') else 0o700)
+        os.chmod(path, 0o755 if name in ('completed', 'authority') else 0o700)
         release.sync_directory(STATE)
     # Runtime profile is published last, after both fixed entrypoints. A crash
     # beforehand leaves activation unavailable; staged evidence remains intact.

@@ -243,7 +243,7 @@ def activate(plan_id: str) -> dict:
     require_root_path(path.parent, directory=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o444)
     with os.fdopen(fd, 'w') as stream:
-        json.dump(authority, stream, sort_keys=True); stream.flush(); os.fsync(stream.fileno())
+        json.dump(authority, stream, sort_keys=True); stream.flush(); os.fchmod(stream.fileno(), 0o444); os.fsync(stream.fileno())
     directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(directory)

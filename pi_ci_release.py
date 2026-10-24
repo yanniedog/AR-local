@@ -171,6 +171,7 @@ def materialize(stage, destination, value, guard):
             outgoing.flush(); os.fsync(outgoing.fileno()); os.fchmod(outgoing.fileno(), row['mode'])
     os.chmod(destination, 0o755)
     for directory, _, _ in os.walk(destination, topdown=False):
+        os.chmod(directory, 0o755)
         sync_directory(directory)
     verify_tree(destination, value, guard)
     sync_directory(destination.parent)

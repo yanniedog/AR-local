@@ -2,6 +2,7 @@
 import hashlib
 import json
 import stat
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -233,6 +234,27 @@ def test_installer_entrypoint_rejects_before_payload_import_or_install(tmp_path)
     assert 'staged files must be read-only and exclusively root controlled' in response.stderr
     assert 'PAYLOAD_IMPORTED_UNSAFELY' not in response.stdout + response.stderr
     assert 'Explicit installation requires root' not in response.stderr
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='native POSIX umask authority publication')
+def test_authority_is_public_readonly_under_umask_0077_without_real_worker(tmp_path, monkeypatch):
+    state = tmp_path / 'state'; state.mkdir(); (state / 'authority').mkdir()
+    monkeypatch.setattr(ci, 'STATE', state)
+    plan = {'target_commit': 'a' * 40, 'expires_at': '2026-10-24T20:00:00+00:00',
+            'runtime_profile_sha256': 'b' * 64, 'adapter_sha256': 'c' * 64}
+    monkeypatch.setattr(ci, 'load_runtime', lambda: {'pi_ci_activate': SimpleNamespace(plan_context=lambda _: {'plan': plan})})
+    monkeypatch.setattr(ci, 'require_root_path', lambda *args, **kwargs: None)
+    monkeypatch.setattr(ci, 'trusted_bytes', lambda *args: b'reviewed installed control')
+    calls = []
+    monkeypatch.setattr(ci, 'run', lambda argv, **kwargs: calls.append(argv) or SimpleNamespace(returncode=0))
+    previous = os.umask(0o077)
+    try: result = ci.activate('d' * 64)
+    finally: os.umask(previous)
+    authority = state / 'authority' / ('d' * 64 + '.json')
+    assert stat.S_IMODE(authority.stat().st_mode) == 0o444
+    observed = json.loads(authority.read_bytes())
+    assert observed['plan'] == 'd' * 64 and observed['scope'] == 'activate-immutable-d027'
+    assert result['result'] == 'WORKER_COMPLETED' and len(calls) == 1
 
 
 @pytest.fixture
