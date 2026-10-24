@@ -15,7 +15,7 @@ import sys
 import time
 
 from pi_shared_queue_store import validate_job
-from pi_shared_queue_post_hooks import retained_stop, approval
+from pi_shared_queue_post_hooks import retained_stop, approval, native_completion_proved
 
 NATIVE_LOCK = Path('/srv/ar-local/data/state/daily-ingest.lock')
 FIXED_ROOTS = {'AR_LOCAL_DATA_ROOT': '/srv/ar-local/data',
@@ -247,7 +247,8 @@ def _clear_native_owned_file(job, path):
         if values != expected and values != dict(expected, recovery='manual'):
             return False
         current = path.lstat()
-        if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
+        if ((info.st_dev, info.st_ino) != (current.st_dev, current.st_ino)
+                or not native_completion_proved(job, (info.st_dev, info.st_ino))):
             return False
         path.unlink()
         directory = os.open(path.parent, os.O_DIRECTORY)
