@@ -170,3 +170,53 @@ its exact closure. Archive producer acceptance, offsite full restore acceptance,
 filesystem image acceptance, deployment and public payload acceptance remain
 separate claims. This source has only mocked/Windows-focused validation so far;
 Linux CI and actual coupled commissioning remain mandatory before archive use.
+
+## Protected installation and packet preparation
+
+`pi_plain_backup_install.py` is the separately reviewed stdlib-only initial
+installer. Its fixed runtime path is
+`/var/lib/ar-local-plain-backup-install-tools/install.py`; the complete uncompressed
+bundle is copied as root-owned0400 `bundle.tar` beside it. Independently verify
+the installer SHA before executing it as root. The reviewed bundle manifest SHA
+and entire archive SHA are explicit arguments, not paths or generic commands:
+
+```
+/usr/bin/python3 -I -B /var/lib/ar-local-plain-backup-install-tools/install.py prepare <bundleSHA> <archiveSHA>
+/usr/bin/python3 -I -B /var/lib/ar-local-plain-backup-install-tools/install.py apply <bundleSHA>
+```
+
+Run both inside the existing manual host/ar-local queue with Userpi, CPU100%,
+IOWeight10, TasksMax64, control-group kill and a finite runtime at most ten minutes.
+The installer checks the live sole admitted claim, exact queue MainPID/invocation,
+boot/start ticks, native manual lease and direct queued sudo ancestry. It preserves
+all expected original queue bytes and the original reclaim entry root-private,
+requires inactive legacy backup/reclaim and no current journal, and refuses any
+unexpected incumbent hash. It never imports mutable production/source Python as
+root. New queue post_hooks is published before its importers; root controls,
+producer/runtime closure and manifests are complete before atomic dispatcher
+publication. A partial installation is retained and requires review, not a blind
+retry. Existing schedules, timer state, manager reload and service activation are
+never changed. Resource observations cover bounded preparation/copy with the
+same whole-unit640MiB early stop, zero swap-out, zero workload swap,2.5GiB floor
+and3328MiB admission reserve. Swappiness stays60 during installation.
+
+The installation plan additionally stages `plan.py` and `build-packet.py` beside
+the seven broker controls; the packet builder validates their installed hashes
+against root-private installation.json before importing either reviewed control.
+The existing original credential is Pi-owned0600 under root0700 custody. The
+builder checks its canonical path, protected ancestors, UID/GID/mode/link/size,
+stable read-only descriptor and unchanged leaf identity, preserves it exactly,
+and creates only the separate root:pi0440 operation copy.
+
+```
+/usr/bin/python3 -I -B /usr/local/lib/ar-local-plain-backup/build-packet.py PROBE <fresh32hex>
+```
+
+This writes only private packet/workspace and public read-only handoff files. It
+normalizes actual current-boot kernel evidence as KERNEL_ONLY, checks installed
+producer/runtime/control hashes and prepares the fixed service plan. It does not
+create/start a unit. PROBE authority expires within120 seconds, so prepare it only
+when the operator is ready to launch that exact reviewed one-shot service. After
+actual coupled/root-resource/stop-post proof, an explicitly authorized separate
+`RUN_ARCHIVE <fresh32hex> <successfulProbe32hex>` packet may be prepared. Neither
+packet creation nor installer success is backup acceptance.
