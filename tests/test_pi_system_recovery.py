@@ -471,6 +471,18 @@ def test_native_package_lock_descriptors_are_held_through_phase_and_released(mon
     monkeypatch.setattr(namespace, "writer_states", lambda plan: {unit: "inactive" for unit in plan["application_writers"]})
     monkeypatch.setattr(namespace, "runtime_directories", lambda: {name: {"mode": 0o1777 if name == "tmp" else 0o755} for name in capture.RUNTIME})
     monkeypatch.setattr(namespace.subprocess, "check_output", lambda *args, **kwargs: "")
+    # Hosted Linux runs as an unprivileged runner. Model only ownership of the
+    # private fixture lock inodes; keep real descriptors, bytes and close checks.
+    fixture_inodes = {(Path(name).stat().st_dev, Path(name).stat().st_ino) for name in locks}
+    real_fstat = os.fstat
+    def root_fixture_stat(descriptor):
+        info = real_fstat(descriptor)
+        if (info.st_dev, info.st_ino) not in fixture_inodes:
+            return info
+        fields = list(info)
+        fields[4] = 0
+        return os.stat_result(fields)
+    monkeypatch.setattr(namespace.os, "fstat", root_fixture_stat)
     descriptors = []
     monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace(LOCK_EX=1, LOCK_NB=4, lockf=lambda descriptor, flags: descriptors.append(descriptor)))
     with namespace.package_lockset({"package_writers": sorted(namespace.PACKAGE_UNITS)}) as proof:
