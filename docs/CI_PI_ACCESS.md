@@ -60,9 +60,12 @@ network permission; this package does not narrow them.
 ## Offsite recovery prerequisite
 
 The operator must first verify the complete raw archive and filesystem recovery
-image in Drive, actual restore/boot proof, and separate off-Pi custody of the
-decryption keys. Keep the last valid backup until its replacement is fully
-verified. These source changes do not lift the Drive hold or start a backup.
+image in Drive and actual restore/boot proof. The new recovery set uses lossless
+compression **without encryption**, following the operator's explicit choice;
+there is no new recovery key or password requirement. Preserve private Drive
+permissions. Keep existing encrypted fallback backups and their existing keys
+until the new complete recovery set is verified. These source changes do not
+lift the Drive hold or start a backup.
 
 Installation takes a root-controlled operator recovery approval and its exact
 SHA-256, plus an independently reviewed staging approval and its exact SHA-256.
@@ -78,8 +81,7 @@ The approval's schema is:
     "raw_archive": {"path": "/root/recovery/raw-archive-receipt.json", "sha256": "ACTUAL_SHA256"},
     "system_image": {"path": "/root/recovery/image-receipt.json", "sha256": "ACTUAL_SHA256"},
     "restore_proof": {"path": "/root/recovery/restore-receipt.json", "sha256": "ACTUAL_SHA256"},
-    "boot_proof": {"path": "/root/recovery/boot-receipt.json", "sha256": "ACTUAL_SHA256"},
-    "off_pi_key_custody": {"path": "/root/recovery/key-custody-receipt.json", "sha256": "ACTUAL_SHA256"}
+    "boot_proof": {"path": "/root/recovery/boot-receipt.json", "sha256": "ACTUAL_SHA256"}
   }
 }
 ```
@@ -89,7 +91,6 @@ approval is an operator attestation binding actual retained receipts. This
 helper does **not** inspect arbitrary receipt formats or claim that a label/hash
 proves remote completeness, bootability or recoverability. Never manufacture
 these references; the responsible operator must assess their actual results.
-Key-custody receipts contain custody evidence, never the decryption key itself.
 
 Do **not** execute the installer through sudo from a mutable checkout. Before
 starting any root shell/interpreter for it, the operator must independently

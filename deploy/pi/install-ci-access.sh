@@ -11,7 +11,7 @@ No activation adapter, deployment approval, key, timer or service will be instal
 Installation requires protected, independently hash-approved read-only staging
 and --install ROOT_RECOVERY_APPROVAL_JSON SHA256 ROOT_STAGING_APPROVAL_JSON SHA256.
 Proceed only after verified
-offsite raw archive, filesystem image, restore/boot proof and off-Pi key custody.
+offsite raw archive, filesystem image and restore/boot proof.
 No changes made. Read docs/CI_PI_ACCESS.md before installation and access cutover.
 EOF
   exit 0

@@ -22,7 +22,7 @@ def digest(body):
 def approved_plan(monkeypatch):
     now = datetime(2026, 10, 24, 3, tzinfo=timezone.utc)
     proofs = {name: encoded({"retained_receipt": name}) for name in
-              ("raw_archive", "system_image", "restore_proof", "boot_proof", "off_pi_key_custody")}
+              ("raw_archive", "system_image", "restore_proof", "boot_proof")}
     recovery = encoded({"schema_version": 1, "result": "PASS", "evidence": {
         name: {"path": "/root/recovery/" + name + ".json", "sha256": digest(body)}
         for name, body in proofs.items()}})
