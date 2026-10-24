@@ -36,6 +36,23 @@ policy version 2 and `retained_export_stage_policy: include-if-present`; catalog
 file-index and pack schemas remain unchanged. Routine legacy snapshots retain
 their version 1 empty-stage requirement. The coupled probe checks this same
 read-only source scope before reporting success, without freezing or cloud calls.
+For retained staging, directory identities are recorded before traversal in the
+private SQLite manifest index, including empty directories. They are checked
+after traversal and before catalog/candidate acceptance; copied retained-file
+identities are also rechecked. A concurrent addition, removal, replacement or
+content change rejects acceptance. These proofs stream from disk with the
+existing bounded SQLite cache rather than retaining the tree in memory.
+The probe additionally validates retained-stage descendant metadata with the
+same excluded-namespace, symlink and unique-regular-file checks, limited to
+100,000 metadata checks or 60 seconds within its existing operation deadline.
+It reads no retained payload bytes and does not claim a complete archive proof.
+
+Legacy source freezes keep their 1,200-second default. The typed manual plaintext
+path uses the remaining sealed host-operation monotonic deadline for its first
+full inventory, which can exceed 20 minutes on large archives. It creates no
+separate timeout allowance: the six-hour outer deadline, quiet window, free-space
+and whole-cgroup resource guards continue to stop work. A local freeze timeout
+reports only the fixed `source_freeze_deadline` code, without source paths.
 Unknown top-level namespaces fail closed. Existing credential/cache and
 telemetry exclusions remain explicit; this is a CDR recovery archive, not a
 whole-filesystem image. Mutable SQLite input is copied privately, including the

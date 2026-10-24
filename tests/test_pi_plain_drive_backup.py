@@ -54,6 +54,7 @@ def layout(tmp_path, monkeypatch):
         db.execute('CREATE TABLE captured_bytes (value BLOB)')
         db.execute('INSERT INTO captured_bytes VALUES (?)', (b'preserve exact bytes',))
     lease = AttestedHostLease.__new__(AttestedHostLease)
+    lease.context = {'deadline_monotonic': source.time.monotonic() + 21599}
     monkeypatch.setattr(AttestedHostLease, 'verify', lambda *args: None)
     return data.resolve(), lease
 
