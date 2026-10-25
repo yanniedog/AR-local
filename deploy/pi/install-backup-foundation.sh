@@ -65,6 +65,14 @@ fi
   exit 1
 }
 
+tmp="$(mktemp -d)"
+trap 'rm -rf -- "$tmp"' EXIT
+source_tree="$tmp/source"
+mkdir "$source_tree"
+git -C "$repo" archive --format=tar "$candidate" > "$tmp/source.tar"
+tar -xf "$tmp/source.tar" -C "$source_tree"
+rm -f "$tmp/source.tar"
+
 prod_head_before=""
 if [ -n "$prod_repo" ]; then
   prod_head_before="$(git -C "$prod_repo" rev-parse HEAD)"
@@ -86,17 +94,14 @@ if [ "$gate_bytes_only" -eq 0 ]; then
     echo "$config must be readable by $run_user (recommended root:$run_group 0640)" >&2
     exit 1
   }
-  configured_identity="$(PYTHONPATH="$repo" python3 -c 'from pathlib import Path; from ar_local_backup_policy import BackupPolicy; p=BackupPolicy.from_env_file(Path("/etc/ar-local/backup.env")); print(f"{p.expected_uid}:{p.expected_gid}")')"
+  configured_identity="$(PYTHONPATH="$source_tree" python3 -c 'from pathlib import Path; from ar_local_backup_policy import BackupPolicy; p=BackupPolicy.from_env_file(Path("/etc/ar-local/backup.env")); print(f"{p.expected_uid}:{p.expected_gid}")')"
   service_identity="$(id -u "$run_user"):$(id -g "$run_user")"
   [ "$configured_identity" = "$service_identity" ] || {
     echo "Configured backup UID:GID $configured_identity does not match $run_user ($service_identity)" >&2
     exit 1
   }
-  python3 "$repo/pi_backup_foundation.py" preflight --config "$config" --repo "$repo" --site-repo "$site" --data-root "$data"
+  python3 "$source_tree/pi_backup_foundation.py" preflight --config "$config" --repo "$repo" --site-repo "$site" --data-root "$data"
 fi
-
-tmp="$(mktemp -d)"
-trap 'rm -rf -- "$tmp"' EXIT
 
 if [ "$gate_bytes_only" -eq 0 ]; then
   sudo install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills
@@ -106,7 +111,7 @@ if [ "$gate_bytes_only" -eq 0 ]; then
       -e "s|{{AR_LOCAL_DATA_ROOT}}|$data|g" -e "s|{{AR_SITE_ROOT}}|$site/site|g" "$1" > "$2"
   }
   for name in ar-local-backup.service ar-local-restore-drill.service; do
-    render "$repo/deploy/pi/$name" "$tmp/$name"
+    render "$source_tree/deploy/pi/$name" "$tmp/$name"
     sudo install -m 0644 "$tmp/$name" "/etc/systemd/system/$name"
   done
 fi
@@ -152,14 +157,14 @@ for name in \
   cdr_upstream_dependency.py \
   laptop_backup_daily_verify.py
 do
-  sudo install -o root -g root -m 0644 "$repo/$name" "$trusted/$name"
+  sudo install -o root -g root -m 0644 "$source_tree/$name" "$trusted/$name"
 done
 sudo install -d -o root -g root -m 0755 "$trusted/contracts"
 for name in export-contract-v2.schema.json observation-v1.schema.json product-accounting-v1.schema.json pi-backup-boot-proof-v1.schema.json pi-deployment-acceptance-v1.schema.json pi-preservation-snapshot-v1.schema.json pi-restore-acceptance-v1.schema.json pi-rollback-acceptance-v1.schema.json; do
-  sudo install -o root -g root -m 0644 "$repo/contracts/$name" "$trusted/contracts/$name"
+  sudo install -o root -g root -m 0644 "$source_tree/contracts/$name" "$trusted/contracts/$name"
 done
 (
-  cd "$repo"
+  cd "$source_tree"
   sha256sum \
     ar_local_backup_policy.py \
     ar_local_backup_scope.py \
@@ -212,13 +217,13 @@ sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/bac
 
 if [ "$gate_bytes_only" -eq 0 ]; then
   for name in ar-local-backup.timer ar-local-restore-drill.timer; do
-    sudo install -m 0644 "$repo/deploy/pi/$name" "/etc/systemd/system/$name"
+    sudo install -m 0644 "$source_tree/deploy/pi/$name" "/etc/systemd/system/$name"
   done
 fi
 
-sudo install -m 0755 "$repo/deploy/pi/ar-local-restore-latest.sh" /usr/local/bin/ar-local-restore-latest
-sudo install -m 0755 "$repo/deploy/pi/ar-local-backup-gate.sh" /usr/local/bin/ar-local-backup-gate
-sudo install -m 0755 "$repo/deploy/pi/ar-local-backup-run.sh" /usr/local/bin/ar-local-backup-run
+sudo install -m 0755 "$source_tree/deploy/pi/ar-local-restore-latest.sh" /usr/local/bin/ar-local-restore-latest
+sudo install -m 0755 "$source_tree/deploy/pi/ar-local-backup-gate.sh" /usr/local/bin/ar-local-backup-gate
+sudo install -m 0755 "$source_tree/deploy/pi/ar-local-backup-run.sh" /usr/local/bin/ar-local-backup-run
 
 if ! (cd "$trusted" && sha256sum --quiet -c /etc/ar-local/backup-gate.sha256); then
   echo "Installed backup-gate bytes failed sha256sum verification against /etc/ar-local/backup-gate.sha256" >&2
