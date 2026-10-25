@@ -166,6 +166,41 @@ def request_day_archive(day: str, *, spool: Path | None = None, reason: str = "p
     return marker
 
 
+class _InventoryHashReader:
+    """Stream file bytes into tar while verifying size and inventoried SHA-256."""
+
+    def __init__(self, handle, *, expected_size: int, expected_sha256: str, source: Path):
+        self._handle = handle
+        self._expected_size = expected_size
+        self._expected_sha256 = expected_sha256
+        self._source = source
+        self._hasher = hashlib.sha256()
+        self._remaining = expected_size
+        self.verified = False
+
+    def read(self, size: int = -1) -> bytes:
+        if self.verified:
+            return b""
+        if size < 0 or size > self._remaining:
+            size = self._remaining
+        chunk = self._handle.read(size) if size else b""
+        if len(chunk) != size:
+            raise DayArchiveError(
+                f"archive member truncated since inventory: {self._source}"
+            )
+        if chunk:
+            self._hasher.update(chunk)
+            self._remaining -= len(chunk)
+        if self._remaining == 0 and not self.verified:
+            self.verified = True
+            digest = self._hasher.hexdigest()
+            if digest != self._expected_sha256:
+                raise DayArchiveError(
+                    f"archive member changed since inventory: {self._source}"
+                )
+        return chunk
+
+
 def _build_tar_zst(archive: Path, rows: list[dict], manifest: dict, guard: Callable[[], None]) -> str:
     if archive.exists():
         raise DayArchiveError(f"archive already exists: {archive}")
@@ -186,8 +221,13 @@ def _build_tar_zst(archive: Path, rows: list[dict], manifest: dict, guard: Calla
                     source = Path(row["source_path"])
                     if not source.is_file() or source.is_symlink():
                         raise DayArchiveError(f"missing archive member: {source}")
+                    size = int(row["size"])
+                    if source.stat().st_size != size:
+                        raise DayArchiveError(
+                            f"archive member size changed since inventory: {source}"
+                        )
                     member = tarfile.TarInfo(row["logical_path"])
-                    member.size = row["size"]
+                    member.size = size
                     member.mode = int(row["mode"], 8)
                     member.uid = row["uid"]
                     member.gid = row["gid"]
@@ -197,8 +237,26 @@ def _build_tar_zst(archive: Path, rows: list[dict], manifest: dict, guard: Calla
                     member.pax_headers = {
                         "mtime": f'{"-" if ns < 0 else ""}{magnitude // 10**9}.{magnitude % 10**9:09d}'
                     }
-                    with source.open("rb") as handle:
-                        tar.addfile(member, handle)
+                    expected_sha = str(row["sha256"])
+                    if size == 0:
+                        if hashlib.sha256().hexdigest() != expected_sha:
+                            raise DayArchiveError(
+                                f"archive member changed since inventory: {source}"
+                            )
+                        tar.addfile(member, __import__("io").BytesIO(b""))
+                    else:
+                        with source.open("rb") as handle:
+                            reader = _InventoryHashReader(
+                                handle,
+                                expected_size=size,
+                                expected_sha256=expected_sha,
+                                source=source,
+                            )
+                            tar.addfile(member, reader)
+                            if not reader.verified:
+                                raise DayArchiveError(
+                                    f"archive member not fully verified: {source}"
+                                )
     return sha256_file(archive, guard)
 
 
@@ -403,7 +461,8 @@ def _process_day_locked(
         request = spool / "requests" / f"{day}.json"
         request.unlink(missing_ok=True)
         return prior
-    work = spool / "work" / day
+    # Dry-run uses a separate workspace so it cannot destroy retained upload retry bytes.
+    work = spool / "work" / "dry-run" / day if dry_run else spool / "work" / day
     work.mkdir(parents=True, exist_ok=True)
     combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
     # Dry-run skips journalctl; never reuse those bytes for a journals-enabled upload.
@@ -477,7 +536,7 @@ def _process_day_locked(
                 "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
             }
             record_progress(spool, row)
-            # Keep dry-run bytes out of the upload workspace so a later real run rebuilds.
+            # Remove only the dry-run workspace; leave spool/work/<day> retry artifacts intact.
             if work.exists():
                 shutil.rmtree(work)
             return row
@@ -560,7 +619,8 @@ def _process_control_locked(
     prior = load_progress(spool).get("CONTROL")
     if prior and prior.get("result") == "PASS" and not dry_run:
         return prior
-    work = spool / "work" / "CONTROL"
+    # Dry-run must not rmtree retained CONTROL retry artifacts under work/CONTROL.
+    work = spool / "work" / "dry-run" / "CONTROL" if dry_run else spool / "work" / "CONTROL"
     work.mkdir(parents=True, exist_ok=True)
 
     def _reuse_or_build_control() -> dict:

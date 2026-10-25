@@ -329,7 +329,52 @@ def test_dry_run_does_not_leave_reusable_workspace(tmp_path: Path, monkeypatch):
         include_journals=True,
     )
     assert dry["result"] == "DRY_RUN"
+    assert not (spool / "work" / "dry-run" / day).exists()
     assert not (spool / "work" / day).exists()
+
+
+def test_dry_run_preserves_retained_upload_workspace(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    data = tmp_path / "data"
+    day = "2026-05-13"
+    _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
+    _write(data / "state" / f"{day}.done.json", '{"ok":true}')
+    real_work = spool / "work" / day
+    built = archive.build_day_archive(data, day, real_work, include_journals=False)
+    retained = Path(built["local_path"])
+    assert retained.is_file()
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    dry = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=None,
+        dry_run=True,
+        include_journals=True,
+    )
+    assert dry["result"] == "DRY_RUN"
+    assert retained.is_file()
+    assert (real_work / f"{day}.sha256").is_file()
+    assert not (spool / "work" / "dry-run" / day).exists()
+
+
+def test_build_rejects_mutated_member_bytes(tmp_path: Path, monkeypatch):
+    data = tmp_path / "data"
+    day = "2026-05-13"
+    source = data / "runs" / day / "_exports" / "local-cdr.sqlite"
+    _write(source, "abc")
+    _write(data / "state" / f"{day}.done.json", '{"ok":true}')
+    work = tmp_path / "work"
+    original = archive.build_day_inventory
+
+    def mutate_then_inventory(*args, **kwargs):
+        inventory = original(*args, **kwargs)
+        source.write_text("XYZ", encoding="utf-8")  # same size, different bytes
+        return inventory
+
+    monkeypatch.setattr(archive, "build_day_inventory", mutate_then_inventory)
+    with pytest.raises(archive.DayArchiveError, match="changed since inventory"):
+        archive.build_day_archive(data, day, work, include_journals=False)
 
 
 def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
