@@ -49,12 +49,28 @@ def _parse_day_archive_env_file(env_path: Path) -> dict[str, str]:
     return parsed
 
 
+def _resolve_fs_path(path_str: str) -> Path:
+    """Normalize path aliases (``.``, trailing slash, symlinks) for isolation checks."""
+    return Path(path_str).expanduser().resolve(strict=False)
+
+
+def _is_same_or_beneath(candidate: Path, root: Path) -> bool:
+    """True when candidate is root or a path under root after resolution."""
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def _validate_canary_day_archive_env(parsed: dict[str, str]) -> None:
     """Fail closed before mutating os.environ so isolation settings survive rejection."""
     spool = parsed.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", "").strip()
     if not spool:
         raise ValueError("canary day-archive env must set AR_LOCAL_DAY_ARCHIVE_SPOOL")
-    if spool.rstrip("/") == PRODUCTION_DAY_ARCHIVE_SPOOL.rstrip("/"):
+    spool_resolved = _resolve_fs_path(spool)
+    production_spool = _resolve_fs_path(PRODUCTION_DAY_ARCHIVE_SPOOL)
+    if _is_same_or_beneath(spool_resolved, production_spool):
         raise ValueError(
             "canary day-archive env must not use production archive spool "
             f"{PRODUCTION_DAY_ARCHIVE_SPOOL}"
@@ -71,9 +87,9 @@ def _validate_canary_day_archive_env(parsed: dict[str, str]) -> None:
     rclone = parsed.get("RCLONE_CONFIG", "").strip()
     if not rclone:
         raise ValueError("canary day-archive env must set isolated RCLONE_CONFIG")
-    if rclone.replace("\\", "/").rstrip("/") == PRODUCTION_DAY_ARCHIVE_RCLONE.rstrip(
-        "/"
-    ):
+    rclone_resolved = _resolve_fs_path(rclone)
+    production_rclone = _resolve_fs_path(PRODUCTION_DAY_ARCHIVE_RCLONE)
+    if rclone_resolved == production_rclone:
         raise ValueError(
             "canary day-archive env must not use production RCLONE_CONFIG"
         )

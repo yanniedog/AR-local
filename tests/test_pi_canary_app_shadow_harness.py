@@ -406,6 +406,25 @@ def test_load_day_archive_env_fail_closed_for_canary(tmp_path: Path, monkeypatch
     # Rejection must not clear prior isolation settings.
     assert os.environ["AR_LOCAL_DAY_ARCHIVE_SPOOL"] == "/srv/ar-local/canary/x/data/archive-spool"
 
+    # Alias through trailing "/." must still resolve to the production spool.
+    alias = tmp_path / "alias.env"
+    _write_canary_archive_env(
+        alias, AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives/."
+    )
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(alias))
+    with pytest.raises(ValueError, match="production archive spool"):
+        archive_ingest.load_day_archive_env()
+
+    # Nested path beneath the production spool is also rejected.
+    nested = tmp_path / "nested.env"
+    _write_canary_archive_env(
+        nested,
+        AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives/canary-sub",
+    )
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(nested))
+    with pytest.raises(ValueError, match="production archive spool"):
+        archive_ingest.load_day_archive_env()
+
     incomplete = tmp_path / "incomplete.env"
     incomplete.write_text(
         'AR_LOCAL_DAY_ARCHIVE_SPOOL="/srv/ar-local/canary/x/data/archive-spool"\n',
