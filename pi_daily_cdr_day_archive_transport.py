@@ -44,6 +44,52 @@ def resolve_archive_remote(remote: str) -> str:
     return f"{remote_name}:{'/'.join(segments)}"
 
 
+def migrate_day_archive_env(text: str) -> str:
+    """Point an installed env file at daily-cdr-raw-records.
+
+    Rewrites only a remote whose final segment is the legacy immutable folder.
+    A remote that already ends in the raw-records folder is unchanged. Any other
+    destination is rejected. The transport still refuses the legacy folder.
+    """
+    lines = text.splitlines(True)
+    seen = False
+    rewritten: list[str] = []
+    for line in lines:
+        if not line.startswith("AR_LOCAL_DAY_ARCHIVE_REMOTE="):
+            rewritten.append(line)
+            continue
+        seen = True
+        newline = "\n" if line.endswith("\n") else ""
+        raw = line[:-1] if newline else line
+        key, separator, value = raw.partition("=")
+        if separator != "=":
+            raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE must be name:path")
+        quote = ""
+        body = value.strip()
+        if len(body) >= 2 and body[0] == body[-1] and body[0] in "\"'":
+            quote = body[0]
+            body = body[1:-1]
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", body.strip())
+        if not match:
+            raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE must be name:path")
+        remote_name, remote_path = match.group(1), match.group(2).strip("/")
+        segments = [segment for segment in remote_path.split("/") if segment]
+        if not segments:
+            raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE needs a folder path")
+        if segments[-1] == LEGACY_FOLDER_NAME:
+            segments[-1] = FOLDER_NAME
+        elif segments[-1] != FOLDER_NAME:
+            raise ValueError(
+                "AR_LOCAL_DAY_ARCHIVE_REMOTE must end in daily-cdr-raw-records "
+                "or daily-cdr-day-archives"
+            )
+        migrated = resolve_archive_remote(f"{remote_name}:{'/'.join(segments)}")
+        rewritten.append(f"{key}={quote}{migrated}{quote}{newline}")
+    if not seen:
+        raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE missing")
+    return "".join(rewritten)
+
+
 class DayArchiveTransportError(RuntimeError):
     """Fatal transport failure; abort without deleting local archives."""
 

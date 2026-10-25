@@ -74,6 +74,22 @@ fi
 if [[ ! -f /etc/ar-local/day-archive.env ]]; then
   install -d -m 0755 /etc/ar-local
   install -m 0644 "$ROOT/deploy/pi/day-archive.env.example" /etc/ar-local/day-archive.env
+elif [[ -L /etc/ar-local/day-archive.env ]]; then
+  echo "refusing day-archive env symlink: /etc/ar-local/day-archive.env" >&2
+  exit 1
+else
+  # Move a legacy daily-cdr-day-archives remote onto daily-cdr-raw-records.
+  # The transport still refuses uploads into the immutable legacy folder.
+  PYTHONPATH="$ROOT" /usr/bin/python3 - << 'PY'
+from pathlib import Path
+from pi_daily_cdr_day_archive_transport import migrate_day_archive_env
+path = Path("/etc/ar-local/day-archive.env")
+current = path.read_text(encoding="utf-8")
+updated = migrate_day_archive_env(current)
+if updated != current:
+    path.write_text(updated, encoding="utf-8")
+    print("migrated AR_LOCAL_DAY_ARCHIVE_REMOTE to daily-cdr-raw-records")
+PY
 fi
 
 rendered=$(mktemp)

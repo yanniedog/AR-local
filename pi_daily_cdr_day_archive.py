@@ -27,6 +27,7 @@ from pi_daily_cdr_day_archive_scope import (
     FIRST_DAY,
     KNOWN_GAPS,
     SCHEMA as SCOPE_SCHEMA,
+    JOURNAL_CLASSIFIER,
     build_day_inventory,
     collect_control_files,
     file_row,
@@ -321,7 +322,7 @@ def build_day_archive(
         "journal_units": inventory.get("journal_units", []),
         "compression": COMPRESSION,
         "include_journals": bool(include_journals),
-        "journal_classifier": inventory.get("journal_classifier", 2),
+        "journal_classifier": inventory.get("journal_classifier", JOURNAL_CLASSIFIER),
         "file_count": inventory["file_count"],
         "total_bytes": inventory["total_bytes"],
         "files": [
@@ -507,9 +508,13 @@ def _process_day_locked(
         sha_path = work / f"{day}.sha256"
         manifest_path = work / f"{day}.manifest.json"
         if day in KNOWN_GAPS and existing_gap.is_file():
-            digest = sha256_file(existing_gap, combined_guard)
             gap = gap_record(day)
             gap["series"] = SERIES
+            existing_gap.write_text(
+                json.dumps(gap, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            digest = sha256_file(existing_gap, combined_guard)
             return {
                 "schema": SCHEMA,
                 "series": SERIES,
@@ -530,7 +535,8 @@ def _process_day_locked(
             digest = sha_path.read_text(encoding="utf-8").split()[0]
             journals_match = bool(manifest.get("include_journals")) == build_journals
             series_match = (not build_journals) or (
-                manifest.get("series") == SERIES and manifest.get("journal_classifier") == 2
+                manifest.get("series") == SERIES
+                and manifest.get("journal_classifier") == JOURNAL_CLASSIFIER
             )
             if (
                 journals_match

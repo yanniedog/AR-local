@@ -196,7 +196,7 @@ def collect_control_files(data_root: Path) -> list[Path]:
 
 # journalctl writes this exact placeholder when the range has no entries.
 _JOURNAL_EMPTY_MARKERS = (b"-- No entries --",)
-JOURNAL_CLASSIFIER = 2
+JOURNAL_CLASSIFIER = 3
 
 
 def _journal_file_status(path: Path) -> str:
@@ -227,6 +227,7 @@ def _export_one_journal(unit: str, day: str, destination: Path, start: datetime,
     command = [
         "journalctl",
         "--no-pager",
+        "--quiet",
         "--output=short-iso-precise",
         f"--unit={unit}",
         f"--since={start.isoformat()}",

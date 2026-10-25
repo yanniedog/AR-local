@@ -31,6 +31,9 @@ They do not by themselves make a day `wire_raw`.
 create-only and are export-only (no journals, no product-detail bodies). This
 worker does not delete them and does not upload the raw series into that
 folder, because `--immutable --ignore-existing` cannot replace them.
+`deploy/pi/install-day-archive.sh` rewrites an installed
+`AR_LOCAL_DAY_ARCHIVE_REMOTE` whose last segment is `daily-cdr-day-archives`
+to `daily-cdr-raw-records`. The transport still rejects the legacy folder.
 
 ## Drive layout
 
