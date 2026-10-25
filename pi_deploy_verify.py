@@ -386,9 +386,17 @@ def _snap_has_dirty_repos(snap: dict[str, str], *, context: str = "") -> bool:
     return found
 
 
-def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
-    return remote_snapshot(ar=pi_ar_repo(), site=pi_site_repo(), data=pi_data_root(),
-                           remote=pi_remote(), run=run_ssh, parse=_parse_kv_lines, dry_run=dry_run)
+def pi_remote_snapshot(*, dry_run: bool = False, fetch: bool = True) -> Optional[dict[str, str]]:
+    return remote_snapshot(
+        ar=pi_ar_repo(),
+        site=pi_site_repo(),
+        data=pi_data_root(),
+        remote=pi_remote(),
+        run=run_ssh,
+        parse=_parse_kv_lines,
+        dry_run=dry_run,
+        fetch=fetch,
+    )
 
 
 def pi_tree_clean(repo_path: str, *, dry_run: bool = False) -> bool:
