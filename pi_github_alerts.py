@@ -223,14 +223,14 @@ class AlertStore:
                                   "first_seen": utc(), "revision": 0, "delivered_revision": 0}
             changed = row.get("active") != (not healthy) or (not healthy and row.get("category") != category)
             if not changed:
-                if obs_iso is not None:
-                    row["last_observation_at"] = obs_iso
                 if not healthy and record_failure:
                     # A repeated failure advances the chronology fence without
                     # creating a new delivery revision or duplicate issue.
                     row["last_failure_at"] = utc()
-                if obs_iso is not None or (not healthy and record_failure):
+                    if obs_iso is not None:
+                        row["last_observation_at"] = obs_iso
                     self.write(state)
+                # Healthy re-observe: keep existing last_observation_at fence; no rewrite.
                 return
             row.update(title=title, active=not healthy, changed_at=utc(), revision=row["revision"] + 1)
             if healthy:
