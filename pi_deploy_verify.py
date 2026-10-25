@@ -45,11 +45,13 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from pi_deploy_queue_claim import (
+    BACKUP_QUEUE_MAX_RUNTIME_SEC,
     SHARED_QUEUE_MAX_RUNTIME_SEC,
     SHARED_QUEUE_SSH_TIMEOUT_SEC,
     SHARED_QUEUE_STATE,
     SHARED_QUEUE_UNIT_RE,
     SHARED_QUEUE_WAIT_TIMEOUT_SEC,
+    TRUSTED_PI_SHARED_TASK,
     _read_self_cgroup,
     already_under_shared_queue,
     inherited_queue_admission,
@@ -203,13 +205,17 @@ def run_deploy_mutation(
     *,
     dry_run: bool = False,
     require_host: bool = False,
+    max_runtime: int = SHARED_QUEUE_MAX_RUNTIME_SEC,
 ) -> tuple[int, str, str]:
     """Run a deploy mutation under the shared Pi queue (fail-closed)."""
 
+    ssh_timeout = SHARED_QUEUE_WAIT_TIMEOUT_SEC + 60 + int(max_runtime) + 30
     return run_ssh(
-        wrap_shared_queue(shell_cmd, require_host=require_host),
+        wrap_shared_queue(
+            shell_cmd, require_host=require_host, max_runtime=max_runtime
+        ),
         dry_run=dry_run,
-        timeout=SHARED_QUEUE_SSH_TIMEOUT_SEC,
+        timeout=ssh_timeout,
     )
 
 
@@ -704,7 +710,9 @@ def deployment_backup_gate(
         f"--protected-code-sha {shell_quote(protected_commit)} "
         f"--candidate-sha {shell_quote(expected_commit)}"
     )
-    code, out, err = run_deploy_mutation(script, dry_run=dry_run)
+    code, out, err = run_deploy_mutation(
+        script, dry_run=dry_run, max_runtime=BACKUP_QUEUE_MAX_RUNTIME_SEC
+    )
     if dry_run:
         print("pi_deploy_verify: dry-run would require a fresh verified backup, restore drill, and boot proof")
         return EXIT_OK

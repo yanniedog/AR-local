@@ -81,9 +81,11 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
 
 def test_wrap_shared_queue_fail_closed_and_skips_when_already_claimed(monkeypatch):
     wrapped = pi_deploy_verify.wrap_shared_queue("echo deploy")
-    assert "pi-shared-task --project ar-local --resource ar-local" in wrapped
+    trusted = pi_deploy_queue_claim.TRUSTED_PI_SHARED_TASK
+    assert f"{trusted} --project ar-local --resource ar-local" in wrapped
     assert "--resource host" not in wrapped
-    assert "command -v pi-shared-task" in wrapped
+    assert f"[ ! -x {trusted} ]" in wrapped or f"[ ! -x '{trusted}' ]" in wrapped
+    assert "command -v pi-shared-task" not in wrapped
     assert f"exit {pi_deploy_verify.EXIT_CONFIG}" in wrapped
     host_wrapped = pi_deploy_verify.wrap_shared_queue("echo nginx", require_host=True)
     assert "--resource ar-local --resource host" in host_wrapped
@@ -105,29 +107,40 @@ def test_wrap_shared_queue_fail_closed_and_skips_when_already_claimed(monkeypatc
 
 def test_inherited_queue_admission_requires_exclusive_ar_local(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
-    unit = "shared-pi-task-" + ("a" * 32) + ".service"
-    foreign = {
-        "jobs": [
-            {
-                "unit": unit,
-                "project": "other",
-                "mode": "exclusive",
-                "resources": ["other"],
-            }
-        ]
-    }
-    state.write_text(json.dumps(foreign), encoding="utf-8")
+    ar_unit = "ar-local-queue-task-" + ("a" * 32) + ".service"
+    foreign_unit = "shared-pi-task-" + ("b" * 32) + ".service"
     monkeypatch.setattr(pi_deploy_queue_claim, "SHARED_QUEUE_STATE", state)
     monkeypatch.setattr(
         pi_deploy_queue_claim,
         "_read_self_cgroup",
-        lambda: f"0::/system.slice/{unit}",
+        lambda: f"0::/system.slice/{foreign_unit}",
+    )
+    # Generic shared-pi-task prefix never bypasses, even with forged AR state.
+    state.write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "unit": foreign_unit,
+                        "project": "ar-local",
+                        "mode": "exclusive",
+                        "resources": ["ar-local"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
     assert pi_deploy_queue_claim.inherited_queue_admission() == "refuse"
+    monkeypatch.setattr(
+        pi_deploy_queue_claim,
+        "_read_self_cgroup",
+        lambda: f"0::/system.slice/{ar_unit}",
+    )
     good = {
         "jobs": [
             {
-                "unit": unit,
+                "unit": ar_unit,
                 "project": "ar-local",
                 "mode": "exclusive",
                 "resources": ["ar-local"],
@@ -143,7 +156,7 @@ def test_inherited_queue_admission_requires_exclusive_ar_local(tmp_path, monkeyp
     shared = {
         "jobs": [
             {
-                "unit": unit,
+                "unit": ar_unit,
                 "project": "ar-local",
                 "mode": "shared",
                 "resources": ["ar-local", "host"],
@@ -166,7 +179,11 @@ def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(
     )
     assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
     command = captured[0]
-    assert "pi-shared-task --project ar-local --resource ar-local" in command
+    assert (
+        f"{pi_deploy_queue_claim.TRUSTED_PI_SHARED_TASK} --project ar-local --resource ar-local"
+        in command
+    )
+    assert f"--max-runtime {pi_deploy_queue_claim.BACKUP_QUEUE_MAX_RUNTIME_SEC}" in command
     assert "/usr/local/bin/ar-local-backup-gate gate" in command
     assert "--candidate-sha" in command
     assert "--protected-code-sha" in command

@@ -11,13 +11,18 @@ from typing import Optional
 
 SHARED_QUEUE_WAIT_TIMEOUT_SEC = 45
 SHARED_QUEUE_MAX_RUNTIME_SEC = 90
+# Backup gate hashes manifests; docs/SHARED_PI_QUEUE.md uses 1800s for backup ops.
+BACKUP_QUEUE_MAX_RUNTIME_SEC = 1800
 SHARED_QUEUE_SSH_TIMEOUT_SEC = (
     SHARED_QUEUE_WAIT_TIMEOUT_SEC + 60 + SHARED_QUEUE_MAX_RUNTIME_SEC + 30
 )
 SHARED_QUEUE_STATE = Path("/var/lib/shared-pi-queue/state.json")
+# Detect any transient queue unit; reuse is limited to ar-local-queue-task-*.
 SHARED_QUEUE_UNIT_RE = re.compile(
     r"((?:ar-local-queue-task-|shared-pi-task-)[0-9a-f]{32})\.service"
 )
+AR_LOCAL_QUEUE_UNIT_PREFIX = "ar-local-queue-task-"
+TRUSTED_PI_SHARED_TASK = "/usr/local/bin/pi-shared-task"
 EXIT_CONFIG = 2
 
 
@@ -58,7 +63,11 @@ def inherited_queue_admission(*, require_host: bool = False) -> str:
     match = SHARED_QUEUE_UNIT_RE.search(_read_self_cgroup())
     if match is None:
         return "admit"
-    job = _queue_job_for_unit(f"{match.group(1)}.service")
+    unit_stem = match.group(1)
+    # shared-pi-task-* is every non-ar-local project; never reuse that bypass.
+    if not unit_stem.startswith(AR_LOCAL_QUEUE_UNIT_PREFIX):
+        return "refuse"
+    job = _queue_job_for_unit(f"{unit_stem}.service")
     resources = job.get("resources") if isinstance(job, dict) else None
     if (
         not isinstance(job, dict)
@@ -99,14 +108,15 @@ def wrap_shared_queue(
     resources = "--resource ar-local"
     if require_host:
         resources += " --resource host"
+    trusted = TRUSTED_PI_SHARED_TASK
     inner = shlex.quote(shell_cmd)
     return (
-        "if ! command -v pi-shared-task >/dev/null 2>&1; then "
-        "echo 'pi_deploy_verify: pi-shared-task required for deploy mutations; "
+        f"if [ ! -x {shlex.quote(trusted)} ]; then "
+        f"echo 'pi_deploy_verify: {trusted} required for deploy mutations; "
         "refusing unqueued production change' >&2; "
         f"exit {EXIT_CONFIG}; "
         "fi; "
-        f"pi-shared-task --project ar-local {resources} --cpu-slots 1 "
+        f"{shlex.quote(trusted)} --project ar-local {resources} --cpu-slots 1 "
         f"--max-runtime {int(max_runtime)} --wait-timeout {int(wait_timeout)} -- "
         f"/bin/bash -lc {inner}"
     )

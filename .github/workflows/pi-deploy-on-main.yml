@@ -206,7 +206,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh -o BatchMode=yes -o ConnectTimeout=60 ar-local-pi5 \
-            'command -v pi-shared-task >/dev/null && pi-shared-task --dry-run --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 90 -- /bin/true'
+            'test -x /usr/local/bin/pi-shared-task && /usr/local/bin/pi-shared-task --dry-run --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 90 -- /bin/true'
 
       - name: Deploy exact approved commit and verify
         if: >-
