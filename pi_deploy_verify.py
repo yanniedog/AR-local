@@ -276,7 +276,7 @@ def run_shell(
     cmd_timeout = max(1, int(timeout))
     if on_pi_host():
         if dry_run:
-            print(f"pi_deploy_verify: dry-run local {shell_cmd!r}")
+            print("pi_deploy_verify: dry-run local command (command redacted)")
             return 0, "", ""
         proc = subprocess.run(
             ["bash", "-lc", shell_cmd],
@@ -297,7 +297,7 @@ def run_shell(
     remote_cmd = _remote_command_with_success_sentinel(shell_cmd)
     cmd = ["ssh", *SSH_OPTIONS, host, remote_cmd]
     if dry_run:
-        print(f"pi_deploy_verify: dry-run ssh {host} {shell_cmd!r}")
+        print(f"pi_deploy_verify: dry-run ssh {host} (command redacted)")
         return 0, "", ""
 
     attempts = SSH_TRANSPORT_RETRIES + 1
