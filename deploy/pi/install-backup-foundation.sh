@@ -60,6 +60,7 @@ for name in \
   ar_local_ingest_schedule.py \
   pi_backup_foundation.py \
   pi_ingest_terminal.py \
+  process_safety.py \
   cdr_atomic.py \
   cdr_export_contract.py \
   cdr_file_lock.py \
@@ -106,6 +107,7 @@ done
     ar_local_ingest_schedule.py \
     pi_backup_foundation.py \
     pi_ingest_terminal.py \
+    process_safety.py \
     cdr_atomic.py \
     cdr_export_contract.py \
     cdr_file_lock.py \

@@ -30,6 +30,40 @@ def _install_inventory() -> set[str]:
     return modules | schemas
 
 
+def test_trusted_bundle_includes_and_imports_process_safety(tmp_path: Path):
+    """Regression: process_safety.py cannot be dropped from both install lists silently."""
+    inventory = _install_inventory()
+    assert "process_safety.py" in inventory
+    bundle = tmp_path / "trusted"
+    for relative in inventory:
+        destination = bundle / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, destination)
+    script = """
+import sys
+from pathlib import Path
+bundle = Path(sys.argv[1]).resolve()
+repo = Path(sys.argv[2]).resolve()
+assert all(not value or Path(value).resolve() != repo for value in sys.path)
+import process_safety
+assert Path(process_safety.__file__).resolve().parent == bundle
+assert callable(process_safety.process_alive)
+print("ok")
+"""
+    environment = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME"}}
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(bundle), str(ROOT)],
+        cwd=bundle,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "ok"
+
+
 def test_installed_bundle_verifies_canonical_legacy_and_wal_without_repo_imports(tmp_path: Path):
     bundle = tmp_path / "trusted"
     for relative in _install_inventory():
