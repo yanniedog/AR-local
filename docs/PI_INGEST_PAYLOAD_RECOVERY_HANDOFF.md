@@ -36942,3 +36942,17 @@ or enabling their timers. See `SHARED_PI_QUEUE.md` for the entry point, limits,
 crash recovery and rollout procedure. Linux tests, harmless live canaries, exact
 merged source hashes and effective service readback must establish installation
 acceptance; future natural ingest remains unverified until observed.
+
+## 2026-10-25 — Drive write hold lift + daily CDR day-archives (operator 1B / ongoing)
+
+The operator authorized lifting the Google Drive write hold entirely and
+starting a dedicated unencrypted per-day CDR archive series under
+`AR-local Pi Backups/daily-cdr-day-archives/`, with sequential backfill from
+`2026-05-13` and ongoing post-ingest enqueue.
+
+Hold lift uses `deploy/pi/lift-drive-write-hold.sh` (inventory hashes, remove
+markers, re-enable Restic timers). Day archives use
+`pi_daily_cdr_day_archive.py` (Zstd level 19, verify-before-unlink local
+`.tar.zst` only). See `docs/DAILY_CDR_DAY_ARCHIVES.md`. Source CDR trees
+remain immutable; permanent gaps `2026-05-14` and `2026-06-26` receive gap
+markers only.

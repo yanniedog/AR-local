@@ -1,0 +1,254 @@
+"""Create-only rclone transport for daily CDR day-archives on Google Drive."""
+from __future__ import annotations
+
+import configparser
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+FOLDER_NAME = "daily-cdr-day-archives"
+DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+OBJECT_RE = re.compile(
+    r"^(?:"
+    r"\d{4}-\d{2}-\d{2}\.(?:tar\.zst|sha256|manifest\.json|GAP\.json)"
+    r"|CONTROL\.(?:tar\.zst|sha256|manifest\.json)"
+    r")$"
+)
+
+
+class DayArchiveTransportError(RuntimeError):
+    """Fatal transport failure; abort without deleting local archives."""
+
+
+class DayArchiveRclone:
+    def __init__(self, config: Path, remote: str, root_folder_id: str, guard=lambda: None):
+        self.config = Path(config)
+        self.remote = remote
+        self.root_folder_id = root_folder_id
+        self.guard = guard
+        self.executable = "/usr/bin/rclone"
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", remote)
+        if not match:
+            raise ValueError("rclone remote must be name:path")
+        self.remote_name, remote_path = match.group(1), match.group(2).strip("/")
+        if remote_path not in ("", FOLDER_NAME) and not remote_path.endswith("/" + FOLDER_NAME):
+            # Accept either dedicated remote path ending in daily-cdr-day-archives
+            # or a parent path where we append the folder name.
+            if FOLDER_NAME not in remote_path.split("/"):
+                self.remote = f"{self.remote_name}:{remote_path}/{FOLDER_NAME}".replace("//", "/")
+            else:
+                self.remote = f"{self.remote_name}:{remote_path}"
+        elif remote_path == "":
+            self.remote = f"{self.remote_name}:{FOLDER_NAME}"
+        else:
+            self.remote = f"{self.remote_name}:{remote_path}"
+        if root_folder_id and not re.fullmatch(r"[a-zA-Z0-9_-]{10,200}", root_folder_id):
+            raise ValueError("pinned Drive root folder ID invalid")
+        info = self.config.lstat()
+        if (
+            self.config != self.config.resolve()
+            or not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_size > 1024**2
+            or stat.S_IMODE(info.st_mode) not in (0o400, 0o440, 0o600, 0o640)
+            or info.st_uid not in (0, os.getuid())
+        ):
+            raise ValueError("private canonical existing rclone config required")
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read(self.config, encoding="utf-8")
+        section = parser[self.remote_name]
+        allowed_roots = (None, "", root_folder_id) if root_folder_id else (None, "")
+        if (
+            section.get("type") != "drive"
+            or section.get("scope") != "drive.file"
+            or not json.loads(section.get("token", "{}")).get("refresh_token")
+            or section.get("service_account_file")
+            or section.get("service_account_credentials")
+            or section.get("team_drive")
+            or section.get("root_folder_id") not in allowed_roots
+        ):
+            raise ValueError("reuse existing drive.file application credentials only")
+
+    def path(self, relative: str) -> str:
+        name = PureName(relative)
+        if not OBJECT_RE.fullmatch(name):
+            raise ValueError(f"unsupported day-archive object path: {relative}")
+        return f"{self.remote}/{name}"
+
+    def _drive_root_args(self) -> list[str]:
+        if not self.root_folder_id:
+            return []
+        return ["--drive-root-folder-id", self.root_folder_id]
+
+    def ensure_folder(self) -> None:
+        """Create the dedicated subdirectory if missing (mkdir idempotent)."""
+        self.guard()
+        env = self._env()
+        args = [
+            self.executable,
+            "--config",
+            str(self.config),
+            "mkdir",
+            *self._drive_root_args(),
+            "--",
+            self.remote,
+        ]
+        completed = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
+        if completed.returncode not in (0,):
+            # rclone mkdir is idempotent; treat already-exists as success when stderr is empty-ish
+            stderr = (completed.stderr or "").lower()
+            if "already" not in stderr and completed.returncode != 0:
+                raise DayArchiveTransportError(
+                    f"failed to ensure Drive folder {self.remote}: exit {completed.returncode}"
+                )
+
+    def upload(self, relative: str, source: Path) -> None:
+        self._copyto("upload", relative, source)
+
+    def download(self, relative: str, destination: Path) -> bool:
+        if destination.exists() or destination.is_symlink():
+            raise ValueError("download requires new private destination")
+        return self._copyto("download", relative, destination, missing=True)
+
+    def remote_exists(self, relative: str) -> bool:
+        self.guard()
+        env = self._env()
+        args = [
+            self.executable,
+            "--config",
+            str(self.config),
+            "lsf",
+            *self._drive_root_args(),
+            "--",
+            self.path(relative),
+        ]
+        completed = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
+        if completed.returncode in (3, 4):
+            return False
+        if completed.returncode != 0:
+            raise DayArchiveTransportError(f"remote exists check failed: exit {completed.returncode}")
+        return bool(completed.stdout.strip())
+
+    def _env(self) -> dict:
+        return {
+            "PATH": "/usr/bin:/bin",
+            "LC_ALL": "C",
+            "GOMAXPROCS": "2",
+            "GOMEMLIMIT": "192MiB",
+            "GOGC": "50",
+            "HOME": "/nonexistent",
+        }
+
+    def _copyto(self, direction: str, relative: str, local: Path, *, missing: bool = False) -> bool:
+        if direction not in ("upload", "download"):
+            raise ValueError("fixed transfer direction required")
+        remote = self.path(relative)
+        local = Path(local)
+        if not local.is_absolute() or local != local.resolve() or local.is_symlink():
+            raise ValueError("canonical absolute local object required")
+        if direction == "upload" and not local.is_file():
+            raise ValueError("regular local upload required")
+        if direction == "download" and local.exists():
+            raise ValueError("new local download required")
+        source, destination = (str(local), remote) if direction == "upload" else (remote, str(local))
+        self.guard()
+        args = [
+            self.executable,
+            "--config",
+            str(self.config),
+            "copyto",
+            *self._drive_root_args(),
+            "--immutable",
+            "--ignore-existing",
+            "--checksum",
+            "--transfers",
+            "1",
+            "--checkers",
+            "1",
+            "--bwlimit",
+            "8M",
+            "--retries",
+            "1",
+            "--low-level-retries",
+            "2",
+            "--contimeout",
+            "30s",
+            "--timeout",
+            "600s",
+            "--",
+            source,
+            destination,
+        ]
+        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+            child = subprocess.Popen(args, stdout=out, stderr=err, env=self._env())
+            try:
+                while child.poll() is None:
+                    self.guard()
+                    if out.tell() + err.tell() > 256 * 1024:
+                        raise DayArchiveTransportError("transport diagnostic size limit exceeded")
+                    time.sleep(0.1)
+                self.guard()
+                if missing and child.returncode in (3, 4):
+                    return False
+                if child.returncode:
+                    raise DayArchiveTransportError(f"day-archive transport failed: exit {child.returncode}")
+                return True
+            finally:
+                if child.poll() is None:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=10)
+
+
+def PureName(relative: str) -> str:
+    name = Path(relative).name
+    if name != relative.replace("\\", "/").rsplit("/", 1)[-1]:
+        raise ValueError("day-archive objects are flat under the dedicated folder")
+    return name
+
+
+def sha256_file(path: Path, guard=lambda: None) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            guard()
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_uploaded_archive(
+    transport: DayArchiveRclone,
+    relative: str,
+    local_archive: Path,
+    expected_sha256: str,
+    scratch: Path,
+    guard=lambda: None,
+) -> None:
+    """Re-download the cloud object and require exact sha256 match before local unlink."""
+    scratch.mkdir(parents=True, exist_ok=True)
+    download = scratch / f"verify-{PureName(relative)}"
+    if download.exists():
+        download.unlink()
+    ok = transport.download(relative, download)
+    if not ok:
+        raise DayArchiveTransportError(f"remote object missing after upload: {relative}")
+    if download.stat().st_size != local_archive.stat().st_size:
+        raise DayArchiveTransportError("remote size differs from local archive")
+    actual = sha256_file(download, guard)
+    if actual != expected_sha256:
+        raise DayArchiveTransportError("remote sha256 differs from local archive")
+    if sha256_file(local_archive, guard) != expected_sha256:
+        raise DayArchiveTransportError("local archive changed after upload")
+    download.unlink()

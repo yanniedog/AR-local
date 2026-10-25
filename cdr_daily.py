@@ -721,6 +721,29 @@ def run_once(args: argparse.Namespace) -> int:
             )
         for cleanup_path in ram_cleanup_paths:
             shutil.rmtree(cleanup_path, ignore_errors=True)
+    # Durable post-ingest enqueue after primary finalize only (not revisions).
+    # Failures here must not undo a verified finalize; surface and continue.
+    if not is_revision:
+        try:
+            from pi_daily_cdr_day_archive import request_day_archive
+
+            archive_request = request_day_archive(date, reason="post-ingest-finalize")
+            finalized = {
+                **finalized,
+                "day_archive_request": {"status": "QUEUED", "path": str(archive_request)},
+            }
+        except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
+            print(
+                f"day-archive enqueue failed after finalize: {archive_error}",
+                file=sys.stderr,
+            )
+            finalized = {
+                **finalized,
+                "day_archive_request": {
+                    "status": "ENQUEUE_FAILED",
+                    "error": str(archive_error)[:300],
+                },
+            }
     print(json.dumps(finalized, indent=2, ensure_ascii=False))
     return 1
 

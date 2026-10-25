@@ -1,0 +1,526 @@
+"""Sequential unencrypted per-day CDR archives to Google Drive.
+
+Create highly compressed tar.zst for one Hobart calendar day, upload to the
+dedicated Drive subdirectory, verify by re-download+sha256, then delete ONLY the
+local compressed artifacts. Source CDR trees are never deleted.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import tarfile
+import tempfile
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Callable
+
+import zstandard
+
+from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from pi_daily_cdr_day_archive_scope import (
+    FIRST_DAY,
+    KNOWN_GAPS,
+    SCHEMA as SCOPE_SCHEMA,
+    build_day_inventory,
+    collect_control_files,
+    file_row,
+    gap_record,
+    hobart_today,
+    iter_backfill_days,
+    require_day,
+)
+from pi_daily_cdr_day_archive_transport import (
+    DayArchiveRclone,
+    DayArchiveTransportError,
+    sha256_file,
+    verify_uploaded_archive,
+)
+
+SCHEMA = "ar-local-daily-cdr-day-archive-v1"
+COMPRESSION = "zstd-lossless-no-encryption-level-19"
+DEFAULT_DATA_ROOT = Path("/srv/ar-local/data")
+DEFAULT_SPOOL = Path("/var/lib/ar-local-day-archives")
+DEFAULT_RCLONE = Path("/var/lib/ar-local-drive-backup/credentials/rclone.conf")
+QUIET_START = (0, 30)
+QUIET_END = (2, 0)
+
+
+class DayArchiveError(RuntimeError):
+    """Abort the day; do not advance progress or unlink archives."""
+
+
+def _atomic_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _append_jsonl(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def in_quiet_window(now: datetime | None = None) -> bool:
+    current = now or datetime.now(tz=DAILY_INGEST_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=DAILY_INGEST_TZ)
+    local = current.astimezone(DAILY_INGEST_TZ)
+    minutes = local.hour * 60 + local.minute
+    start = QUIET_START[0] * 60 + QUIET_START[1]
+    end = QUIET_END[0] * 60 + QUIET_END[1]
+    return start <= minutes < end
+
+
+def progress_path(spool: Path) -> Path:
+    return spool / "progress.jsonl"
+
+
+def load_progress(spool: Path) -> dict[str, dict]:
+    path = progress_path(spool)
+    result: dict[str, dict] = {}
+    if not path.is_file():
+        return result
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        day = row.get("date")
+        if isinstance(day, str):
+            result[day] = row
+    return result
+
+
+def record_progress(spool: Path, row: dict) -> None:
+    _append_jsonl(progress_path(spool), row)
+    latest = spool / "latest.json"
+    _atomic_json(latest, row)
+
+
+def request_day_archive(day: str, *, spool: Path | None = None, reason: str = "post-ingest") -> Path:
+    """Durable enqueue used after successful daily finalize."""
+    day = require_day(day)
+    root = Path(spool or os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
+    requests = root / "requests"
+    requests.mkdir(parents=True, exist_ok=True)
+    marker = requests / f"{day}.json"
+    if marker.exists():
+        return marker
+    payload = {
+        "schema": SCHEMA,
+        "date": day,
+        "requested_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+        "reason": reason[:200],
+    }
+    temporary = marker.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, marker)
+    return marker
+
+
+def _build_tar_zst(archive: Path, rows: list[dict], manifest: dict, guard: Callable[[], None]) -> str:
+    if archive.exists():
+        raise DayArchiveError(f"archive already exists: {archive}")
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    with archive.open("xb") as output:
+        compressor = zstandard.ZstdCompressor(
+            level=19, threads=0, write_checksum=True, write_content_size=False
+        )
+        with compressor.stream_writer(output, closefd=False) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w|", format=tarfile.PAX_FORMAT) as tar:
+                info = tarfile.TarInfo("MANIFEST.json")
+                info.size = len(manifest_bytes)
+                info.mode = 0o600
+                info.mtime = int(time.time())
+                tar.addfile(info, fileobj=__import__("io").BytesIO(manifest_bytes))
+                for row in rows:
+                    guard()
+                    source = Path(row["source_path"])
+                    if not source.is_file() or source.is_symlink():
+                        raise DayArchiveError(f"missing archive member: {source}")
+                    member = tarfile.TarInfo(row["logical_path"])
+                    member.size = row["size"]
+                    member.mode = int(row["mode"], 8)
+                    member.uid = row["uid"]
+                    member.gid = row["gid"]
+                    ns = row["mtime_ns"]
+                    member.mtime = ns // 10**9
+                    magnitude = abs(ns)
+                    member.pax_headers = {
+                        "mtime": f'{"-" if ns < 0 else ""}{magnitude // 10**9}.{magnitude % 10**9:09d}'
+                    }
+                    with source.open("rb") as handle:
+                        tar.addfile(member, handle)
+    return sha256_file(archive, guard)
+
+
+def build_day_archive(
+    data_root: Path,
+    day: str,
+    work: Path,
+    *,
+    guard: Callable[[], None] = lambda: None,
+    include_journals: bool = True,
+) -> dict:
+    day = require_day(day)
+    work.mkdir(parents=True, exist_ok=True)
+    if day in KNOWN_GAPS:
+        gap = gap_record(day)
+        gap_path = work / f"{day}.GAP.json"
+        gap_path.write_text(json.dumps(gap, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        digest = sha256_file(gap_path, guard)
+        return {
+            "schema": SCHEMA,
+            "date": day,
+            "kind": "gap",
+            "coverage": "gap",
+            "local_path": str(gap_path),
+            "remote_name": f"{day}.GAP.json",
+            "sha256": digest,
+            "bytes": gap_path.stat().st_size,
+            "manifest": gap,
+        }
+
+    journal_dir = work / "journal-exports" if include_journals else None
+    inventory = build_day_inventory(data_root, day, journal_dir=journal_dir, guard=guard)
+    rows = list(inventory["files"])
+    if not rows:
+        raise DayArchiveError(f"no recoverable primary files found for {day}")
+    manifest = {
+        "schema": SCHEMA,
+        "scope_schema": SCOPE_SCHEMA,
+        "date": day,
+        "coverage": inventory["coverage"],
+        "compression": COMPRESSION,
+        "file_count": inventory["file_count"],
+        "total_bytes": inventory["total_bytes"],
+        "files": [
+            {k: row[k] for k in ("logical_path", "sha256", "size", "mode", "uid", "gid", "mtime_ns")}
+            for row in rows
+        ],
+    }
+    archive = work / f"{day}.tar.zst"
+    digest = _build_tar_zst(archive, rows, manifest, guard)
+    manifest_path = work / f"{day}.manifest.json"
+    sidecars = {
+        "archive_sha256": digest,
+        "archive_bytes": archive.stat().st_size,
+        **manifest,
+    }
+    manifest_path.write_text(json.dumps(sidecars, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    sha_path = work / f"{day}.sha256"
+    sha_path.write_text(f"{digest}  {day}.tar.zst\n", encoding="utf-8")
+    return {
+        "schema": SCHEMA,
+        "date": day,
+        "kind": "day",
+        "coverage": inventory["coverage"],
+        "local_path": str(archive),
+        "remote_name": f"{day}.tar.zst",
+        "sha256": digest,
+        "bytes": archive.stat().st_size,
+        "manifest_path": str(manifest_path),
+        "sha_path": str(sha_path),
+        "manifest": sidecars,
+    }
+
+
+def build_control_archive(
+    data_root: Path,
+    work: Path,
+    *,
+    guard: Callable[[], None] = lambda: None,
+) -> dict:
+    work.mkdir(parents=True, exist_ok=True)
+    rows = [file_row(data_root, path, guard) for path in collect_control_files(data_root)]
+    if not rows:
+        raise DayArchiveError("no control binding files found under state/")
+    manifest = {
+        "schema": SCHEMA,
+        "kind": "control",
+        "compression": COMPRESSION,
+        "file_count": len(rows),
+        "total_bytes": sum(row["size"] for row in rows),
+        "files": [
+            {k: row[k] for k in ("logical_path", "sha256", "size", "mode", "uid", "gid", "mtime_ns")}
+            for row in rows
+        ],
+    }
+    archive = work / "CONTROL.tar.zst"
+    digest = _build_tar_zst(archive, rows, manifest, guard)
+    manifest_path = work / "CONTROL.manifest.json"
+    sidecars = {
+        "archive_sha256": digest,
+        "archive_bytes": archive.stat().st_size,
+        **manifest,
+    }
+    manifest_path.write_text(json.dumps(sidecars, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    sha_path = work / "CONTROL.sha256"
+    sha_path.write_text(f"{digest}  CONTROL.tar.zst\n", encoding="utf-8")
+    return {
+        "schema": SCHEMA,
+        "kind": "control",
+        "local_path": str(archive),
+        "remote_name": "CONTROL.tar.zst",
+        "sha256": digest,
+        "bytes": archive.stat().st_size,
+        "manifest_path": str(manifest_path),
+        "sha_path": str(sha_path),
+        "manifest": sidecars,
+    }
+
+
+def upload_and_verify(
+    transport: DayArchiveRclone,
+    built: dict,
+    scratch: Path,
+    *,
+    guard: Callable[[], None] = lambda: None,
+) -> None:
+    local = Path(built["local_path"])
+    remote_name = built["remote_name"]
+    transport.upload(remote_name, local)
+    verify_uploaded_archive(transport, remote_name, local, built["sha256"], scratch, guard)
+    if built.get("manifest_path"):
+        transport.upload(Path(built["manifest_path"]).name, Path(built["manifest_path"]))
+    if built.get("sha_path"):
+        transport.upload(Path(built["sha_path"]).name, Path(built["sha_path"]))
+    if built.get("kind") == "day" and built.get("manifest_path"):
+        # Sidecar sha256/manifest are small; verify archive is the hard gate.
+        pass
+
+
+def unlink_local_archive_only(built: dict) -> None:
+    """Remove compressed workspace artifacts only — never source CDR trees."""
+    for key in ("local_path", "manifest_path", "sha_path"):
+        value = built.get(key)
+        if not value:
+            continue
+        path = Path(value)
+        if path.is_file() and (
+            path.name.endswith(".tar.zst")
+            or path.name.endswith(".sha256")
+            or path.name.endswith(".manifest.json")
+            or path.name.endswith(".GAP.json")
+        ):
+            path.unlink(missing_ok=True)
+
+
+def process_day(
+    *,
+    data_root: Path,
+    day: str,
+    spool: Path,
+    transport: DayArchiveRclone | None,
+    dry_run: bool,
+    include_journals: bool,
+    guard: Callable[[], None] = lambda: None,
+) -> dict:
+    day = require_day(day)
+    if in_quiet_window():
+        raise DayArchiveError("refusing day-archive work inside 00:30–02:00 Australia/Hobart quiet window")
+    prior = load_progress(spool).get(day)
+    if prior and prior.get("result") == "PASS":
+        return prior
+    work = spool / "work" / day
+    if work.exists():
+        shutil.rmtree(work)
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        built = build_day_archive(
+            data_root, day, work, guard=guard, include_journals=include_journals and not dry_run
+        )
+        if dry_run:
+            row = {
+                "schema": SCHEMA,
+                "date": day,
+                "result": "DRY_RUN",
+                "coverage": built.get("coverage"),
+                "kind": built.get("kind"),
+                "bytes": built.get("bytes"),
+                "sha256": built.get("sha256"),
+                "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+            }
+            record_progress(spool, row)
+            return row
+        if transport is None:
+            raise DayArchiveError("transport required unless --dry-run")
+        transport.ensure_folder()
+        if transport.remote_exists(built["remote_name"]):
+            # Idempotent: verify existing remote against freshly built local bytes.
+            verify_uploaded_archive(
+                transport,
+                built["remote_name"],
+                Path(built["local_path"]),
+                built["sha256"],
+                spool / "verify",
+                guard,
+            )
+        else:
+            upload_and_verify(transport, built, spool / "verify", guard=guard)
+        unlink_local_archive_only(built)
+        row = {
+            "schema": SCHEMA,
+            "date": day,
+            "result": "PASS",
+            "coverage": built.get("coverage"),
+            "kind": built.get("kind"),
+            "bytes": built.get("bytes"),
+            "sha256": built.get("sha256"),
+            "remote_name": built["remote_name"],
+            "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+        }
+        record_progress(spool, row)
+        request = spool / "requests" / f"{day}.json"
+        request.unlink(missing_ok=True)
+        return row
+    except Exception as error:
+        row = {
+            "schema": SCHEMA,
+            "date": day,
+            "result": "FAIL",
+            "error": str(error)[:500],
+            "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+        }
+        record_progress(spool, row)
+        raise
+
+
+def process_control(
+    *,
+    data_root: Path,
+    spool: Path,
+    transport: DayArchiveRclone,
+    dry_run: bool,
+    guard: Callable[[], None] = lambda: None,
+) -> dict:
+    if in_quiet_window():
+        raise DayArchiveError("refusing control-archive work inside quiet window")
+    work = spool / "work" / "CONTROL"
+    if work.exists():
+        shutil.rmtree(work)
+    built = build_control_archive(data_root, work, guard=guard)
+    if dry_run:
+        return {"result": "DRY_RUN", **{k: built[k] for k in ("sha256", "bytes", "remote_name")}}
+    transport.ensure_folder()
+    upload_and_verify(transport, built, spool / "verify", guard=guard)
+    unlink_local_archive_only(built)
+    row = {
+        "schema": SCHEMA,
+        "date": "CONTROL",
+        "result": "PASS",
+        "kind": "control",
+        "bytes": built["bytes"],
+        "sha256": built["sha256"],
+        "remote_name": built["remote_name"],
+        "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+    }
+    record_progress(spool, row)
+    return row
+
+
+def make_transport(args: argparse.Namespace) -> DayArchiveRclone:
+    remote = args.rclone_remote
+    if ":" not in remote:
+        raise SystemExit("rclone remote must look like ar_local_drive:AR-local Pi Backups")
+    return DayArchiveRclone(args.rclone_config, remote, args.drive_root_folder_id)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Per-day unencrypted CDR archives to Google Drive")
+    parser.add_argument("--data-root", type=Path, default=Path(os.environ.get("AR_LOCAL_DATA_ROOT", DEFAULT_DATA_ROOT)))
+    parser.add_argument("--spool", type=Path, default=Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL)))
+    parser.add_argument("--rclone-config", type=Path, default=Path(os.environ.get("RCLONE_CONFIG", DEFAULT_RCLONE)))
+    parser.add_argument(
+        "--rclone-remote",
+        default=os.environ.get(
+            "AR_LOCAL_DAY_ARCHIVE_REMOTE",
+            "ar_local_drive:AR-local Pi Backups/daily-cdr-day-archives",
+        ),
+    )
+    parser.add_argument(
+        "--drive-root-folder-id",
+        default=os.environ.get("AR_LOCAL_DRIVE_ROOT_FOLDER_ID", ""),
+        help="Pinned drive.file root folder ID",
+    )
+    parser.add_argument("--date", help="Process a single YYYY-MM-DD")
+    parser.add_argument("--backfill", action="store_true", help="Sequential from first day through yesterday")
+    parser.add_argument("--once-pending", action="store_true", help="Process one queued request if present")
+    parser.add_argument("--control", action="store_true", help="Upload CONTROL binding archive")
+    parser.add_argument("--request", metavar="DATE", help="Enqueue a day without processing")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-journals", action="store_true")
+    parser.add_argument("--max-days", type=int, default=0, help="Limit backfill days this invocation")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    spool = args.spool
+    spool.mkdir(parents=True, exist_ok=True)
+    if args.request:
+        path = request_day_archive(args.request, spool=spool, reason="cli-request")
+        print(json.dumps({"requested": args.request, "path": str(path)}, indent=2))
+        return 0
+
+    transport = None
+    if not args.dry_run:
+        transport = make_transport(args)
+
+    if args.control:
+        result = process_control(
+            data_root=args.data_root.resolve(),
+            spool=spool,
+            transport=transport,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result.get("result") in ("PASS", "DRY_RUN") else 1
+
+    days: list[str] = []
+    if args.date:
+        days = [require_day(args.date)]
+    elif args.once_pending:
+        requests_dir = spool / "requests"
+        pending = sorted(requests_dir.glob("*.json")) if requests_dir.is_dir() else []
+        if not pending:
+            print(json.dumps({"result": "IDLE", "reason": "no pending requests"}, indent=2))
+            return 0
+        days = [require_day(json.loads(pending[0].read_text(encoding="utf-8"))["date"])]
+    elif args.backfill:
+        done = load_progress(spool)
+        for day in iter_backfill_days():
+            prior = done.get(day)
+            if prior and prior.get("result") == "PASS":
+                continue
+            days.append(day)
+            if args.max_days and len(days) >= args.max_days:
+                break
+    else:
+        raise SystemExit("specify --date, --backfill, --once-pending, --control, or --request")
+
+    results = []
+    for day in days:
+        result = process_day(
+            data_root=args.data_root.resolve(),
+            day=day,
+            spool=spool,
+            transport=transport,
+            dry_run=args.dry_run,
+            include_journals=not args.skip_journals,
+        )
+        results.append(result)
+        if result.get("result") == "FAIL":
+            print(json.dumps({"results": results}, indent=2, sort_keys=True))
+            return 1
+    print(json.dumps({"results": results}, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
