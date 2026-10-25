@@ -525,6 +525,110 @@ def test_public_candidate_v2_rejects_missing_base_assets(tmp_path: Path) -> None
     assert any("base.details_sha asset missing" in f for f in receipt["findings"])
 
 
+def test_public_candidate_v1_rejects_historical_envelope_wrong_core(
+    tmp_path: Path,
+) -> None:
+    """Hash-valid historical envelope bound to a different core must not PASS."""
+    import gzip
+
+    from app_payload_bank_history_asset import (
+        ASSET_KIND,
+        NAMESPACE,
+        digest,
+        encode_envelope,
+    )
+
+    day = "2026-05-19"
+    repo = "yanniedog/AR-local"
+    tag = f"app-payload-{day}-r000001"
+    core_doc = {
+        "schema_version": 1,
+        "run_date": day,
+        "sections": {"Mortgage": {"rates": []}},
+    }
+    details_doc = {"schema_version": 1, "run_date": day, "products": {}}
+    core_raw = gzip.compress(
+        json.dumps(core_doc, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        mtime=0,
+    )
+    details_raw = gzip.compress(
+        json.dumps(details_doc, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        mtime=0,
+    )
+    core_sha = digest(core_raw)
+    details_sha = digest(details_raw)
+    core_name = f"core-{day}-{core_sha[:12]}.json.gz"
+    details_name = f"details-{day}-{details_sha[:12]}.json.gz"
+    core_path = tmp_path / core_name
+    details_path = tmp_path / details_name
+    core_path.write_bytes(core_raw)
+    details_path.write_bytes(details_raw)
+    # Envelope claims a different core than files.core — publication rejects this.
+    wrong_core = "b" * 64
+    hist_wire = encode_envelope(
+        {"schema_version": 2, "entries": []},
+        run_date=day,
+        core_sha256=wrong_core,
+    )
+    hist_sha = digest(hist_wire)
+    hist_name = f"{ASSET_KIND}-{day}-{hist_sha[:12]}.json.gz"
+    hist_path = tmp_path / hist_name
+    hist_path.write_bytes(hist_wire)
+    manifest = {
+        "schema_version": 1,
+        "run_date": day,
+        "generated_at": "2026-05-19T04:00:00Z",
+        "repo": repo,
+        "tag": tag,
+        "producer_commit": COMMIT,
+        "candidate_generation": GENERATION,
+        "files": {
+            "core": {
+                "name": core_name,
+                "bytes": len(core_raw),
+                "sha256": core_sha,
+                "url": f"https://github.com/{repo}/releases/download/{tag}/{core_name}",
+            },
+            "details": {
+                "name": details_name,
+                "bytes": len(details_raw),
+                "sha256": details_sha,
+                "url": (
+                    f"https://github.com/{repo}/releases/download/{tag}/{details_name}"
+                ),
+            },
+        },
+        NAMESPACE: {
+            "schema_version": 1,
+            "file": {
+                "name": hist_name,
+                "bytes": len(hist_wire),
+                "sha256": hist_sha,
+                "url": f"https://github.com/{repo}/releases/download/{tag}/{hist_name}",
+            },
+        },
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[core_path, details_path, hist_path],
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("v1 local/historical validation" in f for f in receipt["findings"])
+
+
 def test_public_candidate_v2_rejects_hash_ok_but_invalid_gzip(tmp_path: Path) -> None:
     """v2 gzip encoding must be validated even when compressed hash/length match."""
     import gzip
