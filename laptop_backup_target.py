@@ -140,12 +140,14 @@ def refuse_cloud_backup_root(path: Path, probe: Mapping[str, str] | None = None)
             raise ValueError(f"backup target path is a cloud-synced directory ({path})")
     identity = dict(probe) if probe is not None else volume_probe(path)
     drive_type_raw = str(identity.get("drive_type", "")).strip()
-    if drive_type_raw.isdigit() and int(drive_type_raw) == _DRIVE_REMOTE:
-        raise ValueError(f"backup target is a remote/network drive ({path})")
-    elif probe is None and os.name == "nt":
+    if drive_type_raw.isdigit():
+        drive_type = int(drive_type_raw)
+    elif os.name == "nt":
         drive_type = _windows_drive_type(path)
-        if drive_type == _DRIVE_REMOTE:
-            raise ValueError(f"backup target is a remote/network drive ({path})")
+    else:
+        drive_type = None
+    if drive_type == _DRIVE_REMOTE:
+        raise ValueError(f"backup target is a remote/network drive ({path})")
     label = str(identity.get("label", "")).casefold()
     filesystem = str(identity.get("filesystem", "")).casefold()
     for marker in _CLOUD_VOLUME_LABEL_MARKERS:
