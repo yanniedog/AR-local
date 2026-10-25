@@ -980,6 +980,10 @@ def build_parser() -> argparse.ArgumentParser:
             "canary gate; required for --deploy."
         ),
     )
+    parser.add_argument('--restricted-ci', action='store_true',
+                        help='Use only the dedicated account status/check/activate protocol.')
+    parser.add_argument('--approved-plan', default=os.environ.get('AR_PI_APPROVED_PLAN', ''),
+                        help='Root-approved immutable plan SHA-256; required for restricted activation.')
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
         "--verify",
@@ -1011,6 +1015,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args.effective_command = shlex.join(
         [sys.executable, str(Path(__file__).resolve()), *effective_argv]
     )
+    if args.restricted_ci:
+        if args.needs_pi:
+            parser.error('--restricted-ci requires --verify or --deploy')
+        from pi_ci_client import execute
+        try:
+            expected = args.expected_commit or origin_main_sha_local()
+            result = execute(args, host=ssh_host(), expected_commit=expected,
+                             canary_sha256=os.environ.get('AR_PI_CANARY_MANIFEST_SHA256', ''),
+                             canary_tag=os.environ.get('AR_PI_CANARY_RELEASE_TAG', ''))
+            if result or args.dry_run:
+                return result
+            return wait_for_http_smoke(pi_base_url(), require_rates=True)
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            print('Restricted Pi verification failed: ' + str(error), file=sys.stderr)
+            return EXIT_VERIFY_FAIL
     if args.needs_pi:
         return cmd_needs_pi(args)
     if args.verify:

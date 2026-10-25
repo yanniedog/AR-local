@@ -38,7 +38,7 @@ def ingest_definition_fields(*, queued=False, repo=REPO, user="ar-local"):
         post = []
         for line in template.read_text(encoding="utf-8").splitlines():
             if line.startswith("ExecStartPost="):
-                command = line.split("=", 1)[1].replace("{{AR_LOCAL_REPO}}", repo).replace("%%", "%")
+                command = line.split("=", 1)[1].replace("{{AR_LOCAL_REPO}}", repo).replace("%%", "%").replace('$$', '$')
                 flags = ["privileged"] if command.startswith("+") else []
                 argv = shlex.split(command.lstrip("+"))
                 post.append([argv[0], argv, flags, 0, 0, 0, 0, 0, 0, 0])

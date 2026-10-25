@@ -1,29 +1,24 @@
 # Restricted Pi CI access
 
-This package implements the account/login/status boundary and admission for a
-future separated activation adapter. **It does not integrate production
-activation yet.** Activation is hard-disabled in this foundation, even if an
-adapter file is subsequently placed on disk. It ships no `activate_adapter.py`. Existing
-`pi_cdr_quality_activate.py` invokes `sudo` from its worker; `NoNewPrivileges=yes`
-must reject that design. Do not copy it into the adapter location or remove the
-sandbox to make activation work.
+This source implements a restricted account and a functional immutable-release
+transaction. Root executes only an independently approved installed standard-
+library coordinator. It copies hash-bound regular Git blobs into a root-owned
+read-only release and atomically exchanges the canonical production directory.
+The complete prior checkout, including untracked files and Git metadata, remains
+retained. CI cannot write production, data, configuration, home or Git metadata.
 
-The existing production daily/watchdog services do not enforce
-`NoNewPrivileges`. A sandboxed worker that writes production source could
-otherwise plant code later executed by those services with unrestricted sudo.
-Future activation must remain unavailable until **every service executing the
-writable production tree** independently enforces `NoNewPrivileges=yes`, its
-privileged hooks/control files are root-owned and read-only to runtime/CI users,
-and native negative tests prove that indirect escalation path is closed. A
-worker-only sandbox is insufficient. Enabling activation requires a separate
-reviewed source change and service commissioning, not an adapter drop-in.
+Candidate verification executes as `pi`, with no supplementary groups, NNP and
+zero capabilities inside private PID/mount namespaces with read-only source and
+data. Root performs only the fixed existing dashboard/timer transitions. This
+closes the CI code-planting route without requiring an immediate NNP migration
+of daily/publisher services that currently need their fixed sudo operations.
+The owner's existing sudo access is unchanged. Package upgrades, disk repair,
+reboots and arbitrary shell/root commands remain outside CI's protocol.
 
-The deployment canary, exact-head review/CI, shared host queue, natural ingest
-quiet window, rollback and public-payload acceptance remain separate gates.
-Current `pi_deploy_verify.py` sends shell scripts and invokes repo-owned
-installers through sudo. It cannot operate through this restricted login
-protocol unchanged. Do not point the existing workflow at this account and
-report a complete deployment or verifier migration.
+Source tests are not installation or native acceptance. Commissioning requires
+the independently reviewed retained CI queue contract, actual kernel/rollback
+qualification, accepted offsite recovery and scoped operator approval. Missing
+installed profiles/hashes/proofs fail closed. No schedule is enabled or added.
 
 ## Account and command boundary
 
@@ -36,12 +31,14 @@ root-owned copies of `pi_ci_access.py` at:
 
 CI receives no source/data group membership, password, ordinary shell, package
 manager, disk/mount/reboot command, configurable executable or root shell. The
-login shell accepts exactly `status` and `activate <64 lowercase hex characters>`.
+login shell accepts exactly `status`, `check <64 lowercase hex characters>` and `activate <64 lowercase hex characters>`.
 It parses text directly, with no shell evaluation, and forwards a bounded JSON
 request to the no-argument control helper. A supplied executable, environment,
-source path, service name, newline or shell metacharacter is rejected. Status
-returns only an allowlist of service fields, never secrets or arbitrary journal
-contents, and labels deployment acceptance `NOT_ASSESSED`.
+source path, service name, newline or shell metacharacter is rejected. Status returns only fixed service states and hash/acceptance facts, never
+configuration environment values or arbitrary journals. A foundation-only
+installation labels acceptance `NOT_ASSESSED`; a commissioned snapshot verifies
+the complete immutable tree, effective unit definitions and typed native Ex
+privilege flags, plus independent root completion for the accepted plan.
 
 OpenSSH configuration disables password authentication, forwarding, PTYs and
 user startup files for this account. Its authorized key file is root-owned at
@@ -56,6 +53,18 @@ negative tests before allowing its CI SSH identity to reach this account.
 Prefer dedicated key-only OpenSSH over the tailnet if forwarding cannot be
 constrained acceptably. Existing wildcard tailnet network grants are a separate
 network permission; this package does not narrow them.
+
+Cutover requires native proof for both SSH servers: the account's actual login
+shell must be the fixed root-owned gateway even when Tailscale SSH handles the
+connection. Reject shell splicing (`bash -c`, `env`), PTY, SCP/SFTP and forwarding;
+do not infer those results from OpenSSH configuration alone. After the dedicated
+route is qualified, remove the CI tag's permission to log in as `pi` while keeping
+the independently tested human owner recovery route. Replace the Actions private
+key with a dedicated account-only credential and verify the former CI credential
+cannot reach `pi` through either route. Both hosted workflows now hard-code
+`User ar-local-ci`; the old `PI_SSH_USER` secret is ignored and must not be
+treated as evidence of policy cutover. Account installation does not itself
+change a tailnet ACL, revoke a key, update a secret or prove a completed cutover.
 
 ## Offsite recovery prerequisite
 
@@ -145,44 +154,164 @@ Verify the owner recovery route independently before changing CI secrets/user,
 revoking CI's access to `pi`, or reloading SSH. A partial install failure requires
 inspection; never blindly rerun or delete an account to make it pass.
 
-## Future activation integration
+## Immutable activation commissioning
 
-The owner may place a reviewed plan at `/etc/ar-local/ci-plans/SHA256.json`, with
-its exact byte SHA-256 as the filename. CI cannot create or edit that directory.
-Plan fields are exactly `schema_version: 1`, `scope: "activate-sealed-d027"`,
-`target_commit`, `previous_commit` (40 lowercase hex characters), `expires_at`
-(timezone-aware, 30 minutes to 6 hours remaining), `sealed_manifest_sha256`,
-`recovery_approval_sha256` and `adapter_sha256`. The adjacent
-`SHA256.activation.json` and `SHA256.recovery.json` must hash to those values.
-The fixed root-owned adapter path is
-`/usr/local/lib/ar-local-ci/activate_adapter.py`, also bound by the plan's hash.
-No activation adapter is installed by this package, and foundation activation
-remains hard-disabled regardless of any subsequently installed adapter.
+The foundation installer creates the account/login boundary only. An operator
+first independently approves the exact installed module closure and a runtime
+profile, stages those files root-owned/read-only outside user-writable ancestors,
+and verifies the installer hash before starting Python with `-I`. The separate
+`pi_ci_install.py` defaults to validation. Its explicit `--install` copies the
+approved modules, retains the old login/control bytes, creates private state and
+publishes the profile last. It performs no Git, candidate import, service action,
+key/SSH change, deletion or timer activation. A partial attempt is retained for
+inspection; it cannot be replayed over existing runtime paths.
 
-The disabled future admission implementation validates ownership, nonwritable ancestors, regular files, single
-links, sizes, hashes, expiry and all recovery references. It exclusively creates
-an immutable-in-practice root-owned claim under `/var/lib/ar-local-ci`. A second
-invocation, a worker failure or a timeout does not erase/reuse that claim.
-Interrupted or ambiguous work requires an operator investigation and new plan.
+The commissioning approval schema is `ar-local-ci-commission-v1`, with exactly
+`source_commit` (reviewed40hex), `files` (SHA-256 of `pi_ci_access.py`,
+`pi_ci_release.py`, `pi_ci_resources.py`, `pi_ci_activate.py`, `pi_ci_snapshot.py`,
+`pi_ci_worker.py`) and `runtime_sha256` (staged `runtime.json`). Independently
+check these hashes; computing expected hashes from an untrusted staging tree is
+not independent approval. Invocation after backup/scoped authorization:
 
-The disabled future worker path runs only the fixed adapter, with one plan ID, inside a named systemd
-scope as `pi`, `NoNewPrivileges=yes`, empty capabilities, protected home/kernel,
-private devices/tmp and fixed writable checkout/data/worker directories. It
-does not execute source, install units, invoke a shell or accept systemd
-properties from CI input. Existing `pi` passwordless sudo cannot elevate a
-process inside this sandbox. A worker exit zero is labeled `WORKER_COMPLETED`,
-never accepted deployment, public publication or data-integrity proof.
+```sh
+sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+  /usr/bin/python3 -I /ROOT_APPROVED_STAGE/pi_ci_install.py \
+  --staging /ROOT_APPROVED_STAGE \
+  --approval /ROOT_APPROVAL/commission.json --approval-sha256 ACTUAL_SHA256 \
+  --recovery /ROOT_APPROVAL/recovery.json --recovery-sha256 ACTUAL_SHA256
+# Add --install only for the reviewed explicit commissioning transaction.
+```
 
-The adapter still needs a reviewed root-side transaction coordinator for the
-exact permitted service transitions. That coordinator must bind each request
-to the same root-approved plan, retained production lease, current predecessor,
-unchanged backup/data/control receipts, source hashes, exact named units and
-root-owned effective unit definitions. It must restore only previously active
-coordination timers, preserve natural ingest, and retain rollback receipts.
-It must never let the worker choose arbitrary service names, unit contents,
-systemd properties, command arguments or root-executed candidate code. Complete
-this integration and native sandbox/rollback fault tests before enabling CI
-activation. Ordinary OS upgrades or disk repair remain outside CI privileges.
+`/etc/ar-local/ci-runtime.json` has schema `ar-local-ci-runtime-v1`, exact installed
+module hashes, `queue_contract: ci-retained-v1`, complete installed queue file
+hashes, `git_configuration` binding protected `/etc/gitconfig` by SHA-256,
+`unit_properties` for every fixed code consumer/timer in `PROFILE_UNITS`, and
+`unit_native` for every service's six native Ex command properties. Native
+execution flags are retained; only execution timestamps/status counters are
+normalized. Service properties omit human-readable `ExecStart`/hook records
+because those contain changing PIDs/timestamps; all six typed native Ex fields
+bind their executable/argv/privilege flags instead. Timer profiles require both
+`TimersCalendar` and `TimersMonotonic`; only the changing `next_elapse` suffix is
+ignored, while calendar expressions and monotonic base intervals remain exact.
+Dashboard, daily and manual ingest must use the canonical production working
+directory and an exact production script argv token. A service still executing
+an older external checkout cannot satisfy the immutable release profile.
+Root validates loaded definitions and root-controlled fragments and
+drop-ins. Missing/unknown command hooks, drift or pending daemon reload block.
+
+Root-owned production requires protected Git `safe.directory` configuration for
+`/srv/ar-local/AR-local` so normal unprivileged ingest/publisher Git still works.
+This is an explicit commissioning gate, not a Git command executed as root. The
+candidate worker instead receives fixed command-scope safe-directory entries and
+ignores mutable user/system Git configuration. Before cutover independently
+qualify service interpreters, import paths, configuration and existing runtime
+write paths. The canonical checkout and `/srv/ar-local` must be real directories;
+the parent must be root-owned and not group/world writable. Data directories
+retain their existing ownership. Verify release and production are on the same
+filesystem; no cross-filesystem or symlink activation fallback exists.
+
+## Approved plan, staging and transaction
+
+The October24 narrow archive readback launcher is pinned to predecessor e350.
+Code-only CI explicitly refuses activation while its known daily drop-in exists
+or the approved loaded command still contains `pi_payload_archive_launcher.py`.
+The initial full-producer upgrade therefore requires the owner's separately
+reviewed atomic cutover: retire only the exact hash-bound drop-in, verify the
+ordinary daily command, exchange the source and perform a manager-qualified
+reload; restore that exact drop-in only together with its matching predecessor
+on rollback. See `PAYLOAD_ARCHIVE_READBACK_RUNTIME.md`. This helper never removes
+the pin or performs a blind global daemon reload. Routine immutable code-only
+CI becomes available after that special migration and native commissioning.
+
+Root-controlled `/etc/ar-local/ci-plans/PLAN.json` is addressed by its exact byte
+SHA-256. Schema version is exactly integer2; scope is `activate-immutable-d027`.
+Fields are `target_commit`, `previous_commit`, timezone-aware `expires_at` (at
+most6hours), `sealed_manifest_sha256`, `recovery_approval_sha256`, `adapter_sha256`,
+`runtime_profile_sha256`, `release_manifest_sha256`,
+`predecessor_manifest_sha256`, `canary_manifest_sha256`, `canary_release_tag`.
+Adjacent `PLAN.activation.json`, `.recovery.json`, `.release.json`,
+`.previous.json`, `.canary-acceptance.json` bind those exact hashes. The canary
+must be the exact existing protected workflow's accepted target/repository and
+all eight real acceptance gates; an immutable root plan does not bypass it.
+
+The release descriptor schema `ar-local-ci-release-v1` contains `commit` and a
+complete `files` mapping of relative paths to `{sha256, bytes, mode}`. Modes are
+0444/0555. Non-Git files exactly equal the sealed full source inventory; `.git`
+permits only bounded reviewed objects/index/refs, a detached exact HEAD and the
+fixed sanitized config (`SAFE_GIT_CONFIG`). Hooks, alternates and external Git
+configuration are forbidden. The predecessor descriptor schema is
+`ar-local-ci-predecessor-v1`, with `commit` and complete `source_files` hashes.
+
+After the complete plan is independently approved, the owner may invoke only the
+installed fixed root control's internal staging mode through the normal guarded
+owner admission, never as CI:
+
+```sh
+sudo /usr/bin/python3 -I /usr/local/sbin/ar-local-ci-control \
+  --stage ACTUAL_PLAN_SHA256 /READONLY_OR_PI_OWNED_INPUT_TREE
+```
+
+It opens each input component beneath held directory descriptors with no-follow
+flags, rejects links/FIFOs/path traversal, copies bounded bytes to a NEW private
+root workspace and verifies every approved size/hash before publishing readable
+staging. Root never imports input modules or invokes its Git configuration/hooks.
+Prepare the detached metadata unprivileged on the laptop/candidate side; the
+Root-approved descriptor binds every byte, including its index and objects.
+No existing checkout or untracked work is cleaned or overwritten by staging.
+
+`check PLAN` is read-only. `activate PLAN` consumes a root create-only claim;
+errors/timeouts never erase or replay it. Root publishes a nonsecret authority
+record, then launches one fixed `ar-local-ci-activate-PLAN.service` through the
+shared host queue. The queue rotates the native manual lease BEFORE starting the
+root child; its exact successor inode, job, PID ticks, boot, invocation and cgroup
+are bound in the root transaction intent and finalizer. Only the independently
+qualified CI retained predicate may admit this service; a matching name or a
+manually forged generic queue claim is insufficient.
+
+A root observer samples the whole cgroup every100ms across preflight, copying,
+all verification phases, switching and timer restoration. The original host swap
+baseline never resets between workers. Early stop is aggregate RSS640MiB, any
+workload swap/out activity, more than16MiB cold swap-in using actual page size,
+host available memory below2.5GiB or sample gap over2seconds. Linux pidfds bind
+accounting and cleanup signals. Cgroup memory limits are supplementary; a
+missing memory controller is never claimed as an enforced hard limit.
+
+Only previously active coordination/capacity timers are stopped/restored; the
+natural daily timer remains active. Root requires all code consumers idle,
+checks the sealed predecessor and publication controls through the NNP worker,
+materializes the immutable release and atomically exchanges directories using
+Linux `renameat2(RENAME_EXCHANGE)`. It starts the dashboard and runs the exact
+sealed verifier again. Post-switch failure restores the whole original tree
+only after unchanged publication controls permit rollback. An ambiguous inode,
+failed rollback or unproven descendant cleanup retains admission and stopped
+coordination for independent restoration/manual inspection.
+
+Independent privileged ExecStopPost can restore the original tree and original
+timer states after controller/laptop failure. It never grants deployment
+acceptance merely because restoration succeeded. Missing/failed whole-transaction
+resource proof forces restoration, even if a prior phase wrote PASS. Completion
+requires exact code-directory identity, native timer/dashboard readback, retained
+native inode and no other process in the invocation. The queue releases its
+manual native claim only after root completion and the entire cgroup ends.
+
+## Hosted restricted verification
+
+The existing protected `pi-deploy-canary` workflow still checks exact current
+main40SHA, immutable canary release/tag and digest, protected environment and
+explicit deployment confirmation. It now also binds `approved_plan` against
+`AR_PI_APPROVED_PLAN`, connects as `ar-local-ci` and uses only `check PLAN`,
+`activate PLAN`, `status`. No shell scripts/installers/source writes are sent.
+`pi-deploy-watchdog` uses `status` plus independent HTTP smoke only; its existing
+schedule is unchanged and this source does not enable any schedule.
+
+`pi_deploy_verify.py --restricted-ci --verify --expected-commit EXACT40SHA`
+checks the accepted root-owned full source hash inventory, typed native unit
+profile, independent completion and mandatory dashboard/daily timer state, then
+performs the existing real HTTP smoke. It does not fetch Git on the Pi. The
+legacy owner route remains separate; its typed native reads are parallel and
+bounded within SSH's120second budget. Public mobile payload generation, upload
+and actual public bytes remain a separate acceptance step. No snapshot labels
+those bytes current by inference from a deployment commit.
 
 ## Owner codephrase and emergency access
 
@@ -211,13 +340,13 @@ CI's need for those credentials but does not silently revoke the owner's access.
 ## Verification
 
 ```sh
-python -m pytest tests/test_pi_ci_access.py
+python -m pytest tests/test_pi_ci_access.py tests/test_pi_ci_immutable.py tests/test_pi_ci_resources.py
 bash -n deploy/pi/install-ci-access.sh
 bash deploy/pi/install-ci-access.sh --check
 git diff --check
 ```
 
 The tests exercise protocol injection, arbitrary paths/environment, plan expiry,
-hash-bound evidence, missing adapters and replay admission without contacting a
+hash-bound evidence, missing commissioning and replay admission without contacting a
 Pi or running sudo. Linux native ownership, sandbox escape/forwarding rejection,
 installation and end-to-end activation are separate acceptance requirements.
