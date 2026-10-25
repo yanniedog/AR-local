@@ -1,17 +1,21 @@
 #!/bin/bash
 set -euo pipefail
-PROGRESS=/var/lib/ar-local-day-archives/progress.jsonl
 python3 - <<'PY'
 import json
 from pathlib import Path
-path = Path("/var/lib/ar-local-day-archives/progress.jsonl")
+spool = Path("/var/lib/ar-local-day-archives")
+paths = (spool / "progress.jsonl", spool / "meta" / "progress.jsonl")
 latest = {}
-if path.is_file():
+for path in paths:
+    if not path.is_file():
+        continue
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
-        latest[row["date"]] = row
+        day = row.get("date")
+        if isinstance(day, str):
+            latest[day] = row
 passes = sorted(d for d, r in latest.items() if r.get("result") == "PASS")
 fails = sorted(d for d, r in latest.items() if r.get("result") == "FAIL")
 print(json.dumps({

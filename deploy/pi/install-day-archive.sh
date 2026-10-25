@@ -43,7 +43,25 @@ ensure_spool_child requests
 ensure_spool_child work
 ensure_spool_child verify
 ensure_spool_child locks
+# Progress/latest live under meta/ so the root-owned spool parent need not be writable.
+ensure_spool_child meta
 # Parent remains root:root 0755 — do not chown -R the spool.
+# Migrate legacy root progress files into meta/ once (no-clobber).
+if [[ -f "$SPOOL/progress.jsonl" && ! -e "$SPOOL/meta/progress.jsonl" ]]; then
+  if [[ -L "$SPOOL/progress.jsonl" ]]; then
+    echo "refusing legacy progress symlink: $SPOOL/progress.jsonl" >&2
+    exit 1
+  fi
+  mv -n -- "$SPOOL/progress.jsonl" "$SPOOL/meta/progress.jsonl"
+fi
+if [[ -f "$SPOOL/latest.json" && ! -e "$SPOOL/meta/latest.json" ]]; then
+  if [[ -L "$SPOOL/latest.json" ]]; then
+    echo "refusing legacy latest symlink: $SPOOL/latest.json" >&2
+    exit 1
+  fi
+  mv -n -- "$SPOOL/latest.json" "$SPOOL/meta/latest.json"
+fi
+chown -h "$run_user:$run_group" "$SPOOL/meta/progress.jsonl" "$SPOOL/meta/latest.json" 2>/dev/null || true
 
 # System python used by ar-local-daily / day-archive oneshot needs zstandard.
 if ! /usr/bin/python3 -c 'import zstandard' 2>/dev/null; then

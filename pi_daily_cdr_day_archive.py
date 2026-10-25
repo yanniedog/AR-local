@@ -120,29 +120,36 @@ def quiet_window_guard() -> None:
         )
 
 
+def progress_dir(spool: Path) -> Path:
+    """App-writable child under a root-owned spool parent."""
+    return Path(spool) / "meta"
+
+
 def progress_path(spool: Path) -> Path:
-    return spool / "progress.jsonl"
+    return progress_dir(spool) / "progress.jsonl"
 
 
 def load_progress(spool: Path) -> dict[str, dict]:
-    path = progress_path(spool)
     result: dict[str, dict] = {}
-    if not path.is_file():
-        return result
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
+    # Prefer meta/; still honor a legacy root progress.jsonl from earlier installs.
+    for path in (Path(spool) / "progress.jsonl", progress_path(spool)):
+        if not path.is_file():
             continue
-        row = json.loads(line)
-        day = row.get("date")
-        if isinstance(day, str):
-            result[day] = row
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            day = row.get("date")
+            if isinstance(day, str):
+                result[day] = row
     return result
 
 
 def record_progress(spool: Path, row: dict) -> None:
-    _append_jsonl(progress_path(spool), row)
-    latest = spool / "latest.json"
-    _atomic_json(latest, row)
+    meta = progress_dir(spool)
+    meta.mkdir(parents=True, exist_ok=True)
+    _append_jsonl(meta / "progress.jsonl", row)
+    _atomic_json(meta / "latest.json", row)
 
 
 def request_day_archive(day: str, *, spool: Path | None = None, reason: str = "post-ingest") -> Path:
