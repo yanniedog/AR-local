@@ -19,8 +19,10 @@ Environment (optional):
   AR_PI_EXPECTED_COMMIT Exact 40-character AR-local main commit approved by canary
 
 Deploy mutations always acquire the shared Pi queue via ``pi-shared-task``
-(``--project ar-local --resource ar-local``) unless the process is already
-inside a queue cgroup. Missing ``pi-shared-task`` fails closed.
+(``--project ar-local --resource ar-local``, plus ``--resource host`` for
+shared nginx/package mutations) unless an inherited exclusive claim already
+covers the required resources. Missing ``pi-shared-task`` or an insufficient
+inherited claim fails closed.
 
 Examples:
   python pi_deploy_verify.py --verify
@@ -42,6 +44,17 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
+from pi_deploy_queue_claim import (
+    SHARED_QUEUE_MAX_RUNTIME_SEC,
+    SHARED_QUEUE_SSH_TIMEOUT_SEC,
+    SHARED_QUEUE_STATE,
+    SHARED_QUEUE_UNIT_RE,
+    SHARED_QUEUE_WAIT_TIMEOUT_SEC,
+    _read_self_cgroup,
+    already_under_shared_queue,
+    inherited_queue_admission,
+    wrap_shared_queue,
+)
 from pi_deploy_service_snapshot import pi_ingest_service_fences_ok, remote_snapshot
 
 from ar_local_pi_runtime import (
@@ -56,12 +69,6 @@ from ar_local_pi_runtime import (
 
 REPO_ROOT = Path(__file__).resolve().parent
 SUBPROCESS_TIMEOUT_SEC = 120
-# Queue admission wait is fail-fast; execution budget matches a single SSH step.
-SHARED_QUEUE_WAIT_TIMEOUT_SEC = 45
-SHARED_QUEUE_MAX_RUNTIME_SEC = 90
-SHARED_QUEUE_SSH_TIMEOUT_SEC = (
-    SHARED_QUEUE_WAIT_TIMEOUT_SEC + 60 + SHARED_QUEUE_MAX_RUNTIME_SEC + 30
-)
 
 EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
@@ -73,7 +80,6 @@ DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
 SSH_SUCCESS_SENTINEL = "__AR_PI_SSH_COMMAND_OK__"
-SHARED_QUEUE_CGROUP_MARKERS = ("ar-local-queue-task-", "shared-pi-task-")
 # ssh exits 255 for its own transport failures, distinct from any status the
 # remote command could return. That is the one class where the remote command
 # provably never ran, so a retry cannot repeat a side effect.
@@ -192,48 +198,16 @@ def on_pi_host() -> bool:
     return is_raspberry_pi()
 
 
-def already_under_shared_queue() -> bool:
-    """True when this process already holds a pi-shared-task cgroup claim."""
-
-    try:
-        cgroup = Path("/proc/self/cgroup").read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return any(marker in cgroup for marker in SHARED_QUEUE_CGROUP_MARKERS)
-
-
-def wrap_shared_queue(
+def run_deploy_mutation(
     shell_cmd: str,
     *,
-    max_runtime: int = SHARED_QUEUE_MAX_RUNTIME_SEC,
-    wait_timeout: int = SHARED_QUEUE_WAIT_TIMEOUT_SEC,
-) -> str:
-    """Wrap a remote/local shell command so it acquires an ar-local queue claim.
-
-    Fail-closed when ``pi-shared-task`` is not on PATH. Skip wrapping when already
-    inside a queue unit to avoid nested exclusive claims (deadlock).
-    """
-
-    if already_under_shared_queue():
-        return shell_cmd
-    inner = shell_quote(shell_cmd)
-    return (
-        "if ! command -v pi-shared-task >/dev/null 2>&1; then "
-        "echo 'pi_deploy_verify: pi-shared-task required for deploy mutations; "
-        "refusing unqueued production change' >&2; "
-        f"exit {EXIT_CONFIG}; "
-        "fi; "
-        "pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 "
-        f"--max-runtime {int(max_runtime)} --wait-timeout {int(wait_timeout)} -- "
-        f"/bin/bash -lc {inner}"
-    )
-
-
-def run_deploy_mutation(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
+    dry_run: bool = False,
+    require_host: bool = False,
+) -> tuple[int, str, str]:
     """Run a deploy mutation under the shared Pi queue (fail-closed)."""
 
     return run_ssh(
-        wrap_shared_queue(shell_cmd),
+        wrap_shared_queue(shell_cmd, require_host=require_host),
         dry_run=dry_run,
         timeout=SHARED_QUEUE_SSH_TIMEOUT_SEC,
     )
@@ -830,16 +804,27 @@ def rollback_to_protected_commit(
     return EXIT_OK
 
 
+def _deploy_mutation_result(code: int, err: str, *, dry_run: bool) -> Optional[int]:
+    """Map a mutation exit to deploy_services status, or None to continue."""
+
+    if code == EXIT_BUSY and not dry_run:
+        print(err or "pi_deploy_verify: ingest/deploy lock is busy", file=sys.stderr)
+        return EXIT_BUSY
+    if code != 0 and not dry_run:
+        return EXIT_SSH
+    return None
+
+
 def deploy_services(*, dry_run: bool = False) -> int:
+    """Apply runtime units under ar-local; nginx under ar-local+host (no nest)."""
+
     ar_repo = pi_ar_repo()
     site_repo = pi_site_repo()
     data = pi_data_root()
     install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
     apply_runtime = f"{ar_repo}/deploy/pi/apply-pi-runtime-units.sh"
-    deploy_watchdog_script = (
-        f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.sh"
-    )
-    script = (
+    deploy_watchdog_script = f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.sh"
+    runtime_script = (
         f"test -d {shell_quote(data)}/runs && test -d {shell_quote(data)}/state && "
         f"test -x {shell_quote(apply_runtime)} && "
         f"test -x {shell_quote(deploy_watchdog_script)} && "
@@ -848,26 +833,28 @@ def deploy_services(*, dry_run: bool = False) -> int:
         "systemctl cat ar-local-deploy-watchdog.service | "
         f"grep -Fqx {shell_quote(f'WorkingDirectory={ar_repo}')} && "
         "systemctl cat ar-local-deploy-watchdog.service | "
-        f"grep -Fqx {shell_quote(f'ExecStart={deploy_watchdog_script}')} && "
-        "("
+        f"grep -Fqx {shell_quote(f'ExecStart={deploy_watchdog_script}')}"
+    )
+    code, _, err = run_deploy_mutation(runtime_script, dry_run=dry_run)
+    early = _deploy_mutation_result(code, err, dry_run=dry_run)
+    if early is not None:
+        return early
+    # Host claim acquires the native production lease; keep nginx separate so
+    # apply-pi-runtime-units.sh does not nest that same lease.
+    nginx_script = (
         "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
         "sudo nginx -t && sudo systemctl reload-or-restart nginx; "
         f"elif [ -f {shell_quote(install_proxy)} ]; then "
         f"sudo sh {shell_quote(install_proxy)} {shell_quote(ar_repo)}; "
-        "else echo 'pi_deploy_verify: nginx proxy not installed (run deploy/pi/install-pi-dashboard-proxy.sh)' >&2; "
+        "else echo 'pi_deploy_verify: nginx proxy not installed "
+        "(run deploy/pi/install-pi-dashboard-proxy.sh)' >&2; "
         "fi"
-        ")"
     )
-    code, _, err = run_deploy_mutation(script, dry_run=dry_run)
-    if code == EXIT_BUSY and not dry_run:
-        print(
-            err or "pi_deploy_verify: ingest/deploy lock is busy",
-            file=sys.stderr,
-        )
-        return EXIT_BUSY
-    if code != 0 and not dry_run:
-        return EXIT_SSH
-    return EXIT_OK
+    code, _, err = run_deploy_mutation(
+        nginx_script, dry_run=dry_run, require_host=True
+    )
+    early = _deploy_mutation_result(code, err, dry_run=dry_run)
+    return EXIT_OK if early is None else early
 
 
 def paths_touch_pi_deploy(paths: Sequence[str]) -> bool:

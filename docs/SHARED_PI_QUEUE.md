@@ -228,8 +228,11 @@ Activation is **only** authorized through the protected workflow
 manifest/release evidence and protected `AR_PI_CANARY_*` values. That workflow
 fail-closes unless `pi-shared-task` is present on the Pi, and
 `pi_deploy_verify.py --deploy` wraps every mutating remote step with
-`pi-shared-task --project ar-local --resource ar-local` (skipping only when the
-process is already inside a queue cgroup). A bare
+`pi-shared-task --project ar-local --resource ar-local` (plus `--resource host`
+for shared nginx/package mutations). Skip wrapping only when an inherited
+exclusive claim already covers those resources; an inherited foreign/shared
+claim fails closed. Runtime-unit activation stays on `ar-local` alone so a
+host claim's native production lease is not nested. A bare
 `python3 pi_deploy_verify.py --deploy --expected-commit <SHA>` on the Pi without
 those canary gates must not be used as a substitute activation path.
 Never use a bare `git pull` or moving-main checkout as the activation command.

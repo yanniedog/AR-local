@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import pi_deploy_queue_claim  # noqa: E402
 import pi_deploy_verify  # noqa: E402
 from tests.pi_ingest_service_fixtures import ingest_definition_fields
 
@@ -80,10 +82,78 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
 def test_wrap_shared_queue_fail_closed_and_skips_when_already_claimed(monkeypatch):
     wrapped = pi_deploy_verify.wrap_shared_queue("echo deploy")
     assert "pi-shared-task --project ar-local --resource ar-local" in wrapped
+    assert "--resource host" not in wrapped
     assert "command -v pi-shared-task" in wrapped
     assert f"exit {pi_deploy_verify.EXIT_CONFIG}" in wrapped
-    monkeypatch.setattr(pi_deploy_verify, "already_under_shared_queue", lambda: True)
-    assert pi_deploy_verify.wrap_shared_queue("echo deploy") == "echo deploy"
+    host_wrapped = pi_deploy_verify.wrap_shared_queue("echo nginx", require_host=True)
+    assert "--resource ar-local --resource host" in host_wrapped
+    monkeypatch.setattr(
+        pi_deploy_queue_claim, "inherited_queue_admission", lambda **_kwargs: "reuse"
+    )
+    assert pi_deploy_queue_claim.wrap_shared_queue("echo deploy") == "echo deploy"
+    assert (
+        pi_deploy_queue_claim.wrap_shared_queue("echo nginx", require_host=True)
+        == "echo nginx"
+    )
+    monkeypatch.setattr(
+        pi_deploy_queue_claim, "inherited_queue_admission", lambda **_kwargs: "refuse"
+    )
+    refused = pi_deploy_queue_claim.wrap_shared_queue("echo deploy")
+    assert "inherited queue claim insufficient" in refused
+    assert f"exit {pi_deploy_queue_claim.EXIT_CONFIG}" in refused
+
+
+def test_inherited_queue_admission_requires_exclusive_ar_local(tmp_path, monkeypatch):
+    state = tmp_path / "state.json"
+    unit = "shared-pi-task-" + ("a" * 32) + ".service"
+    foreign = {
+        "jobs": [
+            {
+                "unit": unit,
+                "project": "other",
+                "mode": "exclusive",
+                "resources": ["other"],
+            }
+        ]
+    }
+    state.write_text(json.dumps(foreign), encoding="utf-8")
+    monkeypatch.setattr(pi_deploy_queue_claim, "SHARED_QUEUE_STATE", state)
+    monkeypatch.setattr(
+        pi_deploy_queue_claim,
+        "_read_self_cgroup",
+        lambda: f"0::/system.slice/{unit}",
+    )
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "refuse"
+    good = {
+        "jobs": [
+            {
+                "unit": unit,
+                "project": "ar-local",
+                "mode": "exclusive",
+                "resources": ["ar-local"],
+            }
+        ]
+    }
+    state.write_text(json.dumps(good), encoding="utf-8")
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "reuse"
+    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "refuse"
+    good["jobs"][0]["resources"] = ["ar-local", "host"]
+    state.write_text(json.dumps(good), encoding="utf-8")
+    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "reuse"
+    shared = {
+        "jobs": [
+            {
+                "unit": unit,
+                "project": "ar-local",
+                "mode": "shared",
+                "resources": ["ar-local", "host"],
+            }
+        ]
+    }
+    state.write_text(json.dumps(shared), encoding="utf-8")
+    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "refuse"
+    monkeypatch.setattr(pi_deploy_queue_claim, "_read_self_cgroup", lambda: "0::/")
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "admit"
 
 
 def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(monkeypatch):
@@ -228,15 +298,21 @@ def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypa
         lambda command, dry_run=False, timeout=None: captured.append(command) or (0, "", ""),
     )
     assert pi_deploy_verify.deploy_services() == pi_deploy_verify.EXIT_OK
-    command = captured[0]
-    assert "pi-shared-task --project ar-local --resource ar-local" in command
-    assert "chown -R" not in command
-    assert "mkdir -p" not in command
-    assert "apply-pi-runtime-units.sh" in command
-    assert "sudo sh /srv/ar-local/AR-local/deploy/pi/apply-pi-runtime-units.sh" not in command
-    assert "/srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data" in command
-    assert "systemctl cat ar-local-deploy-watchdog.service" in command
-    assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in command
+    assert len(captured) == 2
+    runtime, nginx = captured
+    assert "pi-shared-task --project ar-local --resource ar-local" in runtime
+    assert "--resource host" not in runtime
+    assert "chown -R" not in runtime
+    assert "mkdir -p" not in runtime
+    assert "apply-pi-runtime-units.sh" in runtime
+    assert "sudo sh /srv/ar-local/AR-local/deploy/pi/apply-pi-runtime-units.sh" not in runtime
+    assert "/srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data" in runtime
+    assert "systemctl cat ar-local-deploy-watchdog.service" in runtime
+    assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in runtime
+    assert "nginx" not in runtime
+    assert "--resource ar-local --resource host" in nginx
+    assert "apply-pi-runtime-units.sh" not in nginx
+    assert "reload-or-restart nginx" in nginx or "install-pi-dashboard-proxy.sh" in nginx
 
 
 def test_runtime_unit_activation_is_ingest_locked_and_complete():
