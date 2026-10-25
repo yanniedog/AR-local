@@ -302,7 +302,9 @@ def _stage_matches_uploaded(progress: Path, day: str, generation: str, ownership
 def finish_verified_stage_cleanups(args: argparse.Namespace, state_dir: Path, runs_root: Path) -> None:
     """Resume seal and cleanup for generations whose upload already verified."""
     import sys
-    from pi_daily_cdr_day_archive import DEFAULT_SPOOL, progress_path
+    from pi_daily_cdr_day_archive import DEFAULT_SPOOL, in_quiet_window, progress_path
+    if in_quiet_window():
+        return
     from pi_daily_cdr_day_archive_ingest import generation_has_pass
     spool = Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
     progress = progress_path(spool)

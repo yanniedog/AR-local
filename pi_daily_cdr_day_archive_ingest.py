@@ -80,6 +80,9 @@ def cached_generation_upload(
     roots = list(stage_roots or [])
     has_files = any(root_has_files(path) for path in roots)
     passed = bool(prior and prior.get("result") == "PASS")
+    any_missing = any((not path.is_dir()) or path.is_symlink() for path in roots)
+    if any_missing and not passed:
+        raise StageMissing("capture stage missing before a verified archive")
     if passed and roots and not has_files:
         return prior
     if passed and prior.get("source_fingerprint") == fingerprint:

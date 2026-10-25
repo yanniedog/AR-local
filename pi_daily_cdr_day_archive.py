@@ -697,7 +697,9 @@ def _process_day_locked(
             record_progress(spool, row)
         return row
     except Exception as error:
-        if not generation_has_pass(progress_path(spool), day, generation_id):
+        prior_day = load_progress(spool).get(day) or {}
+        keep_date_pass = prior_day.get("result") == "PASS" and prior_day.get("generation_id") != generation_id
+        if not generation_has_pass(progress_path(spool), day, generation_id) and not keep_date_pass:
             row = {
                 "schema": SCHEMA,
                 "date": day,
