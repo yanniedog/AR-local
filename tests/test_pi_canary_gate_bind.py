@@ -464,6 +464,125 @@ def test_public_candidate_v2_does_not_require_files_core(tmp_path: Path) -> None
         assert payload["result"] == "PASS"
 
 
+def test_public_candidate_v2_rejects_hash_ok_but_invalid_gzip(tmp_path: Path) -> None:
+    """v2 gzip encoding must be validated even when compressed hash/length match."""
+    import gzip
+
+    # Build a schema-valid v2 manifest with non-gzip payload bytes that hash-match.
+    bogus = b"not-a-gzip-stream-but-hashed"
+    bogus_sha = hashlib.sha256(bogus).hexdigest()
+    plain = b'{"ok":true}'
+    plain_gz = gzip.compress(plain, mtime=0)
+    # One asset is valid gzip so contract/shape can pass; the other is bogus.
+    hist_sha = hashlib.sha256(bogus).hexdigest()
+    econ_sha = hashlib.sha256(plain_gz).hexdigest()
+    hist_path = tmp_path / "product_history.json.gz"
+    econ_path = tmp_path / "economic_outlook.json.gz"
+    hist_path.write_bytes(bogus)
+    econ_path.write_bytes(plain_gz)
+    manifest = {
+        "schema_version": 2,
+        "producer_commit": COMMIT,
+        "candidate_generation": GENERATION,
+        "capabilities": ["product_history", "economic_outlook"],
+        "base": {"core_sha": "d" * 64, "details_sha": "e" * 64},
+        "files": {
+            "product_history": {
+                "name": "product_history.json.gz",
+                "sha256": hist_sha,
+                "bytes": len(bogus),
+                "uncompressed_bytes": 4096,
+                "encoding": "gzip",
+                "url": (
+                    "https://github.com/yanniedog/AR-local/releases/download/"
+                    f"app-payload-v2/{hist_sha}"
+                ),
+            },
+            "economic_outlook": {
+                "name": "economic_outlook.json.gz",
+                "sha256": econ_sha,
+                "bytes": len(plain_gz),
+                "uncompressed_bytes": len(plain),
+                "encoding": "gzip",
+                "url": (
+                    "https://github.com/yanniedog/AR-local/releases/download/"
+                    f"app-payload-v2/{econ_sha}"
+                ),
+            },
+        },
+    }
+    # Silence unused — keep sha naming aligned with Codex finding.
+    assert hist_sha == bogus_sha
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[hist_path, econ_path],
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("v2 gzip validation" in f for f in receipt["findings"])
+
+
+def test_receipt_gate_validates_preserved_bytes_not_source_reread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the producer rewrites the source after copy, binder must use preserved bytes."""
+    import pi_canary_gate_bind_ops as ops
+
+    receipt = tmp_path / "r.json"
+    fail_body = {
+        "gate": "shadow_ingest",
+        "target_commit": COMMIT,
+        "result": "FAIL",
+        "candidate_generation": GENERATION,
+        "preservation_snapshot_sha256": SNAPSHOT,
+    }
+    pass_body = {
+        "gate": "shadow_ingest",
+        "target_commit": COMMIT,
+        "result": "PASS",
+        "candidate_generation": GENERATION,
+        "preservation_snapshot_sha256": SNAPSHOT,
+    }
+    receipt.write_text(json.dumps(fail_body) + "\n", encoding="utf-8")
+    original = ops._copy_source_receipt
+
+    def copy_then_rewrite(gate_dir, *, source, relative_path):
+        item = original(gate_dir, source=source, relative_path=relative_path)
+        source.write_text(json.dumps(pass_body) + "\n", encoding="utf-8")
+        return item
+
+    monkeypatch.setattr(ops, "_copy_source_receipt", copy_then_rewrite)
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_receipt_gate(
+        gate_dir,
+        gate="shadow_ingest",
+        target_commit=COMMIT,
+        receipt_path=receipt,
+        required_fields={"target_commit": COMMIT},
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        missing_reason="unused",
+    )
+    assert payload["result"] == "FAIL"
+    preserved = json.loads(
+        (gate_dir / "receipts" / "shadow_ingest-source.json").read_text(encoding="utf-8")
+    )
+    assert preserved["result"] == "FAIL"
+
+
 def test_receipt_gate_rejects_missing_explicit_pass(tmp_path: Path) -> None:
     receipt = tmp_path / "r.json"
     receipt.write_text(

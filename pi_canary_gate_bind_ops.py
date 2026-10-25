@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import subprocess
 from pathlib import Path
@@ -143,6 +145,41 @@ def _copy_source_receipt(
     return emit.materialize_bytes(
         gate_dir, relative_path=relative_path, raw=source.read_bytes()
     )
+
+
+def _load_preserved_receipt(gate_dir: Path, source_item: Mapping[str, str]) -> dict[str, Any]:
+    """Parse the preserved receipt snapshot (never re-read the mutable source)."""
+
+    rel = str(source_item.get("path") or "").strip()
+    if not rel or Path(rel).is_absolute() or ".." in Path(rel).parts:
+        raise GateBindError(f"invalid preserved receipt path: {rel!r}")
+    return _load_json(gate_dir / rel)
+
+
+def _validate_v2_asset_gzip(kind: str, raw: bytes, entry: Mapping[str, Any]) -> None:
+    """Match publication path: decompress gzip assets and check expansion budgets."""
+
+    from app_payload_contracts import MAX_V2_ASSET_UNCOMPRESSED_BYTES
+
+    encoding = entry.get("encoding") or "gzip"
+    if encoding != "gzip":
+        raise ValueError(f"{kind}: encoding must be gzip, got {encoding!r}")
+    uncompressed = entry.get("uncompressed_bytes")
+    if type(uncompressed) is not int or uncompressed < 1:
+        raise ValueError(f"{kind}: uncompressed_bytes required")
+    budget = MAX_V2_ASSET_UNCOMPRESSED_BYTES.get(kind)
+    if budget is None:
+        raise ValueError(f"{kind}: unknown v2 asset kind")
+    total = 0
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+        while chunk := stream.read(1024 * 1024):
+            total += len(chunk)
+            if total > budget:
+                raise ValueError(f"{kind}: gzip expansion exceeds budget")
+    if total != uncompressed:
+        raise ValueError(
+            f"{kind}: uncompressed size mismatch got={total} expected={uncompressed}"
+        )
 
 
 def bind_producer_contracts(
@@ -573,6 +610,12 @@ def bind_public_candidate_bytes(
                 f"len={len(body)} expected_sha={expected_sha} expected_len={expected_bytes}"
             )
             continue
+        if schema_version == 2:
+            try:
+                _validate_v2_asset_gzip(key, body, entry)
+            except Exception as exc:  # noqa: BLE001
+                findings.append(f"{key}: v2 gzip validation: {type(exc).__name__}: {exc}")
+                continue
         capability_bytes[key] = body
         dest_rel = f"receipts/public_asset_{key}.meta.json"
         meta = {
@@ -678,7 +721,7 @@ def bind_preservation_restore(
             relative_path="receipts/preservation_restore-source.json",
         )
         evidence_items.append(source_item)
-        raw = _load_json(restore_receipt)
+        raw = _load_preserved_receipt(gate_dir, source_item)
         receipt_body = {
             "schema_version": 1,
             "binder": "preservation_restore",
@@ -785,7 +828,7 @@ def bind_receipt_gate(
             relative_path=f"receipts/{gate}-source.json",
         )
         evidence_items.append(source_item)
-        raw = _load_json(receipt_path)
+        raw = _load_preserved_receipt(gate_dir, source_item)
         findings: list[str] = []
         for key, expected in required_fields.items():
             actual = raw.get(key)
