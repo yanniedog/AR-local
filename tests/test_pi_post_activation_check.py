@@ -139,3 +139,14 @@ def test_http_only_pass_does_not_claim_commit_checked(monkeypatch, capsys) -> No
     out = capsys.readouterr().out
     assert "PASS_HTTP_ONLY" in out
     assert "commit identity not verified" in out
+
+
+def test_ssh_identity_snapshot_error_fails_with_ssh_exit(monkeypatch, capsys) -> None:
+    import pi_deploy_verify
+
+    def _raise_snapshot_error(*, dry_run: bool = False, fetch: bool = True):
+        raise OSError("ssh executable unavailable")
+
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", _raise_snapshot_error)
+    assert pac.check_ssh_identity("a" * 40) == pac.EXIT_SSH
+    assert "SSH checkout read failed: ssh executable unavailable" in capsys.readouterr().err

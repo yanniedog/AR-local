@@ -76,7 +76,14 @@ def check_ssh_identity(expected_commit: str) -> int:
     import pi_deploy_verify
 
     # fetch=False: read-only identity must not mutate FETCH_HEAD / remote refs.
-    snap = pi_deploy_verify.pi_remote_snapshot(dry_run=False, fetch=False)
+    try:
+        snap = pi_deploy_verify.pi_remote_snapshot(dry_run=False, fetch=False)
+    except Exception as exc:
+        print(
+            f"pi_post_activation_check: SSH checkout read failed: {exc}",
+            file=sys.stderr,
+        )
+        return EXIT_SSH
     if snap is None:
         print("pi_post_activation_check: could not read Pi checkout via SSH", file=sys.stderr)
         return EXIT_SSH
