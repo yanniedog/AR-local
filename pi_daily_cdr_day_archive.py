@@ -559,7 +559,6 @@ def _process_day_locked(
             ensure_sidecars_uploaded(transport, built)
         else:
             upload_and_verify(transport, built, spool / "verify", guard=combined_guard)
-        unlink_local_archive_only(built)
         row = {
             "schema": SCHEMA,
             "date": day,
@@ -571,7 +570,9 @@ def _process_day_locked(
             "remote_name": built["remote_name"],
             "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
         }
+        # Durable PASS before unlink so a crash still leaves retryable local bytes.
         record_progress(spool, row)
+        unlink_local_archive_only(built)
         request = spool / "requests" / f"{day}.json"
         request.unlink(missing_ok=True)
         return row
@@ -668,7 +669,6 @@ def _process_control_locked(
         ensure_sidecars_uploaded(transport, built)
     else:
         upload_and_verify(transport, built, spool / "verify", guard=guard)
-    unlink_local_archive_only(built)
     row = {
         "schema": SCHEMA,
         "date": "CONTROL",
@@ -679,7 +679,9 @@ def _process_control_locked(
         "remote_name": built["remote_name"],
         "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
     }
+    # Durable PASS before unlink so CONTROL retries retain matching local bytes.
     record_progress(spool, row)
+    unlink_local_archive_only(built)
     return row
 
 
