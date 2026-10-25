@@ -213,7 +213,7 @@ def image_terminal(j,authority):
         'stop_post_verified':True,'owned_loop_terminal':True,'writers_restored':True}
 
 
-@pytest.mark.parametrize('field',['owned_loop_terminal','writers_restored','untrusted_processes_gone'])
+@pytest.mark.parametrize('field',['owned_loop_terminal','writers_restored','untrusted_processes_gone','stop_post_verified'])
 def test_image_terminal_requires_own_loop_terminal_and_writer_restoration(monkeypatch,field):
     authority,rows=image_fixture(monkeypatch);j=job(IMAGE_UNIT);terminal=image_terminal(j,authority)
     rows[hooks.IMAGE_HANDOFF/NONCE/'completion.json']=canonical(terminal)

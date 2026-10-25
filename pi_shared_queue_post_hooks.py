@@ -320,7 +320,7 @@ def completion_proved(job, *, native_identity=None):
                 and value.get('phase') == authority['phase']
                 and value.get('source_closure_sha256') == authority['source_closure_sha256']
                 and value.get('credential_custody') in ('NOT_EXPOSED', 'QUARANTINED')
-                and type(value.get('stop_post_verified')) is bool
+                and value.get('stop_post_verified') is True
                 and value.get('owned_loop_terminal') is True and value.get('writers_restored') is True)
         return (value.get('schema') == 'ar-local-plain-backup-root-completion-v1'
             and value.get('credential_quarantined') is True)
