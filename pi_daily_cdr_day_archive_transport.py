@@ -57,7 +57,8 @@ class DayArchiveRclone:
             or info.st_nlink != 1
             or info.st_size > 1024**2
             or stat.S_IMODE(info.st_mode) not in (0o400, 0o440, 0o600, 0o640)
-            or info.st_uid not in (0, os.getuid())
+            # Root services may read a pi-owned conf under a root-only credentials dir.
+            or info.st_uid not in (0, os.getuid(), 1000)
         ):
             raise ValueError("private canonical existing rclone config required")
         parser = configparser.ConfigParser(interpolation=None)
