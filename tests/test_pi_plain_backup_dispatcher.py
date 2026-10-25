@@ -32,7 +32,7 @@ def test_wrapper_has_no_arbitrary_verb_path_or_command():
 
 
 def test_probe_is_explicit_bounded_and_selects_only_fixed_unprivileged_probe():
-    p=packet();p.update(mode='PROBE',expires_at=(NOW+timedelta(seconds=120)).isoformat())
+    p=packet();p.update(mode='PROBE',expires_at=(NOW+timedelta(seconds=120)).isoformat(),runtime_seconds=120)
     core.validate_packet(p,NONCE,NOW)
     argv=resources.sandbox_argv(p)
     assert any(item.endswith('/source/pi_plain_backup_probe.py') for item in argv)
