@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -46,6 +45,11 @@ from cdr_same_day_reuse import (
     reconcile_same_day_reuse, seed_same_day_reuse, validate_reuse_destination,
 )
 from cdr_terms.ingest import capture_if_configured, retry_capture_if_configured
+from cdr_daily_archive_gate import (
+    accept_finalized_retry as _accept_finalized_retry,
+    finish_verified_stage_cleanups,
+    write_ram_ownership as _write_ram_ownership,
+)
 from cdr_ram_capture_cleanup import cleanup_captured_ram_stage, seal_ram_capture_stage
 from cdr_capture_stage_capacity import select_capture_stage
 
@@ -338,62 +342,15 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
-def _ownership_path(state_dir: Path, date: str, generation_id: str) -> Path:
-    return state_dir / f"{date}.{generation_id}.ram-stage-ownership.json"
-
-
-def _read_json(path: Path) -> dict:
-    try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
-
-
-def _write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root: Path,
-                         cleanup_paths: tuple[Path, ...], seal_exports: Path | None) -> None:
-    path = _ownership_path(state_dir, date, generation_id)
-    if path.exists():
-        return
-    payload = {
-        "schema": 1,
-        "date": date,
-        "generation_id": generation_id,
-        "ram_root": str(ram_root.resolve()),
-        "cleanup_paths": [str(item.resolve()) for item in cleanup_paths],
-        "seal_exports": None if seal_exports is None else str(seal_exports.resolve()),
-    }
-    atomic_write_json(path, payload, create_once=True)
-
-
-def _owned_removable(ram_root: Path, runs_root: Path, date: str, raw: object) -> Path | None:
-    if not isinstance(raw, str) or ".." in Path(raw).parts:
-        return None
-    path = Path(raw)
-    if not path.is_absolute():
-        return None
-    resolved = path.resolve()
-    if resolved.is_symlink():
-        return None
-    try:
-        relative = resolved.relative_to(ram_root.resolve()).as_posix()
-    except ValueError:
-        relative = ""
-    if relative in {f"runs/{date}", f"exports/{date}"}:
-        return resolved
-    export_stage = (runs_root.parent / ".daily-export-stage" / date).resolve()
-    if resolved == export_stage:
-        return resolved
-    return None
-
-
 def _archive_raw_day_before_cleanup(date: str, *, data_root: Path, generation_id: str | None,
-                                    stage_roots: list[Path]) -> dict:
+                                    stage_roots: list[Path], state_dir: Path | None = None,
+                                    runs_root: Path | None = None) -> dict:
     try:
         from pi_daily_cdr_day_archive import archive_observation_day
 
         result = archive_observation_day(
             date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
+            state_dir=state_dir, runs_root=runs_root,
         )
     except Exception as archive_error:  # noqa: BLE001 — keep the raw tree
         print(f"day-archive failed before cleanup ({date}): {archive_error}", file=sys.stderr)
@@ -439,95 +396,6 @@ def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, e
         )
 
 
-def _retry_stage_roots(state_dir: Path, date: str, generation: str | None, recorded: dict) -> list[Path]:
-    if isinstance(generation, str):
-        path = _ownership_path(state_dir, date, generation)
-        if path.is_file():
-            ownership = _read_json(path)
-            roots = [Path(item) for item in ownership.get("cleanup_paths") or [] if Path(str(item)).is_dir()]
-            if roots:
-                return roots
-    ram_root = recorded.get("ram_root")
-    if recorded.get("ram_staged") is True and isinstance(ram_root, str):
-        stage = Path(ram_root) / "runs" / date
-        if stage.is_dir():
-            return [stage]
-    return []
-
-
-def _resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_root: Path,
-                              date: str, marker: Path) -> dict | None:
-    recorded = _read_json(marker)
-    generation = recorded.get("generation_id")
-    if not isinstance(generation, str) or not _ownership_path(state_dir, date, generation).is_file():
-        return None
-    ownership = _read_json(_ownership_path(state_dir, date, generation))
-    if ownership.get("generation_id") != generation or ownership.get("date") != date:
-        return {"ram_cleanup": {"status": "PRESERVED", "reason": "ownership_generation_mismatch"}}
-    ram_root = Path(str(ownership.get("ram_root")))
-    targets = []
-    for item in ownership.get("cleanup_paths") or []:
-        allowed = _owned_removable(ram_root, runs_root, date, item)
-        if allowed is None:
-            return {"ram_cleanup": {"status": "PRESERVED", "reason": "ownership_path_rejected"}}
-        targets.append(allowed)
-    if os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
-        owned_targets: dict[str, Path] = {"raw": ram_root / "runs" / date}
-        seal_exports = ownership.get("seal_exports")
-        if isinstance(seal_exports, str):
-            owned_targets["exports"] = Path(seal_exports)
-        seal = seal_ram_capture_stage(
-            recorded, ram_root=ram_root, state_dir=state_dir, runs_root=runs_root,
-            run_date=date, clean=args.clean_ram_stage, owned_targets=owned_targets,
-        )
-        if seal.get("status") == "PRESERVED":
-            return {"ram_cleanup": seal}
-        resume_args = argparse.Namespace(**vars(args))
-        resume_args.ram_root = ram_root
-        terms = retry_terms_capture(marker, resume_args, state_dir, runs_root, date)
-        cleanup = terms.get("ram_cleanup") if isinstance(terms, dict) else None
-        if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
-            return {"terms_evidence": terms, "ram_cleanup": cleanup}
-        return {"terms_evidence": terms, "ram_cleanup": cleanup or {"status": "CLEANED"}}
-    if args.clean_ram_stage:
-        if not verify_completion_marker(recorded, state_dir, date):
-            return {"ram_cleanup": {"status": "PRESERVED", "reason": "marker_unverified"}}
-        for target in targets:
-            if target.exists():
-                shutil.rmtree(target, ignore_errors=True)
-            if target.exists():
-                return {"ram_cleanup": {"status": "PRESERVED", "reason": "cleanup_incomplete"}}
-    return {"ram_cleanup": {"status": "CLEANED"}}
-
-
-def _accept_finalized_retry(args: argparse.Namespace, state_dir: Path, runs_root: Path,
-                            date: str, marker: Path) -> tuple[int | None, dict | None]:
-    recorded = _read_json(marker)
-    generation = recorded.get("generation_id") if isinstance(recorded.get("generation_id"), str) else None
-    result = _archive_raw_day_before_cleanup(
-        date,
-        data_root=runs_root.parent,
-        generation_id=generation,
-        stage_roots=_retry_stage_roots(state_dir, date, generation, recorded),
-    )
-    status = result.get("result")
-    if status == "DEFERRED":
-        print(f"day-archive deferred until after the Hobart quiet window ({date})", file=sys.stderr)
-        return 0, None
-    if status != "PASS":
-        return 2, None
-    resumed = _resume_owned_ram_cleanup(args, state_dir, runs_root, date, marker)
-    if resumed is None:
-        return None, retry_terms_capture(marker, args, state_dir, runs_root, date)
-    cleanup = resumed.get("ram_cleanup") or {}
-    if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
-        reason = cleanup.get("reason") or cleanup.get("status")
-        print(f"raw cleanup still preserved after verified archive ({date}): {reason}", file=sys.stderr)
-        return 2, resumed.get("terms_evidence") if isinstance(resumed.get("terms_evidence"), dict) else None
-    terms = resumed.get("terms_evidence")
-    return None, terms if isinstance(terms, dict) else None
-
-
 def retry_terms_capture(marker: Path, args: argparse.Namespace, state_dir: Path,
                         runs_root: Path, date: str) -> dict | None:
     """A finalized retry may clean only its previously sealed original RAM tree."""
@@ -567,6 +435,7 @@ def run_once(args: argparse.Namespace) -> int:
         print(f"ERROR: unsafe finalization layout: {exc}", file=sys.stderr)
         return 2
     state_dir.mkdir(parents=True, exist_ok=True)
+    finish_verified_stage_cleanups(args, state_dir, persistent_runs_root)
     reuse_plan = None
     if resume_same_day:
         try:
@@ -871,19 +740,23 @@ def run_once(args: argparse.Namespace) -> int:
         # event and completion marker have landed.
         _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
     generation_id = finalized.get("generation_id") if isinstance(finalized.get("generation_id"), str) else None
-    stage_roots = [path for path in (ram_cleanup_paths or ()) if path.is_dir()]
-    if not stage_roots and terms_raw_root is not None and terms_raw_root.is_dir():
+    stage_roots = list(ram_cleanup_paths or ())
+    if not stage_roots and terms_raw_root is not None:
         stage_roots = [terms_raw_root]
-    if generation_id and ram_cleanup_paths is not None:
-        seal_exports = None if persistent_output_stage else staged_exports_to_install
+    if generation_id:
+        seal_exports = None
+        if ram_cleanup_paths is not None and not persistent_output_stage:
+            seal_exports = staged_exports_to_install
         _write_ram_ownership(
-            state_dir, date, generation_id, args.ram_root, ram_cleanup_paths, seal_exports,
+            state_dir, date, generation_id, args.ram_root, ram_cleanup_paths or (), seal_exports, stage_roots,
         )
     archive_result = _archive_raw_day_before_cleanup(
         date,
         data_root=persistent_runs_root.parent,
         generation_id=generation_id,
-        stage_roots=stage_roots,
+        stage_roots=[path for path in stage_roots if path.is_dir()],
+        state_dir=state_dir,
+        runs_root=persistent_runs_root,
     )
     finalized = {
         **finalized,

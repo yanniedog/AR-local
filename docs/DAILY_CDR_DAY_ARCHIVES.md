@@ -111,8 +111,8 @@ and the manifest covers that stage, including its banks tree when the stage
 still has one. A date-level `PASS` is not reused for a different generation:
 a `--force` or `--resume-same-day` revision uploads
 `YYYY-MM-DD.<generation_id>.tar.zst` when the canonical object already belongs
-to an earlier generation. The first generation still uses `YYYY-MM-DD.tar.zst`
-when that name is free.
+to an earlier generation, with matching `.sha256` and `.manifest.json` names.
+The first generation still uses `YYYY-MM-DD.tar.zst` when that name is free.
 
 A verified `PASS` records the stage fingerprint. The same generation reuses
 that object only when the stage bytes still match. Original-stage ownership is
@@ -122,8 +122,10 @@ cleanup of that same stage.
 During 00:30–02:00 Australia/Hobart the upload is not attempted. Finalize still
 succeeds, the raw tree stays, and a continuation request is written.
 `--once-pending` may run that continuation after the window, with same-day
-upload allowed only for that request. Ordinary same-day requests and historical
-backfill stay deferred. `ar-local-day-archive.timer` still only drains queued
+upload allowed only for that request. A verified continuation then resumes
+seal, terms capture, and cleanup. The next `cdr_daily` run does the same for
+any generation whose upload already passed. Ordinary same-day requests and
+historical backfill stay deferred. `ar-local-day-archive.timer` still only drains queued
 requests; it is not enabled by this path and it is not the ingest cleanup gate.
 
 ## Google Drive write-hold lift (operator 1B)

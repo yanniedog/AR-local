@@ -676,3 +676,39 @@ def test_later_archive_pass_cleans_the_original_ram_stage(tmp_path, monkeypatch)
     assert len(ownership) == 1
     assert cdr_daily.run_once(args) == 0
     assert not (ram / "runs" / DATE).exists()
+
+
+def test_existing_seal_is_not_recreated(tmp_path, monkeypatch):
+    import argparse
+    import json
+
+    from cdr_daily_archive_gate import resume_owned_ram_cleanup, write_ram_ownership
+    from cdr_ram_capture_cleanup import seal_receipt_path
+
+    state = tmp_path / "state"
+    state.mkdir()
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    raw.mkdir(parents=True)
+    generation = "obs-2026-08-15-0123456789abcdef"
+    write_ram_ownership(state, DATE, generation, ram, (raw,), None, [raw])
+    marker = state / f"{DATE}.done.json"
+    marker.write_text(json.dumps({"generation_id": generation}), encoding="utf-8")
+    receipt = seal_receipt_path(state, generation)
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(tmp_path / "terms"))
+
+    def reseal(*_args, **_kwargs):
+        raise AssertionError("resealed an existing generation")
+
+    monkeypatch.setattr("cdr_daily_archive_gate.seal_ram_capture_stage", reseal)
+    monkeypatch.setattr(
+        "cdr_daily.retry_terms_capture",
+        lambda *_args, **_kwargs: {"ram_cleanup": {"status": "CLEANED"}},
+    )
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, tmp_path / "runs", DATE, marker,
+    )
+    assert result["ram_cleanup"]["status"] == "CLEANED"

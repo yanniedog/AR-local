@@ -15,9 +15,10 @@ from pathlib import Path
 FOLDER_NAME = "daily-cdr-raw-records"
 LEGACY_FOLDER_NAME = "daily-cdr-day-archives"
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_GEN = r"obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}"
 OBJECT_RE = re.compile(
     r"^(?:"
-    r"\d{4}-\d{2}-\d{2}\.(?:tar\.zst|sha256|manifest\.json|GAP\.json)"
+    rf"\d{{4}}-\d{{2}}-\d{{2}}(?:\.{_GEN})?\.(?:tar\.zst|sha256|manifest\.json|GAP\.json)"
     r"|CONTROL\.(?:tar\.zst|sha256|manifest\.json)"
     r")$"
 )

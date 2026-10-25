@@ -1,6 +1,7 @@
 """Capture-stage coverage, generation reuse, and quiet-window continuation."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pi_daily_cdr_day_archive as archive
@@ -76,6 +77,18 @@ def test_revision_does_not_reuse_an_earlier_generation_pass(tmp_path: Path, monk
     revision = archive.process_day(**common, generation_id=second)
     assert revision["result"] == "PASS"
     assert revision["sha256"] != primary["sha256"]
+    assert [name for name in uploaded if name.endswith(".tar.zst")] == [
+        f"{day}.tar.zst", f"{day}.{second}.tar.zst",
+    ]
+    assert f"{day}.{second}.sha256" in uploaded
+    assert f"{day}.{second}.manifest.json" in uploaded
+    missing = data / "runs" / day
+    shutil.rmtree(missing)
+    reused_kwargs = dict(common)
+    reused_kwargs["stage_roots"] = [missing]
+    reused_kwargs["generation_id"] = second
+    reused = archive.process_day(**reused_kwargs)
+    assert reused["sha256"] == revision["sha256"]
     assert [name for name in uploaded if name.endswith(".tar.zst")] == [
         f"{day}.tar.zst", f"{day}.{second}.tar.zst",
     ]

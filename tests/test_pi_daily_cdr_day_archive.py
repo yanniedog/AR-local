@@ -160,6 +160,11 @@ def test_object_path_validation():
     assert transport.OBJECT_RE.fullmatch("2026-05-13.tar.zst")
     assert transport.OBJECT_RE.fullmatch("2026-05-14.GAP.json")
     assert transport.OBJECT_RE.fullmatch("CONTROL.tar.zst")
+    generation = "2026-10-25.obs-2026-10-25-0123456789abcdef"
+    assert transport.OBJECT_RE.fullmatch(f"{generation}.tar.zst")
+    assert transport.OBJECT_RE.fullmatch(f"{generation}.sha256")
+    assert transport.OBJECT_RE.fullmatch(f"{generation}.manifest.json")
+    assert not transport.OBJECT_RE.fullmatch("2026-10-25.not-a-generation.tar.zst")
     assert not transport.OBJECT_RE.fullmatch("../escape.tar.zst")
     assert transport.PureName("2026-05-13.manifest.json") == "2026-05-13.manifest.json"
     with pytest.raises(ValueError):

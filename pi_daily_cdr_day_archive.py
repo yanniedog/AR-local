@@ -21,6 +21,7 @@ from typing import Callable
 import zstandard
 
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from cdr_daily_archive_gate import maybe_resume_job
 from cdr_file_lock import FileLock
 from pi_drive_backup_hold import Blocked, require_writes_allowed
 from pi_daily_cdr_day_archive_ingest import (
@@ -720,14 +721,10 @@ def archive_observation_day(
     transport: DayArchiveRclone | None = None,
     generation_id: str | None = None,
     stage_roots: list[Path] | None = None,
+    state_dir: Path | None = None,
+    runs_root: Path | None = None,
 ) -> dict:
-    """Synchronous raw-record upload used before ingest deletes that day's files.
-
-    Journals stay on. The same Hobart day is allowed. PASS is a verified Drive
-    upload; this function never deletes source CDR trees. A generation id binds
-    the upload to that observation. During the Hobart quiet window the upload
-    is deferred onto a continuation request instead of failing the ingest.
-    """
+    """Synchronous raw-record upload before ingest deletes that day's files."""
     day = require_day(day)
     root = Path(data_root or os.environ.get("AR_LOCAL_DATA_ROOT", DEFAULT_DATA_ROOT))
     spool_path = Path(spool or os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
@@ -741,6 +738,8 @@ def archive_observation_day(
             generation_id=generation_id,
             stage_roots=roots,
             data_root=root,
+            state_dir=state_dir,
+            runs_root=runs_root,
         )
         return {
             "schema": SCHEMA,
@@ -984,6 +983,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_roots=job.get("stage_roots"),
         )
         results.append(result)
+        maybe_resume_job(result, job)
         if result.get("result") == "FAIL":
             print(json.dumps({"results": results}, indent=2, sort_keys=True))
             return 1

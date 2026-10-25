@@ -74,13 +74,40 @@ def generation_has_pass(progress_file: Path, day: str, generation_id: str | None
     return bool(row and row.get("result") == "PASS")
 
 
+def _sidecar_stem(remote_name: str) -> str:
+    if remote_name.endswith(".tar.zst"):
+        return remote_name[: -len(".tar.zst")]
+    if remote_name.endswith(".GAP.json"):
+        return remote_name[: -len(".GAP.json")]
+    return remote_name
+
+
+def _retarget_sidecar(path: Path, remote_name: str, suffix: str, body: str | None = None) -> Path:
+    target = path.with_name(_sidecar_stem(remote_name) + suffix)
+    if body is not None:
+        path.write_text(body, encoding="utf-8")
+    if target != path:
+        path.replace(target)
+    return target
+
+
 def bind_generation_remote(day: str, built: dict, generation_id: str, prior_day: dict | None, transport) -> None:
     canonical = f"{day}.GAP.json" if built.get("kind") == "gap" else f"{day}.tar.zst"
     taken = bool(transport is not None and transport.remote_exists(canonical))
-    built["remote_name"] = remote_name_for_generation(
+    remote_name = remote_name_for_generation(
         day, kind=str(built.get("kind") or "day"), generation_id=generation_id,
         prior_day=prior_day, canonical_taken=taken,
     )
+    built["remote_name"] = remote_name
+    if remote_name == canonical:
+        return
+    if built.get("sha_path"):
+        sha = Path(built["sha_path"])
+        built["sha_path"] = str(_retarget_sidecar(
+            sha, remote_name, ".sha256", f"{built.get('sha256', '')}  {remote_name}\n",
+        ))
+    if built.get("manifest_path"):
+        built["manifest_path"] = str(_retarget_sidecar(Path(built["manifest_path"]), remote_name, ".manifest.json"))
 
 
 def remote_name_for_generation(
@@ -124,6 +151,8 @@ def enqueue_ingest_continuation(
     generation_id: str,
     stage_roots: list[Path],
     data_root: Path,
+    state_dir: Path | None = None,
+    runs_root: Path | None = None,
 ) -> Path:
     day = require_day(day)
     generation = require_generation(generation_id)
@@ -140,6 +169,8 @@ def enqueue_ingest_continuation(
         "generation_id": generation,
         "stage_roots": [str(Path(root).resolve()) for root in stage_roots],
         "data_root": str(Path(data_root).resolve()),
+        "state_dir": None if state_dir is None else str(Path(state_dir).resolve()),
+        "runs_root": None if runs_root is None else str(Path(runs_root).resolve()),
         "reason": "quiet-window",
         "requested_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
     }
@@ -175,13 +206,18 @@ def _continuation_job(body: dict, day: str) -> dict | None:
     data_root = _absolute_path(body.get("data_root"))
     if data_root is None or not roots:
         return None
-    return {
+    job = {
         "day": day,
         "allow_same_day": True,
         "generation_id": generation,
         "stage_roots": roots,
         "data_root": data_root,
     }
+    for key in ("state_dir", "runs_root"):
+        found = _absolute_path(body.get(key))
+        if found is not None:
+            job[key] = found
+    return job
 
 
 def pending_archive_jobs(spool: Path, *, today: str, quiet: bool) -> list[dict]:
