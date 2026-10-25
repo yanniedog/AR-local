@@ -16,7 +16,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
-COMMIT_RE = __import__("re").compile(r"^[0-9a-f]{40}$")
+import re
+
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+API_LEVEL_RE = re.compile(r"^[1-9][0-9]{0,2}$")
+NON_EMPTY_STR = object()
 
 GATES = (
     "stable_app_compatibility",
@@ -42,9 +47,10 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "Use released/candidate APK for TARGET_SHA only (docs/PRODUCT_EVIDENCE_ACCEPTANCE.md P-007).",
         "Agreed Android emulator: clean install + upgrade path.",
         "Exercise current + repaired historical acquisition; capture screenshots/logs.",
-        "Preserve emulator userdata snapshot path + sha256 in receipt.",
+        "Preserve emulator userdata_snapshot path + userdata_snapshot_sha256 in receipt.",
         "Write receipt with gate=candidate_emulator_matrix, target_commit, "
-        "devices=[{avd,api,abi,result}], result=PASS|FAIL.",
+        "devices=[{avd,api,abi,install_upgrade:true,acquisition_checks:true,"
+        "userdata_snapshot,userdata_snapshot_sha256,result}], result=PASS|FAIL.",
         "Emulator PASS does not imply physical-device or native-v2 acceptance.",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
         "--gate candidate_emulator_matrix --source-receipt <raw> --output <canonical> "
@@ -55,8 +61,8 @@ OPERATOR_STEPS: dict[str, list[str]] = {
     "candidate_device_matrix": [
         "Physical devices only; do not infer from emulator PASS.",
         "Install candidate build bound to TARGET_SHA on each required device.",
-        "Record model, OS version, ABI, install/upgrade result, acquisition checks.",
-        "Attach lab run id / evidence archive sha256.",
+        "Record model, OS version, ABI, install_upgrade=true, acquisition_checks=true.",
+        "Attach lab_run_id and evidence_archive_sha256.",
         "Write receipt with gate=candidate_device_matrix, target_commit, devices=[...], "
         "result=PASS only if matrix complete.",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
@@ -177,6 +183,12 @@ def canonicalize(
                     )
                 if device.get("result") != "PASS":
                     findings.append(f"devices[{index}].result must be PASS")
+                if gate == "candidate_device_matrix":
+                    for bool_field in ("install_upgrade", "acquisition_checks"):
+                        if bool_field in device and device[bool_field] is not True:
+                            findings.append(
+                                f"devices[{index}].{bool_field} must be true for PASS"
+                            )
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,

@@ -137,6 +137,37 @@ def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
     assert any("devices[0]" in f for f in info["findings"])
 
 
+def test_device_canonicalize_rejects_false_install_checks(tmp_path: Path) -> None:
+    src = tmp_path / "dev.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "candidate_device_matrix",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "devices": [
+                    {
+                        "model": "Pixel",
+                        "os": "14",
+                        "abi": "arm64-v8a",
+                        "install_upgrade": False,
+                        "acquisition_checks": False,
+                        "result": "PASS",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "candidate_device_matrix", src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("install_upgrade" in f for f in info["findings"])
+    assert any("acquisition_checks" in f for f in info["findings"])
+
+
 def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
     src = tmp_path / "src.json"
     src.write_text(
