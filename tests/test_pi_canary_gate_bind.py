@@ -629,6 +629,61 @@ def test_public_candidate_v1_rejects_historical_envelope_wrong_core(
     assert any("v1 local/historical validation" in f for f in receipt["findings"])
 
 
+def test_validate_v1_payload_root_stages_domain_bytes_not_wire() -> None:
+    """Root validation must use verified domain bytes, never release wire blobs."""
+    import gzip
+
+    from pi_canary_gate_bind_checks import validate_v1_payload_root
+
+    day = "2026-05-19"
+    core_doc = {
+        "schema_version": 1,
+        "run_date": day,
+        "sections": {"Mortgage": {"rates": []}},
+    }
+    details_doc = {"schema_version": 1, "run_date": day, "products": {}}
+    core_raw = gzip.compress(
+        json.dumps(core_doc, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        mtime=0,
+    )
+    details_raw = gzip.compress(
+        json.dumps(details_doc, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        mtime=0,
+    )
+    core_sha = hashlib.sha256(core_raw).hexdigest()
+    details_sha = hashlib.sha256(details_raw).hexdigest()
+    core_name = f"core-{day}-{core_sha[:12]}.json.gz"
+    details_name = f"details-{day}-{details_sha[:12]}.json.gz"
+    manifest = {
+        "schema_version": 1,
+        "run_date": day,
+        "generated_at": "2026-05-19T04:00:00Z",
+        "repo": "yanniedog/AR-local",
+        "tag": f"app-payload-{day}-r000001",
+        "producer_commit": COMMIT,
+        "files": {
+            "core": {"name": core_name, "bytes": len(core_raw), "sha256": core_sha},
+            "details": {
+                "name": details_name,
+                "bytes": len(details_raw),
+                "sha256": details_sha,
+            },
+        },
+    }
+    ok = validate_v1_payload_root(
+        manifest, {core_name: core_raw, details_name: details_raw}
+    )
+    assert ok == []
+    # Ciphertext / wrong wire must not be treated as domain bytes.
+    wire = b"ARE2" + b"0" * 80
+    bad = validate_v1_payload_root(
+        manifest, {core_name: wire, details_name: details_raw}
+    )
+    assert bad and any("v1 local/historical validation" in f for f in bad)
+    missing = validate_v1_payload_root(manifest, {core_name: core_raw})
+    assert any("missing staged domain bytes" in f for f in missing)
+
+
 def test_public_candidate_v2_rejects_hash_ok_but_invalid_gzip(tmp_path: Path) -> None:
     """v2 gzip encoding must be validated even when compressed hash/length match."""
     import gzip
