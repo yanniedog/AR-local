@@ -15,7 +15,7 @@ def verified_day_archive_before_cleanup(monkeypatch):
     monkeypatch.setattr(
         cdr_daily,
         "_archive_raw_day_before_cleanup",
-        lambda date: {"date": date, "result": "PASS"},
+        lambda date, **_kwargs: {"date": date, "result": "PASS"},
     )
 
 

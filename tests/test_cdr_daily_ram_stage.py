@@ -590,7 +590,7 @@ def test_preserving_evidence_never_raises(tmp_path, monkeypatch, capsys):
 def test_failed_day_archive_leaves_raw_tree_and_skips_seal(tmp_path, monkeypatch):
     args, _runs, state, ram = _configure(tmp_path, monkeypatch)
 
-    def archive(date):
+    def archive(date, **_kwargs):
         raw = ram / "runs" / date
         assert raw.is_dir()
         assert (raw / "banks" / "ingest-status.json").is_file()
@@ -612,10 +612,10 @@ def test_ram_cleanup_runs_only_after_archive_pass(tmp_path, monkeypatch):
     args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
     order = []
 
-    def archive(date):
+    def archive(date, **_kwargs):
         assert (ram / "runs" / date / "_raw-attempt-journals-v1").is_dir()
         order.append("archive")
-        return {"date": date, "result": "PASS", "sha256": "ab" * 32}
+        return {"date": date, "result": "PASS", "sha256": "ab" * 32, "raw_banks_absent": False}
 
     def seal(*_args, **_kwargs):
         order.append("seal")
@@ -633,8 +633,46 @@ def test_finalized_retry_does_not_clean_raw_without_archive_pass(tmp_path, monke
     monkeypatch.setattr(
         cdr_daily,
         "_archive_raw_day_before_cleanup",
-        lambda date: {"date": date, "result": "FAIL", "error": "not uploaded"},
+        lambda date, **_kwargs: {"date": date, "result": "FAIL", "error": "not uploaded"},
     )
     assert cdr_daily.run_once(args) == 2
     assert cdr_daily.run_once(args) == 2
     assert (ram / "runs" / DATE / "banks" / "ingest-status.json").is_file()
+
+
+def test_quiet_window_deferral_keeps_the_run_successful(tmp_path, monkeypatch):
+    args, _runs, state, ram = _configure(tmp_path, monkeypatch)
+
+    def archive(date, **_kwargs):
+        assert (ram / "runs" / date).is_dir()
+        return {"date": date, "result": "DEFERRED", "reason": "quiet-window"}
+
+    def seal(*_args, **_kwargs):
+        raise AssertionError("seal ran while the day archive was deferred")
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    monkeypatch.setattr(cdr_daily, "seal_ram_capture_stage", seal)
+    assert cdr_daily.run_once(args) == 1
+    assert (state / f"{DATE}.done.json").is_file()
+    assert (ram / "runs" / DATE / "banks" / "ingest-status.json").is_file()
+
+
+def test_later_archive_pass_cleans_the_original_ram_stage(tmp_path, monkeypatch):
+    args, _runs, state, ram = _configure(tmp_path, monkeypatch)
+    calls = {"n": 0}
+
+    def archive(date, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            assert (ram / "runs" / date).is_dir()
+            return {"date": date, "result": "FAIL", "error": "retry"}
+        assert any(path.name == date or path.name == "runs" for path in kwargs["stage_roots"])
+        return {"date": date, "result": "PASS", "sha256": "ab" * 32, "raw_banks_absent": False}
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    assert cdr_daily.run_once(args) == 2
+    assert (ram / "runs" / DATE).is_dir()
+    ownership = list(state.glob(f"{DATE}.obs-*.ram-stage-ownership.json"))
+    assert len(ownership) == 1
+    assert cdr_daily.run_once(args) == 0
+    assert not (ram / "runs" / DATE).exists()
