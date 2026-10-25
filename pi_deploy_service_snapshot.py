@@ -72,7 +72,7 @@ def _archive_readback_producer_ok(producer, repo, source_commit):
     Outer queue budgets stay identical; only the inner Python entry may be the
     content-addressed launcher bound to the live AR_HEAD and exact module digests.
     """
-    if not isinstance(producer, list) or len(producer) != 15:
+    if not isinstance(producer, list) or len(producer) != 16:
         return False
     if producer[0] != "/usr/bin/python3" or producer[1] != "-B":
         return False
