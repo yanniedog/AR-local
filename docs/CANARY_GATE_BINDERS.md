@@ -7,6 +7,10 @@ Fail-closed emitters that turn **real** receipts into `canary-gate-evidence-v1` 
 - Only binders that validate artifacts may emit `result: PASS`.
 - Missing prerequisites → `UNKNOWN` or `FAIL`; never invent PASS.
 - Do not hand-edit a passing `canary-acceptance.json`.
+- `producer_contracts` binds on-disk `contracts/` bytes to `--target-commit` via `git show`.
+- `--allow-scoped-index` is tooling-drill-only and never authorizes `historical_integrity` PASS.
+- `preservation_restore` requires a restore-acceptance receipt whose `candidate_code_sha` matches `--protected-code-sha` (protected baseline), while the gate evidence is labeled with the proposed `--target-commit`.
+- External receipts are copied into the gate `receipts/` tree and hash-bound as evidence.
 
 ## Commands
 

@@ -104,18 +104,22 @@ def build_gate_payload(
 
 
 def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
-    """Write JSON object atomically; refuse overwrite. Return SHA-256 of bytes."""
+    """Write JSON object atomically; refuse overwrite. Return SHA-256 of bytes.
+
+    Bytes are fully written + fsynced to a unique temp sibling, then published
+    with ``os.replace`` so readers never observe a partial destination. The
+    destination must not already exist (no silent overwrite).
+    """
 
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
     digest = sha256_bytes(raw)
     if path.exists() or path.is_symlink():
         raise GateEmitError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
-        tmp.write_bytes(raw)
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-        fd = os.open(str(path), flags)
+        fd = os.open(str(tmp), flags)
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(raw)
@@ -123,15 +127,25 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
                 os.fsync(handle.fileno())
         except Exception:
             try:
-                path.unlink(missing_ok=True)
+                tmp.unlink(missing_ok=True)
             except OSError:
                 pass
             raise
-    finally:
+        # Race-safe refuse-overwrite: exclusive create of destination, then
+        # replace that empty placeholder with the fsynced temp payload.
+        placeholder_fd = os.open(str(path), flags)
+        os.close(placeholder_fd)
+        os.replace(str(tmp), str(path))
+    except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
+        raise
     return digest
 
 
@@ -147,6 +161,52 @@ def materialize_receipt(
         raise GateEmitError(f"receipt path must be relative without ..: {relative_path}")
     path = gate_dir / relative_path
     digest = write_json_atomic(path, payload)
+    return {"path": relative_path.replace("\\", "/"), "sha256": digest}
+
+
+def materialize_bytes(
+    gate_dir: Path,
+    *,
+    relative_path: str,
+    raw: bytes,
+) -> dict[str, str]:
+    """Copy opaque bytes under gate_dir atomically; return evidence item."""
+
+    if Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:
+        raise GateEmitError(f"receipt path must be relative without ..: {relative_path}")
+    path = gate_dir / relative_path
+    digest = sha256_bytes(raw)
+    if path.exists() or path.is_symlink():
+        raise GateEmitError(f"refusing to overwrite existing file: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        fd = os.open(str(tmp), flags)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(raw)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        placeholder_fd = os.open(str(path), flags)
+        os.close(placeholder_fd)
+        os.replace(str(tmp), str(path))
+    except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return {"path": relative_path.replace("\\", "/"), "sha256": digest}
 
 
