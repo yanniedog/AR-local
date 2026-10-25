@@ -50,6 +50,8 @@ def migrate_day_archive_env(text: str) -> str:
     Rewrites only a remote whose final segment is the legacy immutable folder.
     A remote that already ends in the raw-records folder is unchanged. Any other
     destination is rejected. The transport still refuses the legacy folder.
+    install-day-archive.sh inlines this decision under python3 -I -S and must
+    not import this module. Keep the two copies aligned.
     """
     lines = text.splitlines(True)
     seen = False

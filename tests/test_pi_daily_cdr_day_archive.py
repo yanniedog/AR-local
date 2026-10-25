@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 from datetime import date, datetime
 from pathlib import Path
@@ -692,6 +694,49 @@ def test_migrate_env_rewrites_only_legacy_remote():
     assert transport.migrate_day_archive_env(updated) == updated
     with pytest.raises(ValueError):
         transport.migrate_day_archive_env('AR_LOCAL_DAY_ARCHIVE_REMOTE="name:other-folder"\n')
+
+
+def _installer_migration_source() -> str:
+    script = (
+        Path(__file__).resolve().parents[1] / "deploy/pi/install-day-archive.sh"
+    ).read_text(encoding="utf-8")
+    assert "pi_daily_cdr_day_archive_transport" not in script
+    assert "PYTHONPATH" not in script
+    assert "/usr/bin/python3 -I -S - /etc/ar-local/day-archive.env" in script
+    start = script.index("<< 'PY'\n") + len("<< 'PY'\n")
+    return script[start:script.index("\nPY\n", start)]
+
+
+def _run_installer_migration(source: str, env_file: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-I", "-S", "-", str(env_file)],
+        input=source,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_install_migration_is_isolated_stdlib(tmp_path: Path):
+    source = _installer_migration_source()
+    legacy = 'AR_LOCAL_DAY_ARCHIVE_REMOTE="name:Parent/daily-cdr-day-archives"\n'
+    env_file = tmp_path / "day-archive.env"
+    env_file.write_text(legacy, encoding="utf-8")
+    migrated = _run_installer_migration(source, env_file)
+    assert migrated.returncode == 0, migrated.stderr
+    assert migrated.stdout.strip() == (
+        "migrated AR_LOCAL_DAY_ARCHIVE_REMOTE to daily-cdr-raw-records"
+    )
+    assert env_file.read_text(encoding="utf-8") == transport.migrate_day_archive_env(legacy)
+    again = _run_installer_migration(source, env_file)
+    assert again.returncode == 0, again.stderr
+    assert again.stdout == ""
+    original = 'AR_LOCAL_DAY_ARCHIVE_REMOTE="name:other-folder"\n'
+    bad = tmp_path / "bad.env"
+    bad.write_text(original, encoding="utf-8")
+    rejected = _run_installer_migration(source, bad)
+    assert rejected.returncode != 0
+    assert bad.read_text(encoding="utf-8") == original
 
 
 def test_journalctl_command_is_quiet(tmp_path: Path, monkeypatch):
