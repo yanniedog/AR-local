@@ -1,0 +1,121 @@
+name: stable-app canary receipt
+
+# Fail-closed: emits a stable_app_compatibility *source* receipt artifact only when
+# AR-app mobile `npm run ci` exits 0 with positive Jest suite/test counts.
+# Does not fabricate PASS, does not bind canary gates, does not activate Pi.
+#
+# AR-local candidate trees have no mobile/ (removed in #483). CI runs against
+# yanniedog/AR-app; the receipt's target_commit is the AR-local freeze SHA.
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: "AR-local canary freeze SHA (40 lowercase hex)"
+        required: true
+        type: string
+      ar_app_ref:
+        description: "AR-app git ref to test (sha / branch / tag)"
+        required: true
+        default: "main"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-app-canary-receipt-${{ github.event.inputs.target_commit }}
+  cancel-in-progress: false
+
+jobs:
+  mobile-ci-receipt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Validate target_commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc='${{ github.event.inputs.target_commit }}'
+          if [[ ! "$tc" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "target_commit must be 40 lowercase hex, got: $tc" >&2
+            exit 2
+          fi
+
+      - name: Checkout AR-local (emit script)
+        uses: actions/checkout@v4
+        with:
+          path: ar-local
+
+      - name: Checkout AR-app
+        uses: actions/checkout@v4
+        with:
+          repository: yanniedog/AR-app
+          ref: ${{ github.event.inputs.ar_app_ref }}
+          path: ar-app
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record AR-app HEAD
+        id: app
+        shell: bash
+        working-directory: ar-app
+        run: |
+          set -euo pipefail
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "AR-app HEAD=$(git rev-parse HEAD)"
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ar-app/mobile/package-lock.json
+
+      - name: npm ci
+        working-directory: ar-app/mobile
+        run: npm ci
+
+      - name: npm run ci (capture log)
+        id: ci
+        working-directory: ar-app/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/receipt-out"
+          set +e
+          npm run ci 2>&1 | tee "$GITHUB_WORKSPACE/receipt-out/mobile-npm-run-ci.log"
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Emit source receipt
+        if: always() && steps.ci.outputs.exit_code != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ar-local/scripts/emit_stable_app_ci_receipt.py \
+            --target-commit '${{ github.event.inputs.target_commit }}' \
+            --ar-app-head '${{ steps.app.outputs.head }}' \
+            --ci-log "$GITHUB_WORKSPACE/receipt-out/mobile-npm-run-ci.log" \
+            --ci-exit-code '${{ steps.ci.outputs.exit_code }}' \
+            --output "$GITHUB_WORKSPACE/receipt-out/stable_app-live-receipt.json" \
+            --worktree "ar-app/mobile@${{ steps.app.outputs.head }}" \
+            || true
+          # Job fails if CI failed; receipt may be FAIL. Artifact still uploaded.
+
+      - name: Upload receipt artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-app-receipt-${{ github.event.inputs.target_commit }}
+          path: |
+            receipt-out/stable_app-live-receipt.json
+            receipt-out/mobile-npm-run-ci.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail job if mobile CI non-zero
+        if: steps.ci.outputs.exit_code != '0'
+        run: |
+          echo "mobile npm run ci exited ${{ steps.ci.outputs.exit_code }}" >&2
+          exit 1
