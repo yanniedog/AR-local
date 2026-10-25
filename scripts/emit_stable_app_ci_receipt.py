@@ -21,8 +21,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
-SUITES_RE = re.compile(r"Test Suites:\s+(\d+)\s+passed")
-TESTS_RE = re.compile(r"Tests:\s+(\d+)\s+passed")
+# Allow preceding skipped/failed counts: "Tests: 2 skipped, 5025 passed, 5027 total"
+SUITES_RE = re.compile(r"Test Suites:[^\n]*?(\d+)\s+passed")
+TESTS_RE = re.compile(r"Tests:[^\n]*?(\d+)\s+passed")
 
 
 def utc_now_iso() -> str:

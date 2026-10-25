@@ -52,6 +52,19 @@ def test_pass_when_ci_green_with_jest_counts(tmp_path: Path) -> None:
     assert len(payload["ci"]["log_sha256"]) == 64
 
 
+def test_pass_when_jest_reports_skipped_before_passed(tmp_path: Path) -> None:
+    body = (
+        "Test Suites: 1 skipped, 449 passed, 450 total\n"
+        "Tests:       2 skipped, 5025 passed, 5027 total\n"
+    )
+    proc = _run(tmp_path, exit_code=0, log_body=body)
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads((tmp_path / "receipt.json").read_text(encoding="utf-8"))
+    assert payload["result"] == "PASS"
+    assert payload["ci"]["suites"] == 449
+    assert payload["ci"]["tests"] == 5025
+
+
 def test_fail_when_exit_nonzero(tmp_path: Path) -> None:
     body = "Test Suites: 1 passed, 1 total\nTests:       1 passed, 1 total\n"
     proc = _run(tmp_path, exit_code=1, log_body=body)
