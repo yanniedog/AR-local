@@ -521,7 +521,7 @@ def _process_day_locked(
     else:
         prior = load_progress(spool).get(day)
         if prior and prior.get("result") == "PASS":
-            not dry_run and clear_archive_requests(spool, day, None)
+            clear_archive_requests(spool, day, None)
             return prior
     # Timer and backfill wait until Hobart midnight. The ingest path sets
     # allow_same_day so it can upload before it deletes the raw tree.
