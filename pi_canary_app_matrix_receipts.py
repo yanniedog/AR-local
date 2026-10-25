@@ -268,6 +268,11 @@ def canonicalize(
         "candidate_generation": generation,
         "preservation_snapshot_sha256": snapshot,
     }
+    # Preserve validated gate-specific evidence so binders can authorize canonicalize output.
+    if result == "PASS" and gate == "stable_app_compatibility":
+        payload["ci"] = raw["ci"]
+    if result == "PASS" and gate.endswith("_matrix"):
+        payload["devices"] = raw["devices"]
     digest = write_json_atomic(output, payload)
     return {
         "gate": gate,

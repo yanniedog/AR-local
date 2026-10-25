@@ -301,6 +301,7 @@ def test_matrix_canonicalize_accepts_complete_rows(tmp_path: Path) -> None:
         body = json.loads(out.read_text(encoding="utf-8"))
         assert body["candidate_generation"] == GENERATION
         assert body["preservation_snapshot_sha256"] == SNAPSHOT
+        assert body["devices"] == [row]
 
 
 def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
@@ -501,6 +502,9 @@ def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
     body = json.loads(out.read_text(encoding="utf-8"))
     assert body["candidate_generation"] == GENERATION
     assert body["preservation_snapshot_sha256"] == SNAPSHOT
+    assert body["ci"]["command"] == "npm run ci"
+    assert body["ci"]["exit_code"] == 0
+    assert body["ci"]["log_sha256"] == "c" * 64
 
 
 def test_app_matrix_canonicalize_requires_bind_fields(tmp_path: Path) -> None:
