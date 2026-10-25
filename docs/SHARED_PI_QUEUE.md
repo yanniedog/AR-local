@@ -163,3 +163,65 @@ supervised harmless canaries: compatible jobs overlap; conflicting jobs execute
 in order; a dead wrapper with a live child retains its slot; a live native AR
 lease defers host work. Verify SSH and the Pi dashboard throughout. Source CI,
 merge, installed hashes and natural-cycle acceptance are separate evidence.
+
+## Exact AR-local rollout invocations (safe-head)
+
+Use these shapes only in **daylight** after post-ingest preflight. Substitute
+reviewed SHAs and paths. Do **not** treat this section as activation authority.
+Host claims must not nest a second production lease inside the command.
+
+### Dry-run admission (no mutate)
+
+```sh
+pi-shared-task --dry-run --project ar-local --resource host --max-runtime 1800 -- \
+  /bin/true
+
+pi-shared-task --dry-run --project ar-local --resource ar-local --cpu-slots 1 \
+  --max-runtime 600 -- /bin/true
+```
+
+### Gate-bytes-only foundation (production HEAD unchanged)
+
+Requires an aligned disposable source tree `$SRC` with
+`HEAD == origin/main == <approved-40-char-sha>`, plus installer support for
+`--gate-bytes-only` (see `docs/PI_BACKUP_FOUNDATION.md`). Does not create
+`backup.env`, mount disks, or enable backup timers.
+
+```sh
+pi-shared-task --project ar-local --resource host --max-runtime 1800 -- \
+  /bin/bash -lc 'cd /srv/ar-local/AR-local && \
+    sh deploy/pi/install-backup-foundation.sh --gate-bytes-only \
+      --prod-repo /srv/ar-local/AR-local \
+      --expect-prod-head <protected-production-sha> \
+      "$SRC" /srv/ar-local/australianrates /srv/ar-local/data \
+      <approved-40-char-sha>'
+```
+
+### Full backup-foundation install (after authorized mount + backup.env)
+
+```sh
+pi-shared-task --project ar-local --resource host --max-runtime 1800 -- \
+  /bin/bash -lc 'cd /srv/ar-local/AR-local && \
+    sh deploy/pi/install-backup-foundation.sh \
+      /srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data \
+      <approved-40-char-sha>'
+```
+
+### Exact-commit deploy (canary-approved only)
+
+Activation remains the protected workflow's
+`python pi_deploy_verify.py --deploy --expected-commit <TARGET_SHA>` path.
+When submitting that reviewed command through the queue, keep resource
+`ar-local` (not a nested second lease) and a max-runtime that leaves 60s before
+the next 00:30 Hobart freeze:
+
+```sh
+pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 \
+  --max-runtime 3600 -- \
+  /bin/bash -lc 'cd /srv/ar-local/AR-local && \
+    python3 pi_deploy_verify.py --deploy --expected-commit <40-char-target-sha>'
+```
+
+Prefer dispatching `.github/workflows/pi-deploy-on-main.yml` with matching
+protected `AR_PI_CANARY_*` values over ad-hoc queue deploys. Never use a bare
+`git pull` or moving-main checkout as the activation command.
