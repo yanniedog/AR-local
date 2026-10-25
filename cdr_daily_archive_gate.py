@@ -198,7 +198,7 @@ def _stage_matches_uploaded(progress: Path, day: str, generation: str, ownership
     if not prior or prior.get("result") != "PASS":
         return False
     roots = [Path(item) for item in (ownership.get("stage_roots") or []) if isinstance(item, str)]
-    if seal_receipt_path(state_dir, generation).is_file():
+    if seal_receipt_path(state_dir, generation).is_file() and os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
         return True
     if not any(root_has_files(path) for path in roots):
         return True

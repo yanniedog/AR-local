@@ -678,6 +678,38 @@ def test_later_archive_pass_cleans_the_original_ram_stage(tmp_path, monkeypatch)
     assert not (ram / "runs" / DATE).exists()
 
 
+def test_seal_receipt_does_not_authorize_replacement_stage_without_terms(tmp_path, monkeypatch):
+    from cdr_daily_archive_gate import _stage_matches_uploaded
+    from cdr_ram_capture_cleanup import seal_receipt_path
+    from pi_daily_cdr_day_archive_scope import stage_source_fingerprint
+
+    generation = "obs-2026-08-15-0123456789abcdef"
+    stage = tmp_path / "ram" / "runs" / DATE
+    stage.mkdir(parents=True)
+    payload = stage / "raw.json"
+    payload.write_text("archived bytes", encoding="utf-8")
+    fingerprint = stage_source_fingerprint([stage])
+    payload.write_text("unarchived replacement", encoding="utf-8")
+
+    state = tmp_path / "state"
+    state.mkdir()
+    receipt = seal_receipt_path(state, generation)
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text("{}\n", encoding="utf-8")
+    progress = tmp_path / "progress.jsonl"
+    progress.write_text(json.dumps({
+        "date": DATE,
+        "generation_id": generation,
+        "result": "PASS",
+        "source_fingerprint": fingerprint,
+    }) + "\n", encoding="utf-8")
+    monkeypatch.delenv("AR_LOCAL_TERMS_ROOT", raising=False)
+
+    assert not _stage_matches_uploaded(
+        progress, DATE, generation, {"stage_roots": [str(stage)]}, state,
+    )
+
+
 def test_existing_seal_is_not_recreated(tmp_path, monkeypatch):
     import argparse
     import json
