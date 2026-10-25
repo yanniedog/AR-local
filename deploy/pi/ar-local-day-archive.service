@@ -8,14 +8,15 @@ ConditionPathExists=!/etc/ar-local/.drive-write-hold-activation.lock
 
 [Service]
 Type=oneshot
-User=root
-Group=root
+# Run as the application account — never root against the writable checkout.
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
 EnvironmentFile=-/etc/ar-local/drive-backup.env
 EnvironmentFile=-/etc/ar-local/day-archive.env
-WorkingDirectory=/srv/ar-local/AR-local
+WorkingDirectory={{AR_LOCAL_REPO}}
 # Do not use python -I: repo-local imports (ar_local_*, pi_*) must resolve from WorkingDirectory.
-Environment=PYTHONPATH=/srv/ar-local/AR-local
-ExecStart=/usr/bin/python3 /srv/ar-local/AR-local/pi_daily_cdr_day_archive.py --once-pending
+Environment=PYTHONPATH={{AR_LOCAL_REPO}}
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_cdr_day_archive.py --once-pending
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

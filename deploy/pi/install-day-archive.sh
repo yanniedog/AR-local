@@ -9,12 +9,16 @@ if [[ "${2:-}" == "--enable" ]]; then
   ENABLE=1
 fi
 
+run_user="${AR_LOCAL_USER:-pi}"
+run_group="${AR_LOCAL_GROUP:-$run_user}"
+
 install -d -m 0755 /var/lib/ar-local-day-archives
-# Ingest runs as user pi and must be able to enqueue day-archive requests.
-install -d -m 0775 -o pi -g pi /var/lib/ar-local-day-archives/requests
-install -d -m 0755 /var/lib/ar-local-day-archives/work
-install -d -m 0755 /var/lib/ar-local-day-archives/verify
-chown pi:pi /var/lib/ar-local-day-archives
+# Ingest and the day-archive oneshot both run as the application account.
+install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/requests
+install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/work
+install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/verify
+install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/locks
+chown -R "$run_user:$run_group" /var/lib/ar-local-day-archives
 
 # System python used by ar-local-daily / day-archive oneshot needs zstandard.
 if ! /usr/bin/python3 -c 'import zstandard' 2>/dev/null; then
@@ -26,8 +30,15 @@ if [[ ! -f /etc/ar-local/day-archive.env ]]; then
   install -m 0644 "$ROOT/deploy/pi/day-archive.env.example" /etc/ar-local/day-archive.env
 fi
 
-install -m 0644 "$ROOT/deploy/pi/ar-local-day-archive.service" /etc/systemd/system/ar-local-day-archive.service
-install -m 0644 "$ROOT/deploy/pi/ar-local-day-archive.timer" /etc/systemd/system/ar-local-day-archive.timer
+rendered=$(mktemp)
+trap 'rm -f -- "$rendered"' EXIT
+for unit in ar-local-day-archive.service ar-local-day-archive.timer; do
+  sed -e "s|{{AR_LOCAL_REPO}}|$ROOT|g" \
+      -e "s|{{AR_LOCAL_USER}}|$run_user|g" \
+      -e "s|{{AR_LOCAL_GROUP}}|$run_group|g" \
+      "$ROOT/deploy/pi/$unit" > "$rendered"
+  install -m 0644 -o root -g root "$rendered" "/etc/systemd/system/$unit"
+done
 systemctl daemon-reload
 
 if [[ "$ENABLE" -eq 1 ]]; then
@@ -35,4 +46,4 @@ if [[ "$ENABLE" -eq 1 ]]; then
   systemctl list-timers ar-local-day-archive.timer --no-pager
 fi
 
-echo "day-archive install complete (enable=$ENABLE)"
+echo "day-archive install complete (enable=$ENABLE user=$run_user)"
