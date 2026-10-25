@@ -21,8 +21,18 @@ from typing import Callable
 import zstandard
 
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from cdr_daily_archive_gate import maybe_resume_job
 from cdr_file_lock import FileLock
 from pi_drive_backup_hold import Blocked, require_writes_allowed
+from pi_daily_cdr_day_archive_ingest import (
+    StageMissing,
+    cached_generation_upload,
+    clear_archive_requests, enqueue_ingest_continuation, quarantine_unrecoverable,
+    generation_has_pass, load_day_archive_env,
+    pending_archive_jobs,
+    bind_generation_remote,
+    require_generation,
+)
 from pi_daily_cdr_day_archive_scope import (
     FIRST_DAY,
     KNOWN_GAPS,
@@ -35,6 +45,7 @@ from pi_daily_cdr_day_archive_scope import (
     hobart_today,
     iter_backfill_days,
     require_day,
+    stage_source_fingerprint,
 )
 from pi_daily_cdr_day_archive_transport import (
     FOLDER_NAME,
@@ -277,6 +288,8 @@ def build_day_archive(
     *,
     guard: Callable[[], None] = lambda: None,
     include_journals: bool = True,
+    stage_roots: list[Path] | None = None,
+    source_fingerprint: str | None = None,
 ) -> dict:
     day = require_day(day)
     work.mkdir(parents=True, exist_ok=True)
@@ -303,7 +316,9 @@ def build_day_archive(
         }
 
     journal_dir = work / "journal-exports" if include_journals else None
-    inventory = build_day_inventory(data_root, day, journal_dir=journal_dir, guard=guard)
+    inventory = build_day_inventory(
+        data_root, day, journal_dir=journal_dir, guard=guard, stage_roots=stage_roots,
+    )
     rows = list(inventory["files"])
     primary_rows = [row for row in rows if not str(row["logical_path"]).startswith("journal/")]
     if not primary_rows:
@@ -323,6 +338,7 @@ def build_day_archive(
         "compression": COMPRESSION,
         "include_journals": bool(include_journals),
         "journal_classifier": inventory.get("journal_classifier", JOURNAL_CLASSIFIER),
+        **({} if source_fingerprint is None else {"source_fingerprint": source_fingerprint}),
         "file_count": inventory["file_count"],
         "total_bytes": inventory["total_bytes"],
         "files": [
@@ -453,6 +469,9 @@ def process_day(
     dry_run: bool,
     include_journals: bool,
     guard: Callable[[], None] = lambda: None,
+    allow_same_day: bool = False,
+    generation_id: str | None = None,
+    stage_roots: list[Path] | None = None,
 ) -> dict:
     day = require_day(day)
     spool = Path(spool)
@@ -466,6 +485,9 @@ def process_day(
             dry_run=dry_run,
             include_journals=include_journals,
             guard=guard,
+            allow_same_day=allow_same_day,
+            generation_id=generation_id,
+            stage_roots=stage_roots,
         )
 
 
@@ -478,16 +500,29 @@ def _process_day_locked(
     dry_run: bool,
     include_journals: bool,
     guard: Callable[[], None],
+    allow_same_day: bool = False,
+    generation_id: str | None = None,
+    stage_roots: list[Path] | None = None,
 ) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing day-archive work inside 00:30–02:00 Australia/Hobart quiet window")
-    prior = load_progress(spool).get(day)
-    if prior and prior.get("result") == "PASS":
-        request = spool / "requests" / f"{day}.json"
-        request.unlink(missing_ok=True)
-        return prior
-    # Same-day archives stay pending until Hobart midnight so journals cover the full day.
-    if day == hobart_today().isoformat() and not dry_run:
+    generation_id = require_generation(generation_id)
+    source_fingerprint = stage_source_fingerprint(stage_roots, quiet_window_guard) if generation_id else None
+    if generation_id:
+        cached = cached_generation_upload(
+            progress_path(spool), day, generation_id, stage_roots, source_fingerprint or "",
+        )
+        if cached is not None:
+            not dry_run and clear_archive_requests(spool, day, generation_id)
+            return cached
+    else:
+        prior = load_progress(spool).get(day)
+        if prior and prior.get("result") == "PASS":
+            clear_archive_requests(spool, day, None)
+            return prior
+    # Timer and backfill wait until Hobart midnight. The ingest path sets
+    # allow_same_day so it can upload before it deletes the raw tree.
+    if day == hobart_today().isoformat() and not dry_run and not allow_same_day:
         return {
             "schema": SCHEMA,
             "date": day,
@@ -499,6 +534,8 @@ def _process_day_locked(
     work = spool / "work" / "dry-run" / day if dry_run else spool / "work" / day
     work.mkdir(parents=True, exist_ok=True)
     combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
+    if transport is not None and hasattr(transport, "guard"):
+        transport.guard = combined_guard
     # Dry-run skips journalctl; never reuse those bytes for a journals-enabled upload.
     build_journals = bool(include_journals) and not dry_run
 
@@ -538,9 +575,14 @@ def _process_day_locked(
                 manifest.get("series") == SERIES
                 and manifest.get("journal_classifier") == JOURNAL_CLASSIFIER
             )
+            fingerprint_match = (
+                source_fingerprint is None
+                or manifest.get("source_fingerprint") == source_fingerprint
+            )
             if (
                 journals_match
                 and series_match
+                and fingerprint_match
                 and len(digest) == 64
                 and sha256_file(existing, combined_guard) == digest
             ):
@@ -573,10 +615,16 @@ def _process_day_locked(
             work,
             guard=combined_guard,
             include_journals=build_journals,
+            stage_roots=stage_roots,
+            source_fingerprint=source_fingerprint,
         )
 
     try:
         built = _reuse_or_build()
+        if generation_id:
+            bind_generation_remote(
+                day, built, generation_id, load_progress(spool).get(day), transport,
+            )
         if dry_run:
             row = {
                 "schema": SCHEMA,
@@ -629,14 +677,17 @@ def _process_day_locked(
             "bytes": built.get("bytes"),
             "sha256": built.get("sha256"),
             "remote_name": built["remote_name"],
+            **({} if not generation_id else {
+                "generation_id": generation_id,
+                "source_fingerprint": source_fingerprint,
+            }),
             "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
         }
         # Durable PASS before unlink so a crash still leaves retryable local bytes.
         record_progress(spool, row)
         try:
             unlink_local_archive_only(built)
-            request = spool / "requests" / f"{day}.json"
-            request.unlink(missing_ok=True)
+            clear_archive_requests(spool, day, generation_id)
         except Exception as cleanup_error:  # noqa: BLE001 — PASS already durable
             # Do not rewrite PASS as FAIL; leftover local bytes are safe to clean later.
             row = {
@@ -646,15 +697,77 @@ def _process_day_locked(
             record_progress(spool, row)
         return row
     except Exception as error:
-        row = {
+        prior_day = load_progress(spool).get(day) or {}
+        keep_date_pass = prior_day.get("result") == "PASS" and prior_day.get("generation_id") != generation_id
+        if not generation_has_pass(progress_path(spool), day, generation_id) and not keep_date_pass:
+            row = {
+                "schema": SCHEMA,
+                "date": day,
+                "result": "FAIL",
+                "error": str(error)[:500],
+                "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+            }
+            if generation_id:
+                row["generation_id"] = generation_id
+            record_progress(spool, row)
+        raise
+
+
+def archive_observation_day(
+    day: str,
+    *,
+    data_root: Path | None = None,
+    spool: Path | None = None,
+    transport: DayArchiveRclone | None = None,
+    generation_id: str | None = None,
+    stage_roots: list[Path] | None = None,
+    state_dir: Path | None = None,
+    runs_root: Path | None = None, clean_ram_stage: bool | None = None,
+) -> dict:
+    """Synchronous raw-record upload before ingest deletes that day's files."""
+    day = require_day(day)
+    load_day_archive_env()
+    root = Path(data_root or os.environ.get("AR_LOCAL_DATA_ROOT", DEFAULT_DATA_ROOT))
+    spool_path = Path(spool or os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
+    spool_path.mkdir(parents=True, exist_ok=True)
+    roots = [Path(path) for path in (stage_roots or [])]
+    generation_id = require_generation(generation_id)
+    if generation_id and in_quiet_window():
+        enqueue_ingest_continuation(
+            day,
+            spool=spool_path,
+            generation_id=generation_id,
+            stage_roots=roots,
+            data_root=root,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
+        )
+        return {
             "schema": SCHEMA,
             "date": day,
-            "result": "FAIL",
-            "error": str(error)[:500],
-            "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+            "result": "DEFERRED",
+            "reason": "quiet-window",
+            "generation_id": generation_id,
         }
-        record_progress(spool, row)
-        raise
+    if transport is None:
+        remote = os.environ.get("AR_LOCAL_DAY_ARCHIVE_REMOTE", DEFAULT_REMOTE)
+        if ":" not in remote:
+            raise DayArchiveError("rclone remote must look like name:path")
+        transport = DayArchiveRclone(
+            Path(os.environ.get("RCLONE_CONFIG", DEFAULT_RCLONE)),
+            remote,
+            os.environ.get("AR_LOCAL_DRIVE_ROOT_FOLDER_ID", ""),
+        )
+    return process_day(
+        data_root=root,
+        day=day,
+        spool=spool_path,
+        transport=transport,
+        dry_run=False,
+        include_journals=True,
+        allow_same_day=True,
+        generation_id=generation_id,
+        stage_roots=roots,
+    )
 
 
 def process_control(
@@ -686,6 +799,9 @@ def _process_control_locked(
 ) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing control-archive work inside quiet window")
+    combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
+    if hasattr(transport, "guard"):
+        transport.guard = combined_guard
     prior = load_progress(spool).get("CONTROL")
     if prior and prior.get("result") == "PASS" and not dry_run:
         return prior
@@ -733,11 +849,11 @@ def _process_control_locked(
             Path(built["local_path"]),
             built["sha256"],
             spool / "verify",
-            guard,
+            combined_guard,
         )
         ensure_sidecars_uploaded(transport, built)
     else:
-        upload_and_verify(transport, built, spool / "verify", guard=guard)
+        upload_and_verify(transport, built, spool / "verify", guard=combined_guard)
     row = {
         "schema": SCHEMA,
         "date": "CONTROL",
@@ -826,58 +942,48 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result.get("result") in ("PASS", "DRY_RUN") else 1
 
-    days: list[str] = []
+    jobs: list[dict] = []
     if args.date:
-        days = [require_day(args.date)]
+        jobs = [{"day": require_day(args.date)}]
     elif args.once_pending:
-        requests_dir = spool / "requests"
-        pending = sorted(requests_dir.glob("*.json")) if requests_dir.is_dir() else []
-        today = hobart_today().isoformat()
-        # Skip same-day requests; leave them queued until the next Hobart day.
-        eligible = []
-        for marker in pending:
-            try:
-                requested = require_day(json.loads(marker.read_text(encoding="utf-8"))["date"])
-            except (OSError, ValueError, KeyError, json.JSONDecodeError):
-                continue
-            if requested == today:
-                continue
-            eligible.append(requested)
-        if not eligible:
-            print(
-                json.dumps(
-                    {
-                        "result": "IDLE",
-                        "reason": "no eligible pending requests (same-day deferred)",
-                    },
-                    indent=2,
-                )
-            )
+        jobs = pending_archive_jobs(
+            spool, today=hobart_today().isoformat(), quiet=in_quiet_window(),
+        )
+        if not jobs:
+            print(json.dumps({"result": "IDLE", "reason": "no eligible pending requests (same-day deferred)"}, indent=2))
             return 0
-        days = [eligible[0]]
     elif args.backfill:
         done = load_progress(spool)
         for day in iter_backfill_days():
             prior = done.get(day)
             if prior and prior.get("result") == "PASS":
                 continue
-            days.append(day)
-            if args.max_days and len(days) >= args.max_days:
+            jobs.append({"day": day})
+            if args.max_days and len(jobs) >= args.max_days:
                 break
     else:
         raise SystemExit("specify --date, --backfill, --once-pending, --control, or --request")
 
     results = []
-    for day in days:
-        result = process_day(
-            data_root=args.data_root.resolve(),
-            day=day,
-            spool=spool,
-            transport=transport,
-            dry_run=args.dry_run,
-            include_journals=True,
-        )
+    for job in jobs:
+        try:
+            result = process_day(
+                data_root=job.get("data_root") or args.data_root.resolve(),
+                day=job["day"],
+                spool=spool,
+                transport=transport,
+                dry_run=args.dry_run,
+                include_journals=True,
+                allow_same_day=bool(job.get("allow_same_day")),
+                generation_id=job.get("generation_id"),
+                stage_roots=job.get("stage_roots"),
+            )
+        except StageMissing as error:
+            quarantine_unrecoverable(spool, job["day"], job.get("generation_id"))
+            print(json.dumps({"result": "BLOCKED", "date": job["day"], "error": str(error)}, indent=2))
+            continue
         results.append(result)
+        maybe_resume_job(result, job, dry_run=args.dry_run, spool=spool)
         if result.get("result") == "FAIL":
             print(json.dumps({"results": results}, indent=2, sort_keys=True))
             return 1

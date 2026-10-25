@@ -136,6 +136,41 @@ def test_process_day_refuses_quiet_window(tmp_path: Path, monkeypatch):
         )
 
 
+def test_process_day_passes_quiet_guard_to_active_transport(tmp_path: Path, monkeypatch):
+    guards: list[str] = []
+
+    class GuardedTransport:
+        def guard(self):
+            return None
+
+        def ensure_folder(self):
+            self.guard()
+
+        def remote_exists(self, _relative):
+            self.guard()
+            return False
+
+        def upload(self, _relative, source):
+            self.guard()
+            Path(source).read_bytes()
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda _spool: None)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
+    result = archive.process_day(
+        data_root=tmp_path / "data",
+        day="2026-05-14",
+        spool=tmp_path / "spool",
+        transport=GuardedTransport(),
+        dry_run=False,
+        include_journals=False,
+        guard=lambda: guards.append("checked"),
+    )
+
+    assert result["result"] == "PASS"
+    assert guards
+
+
 def test_request_day_archive_idempotent(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", str(tmp_path / "spool"))
     first = archive.request_day_archive("2026-10-01", spool=tmp_path / "spool")
@@ -160,6 +195,11 @@ def test_object_path_validation():
     assert transport.OBJECT_RE.fullmatch("2026-05-13.tar.zst")
     assert transport.OBJECT_RE.fullmatch("2026-05-14.GAP.json")
     assert transport.OBJECT_RE.fullmatch("CONTROL.tar.zst")
+    generation = "2026-10-25.obs-2026-10-25-0123456789abcdef"
+    assert transport.OBJECT_RE.fullmatch(f"{generation}.tar.zst")
+    assert transport.OBJECT_RE.fullmatch(f"{generation}.sha256")
+    assert transport.OBJECT_RE.fullmatch(f"{generation}.manifest.json")
+    assert not transport.OBJECT_RE.fullmatch("2026-10-25.not-a-generation.tar.zst")
     assert not transport.OBJECT_RE.fullmatch("../escape.tar.zst")
     assert transport.PureName("2026-05-13.manifest.json") == "2026-05-13.manifest.json"
     with pytest.raises(ValueError):
@@ -252,6 +292,34 @@ def test_pass_clears_pending_request(tmp_path: Path, monkeypatch):
     )
     assert result["result"] == "PASS"
     assert not request.exists()
+
+
+def test_missing_continuation_stage_is_quarantined(tmp_path: Path, monkeypatch):
+    from pi_daily_cdr_day_archive_ingest import enqueue_ingest_continuation
+
+    day = "2026-08-15"
+    generation = f"obs-{day}-0123456789abcdef"
+    spool = tmp_path / "spool"
+    missing_stage = tmp_path / "ram" / "runs" / day
+    request = enqueue_ingest_continuation(
+        day,
+        spool=spool,
+        generation_id=generation,
+        stage_roots=[missing_stage],
+        data_root=tmp_path / "data",
+        state_dir=tmp_path / "data" / "state",
+        runs_root=tmp_path / "data" / "runs",
+    )
+    monkeypatch.setattr(archive, "in_quiet_window", lambda: False)
+    monkeypatch.setattr(archive, "hobart_today", lambda: date.fromisoformat(day))
+
+    assert archive.main([
+        "--once-pending", "--dry-run", "--spool", str(spool),
+        "--data-root", str(tmp_path / "data"),
+    ]) == 0
+
+    assert not request.exists()
+    assert (spool / "blocked" / request.name).is_file()
 
 
 def test_existing_remote_retries_sidecars(tmp_path: Path, monkeypatch):
@@ -821,3 +889,79 @@ def test_walk_propagates_unreadable_directory(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(scope.os, "walk", walk_with_error)
     with pytest.raises(RuntimeError, match="unreadable archive source"):
         list(scope._walk_files(root))
+
+
+def test_same_day_upload_is_opt_in_and_keeps_wire_bodies(tmp_path: Path, monkeypatch):
+    day = archive.hobart_today().isoformat()
+    data = tmp_path / "data"
+    leaf = data / "runs" / day / "banks" / "leaf"
+    leaf.mkdir(parents=True)
+    (leaf / "product-detail.json").write_bytes(b"opaque-wire-body")
+    (leaf / "product-detail.error.txt").write_bytes(b"opaque-error-body")
+    uploaded: list[str] = []
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return False
+
+        def upload(self, relative, source):
+            uploaded.append(relative)
+            Path(source).read_bytes()
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(
+        archive,
+        "verify_uploaded_archive",
+        lambda *args, **kwargs: None,
+    )
+    spool = tmp_path / "spool"
+    deferred = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+    )
+    assert deferred["result"] == "DEFERRED"
+    assert uploaded == []
+    result = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+        allow_same_day=True,
+    )
+    assert result["result"] == "PASS"
+    assert result["raw_banks_absent"] is False
+    assert result["coverage"] == "wire_raw"
+    assert uploaded[0] == f"{day}.tar.zst"
+    assert (leaf / "product-detail.json").read_bytes() == b"opaque-wire-body"
+    assert (leaf / "product-detail.error.txt").read_bytes() == b"opaque-error-body"
+
+
+def test_archive_observation_day_is_synchronous_same_day_with_journals(tmp_path: Path, monkeypatch):
+    seen = {}
+
+    def fake_process_day(**kwargs):
+        seen.update(kwargs)
+        return {"result": "PASS", "date": kwargs["day"]}
+
+    monkeypatch.setattr(archive, "process_day", fake_process_day)
+    result = archive.archive_observation_day(
+        "2026-10-24",
+        data_root=tmp_path,
+        spool=tmp_path / "spool",
+        transport=object(),
+    )
+    assert result == {"result": "PASS", "date": "2026-10-24"}
+    assert seen["allow_same_day"] is True
+    assert seen["include_journals"] is True
+    assert seen["dry_run"] is False
+    assert seen["day"] == "2026-10-24"

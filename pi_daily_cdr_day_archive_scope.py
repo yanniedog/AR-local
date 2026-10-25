@@ -366,12 +366,60 @@ def raw_banks_absent(day: str, rows: list[dict]) -> bool:
     return not any(_is_raw_banks_logical_path(str(row["logical_path"]), day) for row in rows)
 
 
+def stage_source_fingerprint(stage_roots: Iterable[Path] | None,
+                              guard: Callable[[], None] = lambda: None) -> str:
+    """Stable hash of the capture-stage bytes cleanup is about to delete."""
+    lines: list[str] = []
+    for root in stage_roots or []:
+        guard()
+        if not isinstance(root, Path) or not root.is_dir() or root.is_symlink():
+            continue
+        resolved = root.resolve()
+        for path in _walk_files(resolved):
+            relative = path.resolve().relative_to(resolved).as_posix()
+            digest = file_row(resolved, path, guard)["sha256"]
+            lines.append(f"{resolved.as_posix()}/{relative}\t{digest}")
+    lines.sort()
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def merge_stage_rows(
+    data_root: Path,
+    day: str,
+    rows: list[dict],
+    stage_roots: Iterable[Path] | None,
+    guard: Callable[[], None] = lambda: None,
+) -> list[dict]:
+    """Add capture-stage files. Same bytes collapse; conflicting bytes stay."""
+    merged = {str(row["logical_path"]): row for row in rows}
+    for root in stage_roots or []:
+        if not root.is_dir() or root.is_symlink():
+            raise ValueError(f"capture stage is not a directory: {root}")
+        resolved = root.resolve()
+        for path in _walk_files(resolved):
+            guard()
+            relative = path.resolve().relative_to(resolved).as_posix()
+            logical = f"data/runs/{day}/{relative}"
+            row = file_row(data_root, path, guard)
+            if logical in merged and merged[logical]["sha256"] == row["sha256"]:
+                continue
+            if logical in merged:
+                logical = f"data/capture-stage/runs/{day}/{relative}"
+            row["logical_path"] = logical
+            row["source_path"] = str(path)
+            merged[logical] = row
+    ordered = list(merged.values())
+    ordered.sort(key=lambda item: item["logical_path"])
+    return ordered
+
+
 def build_day_inventory(
     data_root: Path,
     day: str,
     *,
     journal_dir: Path | None = None,
     guard: Callable[[], None] = lambda: None,
+    stage_roots: Iterable[Path] | None = None,
 ) -> dict:
     day = require_day(day)
     if day in KNOWN_GAPS:
@@ -392,7 +440,7 @@ def build_day_inventory(
             journal_rows.append(row)
     rows = [file_row(data_root, path, guard) for path in members]
     rows.extend(journal_rows)
-    rows.sort(key=lambda row: row["logical_path"])
+    rows = merge_stage_rows(data_root, day, rows, stage_roots, guard)
     banks_absent = raw_banks_absent(day, rows)
     journals_absent = journal_status == "unavailable" and not journal_rows
     return {

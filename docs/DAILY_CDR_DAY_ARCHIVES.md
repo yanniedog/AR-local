@@ -102,10 +102,33 @@ unit against the day-archive seed checkout
 
 ## Ongoing coverage
 
-Successful `cdr_daily` finalize calls `request_day_archive(date)`, writing
-`/var/lib/ar-local-day-archives/requests/<date>.json`. The
-`ar-local-day-archive.timer` drains pending requests outside the quiet window
-via `pi-shared-task` / the installed service.
+Successful `cdr_daily` finalize calls `archive_observation_day` before
+seal or any cleanup that removes that day's raw files. The call passes the
+live capture stage (`ram_root/runs/<date>` when RAM staging is on, otherwise
+the run directory) and the observation `generation_id`. The upload is
+synchronous and journals stay on. Cleanup runs only when the result is `PASS`
+and the manifest covers that stage, including its banks tree when the stage
+still has one. A date-level `PASS` is not reused for a different generation:
+a `--force` or `--resume-same-day` revision uploads
+`YYYY-MM-DD.<generation_id>.tar.zst` when the canonical object already belongs
+to an earlier generation, with matching `.sha256` and `.manifest.json` names.
+The first generation still uses `YYYY-MM-DD.tar.zst` when that name is free.
+
+A verified `PASS` records the stage fingerprint. The same generation reuses
+that object only when the stage bytes still match. Original-stage ownership is
+written before the upload, so a later `PASS` resumes seal, terms capture, and
+cleanup of that same stage.
+
+During 00:30–02:00 Australia/Hobart the upload is not attempted. Finalize still
+succeeds, the raw tree stays, and a continuation request is written.
+`--once-pending` may run that continuation after the window, with same-day
+upload allowed only for that request. A verified continuation then resumes
+seal, terms capture, and cleanup while holding `state/daily-ingest.lock`.
+A continuation whose stage is gone and has no verified PASS is moved under
+the spool `blocked/` directory so later requests can drain. The next
+`cdr_daily` run also finishes ownership records whose upload already passed.
+Ordinary same-day requests and historical backfill stay deferred. `ar-local-day-archive.timer` still only drains queued
+requests; it is not enabled by this path and it is not the ingest cleanup gate.
 
 ## Google Drive write-hold lift (operator 1B)
 

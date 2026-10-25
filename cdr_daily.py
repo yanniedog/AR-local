@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,11 @@ from cdr_same_day_reuse import (
     reconcile_same_day_reuse, seed_same_day_reuse, validate_reuse_destination,
 )
 from cdr_terms.ingest import capture_if_configured, retry_capture_if_configured
+from cdr_daily_archive_gate import (
+    accept_finalized_retry as _accept_finalized_retry,
+    finish_verified_stage_cleanups,
+    write_ram_ownership as _write_ram_ownership,
+)
 from cdr_ram_capture_cleanup import cleanup_captured_ram_stage, seal_ram_capture_stage
 from cdr_capture_stage_capacity import select_capture_stage
 
@@ -337,21 +343,60 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
-def _reconcile_day_archive_request(date: str, *, reason: str) -> None:
-    """Idempotent enqueue after finalize / already-finalized / recovery paths.
+def _queue_archive_retry(date: str, *, data_root: Path, generation_id: str | None,
+                         stage_roots: list[Path], state_dir: Path | None,
+                         runs_root: Path | None, clean_ram_stage: bool | None) -> None:
+    if not generation_id or state_dir is None or runs_root is None:
+        return
+    from pi_daily_cdr_day_archive import DEFAULT_SPOOL
+    from pi_daily_cdr_day_archive_ingest import enqueue_ingest_continuation
+    spool = Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
+    enqueue_ingest_continuation(
+        date, spool=spool, generation_id=generation_id, stage_roots=stage_roots,
+        data_root=data_root, state_dir=state_dir, runs_root=runs_root,
+        clean_ram_stage=clean_ram_stage,
+    )
 
-    Failures must never undo a verified finalize; surface and continue.
-    """
+
+def _archive_raw_day_before_cleanup(date: str, *, data_root: Path, generation_id: str | None,
+                                    stage_roots: list[Path], state_dir: Path | None = None,
+                                    runs_root: Path | None = None,
+                                    clean_ram_stage: bool | None = None) -> dict:
     try:
-        from pi_daily_cdr_day_archive import request_day_archive
+        from pi_daily_cdr_day_archive import archive_observation_day
 
-        path = request_day_archive(date, reason=reason)
-        print(f"day-archive request reconciled: {path}")
-    except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
-        print(
-            f"day-archive enqueue failed ({reason}): {archive_error}",
-            file=sys.stderr,
+        result = archive_observation_day(
+            date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
         )
+    except Exception as archive_error:  # noqa: BLE001 — keep the raw tree
+        print(f"day-archive failed before cleanup ({date}): {archive_error}", file=sys.stderr)
+        _queue_archive_retry(
+            date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
+        )
+        return {"date": date, "result": "FAIL", "error": str(archive_error)[:500]}
+    if not isinstance(result, dict):
+        print(f"day-archive not verified before cleanup ({date}): FAIL", file=sys.stderr)
+        return {"date": date, "result": "FAIL", "error": "missing archive result"}
+    status = result.get("result")
+    banks_present = any(
+        (root / "banks").is_dir() and not (root / "banks").is_symlink()
+        and any(path.is_file() for path in (root / "banks").rglob("*"))
+        for root in stage_roots
+    )
+    if status == "PASS" and banks_present and result.get("raw_banks_absent") is not False:
+        print(f"day-archive omitted capture-stage banks ({date})", file=sys.stderr)
+        return {**result, "result": "FAIL", "error": "verified archive omitted the capture-stage banks tree"}
+    if status not in ("PASS", "DEFERRED"):
+        detail = str(result.get("error") or result.get("reason") or "")
+        print(f"day-archive not verified ({date}): {status} {detail}".rstrip(), file=sys.stderr)
+        _queue_archive_retry(
+            date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
+        )
+    return result
+
 
 
 def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, exports: Optional[Path]) -> None:
@@ -415,6 +460,7 @@ def run_once(args: argparse.Namespace) -> int:
         print(f"ERROR: unsafe finalization layout: {exc}", file=sys.stderr)
         return 2
     state_dir.mkdir(parents=True, exist_ok=True)
+    finish_verified_stage_cleanups(args, state_dir, persistent_runs_root)
     reuse_plan = None
     if resume_same_day:
         try:
@@ -425,7 +471,11 @@ def run_once(args: argparse.Namespace) -> int:
     if not args.force:
         selected_marker = verified_pointer_marker_for_date(state_dir, date)
         if selected_marker is not None:
-            resumed_terms = retry_terms_capture(selected_marker, args, state_dir, persistent_runs_root, date)
+            stopped, resumed_terms = _accept_finalized_retry(
+                args, state_dir, persistent_runs_root, date, selected_marker,
+            )
+            if stopped is not None:
+                return stopped
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
             print(
@@ -438,11 +488,14 @@ def run_once(args: argparse.Namespace) -> int:
                 )
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
-            _reconcile_day_archive_request(date, reason="already-finalized-pointer")
             return 0
         recovered_marker = recover_pending_finalization(state_dir, date)
         if recovered_marker is not None:
-            resumed_terms = retry_terms_capture(recovered_marker, args, state_dir, persistent_runs_root, date)
+            stopped, resumed_terms = _accept_finalized_retry(
+                args, state_dir, persistent_runs_root, date, recovered_marker,
+            )
+            if stopped is not None:
+                return stopped
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
             print(
@@ -455,14 +508,17 @@ def run_once(args: argparse.Namespace) -> int:
                 )
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
-            _reconcile_day_archive_request(date, reason="finalization-recovery")
             return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
     marker_trusted = marker_exists and not resume_same_day and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
         if marker_trusted:
-            resumed_terms = retry_terms_capture(marker, args, state_dir, persistent_runs_root, date)
+            stopped, resumed_terms = _accept_finalized_retry(
+                args, state_dir, persistent_runs_root, date, marker,
+            )
+            if stopped is not None:
+                return stopped
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
             try:
@@ -480,7 +536,6 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
-            _reconcile_day_archive_request(date, reason="already-finalized-marker")
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
@@ -709,6 +764,41 @@ def run_once(args: argparse.Namespace) -> int:
         # Emit the legacy v1 integrity manifest after the mandatory ledger-v2
         # event and completion marker have landed.
         _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
+    generation_id = finalized.get("generation_id") if isinstance(finalized.get("generation_id"), str) else None
+    stage_roots = list(ram_cleanup_paths or ())
+    if not stage_roots and terms_raw_root is not None:
+        stage_roots = [terms_raw_root]
+    if generation_id:
+        seal_exports = None
+        if ram_cleanup_paths is not None and not persistent_output_stage:
+            seal_exports = staged_exports_to_install
+        _write_ram_ownership(
+            state_dir, date, generation_id, args.ram_root, ram_cleanup_paths or (), seal_exports,
+            stage_roots, clean_ram_stage=args.clean_ram_stage,
+        )
+    archive_result = _archive_raw_day_before_cleanup(
+        date,
+        data_root=persistent_runs_root.parent,
+        generation_id=generation_id,
+        stage_roots=[path for path in stage_roots if path.is_dir()],
+        state_dir=state_dir,
+        runs_root=persistent_runs_root,
+        clean_ram_stage=args.clean_ram_stage,
+    )
+    finalized = {
+        **finalized,
+        "day_archive": {
+            "status": archive_result.get("result"),
+            "sha256": archive_result.get("sha256"),
+            "error": str(archive_result.get("error") or archive_result.get("reason") or "")[:300],
+        },
+    }
+    if archive_result.get("result") == "DEFERRED":
+        print(json.dumps(finalized, indent=2, ensure_ascii=False))
+        return 1
+    if archive_result.get("result") != "PASS":
+        print(json.dumps(finalized, indent=2, ensure_ascii=False))
+        return 2
     cleanup_seal = None
     if ram_cleanup_paths is not None:
         cleanup_seal = seal_ram_capture_stage(
@@ -741,29 +831,6 @@ def run_once(args: argparse.Namespace) -> int:
             )
         for cleanup_path in ram_cleanup_paths:
             shutil.rmtree(cleanup_path, ignore_errors=True)
-    # Durable post-ingest enqueue after primary finalize only (not revisions).
-    # Failures here must not undo a verified finalize; surface and continue.
-    if not is_revision:
-        try:
-            from pi_daily_cdr_day_archive import request_day_archive
-
-            archive_request = request_day_archive(date, reason="post-ingest-finalize")
-            finalized = {
-                **finalized,
-                "day_archive_request": {"status": "QUEUED", "path": str(archive_request)},
-            }
-        except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
-            print(
-                f"day-archive enqueue failed after finalize: {archive_error}",
-                file=sys.stderr,
-            )
-            finalized = {
-                **finalized,
-                "day_archive_request": {
-                    "status": "ENQUEUE_FAILED",
-                    "error": str(archive_error)[:300],
-                },
-            }
     print(json.dumps(finalized, indent=2, ensure_ascii=False))
     return 1
 
