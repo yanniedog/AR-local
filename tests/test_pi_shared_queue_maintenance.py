@@ -51,11 +51,25 @@ def image_fixture(monkeypatch):
         'manual_system_recovery':True,'mode':'RUN_ARCHIVE','phase':'archive','expires_at':'2099-01-01T00:00:00+00:00',
         'source_closure_sha256':'d'*64,'parent_sha256':sha(rows[hooks.IMAGE_ROOT/'parent.py']),
         'resources_sha256':sha(rows[hooks.IMAGE_ROOT/'pi_system_guard_resources.py']),
-        'broker_sha256':sha(rows[hooks.IMAGE_ROOT/'broker.py']),'queue_argv_sha256':'e'*64}
+        'broker_sha256':sha(rows[hooks.IMAGE_ROOT/'broker.py']),
+        'queue_argv_sha256':sha(canonical(hooks.image_start(NONCE,'RUN_ARCHIVE')))}
     rows[hooks.IMAGE_HANDOFF/NONCE/'approval.json']=canonical(authority)
     monkeypatch.setattr(hooks,'_present',lambda path:Path(path) in rows)
     monkeypatch.setattr(hooks,'root_bytes',lambda path,maximum=1048576:rows[Path(path)])
     return authority,rows
+
+
+def plain_fixture(monkeypatch):
+    plain_unit='ar-local-plain-backup-'+NONCE+'.service'
+    path=hooks.HANDOFF/NONCE/'approval.json'
+    authority={'schema':'ar-local-plain-backup-authority-v1','nonce':NONCE,'unit':plain_unit,
+        'manual_plaintext_drive_write':True,'data_root':'/srv/ar-local/data',
+        'expires_at':'2099-01-01T00:00:00+00:00','source_closure_sha256':'d'*64,
+        'parent_sha256':'e'*64,'resources_sha256':'f'*64,'broker_sha256':'a'*64,
+        'queue_argv_sha256':sha(canonical(hooks._plain_starts(NONCE)[1]))}
+    monkeypatch.setattr(hooks,'_present',lambda candidate:Path(candidate)==path)
+    monkeypatch.setattr(hooks,'root_bytes',lambda candidate,maximum=1048576:canonical(authority))
+    return authority,plain_unit
 
 
 def publish_authority(authority,rows):
@@ -76,13 +90,16 @@ def service_fixture():
     values={name:('s',value) for name,value in {'User':'pi','Group':'pi','Type':'notify','NotifyAccess':'main',
         'KillMode':'control-group','ProtectSystem':'strict','ProtectHome':'yes','WorkingDirectory':'/'}.items()}
     values.update({name:('b',value) for name,value in {'NoNewPrivileges':False,'SendSIGKILL':True,
-        'PrivateTmp':True,'ProtectControlGroups':True}.items()})
+        'PrivateTmp':True,'PrivateDevices':True,'ProtectControlGroups':True,
+        'ProtectKernelTunables':True,'ProtectKernelModules':True,'RestrictNamespaces':True}.items()})
     values.update({name:('t',value) for name,value in {'RuntimeMaxUSec':1800000000,'TimeoutStartUSec':960000000,
         'TimeoutStopUSec':900000000,'CPUQuotaPerSecUSec':2000000,'LimitAS':2147483648,
         'MemoryHigh':805306368,'MemoryMax':1073741824,'MemorySwapMax':0}.items()})
     values['ReadWritePaths']=('as',['/srv/ar-local','/var/lib/ar-local-ci','/var/lib/shared-pi-queue'])
     values['Environment']=('as',['HOME=/nonexistent','PATH=/usr/sbin:/usr/bin:/sbin:/bin'])
     values['EnvironmentFiles']=('a(sb)',[])
+    values['CapabilityBoundingSet']=('as',[])
+    values['AmbientCapabilities']=('as',[])
     return values
 
 
@@ -134,7 +151,10 @@ def test_ci_native_fixed_execution_hooks_and_loaded_profile_are_qualified(monkey
 
 @pytest.mark.parametrize('key,value',[('NoNewPrivileges',('b',True)),('User',('s','root')),
     ('RuntimeMaxUSec',('t',2700000000)),('TimeoutStopUSec',('t',901000000)),
-    ('MemorySwapMax',('t',1)),('PrivateTmp',('s','yes')),
+    ('MemorySwapMax',('t',1)),('PrivateTmp',('s','yes')),('PrivateDevices',('b',False)),
+    ('ProtectKernelTunables',('b',False)),('ProtectKernelModules',('b',False)),
+    ('RestrictNamespaces',('b',False)),('CapabilityBoundingSet',('as',['CAP_SYS_ADMIN'])),
+    ('AmbientCapabilities',('as',['CAP_SYS_ADMIN'])),
     ('EnvironmentFiles',('a(sb)',[['/tmp/foreign',False]])),
     ('ReadWritePaths',('as',['/srv/ar-local','/var/lib/ar-local-ci','/var/lib/shared-pi-queue','/etc']))])
 def test_ci_native_profile_mutation_cannot_get_privileged_retention(monkeypatch,key,value):
@@ -165,12 +185,26 @@ def test_image_authority_has_distinct_scope_phase_and_upload_permission(monkeypa
 
 
 def test_image_stop_hook_uses_distinct_fixed_no_site_root_broker(monkeypatch):
-    authority,rows=image_fixture(monkeypatch);start=['/usr/bin/python3','queue','image'];authority['queue_argv_sha256']=sha(canonical(start));publish_authority(authority,rows)
+    authority,rows=image_fixture(monkeypatch);start=hooks.image_start(NONCE,'RUN_ARCHIVE')
     stop=['/usr/bin/python3','-I','-S','-B',str(hooks.IMAGE_ROOT/'broker.py'),'recover',NONCE]
     props=commands(start,stop)
     assert hooks.verify_plain_service(IMAGE_UNIT,native_run(props))['phase']=='archive'
     stop.remove('-S');props=commands(start,stop)
     with pytest.raises(ValueError):hooks.verify_plain_service(IMAGE_UNIT,native_run(props))
+
+
+def test_image_authority_cannot_approve_an_arbitrary_queue_start(monkeypatch):
+    authority,rows=image_fixture(monkeypatch)
+    authority['queue_argv_sha256']=sha(canonical(['/usr/bin/python3','queue','image']))
+    publish_authority(authority,rows)
+    with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
+
+
+def test_plain_authority_accepts_only_fixed_queue_command_profiles(monkeypatch):
+    authority,unit=plain_fixture(monkeypatch)
+    assert hooks.approval(unit)==authority
+    authority['queue_argv_sha256']=sha(canonical(['/usr/bin/python3','queue','plain']))
+    with pytest.raises(ValueError):hooks.approval(unit)
 
 
 def ci_terminal(job):
@@ -252,12 +286,31 @@ def test_ci_supervisor_accepts_only_qualified_separate_start_execution_stop_budg
 def test_ci_root_completion_cannot_release_before_empty_cgroup_or_with_missing_proof(monkeypatch):
     j=job(state='running');s=MemoryStore([j]);calls=[]
     monkeypatch.setattr(store,'completion_proved',lambda job:False)
-    monkeypatch.setattr(native,'clear_native_manual',lambda job:calls.append(job['id']) or True)
+    monkeypatch.setattr(native,'clear_native_manual',lambda job,**kwargs:calls.append(job['id']) or True)
     s.supervisor.ownership=lambda job:'gone'
     assert not s.reconcile(s.state) and not calls and len(s.state['jobs'])==1
     monkeypatch.setattr(store,'completion_proved',lambda job:True);s.supervisor.ownership=lambda job:'present'
     s.reconcile(s.state);assert not calls and len(s.state['jobs'])==1
     s.supervisor.ownership=lambda job:'gone';assert s.reconcile(s.state) and calls==[j['id']]
+
+
+def test_retained_completion_after_reboot_cannot_release_without_current_owner_observation(monkeypatch):
+    j=job(state='running');s=MemoryStore([j]);s.supervisor.boot='22222222-2222-4222-8222-222222222222'
+    monkeypatch.setattr(store,'completion_proved',lambda job:True)
+    assert not s.reconcile(s.state) and s.state['jobs']==[j]
+
+
+def test_retained_ownership_requires_exact_current_invocation_and_empty_cgroup():
+    j=job(state='running');s=FakeSupervisor()
+    s.details.update(ControlGroup=j['cgroup'],InvocationID=j['invocation_id'],ActiveState='inactive')
+    s.processes=[]
+    assert s.ownership(j)=='gone'
+    s.boot='22222222-2222-4222-8222-222222222222'
+    assert s.ownership(j)=='unknown'
+    s.boot=j['boot_id'];s.details['InvocationID']='c'*32
+    assert s.ownership(j)=='unknown'
+    s.details['InvocationID']=j['invocation_id'];s.processes=[j['pid']]
+    assert s.ownership(j)=='live'
 
 
 def test_image_recovery_callback_is_independent_even_if_existing_pass_raises(monkeypatch):
@@ -275,7 +328,7 @@ def test_absent_image_registry_preserves_existing_callback_behavior(monkeypatch)
 def registry_fixture(monkeypatch):
     source=b'root image callback';wrapper=b'root loaded wrapper'
     registry={'schema':'ar-local-system-recovery-reconcile-v1','callback':str(reclaim.IMAGE/'reconcile.py'),
-        'callback_sha256':sha(source),'source_closure_sha256':'f'*64,'wrapper_sha256':sha(wrapper)}
+        'callback_sha256':sha(source),'wrapper_sha256':sha(wrapper)}
     monkeypatch.setattr(Path,'lstat',lambda path:SimpleNamespace())
     monkeypatch.setattr(hooks,'root_json',lambda path:registry)
     monkeypatch.setattr(reclaim,'protected',lambda path:source if path==reclaim.IMAGE/'reconcile.py' else wrapper)
@@ -290,6 +343,12 @@ def test_image_registry_selects_only_fixed_hash_bound_callback_with_five_second_
     assert calls==[['/usr/bin/python3','-I','-S','-B',str(reclaim.IMAGE/'reconcile.py')]]
     registry['callback']='/bin/sh'
     with pytest.raises(RuntimeError):reclaim.reconcile_image(run)
+
+
+def test_image_registry_rejects_unverified_source_closure_claim(monkeypatch):
+    registry=registry_fixture(monkeypatch)
+    registry['source_closure_sha256']='f'*64
+    with pytest.raises(RuntimeError):reclaim.reconcile_image(lambda *a,**kw:pytest.fail('unqualified callback executed'))
 
 
 @pytest.mark.parametrize('field',['callback_sha256','wrapper_sha256'])
@@ -308,11 +367,16 @@ def test_ci_successor_inode_is_bound_before_spawn_and_cleared_only_by_matching_r
     current=path.stat();assert current.st_ino!=original and path.read_bytes()==body
     terminal=ci_terminal(j);terminal['binding'].update(native_device=current.st_dev,native_inode=original)
     rows[hooks.CI_STATE/'completed'/(PLAN+'.json')]=canonical(terminal)
-    assert not native.clear_native_manual(j,path,_recovery_lock_factory)
+    supervisor=FakeSupervisor();supervisor.ownership=lambda job:'gone'
+    assert not native.clear_native_manual(j,path,_recovery_lock_factory,supervisor)
     assert path.read_bytes()==body
     terminal['binding']['native_inode']=current.st_ino
     rows[hooks.CI_STATE/'completed'/(PLAN+'.json')]=canonical(terminal)
-    assert native.clear_native_manual(j,path,_recovery_lock_factory) and not path.exists()
+    supervisor.ownership=lambda job:'live'
+    assert not native.clear_native_manual(j,path,_recovery_lock_factory,supervisor)
+    assert path.read_bytes()==body
+    supervisor.ownership=lambda job:'gone'
+    assert native.clear_native_manual(j,path,_recovery_lock_factory,supervisor) and not path.exists()
 
 
 @pytest.mark.parametrize('change',['missing_privileged','extra_flag','different_executable'])

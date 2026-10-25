@@ -261,10 +261,17 @@ class Supervisor:
 
     def ownership(self, job):
         validate_job(job)
-        if job['boot_id'] != self.boot_id():
+        retained = retained_stop(job['unit'])
+        if job['boot_id'] != self.boot_id() and not retained:
             return 'gone'
+        if retained:
+            # A prepared snapshot predates the terminal proof. Retained maintenance
+            # cleanup needs a fresh invocation identity and cgroup observation.
+            self._snapshot = None
         details = self.show(job['unit'])
         members = self.members(job['cgroup'])
+        if job['boot_id'] != self.boot_id():
+            return 'unknown' if retained else 'gone'
         if details.get('InvocationID') == job['invocation_id'] and details.get('ControlGroup') == job['cgroup']:
             if members:
                 return 'live'
@@ -273,6 +280,8 @@ class Supervisor:
             return 'unknown'
         if self.safe_fixed_handoff(job, details, members):
             return 'gone'
+        if retained:
+            return 'unknown'
         # A reused unit can replace its cgroup path. A nonempty path is ambiguous.
         if not members and details.get('ActiveState') in ('inactive', 'failed'):
             return 'gone'
@@ -410,7 +419,7 @@ class Store:
                     bridged = 'host' in job['resources']
                     if bridged:
                         from pi_shared_queue_native import clear_native_manual
-                    if not bridged or clear_native_manual(job):
+                    if not bridged or clear_native_manual(job, supervisor=self.supervisor):
                         continue
                     trustworthy = False
                 if ownership == 'unknown':

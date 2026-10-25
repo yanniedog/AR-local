@@ -100,11 +100,11 @@ def reconcile_image(run=subprocess.run):
         return 0
     from pi_shared_queue_post_hooks import root_json
     registry=root_json(IMAGE_REGISTRY)
-    if (set(registry)!={'schema','callback','callback_sha256','source_closure_sha256','wrapper_sha256'}
+    if (set(registry)!={'schema','callback','callback_sha256','wrapper_sha256'}
             or registry.get('schema')!='ar-local-system-recovery-reconcile-v1'
             or registry.get('callback')!=str(IMAGE/'reconcile.py')
             or not all(re.fullmatch('[0-9a-f]{64}',str(registry.get(key,''))) for key in
-                ('callback_sha256','source_closure_sha256','wrapper_sha256'))
+                ('callback_sha256','wrapper_sha256'))
             or hashlib.sha256(protected(IMAGE/'reconcile.py')).hexdigest()!=registry['callback_sha256']
             or hashlib.sha256(protected(DISPATCHER)).hexdigest()!=registry['wrapper_sha256']):
         raise RuntimeError('fixed image recovery callback registry differs')

@@ -177,7 +177,8 @@ def test_manual_native_bridge_retained_for_live_children_and_cleared_only_after_
     supervisor.processes = [555]
     store = MemoryStore([job], supervisor)
     original = module.clear_native_manual
-    monkeypatch.setattr(module, 'clear_native_manual', lambda job: original(job, path, recovery_lock_factory=_recovery_lock_factory))
+    monkeypatch.setattr(module, 'clear_native_manual', lambda job, **kwargs: original(
+        job, path, recovery_lock_factory=_recovery_lock_factory, supervisor=kwargs.get('supervisor')))
     assert store.reconcile(store.state)
     assert path.exists() and len(store.state['jobs']) == 1
     supervisor.processes = []
@@ -274,7 +275,7 @@ def test_ar_local_host_completed_record_cleans_only_its_native_marker(monkeypatc
     supervisor.details['ActiveState'] = 'inactive'
     store = MemoryStore([job], supervisor)
     cleaned = []
-    monkeypatch.setattr(native, 'clear_native_manual', lambda job: cleaned.append(job['id']) or True)
+    monkeypatch.setattr(native, 'clear_native_manual', lambda job, **kwargs: cleaned.append(job['id']) or True)
     assert store.reconcile(store.state)
     assert cleaned == ['job-1'] and store.state['jobs'] == []
 

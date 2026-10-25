@@ -25,6 +25,7 @@ CI_STATE = Path("/var/lib/ar-local-ci")
 CI_CONTROL = Path("/usr/local/sbin/ar-local-ci-control")
 CI_RUNTIME = Path("/etc/ar-local/ci-runtime.json")
 QUEUE_ROOT = Path("/usr/local/lib/shared-pi-queue")
+QUEUE_SCRIPT = str(QUEUE_ROOT / "pi_shared_queue.py")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 IMAGE_PHASES = frozenset({"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload"})
 
@@ -82,6 +83,8 @@ def _plain_approval(unit, *, current=False, now=None):
             or any(not re.fullmatch("[0-9a-f]{64}", str(value.get(key, ""))) for key in
                    ("source_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256", "queue_argv_sha256"))):
         raise ValueError("plaintext backup approval differs")
+    if value["queue_argv_sha256"] not in {_argv_sha(start) for start in _plain_starts(match[1])}:
+        raise ValueError("plaintext queue command differs")
     if current and expiry <= (now or datetime.now(timezone.utc)):
         raise ValueError("plaintext backup authority expired")
     return value
@@ -130,6 +133,8 @@ def _image_approval(unit, nonce, *, current=False, now=None):
                                   "broker_sha256", "queue_argv_sha256"))):
         raise ValueError("image recovery approval differs")
     _expiry(value, current, now)
+    if value["queue_argv_sha256"] != _argv_sha(image_start(nonce, value["mode"])):
+        raise ValueError("image recovery queue command differs")
     for name,key in (('parent.py','parent_sha256'),('broker.py','broker_sha256'),
                      ('pi_system_guard_resources.py','resources_sha256')):
         if _sha(root_bytes(IMAGE_ROOT/name))!=value[key]:
@@ -142,6 +147,24 @@ def ci_start(plan):
         '--project', 'ar-local', '--resource', 'ar-local', '--resource', 'host', '--mode', 'exclusive',
         '--cpu-slots', '2', '--wait-timeout', '900', '--max-runtime', '1800', '--',
         '/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', str(CI_CONTROL), '--worker', plan]
+
+
+def _queue_start(parent, nonce, mode, *, isolated=False):
+    runtime, wait = (120, 30) if mode == "PROBE" else (21600, 7200)
+    python_flags = ["-I", "-S", "-B"] if isolated else ["-I", "-B"]
+    return ["/usr/bin/python3", "-B", QUEUE_SCRIPT, "run", "--project", "ar-local",
+        "--resource", "ar-local", "--resource", "host", "--mode", "exclusive", "--cpu-slots", "1",
+        "--max-runtime", str(runtime), "--wait-timeout", str(wait), "--",
+        "/usr/bin/python3", *python_flags, parent, nonce]
+
+
+def _plain_starts(nonce):
+    parent = str(ROOT / "parent.py")
+    return [_queue_start(parent, nonce, mode) for mode in ("PROBE", "RUN_ARCHIVE")]
+
+
+def image_start(nonce, mode):
+    return _queue_start(str(IMAGE_ROOT / "parent.py"), nonce, mode, isolated=True)
 
 
 def _sha(raw):
@@ -208,11 +231,13 @@ def approval(unit, *, current=False, now=None):
 
 def _commands(unit, value, expected, run, *, expected_start=None):
     start, stop = _native(unit, "ExecStartEx", run), _native(unit, "ExecStopPostEx", run)
+    expected_starts = ([expected_start] if expected_start and isinstance(expected_start[0], str)
+                       else expected_start)
     if (len(start) != 1 or len(start[0]) != 10 or start[0][2] != []
             or not isinstance(start[0][1],list) or not start[0][1]
             or not all(isinstance(item,str) for item in start[0][1]) or start[0][0]!=start[0][1][0]
             or _argv_sha(start[0][1]) != value["queue_argv_sha256"]
-            or expected_start is not None and start[0][1] != expected_start
+            or expected_starts is not None and start[0][1] not in expected_starts
             or len(stop) != 1 or len(stop[0]) != 10 or stop[0][:3] != [expected[0], expected, ["privileged"]]):
         raise ValueError("root-created fixed maintenance commands differ")
     for prop in ("ExecConditionEx", "ExecStartPreEx", "ExecStartPostEx", "ExecStopEx"):
@@ -240,7 +265,8 @@ def _ci_service(unit, value, run):
     strings = {'User': 'pi', 'Group': 'pi', 'Type': 'notify', 'NotifyAccess': 'main',
         'KillMode': 'control-group', 'ProtectSystem': 'strict', 'ProtectHome': 'yes', 'WorkingDirectory': '/'}
     booleans = {'NoNewPrivileges': False, 'SendSIGKILL': True,
-        'PrivateTmp': True, 'ProtectControlGroups': True}
+        'PrivateTmp': True, 'PrivateDevices': True, 'ProtectControlGroups': True,
+        'ProtectKernelTunables': True, 'ProtectKernelModules': True, 'RestrictNamespaces': True}
     integers = {'RuntimeMaxUSec': 1800_000_000, 'TimeoutStartUSec': 960_000_000,
         'TimeoutStopUSec': 900_000_000, 'CPUQuotaPerSecUSec': 2_000_000,
         'LimitAS': 2 * 1024**3, 'MemoryHigh': 768 * 1024**2,
@@ -256,6 +282,8 @@ def _ci_service(unit, value, run):
     _typed_property(unit, 'Environment', 'as',
         ['HOME=/nonexistent', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin'], run)
     _typed_property(unit, 'EnvironmentFiles', 'a(sb)', [], run)
+    _typed_property(unit, 'CapabilityBoundingSet', 'as', [], run)
+    _typed_property(unit, 'AmbientCapabilities', 'as', [], run)
 
 
 def verify_plain_service(unit, run=subprocess.run):
@@ -265,9 +293,11 @@ def verify_plain_service(unit, run=subprocess.run):
         _ci_service(unit, value, run)
     elif value['schema'] == 'ar-local-system-recovery-authority-v1':
         _commands(unit, value, ['/usr/bin/python3', '-I', '-S', '-B',
-            str(IMAGE_ROOT / 'broker.py'), 'recover', value['nonce']], run)
+            str(IMAGE_ROOT / 'broker.py'), 'recover', value['nonce']], run,
+            expected_start=image_start(value['nonce'], value['mode']))
     else:
-        _commands(unit, value, ['/usr/bin/python3', '-I', '-B', BROKER, 'recover', value['nonce']], run)
+        _commands(unit, value, ['/usr/bin/python3', '-I', '-B', BROKER, 'recover', value['nonce']], run,
+            expected_start=_plain_starts(value['nonce']))
     return value
 
 

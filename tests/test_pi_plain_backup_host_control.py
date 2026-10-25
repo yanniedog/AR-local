@@ -190,7 +190,7 @@ def test_retained_plain_service_never_uses_ingest_hook_contract_or_live_release(
 def test_reconcile_requires_root_completion_before_native_release(monkeypatch,proved):
     job=backup_job(state='running');s=MemoryStore([job]);s.supervisor.ownership=lambda job:'gone'
     calls=[];monkeypatch.setattr(store_module,'completion_proved',lambda job:proved)
-    monkeypatch.setattr(native,'clear_native_manual',lambda job:calls.append(job['id']) or True)
+    monkeypatch.setattr(native,'clear_native_manual',lambda job,**kwargs:calls.append(job['id']) or True)
     assert s.reconcile(s.state) is proved
     assert calls==([job['id']] if proved else [])
     assert len(s.state['jobs'])==(0 if proved else 1)
