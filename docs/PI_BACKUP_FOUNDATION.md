@@ -28,6 +28,21 @@ Do not infer the correct device from `/dev/sdX` names. Establish and record its 
 
 The installer first requires a clean checkout whose `HEAD` and `origin/main` both equal the supplied immutable candidate SHA. It then verifies that configured UID/GID values match the actual ingest service account, performs the same preflight, creates `/srv/ar-local/restore-drills` as that account with mode `0700`, and installs a root-owned trusted gate plus a SHA-256 manifest before enabling the 04:00 daily backup and 08:00 daily restore-drill timers. Each latest snapshot therefore receives restore evidence before normal daylight deployment. Candidate commits invoke that installed gate and cannot substitute their own gate implementation. Persistent catch-up is blocked from 00:30 through 03:30 and whenever an ingest service is active. If the ingest ran and failed terminally, its append-only failure record and hashed error evidence permit preservation without a completion marker; a merely missed ingest still blocks maintenance. The installer must not be called on the production Pi until the physical target has been approved.
 
+### Gate-bytes-only (production pin stays put)
+
+When production `/srv/ar-local/AR-local` is intentionally detached behind `origin/main`, do **not** move that HEAD merely to satisfy the installer SHA gate. Prepare a disposable aligned source tree at the approved 40-character `origin/main` SHA, then install gate lib/bins/manifest only:
+
+```sh
+# SRC must be clean with HEAD == origin/main == <approved-40-char-sha>
+sh deploy/pi/install-backup-foundation.sh --gate-bytes-only \
+  --prod-repo /srv/ar-local/AR-local \
+  --expect-prod-head <current-protected-production-sha> \
+  "$SRC" /srv/ar-local/australianrates /srv/ar-local/data \
+  <approved-40-character-origin-main-sha>
+```
+
+`--gate-bytes-only` skips `backup.env`, mount preflight, systemd unit install, and timer enable. It still fail-closes if the source tree is dirty or not exactly the approved SHA, and (when `--prod-repo` is set) if production HEAD moves during install. Full foundation (mount + `backup.env` + timers + snapshot/restore/boot proof) remains a later daylight slice after authorized media exists.
+
 ## Evidence and acceptance
 
 Snapshots are staged under a create-once `.partial-*` directory, hashed, flushed to storage, then atomically renamed with the parent directory flushed before success. Mount/device identity and the retention ceiling are checked again under the shared lock immediately before publication. The manifest is written last and copied to immutable manifest evidence. Backup and restore receipts are append-only; mutable `latest-*.json` files are pointers, not evidence. Snapshot payloads are never deleted automatically: `AR_BACKUP_RETENTION_COUNT` is a hard ceiling, and reaching it blocks further snapshots until an append-only decision separately authorizes archival or removal. The initial capacity check rejects obviously undersized media before copying. The decisive check uses the complete staged snapshot—including CDR data, macro database, Git bundles, and system configuration—plus a per-generation manifest/receipt allowance and global headroom, and reserves that amount for every remaining retention slot. This remains a lower bound because `runs/` continues to grow.
