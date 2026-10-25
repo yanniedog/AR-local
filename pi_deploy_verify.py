@@ -746,7 +746,9 @@ def record_deployment_acceptance(
         f"--candidate-sha {shell_quote(expected_commit)} "
         f"--parent-command {shell_quote(parent_command)} --dashboard-verified --services-verified"
     )
-    code, out, err = run_deploy_mutation(script, dry_run=dry_run)
+    code, out, err = run_deploy_mutation(
+        script, dry_run=dry_run, max_runtime=BACKUP_QUEUE_MAX_RUNTIME_SEC
+    )
     if dry_run:
         print("pi_deploy_verify: dry-run would write an append-only deployment acceptance record")
         return EXIT_OK

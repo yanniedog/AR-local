@@ -217,6 +217,7 @@ def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
     assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40, actual_command) == pi_deploy_verify.EXIT_OK
     command = captured[0]
     assert "pi-shared-task --project ar-local --resource ar-local" in command
+    assert f"--max-runtime {pi_deploy_queue_claim.BACKUP_QUEUE_MAX_RUNTIME_SEC}" in command
     assert "record-deployment" in command
     assert "--protected-code-sha" in command
     assert "--candidate-sha" in command
