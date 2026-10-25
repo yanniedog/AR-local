@@ -75,13 +75,15 @@ def check_ssh_identity(expected_commit: str) -> int:
     # Local import keeps HTTP-only runs free of SSH helpers.
     import pi_deploy_verify
 
-    snap = pi_deploy_verify.pi_remote_snapshot(dry_run=False)
+    # fetch=False: read-only identity must not mutate FETCH_HEAD / remote refs.
+    snap = pi_deploy_verify.pi_remote_snapshot(dry_run=False, fetch=False)
     if snap is None:
         print("pi_post_activation_check: could not read Pi checkout via SSH", file=sys.stderr)
         return EXIT_SSH
     head = snap.get("AR_HEAD", "")
     origin = snap.get("AR_ORIGIN", "")
-    dirty = (snap.get("AR_DIRTY") or "").strip()
+    ar_dirty = (snap.get("AR_DIRTY") or "").strip()
+    site_dirty = (snap.get("SITE_DIRTY") or "").strip()
     print(f"pi_post_activation_check: AR_HEAD={head} AR_ORIGIN={origin}")
     print(f"pi_post_activation_check: SITE_HEAD={snap.get('SITE_HEAD')} SITE_ORIGIN={snap.get('SITE_ORIGIN')}")
     print(f"pi_post_activation_check: DASHBOARD={snap.get('DASHBOARD')}")
@@ -92,8 +94,14 @@ def check_ssh_identity(expected_commit: str) -> int:
             file=sys.stderr,
         )
         ok = False
-    if dirty:
+    if ar_dirty:
         print("pi_post_activation_check: AR-local checkout is dirty", file=sys.stderr)
+        ok = False
+    if site_dirty:
+        print(
+            "pi_post_activation_check: australianrates checkout is dirty (shell integrity)",
+            file=sys.stderr,
+        )
         ok = False
     if snap.get("DASHBOARD") != "active":
         print("pi_post_activation_check: dashboard service not active", file=sys.stderr)
@@ -158,12 +166,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     http_rc = check_http(args.base_url, expect_run_date=str(args.expect_run_date or ""))
     ssh_rc = EXIT_OK
+    identity_checked = False
     if args.with_ssh_identity:
         ssh_rc = check_ssh_identity(expected)
+        identity_checked = True
     else:
         print(
             "pi_post_activation_check: SSH identity skipped "
-            "(pass --with-ssh-identity for read-only HEAD check)"
+            "(--expected-commit was NOT compared to any Pi checkout; "
+            "pass --with-ssh-identity for read-only HEAD + dirty checks)"
         )
 
     print_manual_remainder(expected)
@@ -172,7 +183,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return http_rc
     if ssh_rc != EXIT_OK:
         return ssh_rc
-    print("pi_post_activation_check: PASS (requested automated gates)")
+    if identity_checked:
+        print("pi_post_activation_check: PASS (HTTP + SSH identity gates)")
+    else:
+        print(
+            "pi_post_activation_check: PASS_HTTP_ONLY "
+            "(commit identity not verified; not a full post-activation PASS)"
+        )
     return EXIT_OK
 
 
