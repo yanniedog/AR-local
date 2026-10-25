@@ -509,12 +509,9 @@ def _process_day_locked(
     generation_id = require_generation(generation_id)
     source_fingerprint = stage_source_fingerprint(stage_roots, quiet_window_guard) if generation_id else None
     if generation_id:
-        try:
-            cached = cached_generation_upload(
-                progress_path(spool), day, generation_id, stage_roots, source_fingerprint or "",
-            )
-        except StageMissing as error:
-            raise DayArchiveError(str(error)) from error
+        cached = cached_generation_upload(
+            progress_path(spool), day, generation_id, stage_roots, source_fingerprint or "",
+        )
         if cached is not None:
             not dry_run and clear_archive_requests(spool, day, generation_id)
             return cached

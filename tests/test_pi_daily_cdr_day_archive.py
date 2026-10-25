@@ -259,6 +259,34 @@ def test_pass_clears_pending_request(tmp_path: Path, monkeypatch):
     assert not request.exists()
 
 
+def test_missing_continuation_stage_is_quarantined(tmp_path: Path, monkeypatch):
+    from pi_daily_cdr_day_archive_ingest import enqueue_ingest_continuation
+
+    day = "2026-08-15"
+    generation = f"obs-{day}-0123456789abcdef"
+    spool = tmp_path / "spool"
+    missing_stage = tmp_path / "ram" / "runs" / day
+    request = enqueue_ingest_continuation(
+        day,
+        spool=spool,
+        generation_id=generation,
+        stage_roots=[missing_stage],
+        data_root=tmp_path / "data",
+        state_dir=tmp_path / "data" / "state",
+        runs_root=tmp_path / "data" / "runs",
+    )
+    monkeypatch.setattr(archive, "in_quiet_window", lambda: False)
+    monkeypatch.setattr(archive, "hobart_today", lambda: date.fromisoformat(day))
+
+    assert archive.main([
+        "--once-pending", "--dry-run", "--spool", str(spool),
+        "--data-root", str(tmp_path / "data"),
+    ]) == 0
+
+    assert not request.exists()
+    assert (spool / "blocked" / request.name).is_file()
+
+
 def test_existing_remote_retries_sidecars(tmp_path: Path, monkeypatch):
     spool = tmp_path / "spool"
     day = "2026-05-14"

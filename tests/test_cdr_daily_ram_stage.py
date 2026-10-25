@@ -747,3 +747,116 @@ def test_existing_seal_is_not_recreated(tmp_path, monkeypatch):
         state, tmp_path / "runs", DATE, marker,
     )
     assert result["ram_cleanup"]["status"] == "CLEANED"
+
+
+def _persistent_export_cleanup_case(tmp_path, monkeypatch):
+    import json
+
+    from cdr_daily_archive_gate import write_ram_ownership
+    from cdr_ram_capture_cleanup import seal_receipt_path
+
+    state = tmp_path / "state"
+    state.mkdir()
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    raw.mkdir(parents=True)
+    runs = tmp_path / "data" / "runs"
+    stage = runs.parent / ".daily-export-stage" / DATE
+    (stage / "_exports").mkdir(parents=True)
+    finalized_exports = runs / DATE / "_exports"
+    finalized_exports.mkdir(parents=True)
+    (stage / "_exports" / "banks.json").write_text("generation output", encoding="utf-8")
+    (finalized_exports / "banks.json").write_text("generation output", encoding="utf-8")
+    generation = "obs-2026-08-15-0123456789abcdef"
+    write_ram_ownership(state, DATE, generation, ram, (raw, stage), None, [raw, stage])
+    marker = state / f"{DATE}.done.json"
+    marker.write_text(
+        json.dumps({
+            "generation_id": generation,
+            "ram_staged": True,
+            "ram_root": str(ram.resolve()),
+        }),
+        encoding="utf-8",
+    )
+    receipt = seal_receipt_path(state, generation)
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(tmp_path / "terms"))
+    monkeypatch.setattr("cdr_daily_archive_gate.verify_completion_marker", lambda *_args: True)
+    monkeypatch.setattr(
+        "cdr_daily.retry_terms_capture",
+        lambda *_args, **_kwargs: {"ram_cleanup": {"status": "CLEANED"}},
+    )
+    return generation, marker, raw, runs, stage, state, ram
+
+
+def test_terms_cleanup_removes_generation_matched_persistent_export_stage(tmp_path, monkeypatch):
+    import argparse
+
+    from cdr_daily_archive_gate import resume_owned_ram_cleanup
+
+    _generation, marker, _raw, runs, stage, state, ram = _persistent_export_cleanup_case(
+        tmp_path, monkeypatch,
+    )
+
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, runs, DATE, marker,
+    )
+
+    assert result["ram_cleanup"]["status"] == "CLEANED"
+    assert not stage.exists()
+
+
+def test_terms_cleanup_preserves_replaced_persistent_export_stage(tmp_path, monkeypatch):
+    import argparse
+
+    from cdr_daily_archive_gate import resume_owned_ram_cleanup
+
+    _generation, marker, raw, runs, stage, state, ram = _persistent_export_cleanup_case(
+        tmp_path, monkeypatch,
+    )
+    (stage / "_exports" / "banks.json").write_text("replacement", encoding="utf-8")
+    retried = False
+
+    def retry(*_args, **_kwargs):
+        nonlocal retried
+        retried = True
+        return {"ram_cleanup": {"status": "CLEANED"}}
+
+    monkeypatch.setattr("cdr_daily.retry_terms_capture", retry)
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, runs, DATE, marker,
+    )
+
+    assert result["ram_cleanup"] == {
+        "status": "PRESERVED",
+        "reason": "persistent_export_stage_generation_mismatch",
+    }
+    assert not retried
+    assert stage.is_dir()
+    assert raw.is_dir()
+
+
+def test_terms_cleanup_retains_ownership_when_export_stage_removal_fails(tmp_path, monkeypatch):
+    import argparse
+
+    from cdr_daily_archive_gate import ownership_path, resume_owned_ram_cleanup
+
+    generation, marker, _raw, runs, stage, state, ram = _persistent_export_cleanup_case(
+        tmp_path, monkeypatch,
+    )
+    monkeypatch.setattr("cdr_daily_archive_gate.shutil.rmtree", lambda *_args, **_kwargs: None)
+
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, runs, DATE, marker,
+    )
+
+    assert result["ram_cleanup"] == {
+        "status": "PRESERVED",
+        "reason": "persistent_export_stage_cleanup_incomplete",
+    }
+    assert stage.is_dir()
+    assert ownership_path(state, DATE, generation).is_file()

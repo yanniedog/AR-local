@@ -45,15 +45,6 @@ def write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root
     atomic_write_json(path, payload, create_once=True)
 
 
-def _clear_persistent_export_stage(runs_root: Path, date: str, targets: list[Path]) -> bool:
-    expected = (runs_root.parent / ".daily-export-stage" / date).resolve()
-    if not any(Path(target).resolve() == expected for target in targets):
-        return False
-    from cdr_daily import cleanup_persistent_export_stage
-    cleanup_persistent_export_stage(runs_root, date)
-    return expected.exists()
-
-
 def _owned_removable(ram_root: Path, runs_root: Path, date: str, raw: object) -> Path | None:
     if not isinstance(raw, str) or ".." in Path(raw).parts:
         return None
@@ -146,6 +137,11 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
         targets.append(allowed)
     if os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
         from cdr_daily import retry_terms_capture
+        export_cleanup = _persistent_export_stage_cleanup(
+            ownership, runs_root, date, recorded, state_dir, remove=False,
+        )
+        if export_cleanup and export_cleanup.get("status") == "PRESERVED":
+            return {"ram_cleanup": export_cleanup}
         if not seal_receipt_path(state_dir, generation).is_file():
             owned_targets: dict[str, Path] = {"raw": ram_root / "runs" / date}
             seal_exports = ownership.get("seal_exports")
@@ -163,9 +159,11 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
         cleanup = terms.get("ram_cleanup") if isinstance(terms, dict) else None
         if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
             return {"terms_evidence": terms, "ram_cleanup": cleanup}
-        export_left = _clear_persistent_export_stage(runs_root, date, targets)
-        if export_left:
-            return {"terms_evidence": terms, "ram_cleanup": {"status": "PRESERVED", "reason": "export_stage_remaining"}}
+        export_cleanup = _persistent_export_stage_cleanup(
+            ownership, runs_root, date, recorded, state_dir, remove=True,
+        )
+        if export_cleanup and export_cleanup.get("status") == "PRESERVED":
+            return {"terms_evidence": terms, "ram_cleanup": export_cleanup}
         return {"terms_evidence": terms, "ram_cleanup": cleanup or {"status": "CLEANED"}}
     if args.clean_ram_stage:
         if not verify_completion_marker(recorded, state_dir, date):
@@ -176,6 +174,76 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
             if target.exists():
                 return {"ram_cleanup": {"status": "PRESERVED", "reason": "cleanup_incomplete"}}
     return {"ram_cleanup": {"status": "CLEANED"}}
+
+
+def _persistent_export_stage_cleanup(
+    ownership: dict,
+    runs_root: Path,
+    date: str,
+    recorded: dict,
+    state_dir: Path,
+    *,
+    remove: bool,
+) -> dict | None:
+    recorded_paths = ownership.get("cleanup_paths") or []
+    stages = [
+        Path(item) for item in recorded_paths
+        if isinstance(item, str)
+        and Path(item).parts[-2:] == (".daily-export-stage", date)
+    ]
+    if not stages:
+        return None
+    if len(stages) != 1:
+        return {"status": "PRESERVED", "reason": "persistent_export_stage_ownership_ambiguous"}
+    stage = stages[0]
+    expected_parent = runs_root.parent.resolve() / ".daily-export-stage"
+    if stage.parent != expected_parent:
+        return {"status": "PRESERVED", "reason": "persistent_export_stage_path_mismatch"}
+    if stage.parent.is_symlink() or stage.is_symlink():
+        return {"status": "PRESERVED", "reason": "persistent_export_stage_not_a_directory"}
+    if not stage.exists():
+        return {"status": "CLEANED"}
+    if not stage.is_dir():
+        return {"status": "PRESERVED", "reason": "persistent_export_stage_not_a_directory"}
+    try:
+        children = list(stage.iterdir())
+        if not children:
+            if remove:
+                stage.rmdir()
+            return {"status": "CLEANED"}
+        if len(children) != 1 or children[0].name != "_exports":
+            return {"status": "PRESERVED", "reason": "persistent_export_stage_contents_changed"}
+        staged_exports = children[0]
+        finalized_exports = runs_root / date / "_exports"
+        if (
+            staged_exports.is_symlink()
+            or not staged_exports.is_dir()
+            or finalized_exports.is_symlink()
+            or not finalized_exports.is_dir()
+            or not verify_completion_marker(recorded, state_dir, date)
+        ):
+            return {"status": "PRESERVED", "reason": "persistent_export_stage_unverified"}
+        from cdr_ram_capture_cleanup import CleanupBudget, _inventory
+
+        def content_inventory(path: Path) -> dict:
+            return {
+                relative: {
+                    key: item[key]
+                    for key in ("kind", "bytes", "sha256")
+                    if key in item
+                }
+                for relative, item in _inventory(path, CleanupBudget()).items()
+            }
+
+        if content_inventory(staged_exports) != content_inventory(finalized_exports):
+            return {"status": "PRESERVED", "reason": "persistent_export_stage_generation_mismatch"}
+        if remove:
+            shutil.rmtree(stage, ignore_errors=True)
+            if stage.exists():
+                return {"status": "PRESERVED", "reason": "persistent_export_stage_cleanup_incomplete"}
+        return {"status": "CLEANED"}
+    except (OSError, ValueError):
+        return {"status": "PRESERVED", "reason": "persistent_export_stage_validation_failed"}
 
 
 def accept_finalized_retry(args: argparse.Namespace, state_dir: Path, runs_root: Path,
