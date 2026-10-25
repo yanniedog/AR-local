@@ -15,6 +15,10 @@ from jsonschema import Draft202012Validator
 import pi_canary_acceptance as canary
 import pi_canary_gate_emit as emit
 from cdr_domain import contract_validation
+from pi_canary_gate_bind_checks import (
+    append_gate_specific_receipt_findings,
+    validate_v1_payload_root,
+)
 
 ROOT = Path(__file__).resolve().parent
 CONTRACTS_DIR = ROOT / "contracts"
@@ -725,6 +729,12 @@ def bind_public_candidate_bytes(
             )
         except Exception as exc:  # noqa: BLE001
             findings.append(f"v3 generation validation: {type(exc).__name__}: {exc}")
+    # v1: historical catalogue/packed/ready envelopes must bind to files.core.
+    if schema_version == 1 and assets_complete:
+        hist_findings = validate_v1_payload_root(manifest, asset_paths)
+        findings.extend(hist_findings)
+        if hist_findings:
+            assets_complete = False
     result = "PASS" if assets_complete and not findings else "FAIL"
     receipt = {
         "schema_version": 1,
@@ -880,69 +890,6 @@ def bind_preservation_restore(
     return payload
 
 
-def _append_gate_specific_receipt_findings(
-    gate: str, raw: Mapping[str, Any], findings: list[str]
-) -> None:
-    """Mirror canonicalize evidence checks so raw bind cannot authorize incomplete PASS."""
-
-    if gate == "shadow_ingest":
-        if type(raw.get("exit_code")) is not int or raw.get("exit_code") != 0:
-            findings.append(
-                f"shadow_ingest PASS requires exit_code=0, got {raw.get('exit_code')!r}"
-            )
-        exports_raw = raw.get("exports_dirs", raw.get("exports", []))
-        if exports_raw is None:
-            exports: list[object] = []
-        elif isinstance(exports_raw, list):
-            exports = exports_raw
-        else:
-            findings.append(
-                f"exports_dirs/exports must be a list, got {type(exports_raw).__name__}"
-            )
-            exports = []
-        if not exports or any(
-            not isinstance(path, str) or not path.strip() for path in exports
-        ):
-            findings.append(
-                "shadow_ingest PASS requires non-empty exports_dirs/exports path evidence"
-            )
-        return
-
-    if gate == "stable_app_compatibility":
-        ci = raw.get("ci")
-        if not isinstance(ci, dict) or ci.get("command") != "npm run ci":
-            findings.append("stable-app PASS requires ci.command='npm run ci'")
-        elif type(ci.get("exit_code")) is not int or ci.get("exit_code") != 0:
-            findings.append("stable-app PASS requires ci.exit_code=0")
-        elif not (
-            isinstance(ci.get("log_sha256"), str)
-            and canary.SHA256_RE.fullmatch(ci["log_sha256"]) is not None
-        ):
-            findings.append("stable-app PASS requires ci.log_sha256 (64 hex)")
-        elif any(
-            type(ci.get(field)) is not int or ci[field] <= 0
-            for field in ("suites", "tests")
-        ):
-            findings.append(
-                "stable-app PASS requires positive integer ci.suites and ci.tests"
-            )
-        return
-
-    if gate.endswith("_matrix"):
-        # Reuse matrix row validators from the canonicalize path (same evidence bar).
-        from pi_canary_app_matrix_receipts import _validate_matrix_device
-
-        devices = raw.get("devices")
-        if not isinstance(devices, list) or not devices:
-            findings.append("matrix PASS requires non-empty devices[]")
-            return
-        for index, device in enumerate(devices):
-            if not isinstance(device, dict):
-                findings.append(f"devices[{index}] must be an object")
-                continue
-            findings.extend(_validate_matrix_device(gate, index, device))
-
-
 def bind_receipt_gate(
     gate_dir: Path,
     *,
@@ -1026,7 +973,7 @@ def bind_receipt_gate(
                 )
         # Labels alone are not enough: enforce gate-specific test evidence (canonicalize bar).
         if _receipt_outcome_is_pass(raw) and receipt_gate == gate:
-            _append_gate_specific_receipt_findings(gate, raw, findings)
+            append_gate_specific_receipt_findings(gate, raw, findings)
         result = "PASS" if not findings else "FAIL"
         body = {
             "schema_version": 1,
