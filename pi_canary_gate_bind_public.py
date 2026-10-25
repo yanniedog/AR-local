@@ -214,6 +214,59 @@ def _public_asset_entries(
         return list(files.items()), findings
 
 
+def _v2_identity_from_base_manifest(
+    manifest: Mapping[str, Any], asset_paths: Sequence[Path]
+) -> tuple[Optional[str], Optional[Any]]:
+    """Recover producer/generation from a v1 base manifest matching ``base.core_sha``."""
+
+    base = manifest.get("base")
+    if not isinstance(base, Mapping):
+        return None, None
+    core_sha = base.get("core_sha")
+    if not isinstance(core_sha, str) or not canary.SHA256_RE.fullmatch(core_sha):
+        return None, None
+    for path in asset_paths:
+        if path.is_symlink() or not path.is_file():
+            continue
+        name = path.name.lower()
+        if "manifest-v2" in name or "manifest" not in name:
+            continue
+        try:
+            raw = path.read_bytes()
+            obj = _decode_json_object(raw, label=f"base-manifest:{path.name}")
+        except Exception:  # noqa: BLE001
+            continue
+        if obj.get("schema_version") != 1:
+            continue
+        files = obj.get("files")
+        if not isinstance(files, Mapping):
+            continue
+        core = files.get("core")
+        if not isinstance(core, Mapping) or core.get("sha256") != core_sha:
+            continue
+        producer = (
+            obj.get("producer_commit")
+            or obj.get("git_commit")
+            or obj.get("source_commit")
+        )
+        source_obs = obj.get("source_observation")
+        if isinstance(source_obs, Mapping):
+            producer = producer or source_obs.get("producer_commit") or source_obs.get(
+                "git_commit"
+            )
+        gen = (
+            obj.get("candidate_generation")
+            or obj.get("generation_id")
+            or (source_obs.get("generation_id") if isinstance(source_obs, Mapping) else None)
+            or obj.get("tag")
+        )
+        return (
+            producer if isinstance(producer, str) else None,
+            gen,
+        )
+    return None, None
+
+
 def bind_public_candidate_bytes(
     gate_dir: Path,
     *,
@@ -245,6 +298,23 @@ def bind_public_candidate_bytes(
         producer = producer or source_obs.get("producer_commit") or source_obs.get(
             "git_commit"
         )
+    declared_gen = (
+        manifest.get("candidate_generation")
+        or manifest.get("generation_id")
+        or (source_obs.get("generation_id") if isinstance(source_obs, Mapping) else None)
+        or manifest.get("tag")
+    )
+    # v2 sidecars historically omitted identity; recover from a validated v1 base
+    # manifest among supplied assets whose core hash matches base.core_sha.
+    if schema_version == 2 and (
+        not (isinstance(producer, str) and canary.COMMIT_RE.fullmatch(producer or ""))
+        or (candidate_generation and declared_gen is None)
+    ):
+        base_prod, base_gen = _v2_identity_from_base_manifest(manifest, asset_paths)
+        if not (isinstance(producer, str) and canary.COMMIT_RE.fullmatch(producer or "")):
+            producer = base_prod
+        if candidate_generation and declared_gen is None:
+            declared_gen = base_gen
     if isinstance(producer, str) and canary.COMMIT_RE.fullmatch(producer):
         if producer != target_commit:
             findings.append(
@@ -256,12 +326,6 @@ def bind_public_candidate_bytes(
         )
 
     if candidate_generation:
-        declared_gen = (
-            manifest.get("candidate_generation")
-            or manifest.get("generation_id")
-            or (source_obs.get("generation_id") if isinstance(source_obs, Mapping) else None)
-            or manifest.get("tag")
-        )
         if declared_gen is None:
             findings.append(
                 "manifest missing candidate_generation/generation_id/tag required "
