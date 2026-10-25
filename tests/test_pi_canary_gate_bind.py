@@ -291,6 +291,87 @@ def test_public_candidate_enumerates_v3_capabilities(tmp_path: Path) -> None:
     assert not any("manifest.files" in f for f in receipt["findings"])
 
 
+def _rebind_v3_manifest_identity(manifest: dict) -> str:
+    """Retarget producer_commit and refresh generation_id/digest for local bind tests."""
+    from cdr_domain.contract_validation import generation_manifest_digest
+
+    manifest["producer_commit"] = COMMIT
+    digest = generation_manifest_digest(manifest)
+    manifest["generation_digest"] = digest
+    revision = int(manifest["generation_revision"])
+    generation_id = (
+        f"gen-{manifest['observation_date']}-r{revision:04d}-{digest[:12]}"
+    )
+    manifest["generation_id"] = generation_id
+    return generation_id
+
+
+def test_public_candidate_v3_rejects_hash_ok_but_invalid_payload(tmp_path: Path) -> None:
+    """Hash/length match alone must not PASS; validate_generation_manifest must run."""
+    fixture = ROOT / "contracts" / "v3" / "fixtures" / "valid-generation-manifest-v3.json"
+    manifest = json.loads(fixture.read_text(encoding="utf-8"))
+    # Non-gzip bytes declared as gzip: digest matches but publication path rejects.
+    bogus = b"not-a-gzip-stream-but-hashed"
+    bogus_sha = hashlib.sha256(bogus).hexdigest()
+    core = dict(manifest["capabilities"]["core"])
+    core["encoding"] = "gzip"
+    core["sha256"] = bogus_sha
+    core["compressed_bytes"] = len(bogus)
+    core["uncompressed_bytes"] = 4096
+    core["url"] = (
+        "https://github.com/yanniedog/AR-local/releases/download/"
+        f"app-payload-gen/{bogus_sha}.json.gz"
+    )
+    manifest["capabilities"] = {"core": core}
+    generation_id = _rebind_v3_manifest_identity(manifest)
+    asset = tmp_path / f"{bogus_sha}.json.gz"
+    asset.write_bytes(bogus)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[asset],
+        candidate_generation=generation_id,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("v3 generation validation" in f for f in receipt["findings"])
+
+
+def test_public_candidate_v3_passes_with_fixture_core(tmp_path: Path) -> None:
+    fixture = ROOT / "contracts" / "v3" / "fixtures" / "valid-generation-manifest-v3.json"
+    core_path = ROOT / "contracts" / "v3" / "fixtures" / "valid-canonical-core-v3.json"
+    manifest = json.loads(fixture.read_text(encoding="utf-8"))
+    generation_id = _rebind_v3_manifest_identity(manifest)
+    core_bytes = core_path.read_bytes()
+    sha = hashlib.sha256(core_bytes).hexdigest()
+    assert sha == manifest["capabilities"]["core"]["sha256"]
+    asset = tmp_path / f"{sha}.json"
+    asset.write_bytes(core_bytes)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[asset],
+        candidate_generation=generation_id,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    assert payload["result"] == "PASS"
+
+
 def test_public_candidate_requires_manifest_generation(tmp_path: Path) -> None:
     core_body = b'{"ok":true}'
     core_sha = hashlib.sha256(core_body).hexdigest()
@@ -386,7 +467,8 @@ def test_public_candidate_v2_does_not_require_files_core(tmp_path: Path) -> None
 def test_receipt_gate_rejects_missing_explicit_pass(tmp_path: Path) -> None:
     receipt = tmp_path / "r.json"
     receipt.write_text(
-        json.dumps({"target_commit": COMMIT, "status": "FAIL"}) + "\n",
+        json.dumps({"gate": "shadow_ingest", "target_commit": COMMIT, "status": "FAIL"})
+        + "\n",
         encoding="utf-8",
     )
     gate_dir = tmp_path / "gates"
@@ -410,6 +492,7 @@ def test_receipt_gate_rejects_generation_relabel(tmp_path: Path) -> None:
     receipt.write_text(
         json.dumps(
             {
+                "gate": "shadow_ingest",
                 "target_commit": COMMIT,
                 "result": "PASS",
                 "candidate_generation": "prep-old",
@@ -432,6 +515,42 @@ def test_receipt_gate_rejects_generation_relabel(tmp_path: Path) -> None:
         missing_reason="unused",
     )
     assert payload["result"] == "FAIL"
+
+
+def test_receipt_gate_rejects_cross_gate_substitution(tmp_path: Path) -> None:
+    receipt = tmp_path / "r.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "gate": "shadow_ingest",
+                "target_commit": COMMIT,
+                "result": "PASS",
+                "candidate_generation": GENERATION,
+                "preservation_snapshot_sha256": SNAPSHOT,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_receipt_gate(
+        gate_dir,
+        gate="candidate_device_matrix",
+        target_commit=COMMIT,
+        receipt_path=receipt,
+        required_fields={"target_commit": COMMIT},
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        missing_reason="unused",
+    )
+    assert payload["result"] == "FAIL"
+    body = json.loads(
+        (gate_dir / "receipts" / "candidate_device_matrix-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("gate:" in f and "shadow_ingest" in f for f in body["findings"])
 
 
 def test_producer_contracts_reject_mismatched_target(tmp_path: Path) -> None:

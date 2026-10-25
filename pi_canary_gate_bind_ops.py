@@ -534,6 +534,7 @@ def bind_public_candidate_bytes(
     asset_iter, enum_findings = _public_asset_entries(manifest)
     findings.extend(enum_findings)
     required_keys = {key for key, _entry in asset_iter}
+    capability_bytes: dict[str, bytes] = {}
 
     for key, entry in asset_iter:
         if not isinstance(entry, dict):
@@ -572,6 +573,7 @@ def bind_public_candidate_bytes(
                 f"len={len(body)} expected_sha={expected_sha} expected_len={expected_bytes}"
             )
             continue
+        capability_bytes[key] = body
         dest_rel = f"receipts/public_asset_{key}.meta.json"
         meta = {
             "key": key,
@@ -590,6 +592,14 @@ def bind_public_candidate_bytes(
     # v1 files.core is mandatory; v2 references core via base.core_sha, not files.core.
     if schema_version == 1 and "core" not in checked_keys:
         assets_complete = False
+    # Match publication path: decompress + core/coverage checks before authorizing bytes.
+    if schema_version == 3 and assets_complete:
+        try:
+            contract_validation.validate_generation_manifest(
+                manifest, {key: capability_bytes[key] for key in required_keys}
+            )
+        except Exception as exc:  # noqa: BLE001
+            findings.append(f"v3 generation validation: {type(exc).__name__}: {exc}")
     result = "PASS" if assets_complete and not findings else "FAIL"
     receipt = {
         "schema_version": 1,
@@ -781,6 +791,16 @@ def bind_receipt_gate(
             actual = raw.get(key)
             if actual != expected:
                 findings.append(f"{key}: got {actual!r}, expected {expected!r}")
+        # Reject cross-gate substitution (e.g. shadow_ingest receipt as device matrix).
+        receipt_gate = raw.get("gate")
+        if receipt_gate is None and isinstance(raw.get("binder"), str):
+            receipt_gate = raw.get("binder")
+        if receipt_gate is None:
+            findings.append(
+                f"receipt missing gate identity required to bind gate {gate!r}"
+            )
+        elif receipt_gate != gate:
+            findings.append(f"gate: got {receipt_gate!r}, expected {gate!r}")
         if not _receipt_outcome_is_pass(raw):
             status = raw.get("status") if "status" in raw else raw.get("result")
             findings.append(f"receipt status/result not explicit PASS ({status!r})")
