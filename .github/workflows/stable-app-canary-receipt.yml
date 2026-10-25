@@ -33,11 +33,12 @@ jobs:
     steps:
       - name: Validate target_commit
         shell: bash
+        env:
+          TARGET_COMMIT: ${{ github.event.inputs.target_commit }}
         run: |
           set -euo pipefail
-          tc='${{ github.event.inputs.target_commit }}'
-          if [[ ! "$tc" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "target_commit must be 40 lowercase hex, got: $tc" >&2
+          if [[ ! "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "target_commit must be 40 lowercase hex, got: $TARGET_COMMIT" >&2
             exit 2
           fi
 
@@ -45,6 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: ar-local
+          persist-credentials: false
 
       - name: Checkout AR-app
         uses: actions/checkout@v4
@@ -53,6 +55,7 @@ jobs:
           ref: ${{ github.event.inputs.ar_app_ref }}
           path: ar-app
           token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
 
       - name: Record AR-app HEAD
         id: app
@@ -91,17 +94,20 @@ jobs:
       - name: Emit source receipt
         if: always() && steps.ci.outputs.exit_code != ''
         shell: bash
+        env:
+          TARGET_COMMIT: ${{ github.event.inputs.target_commit }}
+          AR_APP_HEAD: ${{ steps.app.outputs.head }}
+          CI_EXIT_CODE: ${{ steps.ci.outputs.exit_code }}
         run: |
           set -euo pipefail
           python3 ar-local/scripts/emit_stable_app_ci_receipt.py \
-            --target-commit '${{ github.event.inputs.target_commit }}' \
-            --ar-app-head '${{ steps.app.outputs.head }}' \
+            --target-commit "$TARGET_COMMIT" \
+            --ar-app-head "$AR_APP_HEAD" \
             --ci-log "$GITHUB_WORKSPACE/receipt-out/mobile-npm-run-ci.log" \
-            --ci-exit-code '${{ steps.ci.outputs.exit_code }}' \
+            --ci-exit-code "$CI_EXIT_CODE" \
             --output "$GITHUB_WORKSPACE/receipt-out/stable_app-live-receipt.json" \
-            --worktree "ar-app/mobile@${{ steps.app.outputs.head }}" \
-            || true
-          # Job fails if CI failed; receipt may be FAIL. Artifact still uploaded.
+            --worktree "ar-app/mobile@$AR_APP_HEAD"
+          # Fail-closed: emitter non-zero fails this step. Artifact upload uses always().
 
       - name: Upload receipt artifact
         if: always()
