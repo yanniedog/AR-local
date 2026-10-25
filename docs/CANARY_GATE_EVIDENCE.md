@@ -4,7 +4,7 @@ Fail-closed inputs for `pi_canary_acceptance_assemble.py` (lands via the canary-
 
 ## Rule
 
-- Only `result: "PASS"` with matching `target_commit` can authorize a gate.
+- Only `result: "PASS"` with matching `target_commit`, `candidate_generation`, and `preservation_snapshot_sha256` can authorize a gate (PASS bindings must match the assemble CLI args).
 - `FAIL` and `UNKNOWN` never default to true.
 - Missing gate files → assembler exits non-zero and writes **nothing**.
 - Never hand-edit a passing acceptance manifest.
@@ -38,6 +38,17 @@ Schema (when present on the branch): `contracts/canary-gate-evidence-v1.schema.j
 | `evidence` | Non-empty array of `{ "path", "sha256" }` (64 lowercase hex) |
 | `notes` | Optional string ≤ 2048 chars |
 
+### PASS-only bindings (required when `result` is `PASS`)
+
+The assembler rejects PASS evidence that omits or mismatches these fields against the assemble CLI:
+
+| Field | Constraint |
+|-------|------------|
+| `candidate_generation` | Must match assemble `--candidate-generation` (1..128 safe identifier chars) |
+| `preservation_snapshot_sha256` | Must match assemble `--preservation-snapshot-sha256` (64 lowercase hex) |
+
+`FAIL` / `UNKNOWN` evidence files do not need these bindings (they never authorize a gate).
+
 ## Assemble command (after assembler is on the tree)
 
 ```sh
@@ -54,6 +65,8 @@ python pi_canary_acceptance_assemble.py \
 ## Example fixtures
 
 Checked-in examples live under `tests/fixtures/canary-gate-evidence/`. They use a **placeholder** commit and hash and are for format/CI shape checks only. They are **not** live canary evidence and must not be published as an acceptance release.
+
+The PASS fixture is **shape-only**: it intentionally omits assemble-ready `candidate_generation` / `preservation_snapshot_sha256` bindings. Do not feed it to `pi_canary_acceptance_assemble.py` expecting a release artifact.
 
 ## Pi rollout phase
 
