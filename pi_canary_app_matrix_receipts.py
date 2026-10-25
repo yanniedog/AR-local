@@ -11,17 +11,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
-import re
-
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 API_LEVEL_RE = re.compile(r"^[1-9][0-9]{0,2}$")
-NON_EMPTY_STR = object()
 
 GATES = (
     "stable_app_compatibility",
@@ -76,6 +74,64 @@ OPERATOR_STEPS: dict[str, list[str]] = {
 
 class AppMatrixError(ValueError):
     """App matrix receipt cannot be written honestly."""
+
+
+def _is_nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_api_level(value: Any) -> bool:
+    if type(value) is int:
+        return 1 <= value <= 99
+    return isinstance(value, str) and API_LEVEL_RE.fullmatch(value) is not None
+
+
+def _validate_matrix_device(gate: str, index: int, device: Mapping[str, Any]) -> list[str]:
+    """Fail-closed per-row checks for emulator/device matrix PASS evidence."""
+    findings: list[str] = []
+    if gate == "candidate_emulator_matrix":
+        required: dict[str, Any] = {
+            "avd": "non-empty string",
+            "api": "API level int/digits",
+            "abi": "non-empty string",
+            "install_upgrade": True,
+            "acquisition_checks": True,
+            "userdata_snapshot": "non-empty string",
+            "userdata_snapshot_sha256": "64-hex sha256",
+        }
+    else:
+        required = {
+            "model": "non-empty string",
+            "os": "non-empty string",
+            "abi": "non-empty string",
+            "install_upgrade": True,
+            "acquisition_checks": True,
+            "lab_run_id": "non-empty string",
+            "evidence_archive_sha256": "64-hex sha256",
+        }
+    for field, expectation in required.items():
+        if field not in device or device[field] in (None, "", [], {}):
+            findings.append(f"devices[{index}] missing required field: {field}")
+            continue
+        value = device[field]
+        if expectation is True:
+            if value is not True:
+                findings.append(f"devices[{index}].{field} must be true for PASS")
+        elif expectation == "64-hex sha256":
+            if not isinstance(value, str) or SHA256_RE.fullmatch(value) is None:
+                findings.append(
+                    f"devices[{index}].{field} must be 64 lowercase hex sha256"
+                )
+        elif expectation == "API level int/digits":
+            if not _is_api_level(value):
+                findings.append(
+                    f"devices[{index}].api must be a positive API level (int or digits)"
+                )
+        elif not _is_nonempty_str(value):
+            findings.append(f"devices[{index}].{field} must be a non-empty string")
+    if device.get("result") != "PASS":
+        findings.append(f"devices[{index}].result must be PASS")
+    return findings
 
 
 def utc_now_iso() -> str:
@@ -163,32 +219,11 @@ def canonicalize(
         if not isinstance(devices, list) or not devices:
             findings.append("matrix PASS requires non-empty devices[]")
         else:
-            required_fields = (
-                ("avd", "api", "abi")
-                if gate == "candidate_emulator_matrix"
-                else ("model", "os", "abi", "install_upgrade", "acquisition_checks")
-            )
             for index, device in enumerate(devices):
                 if not isinstance(device, dict):
                     findings.append(f"devices[{index}] must be an object")
                     continue
-                missing = [
-                    field
-                    for field in required_fields
-                    if field not in device or device[field] in (None, "", [], {})
-                ]
-                if missing:
-                    findings.append(
-                        f"devices[{index}] missing required fields: {', '.join(missing)}"
-                    )
-                if device.get("result") != "PASS":
-                    findings.append(f"devices[{index}].result must be PASS")
-                if gate == "candidate_device_matrix":
-                    for bool_field in ("install_upgrade", "acquisition_checks"):
-                        if bool_field in device and device[bool_field] is not True:
-                            findings.append(
-                                f"devices[{index}].{bool_field} must be true for PASS"
-                            )
+                findings.extend(_validate_matrix_device(gate, index, device))
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,

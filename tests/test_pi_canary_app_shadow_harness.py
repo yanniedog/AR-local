@@ -153,6 +153,8 @@ def test_device_canonicalize_rejects_false_install_checks(tmp_path: Path) -> Non
                         "abi": "arm64-v8a",
                         "install_upgrade": False,
                         "acquisition_checks": False,
+                        "lab_run_id": "lab-1",
+                        "evidence_archive_sha256": "a" * 64,
                         "result": "PASS",
                     }
                 ],
