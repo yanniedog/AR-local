@@ -354,24 +354,38 @@ def test_shadow_template_forbids_production_archive(tmp_path: Path) -> None:
     assert any("AR_LOCAL_DATA_ROOT" in item for item in body["forbidden"])
 
 
+def _write_canary_archive_env(path: Path, **overrides: str) -> None:
+    values = {
+        "AR_LOCAL_DAY_ARCHIVE_SPOOL": "/srv/ar-local/canary/x/data/archive-spool",
+        "AR_LOCAL_DAY_ARCHIVE_REMOTE": "canary_remote:canary-backups/",
+        "RCLONE_CONFIG": "/srv/ar-local/canary/x/config/rclone.conf",
+    }
+    values.update(overrides)
+    path.write_text(
+        "".join(f'{key}="{value}"\n' for key, value in values.items()),
+        encoding="utf-8",
+    )
+
+
 def test_load_day_archive_env_prefers_override(tmp_path: Path, monkeypatch) -> None:
     import os
 
     import pi_daily_cdr_day_archive_ingest as archive_ingest
 
-    production = tmp_path / "production.env"
-    production.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives"\n', encoding="utf-8")
     canary = tmp_path / "canary.env"
-    canary.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/srv/ar-local/canary/x/data/archive-spool"\n', encoding="utf-8")
+    _write_canary_archive_env(canary)
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(canary))
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", "/var/lib/ar-local-day-archives")
     monkeypatch.setenv("RCLONE_CONFIG", "/etc/ar-local/rclone.conf")
     archive_ingest.load_day_archive_env()
     assert os.environ["AR_LOCAL_DAY_ARCHIVE_SPOOL"] == "/srv/ar-local/canary/x/data/archive-spool"
-    assert "RCLONE_CONFIG" not in os.environ
+    assert os.environ["AR_LOCAL_DAY_ARCHIVE_REMOTE"] == "canary_remote:canary-backups/"
+    assert os.environ["RCLONE_CONFIG"] == "/srv/ar-local/canary/x/config/rclone.conf"
 
 
 def test_load_day_archive_env_fail_closed_for_canary(tmp_path: Path, monkeypatch) -> None:
+    import os
+
     import pytest
 
     import pi_daily_cdr_day_archive_ingest as archive_ingest
@@ -382,9 +396,23 @@ def test_load_day_archive_env_fail_closed_for_canary(tmp_path: Path, monkeypatch
         archive_ingest.load_day_archive_env()
 
     canary = tmp_path / "canary.env"
-    canary.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives"\n', encoding="utf-8")
+    _write_canary_archive_env(
+        canary, AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives"
+    )
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(canary))
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", "/srv/ar-local/canary/x/data/archive-spool")
     with pytest.raises(ValueError, match="production archive spool"):
+        archive_ingest.load_day_archive_env()
+    # Rejection must not clear prior isolation settings.
+    assert os.environ["AR_LOCAL_DAY_ARCHIVE_SPOOL"] == "/srv/ar-local/canary/x/data/archive-spool"
+
+    incomplete = tmp_path / "incomplete.env"
+    incomplete.write_text(
+        'AR_LOCAL_DAY_ARCHIVE_SPOOL="/srv/ar-local/canary/x/data/archive-spool"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(incomplete))
+    with pytest.raises(ValueError, match="AR_LOCAL_DAY_ARCHIVE_REMOTE"):
         archive_ingest.load_day_archive_env()
 
 

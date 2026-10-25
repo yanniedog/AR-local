@@ -59,7 +59,9 @@ OPERATOR_STEPS = [
     "{source,data/runs,data/state,data/archive-spool,config,evidence}",
     "Detach worktree at exact TARGET_SHA into canary source (do not switch production HEAD).",
     "Write isolated archive env at <canary>/config/day-archive.env with "
-    "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool and a canary-only remote "
+    "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool, "
+    "AR_LOCAL_DAY_ARCHIVE_REMOTE=<canary-only-remote>, and "
+    "RCLONE_CONFIG=<canary>/config/rclone.conf "
     "(never copy /etc/ar-local/day-archive.env or production rclone remotes).",
     "Export AR_LOCAL_DATA_ROOT=<canary>/data, "
     "AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env and "
