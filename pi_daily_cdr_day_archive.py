@@ -461,6 +461,15 @@ def _process_day_locked(
         request = spool / "requests" / f"{day}.json"
         request.unlink(missing_ok=True)
         return prior
+    # Same-day archives stay pending until Hobart midnight so journals cover the full day.
+    if day == hobart_today().isoformat() and not dry_run:
+        return {
+            "schema": SCHEMA,
+            "date": day,
+            "result": "DEFERRED",
+            "reason": "same-day archives wait until the Hobart calendar day ends",
+            "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
+        }
     # Dry-run uses a separate workspace so it cannot destroy retained upload retry bytes.
     work = spool / "work" / "dry-run" / day if dry_run else spool / "work" / day
     work.mkdir(parents=True, exist_ok=True)
@@ -572,9 +581,17 @@ def _process_day_locked(
         }
         # Durable PASS before unlink so a crash still leaves retryable local bytes.
         record_progress(spool, row)
-        unlink_local_archive_only(built)
-        request = spool / "requests" / f"{day}.json"
-        request.unlink(missing_ok=True)
+        try:
+            unlink_local_archive_only(built)
+            request = spool / "requests" / f"{day}.json"
+            request.unlink(missing_ok=True)
+        except Exception as cleanup_error:  # noqa: BLE001 — PASS already durable
+            # Do not rewrite PASS as FAIL; leftover local bytes are safe to clean later.
+            row = {
+                **row,
+                "cleanup_warning": str(cleanup_error)[:300],
+            }
+            record_progress(spool, row)
         return row
     except Exception as error:
         row = {
@@ -681,7 +698,11 @@ def _process_control_locked(
     }
     # Durable PASS before unlink so CONTROL retries retain matching local bytes.
     record_progress(spool, row)
-    unlink_local_archive_only(built)
+    try:
+        unlink_local_archive_only(built)
+    except Exception as cleanup_error:  # noqa: BLE001 — PASS already durable
+        row = {**row, "cleanup_warning": str(cleanup_error)[:300]}
+        record_progress(spool, row)
     return row
 
 
@@ -750,10 +771,29 @@ def main(argv: list[str] | None = None) -> int:
     elif args.once_pending:
         requests_dir = spool / "requests"
         pending = sorted(requests_dir.glob("*.json")) if requests_dir.is_dir() else []
-        if not pending:
-            print(json.dumps({"result": "IDLE", "reason": "no pending requests"}, indent=2))
+        today = hobart_today().isoformat()
+        # Skip same-day requests; leave them queued until the next Hobart day.
+        eligible = []
+        for marker in pending:
+            try:
+                requested = require_day(json.loads(marker.read_text(encoding="utf-8"))["date"])
+            except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                continue
+            if requested == today:
+                continue
+            eligible.append(requested)
+        if not eligible:
+            print(
+                json.dumps(
+                    {
+                        "result": "IDLE",
+                        "reason": "no eligible pending requests (same-day deferred)",
+                    },
+                    indent=2,
+                )
+            )
             return 0
-        days = [require_day(json.loads(pending[0].read_text(encoding="utf-8"))["date"])]
+        days = [eligible[0]]
     elif args.backfill:
         done = load_progress(spool)
         for day in iter_backfill_days():
@@ -778,6 +818,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         results.append(result)
         if result.get("result") == "FAIL":
+            print(json.dumps({"results": results}, indent=2, sort_keys=True))
+            return 1
+        if result.get("result") == "DEFERRED" and args.date:
+            # Explicit --date for today is not yet eligible.
             print(json.dumps({"results": results}, indent=2, sort_keys=True))
             return 1
     print(json.dumps({"results": results}, indent=2, sort_keys=True))

@@ -11,14 +11,39 @@ fi
 
 run_user="${AR_LOCAL_USER:-pi}"
 run_group="${AR_LOCAL_GROUP:-$run_user}"
+SPOOL=/var/lib/ar-local-day-archives
 
-install -d -m 0755 /var/lib/ar-local-day-archives
+# Spool parent stays root-owned so the app account cannot replace children with
+# symlinks that privileged install -d/chown would follow into /etc (etc.).
+install -d -m 0755 -o root -g root "$SPOOL"
+
+ensure_spool_child() {
+  local child="$1"
+  local path="$SPOOL/$child"
+  if [[ -L "$path" ]]; then
+    echo "refusing day-archive spool symlink: $path" >&2
+    exit 1
+  fi
+  if [[ -e "$path" && ! -d "$path" ]]; then
+    echo "refusing non-directory day-archive spool path: $path" >&2
+    exit 1
+  fi
+  # Create without following links; then chown only the real directory inode.
+  install -d -m 0775 "$path"
+  if [[ -L "$path" ]]; then
+    echo "refusing day-archive spool symlink after create: $path" >&2
+    exit 1
+  fi
+  chown -h "$run_user:$run_group" "$path"
+  chmod 0775 "$path"
+}
+
 # Ingest and the day-archive oneshot both run as the application account.
-install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/requests
-install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/work
-install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/verify
-install -d -m 0775 -o "$run_user" -g "$run_group" /var/lib/ar-local-day-archives/locks
-chown -R "$run_user:$run_group" /var/lib/ar-local-day-archives
+ensure_spool_child requests
+ensure_spool_child work
+ensure_spool_child verify
+ensure_spool_child locks
+# Parent remains root:root 0755 — do not chown -R the spool.
 
 # System python used by ar-local-daily / day-archive oneshot needs zstandard.
 if ! /usr/bin/python3 -c 'import zstandard' 2>/dev/null; then
