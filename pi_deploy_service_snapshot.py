@@ -206,23 +206,25 @@ def ingest_definition_ok(snap, prefix):
         return False
 
 
-def _snapshot_script(ar, site, data, remote):
+def _snapshot_script(ar, site, data, remote, *, fetch: bool = True):
     q_remote = shlex.quote(remote)
     q_ar = shlex.quote(ar)
     q_site = shlex.quote(site)
     q_data = shlex.quote(data)
     q_remote_main = shlex.quote(f"{remote}/main")
+    fetch_ar = f"git -C {q_ar} fetch {q_remote} 2>/dev/null; " if fetch else ""
+    fetch_site = f"git -C {q_site} fetch {q_remote} 2>/dev/null; " if fetch else ""
     return (
         "set +e; "
         + _ingest_definition_script("DAILY", INGEST_UNITS["DAILY"])
         + _ingest_definition_script("MANUAL", INGEST_UNITS["MANUAL"])
         + f"ar_physical=$(CDPATH= cd {q_ar} 2>/dev/null && pwd -P); "
-        f"git -C {q_ar} fetch {q_remote} 2>/dev/null; "
-        f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
+        + fetch_ar
+        + f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
         f"ar_o=$(git -C {q_ar} rev-parse {q_remote_main} 2>/dev/null); "
         f"ar_d=$(git -C {q_ar} status --porcelain | tr '\\n' ';'); "
-        f"git -C {q_site} fetch {q_remote} 2>/dev/null; "
-        f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
+        + fetch_site
+        + f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
         f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
         f"site_d=$(git -C {q_site} status --porcelain | tr '\\n' ';'); "
         f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
@@ -315,9 +317,16 @@ def _dry_snapshot(ar):
     }
 
 
-def remote_snapshot(*, ar, site, data, remote, run, parse, dry_run=False):
-    """One SSH round-trip for SHAs, dirty trees, and native service evidence."""
-    code, stdout, _ = run(_snapshot_script(ar, site, data, remote), dry_run=dry_run)
+def remote_snapshot(*, ar, site, data, remote, run, parse, dry_run=False, fetch: bool = True):
+    """One SSH round-trip for SHAs, dirty trees, and native service evidence.
+
+    When fetch=False, skip `git fetch` so read-only callers do not mutate
+    FETCH_HEAD / remote-tracking refs.
+    """
+    code, stdout, _ = run(
+        _snapshot_script(ar, site, data, remote, fetch=fetch),
+        dry_run=dry_run,
+    )
     if dry_run:
         return _dry_snapshot(ar)
     snap = parse(stdout)
