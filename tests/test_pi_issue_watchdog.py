@@ -25,13 +25,18 @@ def test_missing_scheduled_start_reports_even_if_recovered_elsewhere(tmp_path, m
     assert row['category'] == 'SCHEDULED_INGEST_NOT_STARTED' and row['active']
 
 
+def _schedule_row(store, date='2026-09-13'):
+    return store.read()['incidents'].get('ingest-schedule:' + date)
+
+
 def test_reboot_cleared_exec_main_not_miss_when_timer_triggered(tmp_path, monkeypatch):
     monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
     store = AlertStore(tmp_path)
     empty = units(start=None)
     result = watch.ingest_checks(store, tmp_path, NOW, empty, timer_triggered=DUE + timedelta(minutes=1))
     assert result['status'] == 'PARTIAL'
-    assert 'ingest-schedule:2026-09-13' not in store.read()['incidents']
+    row = _schedule_row(store)
+    assert row is not None and row['active'] is False and row['revision'] == 0
 
 
 def test_reboot_cleared_exec_main_not_miss_when_observation_finalized(tmp_path, monkeypatch):
@@ -51,7 +56,8 @@ def test_reboot_cleared_exec_main_not_miss_when_observation_finalized(tmp_path, 
     }))
     store = AlertStore(tmp_path / 'alerts')
     watch.ingest_checks(store, state, NOW, units(start=None), timer_triggered=None)
-    assert 'ingest-schedule:2026-09-13' not in store.read()['incidents']
+    row = _schedule_row(store)
+    assert row is not None and row['active'] is False and row['revision'] == 0
 
 
 def test_reboot_cleared_exec_main_not_miss_when_ingest_status_mtime_after_due(tmp_path, monkeypatch):
@@ -67,7 +73,8 @@ def test_reboot_cleared_exec_main_not_miss_when_ingest_status_mtime_after_due(tm
     os.utime(status, (after, after))
     store = AlertStore(tmp_path / 'alerts')
     watch.ingest_checks(store, state, NOW, units(start=None), timer_triggered=None)
-    assert 'ingest-schedule:2026-09-13' not in store.read()['incidents']
+    row = _schedule_row(store)
+    assert row is not None and row['active'] is False and row['revision'] == 0
 
 
 def test_empty_start_without_durable_evidence_is_miss(tmp_path, monkeypatch):
@@ -93,7 +100,10 @@ def test_active_ingest_is_not_missed_completion(tmp_path):
     store = AlertStore(tmp_path)
     result = watch.ingest_checks(store, tmp_path, DUE + timedelta(minutes=45), units(active=True),
                                  timer_triggered=None)
-    assert result['status'] == 'RUNNING' and store.read()['incidents'] == {}
+    row = _schedule_row(store)
+    assert result['status'] == 'RUNNING'
+    assert row is not None and row['active'] is False and row['revision'] == 0
+    assert all(not r.get('active') for r in store.read()['incidents'].values())
 
 
 def test_stuck_ingest_is_reported(tmp_path):

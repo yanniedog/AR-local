@@ -247,8 +247,11 @@ def ingest_checks(store, state_root, now, units=None, timer_triggered=None):
     started = scheduled_ingest_started(
         due=due, service_started=daily.get("started_at"),
         timer_triggered=timer_triggered, state_root=state_root, date=date)
+    # Sample time after evidence read: a later stale miss cannot overwrite recovery.
+    observed_at = datetime.now(timezone.utc)
     store.observe("ingest-schedule:" + date, "Pi scheduled ingest missed: " + date,
-                  "SCHEDULED_INGEST_NOT_STARTED", healthy=started)
+                  "SCHEDULED_INGEST_NOT_STARTED", healthy=started,
+                  observation_at=observed_at)
     watchdog_recovery(store, units[UNITS[2]], due, now)
     active = [r for r in units.values() if r.get("ActiveState") in {"active", "activating"}]
     if active:
