@@ -16,7 +16,7 @@ FOLDER_NAME = "daily-cdr-raw-records"
 LEGACY_FOLDER_NAME = "daily-cdr-day-archives"
 PRODUCTION_DATA_ROOT = "/srv/ar-local/data"
 PRODUCTION_DAY_ARCHIVE_SPOOL = "/var/lib/ar-local-day-archives"
-DEFAULT_CANARY_FS_PARENT = "/srv/ar-local/canary"
+CANARY_ROOT_PARENT = Path("/srv/ar-local/canary")
 CANARY_GENERATION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _GEN = r"obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}"
@@ -58,12 +58,6 @@ def resolve_archive_remote(remote: str, *, preserve_absolute: bool = False) -> s
     return f"{remote_name}:{joined}"
 
 
-def _canary_fs_parent() -> Path:
-    """Canonical canary parent; tests may override via ``AR_LOCAL_CANARY_FS_PARENT``."""
-    raw = os.environ.get("AR_LOCAL_CANARY_FS_PARENT", DEFAULT_CANARY_FS_PARENT).strip()
-    return Path(raw).expanduser().resolve(strict=False)
-
-
 def _canary_root_from_env() -> Path:
     """Derive ``<canary>`` from ``AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env``.
 
@@ -81,14 +75,14 @@ def _canary_root_from_env() -> Path:
             "canary day-archive env must be <canary>/config/day-archive.env"
         )
     canary_root = env_path.parent.parent
-    parent = _canary_fs_parent()
-    if canary_root.parent != parent:
+    parent = CANARY_ROOT_PARENT.resolve(strict=False)
+    if (
+        canary_root.parent != parent
+        or not CANARY_GENERATION_RE.fullmatch(canary_root.name)
+        or not canary_root.is_dir()
+    ):
         raise ValueError(
-            f"canary root must be a direct child of {parent}, got {canary_root}"
-        )
-    if not CANARY_GENERATION_RE.fullmatch(canary_root.name):
-        raise ValueError(
-            f"canary generation directory name invalid: {canary_root.name!r}"
+            f"canary root must be an existing generation directory under {parent}"
         )
     return canary_root
 
