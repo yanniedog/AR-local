@@ -33,15 +33,16 @@ The installer first requires a clean checkout whose `HEAD` and `origin/main` bot
 When production `/srv/ar-local/AR-local` is intentionally detached behind `origin/main`, do **not** move that HEAD merely to satisfy the installer SHA gate. Prepare a disposable aligned source tree at the approved 40-character `origin/main` SHA, then install gate lib/bins/manifest only:
 
 ```sh
-# SRC must be clean with HEAD == origin/main == <approved-40-char-sha>
-sh deploy/pi/install-backup-foundation.sh --gate-bytes-only \
+# SRC must be a disposable clean tree with HEAD == origin/main == <approved-40-char-sha>
+# Invoke the installer from that tree (not from production's older copy of the script).
+sh "$SRC/deploy/pi/install-backup-foundation.sh" --gate-bytes-only \
   --prod-repo /srv/ar-local/AR-local \
   --expect-prod-head <current-protected-production-sha> \
   "$SRC" /srv/ar-local/australianrates /srv/ar-local/data \
   <approved-40-character-origin-main-sha>
 ```
 
-`--gate-bytes-only` skips `backup.env`, mount preflight, systemd unit install, and timer enable. It still fail-closes if the source tree is dirty or not exactly the approved SHA, and (when `--prod-repo` is set) if production HEAD moves during install. Full foundation (mount + `backup.env` + timers + snapshot/restore/boot proof) remains a later daylight slice after authorized media exists.
+`--gate-bytes-only` skips `backup.env`, mount preflight, systemd unit install, timer enable, and `/srv/ar-local/restore-drills`. It still fail-closes if the source tree is dirty or not exactly the approved SHA. `--expect-prod-head` requires `--prod-repo` and is checked before any timer enable; a post-install HEAD re-check detects drift after install steps (it cannot unwind timers already started in full-install mode). Full foundation (mount + `backup.env` + timers + snapshot/restore/boot proof) remains a later daylight slice after authorized media exists.
 
 ## Evidence and acceptance
 

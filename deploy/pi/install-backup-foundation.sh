@@ -45,6 +45,10 @@ config="/etc/ar-local/backup.env"
 
 case "$candidate" in *[!0-9a-f]*|'') echo "Invalid approved candidate SHA" >&2; exit 1;; esac
 [ "${#candidate}" -eq 40 ] || { echo "Approved candidate SHA must be 40 characters" >&2; exit 1; }
+if [ -n "$expect_prod_head" ] && [ -z "$prod_repo" ]; then
+  echo "--expect-prod-head requires --prod-repo" >&2
+  exit 1
+fi
 if [ -n "$expect_prod_head" ]; then
   case "$expect_prod_head" in *[!0-9a-f]*|'') echo "Invalid --expect-prod-head SHA" >&2; exit 1;; esac
   [ "${#expect_prod_head}" -eq 40 ] || { echo "--expect-prod-head must be 40 characters" >&2; exit 1; }
@@ -91,11 +95,11 @@ if [ "$gate_bytes_only" -eq 0 ]; then
   python3 "$repo/pi_backup_foundation.py" preflight --config "$config" --repo "$repo" --site-repo "$site" --data-root "$data"
 fi
 
-sudo install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 
 if [ "$gate_bytes_only" -eq 0 ]; then
+  sudo install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills
   render() {
     sed -e "s|{{AR_LOCAL_USER}}|$run_user|g" -e "s|{{AR_LOCAL_GROUP}}|$run_group|g" \
       -e "s|{{AR_LOCAL_HOME}}|$run_home|g" -e "s|{{AR_LOCAL_REPO}}|$repo|g" \
@@ -216,24 +220,38 @@ sudo install -m 0755 "$repo/deploy/pi/ar-local-restore-latest.sh" /usr/local/bin
 sudo install -m 0755 "$repo/deploy/pi/ar-local-backup-gate.sh" /usr/local/bin/ar-local-backup-gate
 sudo install -m 0755 "$repo/deploy/pi/ar-local-backup-run.sh" /usr/local/bin/ar-local-backup-run
 
-(cd "$trusted" && sha256sum -c /etc/ar-local/backup-gate.sha256) >/dev/null
+if ! (cd "$trusted" && sha256sum --quiet -c /etc/ar-local/backup-gate.sha256); then
+  echo "Installed backup-gate bytes failed sha256sum verification against /etc/ar-local/backup-gate.sha256" >&2
+  exit 1
+fi
 test -x /usr/local/bin/ar-local-backup-gate
 test -x /usr/local/bin/ar-local-backup-run
 test -x /usr/local/bin/ar-local-restore-latest
+
+# Re-check production pin before enabling timers so a moved HEAD fail-closes
+# without leaving timers live. A later after-check only detects post-enable drift.
+if [ -n "$prod_repo" ]; then
+  prod_head_mid="$(git -C "$prod_repo" rev-parse HEAD)"
+  echo "PROD_HEAD_BEFORE_ENABLE=$prod_head_mid"
+  [ "$prod_head_mid" = "$prod_head_before" ] || {
+    echo "Production HEAD changed during install before timer enable — FAIL" >&2
+    exit 1
+  }
+fi
 
 if [ "$gate_bytes_only" -eq 0 ]; then
   sudo systemctl daemon-reload
   sudo systemctl enable --now ar-local-backup.timer ar-local-restore-drill.timer
 else
   echo "GATE_BYTES_ONLY_OK"
-  echo "SKIPPED=backup.env,mount-preflight,systemd-units,timers"
+  echo "SKIPPED=backup.env,mount-preflight,systemd-units,timers,restore-drills-dir"
 fi
 
 if [ -n "$prod_repo" ]; then
   prod_head_after="$(git -C "$prod_repo" rev-parse HEAD)"
   echo "PROD_HEAD_AFTER=$prod_head_after"
   [ "$prod_head_after" = "$prod_head_before" ] || {
-    echo "Production HEAD changed during install — FAIL" >&2
+    echo "Production HEAD drifted after install steps — FAIL (timers may already be live in full-install mode)" >&2
     exit 1
   }
 fi
