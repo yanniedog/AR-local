@@ -366,16 +366,18 @@ def raw_banks_absent(day: str, rows: list[dict]) -> bool:
     return not any(_is_raw_banks_logical_path(str(row["logical_path"]), day) for row in rows)
 
 
-def stage_source_fingerprint(stage_roots: Iterable[Path] | None) -> str:
+def stage_source_fingerprint(stage_roots: Iterable[Path] | None,
+                              guard: Callable[[], None] = lambda: None) -> str:
     """Stable hash of the capture-stage bytes cleanup is about to delete."""
     lines: list[str] = []
     for root in stage_roots or []:
+        guard()
         if not isinstance(root, Path) or not root.is_dir() or root.is_symlink():
             continue
         resolved = root.resolve()
         for path in _walk_files(resolved):
             relative = path.resolve().relative_to(resolved).as_posix()
-            digest = file_row(resolved, path)["sha256"]
+            digest = file_row(resolved, path, guard)["sha256"]
             lines.append(f"{resolved.as_posix()}/{relative}\t{digest}")
     lines.sort()
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()

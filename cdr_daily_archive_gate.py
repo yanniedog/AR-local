@@ -27,6 +27,7 @@ def read_json(path: Path) -> dict:
 def write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root: Path,
                         cleanup_paths: tuple[Path, ...], seal_exports: Path | None,
                         stage_roots: list[Path], *, clean_ram_stage: bool = True) -> None:
+    ram_root = Path(ram_root).expanduser()
     path = ownership_path(state_dir, date, generation_id)
     if path.exists():
         return
@@ -35,13 +36,22 @@ def write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root
         "date": date,
         "generation_id": generation_id,
         "ram_root": str(ram_root.resolve()),
-        "cleanup_paths": [str(item.resolve()) for item in cleanup_paths],
-        "stage_roots": [str(Path(item).resolve()) for item in stage_roots],
+        "cleanup_paths": [str(Path(item).expanduser().resolve()) for item in cleanup_paths],
+        "stage_roots": [str(Path(item).expanduser().resolve()) for item in stage_roots],
         "seal_exports": None if seal_exports is None else str(seal_exports.resolve()),
         "clean_ram_stage": bool(clean_ram_stage),
         "terms_root": os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip(),
     }
     atomic_write_json(path, payload, create_once=True)
+
+
+def _clear_persistent_export_stage(runs_root: Path, date: str, targets: list[Path]) -> bool:
+    expected = (runs_root.parent / ".daily-export-stage" / date).resolve()
+    if not any(Path(target).resolve() == expected for target in targets):
+        return False
+    from cdr_daily import cleanup_persistent_export_stage
+    cleanup_persistent_export_stage(runs_root, date)
+    return expected.exists()
 
 
 def _owned_removable(ram_root: Path, runs_root: Path, date: str, raw: object) -> Path | None:
@@ -153,6 +163,9 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
         cleanup = terms.get("ram_cleanup") if isinstance(terms, dict) else None
         if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
             return {"terms_evidence": terms, "ram_cleanup": cleanup}
+        export_left = _clear_persistent_export_stage(runs_root, date, targets)
+        if export_left:
+            return {"terms_evidence": terms, "ram_cleanup": {"status": "PRESERVED", "reason": "export_stage_remaining"}}
         return {"terms_evidence": terms, "ram_cleanup": cleanup or {"status": "CLEANED"}}
     if args.clean_ram_stage:
         if not verify_completion_marker(recorded, state_dir, date):

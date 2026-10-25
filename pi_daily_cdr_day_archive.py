@@ -507,7 +507,7 @@ def _process_day_locked(
     if in_quiet_window():
         raise DayArchiveError("refusing day-archive work inside 00:30–02:00 Australia/Hobart quiet window")
     generation_id = require_generation(generation_id)
-    source_fingerprint = stage_source_fingerprint(stage_roots) if generation_id else None
+    source_fingerprint = stage_source_fingerprint(stage_roots, quiet_window_guard) if generation_id else None
     if generation_id:
         try:
             cached = cached_generation_upload(
