@@ -985,3 +985,33 @@ def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path:
     assert record["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256
     with pytest.raises(FileExistsError):
         receiver.atomic_create(path, b"replace")
+
+
+def test_refuse_cloud_backup_root_blocks_google_drive_label(tmp_path: Path):
+    target = tmp_path / "backups" / "AR-local-pi5"
+    target.mkdir(parents=True)
+    with pytest.raises(ValueError, match="cloud/virtual root"):
+        receiver.refuse_cloud_backup_root(
+            target,
+            probe={"root": "G:\\", "label": "Google Drive", "filesystem": "FAT32"},
+        )
+
+
+def test_refuse_cloud_backup_root_blocks_remote_filesystem(tmp_path: Path):
+    target = tmp_path / "mnt" / "share"
+    target.mkdir(parents=True)
+    with pytest.raises(ValueError, match="remote/virtual"):
+        receiver.refuse_cloud_backup_root(
+            target,
+            probe={"root": "/mnt/share", "label": "", "filesystem": "cifs"},
+        )
+
+
+def test_canonical_target_allows_local_volume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    target = tmp_path / "backups" / "AR-local-pi5"
+    monkeypatch.setattr(
+        receiver,
+        "volume_probe",
+        lambda _path: {"root": str(tmp_path), "label": "Local Disk", "filesystem": "NTFS"},
+    )
+    assert receiver.canonical_target(target) == target.resolve()

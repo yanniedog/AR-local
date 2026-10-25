@@ -27,6 +27,18 @@ candidate. Do not alter it, call it current, or use the known-short failed image
 as a restore source. Current data is stored as independently verifiable,
 compressed generations below `C:\code\backups\AR-local-pi5`.
 
+### Alternate local backup root (external volume)
+
+When `C:` cannot hold the 50 GiB free-space floor plus projected write capacity,
+an attached **local** external volume (USB/NVMe enclosure with NTFS, exFAT, or
+similar local filesystem) may be named as `--target` instead, for example
+`E:\backups\AR-local-pi5`. The receiver still enforces the free-space floor on
+that volume. Cloud or virtual roots (Google Drive, OneDrive, Dropbox, CIFS/SMB,
+FUSE network mounts) are refused. The Drive write hold remains in force: do not
+point `--target` at Google Drive. Pi foundation commissioning remains a separate
+physically separate UUID at `/mnt/ar-local-backup` and is not replaced by this
+laptop alternate root.
+
 ## Manual daylight sequence
 
 Use a clean detached checkout of the exact merged `origin/main`. Substitute the
