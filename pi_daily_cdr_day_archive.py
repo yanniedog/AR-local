@@ -22,6 +22,7 @@ import zstandard
 
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_file_lock import FileLock
+from pi_drive_backup_hold import Blocked, require_writes_allowed
 from pi_daily_cdr_day_archive_scope import (
     FIRST_DAY,
     KNOWN_GAPS,
@@ -45,6 +46,7 @@ SCHEMA = "ar-local-daily-cdr-day-archive-v1"
 COMPRESSION = "zstd-lossless-no-encryption-level-19"
 DEFAULT_DATA_ROOT = Path("/srv/ar-local/data")
 DEFAULT_SPOOL = Path("/var/lib/ar-local-day-archives")
+DEFAULT_DRIVE_BACKUP_SPOOL = Path("/var/lib/ar-local-drive-backup")
 DEFAULT_RCLONE = Path(
     "/var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf"
 )
@@ -63,9 +65,34 @@ class DayArchiveError(RuntimeError):
 
 def _atomic_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def require_day_archive_writes_allowed(spool: Path) -> None:
+    """Honor the global Drive write hold for direct CLI and service invocations."""
+    try:
+        require_writes_allowed(Path(spool))
+        backup_spool = Path(
+            os.environ.get("AR_LOCAL_DRIVE_BACKUP_SPOOL", str(DEFAULT_DRIVE_BACKUP_SPOOL))
+        )
+        if backup_spool.resolve() != Path(spool).resolve():
+            require_writes_allowed(backup_spool)
+    except Blocked as error:
+        raise DayArchiveError(str(error)) from error
 
 
 def _append_jsonl(path: Path, payload: dict) -> None:
@@ -457,6 +484,7 @@ def _process_day_locked(
         if transport is None:
             raise DayArchiveError("transport required unless --dry-run")
         quiet_window_guard()
+        require_day_archive_writes_allowed(spool)
         transport.ensure_folder()
         if transport.remote_exists(built["remote_name"]):
             # Idempotent: verify existing remote against local archive bytes,
@@ -529,16 +557,57 @@ def _process_control_locked(
 ) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing control-archive work inside quiet window")
+    prior = load_progress(spool).get("CONTROL")
+    if prior and prior.get("result") == "PASS" and not dry_run:
+        return prior
     work = spool / "work" / "CONTROL"
-    if work.exists():
-        shutil.rmtree(work)
-    built = build_control_archive(data_root, work, guard=guard)
+    work.mkdir(parents=True, exist_ok=True)
+
+    def _reuse_or_build_control() -> dict:
+        existing = work / "CONTROL.tar.zst"
+        sha_path = work / "CONTROL.sha256"
+        manifest_path = work / "CONTROL.manifest.json"
+        if existing.is_file() and sha_path.is_file() and manifest_path.is_file():
+            digest = sha_path.read_text(encoding="utf-8").split()[0]
+            if len(digest) == 64 and sha256_file(existing, guard) == digest:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                return {
+                    "schema": SCHEMA,
+                    "kind": "control",
+                    "local_path": str(existing),
+                    "remote_name": "CONTROL.tar.zst",
+                    "sha256": digest,
+                    "bytes": existing.stat().st_size,
+                    "manifest_path": str(manifest_path),
+                    "sha_path": str(sha_path),
+                    "manifest": manifest,
+                }
+        for path in work.iterdir():
+            if path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+        return build_control_archive(data_root, work, guard=guard)
+
+    built = _reuse_or_build_control()
     if dry_run:
         if work.exists():
             shutil.rmtree(work)
         return {"result": "DRY_RUN", **{k: built[k] for k in ("sha256", "bytes", "remote_name")}}
+    require_day_archive_writes_allowed(spool)
     transport.ensure_folder()
-    upload_and_verify(transport, built, spool / "verify", guard=guard)
+    if transport.remote_exists(built["remote_name"]):
+        verify_uploaded_archive(
+            transport,
+            built["remote_name"],
+            Path(built["local_path"]),
+            built["sha256"],
+            spool / "verify",
+            guard,
+        )
+        ensure_sidecars_uploaded(transport, built)
+    else:
+        upload_and_verify(transport, built, spool / "verify", guard=guard)
     unlink_local_archive_only(built)
     row = {
         "schema": SCHEMA,

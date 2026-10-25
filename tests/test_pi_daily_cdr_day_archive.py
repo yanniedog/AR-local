@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -97,6 +98,7 @@ def test_build_day_archive_gap_and_verify_before_unlink(tmp_path: Path, monkeypa
             return True
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
@@ -248,6 +250,7 @@ def test_existing_remote_retries_sidecars(tmp_path: Path, monkeypatch):
             raise AssertionError("verify stubbed")
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
@@ -278,6 +281,7 @@ def test_existing_remote_day_uploads_missing_sidecars(tmp_path: Path, monkeypatc
     _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
     _write(data / "state" / f"{day}.done.json", '{"ok":true}')
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     work = spool / "work" / day
     built = archive.build_day_archive(data, day, work, include_journals=False)
@@ -345,6 +349,7 @@ def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(archive, "build_day_archive", tracking_build)
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     monkeypatch.setattr(scope, "export_journals", lambda day, dest: [])
 
@@ -411,3 +416,84 @@ def test_process_day_holds_per_day_lock(tmp_path: Path, monkeypatch):
         include_journals=False,
     )
     assert seen == [spool / "locks" / f"{day}.lock"]
+
+
+def test_hold_blocks_upload(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    day = "2026-05-14"
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(
+        archive,
+        "require_day_archive_writes_allowed",
+        lambda path: (_ for _ in ()).throw(archive.DayArchiveError("held")),
+    )
+
+    class FakeTransport:
+        def ensure_folder(self):
+            raise AssertionError("must not reach transport under hold")
+
+        def remote_exists(self, relative):
+            raise AssertionError("must not reach transport under hold")
+
+    with pytest.raises(archive.DayArchiveError, match="held"):
+        archive.process_day(
+            data_root=tmp_path / "data",
+            day=day,
+            spool=spool,
+            transport=FakeTransport(),
+            dry_run=False,
+            include_journals=False,
+        )
+
+
+def test_atomic_json_uses_unique_temp(tmp_path: Path):
+    target = tmp_path / "latest.json"
+    archive._atomic_json(target, {"a": 1})
+    archive._atomic_json(target, {"a": 2})
+    assert json.loads(target.read_text(encoding="utf-8"))["a"] == 2
+    assert list(tmp_path.glob("latest.json.*.tmp")) == []
+
+
+def test_control_reuses_local_artifact(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    data = tmp_path / "data"
+    _write(data / "state" / "control.json", '{"ok":true}')
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
+    monkeypatch.setattr(
+        archive,
+        "collect_control_files",
+        lambda root: [data / "state" / "control.json"],
+    )
+    work = spool / "work" / "CONTROL"
+    first = archive.build_control_archive(data, work)
+    first_sha = first["sha256"]
+    rebuilt: list[bool] = []
+    original = archive.build_control_archive
+
+    def tracking(*args, **kwargs):
+        rebuilt.append(True)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(archive, "build_control_archive", tracking)
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return True
+
+        def upload(self, relative, source):
+            return None
+
+    result = archive.process_control(
+        data_root=data,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+    )
+    assert result["result"] == "PASS"
+    assert result["sha256"] == first_sha
+    assert rebuilt == []
