@@ -34,7 +34,7 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "result=PASS, and ci={command,suites,tests}.",
         "Do not reuse PASS from a different candidate SHA (e.g. prior product-evidence head).",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
-        "--gate stable_app_compatibility --source <raw> --output <canonical> "
+        "--gate stable_app_compatibility --source-receipt <raw> --output <canonical> "
         "--target-commit TARGET_SHA",
         "Bind only the canonicalize output: python pi_canary_gate_bind.py "
         "stable-app-compatibility --receipt <canonical> ...",
@@ -48,7 +48,7 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "devices=[{avd,api,abi,result}], result=PASS|FAIL.",
         "Emulator PASS does not imply physical-device or native-v2 acceptance.",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
-        "--gate candidate_emulator_matrix --source <raw> --output <canonical> "
+        "--gate candidate_emulator_matrix --source-receipt <raw> --output <canonical> "
         "--target-commit TARGET_SHA",
         "Bind only the canonicalize output: python pi_canary_gate_bind.py "
         "candidate-emulator-matrix --receipt <canonical> ...",
@@ -61,7 +61,7 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "Write receipt with gate=candidate_device_matrix, target_commit, devices=[...], "
         "result=PASS only if matrix complete.",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
-        "--gate candidate_device_matrix --source <raw> --output <canonical> "
+        "--gate candidate_device_matrix --source-receipt <raw> --output <canonical> "
         "--target-commit TARGET_SHA",
         "Bind only the canonicalize output: python pi_canary_gate_bind.py "
         "candidate-device-matrix --receipt <canonical> ...",
@@ -139,11 +139,17 @@ def canonicalize(
 ) -> dict[str, Any]:
     if gate not in GATES:
         raise AppMatrixError(f"unknown gate: {gate}")
+    if not COMMIT_RE.fullmatch(target_commit):
+        raise AppMatrixError("target_commit must be 40 lowercase hex")
     raw = json.loads(source.read_text(encoding="utf-8"))
     findings: list[str] = []
-    source_gate = raw.get("gate")
-    if source_gate != gate:
-        findings.append(f"source gate mismatch: {source_gate!r} != {gate!r}")
+    if not isinstance(raw, dict):
+        raw = {}
+        findings.append("receipt must be a JSON object")
+    if raw.get("schema_version") != 1:
+        findings.append("schema_version must be 1")
+    if raw.get("gate") != gate:
+        findings.append(f"gate is {raw.get('gate')!r}, not {gate!r}")
     if raw.get("target_commit") != target_commit:
         findings.append(
             f"target_commit mismatch: {raw.get('target_commit')!r} != {target_commit!r}"
@@ -153,31 +159,38 @@ def canonicalize(
         findings.append(f"result is {status!r}, not PASS")
     if gate == "stable_app_compatibility" and status == "PASS":
         ci = raw.get("ci")
-        if not isinstance(ci, dict):
-            findings.append("stable_app PASS requires ci object evidence")
-        else:
-            if not str(ci.get("command") or "").strip():
-                findings.append("stable_app PASS requires ci.command")
-            suites = ci.get("suites")
-            tests = ci.get("tests")
-            if not isinstance(suites, int) or suites < 0:
-                findings.append("stable_app PASS requires non-negative int ci.suites")
-            if not isinstance(tests, int) or tests < 0:
-                findings.append("stable_app PASS requires non-negative int ci.tests")
+        if not isinstance(ci, dict) or ci.get("command") != "npm run ci":
+            findings.append("stable-app PASS requires ci.command='npm run ci'")
+        elif any(
+            type(ci.get(field)) is not int or ci[field] <= 0
+            for field in ("suites", "tests")
+        ):
+            findings.append("stable-app PASS requires positive integer ci.suites and ci.tests")
     if gate.endswith("_matrix") and status == "PASS":
         devices = raw.get("devices")
         if not isinstance(devices, list) or not devices:
             findings.append("matrix PASS requires non-empty devices[]")
         else:
+            required_fields = (
+                ("avd", "api", "abi")
+                if gate == "candidate_emulator_matrix"
+                else ("model", "os", "abi", "install_upgrade", "acquisition_checks")
+            )
             for index, device in enumerate(devices):
                 if not isinstance(device, dict):
                     findings.append(f"devices[{index}] must be an object")
                     continue
-                device_result = device.get("result") or device.get("status")
-                if device_result != "PASS":
+                missing = [
+                    field
+                    for field in required_fields
+                    if field not in device or device[field] in (None, "", [], {})
+                ]
+                if missing:
                     findings.append(
-                        f"devices[{index}] result is {device_result!r}, not PASS"
+                        f"devices[{index}] missing required fields: {', '.join(missing)}"
                     )
+                if device.get("result") != "PASS":
+                    findings.append(f"devices[{index}].result must be PASS")
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,

@@ -28,6 +28,7 @@ def test_shadow_canonicalize_rejects_wrong_commit(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "schema_version": 1,
                 "gate": "shadow_ingest",
                 "target_commit": "a" * 40,
                 "result": "PASS",
@@ -48,6 +49,7 @@ def test_shadow_canonicalize_pass(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "schema_version": 1,
                 "gate": "shadow_ingest",
                 "target_commit": TARGET,
                 "result": "PASS",
@@ -60,25 +62,6 @@ def test_shadow_canonicalize_pass(tmp_path: Path) -> None:
     out = tmp_path / "out.json"
     info = shadow.validate_and_canonicalize(src, out, target_commit=TARGET)
     assert info["result"] == "PASS"
-
-
-def test_shadow_canonicalize_rejects_missing_gate(tmp_path: Path) -> None:
-    src = tmp_path / "src.json"
-    src.write_text(
-        json.dumps(
-            {
-                "target_commit": TARGET,
-                "result": "PASS",
-                "exit_code": 0,
-                "exports_dirs": ["/tmp/x"],
-            }
-        ),
-        encoding="utf-8",
-    )
-    out = tmp_path / "out.json"
-    info = shadow.validate_and_canonicalize(src, out, target_commit=TARGET)
-    assert info["result"] == "FAIL"
-    assert any("source gate mismatch" in f for f in info["findings"])
 
 
 def test_app_matrix_templates(tmp_path: Path) -> None:
@@ -94,6 +77,7 @@ def test_emulator_canonicalize_requires_devices(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "schema_version": 1,
                 "gate": "candidate_emulator_matrix",
                 "target_commit": TARGET,
                 "result": "PASS",
@@ -109,31 +93,12 @@ def test_emulator_canonicalize_requires_devices(tmp_path: Path) -> None:
     assert info["result"] == "FAIL"
 
 
-def test_stable_app_requires_ci_evidence(tmp_path: Path) -> None:
-    src = tmp_path / "app.json"
-    src.write_text(
-        json.dumps(
-            {
-                "gate": "stable_app_compatibility",
-                "target_commit": TARGET,
-                "result": "PASS",
-            }
-        ),
-        encoding="utf-8",
-    )
-    out = tmp_path / "out.json"
-    info = app_matrix.canonicalize(
-        "stable_app_compatibility", src, out, target_commit=TARGET
-    )
-    assert info["result"] == "FAIL"
-    assert any("ci object" in f for f in info["findings"])
-
-
 def test_device_canonicalize_rejects_emulator_gate(tmp_path: Path) -> None:
     src = tmp_path / "emu.json"
     src.write_text(
         json.dumps(
             {
+                "schema_version": 1,
                 "gate": "candidate_emulator_matrix",
                 "target_commit": TARGET,
                 "result": "PASS",
@@ -147,7 +112,7 @@ def test_device_canonicalize_rejects_emulator_gate(tmp_path: Path) -> None:
         "candidate_device_matrix", src, out, target_commit=TARGET
     )
     assert info["result"] == "FAIL"
-    assert any("source gate mismatch" in f for f in info["findings"])
+    assert any("gate" in f for f in info["findings"])
 
 
 def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
@@ -155,6 +120,7 @@ def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "schema_version": 1,
                 "gate": "candidate_device_matrix",
                 "target_commit": TARGET,
                 "result": "PASS",
@@ -176,6 +142,7 @@ def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "schema_version": 1,
                 "gate": "shadow_ingest",
                 "target_commit": TARGET,
                 "result": "PASS",
@@ -189,3 +156,65 @@ def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
     info = shadow.validate_and_canonicalize(src, out, target_commit=TARGET)
     assert info["result"] == "FAIL"
     assert any("must be a list" in f for f in info["findings"])
+
+
+def test_shadow_canonicalize_requires_exit_and_exports(tmp_path: Path) -> None:
+    src = tmp_path / "src.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "producer_contracts",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "exports_dirs": ["/srv/ar-local/canary/x/data/runs/2026-10-26/_exports"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = shadow.validate_and_canonicalize(
+        src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("gate" in finding for finding in info["findings"])
+    assert any("exit_code" in finding for finding in info["findings"])
+
+
+def test_stable_app_requires_ci_evidence(tmp_path: Path) -> None:
+    src = tmp_path / "app.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "stable_app_compatibility",
+                "target_commit": TARGET,
+                "result": "PASS",
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "stable_app_compatibility", src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("ci.command" in finding for finding in info["findings"])
+
+
+def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
+    src = tmp_path / "app.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "stable_app_compatibility",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "ci": {"command": "npm run ci", "suites": 5, "tests": 42},
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "stable_app_compatibility", src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "PASS"

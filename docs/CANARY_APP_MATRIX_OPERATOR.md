@@ -2,17 +2,14 @@
 
 Fail-closed. Do **not** mark `stable_app_compatibility`, `candidate_emulator_matrix`, or
 `candidate_device_matrix` PASS without a receipt whose `target_commit` equals the frozen
-candidate SHA and whose `result` is exactly `PASS`.
+candidate SHA and whose `result` is exactly `PASS`. Always canonicalize the source receipt
+with this module before binding it; never pass the raw receipt directly to the generic binder.
 
 Companion producers:
 
 - `pi_canary_shadow_ingest.py` — isolated shadow-ingest receipt / template
 - `pi_canary_app_matrix_receipts.py` — UNKNOWN templates + canonicalize lab/CI receipts
-- `pi_canary_gate_bind.py` (PR binders) — bind **canonicalized** receipts into gate evidence
-
-Always **canonicalize then bind**. Never pass a raw lab/CI receipt straight to
-`pi_canary_gate_bind.py`; the binder's generic path does not re-run these gate-specific
-checks.
+- `pi_canary_gate_bind.py` (PR binders) — bind validated receipts into gate evidence
 
 ## stable_app_compatibility
 
@@ -28,22 +25,24 @@ checks.
   "target_commit": "<40hex TARGET_SHA>",
   "result": "PASS",
   "completed_at": "<ISO-8601 Z>",
-  "ci": {"command": "npm run ci", "suites": 0, "tests": 0}
+  "ci": {"command": "npm run ci", "suites": 1, "tests": 1}
 }
 ```
 
-5. Canonicalize:
+5. Canonicalize, then bind the canonical output:
 
-```text
+```sh
 python pi_canary_app_matrix_receipts.py canonicalize \
   --gate stable_app_compatibility \
-  --source <raw-receipt.json> \
-  --output <canonical-receipt.json> \
-  --target-commit <40hex TARGET_SHA>
+  --source-receipt <raw-receipt.json> \
+  --output .work/canary-gates/<TARGET_SHA>/receipts/stable-app-compatibility.json \
+  --target-commit <TARGET_SHA>
+python pi_canary_gate_bind.py stable-app-compatibility \
+  --receipt .work/canary-gates/<TARGET_SHA>/receipts/stable-app-compatibility.json ...
 ```
 
-6. Bind only the canonicalize output with
-   `pi_canary_gate_bind.py stable-app-compatibility --receipt <canonical-receipt.json> …`.
+The canonicalizer requires the matching gate and `ci.command="npm run ci"` with positive
+integer `ci.suites` and `ci.tests` before it emits PASS.
 
 A prior product-evidence PASS on a **different** SHA is not transferable.
 
@@ -54,11 +53,19 @@ External lab / agreed emulator. Emulator PASS does **not** prove physical device
 1. Install the candidate build for `TARGET_SHA` on the agreed AVD.
 2. Clean install + upgrade; current and repaired historical acquisition.
 3. Preserve emulator userdata path + sha256.
-4. Receipt must include `gate=candidate_emulator_matrix` and non-empty `devices[]`
-   with per-AVD `result=PASS`.
-5. Canonicalize via `pi_canary_app_matrix_receipts.py canonicalize --gate candidate_emulator_matrix …`.
-6. Bind only the canonicalize output with
-   `pi_canary_gate_bind.py candidate-emulator-matrix --receipt …`.
+4. Receipt must include non-empty `devices[]` with per-AVD `avd`, `api`, `abi`, and
+   `result="PASS"` fields.
+5. Canonicalize, then bind the canonical output:
+
+```sh
+python pi_canary_app_matrix_receipts.py canonicalize \
+  --gate candidate_emulator_matrix \
+  --source-receipt <raw-receipt.json> \
+  --output .work/canary-gates/<TARGET_SHA>/receipts/candidate-emulator-matrix.json \
+  --target-commit <TARGET_SHA>
+python pi_canary_gate_bind.py candidate-emulator-matrix \
+  --receipt .work/canary-gates/<TARGET_SHA>/receipts/candidate-emulator-matrix.json ...
+```
 
 ## candidate_device_matrix
 
@@ -66,26 +73,34 @@ Physical devices only. Never infer from emulator.
 
 1. Install candidate build on each required device.
 2. Record model, OS, ABI, install/upgrade, acquisition checks, lab run id.
-3. Receipt must include `gate=candidate_device_matrix` and `devices[]` covering the agreed matrix.
-4. Canonicalize via `pi_canary_app_matrix_receipts.py canonicalize --gate candidate_device_matrix …`.
-5. Bind only the canonicalize output with
-   `pi_canary_gate_bind.py candidate-device-matrix --receipt …`.
+3. Receipt `devices[]` must cover the agreed matrix, with each device recording `model`,
+   `os`, `abi`, `install_upgrade`, `acquisition_checks`, and `result="PASS"`.
+4. Canonicalize, then bind the canonical output:
 
-## Shadow ingest
-
-1. Run isolated canary ingest under `/srv/ar-local/canary/<generation>/` (never production).
-2. Write raw receipt with `gate=shadow_ingest`, `exit_code=0`, and non-empty `exports_dirs` list.
-3. Canonicalize:
-
-```text
-python pi_canary_shadow_ingest.py canonicalize \
+```sh
+python pi_canary_app_matrix_receipts.py canonicalize \
+  --gate candidate_device_matrix \
   --source-receipt <raw-receipt.json> \
-  --output <canonical-receipt.json> \
-  --target-commit <40hex TARGET_SHA>
+  --output .work/canary-gates/<TARGET_SHA>/receipts/candidate-device-matrix.json \
+  --target-commit <TARGET_SHA>
+python pi_canary_gate_bind.py candidate-device-matrix \
+  --receipt .work/canary-gates/<TARGET_SHA>/receipts/candidate-device-matrix.json ...
 ```
 
-4. Bind only the canonicalize output with
-   `pi_canary_gate_bind.py shadow-ingest --receipt <canonical-receipt.json> …`.
+## shadow_ingest
+
+Canonicalize the isolated-canary receipt before using it as binder input. The
+canonicalizer requires `gate="shadow_ingest"`, `result="PASS"`, `exit_code=0`, and
+non-empty export path evidence:
+
+```sh
+python pi_canary_shadow_ingest.py canonicalize \
+  --source-receipt <raw-receipt.json> \
+  --output .work/canary-gates/<TARGET_SHA>/receipts/shadow-ingest.json \
+  --target-commit <TARGET_SHA>
+python pi_canary_gate_bind.py shadow-ingest \
+  --receipt .work/canary-gates/<TARGET_SHA>/receipts/shadow-ingest.json ...
+```
 
 ## Emit UNKNOWN templates (automation)
 
@@ -100,5 +115,4 @@ python pi_canary_app_matrix_receipts.py template \
 - Fabricating PASS
 - Reusing receipts across candidate SHAs
 - Inferring device PASS from emulator
-- Binding raw receipts without canonicalize
 - Claiming assemble-ready while any of these gates remain UNKNOWN

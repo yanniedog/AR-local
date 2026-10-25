@@ -119,10 +119,17 @@ def validate_and_canonicalize(
     *,
     target_commit: str,
 ) -> dict[str, Any]:
+    if not COMMIT_RE.fullmatch(target_commit):
+        raise ShadowIngestError("target_commit must be 40 lowercase hex")
     if not source_receipt.is_file() or source_receipt.is_symlink():
         raise ShadowIngestError(f"source receipt missing: {source_receipt}")
     raw = json.loads(source_receipt.read_text(encoding="utf-8"))
     findings: list[str] = []
+    if not isinstance(raw, dict):
+        raw = {}
+        findings.append("receipt must be a JSON object")
+    if raw.get("schema_version") != 1:
+        findings.append("schema_version must be 1")
     source_gate = raw.get("gate")
     if source_gate != "shadow_ingest":
         findings.append(f"source gate mismatch: {source_gate!r} != 'shadow_ingest'")
@@ -135,10 +142,8 @@ def validate_and_canonicalize(
     status = raw.get("result") or raw.get("status")
     if status != "PASS":
         findings.append(f"result is {status!r}, not PASS")
-    if raw.get("exit_code") not in (0, "0", None):
-        # None allowed only when status already PASS and exit implied
-        if raw.get("exit_code") not in (0, "0"):
-            findings.append(f"exit_code={raw.get('exit_code')!r}")
+    if type(raw.get("exit_code")) is not int or raw.get("exit_code") != 0:
+        findings.append(f"exit_code must be integer 0, got {raw.get('exit_code')!r}")
     exports_raw = raw.get("exports_dirs", raw.get("exports", []))
     if exports_raw is None:
         exports: list[object] = []
@@ -149,8 +154,11 @@ def validate_and_canonicalize(
             f"exports_dirs/exports must be a list, got {type(exports_raw).__name__}"
         )
         exports = []
-    if status == "PASS" and not exports:
-        findings.append("PASS requires non-empty exports_dirs/exports evidence")
+    if status == "PASS" and (
+        not exports
+        or any(not isinstance(path, str) or not path.strip() for path in exports)
+    ):
+        findings.append("PASS requires non-empty exports_dirs/exports path evidence")
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,
