@@ -67,9 +67,16 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
         raise AppMatrixError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    # Exclusive create + random name avoids following a planted symlink.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
     try:
-        tmp.write_bytes(raw)
+        fd = os.open(str(tmp), flags, 0o644)
+        try:
+            os.write(fd, raw)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
         os.replace(tmp, path)
     finally:
         try:
@@ -115,6 +122,9 @@ def canonicalize(
         raise AppMatrixError(f"unknown gate: {gate}")
     raw = json.loads(source.read_text(encoding="utf-8"))
     findings: list[str] = []
+    source_gate = raw.get("gate")
+    if source_gate is not None and source_gate != gate:
+        findings.append(f"source gate mismatch: {source_gate!r} != {gate!r}")
     if raw.get("target_commit") != target_commit:
         findings.append(
             f"target_commit mismatch: {raw.get('target_commit')!r} != {target_commit!r}"
@@ -126,6 +136,16 @@ def canonicalize(
         devices = raw.get("devices")
         if not isinstance(devices, list) or not devices:
             findings.append("matrix PASS requires non-empty devices[]")
+        else:
+            for index, device in enumerate(devices):
+                if not isinstance(device, dict):
+                    findings.append(f"devices[{index}] must be an object")
+                    continue
+                device_result = device.get("result") or device.get("status")
+                if device_result != "PASS":
+                    findings.append(
+                        f"devices[{index}] result is {device_result!r}, not PASS"
+                    )
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,

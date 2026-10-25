@@ -43,9 +43,15 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
         raise ShadowIngestError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
     try:
-        tmp.write_bytes(raw)
+        fd = os.open(str(tmp), flags, 0o644)
+        try:
+            os.write(fd, raw)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
         os.replace(tmp, path)
     finally:
         try:
@@ -122,7 +128,16 @@ def validate_and_canonicalize(
         # None allowed only when status already PASS and exit implied
         if raw.get("exit_code") not in (0, "0"):
             findings.append(f"exit_code={raw.get('exit_code')!r}")
-    exports = raw.get("exports_dirs") or raw.get("exports") or []
+    exports_raw = raw.get("exports_dirs", raw.get("exports", []))
+    if exports_raw is None:
+        exports: list[object] = []
+    elif isinstance(exports_raw, list):
+        exports = exports_raw
+    else:
+        findings.append(
+            f"exports_dirs/exports must be a list, got {type(exports_raw).__name__}"
+        )
+        exports = []
     if status == "PASS" and not exports:
         findings.append("PASS requires non-empty exports_dirs/exports evidence")
     result = "PASS" if not findings else "FAIL"
@@ -135,7 +150,7 @@ def validate_and_canonicalize(
         "source_receipt": str(source_receipt),
         "source_sha256": sha256_file(source_receipt),
         "findings": findings,
-        "exports_dirs": exports if isinstance(exports, list) else [],
+        "exports_dirs": exports,
         "candidate_generation": raw.get("candidate_generation"),
         "canary_root": raw.get("canary_root"),
         "exit_code": raw.get("exit_code"),
