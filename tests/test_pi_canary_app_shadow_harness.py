@@ -79,3 +79,64 @@ def test_emulator_canonicalize_requires_devices(tmp_path: Path) -> None:
         "candidate_emulator_matrix", src, out, target_commit=TARGET
     )
     assert info["result"] == "FAIL"
+
+
+def test_device_canonicalize_rejects_emulator_gate(tmp_path: Path) -> None:
+    src = tmp_path / "emu.json"
+    src.write_text(
+        json.dumps(
+            {
+                "gate": "candidate_emulator_matrix",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "devices": [{"avd": "x", "result": "PASS"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    info = app_matrix.canonicalize(
+        "candidate_device_matrix", src, out, target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("source gate mismatch" in f for f in info["findings"])
+
+
+def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
+    src = tmp_path / "dev.json"
+    src.write_text(
+        json.dumps(
+            {
+                "gate": "candidate_device_matrix",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "devices": [{"id": "a", "result": "FAIL"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    info = app_matrix.canonicalize(
+        "candidate_device_matrix", src, out, target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("devices[0]" in f for f in info["findings"])
+
+
+def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
+    src = tmp_path / "src.json"
+    src.write_text(
+        json.dumps(
+            {
+                "target_commit": TARGET,
+                "result": "PASS",
+                "exit_code": 0,
+                "exports_dirs": "not-an-array",
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    info = shadow.validate_and_canonicalize(src, out, target_commit=TARGET)
+    assert info["result"] == "FAIL"
+    assert any("must be a list" in f for f in info["findings"])

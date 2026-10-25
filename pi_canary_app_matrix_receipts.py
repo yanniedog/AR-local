@@ -30,26 +30,41 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "Checkout exact TARGET_SHA (or mobile tree pinned to that commit).",
         "cd mobile && npm ci && npm run ci (Jest + script tests + doctor + typecheck + lint).",
         "Record package versions, APK/IPA digests if built, and CI log path.",
-        "Write receipt JSON with target_commit=TARGET_SHA, result=PASS, suite counts.",
+        "Write receipt JSON with gate=stable_app_compatibility, target_commit=TARGET_SHA, "
+        "result=PASS, and ci={command,suites,tests}.",
         "Do not reuse PASS from a different candidate SHA (e.g. prior product-evidence head).",
-        "Bind: python pi_canary_gate_bind.py stable-app-compatibility --receipt <path> ...",
+        "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
+        "--gate stable_app_compatibility --source <raw> --output <canonical> "
+        "--target-commit TARGET_SHA",
+        "Bind only the canonicalize output: python pi_canary_gate_bind.py "
+        "stable-app-compatibility --receipt <canonical> ...",
     ],
     "candidate_emulator_matrix": [
         "Use released/candidate APK for TARGET_SHA only (docs/PRODUCT_EVIDENCE_ACCEPTANCE.md P-007).",
         "Agreed Android emulator: clean install + upgrade path.",
         "Exercise current + repaired historical acquisition; capture screenshots/logs.",
         "Preserve emulator userdata snapshot path + sha256 in receipt.",
-        "Write receipt with target_commit, devices=[{avd,api,abi,result}], result=PASS|FAIL.",
+        "Write receipt with gate=candidate_emulator_matrix, target_commit, "
+        "devices=[{avd,api,abi,result}], result=PASS|FAIL.",
         "Emulator PASS does not imply physical-device or native-v2 acceptance.",
-        "Bind: python pi_canary_gate_bind.py candidate-emulator-matrix --receipt <path> ...",
+        "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
+        "--gate candidate_emulator_matrix --source <raw> --output <canonical> "
+        "--target-commit TARGET_SHA",
+        "Bind only the canonicalize output: python pi_canary_gate_bind.py "
+        "candidate-emulator-matrix --receipt <canonical> ...",
     ],
     "candidate_device_matrix": [
         "Physical devices only; do not infer from emulator PASS.",
         "Install candidate build bound to TARGET_SHA on each required device.",
         "Record model, OS version, ABI, install/upgrade result, acquisition checks.",
         "Attach lab run id / evidence archive sha256.",
-        "Write receipt with target_commit, devices=[...], result=PASS only if matrix complete.",
-        "Bind: python pi_canary_gate_bind.py candidate-device-matrix --receipt <path> ...",
+        "Write receipt with gate=candidate_device_matrix, target_commit, devices=[...], "
+        "result=PASS only if matrix complete.",
+        "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
+        "--gate candidate_device_matrix --source <raw> --output <canonical> "
+        "--target-commit TARGET_SHA",
+        "Bind only the canonicalize output: python pi_canary_gate_bind.py "
+        "candidate-device-matrix --receipt <canonical> ...",
     ],
 }
 
@@ -67,9 +82,11 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
         raise AppMatrixError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
-    # Exclusive create + random name avoids following a planted symlink.
+    # Exclusive create + random name + O_NOFOLLOW when available; never follow planted symlinks.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(8).hex()}.tmp")
     try:
         fd = os.open(str(tmp), flags, 0o644)
         try:
@@ -77,6 +94,8 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
             os.fsync(fd)
         finally:
             os.close(fd)
+        if tmp.is_symlink() or not tmp.is_file():
+            raise AppMatrixError(f"refusing non-regular temp path: {tmp}")
         os.replace(tmp, path)
     finally:
         try:
