@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -33,6 +35,20 @@ import pi_canary_acceptance as canary
 
 GATE_EVIDENCE_SCHEMA_VERSION = 1
 ALLOWED_RESULTS = frozenset({"PASS", "FAIL", "UNKNOWN"})
+MAX_NOTES_CHARS = 2048
+ALLOWED_EVIDENCE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "gate",
+        "result",
+        "target_commit",
+        "completed_at",
+        "evidence",
+        "notes",
+        "candidate_generation",
+        "preservation_snapshot_sha256",
+    }
+)
 
 
 class CanaryAssembleError(ValueError):
@@ -66,11 +82,56 @@ def _require_iso_timestamp(value: object, *, field: str, path: Path) -> str:
     return text
 
 
+def _validate_notes(payload: Mapping[str, Any], *, path: Path) -> Optional[str]:
+    if "notes" not in payload:
+        return None
+    notes = payload.get("notes")
+    if not isinstance(notes, str):
+        return f"{path}: notes must be a string"
+    if len(notes) > MAX_NOTES_CHARS:
+        return f"{path}: notes must be at most {MAX_NOTES_CHARS} characters"
+    return None
+
+
+def _verify_evidence_bytes(path: Path, evidence: Sequence[Mapping[str, Any]]) -> Optional[str]:
+    """Resolve each relative evidence path under the gate file's directory and hash it."""
+
+    base = path.parent.resolve()
+    for index, item in enumerate(evidence):
+        raw_path = str(item["path"]).strip()
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return f"{path}: evidence[{index}].path must be relative to the gate file directory"
+        resolved = (base / candidate).resolve()
+        try:
+            resolved.relative_to(base)
+        except ValueError:
+            return (
+                f"{path}: evidence[{index}].path escapes gate evidence directory "
+                f"({raw_path})"
+            )
+        if resolved.is_symlink() or not resolved.is_file():
+            return (
+                f"{path}: evidence[{index}] referenced path missing or not a regular "
+                f"file: {raw_path}"
+            )
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        expected = str(item["sha256"])
+        if digest != expected:
+            return (
+                f"{path}: evidence[{index}] sha256 mismatch for {raw_path} "
+                f"(got {digest}, expected {expected})"
+            )
+    return None
+
+
 def evaluate_gate_evidence(
     path: Path,
     *,
     expected_gate: str,
     expected_commit: str,
+    expected_candidate_generation: Optional[str] = None,
+    expected_preservation_snapshot_sha256: Optional[str] = None,
 ) -> tuple[bool, str]:
     """Return (passed, reason). Never treats missing/UNKNOWN as PASS."""
 
@@ -100,6 +161,10 @@ def evaluate_gate_evidence(
     except CanaryAssembleError as exc:
         return False, str(exc)
 
+    notes_error = _validate_notes(payload, path=path)
+    if notes_error:
+        return False, notes_error
+
     evidence = payload.get("evidence")
     if not isinstance(evidence, list) or not evidence:
         return False, f"{path}: evidence must be a non-empty array"
@@ -116,9 +181,7 @@ def evaluate_gate_evidence(
         if unexpected:
             return False, f"{path}: evidence[{index}] unexpected fields: {', '.join(unexpected)}"
 
-    unexpected_fields = sorted(
-        set(payload) - {"schema_version", "gate", "result", "target_commit", "completed_at", "evidence", "notes"}
-    )
+    unexpected_fields = sorted(set(payload) - ALLOWED_EVIDENCE_FIELDS)
     if unexpected_fields:
         return False, f"{path}: unexpected fields: {', '.join(unexpected_fields)}"
 
@@ -126,6 +189,29 @@ def evaluate_gate_evidence(
         return False, f"{path}: result is UNKNOWN (external evidence not supplied)"
     if result != "PASS":
         return False, f"{path}: result is {result} (not PASS)"
+
+    # PASS-only: bind generation/snapshot and verify referenced receipt bytes.
+    if expected_candidate_generation is not None:
+        generation = payload.get("candidate_generation")
+        if generation != expected_candidate_generation:
+            return (
+                False,
+                f"{path}: candidate_generation mismatch "
+                f"({generation!r} != {expected_candidate_generation!r})",
+            )
+    if expected_preservation_snapshot_sha256 is not None:
+        snapshot = payload.get("preservation_snapshot_sha256")
+        if snapshot != expected_preservation_snapshot_sha256:
+            return (
+                False,
+                f"{path}: preservation_snapshot_sha256 mismatch "
+                f"({snapshot!r} != {expected_preservation_snapshot_sha256!r})",
+            )
+
+    bytes_error = _verify_evidence_bytes(path, evidence)
+    if bytes_error:
+        return False, bytes_error
+
     return True, f"{path}: PASS"
 
 
@@ -157,6 +243,8 @@ def collect_gate_results(
     gate_paths: Mapping[str, Path],
     *,
     expected_commit: str,
+    expected_candidate_generation: str,
+    expected_preservation_snapshot_sha256: str,
 ) -> tuple[dict[str, bool], list[str]]:
     """Evaluate all eight gates. Missing files are failures, never true."""
 
@@ -172,6 +260,8 @@ def collect_gate_results(
             path,
             expected_gate=gate,
             expected_commit=expected_commit,
+            expected_candidate_generation=expected_candidate_generation,
+            expected_preservation_snapshot_sha256=expected_preservation_snapshot_sha256,
         )
         gates[gate] = passed
         if not passed:
@@ -229,6 +319,12 @@ def encode_manifest(payload: Mapping[str, Any]) -> bytes:
     )
 
 
+def _path_lexists(path: Path) -> bool:
+    """True if path exists or is a (possibly broken) symlink."""
+
+    return path.exists() or path.is_symlink()
+
+
 def write_manifest_if_authorized(
     output: Path,
     payload: Mapping[str, Any],
@@ -241,21 +337,45 @@ def write_manifest_if_authorized(
             f"manifest size must be 1..{canary.MAX_MANIFEST_BYTES} bytes"
         )
     digest = hashlib.sha256(raw).hexdigest()
-    if output.exists():
+    if _path_lexists(output):
         raise CanaryAssembleError(f"refusing to overwrite existing file: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    tmp = output.with_name(output.name + ".tmp")
-    if tmp.exists():
+    tmp = output.with_name(f"{output.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    if _path_lexists(tmp):
         raise CanaryAssembleError(f"refusing to overwrite existing temp file: {tmp}")
-    tmp.write_bytes(raw)
-    # Verify with the same consumer rules before promoting.
-    canary.verify_canary_acceptance(
-        tmp,
-        expected_sha256=digest,
-        expected_commit=str(payload["target_commit"]),
-        expected_repository=str(payload["repository"]),
-    )
-    tmp.replace(output)
+    try:
+        tmp.write_bytes(raw)
+        # Verify with the same consumer rules before promoting.
+        canary.verify_canary_acceptance(
+            tmp,
+            expected_sha256=digest,
+            expected_commit=str(payload["target_commit"]),
+            expected_repository=str(payload["repository"]),
+        )
+        # Atomic no-replace publish: exclusive create fails if another writer won.
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        try:
+            fd = os.open(str(output), flags)
+        except FileExistsError as exc:
+            raise CanaryAssembleError(
+                f"refusing to overwrite existing file: {output}"
+            ) from exc
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(raw)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            try:
+                output.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
     return digest
 
 
@@ -269,7 +389,12 @@ def assemble_canary_acceptance(
     output: Path,
     gate_paths: Mapping[str, Path],
 ) -> tuple[dict[str, Any], str]:
-    gates, problems = collect_gate_results(gate_paths, expected_commit=target_commit)
+    gates, problems = collect_gate_results(
+        gate_paths,
+        expected_commit=target_commit,
+        expected_candidate_generation=candidate_generation,
+        expected_preservation_snapshot_sha256=preservation_snapshot_sha256,
+    )
     if problems:
         raise CanaryAssembleError(
             "cannot assemble canary-acceptance.json; unresolved gates:\n- "
