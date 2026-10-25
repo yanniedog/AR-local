@@ -20,6 +20,21 @@ SCHEMA = "ar-local-daily-cdr-raw-record-v1"
 GENERATION_RE = re.compile(r"^obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}$")
 
 
+def load_day_archive_env(path: Path | None = None) -> None:
+    """Apply the archive env file so ingest uses the dedicated remote and config."""
+    env_path = path or Path("/etc/ar-local/day-archive.env")
+    if not env_path.is_file() or env_path.is_symlink():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("AR_LOCAL_") or key == "RCLONE_CONFIG":
+            os.environ[key] = value.strip().strip("\"'")
+
+
 def require_generation(value: str | None) -> str | None:
     if value is None:
         return None

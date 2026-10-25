@@ -115,7 +115,11 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
             return {"terms_evidence": terms, "ram_cleanup": {"status": "SKIPPED"}}
         return {"ram_cleanup": {"status": "SKIPPED"}}
     if ownership.get("clean_ram_stage") is False:
-        return {"ram_cleanup": {"status": "KEPT"}}
+        terms = None
+        if os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
+            from cdr_daily import retry_terms_capture
+            terms = retry_terms_capture(marker, args, state_dir, runs_root, date)
+        return {"terms_evidence": terms, "ram_cleanup": {"status": "KEPT"}}
     args = argparse.Namespace(**vars(args))
     args.clean_ram_stage = True
     args.ram_root = Path(str(ownership.get("ram_root")))
@@ -186,13 +190,16 @@ def accept_finalized_retry(args: argparse.Namespace, state_dir: Path, runs_root:
     return None, terms if isinstance(terms, dict) else None
 
 
-def _stage_matches_uploaded(progress: Path, day: str, generation: str, ownership: dict) -> bool:
+def _stage_matches_uploaded(progress: Path, day: str, generation: str, ownership: dict,
+                           state_dir: Path) -> bool:
     from pi_daily_cdr_day_archive_ingest import generation_progress, root_has_files
     from pi_daily_cdr_day_archive_scope import stage_source_fingerprint
     prior = generation_progress(progress).get(f"{day}#{generation}")
     if not prior or prior.get("result") != "PASS":
         return False
     roots = [Path(item) for item in (ownership.get("stage_roots") or []) if isinstance(item, str)]
+    if seal_receipt_path(state_dir, generation).is_file():
+        return True
     if not any(root_has_files(path) for path in roots):
         return True
     return stage_source_fingerprint(roots) == prior.get("source_fingerprint")
@@ -216,19 +223,19 @@ def finish_verified_stage_cleanups(args: argparse.Namespace, state_dir: Path, ru
         marker = marker_for_generation(state_dir, day, generation)
         if marker is None:
             continue
-        if not _stage_matches_uploaded(progress, day, generation, ownership):
+        if not _stage_matches_uploaded(progress, day, generation, ownership, state_dir):
             continue
         resumed = resume_owned_ram_cleanup(args, state_dir, runs_root, day, marker)
         cleanup = (resumed or {}).get("ram_cleanup") or {}
-        if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "SKIPPED", "KEPT"}:
+        if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "KEPT"}:
             path.unlink(missing_ok=True)
         elif isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
             print(f"raw cleanup still preserved ({day}): {cleanup.get('reason', '')}", file=sys.stderr)
 
 
-def maybe_resume_job(result: dict, job: dict) -> None:
+def maybe_resume_job(result: dict, job: dict, *, dry_run: bool = False) -> None:
     import sys
-    if result.get("result") != "PASS" or not job.get("state_dir") or not job.get("runs_root"):
+    if dry_run or result.get("result") != "PASS" or not job.get("state_dir") or not job.get("runs_root"):
         return
     try:
         resume_job_cleanup(job)
@@ -247,7 +254,7 @@ def resume_job_cleanup(job: dict) -> None:
     from pi_daily_cdr_day_archive import DEFAULT_SPOOL, progress_path
     progress = progress_path(Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL)))
     ownership = read_json(ownership_path(state_dir, day, generation))
-    if not _stage_matches_uploaded(progress, day, generation, ownership):
+    if not _stage_matches_uploaded(progress, day, generation, ownership, state_dir):
         return
     ram_root = Path(str(ownership.get("ram_root") or job.get("data_root")))
     clean = job.get("clean_ram_stage", ownership.get("clean_ram_stage", True))
@@ -256,5 +263,5 @@ def resume_job_cleanup(job: dict) -> None:
     cleanup = (finish_one or {}).get("ram_cleanup") or {}
     if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
         raise RuntimeError(cleanup.get("reason") or "cleanup preserved")
-    if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "SKIPPED", "KEPT"}:
+    if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "KEPT"}:
         ownership_path(state_dir, day, generation).unlink(missing_ok=True)

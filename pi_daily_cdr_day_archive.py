@@ -29,7 +29,7 @@ from pi_daily_cdr_day_archive_ingest import (
     cached_generation_upload,
     clear_archive_requests,
     enqueue_ingest_continuation,
-    generation_has_pass,
+    generation_has_pass, load_day_archive_env,
     pending_archive_jobs,
     bind_generation_remote,
     require_generation,
@@ -517,12 +517,12 @@ def _process_day_locked(
         except StageMissing as error:
             raise DayArchiveError(str(error)) from error
         if cached is not None:
-            clear_archive_requests(spool, day, generation_id)
+            not dry_run and clear_archive_requests(spool, day, generation_id)
             return cached
     else:
         prior = load_progress(spool).get(day)
         if prior and prior.get("result") == "PASS":
-            clear_archive_requests(spool, day, None)
+            not dry_run and clear_archive_requests(spool, day, None)
             return prior
     # Timer and backfill wait until Hobart midnight. The ingest path sets
     # allow_same_day so it can upload before it deletes the raw tree.
@@ -726,6 +726,7 @@ def archive_observation_day(
 ) -> dict:
     """Synchronous raw-record upload before ingest deletes that day's files."""
     day = require_day(day)
+    load_day_archive_env()
     root = Path(data_root or os.environ.get("AR_LOCAL_DATA_ROOT", DEFAULT_DATA_ROOT))
     spool_path = Path(spool or os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
     spool_path.mkdir(parents=True, exist_ok=True)
@@ -982,7 +983,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_roots=job.get("stage_roots"),
         )
         results.append(result)
-        maybe_resume_job(result, job)
+        maybe_resume_job(result, job, dry_run=args.dry_run)
         if result.get("result") == "FAIL":
             print(json.dumps({"results": results}, indent=2, sort_keys=True))
             return 1
