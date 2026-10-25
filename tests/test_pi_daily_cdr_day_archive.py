@@ -233,9 +233,9 @@ def test_resolve_archive_remote_preserves_absolute_local_path():
     assert stripped.startswith("canary_local:srv/")
 
 
-@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
-def test_day_archive_rclone_accepts_local_canary(tmp_path: Path, monkeypatch):
-    canary = tmp_path / "prep-local"
+def _seed_local_canary_tree(tmp_path: Path, monkeypatch, *, name: str = "prep-local"):
+    parent = tmp_path / "canary-parent"
+    canary = parent / name
     config_dir = canary / "config"
     remote_dir = canary / "data" / "day-archive-remote"
     config_dir.mkdir(parents=True)
@@ -255,7 +255,14 @@ def test_day_archive_rclone_accepts_local_canary(tmp_path: Path, monkeypatch):
     )
     rclone_conf.write_text("[canary_local]\ntype = local\nnounc = true\n", encoding="utf-8")
     rclone_conf.chmod(0o600)
+    monkeypatch.setenv("AR_LOCAL_CANARY_FS_PARENT", str(parent))
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(env_path))
+    return canary, remote_dir, rclone_conf, env_path
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
+def test_day_archive_rclone_accepts_local_canary(tmp_path: Path, monkeypatch):
+    _canary, remote_dir, rclone_conf, _env = _seed_local_canary_tree(tmp_path, monkeypatch)
     client = transport.DayArchiveRclone(
         rclone_conf, f"canary_local:{remote_dir}", ""
     )
@@ -266,14 +273,7 @@ def test_day_archive_rclone_accepts_local_canary(tmp_path: Path, monkeypatch):
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
 def test_day_archive_rclone_rejects_local_without_canary_env(tmp_path: Path, monkeypatch):
-    canary = tmp_path / "prep-local"
-    config_dir = canary / "config"
-    remote_dir = canary / "data" / "day-archive-remote"
-    config_dir.mkdir(parents=True)
-    remote_dir.mkdir(parents=True)
-    rclone_conf = config_dir / "rclone.conf"
-    rclone_conf.write_text("[canary_local]\ntype = local\nnounc = true\n", encoding="utf-8")
-    rclone_conf.chmod(0o600)
+    _canary, remote_dir, rclone_conf, _env = _seed_local_canary_tree(tmp_path, monkeypatch)
     monkeypatch.delenv("AR_LOCAL_DAY_ARCHIVE_ENV", raising=False)
     with pytest.raises(ValueError, match="AR_LOCAL_DAY_ARCHIVE_ENV"):
         transport.DayArchiveRclone(rclone_conf, f"canary_local:{remote_dir}", "")
@@ -281,24 +281,40 @@ def test_day_archive_rclone_rejects_local_without_canary_env(tmp_path: Path, mon
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
 def test_day_archive_rclone_rejects_local_outside_canary(tmp_path: Path, monkeypatch):
-    canary = tmp_path / "prep-local"
+    canary, _remote_dir, rclone_conf, _env = _seed_local_canary_tree(tmp_path, monkeypatch)
     other = tmp_path / "outside"
-    config_dir = canary / "config"
-    config_dir.mkdir(parents=True)
     other.mkdir(parents=True)
-    env_path = config_dir / "day-archive.env"
-    rclone_conf = config_dir / "rclone.conf"
-    env_path.write_text(
-        f'AR_LOCAL_DAY_ARCHIVE_SPOOL="{canary / "data" / "archive-spool"}"\n'
-        f'AR_LOCAL_DAY_ARCHIVE_REMOTE="canary_local:{other}"\n'
-        f'RCLONE_CONFIG="{rclone_conf}"\n',
-        encoding="utf-8",
-    )
-    rclone_conf.write_text("[canary_local]\ntype = local\nnounc = true\n", encoding="utf-8")
-    rclone_conf.chmod(0o600)
-    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(env_path))
     with pytest.raises(ValueError, match="under canary root"):
         transport.DayArchiveRclone(rclone_conf, f"canary_local:{other}", "")
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
+def test_day_archive_rclone_rejects_drive_under_canary_env(tmp_path: Path, monkeypatch):
+    canary, remote_dir, rclone_conf, _env = _seed_local_canary_tree(tmp_path, monkeypatch)
+    rclone_conf.write_text(
+        "[canary_drive]\ntype = drive\nscope = drive.file\n"
+        'token = {"refresh_token":"x"}\n',
+        encoding="utf-8",
+    )
+    rclone_conf.chmod(0o600)
+    with pytest.raises(ValueError, match="type=local"):
+        transport.DayArchiveRclone(rclone_conf, f"canary_drive:{remote_dir}", "")
+
+
+def test_require_day_archive_writes_allowed_skips_drive_hold_for_local():
+    # local_backend skips hold entirely — must not raise even without fixtures.
+    archive.require_day_archive_writes_allowed(Path("/tmp/unused"), local_backend=True)
+
+
+def test_canary_root_rejects_non_generation_parent(tmp_path: Path, monkeypatch):
+    # /config/day-archive.env would derive canary_root=/ which must fail.
+    rogue = tmp_path / "config" / "day-archive.env"
+    rogue.parent.mkdir(parents=True)
+    rogue.write_text("AR_LOCAL_DAY_ARCHIVE_SPOOL=/x\n", encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(rogue))
+    monkeypatch.setenv("AR_LOCAL_CANARY_FS_PARENT", str(tmp_path / "canary-parent"))
+    with pytest.raises(ValueError, match="direct child"):
+        transport._canary_root_from_env()
 
 
 def test_build_compressed_day_archive_roundtrip_sha(tmp_path: Path):

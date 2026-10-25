@@ -96,8 +96,16 @@ def _atomic_json(path: Path, payload: dict) -> None:
         raise
 
 
-def require_day_archive_writes_allowed(spool: Path) -> None:
-    """Honor the global Drive write hold for direct CLI and service invocations."""
+def require_day_archive_writes_allowed(
+    spool: Path, *, local_backend: bool = False
+) -> None:
+    """Honor the global Drive write hold for direct CLI and service invocations.
+
+    Isolated canary ``type=local`` archives never touch Drive, so the Drive write
+    hold (D-028) must not block them when ``local_backend`` is true.
+    """
+    if local_backend:
+        return
     try:
         require_writes_allowed(Path(spool))
         backup_spool = Path(
@@ -648,7 +656,9 @@ def _process_day_locked(
         if transport is None:
             raise DayArchiveError("transport required unless --dry-run")
         quiet_window_guard()
-        require_day_archive_writes_allowed(spool)
+        require_day_archive_writes_allowed(
+            spool, local_backend=bool(getattr(transport, "local_backend", False))
+        )
         transport.ensure_folder()
         if transport.remote_exists(built["remote_name"]):
             # Idempotent: verify existing remote against local archive bytes,
@@ -840,7 +850,9 @@ def _process_control_locked(
         if work.exists():
             shutil.rmtree(work)
         return {"result": "DRY_RUN", **{k: built[k] for k in ("sha256", "bytes", "remote_name")}}
-    require_day_archive_writes_allowed(spool)
+    require_day_archive_writes_allowed(
+        spool, local_backend=bool(getattr(transport, "local_backend", False))
+    )
     transport.ensure_folder()
     if transport.remote_exists(built["remote_name"]):
         verify_uploaded_archive(

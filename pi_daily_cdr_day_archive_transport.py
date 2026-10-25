@@ -16,6 +16,8 @@ FOLDER_NAME = "daily-cdr-raw-records"
 LEGACY_FOLDER_NAME = "daily-cdr-day-archives"
 PRODUCTION_DATA_ROOT = "/srv/ar-local/data"
 PRODUCTION_DAY_ARCHIVE_SPOOL = "/var/lib/ar-local-day-archives"
+DEFAULT_CANARY_FS_PARENT = "/srv/ar-local/canary"
+CANARY_GENERATION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _GEN = r"obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}"
 OBJECT_RE = re.compile(
@@ -56,8 +58,18 @@ def resolve_archive_remote(remote: str, *, preserve_absolute: bool = False) -> s
     return f"{remote_name}:{joined}"
 
 
+def _canary_fs_parent() -> Path:
+    """Canonical canary parent; tests may override via ``AR_LOCAL_CANARY_FS_PARENT``."""
+    raw = os.environ.get("AR_LOCAL_CANARY_FS_PARENT", DEFAULT_CANARY_FS_PARENT).strip()
+    return Path(raw).expanduser().resolve(strict=False)
+
+
 def _canary_root_from_env() -> Path:
-    """Derive ``<canary>`` from ``AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env``."""
+    """Derive ``<canary>`` from ``AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env``.
+
+    The canary root must be a generation directory directly under the canonical
+    canary parent (default ``/srv/ar-local/canary/<generation>``).
+    """
     override = os.environ.get("AR_LOCAL_DAY_ARCHIVE_ENV", "").strip()
     if not override:
         raise ValueError(
@@ -68,7 +80,17 @@ def _canary_root_from_env() -> Path:
         raise ValueError(
             "canary day-archive env must be <canary>/config/day-archive.env"
         )
-    return env_path.parent.parent
+    canary_root = env_path.parent.parent
+    parent = _canary_fs_parent()
+    if canary_root.parent != parent:
+        raise ValueError(
+            f"canary root must be a direct child of {parent}, got {canary_root}"
+        )
+    if not CANARY_GENERATION_RE.fullmatch(canary_root.name):
+        raise ValueError(
+            f"canary generation directory name invalid: {canary_root.name!r}"
+        )
+    return canary_root
 
 
 def _is_same_or_beneath(candidate: Path, root: Path) -> bool:
@@ -182,9 +204,14 @@ class DayArchiveRclone:
             raise ValueError(f"rclone remote section missing: {self.remote_name}")
         section = parser[self.remote_name]
         backend = section.get("type", "").strip()
+        canary_override = bool(os.environ.get("AR_LOCAL_DAY_ARCHIVE_ENV", "").strip())
         if backend == "local":
             self._init_local_canary(remote, section)
             return
+        if canary_override:
+            raise ValueError(
+                "canary day-archive env requires type=local rclone remote (D-028)"
+            )
         self.remote = resolve_archive_remote(remote)
         match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", self.remote)
         if not match:
