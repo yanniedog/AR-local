@@ -706,7 +706,7 @@ def rollback_to_protected_commit(
     *,
     dry_run: bool = False,
 ) -> int:
-    """Restore the exact pre-deploy SHA when post-activation acceptance fails."""
+    """Restore the exact pre-deploy SHA when post-activation verification fails."""
 
     if not FULL_COMMIT_RE.fullmatch(protected_commit) or not FULL_COMMIT_RE.fullmatch(failed_candidate):
         return EXIT_CONFIG
@@ -825,6 +825,26 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _rollback_after_activation_failure(
+    protected_commit: str,
+    failed_candidate: str,
+    parent_command: str,
+    *,
+    failure_label: str,
+) -> int:
+    """Roll back a failed activation; print CRITICAL if rollback itself fails."""
+
+    rollback = rollback_to_protected_commit(
+        protected_commit, failed_candidate, parent_command, dry_run=False
+    )
+    if rollback != EXIT_OK:
+        print(
+            f"pi_deploy_verify: CRITICAL {failure_label} and rollback was not verified",
+            file=sys.stderr,
+        )
+    return rollback
+
+
 def cmd_deploy(args: argparse.Namespace) -> int:
     expected_commit = str(args.expected_commit or "").strip().lower()
     if not FULL_COMMIT_RE.fullmatch(expected_commit):
@@ -891,6 +911,17 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         return sync_rc
     smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
+        print(
+            "pi_deploy_verify: post-deploy HTTP smoke failed; "
+            f"rolling back to protected commit {snap['AR_HEAD']}",
+            file=sys.stderr,
+        )
+        _rollback_after_activation_failure(
+            snap["AR_HEAD"],
+            expected_commit,
+            args.effective_command,
+            failure_label="smoke failed",
+        )
         return smoke
     acceptance = record_deployment_acceptance(
         expected_commit,
@@ -899,14 +930,12 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         dry_run=False,
     )
     if acceptance != EXIT_OK:
-        rollback = rollback_to_protected_commit(
-            snap["AR_HEAD"], expected_commit, args.effective_command, dry_run=False
+        _rollback_after_activation_failure(
+            snap["AR_HEAD"],
+            expected_commit,
+            args.effective_command,
+            failure_label="acceptance failed",
         )
-        if rollback != EXIT_OK:
-            print(
-                "pi_deploy_verify: CRITICAL acceptance failed and rollback was not verified",
-                file=sys.stderr,
-            )
         return acceptance
     print("pi_deploy_verify: deploy OK")
     return EXIT_OK
