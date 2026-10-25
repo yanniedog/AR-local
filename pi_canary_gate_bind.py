@@ -521,6 +521,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 historical_summary=args.historical_summary,
                 expected_historical_index=args.expected_historical_index,
                 restore_receipt=args.restore_receipt,
+                restore_manifest=args.restore_manifest,
                 protected_code_sha=protected,
                 public_manifest=args.public_manifest,
                 public_assets=args.public_asset,

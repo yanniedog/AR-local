@@ -347,6 +347,51 @@ def test_harness_fail_closed_without_external_receipts(tmp_path: Path) -> None:
     assert not (tmp_path / "canary-acceptance.json").exists()
 
 
+def test_preservation_restore_rejects_mismatched_file_set_digests(
+    tmp_path: Path,
+) -> None:
+    """Contradictory restored_files digests must not authorize preservation."""
+    receipt = {
+        "result": "PASS",
+        "restore_acceptance_version": 1,
+        "candidate_code_sha": COMMIT,
+        "manifest_sha256": SNAPSHOT,
+        "checks": {
+            "ok": True,
+            "restored_files": {
+                "ok": True,
+                "source_file_set_sha256": "a" * 64,
+                "restored_file_set_sha256": "b" * 64,
+                "file_count": 1,
+                "total_bytes": 1,
+            },
+            "selected_observation": {},
+            "macro": {},
+        },
+    }
+    receipt_path = tmp_path / "restore.json"
+    receipt_path.write_text(json.dumps(receipt) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_preservation_restore(
+        gate_dir,
+        target_commit=COMMIT,
+        restore_receipt=receipt_path,
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        protected_code_sha=COMMIT,
+        restore_manifest=None,
+    )
+    assert payload["result"] == "FAIL"
+    body = json.loads(
+        (gate_dir / "receipts" / "preservation_restore-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("source_file_set_sha256 != restored_file_set_sha256" in f for f in body["findings"])
+    assert any("--restore-manifest" in f for f in body["findings"])
+
+
 def test_sha256_helpers_stable() -> None:
     raw = b"abc"
     assert emit.sha256_bytes(raw) == hashlib.sha256(raw).hexdigest()

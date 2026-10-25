@@ -375,6 +375,7 @@ def bind_preservation_restore(
     candidate_generation: Optional[str],
     preservation_snapshot_sha256: Optional[str],
     protected_code_sha: Optional[str] = None,
+    restore_manifest: Optional[Path] = None,
     ro_inventory: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """PASS only with a restore-acceptance receipt whose result is PASS.
@@ -382,6 +383,8 @@ def bind_preservation_restore(
     ``candidate_code_sha`` on the receipt is the restored/protected baseline
     (see ``validate_restore_acceptance``), not the proposed canary target.
     The gate evidence itself is still labeled with ``target_commit``.
+    Authorizing PASS requires ``--restore-manifest`` so file-set digests are
+    checked against the bound snapshot via ``validate_restore_acceptance``.
     """
 
     findings: list[str] = []
@@ -433,6 +436,28 @@ def bind_preservation_restore(
         checks = raw.get("checks")
         if not isinstance(checks, Mapping) or checks.get("ok") is not True:
             findings.append("restore checks.ok must be true")
+        restored_files = (
+            checks.get("restored_files") if isinstance(checks, Mapping) else None
+        )
+        if not isinstance(restored_files, Mapping):
+            findings.append("checks.restored_files object required")
+        else:
+            if restored_files.get("ok") is not True:
+                findings.append("checks.restored_files.ok must be true")
+            src_set = restored_files.get("source_file_set_sha256")
+            dst_set = restored_files.get("restored_file_set_sha256")
+            if not isinstance(src_set, str) or not canary.SHA256_RE.fullmatch(src_set):
+                findings.append("source_file_set_sha256 missing or not 64 hex")
+            if not isinstance(dst_set, str) or not canary.SHA256_RE.fullmatch(dst_set):
+                findings.append("restored_file_set_sha256 missing or not 64 hex")
+            if (
+                isinstance(src_set, str)
+                and isinstance(dst_set, str)
+                and src_set != dst_set
+            ):
+                findings.append(
+                    "restored_files source_file_set_sha256 != restored_file_set_sha256"
+                )
         cand = raw.get("candidate_code_sha")
         if not isinstance(cand, str) or not canary.COMMIT_RE.fullmatch(cand or ""):
             findings.append("candidate_code_sha missing or not 40 hex")
@@ -458,6 +483,41 @@ def bind_preservation_restore(
             except Exception as exc:  # noqa: BLE001
                 findings.append(
                     f"restore receipt schema: {type(exc).__name__}: {exc}"
+                )
+        if restore_manifest is None:
+            findings.append(
+                "PASS requires --restore-manifest bound to receipt manifest_sha256"
+            )
+        elif restore_manifest.is_symlink() or not restore_manifest.is_file():
+            findings.append(f"restore manifest must be a regular file: {restore_manifest}")
+        else:
+            try:
+                from ar_local_restore_verification import validate_restore_acceptance
+
+                manifest_raw = restore_manifest.read_bytes()
+                manifest_sha = emit.sha256_bytes(manifest_raw)
+                if isinstance(snap, str) and snap and manifest_sha != snap:
+                    findings.append(
+                        f"restore manifest sha256 {manifest_sha} != "
+                        f"receipt manifest_sha256 {snap}"
+                    )
+                manifest_obj = json.loads(manifest_raw.decode("utf-8"))
+                if not isinstance(manifest_obj, dict):
+                    findings.append("restore manifest root must be object")
+                elif not protected_code_sha:
+                    findings.append(
+                        "PASS requires --protected-code-sha for restore acceptance"
+                    )
+                else:
+                    verdict = validate_restore_acceptance(
+                        raw, manifest_obj, protected_code_sha
+                    )
+                    if not verdict.get("ok"):
+                        for item in verdict.get("findings") or []:
+                            findings.append(f"restore_acceptance:{item}")
+            except Exception as exc:  # noqa: BLE001
+                findings.append(
+                    f"restore acceptance validation: {type(exc).__name__}: {exc}"
                 )
         receipt_body["findings"] = findings
         result = "PASS" if not findings else "FAIL"
