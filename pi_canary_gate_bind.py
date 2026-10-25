@@ -35,8 +35,8 @@ from pi_canary_gate_bind_ops import (
     bind_preservation_restore,
     bind_producer_contracts,
     bind_public_candidate_bytes,
-    bind_receipt_gate,
 )
+from pi_canary_gate_bind_receipts import bind_receipt_gate
 
 def collect_pi_readonly_inventory() -> dict[str, Any]:
     """Best-effort read-only SSH inventory for preservation/shadow blockers."""
