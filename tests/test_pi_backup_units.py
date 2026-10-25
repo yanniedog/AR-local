@@ -59,7 +59,10 @@ def test_installer_uses_approved_commit_snapshot_for_installed_bytes() -> None:
     assert 'tar -xf "$tmp/source.tar" -C "$source_tree"' in installer
     assert 'sudo install -o root -g root -m 0644 "$source_tree/$name" "$trusted/$name"' in installer
     assert 'cd "$source_tree"' in installer
-    assert 'sha256sum --quiet -c /etc/ar-local/backup-gate.sha256' in installer
+    assert "sha256sum --quiet -c -" in installer
+    assert "verify_installed_wrapper" in installer
+    assert "require_regular_file" in installer
+    assert "disable_backup_timers" in installer
 
 
 def test_configuration_has_controlled_plan_identity_and_no_force_bypass() -> None:
