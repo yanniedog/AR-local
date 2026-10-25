@@ -191,14 +191,22 @@ def boot_swappiness(root, boot):
     for name in ("etc/credstore/sysctl.extra", "etc/credstore.encrypted/sysctl.extra"):
         if safe(root, name).exists():
             raise ValueError("unqualified persistent sysctl credential override")
-    for base in ("etc/systemd/system/systemd-sysctl.service.d", "usr/lib/systemd/system/systemd-sysctl.service.d"):
+    for base in (
+        "etc/systemd/system/systemd-sysctl.service.d",
+        "usr/lib/systemd/system/systemd-sysctl.service.d",
+        "usr/local/lib/systemd/system/systemd-sysctl.service.d",
+    ):
         path = image_target(root, base)
         if path.exists() and any(entry.name.endswith(".conf") for entry in os.scandir(path)):
             raise ValueError("unqualified persistent sysctl service drop-in")
     service = image_target(root, "usr/lib/systemd/system/systemd-sysctl.service")
-    override = root / "etc/systemd/system/systemd-sysctl.service"
-    if override.exists() or override.is_symlink():
-        raise ValueError("unqualified persistent sysctl service replacement")
+    for override_rel in (
+        "etc/systemd/system/systemd-sysctl.service",
+        "usr/local/lib/systemd/system/systemd-sysctl.service",
+    ):
+        override = root / override_rel
+        if override.exists() or override.is_symlink():
+            raise ValueError("unqualified persistent sysctl service replacement")
     if not service.is_file() or service.stat().st_size > 65536:
         raise ValueError("bounded captured systemd sysctl service required")
     starts = []
