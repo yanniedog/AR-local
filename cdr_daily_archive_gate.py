@@ -214,7 +214,8 @@ def _persistent_export_stage_cleanup(
         if len(children) != 1 or children[0].name != "_exports":
             return {"status": "PRESERVED", "reason": "persistent_export_stage_contents_changed"}
         staged_exports = children[0]
-        finalized_exports = runs_root / date / "_exports"
+        recorded_out = recorded.get("out_dir")
+        finalized_exports = Path(recorded_out).expanduser() if isinstance(recorded_out, str) and recorded_out.strip() else runs_root / date / "_exports"
         if (
             staged_exports.is_symlink()
             or not staged_exports.is_dir()
