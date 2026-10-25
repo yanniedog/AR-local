@@ -426,6 +426,76 @@ def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
     assert rolled_back == [(protected, candidate, args.effective_command)]
 
 
+def test_post_deploy_smoke_failure_invokes_verified_rollback(monkeypatch, capsys):
+    candidate = "a" * 40
+    protected = "b" * 40
+    initial = _verified_sync_snapshot(protected)
+    initial["AR_ORIGIN"] = candidate
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: candidate)
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", lambda **_kwargs: initial)
+    monkeypatch.setattr(pi_deploy_verify, "deployment_backup_gate", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_pull_all", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "verify_sync", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "wait_for_http_smoke",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "record_deployment_acceptance",
+        lambda *_args, **_kwargs: pytest.fail("smoke failure must not record acceptance"),
+    )
+    rolled_back = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "rollback_to_protected_commit",
+        lambda *values, **_kwargs: rolled_back.append(values) or pi_deploy_verify.EXIT_OK,
+    )
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", candidate]
+    )
+    args.effective_command = f"python pi_deploy_verify.py --deploy --expected-commit {candidate}"
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    assert rolled_back == [(protected, candidate, args.effective_command)]
+    err = capsys.readouterr().err
+    assert "post-deploy HTTP smoke failed" in err
+    assert protected in err
+
+
+def test_post_deploy_smoke_failure_reports_critical_when_rollback_fails(
+    monkeypatch, capsys
+):
+    candidate = "a" * 40
+    protected = "b" * 40
+    initial = _verified_sync_snapshot(protected)
+    initial["AR_ORIGIN"] = candidate
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: candidate)
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", lambda **_kwargs: initial)
+    monkeypatch.setattr(pi_deploy_verify, "deployment_backup_gate", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_pull_all", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "verify_sync", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "wait_for_http_smoke",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "rollback_to_protected_commit",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", candidate]
+    )
+    args.effective_command = f"python pi_deploy_verify.py --deploy --expected-commit {candidate}"
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    err = capsys.readouterr().err
+    assert "CRITICAL smoke failed and rollback was not verified" in err
+
+
 def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(
     monkeypatch, capsys
 ):
