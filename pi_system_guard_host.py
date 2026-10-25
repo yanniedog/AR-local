@@ -14,6 +14,7 @@ import time
 
 from pi_plain_backup_linux import Host as PlainHost, atomic, digest, identity
 from pi_plain_backup_core import Blocked
+from pi_system_guard_files import protected
 from pi_shared_queue_post_hooks import approval, root_json, verify_plain_service
 
 ROOT = Path("/usr/local/lib/ar-local-system-recovery")
@@ -77,6 +78,7 @@ class ImageHost(PlainHost):
         raise Blocked("fixed image parent absent")
 
     def _controls(self, packet):
+        self.check_staged_credential(packet)
         if packet.get("root_control_manifest_sha256") != digest(ROOT / "root-control-manifest.json"):
             raise Blocked("image packet does not bind its own current root control manifest")
         authority = approval(packet["unit"], current=True)
@@ -127,6 +129,19 @@ class ImageHost(PlainHost):
             previous = root_json(STATE / prior / "packet.json")
             proof = root_json(HANDOFF / prior / "coupled-probe.json")
             validate_commissioning(packet, prior, previous, proof, self.boot())
+
+    def check_staged_credential(self, packet):
+        if packet["phase"] not in {"upload", "fetch"}:
+            return
+        expected = packet.get("credential_sha256", "")
+        if not re.fullmatch(r"[a-f0-9]{64}", expected):
+            raise Blocked("image operation credential binding absent")
+        path = self.public / "credentials-copy.conf"
+        raw = protected(path, maximum=65536)
+        info = path.lstat()
+        if (info.st_gid != packet["gid"] or stat.S_IMODE(info.st_mode) != 0o440 or not raw
+                or hashlib.sha256(raw).hexdigest() != expected):
+            raise Blocked("root-prestaged read-only scoped OAuth copy differs")
 
     def _recovery_controls(self, packet):
         registry = Path("/etc/ar-local/system-recovery-reconcile.json")
@@ -271,6 +286,7 @@ class ImageHost(PlainHost):
                     and all(item.get("violation") is None for item in observations) and observations[-1].get("readback") == 60)
         body = {"schema": "ar-local-system-recovery-root-completion-v1", "nonce": self.nonce, "phase": packet["phase"],
                 "root_control_manifest_sha256": packet["root_control_manifest_sha256"],
+                "queue_closure_sha256": packet["queue_closure_sha256"],
                 "source_closure_sha256": packet["source_closure_sha256"], **{key: expected[key] for key in ("owner_pid", "owner_ticks", "boot_id", "job_id", "unit", "invocation")},
                 "result": result, "readback": 60, "untrusted_processes_gone": True,
                 "credential_custody": "QUARANTINED" if packet["phase"] in {"upload", "fetch"} else "NOT_EXPOSED",

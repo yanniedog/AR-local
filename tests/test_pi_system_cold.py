@@ -355,7 +355,8 @@ def test_cold_predecessor_requires_root_completion_resources_and_quarantined_cop
                   "phase": "fetch", "result": "RESTORED", "resource_acceptance": "PASS", "stop_post_verified": True,
                   "readback": 60, "credential_custody": "QUARANTINED", "untrusted_processes_gone": True,
                   "owned_loop_terminal": True, "writers_restored": True,
-                  **{key: value[key] for key in ("source_closure_sha256", "cold_plan_sha256", "cold_vendor_sha256")}}
+                  **{key: value[key] for key in ("source_closure_sha256", "cold_plan_sha256", "cold_vendor_sha256",
+                                                "root_control_manifest_sha256", "queue_closure_sha256")}}
     resources = {"schema": "ar-local-system-recovery-resources-v1", "phase": "fetch", "result": "PASS", "group_clean": True}
     lookup = {"packet.json": old, "completion.json": completion, "resources.json": resources}
     monkeypatch.setattr(guard, "protected", lambda path, **kwargs: json.dumps(lookup[path.name]).encode())
@@ -364,5 +365,25 @@ def test_cold_predecessor_requires_root_completion_resources_and_quarantined_cop
         original = completion[key]; completion[key] = bad
         with pytest.raises(RuntimeError): guard.predecessor(value)
         completion[key] = original
+    for key in ("root_control_manifest_sha256", "queue_closure_sha256"):
+        original = completion[key]; completion[key] = "0" * 64
+        with pytest.raises(RuntimeError): guard.predecessor(value)
+        completion[key] = original
+        original = old[key]; old[key] = "0" * 64
+        with pytest.raises(RuntimeError): guard.predecessor(value)
+        old[key] = original
     resources["group_clean"] = False
     with pytest.raises(RuntimeError): guard.predecessor(value)
+
+
+@pytest.mark.parametrize("phase", ["PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "restore", "rejoin"])
+def test_image_admission_does_not_require_credentials_for_non_drive_phases(phase):
+    controller = object.__new__(host.ImageHost)
+    controller.check_staged_credential({"phase": phase})
+
+
+@pytest.mark.parametrize("phase", ["upload", "fetch"])
+def test_image_drive_admission_requires_bound_staged_credential(phase):
+    controller = object.__new__(host.ImageHost)
+    with pytest.raises(policy.Blocked, match="credential binding"):
+        controller.check_staged_credential({"phase": phase})

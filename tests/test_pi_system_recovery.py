@@ -414,7 +414,7 @@ def test_failed_loop_attach_detaches_only_kernel_proved_owned_inode(monkeypatch,
 
 
 def test_fat_source_masks_are_explicit_and_independent_of_service_umask():
-    source = "24 23 259:1 / /source/boot ro,relatime - vfat /dev/nvme0n1p1 rw,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro"
+    source = "24 23 259:1 / /source/boot ro,relatime,uid=0,gid=0,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8 - vfat /dev/nvme0n1p1 rw,errors=remount-ro"
     settings = filesystems.fat_mount("/source/boot", source)
     flags = filesystems.fat_options(settings)
     assert {"uid=0", "gid=0", "fmask=0022", "dmask=0022", "utf8=1", "shortname=mixed"} <= set(flags)
@@ -422,7 +422,7 @@ def test_fat_source_masks_are_explicit_and_independent_of_service_umask():
     with pytest.raises(ValueError, match="option value"):
         filesystems.fat_options({**settings, "iocharset": "ascii,bind"})
     with pytest.raises(ValueError, match="showexec"):
-        filesystems.fat_mount("/source/boot", source + ",showexec")
+        filesystems.fat_mount("/source/boot", source.replace("shortname=mixed,utf8", "shortname=mixed,showexec,utf8"))
 
 
 def test_capacity_is_measured_before_payload_copy_and_fails_closed(monkeypatch, tmp_path):

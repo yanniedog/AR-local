@@ -60,11 +60,14 @@ def predecessor(packet):
     resources = json.loads(protected(STATE / nonce / "resources.json", readonly=False))
     expected = "fetch" if packet["phase"] == "restore" else "restore"
     if (old.get("phase") != expected or any(old.get(key) != packet[key] for key in
-            ("workspace_id", "cold_plan_sha256", "source_closure_sha256", "cold_vendor_sha256"))
+            ("workspace_id", "cold_plan_sha256", "source_closure_sha256", "cold_vendor_sha256",
+             "root_control_manifest_sha256", "queue_closure_sha256"))
             or complete.get("schema") != "ar-local-system-recovery-root-completion-v1"
             or complete.get("nonce") != nonce or complete.get("unit") != old.get("unit")
             or complete.get("result") != "RESTORED" or complete.get("phase") != expected or complete.get("resource_acceptance") != "PASS"
             or complete.get("source_closure_sha256") != packet["source_closure_sha256"]
+            or complete.get("root_control_manifest_sha256") != packet["root_control_manifest_sha256"]
+            or complete.get("queue_closure_sha256") != packet["queue_closure_sha256"]
             or complete.get("cold_plan_sha256") != packet["cold_plan_sha256"]
             or complete.get("cold_vendor_sha256") != packet["cold_vendor_sha256"]
             or complete.get("stop_post_verified") is not True or complete.get("readback") != 60
