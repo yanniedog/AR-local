@@ -128,8 +128,8 @@ def validate_and_canonicalize(
     if not isinstance(raw, dict):
         raw = {}
         findings.append("receipt must be a JSON object")
-    if raw.get("schema_version") != 1:
-        findings.append("schema_version must be 1")
+    if type(raw.get("schema_version")) is not int or raw.get("schema_version") != 1:
+        findings.append("schema_version must be integer 1")
     source_gate = raw.get("gate")
     if source_gate != "shadow_ingest":
         findings.append(f"source gate mismatch: {source_gate!r} != 'shadow_ingest'")

@@ -33,7 +33,7 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "cd mobile && npm ci && npm run ci (Jest + script tests + doctor + typecheck + lint).",
         "Record package versions, APK/IPA digests if built, and CI log path.",
         "Write receipt JSON with gate=stable_app_compatibility, target_commit=TARGET_SHA, "
-        "result=PASS, and ci={command,suites,tests}.",
+        "result=PASS, and ci={command,exit_code:0,log_sha256,suites,tests}.",
         "Do not reuse PASS from a different candidate SHA (e.g. prior product-evidence head).",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
         "--gate stable_app_compatibility --source-receipt <raw> --output <canonical> "
@@ -194,8 +194,8 @@ def canonicalize(
     if not isinstance(raw, dict):
         raw = {}
         findings.append("receipt must be a JSON object")
-    if raw.get("schema_version") != 1:
-        findings.append("schema_version must be 1")
+    if type(raw.get("schema_version")) is not int or raw.get("schema_version") != 1:
+        findings.append("schema_version must be integer 1")
     if raw.get("gate") != gate:
         findings.append(f"gate is {raw.get('gate')!r}, not {gate!r}")
     if raw.get("target_commit") != target_commit:
@@ -209,6 +209,13 @@ def canonicalize(
         ci = raw.get("ci")
         if not isinstance(ci, dict) or ci.get("command") != "npm run ci":
             findings.append("stable-app PASS requires ci.command='npm run ci'")
+        elif type(ci.get("exit_code")) is not int or ci.get("exit_code") != 0:
+            findings.append("stable-app PASS requires ci.exit_code=0")
+        elif not (
+            isinstance(ci.get("log_sha256"), str)
+            and SHA256_RE.fullmatch(ci["log_sha256"]) is not None
+        ):
+            findings.append("stable-app PASS requires ci.log_sha256 (64 hex)")
         elif any(
             type(ci.get(field)) is not int or ci[field] <= 0
             for field in ("suites", "tests")

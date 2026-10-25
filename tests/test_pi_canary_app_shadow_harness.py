@@ -397,7 +397,13 @@ def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
                 "gate": "stable_app_compatibility",
                 "target_commit": TARGET,
                 "result": "PASS",
-                "ci": {"command": "npm run ci", "suites": 5, "tests": 42},
+                "ci": {
+                    "command": "npm run ci",
+                    "exit_code": 0,
+                    "log_sha256": "c" * 64,
+                    "suites": 5,
+                    "tests": 42,
+                },
             }
         ),
         encoding="utf-8",
@@ -406,3 +412,46 @@ def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
         "stable_app_compatibility", src, tmp_path / "out.json", target_commit=TARGET
     )
     assert info["result"] == "PASS"
+
+
+def test_stable_app_requires_ci_exit_and_log_digest(tmp_path: Path) -> None:
+    src = tmp_path / "app.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "stable_app_compatibility",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "ci": {"command": "npm run ci", "suites": 5, "tests": 42},
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "stable_app_compatibility", src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("exit_code" in f for f in info["findings"])
+
+
+def test_canonicalize_rejects_boolean_schema_version(tmp_path: Path) -> None:
+    src = tmp_path / "src.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": True,
+                "gate": "shadow_ingest",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "exit_code": 0,
+                "exports_dirs": ["/srv/ar-local/canary/x/data/runs/2026-10-26/_exports"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = shadow.validate_and_canonicalize(
+        src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("schema_version" in f for f in info["findings"])

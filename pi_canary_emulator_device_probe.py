@@ -48,6 +48,7 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
 
 
 def _run(cmd: Sequence[str], timeout: int = 30) -> dict[str, Any]:
+    """Run an argv list (never shell=True). Callers pass SDK-local binaries only."""
     try:
         proc = subprocess.run(
             list(cmd),
@@ -55,6 +56,7 @@ def _run(cmd: Sequence[str], timeout: int = 30) -> dict[str, Any]:
             text=True,
             timeout=timeout,
             check=False,
+            shell=False,
         )
         return {
             "cmd": list(cmd),
@@ -70,9 +72,16 @@ def discover_sdk() -> Path:
     env = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
     if env:
         return Path(env)
-    local = Path.home() / "AppData" / "Local" / "Android" / "Sdk"
-    if local.is_dir():
-        return local
+    candidates = (
+        Path.home() / "AppData" / "Local" / "Android" / "Sdk",  # Windows
+        Path.home() / "Library" / "Android" / "sdk",  # macOS
+        Path.home() / "Android" / "Sdk",  # Linux
+        Path("/usr/lib/android-sdk"),
+        Path("/opt/android-sdk"),
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
     raise ProbeError("Android SDK not found (set ANDROID_HOME)")
 
 

@@ -41,8 +41,9 @@ python pi_canary_gate_bind.py stable-app-compatibility \
   --receipt .work/canary-gates/<TARGET_SHA>/receipts/stable-app-compatibility.json ...
 ```
 
-The canonicalizer requires the matching gate and `ci.command="npm run ci"` with positive
-integer `ci.suites` and `ci.tests` before it emits PASS.
+The canonicalizer requires the matching gate, `ci.command="npm run ci"`,
+`ci.exit_code=0`, `ci.log_sha256` (64 hex), and positive integer `ci.suites` /
+`ci.tests` before it emits PASS.
 
 A prior product-evidence PASS on a **different** SHA is not transferable.
 
