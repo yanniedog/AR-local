@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 from datetime import date, datetime
 from pathlib import Path
@@ -50,6 +52,7 @@ def test_day_inventory_excludes_app_payload_and_classifies(tmp_path: Path):
     day = "2026-05-13"
     _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "sqlite-bytes")
     _write(data / "runs" / day / "_exports" / "app-payload" / "manifest.json", "skip-me")
+    _write(data / "runs" / day / "_exports" / "app-payload-latest" / "manifest.json", "z")
     _write(data / "runs" / day / "_exports" / "dashboard-cache" / "x.json", "skip-me")
     _write(
         data / "runs" / day / "_exports" / "attempt-evidence" / "raw-attempt-journals-v1" / "s" / "bodies" / "a.body",
@@ -62,6 +65,9 @@ def test_day_inventory_excludes_app_payload_and_classifies(tmp_path: Path):
     assert not any("app-payload" in path for path in paths)
     assert not any("dashboard-cache" in path for path in paths)
     assert inventory["coverage"] == "wire_raw"
+    assert inventory["raw_banks_absent"] is True
+    assert inventory["journal_status"] == "unavailable"
+    assert inventory["journals_absent"] is True
 
 
 def test_exports_only_coverage(tmp_path: Path):
@@ -155,6 +161,24 @@ def test_object_path_validation():
     assert transport.OBJECT_RE.fullmatch("2026-05-14.GAP.json")
     assert transport.OBJECT_RE.fullmatch("CONTROL.tar.zst")
     assert not transport.OBJECT_RE.fullmatch("../escape.tar.zst")
+    assert transport.PureName("2026-05-13.manifest.json") == "2026-05-13.manifest.json"
+    with pytest.raises(ValueError):
+        transport.PureName("../2026-05-13.tar.zst")
+    with pytest.raises(ValueError):
+        transport.PureName("daily-cdr-day-archives/2026-05-13.tar.zst")
+
+
+def test_resolve_archive_remote_pins_raw_records_folder():
+    parent = (
+        "ar_local_drive_dedicated_20260913:"
+        "AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412"
+    )
+    resolved = transport.resolve_archive_remote(parent)
+    assert resolved.endswith("/daily-cdr-raw-records")
+    assert "daily-cdr-day-archives" not in resolved
+    assert transport.resolve_archive_remote(resolved) == resolved
+    with pytest.raises(ValueError, match="daily-cdr-day-archives"):
+        transport.resolve_archive_remote(parent + "/daily-cdr-day-archives")
 
 
 def test_build_compressed_day_archive_roundtrip_sha(tmp_path: Path):
@@ -396,7 +420,15 @@ def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
     monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
-    monkeypatch.setattr(scope, "export_journals", lambda day, dest: [])
+    monkeypatch.setattr(
+        scope,
+        "export_journals",
+        lambda day, dest, units=scope.JOURNAL_UNITS: {
+            "paths": [],
+            "journal_status": "unavailable",
+            "units": [],
+        },
+    )
 
     class FakeTransport:
         def ensure_folder(self):
@@ -544,7 +576,7 @@ def test_control_reuses_local_artifact(tmp_path: Path, monkeypatch):
     assert rebuilt == []
 
 
-def test_journalctl_nonzero_exit_is_rejected(tmp_path: Path, monkeypatch):
+def test_journalctl_nonzero_exit_is_unavailable(tmp_path: Path, monkeypatch):
     class FakeCompleted:
         returncode = 1
         stderr = "Failed to open journal"
@@ -554,8 +586,220 @@ def test_journalctl_nonzero_exit_is_rejected(tmp_path: Path, monkeypatch):
         "run",
         lambda *args, **kwargs: FakeCompleted(),
     )
-    with pytest.raises(RuntimeError, match="journalctl failed"):
-        scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    result = scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    assert result["journal_status"] == "unavailable"
+    assert result["paths"] == []
+    assert list((tmp_path / "journals").glob("*.log")) == []
+
+
+def test_journalctl_empty_range_is_kept(tmp_path: Path, monkeypatch):
+    class FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(scope.subprocess, "run", lambda *args, **kwargs: FakeCompleted())
+    result = scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    assert result["journal_status"] == "empty"
+    assert result["paths"][0].read_text(encoding="utf-8") == ""
+    assert result["units"][0]["status"] == "empty"
+
+
+def test_journalctl_output_is_captured(tmp_path: Path, monkeypatch):
+    class FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    def _run(*args, **kwargs):
+        kwargs["stdout"].write("j")
+        return FakeCompleted()
+
+    monkeypatch.setattr(scope.subprocess, "run", _run)
+    result = scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    assert result["journal_status"] == "captured"
+    assert result["paths"][0].read_text(encoding="utf-8") == "j"
+
+
+def test_journalctl_no_entries_marker_is_empty(tmp_path: Path, monkeypatch):
+    class FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    def _run(*args, **kwargs):
+        kwargs["stdout"].write("-- No entries --\n")
+        return FakeCompleted()
+
+    monkeypatch.setattr(scope.subprocess, "run", _run)
+    result = scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    assert result["journal_status"] == "empty"
+    assert result["units"][0]["status"] == "empty"
+
+
+def test_reconstruction_exports_are_not_wire_raw(tmp_path: Path):
+    data = tmp_path / "data"
+    day = "2026-07-07"
+    _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "s")
+    _write(data / "runs" / day / "_exports" / f"banks-{day}.json", "j")
+    _write(data / "runs" / day / "_exports" / f"banks-{day}.xlsx", "x")
+    _write(data / "runs" / day / "_exports" / "app-payload-latest" / "manifest.json", "d")
+    inventory = scope.build_day_inventory(data, day, journal_dir=None)
+    paths = {row["logical_path"] for row in inventory["files"]}
+    assert any(path.endswith(f"banks-{day}.json") for path in paths)
+    assert any(path.endswith("local-cdr.sqlite") for path in paths)
+    assert not any("app-payload" in path for path in paths)
+    assert inventory["coverage"] == "exports_only"
+    assert inventory["raw_banks_absent"] is True
+    assert inventory["journals_absent"] is True
+
+
+def test_banks_product_detail_is_wire_raw(tmp_path: Path):
+    data = tmp_path / "data"
+    day = "2026-08-01"
+    _write(data / "runs" / day / "banks" / "a" / "b" / "product-detail.json", "p")
+    _write(data / "runs" / day / "banks" / "a" / "b" / "product-id.txt", "q")
+    _write(data / "runs" / day / "holders" / "h.txt", "h")
+    _write(data / "runs" / day / "_revisions" / "r" / "m.txt", "m")
+    _write(data / "runs" / day / "_exports" / f"banks-{day}.json", "j")
+    _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "s")
+    inventory = scope.build_day_inventory(data, day, journal_dir=None)
+    paths = {row["logical_path"] for row in inventory["files"]}
+    assert any(path.endswith("product-detail.json") for path in paths)
+    assert any("/holders/" in path for path in paths)
+    assert any("/_revisions/" in path for path in paths)
+    assert inventory["coverage"] == "wire_raw"
+    assert inventory["raw_banks_absent"] is False
+
+
+def test_legacy_pass_rows_are_not_raw_progress(tmp_path: Path):
+    spool = tmp_path / "spool"
+    meta = spool / "meta"
+    meta.mkdir(parents=True)
+    legacy = json.dumps({"date": "2026-05-13", "result": "PASS", "coverage": "exports_only"}) + "\n"
+    (spool / "progress.jsonl").write_text(legacy, encoding="utf-8")
+    (meta / "progress.jsonl").write_text(legacy, encoding="utf-8")
+    assert archive.load_progress(spool) == {}
+    archive.record_progress(spool, {"date": "2026-05-15", "result": "PASS"})
+    assert set(archive.load_progress(spool)) == {"2026-05-15"}
+    assert (meta / "raw-progress.jsonl").is_file()
+    assert "2026-05-15" not in (meta / "progress.jsonl").read_text(encoding="utf-8")
+
+
+def test_migrate_env_rewrites_only_legacy_remote():
+    legacy = (
+        'AR_LOCAL_DATA_ROOT=/srv/ar-local/data\n'
+        'AR_LOCAL_DAY_ARCHIVE_REMOTE="name:Parent/daily-cdr-day-archives"\n'
+    )
+    updated = transport.migrate_day_archive_env(legacy)
+    assert "daily-cdr-day-archives" not in updated
+    assert updated.endswith('AR_LOCAL_DAY_ARCHIVE_REMOTE="name:Parent/daily-cdr-raw-records"\n')
+    assert transport.migrate_day_archive_env(updated) == updated
+    with pytest.raises(ValueError):
+        transport.migrate_day_archive_env('AR_LOCAL_DAY_ARCHIVE_REMOTE="name:other-folder"\n')
+
+
+def _installer_migration_source() -> str:
+    script = (
+        Path(__file__).resolve().parents[1] / "deploy/pi/install-day-archive.sh"
+    ).read_text(encoding="utf-8")
+    assert "pi_daily_cdr_day_archive_transport" not in script
+    assert "PYTHONPATH" not in script
+    assert "/usr/bin/python3 -I -S - /etc/ar-local/day-archive.env" in script
+    start = script.index("<< 'PY'\n") + len("<< 'PY'\n")
+    return script[start:script.index("\nPY\n", start)]
+
+
+def _run_installer_migration(source: str, env_file: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-I", "-S", "-", str(env_file)],
+        input=source,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_install_migration_is_isolated_stdlib(tmp_path: Path):
+    source = _installer_migration_source()
+    legacy = 'AR_LOCAL_DAY_ARCHIVE_REMOTE="name:Parent/daily-cdr-day-archives"\n'
+    env_file = tmp_path / "day-archive.env"
+    env_file.write_text(legacy, encoding="utf-8")
+    migrated = _run_installer_migration(source, env_file)
+    assert migrated.returncode == 0, migrated.stderr
+    assert migrated.stdout.strip() == (
+        "migrated AR_LOCAL_DAY_ARCHIVE_REMOTE to daily-cdr-raw-records"
+    )
+    assert env_file.read_text(encoding="utf-8") == transport.migrate_day_archive_env(legacy)
+    again = _run_installer_migration(source, env_file)
+    assert again.returncode == 0, again.stderr
+    assert again.stdout == ""
+    original = 'AR_LOCAL_DAY_ARCHIVE_REMOTE="name:other-folder"\n'
+    bad = tmp_path / "bad.env"
+    bad.write_text(original, encoding="utf-8")
+    rejected = _run_installer_migration(source, bad)
+    assert rejected.returncode != 0
+    assert bad.read_text(encoding="utf-8") == original
+
+
+def test_journalctl_command_is_quiet(tmp_path: Path, monkeypatch):
+    class FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    seen: dict[str, list[str]] = {}
+
+    def _run(command, **kwargs):
+        seen["command"] = list(command)
+        return FakeCompleted()
+
+    monkeypatch.setattr(scope.subprocess, "run", _run)
+    result = scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    assert "--quiet" in seen["command"]
+    assert result["journal_status"] == "empty"
+
+
+def test_stale_gap_marker_is_rewritten_before_upload(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    day = "2026-05-14"
+    work = spool / "work" / day
+    work.mkdir(parents=True)
+    gap_path = work / f"{day}.GAP.json"
+    gap_path.write_text("{}\n", encoding="utf-8")
+    uploaded: dict[str, str] = {}
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return False
+
+        def upload(self, relative, source):
+            uploaded[relative] = Path(source).read_text(encoding="utf-8")
+
+        def download(self, relative, destination):
+            raise AssertionError("verify stubbed")
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
+    result = archive.process_day(
+        data_root=tmp_path / "data",
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+    )
+    body = json.loads(uploaded[f"{day}.GAP.json"])
+    assert result["result"] == "PASS"
+    assert body["series"] == "daily-cdr-raw-records"
+    assert body["coverage"] == "gap"
+    assert body["raw_banks_absent"] is True
+    assert "{}" not in uploaded[f"{day}.GAP.json"]
+
+
+def test_skip_journals_is_rejected():
+    with pytest.raises(SystemExit, match="skip-journals"):
+        archive.main(["--skip-journals", "--dry-run", "--date", "2026-05-13"])
 
 
 def test_walk_propagates_unreadable_directory(tmp_path: Path, monkeypatch):

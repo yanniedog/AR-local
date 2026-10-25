@@ -1,4 +1,4 @@
-"""Create-only rclone transport for daily CDR day-archives on Google Drive."""
+"""Create-only rclone transport for daily CDR raw records on Google Drive."""
 from __future__ import annotations
 
 import configparser
@@ -12,7 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
-FOLDER_NAME = "daily-cdr-day-archives"
+FOLDER_NAME = "daily-cdr-raw-records"
+LEGACY_FOLDER_NAME = "daily-cdr-day-archives"
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 OBJECT_RE = re.compile(
     r"^(?:"
@@ -22,6 +23,75 @@ OBJECT_RE = re.compile(
 )
 
 
+def resolve_archive_remote(remote: str) -> str:
+    """Pin uploads to daily-cdr-raw-records. The older day-archives folder is immutable."""
+    match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", remote.strip())
+    if not match:
+        raise ValueError("rclone remote must be name:path")
+    remote_name, remote_path = match.group(1), match.group(2).strip("/")
+    segments = [segment for segment in remote_path.split("/") if segment]
+    if any(segment in (".", "..") for segment in segments):
+        raise ValueError("day-archive remote path must not contain . or ..")
+    if LEGACY_FOLDER_NAME in segments:
+        raise ValueError(
+            "refusing immutable export-only folder daily-cdr-day-archives; "
+            "raw records use daily-cdr-raw-records"
+        )
+    if FOLDER_NAME in segments and segments[-1] != FOLDER_NAME:
+        raise ValueError("daily-cdr-raw-records must be the final remote path segment")
+    if not segments or segments[-1] != FOLDER_NAME:
+        segments = [*segments, FOLDER_NAME]
+    return f"{remote_name}:{'/'.join(segments)}"
+
+
+def migrate_day_archive_env(text: str) -> str:
+    """Point an installed env file at daily-cdr-raw-records.
+
+    Rewrites only a remote whose final segment is the legacy immutable folder.
+    A remote that already ends in the raw-records folder is unchanged. Any other
+    destination is rejected. The transport still refuses the legacy folder.
+    install-day-archive.sh inlines this decision under python3 -I -S and must
+    not import this module. Keep the two copies aligned.
+    """
+    lines = text.splitlines(True)
+    seen = False
+    rewritten: list[str] = []
+    for line in lines:
+        if not line.startswith("AR_LOCAL_DAY_ARCHIVE_REMOTE="):
+            rewritten.append(line)
+            continue
+        seen = True
+        newline = "\n" if line.endswith("\n") else ""
+        raw = line[:-1] if newline else line
+        key, separator, value = raw.partition("=")
+        if separator != "=":
+            raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE must be name:path")
+        quote = ""
+        body = value.strip()
+        if len(body) >= 2 and body[0] == body[-1] and body[0] in "\"'":
+            quote = body[0]
+            body = body[1:-1]
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", body.strip())
+        if not match:
+            raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE must be name:path")
+        remote_name, remote_path = match.group(1), match.group(2).strip("/")
+        segments = [segment for segment in remote_path.split("/") if segment]
+        if not segments:
+            raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE needs a folder path")
+        if segments[-1] == LEGACY_FOLDER_NAME:
+            segments[-1] = FOLDER_NAME
+        elif segments[-1] != FOLDER_NAME:
+            raise ValueError(
+                "AR_LOCAL_DAY_ARCHIVE_REMOTE must end in daily-cdr-raw-records "
+                "or daily-cdr-day-archives"
+            )
+        migrated = resolve_archive_remote(f"{remote_name}:{'/'.join(segments)}")
+        rewritten.append(f"{key}={quote}{migrated}{quote}{newline}")
+    if not seen:
+        raise ValueError("AR_LOCAL_DAY_ARCHIVE_REMOTE missing")
+    return "".join(rewritten)
+
+
 class DayArchiveTransportError(RuntimeError):
     """Fatal transport failure; abort without deleting local archives."""
 
@@ -29,25 +99,14 @@ class DayArchiveTransportError(RuntimeError):
 class DayArchiveRclone:
     def __init__(self, config: Path, remote: str, root_folder_id: str, guard=lambda: None):
         self.config = Path(config)
-        self.remote = remote
+        self.remote = resolve_archive_remote(remote)
         self.root_folder_id = root_folder_id
         self.guard = guard
         self.executable = "/usr/bin/rclone"
-        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", remote)
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", self.remote)
         if not match:
             raise ValueError("rclone remote must be name:path")
-        self.remote_name, remote_path = match.group(1), match.group(2).strip("/")
-        if remote_path not in ("", FOLDER_NAME) and not remote_path.endswith("/" + FOLDER_NAME):
-            # Accept either dedicated remote path ending in daily-cdr-day-archives
-            # or a parent path where we append the folder name.
-            if FOLDER_NAME not in remote_path.split("/"):
-                self.remote = f"{self.remote_name}:{remote_path}/{FOLDER_NAME}".replace("//", "/")
-            else:
-                self.remote = f"{self.remote_name}:{remote_path}"
-        elif remote_path == "":
-            self.remote = f"{self.remote_name}:{FOLDER_NAME}"
-        else:
-            self.remote = f"{self.remote_name}:{remote_path}"
+        self.remote_name = match.group(1)
         if root_folder_id and not re.fullmatch(r"[a-zA-Z0-9_-]{10,200}", root_folder_id):
             raise ValueError("pinned Drive root folder ID invalid")
         info = self.config.lstat()
@@ -211,10 +270,13 @@ class DayArchiveRclone:
 
 
 def PureName(relative: str) -> str:
-    name = Path(relative).name
-    if name != relative.replace("\\", "/").rsplit("/", 1)[-1]:
+    """Accept only a single object filename. Do not strip directory prefixes."""
+    text = relative.replace("\\", "/").strip()
+    if not text or text != Path(text).name or text in (".", ".."):
         raise ValueError("day-archive objects are flat under the dedicated folder")
-    return name
+    if not OBJECT_RE.fullmatch(text):
+        raise ValueError(f"unsupported day-archive object path: {relative}")
+    return text
 
 
 def sha256_file(path: Path, guard=lambda: None) -> str:

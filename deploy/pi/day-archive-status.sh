@@ -4,7 +4,7 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 spool = Path("/var/lib/ar-local-day-archives")
-paths = (spool / "progress.jsonl", spool / "meta" / "progress.jsonl")
+paths = (spool / "meta" / "raw-progress.jsonl",)
 latest = {}
 for path in paths:
     if not path.is_file():
@@ -19,6 +19,8 @@ for path in paths:
 passes = sorted(d for d, r in latest.items() if r.get("result") == "PASS")
 fails = sorted(d for d, r in latest.items() if r.get("result") == "FAIL")
 print(json.dumps({
+    "series": "daily-cdr-raw-records",
+    "ledger": "meta/raw-progress.jsonl",
     "pass_count": len(passes),
     "fail_count": len(fails),
     "last_pass": passes[-1] if passes else None,
