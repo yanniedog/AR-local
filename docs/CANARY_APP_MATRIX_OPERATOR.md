@@ -47,6 +47,22 @@ The canonicalizer requires the matching gate, `ci.command="npm run ci"`,
 
 A prior product-evidence PASS on a **different** SHA is not transferable.
 
+## Pre-lab inventory probe (fail-closed)
+
+Local SDK / AVD / adb inventory only — **never** upgrades a gate to PASS:
+
+```sh
+python pi_canary_emulator_device_probe.py \
+  --target-commit <TARGET_SHA> \
+  --output .work/canary-gates/<TARGET_SHA>/receipts/emulator-device-probe-receipt.json \
+  --apk-inventory-root /path/to/AR-app/tmp \
+  --replace-output
+```
+
+- Lists AVDs and adb devices.
+- Optional shallow APK inventory records unbound builds (`bound_to_target=false`).
+- Do **not** bind inventory APKs as the TARGET_SHA candidate.
+
 ## candidate_emulator_matrix (P-007)
 
 External lab / agreed emulator. Emulator PASS does **not** prove physical devices.

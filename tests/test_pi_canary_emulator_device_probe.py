@@ -34,3 +34,25 @@ def test_refuse_overwrite(tmp_path: Path, monkeypatch) -> None:
         assert False, "expected ProbeError"
     except probe.ProbeError:
         pass
+
+
+def test_replace_output_and_inventory(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(probe, "discover_sdk", lambda: tmp_path)
+    monkeypatch.setattr(probe, "list_avds", lambda sdk: ["Medium_Phone_API_36.1"])
+    monkeypatch.setattr(probe, "list_adb_devices", lambda sdk: [])
+    apk_root = tmp_path / "apks"
+    apk_root.mkdir()
+    (apk_root / "old.apk").write_bytes(b"not-a-real-apk")
+    out = tmp_path / "probe.json"
+    probe.probe(target_commit=TARGET, output=out)
+    info = probe.probe(
+        target_commit=TARGET,
+        output=out,
+        apk_inventory_roots=[apk_root],
+        replace_output=True,
+    )
+    assert info["result"] == "UNKNOWN"
+    assert info["apk_inventory_count"] == 1
+    body = json.loads(out.read_text(encoding="utf-8"))
+    assert body["apk_inventory"][0]["bound_to_target"] is False
+    assert "binding inventory APKs" in " ".join(body["forbidden"])
