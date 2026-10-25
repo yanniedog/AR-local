@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import PurePosixPath
+import re
 import shlex
 import sys
 
@@ -15,6 +17,10 @@ QUEUE = "/usr/local/lib/shared-pi-queue/pi_shared_queue.py"
 QUEUE_STOP = ["/usr/bin/python3", "/usr/local/lib/shared-pi-queue/pi_shared_queue_stop_hook.py"]
 BASE_STOP = ["/usr/bin/systemctl", "start", "ar-local-dashboard.service"]
 EMPTY_HOOKS = ("CONDITION_JSON", "START_PRE_JSON", "STOP_JSON")
+ARCHIVE_PKG_ROOT = "/usr/local/lib/ar-local-payload-archive"
+ARCHIVE_LAUNCHER = "pi_payload_archive_launcher.py"
+_COMMIT_RE = re.compile(r"^[a-f0-9]{40}$")
+_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
 def _post_start_shell(repo):
@@ -58,6 +64,65 @@ def _queued_argv(producer):
     return ["/usr/bin/python3", QUEUE, "run", "--project", "ar-local", "--resource", "ar-local",
             "--mode", "exclusive", "--cpu-slots", "3", "--wait-timeout", "21600",
             "--max-runtime", "21600", "--", *producer]
+
+
+def _archive_readback_producer_ok(producer, repo, source_commit):
+    """Accept the narrow DAILY archive-readback splice (docs/PAYLOAD_ARCHIVE_READBACK_RUNTIME.md).
+
+    Outer queue budgets stay identical; only the inner Python entry may be the
+    content-addressed launcher bound to the live AR_HEAD and exact module digests.
+    """
+    if not isinstance(producer, list) or len(producer) != 16:
+        return False
+    if producer[0] != "/usr/bin/python3" or producer[1] != "-B":
+        return False
+    launcher = producer[2]
+    if not isinstance(launcher, str) or not launcher.startswith(ARCHIVE_PKG_ROOT + "/"):
+        return False
+    parts = PurePosixPath(launcher).parts
+    if (len(parts) != 7 or parts[1:5] != ("usr", "local", "lib", "ar-local-payload-archive")
+            or not _SHA256_RE.fullmatch(parts[5]) or parts[6] != ARCHIVE_LAUNCHER):
+        return False
+    package_root = f"{ARCHIVE_PKG_ROOT}/{parts[5]}"
+    if launcher != f"{package_root}/{ARCHIVE_LAUNCHER}":
+        return False
+    if not isinstance(source_commit, str) or not _COMMIT_RE.fullmatch(source_commit):
+        return False
+    if producer[3:9] != ["--source-root", repo, "--package-root", package_root,
+                         "--source-commit", source_commit]:
+        return False
+    if producer[9] != "--original-sha256" or not _SHA256_RE.fullmatch(str(producer[10])):
+        return False
+    if producer[11] != "--replacement-sha256" or not _SHA256_RE.fullmatch(str(producer[12])):
+        return False
+    if producer[10] == producer[12]:
+        return False
+    return producer[13:] == ["--", "--banks-only", "--skip-git-sync"]
+
+
+def _queued_archive_readback_ok(commands, repo, prefix, source_commit):
+    """Queued DAILY only: exact queue wrapper + archive-readback inner producer."""
+    if prefix != "DAILY" or not isinstance(commands, list) or len(commands) != 1:
+        return False
+    row = commands[0]
+    if not isinstance(row, list) or len(row) != 10 or not isinstance(row[1], list):
+        return False
+    argv = row[1]
+    marker = "--"
+    if marker not in argv:
+        return False
+    split_at = argv.index(marker)
+    outer, producer = argv[:split_at], argv[split_at + 1:]
+    expected_outer = [
+        "/usr/bin/python3", QUEUE, "run", "--project", "ar-local", "--resource", "ar-local",
+        "--mode", "exclusive", "--cpu-slots", "3", "--wait-timeout", "21600",
+        "--max-runtime", "21600",
+    ]
+    if outer != expected_outer:
+        return False
+    if not _archive_readback_producer_ok(producer, repo, source_commit):
+        return False
+    return command_matches(commands, outer + [marker] + producer)
 
 
 def _dry_ingest_definition(prefix, repo):
@@ -127,6 +192,10 @@ def ingest_definition_ok(snap, prefix):
             if not _base_stop_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE)):
                 return False
         elif command_matches(commands, _queued_argv(producer)):
+            start, stop = "13h", "15min"
+            if not command_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE), QUEUE_STOP):
+                return False
+        elif _queued_archive_readback_ok(commands, repo, prefix, snap.get("AR_HEAD")):
             start, stop = "13h", "15min"
             if not command_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE), QUEUE_STOP):
                 return False

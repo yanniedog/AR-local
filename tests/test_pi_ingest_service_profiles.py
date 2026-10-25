@@ -30,6 +30,60 @@ def test_exact_direct_and_commissioned_queued_profiles_pass(queued):
     assert service.pi_ingest_service_fences_ok(snapshot(queued=queued))
 
 
+def _archive_readback_daily_argv(repo=REPO):
+    digest = "d393c008e272ec01d030e91f4ce66c8b4370aa74f5d5603bb114be1bf0da03f8"
+    package = f"/usr/local/lib/ar-local-payload-archive/{digest}"
+    commit = "e350bb7b5aca6cb82da07dee8492f8caf7741edd"
+    return [
+        "/usr/bin/python3", "/usr/local/lib/shared-pi-queue/pi_shared_queue.py", "run",
+        "--project", "ar-local", "--resource", "ar-local", "--mode", "exclusive",
+        "--cpu-slots", "3", "--wait-timeout", "21600", "--max-runtime", "21600", "--",
+        "/usr/bin/python3", "-B", f"{package}/pi_payload_archive_launcher.py",
+        "--source-root", repo, "--package-root", package,
+        "--source-commit", commit,
+        "--original-sha256", "0e61ff246a2072233d67c9afa8b2cb3f16c7733c599f7c6ce9ea55d94a28876f",
+        "--replacement-sha256", "25d525347d071537eb5c1bdf457a9829e623e0829517eaa9ce8e136717f0457e",
+        "--", "--banks-only", "--skip-git-sync",
+    ]
+
+
+def test_queued_daily_archive_readback_profile_passes_when_bound_to_ar_head():
+    current = snapshot(queued=True)
+    current["AR_HEAD"] = "e350bb7b5aca6cb82da07dee8492f8caf7741edd"
+    current["DAILY_EXEC_JSON"] = command_json(_archive_readback_daily_argv())
+    assert service.pi_ingest_service_fences_ok(current)
+
+
+@pytest.mark.parametrize("change", [
+    "wrong_commit", "missing_head", "manual_prefix", "same_digests", "force_flag",
+    "wrong_launcher", "extra_arg",
+])
+def test_archive_readback_profile_is_fail_closed(change):
+    current = snapshot(queued=True)
+    current["AR_HEAD"] = "e350bb7b5aca6cb82da07dee8492f8caf7741edd"
+    argv = _archive_readback_daily_argv()
+    if change == "wrong_commit":
+        current["AR_HEAD"] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    elif change == "missing_head":
+        current.pop("AR_HEAD", None)
+    elif change == "same_digests":
+        idx = argv.index("--replacement-sha256") + 1
+        argv[idx] = argv[argv.index("--original-sha256") + 1]
+    elif change == "force_flag":
+        argv.append("--force")
+    elif change == "wrong_launcher":
+        argv[argv.index("-B") + 1] = argv[argv.index("-B") + 1].replace(
+            "pi_payload_archive_launcher.py", "other_launcher.py")
+    elif change == "extra_arg":
+        argv.insert(-1, "--check-only")
+    current["DAILY_EXEC_JSON"] = command_json(argv)
+    if change == "manual_prefix":
+        # Archive splice is DAILY-only; MANUAL must stay the plain producer.
+        current["MANUAL_EXEC_JSON"] = command_json(argv)
+        current["DAILY_EXEC_JSON"] = ingest_definition_fields(queued=True)["DAILY_EXEC_JSON"]
+    assert not service.pi_ingest_service_fences_ok(current)
+
+
 @pytest.mark.parametrize("manual", [False, True])
 def test_profile_control_argv_and_deadlines_match_checked_in_templates(manual):
     prefix = "MANUAL" if manual else "DAILY"
