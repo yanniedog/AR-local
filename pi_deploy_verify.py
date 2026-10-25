@@ -18,6 +18,10 @@ Environment (optional):
   AR_PI_GITHUB_REMOTE  Remote name on Pi (default: origin)
   AR_PI_EXPECTED_COMMIT Exact 40-character AR-local main commit approved by canary
 
+Deploy mutations always acquire the shared Pi queue via ``pi-shared-task``
+(``--project ar-local --resource ar-local``) unless the process is already
+inside a queue cgroup. Missing ``pi-shared-task`` fails closed.
+
 Examples:
   python pi_deploy_verify.py --verify
   python pi_deploy_verify.py --deploy --expected-commit <40-char-sha>
@@ -52,6 +56,12 @@ from ar_local_pi_runtime import (
 
 REPO_ROOT = Path(__file__).resolve().parent
 SUBPROCESS_TIMEOUT_SEC = 120
+# Queue admission wait is fail-fast; execution budget matches a single SSH step.
+SHARED_QUEUE_WAIT_TIMEOUT_SEC = 45
+SHARED_QUEUE_MAX_RUNTIME_SEC = 90
+SHARED_QUEUE_SSH_TIMEOUT_SEC = (
+    SHARED_QUEUE_WAIT_TIMEOUT_SEC + 60 + SHARED_QUEUE_MAX_RUNTIME_SEC + 30
+)
 
 EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
@@ -63,6 +73,7 @@ DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
 SSH_SUCCESS_SENTINEL = "__AR_PI_SSH_COMMAND_OK__"
+SHARED_QUEUE_CGROUP_MARKERS = ("ar-local-queue-task-", "shared-pi-task-")
 # ssh exits 255 for its own transport failures, distinct from any status the
 # remote command could return. That is the one class where the remote command
 # provably never ran, so a retry cannot repeat a side effect.
@@ -181,6 +192,53 @@ def on_pi_host() -> bool:
     return is_raspberry_pi()
 
 
+def already_under_shared_queue() -> bool:
+    """True when this process already holds a pi-shared-task cgroup claim."""
+
+    try:
+        cgroup = Path("/proc/self/cgroup").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return any(marker in cgroup for marker in SHARED_QUEUE_CGROUP_MARKERS)
+
+
+def wrap_shared_queue(
+    shell_cmd: str,
+    *,
+    max_runtime: int = SHARED_QUEUE_MAX_RUNTIME_SEC,
+    wait_timeout: int = SHARED_QUEUE_WAIT_TIMEOUT_SEC,
+) -> str:
+    """Wrap a remote/local shell command so it acquires an ar-local queue claim.
+
+    Fail-closed when ``pi-shared-task`` is not on PATH. Skip wrapping when already
+    inside a queue unit to avoid nested exclusive claims (deadlock).
+    """
+
+    if already_under_shared_queue():
+        return shell_cmd
+    inner = shell_quote(shell_cmd)
+    return (
+        "if ! command -v pi-shared-task >/dev/null 2>&1; then "
+        "echo 'pi_deploy_verify: pi-shared-task required for deploy mutations; "
+        "refusing unqueued production change' >&2; "
+        f"exit {EXIT_CONFIG}; "
+        "fi; "
+        "pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 "
+        f"--max-runtime {int(max_runtime)} --wait-timeout {int(wait_timeout)} -- "
+        f"/bin/bash -lc {inner}"
+    )
+
+
+def run_deploy_mutation(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
+    """Run a deploy mutation under the shared Pi queue (fail-closed)."""
+
+    return run_ssh(
+        wrap_shared_queue(shell_cmd),
+        dry_run=dry_run,
+        timeout=SHARED_QUEUE_SSH_TIMEOUT_SEC,
+    )
+
+
 def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
     """Accept a Windows OpenSSH abort at socket close after the command ran.
 
@@ -229,7 +287,13 @@ def _strip_success_sentinel(stdout: str) -> str:
     return "\n".join(lines).strip()
 
 
-def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
+def run_shell(
+    shell_cmd: str,
+    *,
+    dry_run: bool = False,
+    timeout: int = SUBPROCESS_TIMEOUT_SEC,
+) -> tuple[int, str, str]:
+    cmd_timeout = max(1, int(timeout))
     if on_pi_host():
         if dry_run:
             print(f"pi_deploy_verify: dry-run local {shell_cmd!r}")
@@ -241,7 +305,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
             text=True,
             cwd=str(REPO_ROOT),
             check=False,
-            timeout=SUBPROCESS_TIMEOUT_SEC,
+            timeout=cmd_timeout,
         )
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
@@ -267,7 +331,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
                 text=True,
                 shell=False,
                 check=False,
-                timeout=SUBPROCESS_TIMEOUT_SEC,
+                timeout=cmd_timeout,
             )
         except subprocess.TimeoutExpired:
             if last:
@@ -324,8 +388,13 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
     return proc.returncode, out, err
 
 
-def run_ssh(remote_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
-    return run_shell(remote_cmd, dry_run=dry_run)
+def run_ssh(
+    remote_cmd: str,
+    *,
+    dry_run: bool = False,
+    timeout: int = SUBPROCESS_TIMEOUT_SEC,
+) -> tuple[int, str, str]:
+    return run_shell(remote_cmd, dry_run=dry_run, timeout=timeout)
 
 
 def origin_main_sha_local() -> Optional[str]:
@@ -629,7 +698,7 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
         f"--data-root {shell_quote(pi_data_root())} "
         f"--candidate-sha {shell_quote(expected_commit)}"
     )
-    code, out, err = run_ssh(script, dry_run=dry_run)
+    code, out, err = run_deploy_mutation(script, dry_run=dry_run)
     if code == EXIT_BUSY and not dry_run:
         print(err or "pi_deploy_verify: ingest/deploy lock is busy", file=sys.stderr)
         return EXIT_BUSY
@@ -661,7 +730,7 @@ def deployment_backup_gate(
         f"--protected-code-sha {shell_quote(protected_commit)} "
         f"--candidate-sha {shell_quote(expected_commit)}"
     )
-    code, out, err = run_ssh(script, dry_run=dry_run)
+    code, out, err = run_deploy_mutation(script, dry_run=dry_run)
     if dry_run:
         print("pi_deploy_verify: dry-run would require a fresh verified backup, restore drill, and boot proof")
         return EXIT_OK
@@ -695,7 +764,7 @@ def record_deployment_acceptance(
         f"--candidate-sha {shell_quote(expected_commit)} "
         f"--parent-command {shell_quote(parent_command)} --dashboard-verified --services-verified"
     )
-    code, out, err = run_ssh(script, dry_run=dry_run)
+    code, out, err = run_deploy_mutation(script, dry_run=dry_run)
     if dry_run:
         print("pi_deploy_verify: dry-run would write an append-only deployment acceptance record")
         return EXIT_OK
@@ -726,7 +795,7 @@ def rollback_to_protected_commit(
         f"--data-root {shell_quote(pi_data_root())} "
         f"--protected-code-sha {shell_quote(protected_commit)}"
     )
-    code, _out, err = run_ssh(script, dry_run=dry_run)
+    code, _out, err = run_deploy_mutation(script, dry_run=dry_run)
     if dry_run:
         return EXIT_OK
     if code != 0:
@@ -751,7 +820,7 @@ def rollback_to_protected_commit(
         f"--parent-command {shell_quote(parent_command)} "
         f"--parent-command {shell_quote(script)} --dashboard-verified --services-verified"
     )
-    code, out, err = run_ssh(record_script, dry_run=False)
+    code, out, err = run_deploy_mutation(record_script, dry_run=False)
     if code != 0:
         print(err or out or "pi_deploy_verify: rollback acceptance record failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
@@ -789,7 +858,7 @@ def deploy_services(*, dry_run: bool = False) -> int:
         "fi"
         ")"
     )
-    code, _, err = run_ssh(script, dry_run=dry_run)
+    code, _, err = run_deploy_mutation(script, dry_run=dry_run)
     if code == EXIT_BUSY and not dry_run:
         print(
             err or "pi_deploy_verify: ingest/deploy lock is busy",

@@ -77,15 +77,26 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     assert calls == [("gate", expected, expected, True), ("pull", expected, True), ("services", True)]
 
 
+def test_wrap_shared_queue_fail_closed_and_skips_when_already_claimed(monkeypatch):
+    wrapped = pi_deploy_verify.wrap_shared_queue("echo deploy")
+    assert "pi-shared-task --project ar-local --resource ar-local" in wrapped
+    assert "command -v pi-shared-task" in wrapped
+    assert f"exit {pi_deploy_verify.EXIT_CONFIG}" in wrapped
+    monkeypatch.setattr(pi_deploy_verify, "already_under_shared_queue", lambda: True)
+    assert pi_deploy_verify.wrap_shared_queue("echo deploy") == "echo deploy"
+
+
 def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(monkeypatch):
     captured = []
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command)
+        or (0, '{"result":"PASS"}', ""),
     )
     assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
     command = captured[0]
+    assert "pi-shared-task --project ar-local --resource ar-local" in command
     assert "/usr/local/bin/ar-local-backup-gate gate" in command
     assert "--candidate-sha" in command
     assert "--protected-code-sha" in command
@@ -109,11 +120,13 @@ def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command)
+        or (0, '{"result":"PASS"}', ""),
     )
     actual_command = "python pi_deploy_verify.py --deploy --expected-commit " + "a" * 40
     assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40, actual_command) == pi_deploy_verify.EXIT_OK
     command = captured[0]
+    assert "pi-shared-task --project ar-local --resource ar-local" in command
     assert "record-deployment" in command
     assert "--protected-code-sha" in command
     assert "--candidate-sha" in command
@@ -151,7 +164,7 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: commands.append(command) or (0, "", ""),
+        lambda command, dry_run=False, timeout=None: commands.append(command) or (0, "", ""),
     )
     monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
     monkeypatch.setattr(
@@ -164,6 +177,7 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
         pi_deploy_verify.rollback_to_protected_commit(protected, candidate, "deploy command")
         == pi_deploy_verify.EXIT_OK
     )
+    assert "pi-shared-task --project ar-local --resource ar-local" in commands[0]
     assert "ar-local-backup-gate rollback-checkout" in commands[0]
     assert f"--protected-code-sha {protected}" in commands[0]
     assert "rm -f" not in commands[0]
@@ -177,10 +191,11 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, "", ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command) or (0, "", ""),
     )
     expected = "a" * 40
     assert pi_deploy_verify.deploy_pull_all(expected) == pi_deploy_verify.EXIT_OK
+    assert "pi-shared-task --project ar-local --resource ar-local" in captured[0]
     assert f"--candidate-sha {expected}" in captured[0]
     assert "ar-local-backup-gate install-checkout" in captured[0]
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
@@ -210,10 +225,11 @@ def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypa
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, "", ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command) or (0, "", ""),
     )
     assert pi_deploy_verify.deploy_services() == pi_deploy_verify.EXIT_OK
     command = captured[0]
+    assert "pi-shared-task --project ar-local --resource ar-local" in command
     assert "chown -R" not in command
     assert "mkdir -p" not in command
     assert "apply-pi-runtime-units.sh" in command

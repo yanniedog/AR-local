@@ -225,7 +225,11 @@ pi-shared-task --project ar-local --resource ar-local --resource host \
 
 Activation is **only** authorized through the protected workflow
 `.github/workflows/pi-deploy-on-main.yml` with matching immutable canary
-manifest/release evidence and protected `AR_PI_CANARY_*` values. A queued
-`python3 pi_deploy_verify.py --deploy --expected-commit <SHA>` alone does **not**
-enforce those canary gates and must not be used as a substitute activation path.
+manifest/release evidence and protected `AR_PI_CANARY_*` values. That workflow
+fail-closes unless `pi-shared-task` is present on the Pi, and
+`pi_deploy_verify.py --deploy` wraps every mutating remote step with
+`pi-shared-task --project ar-local --resource ar-local` (skipping only when the
+process is already inside a queue cgroup). A bare
+`python3 pi_deploy_verify.py --deploy --expected-commit <SHA>` on the Pi without
+those canary gates must not be used as a substitute activation path.
 Never use a bare `git pull` or moving-main checkout as the activation command.
