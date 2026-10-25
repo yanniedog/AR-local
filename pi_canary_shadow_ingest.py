@@ -61,10 +61,12 @@ OPERATOR_STEPS = [
     "Write isolated archive env at <canary>/config/day-archive.env with "
     "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool and a canary-only remote "
     "(never copy /etc/ar-local/day-archive.env or production rclone remotes).",
-    "Export AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env and "
+    "Export AR_LOCAL_DATA_ROOT=<canary>/data, "
+    "AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env and "
     "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool for the canary process only.",
     "Submit via pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 "
-    "--max-runtime <bounded> -- env AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env "
+    "--max-runtime <bounded> -- env AR_LOCAL_DATA_ROOT=<canary>/data "
+    "AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env "
     "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool "
     "python3 <canary>/source/cdr_daily.py "
     "--runs <canary>/data/runs --state <canary>/data/state "
@@ -101,6 +103,7 @@ def emit_template(
         "forbidden": [
             "production activate / deploy",
             "mutating production --runs or --state",
+            "leaving AR_LOCAL_DATA_ROOT on production while probing writability",
             "using /etc/ar-local/day-archive.env or /var/lib/ar-local-day-archives",
             "disabling ar-local-daily.timer",
             "fabricating PASS without exit 0 + exports",

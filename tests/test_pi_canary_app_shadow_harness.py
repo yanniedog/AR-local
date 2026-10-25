@@ -115,6 +115,36 @@ def test_device_canonicalize_rejects_emulator_gate(tmp_path: Path) -> None:
     assert any("gate" in f for f in info["findings"])
 
 
+def _device_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "model": "Pixel 8",
+        "os": "14",
+        "abi": "arm64-v8a",
+        "install_upgrade": True,
+        "acquisition_checks": True,
+        "lab_run_id": "lab-2026-10-26-1",
+        "evidence_archive_sha256": "a" * 64,
+        "result": "PASS",
+    }
+    row.update(overrides)
+    return row
+
+
+def _emulator_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "avd": "Pixel_6_API_34",
+        "api": 34,
+        "abi": "x86_64",
+        "install_upgrade": True,
+        "acquisition_checks": True,
+        "userdata_snapshot": "/lab/snapshots/pixel6.img",
+        "userdata_snapshot_sha256": "b" * 64,
+        "result": "PASS",
+    }
+    row.update(overrides)
+    return row
+
+
 def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
     src = tmp_path / "dev.json"
     src.write_text(
@@ -124,7 +154,7 @@ def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
                 "gate": "candidate_device_matrix",
                 "target_commit": TARGET,
                 "result": "PASS",
-                "devices": [{"id": "a", "result": "FAIL"}],
+                "devices": [_device_row(result="FAIL")],
             }
         ),
         encoding="utf-8",
@@ -134,7 +164,7 @@ def test_matrix_canonicalize_rejects_failed_device(tmp_path: Path) -> None:
         "candidate_device_matrix", src, out, target_commit=TARGET
     )
     assert info["result"] == "FAIL"
-    assert any("devices[0]" in f for f in info["findings"])
+    assert any("devices[0].result" in f for f in info["findings"])
 
 
 def test_device_canonicalize_rejects_false_install_checks(tmp_path: Path) -> None:
@@ -146,18 +176,7 @@ def test_device_canonicalize_rejects_false_install_checks(tmp_path: Path) -> Non
                 "gate": "candidate_device_matrix",
                 "target_commit": TARGET,
                 "result": "PASS",
-                "devices": [
-                    {
-                        "model": "Pixel",
-                        "os": "14",
-                        "abi": "arm64-v8a",
-                        "install_upgrade": False,
-                        "acquisition_checks": False,
-                        "lab_run_id": "lab-1",
-                        "evidence_archive_sha256": "a" * 64,
-                        "result": "PASS",
-                    }
-                ],
+                "devices": [_device_row(install_upgrade=False, acquisition_checks=False)],
             }
         ),
         encoding="utf-8",
@@ -168,6 +187,83 @@ def test_device_canonicalize_rejects_false_install_checks(tmp_path: Path) -> Non
     assert info["result"] == "FAIL"
     assert any("install_upgrade" in f for f in info["findings"])
     assert any("acquisition_checks" in f for f in info["findings"])
+
+
+def test_emulator_canonicalize_requires_snapshot_and_true_checks(tmp_path: Path) -> None:
+    src = tmp_path / "emu.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "candidate_emulator_matrix",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "devices": [
+                    {
+                        "avd": "Pixel_6_API_34",
+                        "api": 34,
+                        "abi": "x86_64",
+                        "install_upgrade": False,
+                        "result": "PASS",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "candidate_emulator_matrix", src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("install_upgrade" in f for f in info["findings"])
+    assert any("userdata_snapshot" in f for f in info["findings"])
+
+
+def test_matrix_canonicalize_rejects_malformed_field_types(tmp_path: Path) -> None:
+    src = tmp_path / "dev.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "candidate_device_matrix",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "devices": [_device_row(model=1, os=False, evidence_archive_sha256="nope")],
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "candidate_device_matrix", src, tmp_path / "out.json", target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("model" in f for f in info["findings"])
+    assert any("os" in f for f in info["findings"])
+    assert any("evidence_archive_sha256" in f for f in info["findings"])
+
+
+def test_matrix_canonicalize_accepts_complete_rows(tmp_path: Path) -> None:
+    for gate, row in (
+        ("candidate_device_matrix", _device_row()),
+        ("candidate_emulator_matrix", _emulator_row()),
+    ):
+        src = tmp_path / f"{gate}.json"
+        src.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "gate": gate,
+                    "target_commit": TARGET,
+                    "result": "PASS",
+                    "devices": [row],
+                }
+            ),
+            encoding="utf-8",
+        )
+        info = app_matrix.canonicalize(
+            gate, src, tmp_path / f"{gate}-out.json", target_commit=TARGET
+        )
+        assert info["result"] == "PASS", info["findings"]
 
 
 def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
@@ -251,9 +347,11 @@ def test_shadow_template_forbids_production_archive(tmp_path: Path) -> None:
     shadow.emit_template(out, target_commit=TARGET, candidate_generation="prep-test")
     body = json.loads(out.read_text(encoding="utf-8"))
     steps = "\n".join(body["operator_steps"])
+    assert "AR_LOCAL_DATA_ROOT" in steps
     assert "AR_LOCAL_DAY_ARCHIVE_ENV" in steps
     assert "day-archive.env" in steps
     assert any("day-archive.env" in item for item in body["forbidden"])
+    assert any("AR_LOCAL_DATA_ROOT" in item for item in body["forbidden"])
 
 
 def test_load_day_archive_env_prefers_override(tmp_path: Path, monkeypatch) -> None:
@@ -266,10 +364,28 @@ def test_load_day_archive_env_prefers_override(tmp_path: Path, monkeypatch) -> N
     canary = tmp_path / "canary.env"
     canary.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/srv/ar-local/canary/x/data/archive-spool"\n', encoding="utf-8")
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(canary))
-    monkeypatch.delenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", raising=False)
-    # Ensure production path is not the default fall-through by leaving it unused.
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", "/var/lib/ar-local-day-archives")
+    monkeypatch.setenv("RCLONE_CONFIG", "/etc/ar-local/rclone.conf")
     archive_ingest.load_day_archive_env()
     assert os.environ["AR_LOCAL_DAY_ARCHIVE_SPOOL"] == "/srv/ar-local/canary/x/data/archive-spool"
+    assert "RCLONE_CONFIG" not in os.environ
+
+
+def test_load_day_archive_env_fail_closed_for_canary(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+
+    import pi_daily_cdr_day_archive_ingest as archive_ingest
+
+    missing = tmp_path / "missing.env"
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(missing))
+    with pytest.raises(ValueError, match="fail-closed"):
+        archive_ingest.load_day_archive_env()
+
+    canary = tmp_path / "canary.env"
+    canary.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives"\n', encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(canary))
+    with pytest.raises(ValueError, match="production archive spool"):
+        archive_ingest.load_day_archive_env()
 
 
 def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:

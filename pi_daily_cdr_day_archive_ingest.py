@@ -20,19 +20,19 @@ SCHEMA = "ar-local-daily-cdr-raw-record-v1"
 GENERATION_RE = re.compile(r"^obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}$")
 
 
-def load_day_archive_env(path: Path | None = None) -> None:
-    """Apply the archive env file so ingest uses the dedicated remote and config.
+PRODUCTION_DAY_ARCHIVE_ENV = Path("/etc/ar-local/day-archive.env")
+PRODUCTION_DAY_ARCHIVE_SPOOL = "/var/lib/ar-local-day-archives"
 
-    Prefer ``AR_LOCAL_DAY_ARCHIVE_ENV`` when set so isolated canary/shadow runs
-    cannot silently load production ``/etc/ar-local/day-archive.env``.
-    """
-    if path is None:
-        override = os.environ.get("AR_LOCAL_DAY_ARCHIVE_ENV", "").strip()
-        env_path = Path(override) if override else Path("/etc/ar-local/day-archive.env")
-    else:
-        env_path = path
-    if not env_path.is_file() or env_path.is_symlink():
-        return
+
+def _clear_inherited_day_archive_env() -> None:
+    """Drop inherited archive settings so a canary env cannot partially override production."""
+    for key in list(os.environ):
+        if key.startswith("AR_LOCAL_DAY_ARCHIVE") or key == "RCLONE_CONFIG":
+            os.environ.pop(key, None)
+
+
+def _parse_day_archive_env_file(env_path: Path) -> dict[str, str]:
+    parsed: dict[str, str] = {}
     for raw in env_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -40,7 +40,51 @@ def load_day_archive_env(path: Path | None = None) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         if key.startswith("AR_LOCAL_") or key == "RCLONE_CONFIG":
-            os.environ[key] = value.strip().strip("\"'")
+            parsed[key] = value.strip().strip("\"'")
+    return parsed
+
+
+def load_day_archive_env(path: Path | None = None) -> None:
+    """Apply the archive env file so ingest uses the dedicated remote and config.
+
+    Prefer ``AR_LOCAL_DAY_ARCHIVE_ENV`` when set so isolated canary/shadow runs
+    cannot silently load production ``/etc/ar-local/day-archive.env``.
+
+    When the override is set, fail closed on missing/symlink/incomplete env files
+    and refuse production spool inheritance instead of uploading canary data to
+    production archives.
+    """
+    override = os.environ.get("AR_LOCAL_DAY_ARCHIVE_ENV", "").strip()
+    if path is None:
+        env_path = Path(override) if override else PRODUCTION_DAY_ARCHIVE_ENV
+    else:
+        env_path = path
+    # Fail closed only when an isolated canary override is selected.
+    canary_mode = bool(override)
+    if not env_path.is_file() or env_path.is_symlink():
+        if canary_mode:
+            raise ValueError(
+                f"canary day-archive env missing or symlink (fail-closed): {env_path}"
+            )
+        return
+    parsed = _parse_day_archive_env_file(env_path)
+    if canary_mode:
+        _clear_inherited_day_archive_env()
+        spool = parsed.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", "").strip()
+        if not spool:
+            raise ValueError(
+                "canary day-archive env must set AR_LOCAL_DAY_ARCHIVE_SPOOL"
+            )
+        normalized_spool = spool.rstrip("/")
+        if normalized_spool == PRODUCTION_DAY_ARCHIVE_SPOOL.rstrip("/"):
+            raise ValueError(
+                "canary day-archive env must not use production archive spool "
+                f"{PRODUCTION_DAY_ARCHIVE_SPOOL}"
+            )
+        # Keep AR_LOCAL_DAY_ARCHIVE_ENV pointing at the canary file after clear.
+        os.environ["AR_LOCAL_DAY_ARCHIVE_ENV"] = str(env_path)
+    for key, value in parsed.items():
+        os.environ[key] = value
 
 
 def require_generation(value: str | None) -> str | None:

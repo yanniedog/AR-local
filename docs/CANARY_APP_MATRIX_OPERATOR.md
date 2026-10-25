@@ -52,9 +52,10 @@ External lab / agreed emulator. Emulator PASS does **not** prove physical device
 
 1. Install the candidate build for `TARGET_SHA` on the agreed AVD.
 2. Clean install + upgrade; current and repaired historical acquisition.
-3. Preserve emulator userdata path + sha256.
-4. Receipt must include non-empty `devices[]` with per-AVD `avd`, `api`, `abi`, and
-   `result="PASS"` fields.
+3. Preserve emulator `userdata_snapshot` path + `userdata_snapshot_sha256`.
+4. Receipt must include non-empty `devices[]` with per-AVD `avd`, `api`, `abi`,
+   `install_upgrade=true`, `acquisition_checks=true`, snapshot fields, and
+   `result="PASS"`.
 5. Canonicalize, then bind the canonical output:
 
 ```sh
@@ -72,9 +73,10 @@ python pi_canary_gate_bind.py candidate-emulator-matrix \
 Physical devices only. Never infer from emulator.
 
 1. Install candidate build on each required device.
-2. Record model, OS, ABI, install/upgrade, acquisition checks, lab run id.
-3. Receipt `devices[]` must cover the agreed matrix, with each device recording `model`,
-   `os`, `abi`, `install_upgrade`, `acquisition_checks`, and `result="PASS"`.
+2. Record model, OS, ABI, `install_upgrade=true`, `acquisition_checks=true`,
+   `lab_run_id`, and `evidence_archive_sha256`.
+3. Receipt `devices[]` must cover the agreed matrix with those typed fields and
+   `result="PASS"` (false/unknown check outcomes are rejected).
 4. Canonicalize, then bind the canonical output:
 
 ```sh
@@ -93,8 +95,9 @@ Shadow ingest must not touch production archive config. Before launching
 `cdr_daily.py` under the canary tree:
 
 1. Create `<canary>/config/day-archive.env` and `<canary>/data/archive-spool`.
-2. Point `AR_LOCAL_DAY_ARCHIVE_ENV` and `AR_LOCAL_DAY_ARCHIVE_SPOOL` at those
-   canary paths only (never `/etc/ar-local/day-archive.env` or
+2. Point `AR_LOCAL_DATA_ROOT`, `AR_LOCAL_DAY_ARCHIVE_ENV`, and
+   `AR_LOCAL_DAY_ARCHIVE_SPOOL` at the canary tree only (never production
+   `/srv/ar-local/data`, `/etc/ar-local/day-archive.env`, or
    `/var/lib/ar-local-day-archives`).
 3. Abort if production runs/state or the production archive spool mtimes change.
 
