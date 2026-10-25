@@ -460,25 +460,75 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     return ok
 
 
+_INGEST_TIMER_FIELDS = (
+    "DAILY_TIMER_ENABLED",
+    "DAILY_TIMER_ACTIVE",
+    "WATCHDOG_TIMER_ENABLED",
+    "WATCHDOG_TIMER_ACTIVE",
+    "CAPACITY_TIMER_ENABLED",
+    "CAPACITY_TIMER_ACTIVE",
+)
+
+_INGEST_TIMER_ARMED = {
+    "DAILY_TIMER_ENABLED": "enabled",
+    "DAILY_TIMER_ACTIVE": "active",
+    "WATCHDOG_TIMER_ENABLED": "enabled",
+    "WATCHDOG_TIMER_ACTIVE": "active",
+    "CAPACITY_TIMER_ENABLED": "enabled",
+    "CAPACITY_TIMER_ACTIVE": "active",
+}
+
+_INGEST_TIMER_UNARMED = {
+    "DAILY_TIMER_ENABLED": "disabled",
+    "DAILY_TIMER_ACTIVE": "inactive",
+    "WATCHDOG_TIMER_ENABLED": "disabled",
+    "WATCHDOG_TIMER_ACTIVE": "inactive",
+    "CAPACITY_TIMER_ENABLED": "disabled",
+    "CAPACITY_TIMER_ACTIVE": "inactive",
+}
+
+
+def _print_ingest_timer_fields(snap: dict[str, str]) -> None:
+    for field in _INGEST_TIMER_FIELDS:
+        print(f"pi_deploy_verify: {field}: {snap.get(field, '')}")
+
+
+def pi_ingest_timer_fields_observed(snap: dict[str, str]) -> bool:
+    """True when every ingest-timer field is present and non-empty."""
+    missing = [field for field in _INGEST_TIMER_FIELDS if not str(snap.get(field, "")).strip()]
+    if missing:
+        print(
+            "pi_deploy_verify: ingest timer state missing or unreadable: "
+            + ", ".join(missing),
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_TIMER_ENABLED": "enabled",
-        "DAILY_TIMER_ACTIVE": "active",
-        "WATCHDOG_TIMER_ENABLED": "enabled",
-        "WATCHDOG_TIMER_ACTIVE": "active",
-        "CAPACITY_TIMER_ENABLED": "enabled",
-        "CAPACITY_TIMER_ACTIVE": "active",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
+    _print_ingest_timer_fields(snap)
+    ok = all(snap.get(field, "") == value for field, value in _INGEST_TIMER_ARMED.items())
     if not ok:
         print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
     return ok
 
+
+def pi_ingest_timers_allow_unarmed(snap: dict[str, str]) -> bool:
+    """Held-timer verify: require observed state; allow armed or explicitly unarmed."""
+    _print_ingest_timer_fields(snap)
+    if not pi_ingest_timer_fields_observed(snap):
+        return False
+    if all(snap.get(field, "") == value for field, value in _INGEST_TIMER_ARMED.items()):
+        return True
+    if all(snap.get(field, "") == value for field, value in _INGEST_TIMER_UNARMED.items()):
+        return True
+    print(
+        "pi_deploy_verify: ingest timers are neither fully armed nor fully unarmed "
+        "(held-timer bypass requires an explicit observed state)",
+        file=sys.stderr,
+    )
+    return False
 
 
 def http_smoke(
@@ -583,10 +633,11 @@ def verify_sync(
         return EXIT_VERIFY_FAIL
     if allow_unarmed_ingest_timers:
         print(
-            "pi_deploy_verify: skipping ingest timer arming check "
+            "pi_deploy_verify: held-timer verify "
             "(--allow-unarmed-ingest-timers); timers not enabled by this verify"
         )
-        _ = pi_ingest_timers_ok(snap)  # still print observed timer state
+        if not pi_ingest_timers_allow_unarmed(snap):
+            return EXIT_VERIFY_FAIL
     elif not pi_ingest_timers_ok(snap):
         return EXIT_VERIFY_FAIL
     if not pi_ingest_service_fences_ok(snap):

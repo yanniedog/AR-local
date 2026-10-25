@@ -550,11 +550,18 @@ def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
     )
 
 
-def test_verify_sync_can_skip_unarmed_ingest_timer_check(monkeypatch):
+def test_verify_sync_can_skip_unarmed_ingest_timer_check(monkeypatch, capsys):
     commit = "a" * 40
     snap = _verified_sync_snapshot(commit)
-    snap["WATCHDOG_TIMER_ENABLED"] = "disabled"
-    snap["WATCHDOG_TIMER_ACTIVE"] = "inactive"
+    for field, value in (
+        ("DAILY_TIMER_ENABLED", "disabled"),
+        ("DAILY_TIMER_ACTIVE", "inactive"),
+        ("WATCHDOG_TIMER_ENABLED", "disabled"),
+        ("WATCHDOG_TIMER_ACTIVE", "inactive"),
+        ("CAPACITY_TIMER_ENABLED", "disabled"),
+        ("CAPACITY_TIMER_ACTIVE", "inactive"),
+    ):
+        snap[field] = value
     monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
     monkeypatch.setattr(
         pi_deploy_verify,
@@ -565,10 +572,38 @@ def test_verify_sync_can_skip_unarmed_ingest_timer_check(monkeypatch):
         pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
         == pi_deploy_verify.EXIT_OK
     )
+    captured = capsys.readouterr()
+    assert "daily ingest timers are not armed" not in captured.err
+    for field, value in (
+        ("DAILY_TIMER_ENABLED", "disabled"),
+        ("DAILY_TIMER_ACTIVE", "inactive"),
+        ("WATCHDOG_TIMER_ENABLED", "disabled"),
+        ("WATCHDOG_TIMER_ACTIVE", "inactive"),
+        ("CAPACITY_TIMER_ENABLED", "disabled"),
+        ("CAPACITY_TIMER_ACTIVE", "inactive"),
+    ):
+        assert f"{field}: {value}" in captured.out
     assert (
         pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=False)
         == pi_deploy_verify.EXIT_VERIFY_FAIL
     )
+
+
+def test_verify_sync_held_timers_fail_when_timer_state_unreadable(monkeypatch, capsys):
+    commit = "a" * 40
+    snap = _verified_sync_snapshot(commit)
+    snap["WATCHDOG_TIMER_ENABLED"] = ""
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: snap,
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+    assert "missing or unreadable" in capsys.readouterr().err
 
 
 def test_deploy_rejects_allow_unarmed_ingest_timers():
