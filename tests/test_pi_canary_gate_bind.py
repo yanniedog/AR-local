@@ -291,6 +291,98 @@ def test_public_candidate_enumerates_v3_capabilities(tmp_path: Path) -> None:
     assert not any("manifest.files" in f for f in receipt["findings"])
 
 
+def test_public_candidate_requires_manifest_generation(tmp_path: Path) -> None:
+    core_body = b'{"ok":true}'
+    core_sha = hashlib.sha256(core_body).hexdigest()
+    asset = tmp_path / "core.json.gz"
+    asset.write_bytes(core_body)
+    manifest = {
+        "schema_version": 1,
+        "producer_commit": COMMIT,
+        "files": {
+            "core": {"name": "core.json.gz", "sha256": core_sha, "bytes": len(core_body)},
+            "details": {
+                "name": "details.json.gz",
+                "sha256": core_sha,
+                "bytes": len(core_body),
+            },
+        },
+    }
+    details = tmp_path / "details.json.gz"
+    details.write_bytes(core_body)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[asset, details],
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("missing candidate_generation" in f for f in receipt["findings"])
+
+
+def test_public_candidate_v2_does_not_require_files_core(tmp_path: Path) -> None:
+    # Minimal v2 shape: files only product_history/economic_outlook; core via base.
+    hist = b'{"history":true}'
+    hist_sha = hashlib.sha256(hist).hexdigest()
+    econ = b'{"econ":true}'
+    econ_sha = hashlib.sha256(econ).hexdigest()
+    hist_path = tmp_path / "product_history.json.gz"
+    econ_path = tmp_path / "economic_outlook.json.gz"
+    hist_path.write_bytes(hist)
+    econ_path.write_bytes(econ)
+    manifest = {
+        "schema_version": 2,
+        "producer_commit": COMMIT,
+        "candidate_generation": GENERATION,
+        "base": {"core_sha": "d" * 64, "details_sha": "e" * 64},
+        "files": {
+            "product_history": {
+                "name": "product_history.json.gz",
+                "sha256": hist_sha,
+                "bytes": len(hist),
+            },
+            "economic_outlook": {
+                "name": "economic_outlook.json.gz",
+                "sha256": econ_sha,
+                "bytes": len(econ),
+            },
+        },
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[hist_path, econ_path],
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    # Contract validation may still fail v2 shape; never invent a files.core demand.
+    assert "core" not in receipt.get("required_keys", [])
+    assert not any("files.core" in f for f in receipt["findings"])
+    if not any("manifest contract" in f for f in receipt["findings"]):
+        assert payload["result"] == "PASS"
+
+
 def test_receipt_gate_rejects_missing_explicit_pass(tmp_path: Path) -> None:
     receipt = tmp_path / "r.json"
     receipt.write_text(

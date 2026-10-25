@@ -180,7 +180,12 @@ def bind_producer_contracts(
     v3_root = contracts_root / "v3"
     v3_digest: Optional[str] = None
     try:
-        contract_validation.load_schemas(v3_root)
+        v3_schemas = contract_validation.load_schemas(v3_root)
+        for name, schema in v3_schemas.items():
+            try:
+                Draft202012Validator.check_schema(schema)
+            except Exception as exc:  # noqa: BLE001 — capture any schema defect
+                findings.append(f"v3/{name}: {type(exc).__name__}: {exc}")
         v3_digest = contract_validation.contract_sha256(v3_root)
     except Exception as exc:  # noqa: BLE001
         findings.append(f"v3 contracts: {type(exc).__name__}: {exc}")
@@ -499,7 +504,12 @@ def bind_public_candidate_bytes(
             or (source_obs.get("generation_id") if isinstance(source_obs, Mapping) else None)
             or manifest.get("tag")
         )
-        if declared_gen is not None and str(declared_gen) != candidate_generation:
+        if declared_gen is None:
+            findings.append(
+                "manifest missing candidate_generation/generation_id/tag required "
+                f"to bind candidate_generation {candidate_generation!r}"
+            )
+        elif str(declared_gen) != candidate_generation:
             findings.append(
                 f"manifest generation/tag {declared_gen!r} != "
                 f"candidate_generation {candidate_generation!r}"
@@ -577,7 +587,8 @@ def bind_public_candidate_bytes(
 
     checked_keys = {c["key"] for c in checked}
     assets_complete = bool(required_keys) and required_keys.issubset(checked_keys)
-    if schema_version in (1, 2) and "core" not in checked_keys:
+    # v1 files.core is mandatory; v2 references core via base.core_sha, not files.core.
+    if schema_version == 1 and "core" not in checked_keys:
         assets_complete = False
     result = "PASS" if assets_complete and not findings else "FAIL"
     receipt = {
