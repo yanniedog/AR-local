@@ -142,7 +142,7 @@ def canonicalize(
     raw = json.loads(source.read_text(encoding="utf-8"))
     findings: list[str] = []
     source_gate = raw.get("gate")
-    if source_gate is not None and source_gate != gate:
+    if source_gate != gate:
         findings.append(f"source gate mismatch: {source_gate!r} != {gate!r}")
     if raw.get("target_commit") != target_commit:
         findings.append(
@@ -151,6 +151,19 @@ def canonicalize(
     status = raw.get("result") or raw.get("status")
     if status != "PASS":
         findings.append(f"result is {status!r}, not PASS")
+    if gate == "stable_app_compatibility" and status == "PASS":
+        ci = raw.get("ci")
+        if not isinstance(ci, dict):
+            findings.append("stable_app PASS requires ci object evidence")
+        else:
+            if not str(ci.get("command") or "").strip():
+                findings.append("stable_app PASS requires ci.command")
+            suites = ci.get("suites")
+            tests = ci.get("tests")
+            if not isinstance(suites, int) or suites < 0:
+                findings.append("stable_app PASS requires non-negative int ci.suites")
+            if not isinstance(tests, int) or tests < 0:
+                findings.append("stable_app PASS requires non-negative int ci.tests")
     if gate.endswith("_matrix") and status == "PASS":
         devices = raw.get("devices")
         if not isinstance(devices, list) or not devices:

@@ -28,6 +28,7 @@ def test_shadow_canonicalize_rejects_wrong_commit(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "gate": "shadow_ingest",
                 "target_commit": "a" * 40,
                 "result": "PASS",
                 "exit_code": 0,
@@ -47,6 +48,7 @@ def test_shadow_canonicalize_pass(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "gate": "shadow_ingest",
                 "target_commit": TARGET,
                 "result": "PASS",
                 "exit_code": 0,
@@ -60,6 +62,25 @@ def test_shadow_canonicalize_pass(tmp_path: Path) -> None:
     assert info["result"] == "PASS"
 
 
+def test_shadow_canonicalize_rejects_missing_gate(tmp_path: Path) -> None:
+    src = tmp_path / "src.json"
+    src.write_text(
+        json.dumps(
+            {
+                "target_commit": TARGET,
+                "result": "PASS",
+                "exit_code": 0,
+                "exports_dirs": ["/tmp/x"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    info = shadow.validate_and_canonicalize(src, out, target_commit=TARGET)
+    assert info["result"] == "FAIL"
+    assert any("source gate mismatch" in f for f in info["findings"])
+
+
 def test_app_matrix_templates(tmp_path: Path) -> None:
     infos = []
     for gate in app_matrix.GATES:
@@ -71,7 +92,14 @@ def test_app_matrix_templates(tmp_path: Path) -> None:
 def test_emulator_canonicalize_requires_devices(tmp_path: Path) -> None:
     src = tmp_path / "emu.json"
     src.write_text(
-        json.dumps({"target_commit": TARGET, "result": "PASS", "devices": []}),
+        json.dumps(
+            {
+                "gate": "candidate_emulator_matrix",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "devices": [],
+            }
+        ),
         encoding="utf-8",
     )
     out = tmp_path / "out.json"
@@ -79,6 +107,26 @@ def test_emulator_canonicalize_requires_devices(tmp_path: Path) -> None:
         "candidate_emulator_matrix", src, out, target_commit=TARGET
     )
     assert info["result"] == "FAIL"
+
+
+def test_stable_app_requires_ci_evidence(tmp_path: Path) -> None:
+    src = tmp_path / "app.json"
+    src.write_text(
+        json.dumps(
+            {
+                "gate": "stable_app_compatibility",
+                "target_commit": TARGET,
+                "result": "PASS",
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    info = app_matrix.canonicalize(
+        "stable_app_compatibility", src, out, target_commit=TARGET
+    )
+    assert info["result"] == "FAIL"
+    assert any("ci object" in f for f in info["findings"])
 
 
 def test_device_canonicalize_rejects_emulator_gate(tmp_path: Path) -> None:
@@ -128,6 +176,7 @@ def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
     src.write_text(
         json.dumps(
             {
+                "gate": "shadow_ingest",
                 "target_commit": TARGET,
                 "result": "PASS",
                 "exit_code": 0,

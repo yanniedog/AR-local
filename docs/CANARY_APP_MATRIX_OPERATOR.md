@@ -8,7 +8,11 @@ Companion producers:
 
 - `pi_canary_shadow_ingest.py` — isolated shadow-ingest receipt / template
 - `pi_canary_app_matrix_receipts.py` — UNKNOWN templates + canonicalize lab/CI receipts
-- `pi_canary_gate_bind.py` (PR binders) — bind validated receipts into gate evidence
+- `pi_canary_gate_bind.py` (PR binders) — bind **canonicalized** receipts into gate evidence
+
+Always **canonicalize then bind**. Never pass a raw lab/CI receipt straight to
+`pi_canary_gate_bind.py`; the binder's generic path does not re-run these gate-specific
+checks.
 
 ## stable_app_compatibility
 
@@ -28,7 +32,18 @@ Companion producers:
 }
 ```
 
-5. Bind with `pi_canary_gate_bind.py stable-app-compatibility --receipt …`.
+5. Canonicalize:
+
+```text
+python pi_canary_app_matrix_receipts.py canonicalize \
+  --gate stable_app_compatibility \
+  --source <raw-receipt.json> \
+  --output <canonical-receipt.json> \
+  --target-commit <40hex TARGET_SHA>
+```
+
+6. Bind only the canonicalize output with
+   `pi_canary_gate_bind.py stable-app-compatibility --receipt <canonical-receipt.json> …`.
 
 A prior product-evidence PASS on a **different** SHA is not transferable.
 
@@ -39,8 +54,11 @@ External lab / agreed emulator. Emulator PASS does **not** prove physical device
 1. Install the candidate build for `TARGET_SHA` on the agreed AVD.
 2. Clean install + upgrade; current and repaired historical acquisition.
 3. Preserve emulator userdata path + sha256.
-4. Receipt must include non-empty `devices[]` with per-AVD results.
-5. Bind with `pi_canary_gate_bind.py candidate-emulator-matrix --receipt …`.
+4. Receipt must include `gate=candidate_emulator_matrix` and non-empty `devices[]`
+   with per-AVD `result=PASS`.
+5. Canonicalize via `pi_canary_app_matrix_receipts.py canonicalize --gate candidate_emulator_matrix …`.
+6. Bind only the canonicalize output with
+   `pi_canary_gate_bind.py candidate-emulator-matrix --receipt …`.
 
 ## candidate_device_matrix
 
@@ -48,8 +66,26 @@ Physical devices only. Never infer from emulator.
 
 1. Install candidate build on each required device.
 2. Record model, OS, ABI, install/upgrade, acquisition checks, lab run id.
-3. Receipt `devices[]` must cover the agreed matrix.
-4. Bind with `pi_canary_gate_bind.py candidate-device-matrix --receipt …`.
+3. Receipt must include `gate=candidate_device_matrix` and `devices[]` covering the agreed matrix.
+4. Canonicalize via `pi_canary_app_matrix_receipts.py canonicalize --gate candidate_device_matrix …`.
+5. Bind only the canonicalize output with
+   `pi_canary_gate_bind.py candidate-device-matrix --receipt …`.
+
+## Shadow ingest
+
+1. Run isolated canary ingest under `/srv/ar-local/canary/<generation>/` (never production).
+2. Write raw receipt with `gate=shadow_ingest`, `exit_code=0`, and non-empty `exports_dirs` list.
+3. Canonicalize:
+
+```text
+python pi_canary_shadow_ingest.py canonicalize \
+  --source-receipt <raw-receipt.json> \
+  --output <canonical-receipt.json> \
+  --target-commit <40hex TARGET_SHA>
+```
+
+4. Bind only the canonicalize output with
+   `pi_canary_gate_bind.py shadow-ingest --receipt <canonical-receipt.json> …`.
 
 ## Emit UNKNOWN templates (automation)
 
@@ -64,4 +100,5 @@ python pi_canary_app_matrix_receipts.py template \
 - Fabricating PASS
 - Reusing receipts across candidate SHAs
 - Inferring device PASS from emulator
+- Binding raw receipts without canonicalize
 - Claiming assemble-ready while any of these gates remain UNKNOWN

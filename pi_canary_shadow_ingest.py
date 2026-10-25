@@ -44,7 +44,9 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(8).hex()}.tmp")
     try:
         fd = os.open(str(tmp), flags, 0o644)
         try:
@@ -52,6 +54,8 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
             os.fsync(fd)
         finally:
             os.close(fd)
+        if tmp.is_symlink() or not tmp.is_file():
+            raise ShadowIngestError(f"refusing non-regular temp path: {tmp}")
         os.replace(tmp, path)
     finally:
         try:
@@ -71,8 +75,12 @@ OPERATOR_STEPS = [
     "--runs <canary>/data/runs --state <canary>/data/state "
     "--ram-root /dev/shm/ar-local-canary-<generation> --banks-only --ram-stage",
     "Abort if production runs/state mtimes change or dashboard health fails.",
-    "On exit 0 with exports present, write receipt with result=PASS and target_commit=TARGET_SHA.",
-    "Bind: python pi_canary_gate_bind.py shadow-ingest --receipt <receipt> ...",
+    "On exit 0 with exports present, write receipt with gate=shadow_ingest, "
+    "result=PASS, target_commit=TARGET_SHA, exit_code=0, and exports_dirs=[...].",
+    "Canonicalize: python pi_canary_shadow_ingest.py canonicalize "
+    "--source-receipt <raw> --output <canonical> --target-commit TARGET_SHA",
+    "Bind only the canonicalize output: python pi_canary_gate_bind.py "
+    "shadow-ingest --receipt <canonical> ...",
 ]
 
 
@@ -115,6 +123,9 @@ def validate_and_canonicalize(
         raise ShadowIngestError(f"source receipt missing: {source_receipt}")
     raw = json.loads(source_receipt.read_text(encoding="utf-8"))
     findings: list[str] = []
+    source_gate = raw.get("gate")
+    if source_gate != "shadow_ingest":
+        findings.append(f"source gate mismatch: {source_gate!r} != 'shadow_ingest'")
     if raw.get("target_commit") != target_commit:
         findings.append(
             f"target_commit mismatch: {raw.get('target_commit')!r} != {target_commit!r}"
