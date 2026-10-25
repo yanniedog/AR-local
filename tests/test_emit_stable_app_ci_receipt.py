@@ -11,9 +11,18 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "emit_stable_app_ci_receipt.py"
 TARGET = "0d8cd36a478a2e8c35d2372659b42a842a14b220"
 APP = "91b71b25492e45d017f12ed68ddf5a2acfcbf338"
+GENERATION = "prep-stable-app-ci"
+SNAPSHOT = "a" * 64
 
 
-def _run(tmp_path: Path, *, exit_code: int, log_body: str) -> subprocess.CompletedProcess:
+def _run(
+    tmp_path: Path,
+    *,
+    exit_code: int,
+    log_body: str,
+    generation: str = GENERATION,
+    snapshot: str = SNAPSHOT,
+) -> subprocess.CompletedProcess:
     log = tmp_path / "ci.log"
     log.write_text(log_body, encoding="utf-8")
     out = tmp_path / "receipt.json"
@@ -29,6 +38,10 @@ def _run(tmp_path: Path, *, exit_code: int, log_body: str) -> subprocess.Complet
             str(log),
             "--ci-exit-code",
             str(exit_code),
+            "--candidate-generation",
+            generation,
+            "--preservation-snapshot-sha256",
+            snapshot,
             "--output",
             str(out),
         ],
@@ -50,6 +63,8 @@ def test_pass_when_ci_green_with_jest_counts(tmp_path: Path) -> None:
     assert payload["ci"]["command"] == "npm run ci"
     assert payload["ci"]["exit_code"] == 0
     assert len(payload["ci"]["log_sha256"]) == 64
+    assert payload["candidate_generation"] == GENERATION
+    assert payload["preservation_snapshot_sha256"] == SNAPSHOT
 
 
 def test_pass_when_jest_reports_skipped_before_passed(tmp_path: Path) -> None:
@@ -71,6 +86,8 @@ def test_fail_when_exit_nonzero(tmp_path: Path) -> None:
     assert proc.returncode == 1
     payload = json.loads((tmp_path / "receipt.json").read_text(encoding="utf-8"))
     assert payload["result"] == "FAIL"
+    assert payload["candidate_generation"] == GENERATION
+    assert payload["preservation_snapshot_sha256"] == SNAPSHOT
 
 
 def test_fail_without_jest_summary(tmp_path: Path) -> None:
@@ -78,3 +95,10 @@ def test_fail_without_jest_summary(tmp_path: Path) -> None:
     assert proc.returncode == 1
     payload = json.loads((tmp_path / "receipt.json").read_text(encoding="utf-8"))
     assert payload["result"] == "FAIL"
+
+
+def test_rejects_invalid_bind_fields(tmp_path: Path) -> None:
+    body = "Test Suites: 1 passed, 1 total\nTests:       1 passed, 1 total\n"
+    proc = _run(tmp_path, exit_code=0, log_body=body, snapshot="not-a-sha")
+    assert proc.returncode != 0
+    assert not (tmp_path / "receipt.json").exists()

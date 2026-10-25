@@ -18,6 +18,14 @@ on:
         required: true
         default: "main"
         type: string
+      candidate_generation:
+        description: "Canary candidate_generation for canonicalize→bind"
+        required: true
+        type: string
+      preservation_snapshot_sha256:
+        description: "preservation_snapshot_sha256 (64 lowercase hex)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -31,14 +39,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Validate target_commit
+      - name: Validate bind inputs
         shell: bash
         env:
           TARGET_COMMIT: ${{ github.event.inputs.target_commit }}
+          CANDIDATE_GENERATION: ${{ github.event.inputs.candidate_generation }}
+          PRESERVATION_SNAPSHOT_SHA256: ${{ github.event.inputs.preservation_snapshot_sha256 }}
         run: |
           set -euo pipefail
           if [[ ! "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
             echo "target_commit must be 40 lowercase hex, got: $TARGET_COMMIT" >&2
+            exit 2
+          fi
+          if [[ ! "$CANDIDATE_GENERATION" =~ ^[A-Za-z0-9._:-]{1,128}$ ]]; then
+            echo "candidate_generation charset/length invalid: $CANDIDATE_GENERATION" >&2
+            exit 2
+          fi
+          if [[ ! "$PRESERVATION_SNAPSHOT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "preservation_snapshot_sha256 must be 64 lowercase hex" >&2
             exit 2
           fi
 
@@ -98,6 +116,8 @@ jobs:
           TARGET_COMMIT: ${{ github.event.inputs.target_commit }}
           AR_APP_HEAD: ${{ steps.app.outputs.head }}
           CI_EXIT_CODE: ${{ steps.ci.outputs.exit_code }}
+          CANDIDATE_GENERATION: ${{ github.event.inputs.candidate_generation }}
+          PRESERVATION_SNAPSHOT_SHA256: ${{ github.event.inputs.preservation_snapshot_sha256 }}
         run: |
           set -euo pipefail
           python3 ar-local/scripts/emit_stable_app_ci_receipt.py \
@@ -105,6 +125,8 @@ jobs:
             --ar-app-head "$AR_APP_HEAD" \
             --ci-log "$GITHUB_WORKSPACE/receipt-out/mobile-npm-run-ci.log" \
             --ci-exit-code "$CI_EXIT_CODE" \
+            --candidate-generation "$CANDIDATE_GENERATION" \
+            --preservation-snapshot-sha256 "$PRESERVATION_SNAPSHOT_SHA256" \
             --output "$GITHUB_WORKSPACE/receipt-out/stable_app-live-receipt.json" \
             --worktree "ar-app/mobile@$AR_APP_HEAD"
           # Fail-closed: emitter non-zero fails this step. Artifact upload uses always().
