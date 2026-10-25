@@ -67,3 +67,31 @@ def test_canonical_target_allows_local_volume(tmp_path: Path, monkeypatch: pytes
     )
     monkeypatch.setattr(target_guard, "_windows_drive_type", lambda _path: 3)
     assert receiver.canonical_target(target) == target.resolve()
+
+
+def test_decode_proc_mounts_field_handles_space_escape():
+    assert target_guard._decode_proc_mounts_field(r"/mnt/remote\040share") == "/mnt/remote share"
+
+
+def test_volume_probe_matches_escaped_cifs_mountpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    mount = tmp_path / "remote share"
+    mount.mkdir()
+    target = mount / "AR-local-pi5"
+    target.mkdir()
+    mounts_file = tmp_path / "mounts"
+    escaped_root = tmp_path.as_posix().replace(" ", r"\040")
+    mounts_file.write_text(
+        f"//server/share {escaped_root}/remote\\040share cifs rw 0 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(target_guard, "os", type("O", (), {"name": "posix"})())
+    real_open = open
+
+    def fake_open(path, *args, **kwargs):
+        if str(path) == "/proc/mounts":
+            return real_open(mounts_file, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", fake_open)
+    identity = target_guard.volume_probe(target)
+    assert identity["filesystem"] == "cifs"

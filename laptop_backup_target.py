@@ -72,6 +72,22 @@ def existing_ancestor(path: Path) -> Path:
         current = parent
 
 
+def _decode_proc_mounts_field(value: str) -> str:
+    """Decode /proc/mounts octal escapes (e.g. ``\\040`` for space)."""
+    out: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] == "\\" and index + 3 < len(value):
+            octal = value[index + 1 : index + 4]
+            if all(char in "01234567" for char in octal):
+                out.append(chr(int(octal, 8)))
+                index += 4
+                continue
+        out.append(value[index])
+        index += 1
+    return "".join(out)
+
+
 def volume_probe(path: Path) -> dict[str, str]:
     """Best-effort local volume identity for refuse-cloud checks (Windows + POSIX)."""
     label = ""
@@ -113,7 +129,8 @@ def volume_probe(path: Path) -> dict[str, str]:
                     parts = line.split()
                     if len(parts) < 3:
                         continue
-                    mountpoint, fstype = parts[1], parts[2]
+                    mountpoint = _decode_proc_mounts_field(parts[1])
+                    fstype = parts[2]
                     try:
                         mount_path = Path(mountpoint).resolve()
                     except OSError:
