@@ -102,10 +102,13 @@ unit against the day-archive seed checkout
 
 ## Ongoing coverage
 
-Successful `cdr_daily` finalize calls `request_day_archive(date)`, writing
-`/var/lib/ar-local-day-archives/requests/<date>.json`. The
-`ar-local-day-archive.timer` drains pending requests outside the quiet window
-via `pi-shared-task` / the installed service.
+Successful `cdr_daily` finalize calls `archive_observation_day(date)` before
+seal or any cleanup that removes that day's raw files. The upload is
+synchronous, journals stay on, and the same Hobart day is allowed so the
+still-present banks tree is in the tar. Cleanup runs only when the result is
+`PASS` (verified upload; local tar removed only after that verify). Any other
+result leaves the raw tree in place. `ar-local-day-archive.timer` still drains
+queued requests; it is not the ingest cleanup gate.
 
 ## Google Drive write-hold lift (operator 1B)
 

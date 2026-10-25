@@ -453,6 +453,7 @@ def process_day(
     dry_run: bool,
     include_journals: bool,
     guard: Callable[[], None] = lambda: None,
+    allow_same_day: bool = False,
 ) -> dict:
     day = require_day(day)
     spool = Path(spool)
@@ -466,6 +467,7 @@ def process_day(
             dry_run=dry_run,
             include_journals=include_journals,
             guard=guard,
+            allow_same_day=allow_same_day,
         )
 
 
@@ -478,6 +480,7 @@ def _process_day_locked(
     dry_run: bool,
     include_journals: bool,
     guard: Callable[[], None],
+    allow_same_day: bool = False,
 ) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing day-archive work inside 00:30–02:00 Australia/Hobart quiet window")
@@ -486,8 +489,9 @@ def _process_day_locked(
         request = spool / "requests" / f"{day}.json"
         request.unlink(missing_ok=True)
         return prior
-    # Same-day archives stay pending until Hobart midnight so journals cover the full day.
-    if day == hobart_today().isoformat() and not dry_run:
+    # Timer and backfill wait until Hobart midnight. The ingest path sets
+    # allow_same_day so it can upload before it deletes the raw tree.
+    if day == hobart_today().isoformat() and not dry_run and not allow_same_day:
         return {
             "schema": SCHEMA,
             "date": day,
@@ -655,6 +659,42 @@ def _process_day_locked(
         }
         record_progress(spool, row)
         raise
+
+
+def archive_observation_day(
+    day: str,
+    *,
+    data_root: Path | None = None,
+    spool: Path | None = None,
+    transport: DayArchiveRclone | None = None,
+) -> dict:
+    """Synchronous raw-record upload used before ingest deletes that day's files.
+
+    Journals stay on. The same Hobart day is allowed. PASS is a verified Drive
+    upload; this function never deletes source CDR trees.
+    """
+    day = require_day(day)
+    root = Path(data_root or os.environ.get("AR_LOCAL_DATA_ROOT", DEFAULT_DATA_ROOT))
+    spool_path = Path(spool or os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
+    spool_path.mkdir(parents=True, exist_ok=True)
+    if transport is None:
+        remote = os.environ.get("AR_LOCAL_DAY_ARCHIVE_REMOTE", DEFAULT_REMOTE)
+        if ":" not in remote:
+            raise DayArchiveError("rclone remote must look like name:path")
+        transport = DayArchiveRclone(
+            Path(os.environ.get("RCLONE_CONFIG", DEFAULT_RCLONE)),
+            remote,
+            os.environ.get("AR_LOCAL_DRIVE_ROOT_FOLDER_ID", ""),
+        )
+    return process_day(
+        data_root=root,
+        day=day,
+        spool=spool_path,
+        transport=transport,
+        dry_run=False,
+        include_journals=True,
+        allow_same_day=True,
+    )
 
 
 def process_control(

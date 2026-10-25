@@ -821,3 +821,79 @@ def test_walk_propagates_unreadable_directory(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(scope.os, "walk", walk_with_error)
     with pytest.raises(RuntimeError, match="unreadable archive source"):
         list(scope._walk_files(root))
+
+
+def test_same_day_upload_is_opt_in_and_keeps_wire_bodies(tmp_path: Path, monkeypatch):
+    day = archive.hobart_today().isoformat()
+    data = tmp_path / "data"
+    leaf = data / "runs" / day / "banks" / "leaf"
+    leaf.mkdir(parents=True)
+    (leaf / "product-detail.json").write_bytes(b"opaque-wire-body")
+    (leaf / "product-detail.error.txt").write_bytes(b"opaque-error-body")
+    uploaded: list[str] = []
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return False
+
+        def upload(self, relative, source):
+            uploaded.append(relative)
+            Path(source).read_bytes()
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(
+        archive,
+        "verify_uploaded_archive",
+        lambda *args, **kwargs: None,
+    )
+    spool = tmp_path / "spool"
+    deferred = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+    )
+    assert deferred["result"] == "DEFERRED"
+    assert uploaded == []
+    result = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+        allow_same_day=True,
+    )
+    assert result["result"] == "PASS"
+    assert result["raw_banks_absent"] is False
+    assert result["coverage"] == "wire_raw"
+    assert uploaded[0] == f"{day}.tar.zst"
+    assert (leaf / "product-detail.json").read_bytes() == b"opaque-wire-body"
+    assert (leaf / "product-detail.error.txt").read_bytes() == b"opaque-error-body"
+
+
+def test_archive_observation_day_is_synchronous_same_day_with_journals(tmp_path: Path, monkeypatch):
+    seen = {}
+
+    def fake_process_day(**kwargs):
+        seen.update(kwargs)
+        return {"result": "PASS", "date": kwargs["day"]}
+
+    monkeypatch.setattr(archive, "process_day", fake_process_day)
+    result = archive.archive_observation_day(
+        "2026-10-24",
+        data_root=tmp_path,
+        spool=tmp_path / "spool",
+        transport=object(),
+    )
+    assert result == {"result": "PASS", "date": "2026-10-24"}
+    assert seen["allow_same_day"] is True
+    assert seen["include_journals"] is True
+    assert seen["dry_run"] is False
+    assert seen["day"] == "2026-10-24"

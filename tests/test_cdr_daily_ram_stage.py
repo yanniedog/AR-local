@@ -585,3 +585,56 @@ def test_preserving_evidence_never_raises(tmp_path, monkeypatch, capsys):
     cdr_daily.preserve_attempt_evidence(tmp_path / "run", tmp_path / "_exports")
 
     assert "could not preserve raw attempt evidence" in capsys.readouterr().err
+
+
+def test_failed_day_archive_leaves_raw_tree_and_skips_seal(tmp_path, monkeypatch):
+    args, _runs, state, ram = _configure(tmp_path, monkeypatch)
+
+    def archive(date):
+        raw = ram / "runs" / date
+        assert raw.is_dir()
+        assert (raw / "banks" / "ingest-status.json").is_file()
+        assert (raw / "_raw-attempt-journals-v1").is_dir()
+        return {"date": date, "result": "FAIL", "error": "upload not verified"}
+
+    def seal(*_args, **_kwargs):
+        raise AssertionError("seal ran without a verified day archive")
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    monkeypatch.setattr(cdr_daily, "seal_ram_capture_stage", seal)
+    assert cdr_daily.run_once(args) == 2
+    assert (ram / "runs" / DATE).is_dir()
+    assert (ram / "runs" / DATE / "_raw-attempt-journals-v1").is_dir()
+    assert (state / f"{DATE}.done.json").is_file()
+
+
+def test_ram_cleanup_runs_only_after_archive_pass(tmp_path, monkeypatch):
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+    order = []
+
+    def archive(date):
+        assert (ram / "runs" / date / "_raw-attempt-journals-v1").is_dir()
+        order.append("archive")
+        return {"date": date, "result": "PASS", "sha256": "ab" * 32}
+
+    def seal(*_args, **_kwargs):
+        order.append("seal")
+        return {"status": "DISABLED"}
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    monkeypatch.setattr(cdr_daily, "seal_ram_capture_stage", seal)
+    assert cdr_daily.run_once(args) == 1
+    assert order == ["archive", "seal"]
+    assert not (ram / "runs" / DATE).exists()
+
+
+def test_finalized_retry_does_not_clean_raw_without_archive_pass(tmp_path, monkeypatch):
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cdr_daily,
+        "_archive_raw_day_before_cleanup",
+        lambda date: {"date": date, "result": "FAIL", "error": "not uploaded"},
+    )
+    assert cdr_daily.run_once(args) == 2
+    assert cdr_daily.run_once(args) == 2
+    assert (ram / "runs" / DATE / "banks" / "ingest-status.json").is_file()

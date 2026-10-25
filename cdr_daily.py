@@ -337,21 +337,39 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
-def _reconcile_day_archive_request(date: str, *, reason: str) -> None:
-    """Idempotent enqueue after finalize / already-finalized / recovery paths.
+def _archive_raw_day_before_cleanup(date: str) -> dict:
+    """Upload this Hobart day's raw record while the source tree still exists.
 
-    Failures must never undo a verified finalize; surface and continue.
+    PASS means Drive accepted the object, the re-download hash matched, and
+    only the local compressed archive was removed. Seal and raw cleanup are
+    forbidden for every other result.
     """
     try:
-        from pi_daily_cdr_day_archive import request_day_archive
+        from pi_daily_cdr_day_archive import archive_observation_day
 
-        path = request_day_archive(date, reason=reason)
-        print(f"day-archive request reconciled: {path}")
-    except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
+        result = archive_observation_day(date)
+    except Exception as archive_error:  # noqa: BLE001 — keep the raw tree
         print(
-            f"day-archive enqueue failed ({reason}): {archive_error}",
+            f"day-archive failed before cleanup ({date}): {archive_error}",
             file=sys.stderr,
         )
+        return {"date": date, "result": "FAIL", "error": str(archive_error)[:500]}
+    if not isinstance(result, dict) or result.get("result") != "PASS":
+        status = result.get("result") if isinstance(result, dict) else "FAIL"
+        detail = ""
+        if isinstance(result, dict):
+            detail = str(result.get("error") or result.get("reason") or "")
+        print(
+            f"day-archive not verified before cleanup ({date}): {status} {detail}".rstrip(),
+            file=sys.stderr,
+        )
+        if not isinstance(result, dict):
+            return {"date": date, "result": "FAIL", "error": "missing archive result"}
+    return result
+
+
+def _verified_before_raw_cleanup(date: str) -> bool:
+    return _archive_raw_day_before_cleanup(date).get("result") == "PASS"
 
 
 def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, exports: Optional[Path]) -> None:
@@ -425,6 +443,8 @@ def run_once(args: argparse.Namespace) -> int:
     if not args.force:
         selected_marker = verified_pointer_marker_for_date(state_dir, date)
         if selected_marker is not None:
+            if not _verified_before_raw_cleanup(date):
+                return 2
             resumed_terms = retry_terms_capture(selected_marker, args, state_dir, persistent_runs_root, date)
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
@@ -438,10 +458,11 @@ def run_once(args: argparse.Namespace) -> int:
                 )
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
-            _reconcile_day_archive_request(date, reason="already-finalized-pointer")
             return 0
         recovered_marker = recover_pending_finalization(state_dir, date)
         if recovered_marker is not None:
+            if not _verified_before_raw_cleanup(date):
+                return 2
             resumed_terms = retry_terms_capture(recovered_marker, args, state_dir, persistent_runs_root, date)
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
@@ -455,13 +476,14 @@ def run_once(args: argparse.Namespace) -> int:
                 )
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
-            _reconcile_day_archive_request(date, reason="finalization-recovery")
             return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
     marker_trusted = marker_exists and not resume_same_day and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
         if marker_trusted:
+            if not _verified_before_raw_cleanup(date):
+                return 2
             resumed_terms = retry_terms_capture(marker, args, state_dir, persistent_runs_root, date)
             if resumed_terms is not None:
                 print(json.dumps({"terms_evidence": resumed_terms}, ensure_ascii=False))
@@ -480,7 +502,6 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
-            _reconcile_day_archive_request(date, reason="already-finalized-marker")
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
@@ -709,6 +730,20 @@ def run_once(args: argparse.Namespace) -> int:
         # Emit the legacy v1 integrity manifest after the mandatory ledger-v2
         # event and completion marker have landed.
         _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
+    # Verified Drive upload while banks/, error bodies, and attempt journals
+    # are still on disk. Seal and every raw-file cleanup are below this gate.
+    archive_result = _archive_raw_day_before_cleanup(date)
+    finalized = {
+        **finalized,
+        "day_archive": {
+            "status": archive_result.get("result"),
+            "sha256": archive_result.get("sha256"),
+            "error": str(archive_result.get("error") or archive_result.get("reason") or "")[:300],
+        },
+    }
+    if archive_result.get("result") != "PASS":
+        print(json.dumps(finalized, indent=2, ensure_ascii=False))
+        return 2
     cleanup_seal = None
     if ram_cleanup_paths is not None:
         cleanup_seal = seal_ram_capture_stage(
@@ -741,29 +776,6 @@ def run_once(args: argparse.Namespace) -> int:
             )
         for cleanup_path in ram_cleanup_paths:
             shutil.rmtree(cleanup_path, ignore_errors=True)
-    # Durable post-ingest enqueue after primary finalize only (not revisions).
-    # Failures here must not undo a verified finalize; surface and continue.
-    if not is_revision:
-        try:
-            from pi_daily_cdr_day_archive import request_day_archive
-
-            archive_request = request_day_archive(date, reason="post-ingest-finalize")
-            finalized = {
-                **finalized,
-                "day_archive_request": {"status": "QUEUED", "path": str(archive_request)},
-            }
-        except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
-            print(
-                f"day-archive enqueue failed after finalize: {archive_error}",
-                file=sys.stderr,
-            )
-            finalized = {
-                **finalized,
-                "day_archive_request": {
-                    "status": "ENQUEUE_FAILED",
-                    "error": str(archive_error)[:300],
-                },
-            }
     print(json.dumps(finalized, indent=2, ensure_ascii=False))
     return 1
 
