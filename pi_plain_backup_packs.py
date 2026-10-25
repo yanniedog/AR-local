@@ -188,8 +188,11 @@ def header(name, row):
     info.size, info.mode = row['size'], int(row['mode'], 8)
     info.uid, info.gid = row['uid'], row['gid']
     ns = row['mtime_ns']
+    # Floor division breaks negative fractional seconds (e.g. -1.5s → -2.5); use abs.
+    sign = '-' if ns < 0 else ''
+    whole, frac = divmod(abs(ns), 10**9)
     info.mtime = ns // 10**9
-    info.pax_headers = {'mtime': f'{ns // 10**9}.{ns % 10**9:09d}'}
+    info.pax_headers = {'mtime': f'{sign}{whole}.{frac:09d}'}
     return info
 
 
