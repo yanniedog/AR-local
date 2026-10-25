@@ -733,6 +733,112 @@ def test_receipt_gate_rejects_cross_gate_substitution(tmp_path: Path) -> None:
     assert any("gate:" in f and "shadow_ingest" in f for f in body["findings"])
 
 
+def test_receipt_gate_rejects_shadow_without_exit_exports(tmp_path: Path) -> None:
+    """Labeled PASS without exit_code/exports must not authorize shadow_ingest."""
+    receipt = tmp_path / "r.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "gate": "shadow_ingest",
+                "target_commit": COMMIT,
+                "result": "PASS",
+                "candidate_generation": GENERATION,
+                "preservation_snapshot_sha256": SNAPSHOT,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_receipt_gate(
+        gate_dir,
+        gate="shadow_ingest",
+        target_commit=COMMIT,
+        receipt_path=receipt,
+        required_fields={"target_commit": COMMIT},
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        missing_reason="unused",
+    )
+    assert payload["result"] == "FAIL"
+    body = json.loads(
+        (gate_dir / "receipts" / "shadow_ingest-receipt.json").read_text(encoding="utf-8")
+    )
+    assert any("exit_code" in f for f in body["findings"])
+    assert any("exports" in f for f in body["findings"])
+
+
+def test_receipt_gate_passes_shadow_with_exit_exports(tmp_path: Path) -> None:
+    receipt = tmp_path / "r.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "gate": "shadow_ingest",
+                "target_commit": COMMIT,
+                "result": "PASS",
+                "exit_code": 0,
+                "exports_dirs": ["/srv/ar-local/canary/exports/day"],
+                "candidate_generation": GENERATION,
+                "preservation_snapshot_sha256": SNAPSHOT,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_receipt_gate(
+        gate_dir,
+        gate="shadow_ingest",
+        target_commit=COMMIT,
+        receipt_path=receipt,
+        required_fields={"target_commit": COMMIT},
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        missing_reason="unused",
+    )
+    assert payload["result"] == "PASS"
+
+
+def test_receipt_gate_rejects_empty_device_matrix(tmp_path: Path) -> None:
+    """Matrix labels alone (empty devices / FAIL rows) must not authorize PASS."""
+    receipt = tmp_path / "r.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "gate": "candidate_device_matrix",
+                "target_commit": COMMIT,
+                "result": "PASS",
+                "devices": [{"model": "Pixel", "result": "FAIL"}],
+                "candidate_generation": GENERATION,
+                "preservation_snapshot_sha256": SNAPSHOT,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_receipt_gate(
+        gate_dir,
+        gate="candidate_device_matrix",
+        target_commit=COMMIT,
+        receipt_path=receipt,
+        required_fields={"target_commit": COMMIT},
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        missing_reason="unused",
+    )
+    assert payload["result"] == "FAIL"
+    body = json.loads(
+        (gate_dir / "receipts" / "candidate_device_matrix-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("devices[0].result must be PASS" in f for f in body["findings"])
+
+
 def test_producer_contracts_reject_mismatched_target(tmp_path: Path) -> None:
     payload = bind.bind_producer_contracts(
         tmp_path,
