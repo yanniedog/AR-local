@@ -165,6 +165,18 @@ def continuation_path(spool: Path, day: str, generation_id: str) -> Path:
     return Path(spool) / "requests" / f"{day}.{generation_id}.ingest-continuation.json"
 
 
+def quarantine_unrecoverable(spool: Path, day: str, generation_id: str | None) -> None:
+    """Move a continuation that can never upload so later requests can drain."""
+    if not generation_id:
+        return
+    source = continuation_path(spool, day, generation_id)
+    if not source.exists():
+        return
+    blocked = Path(spool) / "blocked"
+    blocked.mkdir(parents=True, exist_ok=True)
+    source.replace(blocked / source.name)
+
+
 def clear_archive_requests(spool: Path, day: str, generation_id: str | None) -> None:
     (Path(spool) / "requests" / f"{day}.json").unlink(missing_ok=True)
     if generation_id:

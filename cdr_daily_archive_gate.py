@@ -39,6 +39,7 @@ def write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root
         "stage_roots": [str(Path(item).resolve()) for item in stage_roots],
         "seal_exports": None if seal_exports is None else str(seal_exports.resolve()),
         "clean_ram_stage": bool(clean_ram_stage),
+        "terms_root": os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip(),
     }
     atomic_write_json(path, payload, create_once=True)
 
@@ -108,6 +109,9 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
     ownership = read_json(ownership_path(state_dir, date, generation))
     if ownership.get("generation_id") != generation or ownership.get("date") != date:
         return {"ram_cleanup": {"status": "PRESERVED", "reason": "ownership_generation_mismatch"}}
+    required_terms = str(ownership.get("terms_root") or "").strip()
+    if required_terms and not os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
+        os.environ["AR_LOCAL_TERMS_ROOT"] = required_terms
     if recorded.get("ram_staged") is not True:
         if os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
             from cdr_daily import retry_terms_capture
@@ -227,23 +231,30 @@ def finish_verified_stage_cleanups(args: argparse.Namespace, state_dir: Path, ru
             continue
         resumed = resume_owned_ram_cleanup(args, state_dir, runs_root, day, marker)
         cleanup = (resumed or {}).get("ram_cleanup") or {}
-        if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "KEPT"}:
+        if isinstance(cleanup, dict) and cleanup.get("status") == "CLEANED":
             path.unlink(missing_ok=True)
         elif isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
             print(f"raw cleanup still preserved ({day}): {cleanup.get('reason', '')}", file=sys.stderr)
 
 
-def maybe_resume_job(result: dict, job: dict, *, dry_run: bool = False) -> None:
+def maybe_resume_job(result: dict, job: dict, *, dry_run: bool = False, spool: Path | None = None) -> None:
     import sys
     if dry_run or result.get("result") != "PASS" or not job.get("state_dir") or not job.get("runs_root"):
         return
     try:
-        resume_job_cleanup(job)
+        resume_job_cleanup(job, spool=spool)
     except Exception as error:  # noqa: BLE001 — a verified upload still stands
         print(f"day-archive cleanup resume failed ({job.get('day')}): {error}", file=sys.stderr)
 
 
-def resume_job_cleanup(job: dict) -> None:
+def resume_job_cleanup(job: dict, *, spool: Path | None = None) -> None:
+    from pi_daily_sync import DailyIngestLock
+    state_dir = Path(job["state_dir"])
+    with DailyIngestLock(state_dir / "daily-ingest.lock"):
+        _resume_job_cleanup_locked(job, spool=spool)
+
+
+def _resume_job_cleanup_locked(job: dict, *, spool: Path | None) -> None:
     state_dir = Path(job["state_dir"])
     runs_root = Path(job["runs_root"])
     day = str(job["day"])
@@ -252,7 +263,7 @@ def resume_job_cleanup(job: dict) -> None:
     if marker is None:
         return
     from pi_daily_cdr_day_archive import DEFAULT_SPOOL, progress_path
-    progress = progress_path(Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL)))
+    progress = progress_path(Path(spool or os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL)))
     ownership = read_json(ownership_path(state_dir, day, generation))
     if not _stage_matches_uploaded(progress, day, generation, ownership, state_dir):
         return
@@ -263,5 +274,5 @@ def resume_job_cleanup(job: dict) -> None:
     cleanup = (finish_one or {}).get("ram_cleanup") or {}
     if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
         raise RuntimeError(cleanup.get("reason") or "cleanup preserved")
-    if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "KEPT"}:
+    if isinstance(cleanup, dict) and cleanup.get("status") == "CLEANED":
         ownership_path(state_dir, day, generation).unlink(missing_ok=True)

@@ -27,8 +27,7 @@ from pi_drive_backup_hold import Blocked, require_writes_allowed
 from pi_daily_cdr_day_archive_ingest import (
     StageMissing,
     cached_generation_upload,
-    clear_archive_requests,
-    enqueue_ingest_continuation,
+    clear_archive_requests, enqueue_ingest_continuation, quarantine_unrecoverable,
     generation_has_pass, load_day_archive_env,
     pending_archive_jobs,
     bind_generation_remote,
@@ -947,15 +946,7 @@ def main(argv: list[str] | None = None) -> int:
             spool, today=hobart_today().isoformat(), quiet=in_quiet_window(),
         )
         if not jobs:
-            print(
-                json.dumps(
-                    {
-                        "result": "IDLE",
-                        "reason": "no eligible pending requests (same-day deferred)",
-                    },
-                    indent=2,
-                )
-            )
+            print(json.dumps({"result": "IDLE", "reason": "no eligible pending requests (same-day deferred)"}, indent=2))
             return 0
     elif args.backfill:
         done = load_progress(spool)
@@ -971,19 +962,24 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     for job in jobs:
-        result = process_day(
-            data_root=job.get("data_root") or args.data_root.resolve(),
-            day=job["day"],
-            spool=spool,
-            transport=transport,
-            dry_run=args.dry_run,
-            include_journals=True,
-            allow_same_day=bool(job.get("allow_same_day")),
-            generation_id=job.get("generation_id"),
-            stage_roots=job.get("stage_roots"),
-        )
+        try:
+            result = process_day(
+                data_root=job.get("data_root") or args.data_root.resolve(),
+                day=job["day"],
+                spool=spool,
+                transport=transport,
+                dry_run=args.dry_run,
+                include_journals=True,
+                allow_same_day=bool(job.get("allow_same_day")),
+                generation_id=job.get("generation_id"),
+                stage_roots=job.get("stage_roots"),
+            )
+        except StageMissing as error:
+            quarantine_unrecoverable(spool, job["day"], job.get("generation_id"))
+            print(json.dumps({"result": "BLOCKED", "date": job["day"], "error": str(error)}, indent=2))
+            continue
         results.append(result)
-        maybe_resume_job(result, job, dry_run=args.dry_run)
+        maybe_resume_job(result, job, dry_run=args.dry_run, spool=spool)
         if result.get("result") == "FAIL":
             print(json.dumps({"results": results}, indent=2, sort_keys=True))
             return 1
