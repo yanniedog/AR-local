@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, ContextManager
 
 from app_payload_common import DEFAULT_REPO, DEFAULT_TAG, HISTORY_MIN_DATE
 from app_payload_revisions_github import (
@@ -157,6 +158,8 @@ def publish_revision_bundle(
     payload_dir: Path, *, state_dir: Path, repo: str = DEFAULT_REPO,
     consumer_commit: str | None = None, enabled: bool = False, store: Any = None,
     migrate_encryption: bool = False,
+    pre_promotion_guard: Callable[[], None] | None = None,
+    pre_promotion_fence: Callable[[], ContextManager] | None = None,
 ) -> RevisionPublication:
     """Archive, independently verify, then advance one date's selected head.
 
@@ -177,7 +180,9 @@ transaction has already preserved all prior dates and revision heads.
     backend = store or GitHubRevisionStore(repo)
     with production_lock(state_dir / ".revision-publication.lock", "payload-revisions"):
         result = _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo,
-                                 migrate_encryption=migrate_encryption)
+                                 migrate_encryption=migrate_encryption,
+                                 pre_promotion_guard=pre_promotion_guard,
+                                 pre_promotion_fence=pre_promotion_fence)
         # Canonical ARE2 releases are delivered through Cloudflare. Historical
         # direct-delivery metadata never adds a public-branch publication dependency.
         return result
@@ -186,6 +191,8 @@ transaction has already preserved all prior dates and revision heads.
 def _publish_locked(
     payload_dir: Path, manifest: dict[str, Any], root: Path, store: Any, consumer: str, repo: str,
     *, migrate_encryption: bool = False,
+    pre_promotion_guard: Callable[[], None] | None = None,
+    pre_promotion_fence: Callable[[], ContextManager] | None = None,
 ) -> RevisionPublication:
     run_date = manifest["run_date"]
     prior_raw = store.read(DEFAULT_TAG, "dates-index.json")
@@ -201,6 +208,9 @@ def _publish_locked(
             and (not migrate_encryption or encrypted_selection(
                 store, previous, previous_root, prior_raw,
                 root / 'revisions' / run_date / f"r{head['revision']:06d}"))):
+        with pre_promotion_fence() if pre_promotion_fence else nullcontext():
+            if pre_promotion_guard:
+                pre_promotion_guard()
         write_once(previous_root / f"verified-{digest(prior_raw)}.json", canonical({
             "schema_version": 1, "head": head, "index_sha256": digest(prior_raw),
         }))
@@ -260,7 +270,10 @@ def _publish_locked(
         "schema_version": 1, "index_sha256": digest(index_bytes),
         "predecessor_index_sha256": digest(prior_raw) if prior_raw is not None else None,
     }))
-    store.replace_index(DEFAULT_TAG, index_path, prior_raw)
+    with pre_promotion_fence() if pre_promotion_fence else nullcontext():
+        if pre_promotion_guard:
+            pre_promotion_guard()
+        store.replace_index(DEFAULT_TAG, index_path, prior_raw)
     write_once(promotion_root / "promotion-receipt.json", canonical({
         "schema_version": 1, "head": new_head, "index_sha256": digest(index_path.read_bytes()),
         "predecessor_index_sha256": digest(prior_raw) if prior_raw is not None else None,

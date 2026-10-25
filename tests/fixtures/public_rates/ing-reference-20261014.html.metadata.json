@@ -1,0 +1,11 @@
+{
+  "sha256": "51c70ed9f7e855721482a7573b2a349d9306d8702784edb86bffc73df89e3f5d",
+  "finalUrl": "https://www.ing.com.au/rates-and-fees/home-loan-reference-rates.html",
+  "contentType": [
+    "text/html"
+  ],
+  "observedAt": "2026-10-14T11:50:17.7095831Z",
+  "sourceUrl": "https://www.ing.com.au/rates-and-fees/home-loan-reference-rates.html",
+  "status": 200,
+  "bytes": 169968
+}

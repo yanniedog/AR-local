@@ -22,18 +22,40 @@ def test_committed_ready_fixture_reproduces_from_retained_observations():
     assert actual == fixture
 
 
-def test_ready_compiler_matches_reviewed_lvr_interval_consumer():
+def test_ready_compiler_matches_reconciled_public_rate_consumer():
     from app_payload_bank_history_ready_asset import compiler_identity, _invoke
-    # Independent pin exported from the matching AR-app LVR interval change.
+    # Independent pin from AR-app #402 source 39bab712, including strict LVR maxima.
     # Publication still requires that consumer to be released and verified.
-    expected = "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7"
+    expected = "51e28fd661d3c273ea9b07aefe7c04c2f90c53e16d48111b9a8814d8d9572ae7"
     assert compiler_identity()[1] == expected
     ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
     assert ready["compiler_sha256"] == expected
     assert _invoke(ready, validate=True) == expected
-    ready["compiler_sha256"] = "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3"
-    with pytest.raises(ValueError, match="compilation/validation failed"):
-        _invoke(ready, validate=True)
+    for previous in (
+        "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7",
+        "5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e",
+        "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3",
+    ):
+        ready["compiler_sha256"] = previous
+        with pytest.raises(ValueError, match="compilation/validation failed"):
+            _invoke(ready, validate=True)
+
+
+@pytest.mark.parametrize("tier, accepted", [
+    ("lvr_>=80.01-<95%", True), ("lvr_>=80.01-<=95%", True),
+    ("lvr_>=95-<95%", False), ("lvr_>=95-<=95%", True),
+    ("lvr_>95-<=95%", False),
+])
+def test_ready_compiler_preserves_explicit_upper_bound_protocol(tier, accepted):
+    from tests.test_app_payload_bank_catalogue import FIXTURE, packed
+    from app_payload_bank_history_ready_asset import compile_ready
+    catalogue = packed(json.loads(FIXTURE.read_bytes())["observations"])
+    # Bound-protocol control only; retained rates and source receipts stay intact.
+    catalogue["sections"]["Mortgage"][0]["row"]["lvr_tier"] = tier
+    actual = compile_ready(catalogue)
+    cohort = next(item for item in actual["sections"]["Mortgage"] if item[1][3] == tier)
+    # Unusable bounds remain visible but cannot count as broadly available.
+    assert cohort[3] is accepted
 
 
 @pytest.mark.parametrize("encrypted", [False, True])

@@ -1,0 +1,11 @@
+{
+  "sha256": "fb3d4c104100c46de6cb7c49da81ae959c9156b46f2f2a775b61bf76bfdb34ec",
+  "finalUrl": "https://www.westpac.com.au/home-loans/manage-home-loan/reference-rates",
+  "contentType": [
+    "text/html; charset=utf-8"
+  ],
+  "observedAt": "2026-10-14T11:50:16.3703222Z",
+  "sourceUrl": "https://www.westpac.com.au/home-loans/manage-home-loan/reference-rates",
+  "status": 200,
+  "bytes": 16902
+}

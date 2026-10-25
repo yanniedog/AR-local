@@ -12,8 +12,9 @@ import subprocess
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, ContextManager, Dict, Iterable, List, Optional, Tuple
 
 from pi_payload_freshness import fresh_document_url
 from app_payload_optional_assets import iter_payload_assets, executable_asset_url
@@ -340,6 +341,8 @@ def publish_payload(
     dry_run: bool = False,
     require_token: bool = False,
     force: bool = False,
+    pre_promotion_guard: Callable[[], None] | None = None,
+    pre_promotion_fence: Callable[[], ContextManager] | None = None,
 ) -> bool:
     """Upload manifest + core + details to the rolling release. Returns True on upload.
 
@@ -495,36 +498,39 @@ def publish_payload(
     if status == "present" and live is not None:
         backup_manifest.write_text(json.dumps(live), encoding="utf-8")
 
-    try:
-        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-        secure_upload(
-            [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
-            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
-        )
-    except subprocess.SubprocessError:
-        # Restore the displaced manifest ONLY after positively confirming it's safe:
-        # the live manifest is now genuinely missing, or still the one we displaced
-        # (generated_at unchanged). A transient recheck error -> do NOT restore (we can't
-        # confirm we wouldn't clobber a newer concurrent publish).
-        if backup_manifest.exists():
-            recheck, cur = _app_payload("_live_manifest_status")(repo, tag)
-            cur_gen = str((cur or {}).get("generated_at") or "")
-            safe_to_restore = recheck == "missing" or (
-                recheck == "present" and backup_gen is not None and cur_gen <= backup_gen
+    # Source snapshots may change while data assets upload. Fence only the
+    # selection check and this small manifest mutation, never the data upload.
+    with pre_promotion_fence() if pre_promotion_fence else nullcontext():
+        if pre_promotion_guard:
+            pre_promotion_guard()
+        try:
+            # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+            secure_upload(
+                [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
+                check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
             )
-            if safe_to_restore:
-                try:
-                    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-                    secure_upload(
-                        [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
-                        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
-                    )
-                    print("[app_payload] restored previous manifest after a failed replacement upload")
-                except subprocess.SubprocessError:
-                    print("[app_payload] WARNING: manifest upload failed AND restore failed")
-            else:
-                print(f"[app_payload] not restoring backup (live recheck={recheck}); avoiding a clobber")
-        raise
+        except subprocess.SubprocessError:
+            # Restore only a positively verified displaced manifest. A
+            # transient recheck cannot establish that restoration is safe.
+            if backup_manifest.exists():
+                recheck, cur = _app_payload("_live_manifest_status")(repo, tag)
+                cur_gen = str((cur or {}).get("generated_at") or "")
+                safe_to_restore = recheck == "missing" or (
+                    recheck == "present" and backup_gen is not None and cur_gen <= backup_gen
+                )
+                if safe_to_restore:
+                    try:
+                        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+                        secure_upload(
+                            [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"], runner=_app_payload("subprocess").run,
+                            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+                        )
+                        print("[app_payload] restored previous manifest after a failed replacement upload")
+                    except subprocess.SubprocessError:
+                        print("[app_payload] WARNING: manifest upload failed AND restore failed")
+                else:
+                    print(f"[app_payload] not restoring backup (live recheck={recheck}); avoiding a clobber")
+            raise
     if store.read(tag, "manifest.json", require_encrypted=True) != manifest_path.read_bytes():
         raise RevisionError("compatibility alias failed encrypted manifest verification")
     if tag == DEFAULT_TAG and manifest.get('payload_revision'):

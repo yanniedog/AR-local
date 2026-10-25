@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "registerVersion": "public-sources-v1",
+  "publicOnly": true,
+  "sources": [
+    {
+      "sourceId": "nab-indicator",
+      "url": "https://www.nab.com.au/content/dam/nabrwd/documents/rates-and-fees/loans/indicator-rates-for-home-lending.pdf",
+      "legalLender": "National Australia Bank Limited",
+      "providerAliases": [
+        "NAB",
+        "National Australia Bank",
+        "National Australia Bank Limited"
+      ],
+      "officialDomains": [
+        "www.nab.com.au"
+      ],
+      "allowedHosts": [
+        "www.nab.com.au"
+      ],
+      "adapterId": "nab_indicator",
+      "adapterVersion": "1",
+      "profileId": "nab-indicator",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": [
+        {
+          "aliases": [
+            "NAB Tailored Home Loan"
+          ],
+          "referenceNamePrefixes": [
+            "Variable Rate for",
+            "Fixed Rate for",
+            "1 year Fixed Rate",
+            "2 years Fixed Rate",
+            "3 years Fixed Rate",
+            "4 years Fixed Rate",
+            "5 years Fixed Rate"
+          ]
+        },
+        {
+          "aliases": [
+            "NAB Base Variable Rate Home Loan"
+          ],
+          "referenceNamePrefixes": [
+            "Base Variable Rate"
+          ]
+        }
+      ]
+    },
+    {
+      "sourceId": "cba-reference",
+      "url": "https://www.commbank.com.au/content/dam/commbank/personal/apply-online/download-printed-forms/home-loan-update-002842.pdf?ei=rates_download_all",
+      "legalLender": "Commonwealth Bank of Australia",
+      "providerAliases": [
+        "Commonwealth Bank of Australia",
+        "CommBank",
+        "Commonwealth Bank"
+      ],
+      "officialDomains": [
+        "www.commbank.com.au"
+      ],
+      "allowedHosts": [
+        "www.commbank.com.au"
+      ],
+      "adapterId": "cba_reference",
+      "adapterVersion": "1",
+      "profileId": "cba-reference",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": [
+        {
+          "aliases": [
+            "Complete Home Loan",
+            "Standard Variable Rate Home Loan",
+            "Standard Variable Rate (Complete)"
+          ],
+          "referenceNamePrefixes": [
+            "Standard Variable Rate (Complete)"
+          ]
+        },
+        {
+          "aliases": [
+            "Simple Home Loan"
+          ],
+          "referenceNamePrefixes": [
+            "Simple Home Loan"
+          ]
+        },
+        {
+          "aliases": [
+            "Digi Home Loan"
+          ],
+          "referenceNamePrefixes": [
+            "Digi Home Loan"
+          ]
+        }
+      ]
+    },
+    {
+      "sourceId": "westpac-reference",
+      "url": "https://www.westpac.com.au/home-loans/manage-home-loan/reference-rates",
+      "legalLender": "Westpac Banking Corporation",
+      "providerAliases": [
+        "Westpac",
+        "Westpac Banking Corporation"
+      ],
+      "officialDomains": [
+        "www.westpac.com.au"
+      ],
+      "allowedHosts": [
+        "www.westpac.com.au"
+      ],
+      "adapterId": "westpac_reference",
+      "adapterVersion": "1",
+      "profileId": "westpac-reference",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": [
+        {
+          "aliases": [
+            "Rocket Repay Home Loan",
+            "Rocket Repay"
+          ],
+          "referenceNamePrefixes": [
+            "Rocket"
+          ]
+        },
+        {
+          "aliases": [
+            "Flexi First Option Home Loan",
+            "Flexi First Option"
+          ],
+          "referenceNamePrefixes": [
+            "Flexi First"
+          ]
+        }
+      ]
+    },
+    {
+      "sourceId": "anz-index-page",
+      "url": "https://www.anz.com.au/personal/home-loans/interest-rates/",
+      "legalLender": "Australia and New Zealand Banking Group Limited",
+      "providerAliases": [
+        "ANZ",
+        "Australia and New Zealand Banking Group",
+        "Australia and New Zealand Banking Group Limited"
+      ],
+      "officialDomains": [
+        "www.anz.com.au"
+      ],
+      "allowedHosts": [
+        "www.anz.com.au"
+      ],
+      "adapterId": "anz_index_page",
+      "adapterVersion": "1",
+      "profileId": "anz-index-page",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": []
+    },
+    {
+      "sourceId": "anz-owner-index",
+      "url": "https://www.anz.com.au/productdata/productdata.asp?output=json&callback=callbackFunction&country=AU&section=PHL&subsection=",
+      "legalLender": "Australia and New Zealand Banking Group Limited",
+      "providerAliases": [
+        "ANZ",
+        "Australia and New Zealand Banking Group",
+        "Australia and New Zealand Banking Group Limited"
+      ],
+      "officialDomains": [
+        "www.anz.com.au"
+      ],
+      "allowedHosts": [
+        "www.anz.com.au"
+      ],
+      "adapterId": "anz_index_data",
+      "adapterVersion": "1",
+      "profileId": "anz-owner-index",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [
+        "anz-index-page"
+      ],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": [
+        {
+          "aliases": [
+            "ANZ Standard Variable Home Loan",
+            "ANZ Standard Variable Rate Home Loan"
+          ],
+          "referenceNamePrefixes": [
+            "ANZ Standard Variable Rate",
+            "ANZ Fixed Home Loan - Index Rates"
+          ]
+        }
+      ]
+    },
+    {
+      "sourceId": "anz-investment-index",
+      "url": "https://www.anz.com.au/productdata/productdata.asp?output=json&callback=callbackFunction&country=AU&section=PRL&subsection=",
+      "legalLender": "Australia and New Zealand Banking Group Limited",
+      "providerAliases": [
+        "ANZ",
+        "Australia and New Zealand Banking Group",
+        "Australia and New Zealand Banking Group Limited"
+      ],
+      "officialDomains": [
+        "www.anz.com.au"
+      ],
+      "allowedHosts": [
+        "www.anz.com.au"
+      ],
+      "adapterId": "anz_index_data",
+      "adapterVersion": "1",
+      "profileId": "anz-investment-index",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [
+        "anz-index-page"
+      ],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": [
+        {
+          "aliases": [
+            "ANZ Residential Investment Loan"
+          ],
+          "referenceNamePrefixes": [
+            "ANZ Variable Rate",
+            "ANZ Fixed Residential Investment Loan - Index Rates"
+          ]
+        }
+      ]
+    },
+    {
+      "sourceId": "ing-reference-page",
+      "url": "https://www.ing.com.au/rates-and-fees/home-loan-reference-rates.html",
+      "legalLender": "ING Bank (Australia) Limited",
+      "providerAliases": [
+        "ING",
+        "ING Bank Australia",
+        "ING Bank (Australia) Limited",
+        "ING BANK (Australia) Ltd"
+      ],
+      "officialDomains": [
+        "www.ing.com.au"
+      ],
+      "allowedHosts": [
+        "www.ing.com.au"
+      ],
+      "adapterId": "ing_reference_page",
+      "adapterVersion": "1",
+      "profileId": "ing-reference-page",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": []
+    },
+    {
+      "sourceId": "ing-reference-data",
+      "url": "https://www.ing.com.au/ReverseProxy/ProductService/V1/productservice.svc/json/interestrates/currenteffective",
+      "legalLender": "ING Bank (Australia) Limited",
+      "providerAliases": [
+        "ING",
+        "ING Bank Australia",
+        "ING Bank (Australia) Limited",
+        "ING BANK (Australia) Ltd"
+      ],
+      "officialDomains": [
+        "www.ing.com.au"
+      ],
+      "allowedHosts": [
+        "www.ing.com.au"
+      ],
+      "adapterId": "ing_reference_data",
+      "adapterVersion": "1",
+      "profileId": "ing-reference-data",
+      "sections": [
+        "Mortgage"
+      ],
+      "dependencies": [
+        "ing-reference-page"
+      ],
+      "supportedPricingStructures": [
+        "reference_only"
+      ],
+      "productBindings": [
+        {
+          "aliases": [
+            "Orange Advantage"
+          ],
+          "referenceNamePrefixes": [
+            "Orange Advantage"
+          ]
+        },
+        {
+          "aliases": [
+            "Mortgage Simplifier"
+          ],
+          "referenceNamePrefixes": [
+            "Mortgage Simplifier"
+          ]
+        }
+      ]
+    }
+  ]
+}
