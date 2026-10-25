@@ -226,3 +226,188 @@ def test_pass_clears_pending_request(tmp_path: Path, monkeypatch):
     )
     assert result["result"] == "PASS"
     assert not request.exists()
+
+
+def test_existing_remote_retries_sidecars(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    day = "2026-05-14"
+    uploaded: list[str] = []
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return relative == f"{day}.GAP.json"
+
+        def upload(self, relative, source):
+            uploaded.append(relative)
+            Path(source).read_bytes()
+
+        def download(self, relative, destination):
+            raise AssertionError("verify stubbed")
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(
+        archive,
+        "verify_uploaded_archive",
+        lambda *args, **kwargs: None,
+    )
+    # Seed a reusable local gap artifact so the existing-remote branch is taken.
+    work = spool / "work" / day
+    work.mkdir(parents=True)
+    gap_path = work / f"{day}.GAP.json"
+    gap_path.write_text(json.dumps(scope.gap_record(day)), encoding="utf-8")
+    result = archive.process_day(
+        data_root=tmp_path / "data",
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+    )
+    assert result["result"] == "PASS"
+    # Gap archives have no sidecars; existing-remote path must still complete.
+    assert uploaded == []
+
+
+def test_existing_remote_day_uploads_missing_sidecars(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    data = tmp_path / "data"
+    day = "2026-05-13"
+    _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
+    _write(data / "state" / f"{day}.done.json", '{"ok":true}')
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
+    work = spool / "work" / day
+    built = archive.build_day_archive(data, day, work, include_journals=False)
+    uploaded: list[str] = []
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return relative == built["remote_name"]
+
+        def upload(self, relative, source):
+            uploaded.append(relative)
+
+        def download(self, relative, destination):
+            raise AssertionError("verify stubbed")
+
+    result = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+    )
+    assert result["result"] == "PASS"
+    assert f"{day}.manifest.json" in uploaded
+    assert f"{day}.sha256" in uploaded
+
+
+def test_dry_run_does_not_leave_reusable_workspace(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    data = tmp_path / "data"
+    day = "2026-05-13"
+    _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
+    _write(data / "state" / f"{day}.done.json", '{"ok":true}')
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    dry = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=None,
+        dry_run=True,
+        include_journals=True,
+    )
+    assert dry["result"] == "DRY_RUN"
+    assert not (spool / "work" / day).exists()
+
+
+def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    data = tmp_path / "data"
+    day = "2026-05-13"
+    _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
+    _write(data / "state" / f"{day}.done.json", '{"ok":true}')
+    work = spool / "work" / day
+    archive.build_day_archive(data, day, work, include_journals=False)
+    rebuilt: list[bool] = []
+    original_build = archive.build_day_archive
+
+    def tracking_build(*args, **kwargs):
+        rebuilt.append(bool(kwargs.get("include_journals")))
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(archive, "build_day_archive", tracking_build)
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
+    monkeypatch.setattr(scope, "export_journals", lambda day, dest: [])
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return False
+
+        def upload(self, relative, source):
+            return None
+
+        def download(self, relative, destination):
+            raise AssertionError("unused")
+
+    # Journals requested but workspace holds a no-journals archive → rebuild.
+    result = archive.process_day(
+        data_root=data,
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=True,
+    )
+    assert result["result"] == "PASS"
+    assert rebuilt == [True]
+
+
+def test_process_day_holds_per_day_lock(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    day = "2026-05-14"
+    seen: list[Path] = []
+
+    class RecordingLock:
+        def __init__(self, path: Path):
+            seen.append(path)
+            self.path = path
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(archive, "FileLock", RecordingLock)
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    archive.record_progress(
+        spool,
+        {
+            "schema": archive.SCHEMA,
+            "date": day,
+            "result": "PASS",
+            "kind": "gap",
+            "recorded_at": "now",
+        },
+    )
+    archive.process_day(
+        data_root=tmp_path / "data",
+        day=day,
+        spool=spool,
+        transport=None,
+        dry_run=True,
+        include_journals=False,
+    )
+    assert seen == [spool / "locks" / f"{day}.lock"]

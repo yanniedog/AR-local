@@ -21,6 +21,7 @@ from typing import Callable
 import zstandard
 
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from cdr_file_lock import FileLock
 from pi_daily_cdr_day_archive_scope import (
     FIRST_DAY,
     KNOWN_GAPS,
@@ -215,6 +216,7 @@ def build_day_archive(
         "date": day,
         "coverage": inventory["coverage"],
         "compression": COMPRESSION,
+        "include_journals": bool(include_journals),
         "file_count": inventory["file_count"],
         "total_bytes": inventory["total_bytes"],
         "files": [
@@ -293,6 +295,14 @@ def build_control_archive(
     }
 
 
+def ensure_sidecars_uploaded(transport: DayArchiveRclone, built: dict) -> None:
+    """Upload manifest/sha256 sidecars (idempotent via rclone --ignore-existing)."""
+    if built.get("manifest_path"):
+        transport.upload(Path(built["manifest_path"]).name, Path(built["manifest_path"]))
+    if built.get("sha_path"):
+        transport.upload(Path(built["sha_path"]).name, Path(built["sha_path"]))
+
+
 def upload_and_verify(
     transport: DayArchiveRclone,
     built: dict,
@@ -304,13 +314,8 @@ def upload_and_verify(
     remote_name = built["remote_name"]
     transport.upload(remote_name, local)
     verify_uploaded_archive(transport, remote_name, local, built["sha256"], scratch, guard)
-    if built.get("manifest_path"):
-        transport.upload(Path(built["manifest_path"]).name, Path(built["manifest_path"]))
-    if built.get("sha_path"):
-        transport.upload(Path(built["sha_path"]).name, Path(built["sha_path"]))
-    if built.get("kind") == "day" and built.get("manifest_path"):
-        # Sidecar sha256/manifest are small; verify archive is the hard gate.
-        pass
+    # Sidecar sha256/manifest are small; archive verify is the hard gate.
+    ensure_sidecars_uploaded(transport, built)
 
 
 def unlink_local_archive_only(built: dict) -> None:
@@ -340,6 +345,30 @@ def process_day(
     guard: Callable[[], None] = lambda: None,
 ) -> dict:
     day = require_day(day)
+    spool = Path(spool)
+    lock_path = spool / "locks" / f"{day}.lock"
+    with FileLock(lock_path):
+        return _process_day_locked(
+            data_root=data_root,
+            day=day,
+            spool=spool,
+            transport=transport,
+            dry_run=dry_run,
+            include_journals=include_journals,
+            guard=guard,
+        )
+
+
+def _process_day_locked(
+    *,
+    data_root: Path,
+    day: str,
+    spool: Path,
+    transport: DayArchiveRclone | None,
+    dry_run: bool,
+    include_journals: bool,
+    guard: Callable[[], None],
+) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing day-archive work inside 00:30–02:00 Australia/Hobart quiet window")
     prior = load_progress(spool).get(day)
@@ -350,6 +379,8 @@ def process_day(
     work = spool / "work" / day
     work.mkdir(parents=True, exist_ok=True)
     combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
+    # Dry-run skips journalctl; never reuse those bytes for a journals-enabled upload.
+    build_journals = bool(include_journals) and not dry_run
 
     def _reuse_or_build() -> dict:
         existing = work / f"{day}.tar.zst"
@@ -370,20 +401,26 @@ def process_day(
                 "manifest": gap_record(day),
             }
         if existing.is_file() and sha_path.is_file() and manifest_path.is_file():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             digest = sha_path.read_text(encoding="utf-8").split()[0]
-            if len(digest) == 64 and sha256_file(existing, combined_guard) == digest:
+            options_match = bool(manifest.get("include_journals")) == build_journals
+            if (
+                options_match
+                and len(digest) == 64
+                and sha256_file(existing, combined_guard) == digest
+            ):
                 return {
                     "schema": SCHEMA,
                     "date": day,
                     "kind": "day",
-                    "coverage": json.loads(manifest_path.read_text(encoding="utf-8")).get("coverage"),
+                    "coverage": manifest.get("coverage"),
                     "local_path": str(existing),
                     "remote_name": f"{day}.tar.zst",
                     "sha256": digest,
                     "bytes": existing.stat().st_size,
                     "manifest_path": str(manifest_path),
                     "sha_path": str(sha_path),
-                    "manifest": json.loads(manifest_path.read_text(encoding="utf-8")),
+                    "manifest": manifest,
                 }
         # Fresh build only when no reusable verified-local artifact exists.
         for path in work.iterdir():
@@ -396,7 +433,7 @@ def process_day(
             day,
             work,
             guard=combined_guard,
-            include_journals=include_journals and not dry_run,
+            include_journals=build_journals,
         )
 
     try:
@@ -413,13 +450,17 @@ def process_day(
                 "recorded_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
             }
             record_progress(spool, row)
+            # Keep dry-run bytes out of the upload workspace so a later real run rebuilds.
+            if work.exists():
+                shutil.rmtree(work)
             return row
         if transport is None:
             raise DayArchiveError("transport required unless --dry-run")
         quiet_window_guard()
         transport.ensure_folder()
         if transport.remote_exists(built["remote_name"]):
-            # Idempotent: verify existing remote against local archive bytes.
+            # Idempotent: verify existing remote against local archive bytes,
+            # then reconcile sidecars that may have failed on a prior attempt.
             verify_uploaded_archive(
                 transport,
                 built["remote_name"],
@@ -428,6 +469,7 @@ def process_day(
                 spool / "verify",
                 combined_guard,
             )
+            ensure_sidecars_uploaded(transport, built)
         else:
             upload_and_verify(transport, built, spool / "verify", guard=combined_guard)
         unlink_local_archive_only(built)
@@ -466,6 +508,25 @@ def process_control(
     dry_run: bool,
     guard: Callable[[], None] = lambda: None,
 ) -> dict:
+    spool = Path(spool)
+    with FileLock(spool / "locks" / "CONTROL.lock"):
+        return _process_control_locked(
+            data_root=data_root,
+            spool=spool,
+            transport=transport,
+            dry_run=dry_run,
+            guard=guard,
+        )
+
+
+def _process_control_locked(
+    *,
+    data_root: Path,
+    spool: Path,
+    transport: DayArchiveRclone,
+    dry_run: bool,
+    guard: Callable[[], None],
+) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing control-archive work inside quiet window")
     work = spool / "work" / "CONTROL"
@@ -473,6 +534,8 @@ def process_control(
         shutil.rmtree(work)
     built = build_control_archive(data_root, work, guard=guard)
     if dry_run:
+        if work.exists():
+            shutil.rmtree(work)
         return {"result": "DRY_RUN", **{k: built[k] for k in ("sha256", "bytes", "remote_name")}}
     transport.ensure_folder()
     upload_and_verify(transport, built, spool / "verify", guard=guard)
