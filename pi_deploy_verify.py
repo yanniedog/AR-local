@@ -26,15 +26,22 @@ inherited claim fails closed.
 
 Examples:
   python pi_deploy_verify.py --verify
+  python pi_deploy_verify.py --verify --allow-unarmed-ingest-timers
   python pi_deploy_verify.py --deploy --expected-commit <40-char-sha>
   python pi_deploy_verify.py --deploy --expected-commit <40-char-sha> --dry-run
   python pi_deploy_verify.py --needs-pi --ref origin/main~1
+
+Held-timer rollouts:
+  ``--verify --allow-unarmed-ingest-timers`` skips the daily/watchdog/capacity
+  timer arming check so soak/acceptance can proceed without enabling timers
+  merely to satisfy verify. Forbidden with ``--deploy`` (activation still
+  requires armed ingest timers). Day-archive timer state is out of scope for
+  this check and remains a separately authorized slice.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import shlex
@@ -44,6 +51,12 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
+from pi_deploy_http_smoke import http_smoke, wait_for_http_smoke  # noqa: F401 — re-exported
+from pi_deploy_ingest_timers import (  # noqa: F401 — re-exported for tests
+    pi_ingest_timer_fields_observed,
+    pi_ingest_timers_allow_unarmed,
+    pi_ingest_timers_ok,
+)
 from pi_deploy_queue_claim import (
     BACKUP_QUEUE_MAX_RUNTIME_SEC,
     SHARED_QUEUE_MAX_RUNTIME_SEC,
@@ -66,7 +79,6 @@ from ar_local_pi_runtime import (
     PI_REPO_ROOT,
     PI_SITE_REPO,
     is_raspberry_pi,
-    manifest_banks_rate_count,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -109,6 +121,8 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "deploy/pi/",
     "pi_daily_sync.py",
     "pi_deploy_verify.py",
+    "pi_deploy_http_smoke.py",
+    "pi_deploy_ingest_timers.py",
     "pi_deploy_service_snapshot.py",
     "pi_observer_unit_contract.py",
     "pi_observer_unit_verify.py",
@@ -509,97 +523,11 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     return ok
 
 
-def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_TIMER_ENABLED": "enabled",
-        "DAILY_TIMER_ACTIVE": "active",
-        "WATCHDOG_TIMER_ENABLED": "enabled",
-        "WATCHDOG_TIMER_ACTIVE": "active",
-        "CAPACITY_TIMER_ENABLED": "enabled",
-        "CAPACITY_TIMER_ACTIVE": "active",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
-    if not ok:
-        print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
-    return ok
-
-
-
-def http_smoke(
-    base_url: str,
-    *,
-    require_rates: bool = True,
-    timeout_seconds: float = 30.0,
-) -> int:
-    import urllib.error
-    import urllib.request
-
-    latest = base_url.rstrip("/") + "/api/latest"
-    try:
-        with urllib.request.urlopen(latest, timeout=timeout_seconds) as resp:
-            if int(resp.status) != 200:
-                print(f"pi_deploy_verify: {latest} HTTP {resp.status}", file=sys.stderr)
-                return EXIT_VERIFY_FAIL
-            payload = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        print(f"pi_deploy_verify: {latest} HTTP {exc.code}", file=sys.stderr)
-        return EXIT_VERIFY_FAIL
-    except Exception as exc:
-        print(f"pi_deploy_verify: {latest} failed: {exc}", file=sys.stderr)
-        return EXIT_VERIFY_FAIL
-
-    rates = manifest_banks_rate_count(payload)
-    run_date = payload.get("run_date")
-    if require_rates and rates <= 0:
-        print(
-            f"pi_deploy_verify: /api/latest run_date={run_date!r} banks_counts.rates={rates}",
-            file=sys.stderr,
-        )
-        return EXIT_VERIFY_FAIL
-    print(f"pi_deploy_verify: HTTP OK {latest} run_date={run_date} rates={rates}")
-    return EXIT_OK
-
-
-def wait_for_http_smoke(
-    base_url: str,
-    *,
-    require_rates: bool = True,
-    attempts: int = 13,
-    delay_seconds: float = 10.0,
-    budget_seconds: float = 120.0,
-) -> int:
-    """Allow the dashboard's preload phase to finish after a service restart."""
-    deadline = time.monotonic() + max(0.0, budget_seconds)
-    result = EXIT_VERIFY_FAIL
-    for attempt in range(1, attempts + 1):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        result = http_smoke(
-            base_url,
-            require_rates=require_rates,
-            timeout_seconds=min(30.0, remaining),
-        )
-        if result == EXIT_OK:
-            return EXIT_OK
-        remaining = deadline - time.monotonic()
-        if attempt < attempts and remaining > 0:
-            sleep_seconds = min(delay_seconds, remaining)
-            print(
-                f"pi_deploy_verify: dashboard not ready after restart "
-                f"(attempt {attempt}/{attempts}); retrying in {sleep_seconds:g}s"
-            )
-            time.sleep(sleep_seconds)
-    return result
-
-
 def verify_sync(
-    *, dry_run: bool = False, expected_commit: Optional[str] = None
+    *,
+    dry_run: bool = False,
+    expected_commit: Optional[str] = None,
+    allow_unarmed_ingest_timers: bool = False,
 ) -> int:
     local_main = origin_main_sha_local()
     if not local_main:
@@ -627,7 +555,14 @@ def verify_sync(
         return EXIT_VERIFY_FAIL
     if not pi_service_paths_ok(snap):
         return EXIT_VERIFY_FAIL
-    if not pi_ingest_timers_ok(snap):
+    if allow_unarmed_ingest_timers:
+        print(
+            "pi_deploy_verify: held-timer verify "
+            "(--allow-unarmed-ingest-timers); timers not enabled by this verify"
+        )
+        if not pi_ingest_timers_allow_unarmed(snap):
+            return EXIT_VERIFY_FAIL
+    elif not pi_ingest_timers_ok(snap):
         return EXIT_VERIFY_FAIL
     if not pi_ingest_service_fences_ok(snap):
         return EXIT_VERIFY_FAIL
@@ -886,7 +821,10 @@ def changed_files_since(ref: str) -> list[str]:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    code = verify_sync(dry_run=args.dry_run)
+    code = verify_sync(
+        dry_run=args.dry_run,
+        allow_unarmed_ingest_timers=bool(args.allow_unarmed_ingest_timers),
+    )
     if code != EXIT_OK:
         return code
     if args.dry_run:
@@ -925,6 +863,13 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         print(
             "pi_deploy_verify: --deploy requires --expected-commit with an exact "
             "40-character lowercase SHA",
+            file=sys.stderr,
+        )
+        return EXIT_CONFIG
+    if args.allow_unarmed_ingest_timers:
+        print(
+            "pi_deploy_verify: --allow-unarmed-ingest-timers is verify-only; "
+            "forbidden with --deploy",
             file=sys.stderr,
         )
         return EXIT_CONFIG
@@ -1045,6 +990,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-empty-rates",
         action="store_true",
         help="Pass HTTP smoke when /api/latest has zero banks_counts.rates.",
+    )
+    parser.add_argument(
+        "--allow-unarmed-ingest-timers",
+        action="store_true",
+        help=(
+            "Verify-only: do not fail when daily/watchdog/capacity timers are "
+            "unarmed. Does not enable timers. Forbidden with --deploy."
+        ),
     )
     parser.add_argument(
         "--expected-commit",

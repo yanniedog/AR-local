@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import pi_deploy_http_smoke  # noqa: E402
 import pi_deploy_queue_claim  # noqa: E402
 import pi_deploy_verify  # noqa: E402
 from tests.pi_ingest_service_fixtures import ingest_definition_fields
@@ -432,6 +434,14 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
 
 
+@pytest.mark.parametrize(
+    "path",
+    ("pi_deploy_http_smoke.py", "pi_deploy_ingest_timers.py"),
+)
+def test_extracted_deploy_helpers_require_pi_deploy(path):
+    assert pi_deploy_verify.paths_touch_pi_deploy([path])
+
+
 @pytest.mark.parametrize("path", ["verify_local.py", "verify_local_compact.py", "verify_local_json_worker.py"])
 def test_runtime_verifier_modules_require_pi_deploy(path):
     assert pi_deploy_verify.paths_touch_pi_deploy([path])
@@ -662,6 +672,72 @@ def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
     )
 
 
+def test_verify_sync_can_skip_unarmed_ingest_timer_check(monkeypatch, capsys):
+    commit = "a" * 40
+    snap = _verified_sync_snapshot(commit)
+    for field, value in (
+        ("DAILY_TIMER_ENABLED", "disabled"),
+        ("DAILY_TIMER_ACTIVE", "inactive"),
+        ("WATCHDOG_TIMER_ENABLED", "disabled"),
+        ("WATCHDOG_TIMER_ACTIVE", "inactive"),
+        ("CAPACITY_TIMER_ENABLED", "disabled"),
+        ("CAPACITY_TIMER_ACTIVE", "inactive"),
+    ):
+        snap[field] = value
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: snap,
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
+        == pi_deploy_verify.EXIT_OK
+    )
+    captured = capsys.readouterr()
+    assert "daily ingest timers are not armed" not in captured.err
+    for field, value in (
+        ("DAILY_TIMER_ENABLED", "disabled"),
+        ("DAILY_TIMER_ACTIVE", "inactive"),
+        ("WATCHDOG_TIMER_ENABLED", "disabled"),
+        ("WATCHDOG_TIMER_ACTIVE", "inactive"),
+        ("CAPACITY_TIMER_ENABLED", "disabled"),
+        ("CAPACITY_TIMER_ACTIVE", "inactive"),
+    ):
+        assert f"{field}: {value}" in captured.out
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=False)
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+
+
+def test_verify_sync_held_timers_fail_when_timer_state_unreadable(monkeypatch, capsys):
+    commit = "a" * 40
+    snap = _verified_sync_snapshot(commit)
+    snap["WATCHDOG_TIMER_ENABLED"] = ""
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: snap,
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+    assert "missing or unreadable" in capsys.readouterr().err
+
+
+def test_deploy_rejects_allow_unarmed_ingest_timers():
+    args = argparse.Namespace(
+        expected_commit="a" * 40,
+        allow_unarmed_ingest_timers=True,
+        allow_empty_rates=False,
+        dry_run=False,
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+
+
 def test_ingest_fence_verification_rejects_partial_unit_rollout():
     assert pi_deploy_verify.pi_ingest_service_fences_ok(_service_snapshot())
     assert not pi_deploy_verify.pi_ingest_service_fences_ok(
@@ -765,14 +841,14 @@ def test_remote_wrapper_keeps_marker_outside_trailing_comment():
 def test_deploy_smoke_waits_for_dashboard_preload(monkeypatch):
     results = iter(
         [
-            pi_deploy_verify.EXIT_VERIFY_FAIL,
-            pi_deploy_verify.EXIT_VERIFY_FAIL,
-            pi_deploy_verify.EXIT_OK,
+            pi_deploy_http_smoke.EXIT_VERIFY_FAIL,
+            pi_deploy_http_smoke.EXIT_VERIFY_FAIL,
+            pi_deploy_http_smoke.EXIT_OK,
         ]
     )
     sleeps = []
-    monkeypatch.setattr(pi_deploy_verify, "http_smoke", lambda *_args, **_kwargs: next(results))
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke, "http_smoke", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
@@ -787,11 +863,11 @@ def test_deploy_smoke_returns_immediately_when_ready(monkeypatch):
     sleeps = []
     calls = []
     monkeypatch.setattr(
-        pi_deploy_verify,
+        pi_deploy_http_smoke,
         "http_smoke",
-        lambda *_args, **kwargs: calls.append(kwargs) or pi_deploy_verify.EXIT_OK,
+        lambda *_args, **kwargs: calls.append(kwargs) or pi_deploy_http_smoke.EXIT_OK,
     )
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
@@ -808,11 +884,11 @@ def test_deploy_smoke_fails_after_bounded_retries(monkeypatch):
     attempts = []
     sleeps = []
     monkeypatch.setattr(
-        pi_deploy_verify,
+        pi_deploy_http_smoke,
         "http_smoke",
-        lambda *_args, **_kwargs: attempts.append(True) or pi_deploy_verify.EXIT_VERIFY_FAIL,
+        lambda *_args, **_kwargs: attempts.append(True) or pi_deploy_http_smoke.EXIT_VERIFY_FAIL,
     )
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
@@ -828,10 +904,10 @@ def test_deploy_smoke_caps_request_to_remaining_budget(monkeypatch):
     timeouts = []
     sleeps = []
     ticks = iter([100.0, 100.0, 125.0, 125.0])
-    monkeypatch.setattr(pi_deploy_verify.time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
     monkeypatch.setattr(
-        pi_deploy_verify,
+        pi_deploy_http_smoke,
         "http_smoke",
         lambda *_args, **kwargs: timeouts.append(kwargs["timeout_seconds"])
         or pi_deploy_verify.EXIT_SSH,
