@@ -45,6 +45,11 @@ from laptop_backup_archive import (
     tar_metadata,
     verify_tar_metadata,
 )
+from laptop_backup_target import (
+    canonical_target,
+    refuse_cloud_backup_root,
+    volume_probe,
+)
 from laptop_backup_transport import (
     add_transport_arguments,
     finish_stream_process,
@@ -169,17 +174,6 @@ def git_state(repo: Path) -> dict[str, object]:
     commit = subprocess.run(("git", "-C", str(repo), "rev-parse", "HEAD"), text=True, capture_output=True, check=True).stdout.strip()
     dirty = subprocess.run(("git", "-C", str(repo), "status", "--porcelain"), text=True, capture_output=True, check=True).stdout.splitlines()
     return {"commit": commit, "clean": not dirty, "dirty_paths": dirty}
-
-
-def canonical_target(value: Path) -> Path:
-    configured = value.expanduser()
-    if not configured.is_absolute() or configured.is_symlink():
-        raise ValueError("backup target must be an absolute non-symlink path")
-    configured.mkdir(parents=True, exist_ok=True)
-    resolved = configured.resolve(strict=True)
-    if configured != resolved or not resolved.is_dir() or resolved.anchor == str(resolved):
-        raise ValueError("backup target must be a canonical directory below a volume root")
-    return resolved
 
 
 def is_within(path: Path, root: Path) -> bool:
