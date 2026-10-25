@@ -268,13 +268,8 @@ done
     contracts/pi-deployment-acceptance-v1.schema.json \
     contracts/pi-preservation-snapshot-v1.schema.json \
     contracts/pi-restore-acceptance-v1.schema.json \
-    contracts/pi-rollback-acceptance-v1.schema.json \
-    deploy/pi/ar-local-restore-latest.sh \
-    deploy/pi/ar-local-backup-gate.sh \
-    deploy/pi/ar-local-backup-run.sh
+    contracts/pi-rollback-acceptance-v1.schema.json
 ) > "$tmp/backup-gate.sha256"
-sudo install -d -o root -g root -m 0755 /etc/ar-local
-sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/backup-gate.sha256
 
 if [ "$gate_bytes_only" -eq 0 ]; then
   for name in ar-local-backup.timer ar-local-restore-drill.timer; do
@@ -294,29 +289,28 @@ sudo install -m 0755 "$source_tree/deploy/pi/ar-local-restore-latest.sh" /usr/lo
 sudo install -m 0755 "$source_tree/deploy/pi/ar-local-backup-gate.sh" /usr/local/bin/ar-local-backup-gate
 sudo install -m 0755 "$source_tree/deploy/pi/ar-local-backup-run.sh" /usr/local/bin/ar-local-backup-run
 
-# Verify trusted libs against the manifest (paths relative to $trusted).
-# Wrapper entries use deploy/pi/ paths — verify those against installed bins separately.
-if ! (
-  cd "$trusted"
-  grep -v '^deploy/pi/' /etc/ar-local/backup-gate.sha256 | sha256sum --quiet -c -
-); then
+# Record wrappers under their installed absolute paths so both this installer and
+# runtime `ar-local-backup-gate` (cd $trusted && sha256sum -c) accept the same
+# manifest. Relative deploy/pi/ paths are not present on the installed layout.
+append_installed_wrapper_hash() {
+  src="$1"
+  dest="$2"
+  hash="$(sha256sum < "$source_tree/$src" | awk '{print $1}')"
+  printf '%s  %s\n' "$hash" "$dest" >> "$tmp/backup-gate.sha256"
+}
+append_installed_wrapper_hash deploy/pi/ar-local-restore-latest.sh /usr/local/bin/ar-local-restore-latest
+append_installed_wrapper_hash deploy/pi/ar-local-backup-gate.sh /usr/local/bin/ar-local-backup-gate
+append_installed_wrapper_hash deploy/pi/ar-local-backup-run.sh /usr/local/bin/ar-local-backup-run
+
+sudo install -d -o root -g root -m 0755 /etc/ar-local
+sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/backup-gate.sha256
+
+# Relative lib/schema paths resolve under $trusted; absolute wrapper paths verify
+# from any cwd. This matches runtime ar-local-backup-gate verification.
+if ! (cd "$trusted" && sha256sum --quiet -c /etc/ar-local/backup-gate.sha256); then
   echo "Installed backup-gate bytes failed sha256sum verification against /etc/ar-local/backup-gate.sha256" >&2
   exit 1
 fi
-
-verify_installed_wrapper() {
-  src="$1"
-  dest="$2"
-  expected="$(sha256sum < "$source_tree/$src" | awk '{print $1}')"
-  actual="$(sha256sum < "$dest" | awk '{print $1}')"
-  [ "$expected" = "$actual" ] || {
-    echo "Installed wrapper $dest does not match approved source $src" >&2
-    exit 1
-  }
-}
-verify_installed_wrapper deploy/pi/ar-local-restore-latest.sh /usr/local/bin/ar-local-restore-latest
-verify_installed_wrapper deploy/pi/ar-local-backup-gate.sh /usr/local/bin/ar-local-backup-gate
-verify_installed_wrapper deploy/pi/ar-local-backup-run.sh /usr/local/bin/ar-local-backup-run
 
 test -x /usr/local/bin/ar-local-backup-gate
 test -x /usr/local/bin/ar-local-backup-run
