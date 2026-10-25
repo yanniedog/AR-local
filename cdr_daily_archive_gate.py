@@ -250,13 +250,21 @@ def accept_finalized_retry(args: argparse.Namespace, state_dir: Path, runs_root:
                            date: str, marker: Path) -> tuple[int | None, dict | None]:
     import sys
     from cdr_daily import _archive_raw_day_before_cleanup, retry_terms_capture
+    from pi_daily_cdr_day_archive import DEFAULT_SPOOL, progress_path
     recorded = read_json(marker)
     generation = recorded.get("generation_id") if isinstance(recorded.get("generation_id"), str) else None
-    result = _archive_raw_day_before_cleanup(
-        date, data_root=runs_root.parent, generation_id=generation,
-        stage_roots=retry_stage_roots(state_dir, date, generation, recorded),
-        state_dir=state_dir, runs_root=runs_root, clean_ram_stage=args.clean_ram_stage,
-    )
+    spool = Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
+    ownership = read_json(ownership_path(state_dir, date, generation)) if generation else {}
+    if generation and _stage_matches_uploaded(
+        progress_path(spool), date, generation, ownership, state_dir,
+    ):
+        result = {"result": "PASS"}
+    else:
+        result = _archive_raw_day_before_cleanup(
+            date, data_root=runs_root.parent, generation_id=generation,
+            stage_roots=retry_stage_roots(state_dir, date, generation, recorded),
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=args.clean_ram_stage,
+        )
     status = result.get("result")
     if status == "DEFERRED":
         print(f"day-archive deferred until after the Hobart quiet window ({date})", file=sys.stderr)
@@ -283,7 +291,7 @@ def _stage_matches_uploaded(progress: Path, day: str, generation: str, ownership
     if not prior or prior.get("result") != "PASS":
         return False
     roots = [Path(item) for item in (ownership.get("stage_roots") or []) if isinstance(item, str)]
-    if seal_receipt_path(state_dir, generation).is_file() and os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
+    if seal_receipt_path(state_dir, generation).is_file() and str(ownership.get("terms_root") or "").strip():
         return True
     if not any(root_has_files(path) for path in roots):
         return True

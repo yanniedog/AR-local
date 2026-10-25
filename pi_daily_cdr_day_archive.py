@@ -534,6 +534,8 @@ def _process_day_locked(
     work = spool / "work" / "dry-run" / day if dry_run else spool / "work" / day
     work.mkdir(parents=True, exist_ok=True)
     combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
+    if transport is not None and hasattr(transport, "guard"):
+        transport.guard = combined_guard
     # Dry-run skips journalctl; never reuse those bytes for a journals-enabled upload.
     build_journals = bool(include_journals) and not dry_run
 
@@ -795,6 +797,9 @@ def _process_control_locked(
 ) -> dict:
     if in_quiet_window():
         raise DayArchiveError("refusing control-archive work inside quiet window")
+    combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
+    if hasattr(transport, "guard"):
+        transport.guard = combined_guard
     prior = load_progress(spool).get("CONTROL")
     if prior and prior.get("result") == "PASS" and not dry_run:
         return prior
@@ -842,11 +847,11 @@ def _process_control_locked(
             Path(built["local_path"]),
             built["sha256"],
             spool / "verify",
-            guard,
+            combined_guard,
         )
         ensure_sidecars_uploaded(transport, built)
     else:
-        upload_and_verify(transport, built, spool / "verify", guard=guard)
+        upload_and_verify(transport, built, spool / "verify", guard=combined_guard)
     row = {
         "schema": SCHEMA,
         "date": "CONTROL",

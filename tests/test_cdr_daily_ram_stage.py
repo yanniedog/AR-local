@@ -710,6 +710,68 @@ def test_seal_receipt_does_not_authorize_replacement_stage_without_terms(tmp_pat
     )
 
 
+def test_finalized_retry_reuses_pass_for_persisted_sealed_cleanup_progress(
+    tmp_path, monkeypatch
+):
+    import argparse
+
+    import cdr_daily_archive_gate as gate
+    import pi_daily_cdr_day_archive as day_archive
+    from cdr_ram_capture_cleanup import seal_receipt_path
+    from pi_daily_cdr_day_archive_scope import stage_source_fingerprint
+
+    generation = "obs-2026-08-15-0123456789abcdef"
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    exports = ram / "exports" / DATE
+    _write_ingest(raw)
+    (exports / "banks").mkdir(parents=True)
+    (exports / "banks" / "rates.json").write_text("rates", encoding="utf-8")
+    stage_roots = [raw, exports]
+    fingerprint = stage_source_fingerprint(stage_roots)
+
+    state = tmp_path / "state"
+    state.mkdir()
+    runs = tmp_path / "data" / "runs"
+    terms = tmp_path / "terms"
+    spool = tmp_path / "spool"
+    monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(terms))
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", str(spool))
+    gate.write_ram_ownership(
+        state, DATE, generation, ram, (raw, exports), None, stage_roots,
+    )
+    marker = state / f"{DATE}.done.json"
+    marker.write_text(json.dumps({
+        "generation_id": generation, "ram_staged": True, "ram_root": str(ram.resolve()),
+    }), encoding="utf-8")
+    seal = seal_receipt_path(state, generation)
+    seal.parent.mkdir(parents=True)
+    seal.write_text("{}\n", encoding="utf-8")
+    day_archive.record_progress(spool, {
+        "date": DATE, "generation_id": generation, "result": "PASS",
+        "source_fingerprint": fingerprint,
+    })
+
+    (exports / "banks" / "rates.json").unlink()
+
+    monkeypatch.setattr(
+        cdr_daily, "_archive_raw_day_before_cleanup",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("partial sealed cleanup must reuse its verified PASS")
+        ),
+    )
+    monkeypatch.setattr(
+        gate, "resume_owned_ram_cleanup",
+        lambda *_args, **_kwargs: {"ram_cleanup": {"status": "CLEANED"}},
+    )
+    stopped, _terms = gate.accept_finalized_retry(
+        argparse.Namespace(clean_ram_stage=True, ram_root=ram),
+        state, runs, DATE, marker,
+    )
+
+    assert stopped is None
+
+
 def test_existing_seal_is_not_recreated(tmp_path, monkeypatch):
     import argparse
     import json

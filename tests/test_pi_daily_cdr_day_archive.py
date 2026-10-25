@@ -136,6 +136,41 @@ def test_process_day_refuses_quiet_window(tmp_path: Path, monkeypatch):
         )
 
 
+def test_process_day_passes_quiet_guard_to_active_transport(tmp_path: Path, monkeypatch):
+    guards: list[str] = []
+
+    class GuardedTransport:
+        def guard(self):
+            return None
+
+        def ensure_folder(self):
+            self.guard()
+
+        def remote_exists(self, _relative):
+            self.guard()
+            return False
+
+        def upload(self, _relative, source):
+            self.guard()
+            Path(source).read_bytes()
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda _spool: None)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
+    result = archive.process_day(
+        data_root=tmp_path / "data",
+        day="2026-05-14",
+        spool=tmp_path / "spool",
+        transport=GuardedTransport(),
+        dry_run=False,
+        include_journals=False,
+        guard=lambda: guards.append("checked"),
+    )
+
+    assert result["result"] == "PASS"
+    assert guards
+
+
 def test_request_day_archive_idempotent(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", str(tmp_path / "spool"))
     first = archive.request_day_archive("2026-10-01", spool=tmp_path / "spool")
