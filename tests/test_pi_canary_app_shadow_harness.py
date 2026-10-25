@@ -9,6 +9,15 @@ import pi_canary_app_matrix_receipts as app_matrix
 import pi_canary_shadow_ingest as shadow
 
 TARGET = "0d8cd36a478a2e8c35d2372659b42a842a14b220"
+GENERATION = "prep-test-001"
+SNAPSHOT = "c" * 64
+
+
+def _bind_fields() -> dict[str, str]:
+    return {
+        "candidate_generation": GENERATION,
+        "preservation_snapshot_sha256": SNAPSHOT,
+    }
 
 
 def test_shadow_template_is_unknown(tmp_path: Path) -> None:
@@ -55,6 +64,7 @@ def test_shadow_canonicalize_pass(tmp_path: Path) -> None:
                 "result": "PASS",
                 "exit_code": 0,
                 "exports_dirs": ["/srv/ar-local/canary/x/data/runs/2026-10-26/_exports"],
+                **_bind_fields(),
             }
         ),
         encoding="utf-8",
@@ -62,6 +72,30 @@ def test_shadow_canonicalize_pass(tmp_path: Path) -> None:
     out = tmp_path / "out.json"
     info = shadow.validate_and_canonicalize(src, out, target_commit=TARGET)
     assert info["result"] == "PASS"
+    body = json.loads(out.read_text(encoding="utf-8"))
+    assert body["candidate_generation"] == GENERATION
+    assert body["preservation_snapshot_sha256"] == SNAPSHOT
+
+
+def test_shadow_canonicalize_requires_bind_fields(tmp_path: Path) -> None:
+    src = tmp_path / "src.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "shadow_ingest",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "exit_code": 0,
+                "exports_dirs": ["/srv/ar-local/canary/x/data/runs/2026-10-26/_exports"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = shadow.validate_and_canonicalize(src, tmp_path / "out.json", target_commit=TARGET)
+    assert info["result"] == "FAIL"
+    assert any("candidate_generation" in f for f in info["findings"])
+    assert any("preservation_snapshot_sha256" in f for f in info["findings"])
 
 
 def test_app_matrix_templates(tmp_path: Path) -> None:
@@ -248,6 +282,7 @@ def test_matrix_canonicalize_accepts_complete_rows(tmp_path: Path) -> None:
         ("candidate_emulator_matrix", _emulator_row()),
     ):
         src = tmp_path / f"{gate}.json"
+        out = tmp_path / f"{gate}-out.json"
         src.write_text(
             json.dumps(
                 {
@@ -256,14 +291,16 @@ def test_matrix_canonicalize_accepts_complete_rows(tmp_path: Path) -> None:
                     "target_commit": TARGET,
                     "result": "PASS",
                     "devices": [row],
+                    **_bind_fields(),
                 }
             ),
             encoding="utf-8",
         )
-        info = app_matrix.canonicalize(
-            gate, src, tmp_path / f"{gate}-out.json", target_commit=TARGET
-        )
+        info = app_matrix.canonicalize(gate, src, out, target_commit=TARGET)
         assert info["result"] == "PASS", info["findings"]
+        body = json.loads(out.read_text(encoding="utf-8"))
+        assert body["candidate_generation"] == GENERATION
+        assert body["preservation_snapshot_sha256"] == SNAPSHOT
 
 
 def test_shadow_canonicalize_rejects_non_list_exports(tmp_path: Path) -> None:
@@ -437,6 +474,37 @@ def test_load_day_archive_env_fail_closed_for_canary(tmp_path: Path, monkeypatch
 
 def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
     src = tmp_path / "app.json"
+    out = tmp_path / "out.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gate": "stable_app_compatibility",
+                "target_commit": TARGET,
+                "result": "PASS",
+                "ci": {
+                    "command": "npm run ci",
+                    "exit_code": 0,
+                    "log_sha256": "c" * 64,
+                    "suites": 5,
+                    "tests": 42,
+                },
+                **_bind_fields(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    info = app_matrix.canonicalize(
+        "stable_app_compatibility", src, out, target_commit=TARGET
+    )
+    assert info["result"] == "PASS"
+    body = json.loads(out.read_text(encoding="utf-8"))
+    assert body["candidate_generation"] == GENERATION
+    assert body["preservation_snapshot_sha256"] == SNAPSHOT
+
+
+def test_app_matrix_canonicalize_requires_bind_fields(tmp_path: Path) -> None:
+    src = tmp_path / "app.json"
     src.write_text(
         json.dumps(
             {
@@ -458,7 +526,9 @@ def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
     info = app_matrix.canonicalize(
         "stable_app_compatibility", src, tmp_path / "out.json", target_commit=TARGET
     )
-    assert info["result"] == "PASS"
+    assert info["result"] == "FAIL"
+    assert any("candidate_generation" in f for f in info["findings"])
+    assert any("preservation_snapshot_sha256" in f for f in info["findings"])
 
 
 def test_stable_app_requires_ci_exit_and_log_digest(tmp_path: Path) -> None:
