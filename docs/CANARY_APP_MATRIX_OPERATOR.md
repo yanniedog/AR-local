@@ -89,6 +89,15 @@ python pi_canary_gate_bind.py candidate-device-matrix \
 
 ## shadow_ingest
 
+Shadow ingest must not touch production archive config. Before launching
+`cdr_daily.py` under the canary tree:
+
+1. Create `<canary>/config/day-archive.env` and `<canary>/data/archive-spool`.
+2. Point `AR_LOCAL_DAY_ARCHIVE_ENV` and `AR_LOCAL_DAY_ARCHIVE_SPOOL` at those
+   canary paths only (never `/etc/ar-local/day-archive.env` or
+   `/var/lib/ar-local-day-archives`).
+3. Abort if production runs/state or the production archive spool mtimes change.
+
 Canonicalize the isolated-canary receipt before using it as binder input. The
 canonicalizer requires `gate="shadow_ingest"`, `result="PASS"`, `exit_code=0`, and
 non-empty export path evidence:

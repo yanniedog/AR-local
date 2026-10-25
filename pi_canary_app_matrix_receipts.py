@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,30 +77,17 @@ def utc_now_iso() -> str:
 
 
 def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
-    if path.exists() or path.is_symlink():
-        raise AppMatrixError(f"refusing to overwrite existing file: {path}")
+    """Create-once publish; concurrent writers cannot overwrite via replace."""
+    from cdr_atomic import ImmutablePathError, atomic_write_bytes
+
+    if path.is_symlink():
+        raise AppMatrixError(f"refusing to write through symlink: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
-    # Exclusive create + random name + O_NOFOLLOW when available; never follow planted symlinks.
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(8).hex()}.tmp")
     try:
-        fd = os.open(str(tmp), flags, 0o644)
-        try:
-            os.write(fd, raw)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        if tmp.is_symlink() or not tmp.is_file():
-            raise AppMatrixError(f"refusing non-regular temp path: {tmp}")
-        os.replace(tmp, path)
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        atomic_write_bytes(path, raw, create_once=True)
+    except ImmutablePathError as exc:
+        raise AppMatrixError(str(exc)) from exc
     return hashlib.sha256(raw).hexdigest()
 
 

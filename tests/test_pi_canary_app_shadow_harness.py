@@ -200,6 +200,45 @@ def test_stable_app_requires_ci_evidence(tmp_path: Path) -> None:
     assert any("ci.command" in finding for finding in info["findings"])
 
 
+def test_write_json_atomic_create_once_refuses_overwrite(tmp_path: Path) -> None:
+    path = tmp_path / "receipt.json"
+    app_matrix.write_json_atomic(path, {"result": "FAIL", "n": 1})
+    try:
+        app_matrix.write_json_atomic(path, {"result": "PASS", "n": 2})
+        raise AssertionError("expected AppMatrixError on create-once collision")
+    except app_matrix.AppMatrixError as exc:
+        assert "immutable path" in str(exc).lower() or "already exists" in str(exc).lower()
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert body["result"] == "FAIL"
+    assert body["n"] == 1
+
+
+def test_shadow_template_forbids_production_archive(tmp_path: Path) -> None:
+    out = tmp_path / "shadow-template.json"
+    shadow.emit_template(out, target_commit=TARGET, candidate_generation="prep-test")
+    body = json.loads(out.read_text(encoding="utf-8"))
+    steps = "\n".join(body["operator_steps"])
+    assert "AR_LOCAL_DAY_ARCHIVE_ENV" in steps
+    assert "day-archive.env" in steps
+    assert any("day-archive.env" in item for item in body["forbidden"])
+
+
+def test_load_day_archive_env_prefers_override(tmp_path: Path, monkeypatch) -> None:
+    import os
+
+    import pi_daily_cdr_day_archive_ingest as archive_ingest
+
+    production = tmp_path / "production.env"
+    production.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/var/lib/ar-local-day-archives"\n', encoding="utf-8")
+    canary = tmp_path / "canary.env"
+    canary.write_text('AR_LOCAL_DAY_ARCHIVE_SPOOL="/srv/ar-local/canary/x/data/archive-spool"\n', encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(canary))
+    monkeypatch.delenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", raising=False)
+    # Ensure production path is not the default fall-through by leaving it unused.
+    archive_ingest.load_day_archive_env()
+    assert os.environ["AR_LOCAL_DAY_ARCHIVE_SPOOL"] == "/srv/ar-local/canary/x/data/archive-spool"
+
+
 def test_stable_app_canonicalize_accepts_ci_evidence(tmp_path: Path) -> None:
     src = tmp_path / "app.json"
     src.write_text(

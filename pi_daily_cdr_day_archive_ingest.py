@@ -21,8 +21,16 @@ GENERATION_RE = re.compile(r"^obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}$")
 
 
 def load_day_archive_env(path: Path | None = None) -> None:
-    """Apply the archive env file so ingest uses the dedicated remote and config."""
-    env_path = path or Path("/etc/ar-local/day-archive.env")
+    """Apply the archive env file so ingest uses the dedicated remote and config.
+
+    Prefer ``AR_LOCAL_DAY_ARCHIVE_ENV`` when set so isolated canary/shadow runs
+    cannot silently load production ``/etc/ar-local/day-archive.env``.
+    """
+    if path is None:
+        override = os.environ.get("AR_LOCAL_DAY_ARCHIVE_ENV", "").strip()
+        env_path = Path(override) if override else Path("/etc/ar-local/day-archive.env")
+    else:
+        env_path = path
     if not env_path.is_file() or env_path.is_symlink():
         return
     for raw in env_path.read_text(encoding="utf-8").splitlines():

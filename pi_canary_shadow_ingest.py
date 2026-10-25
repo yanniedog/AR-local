@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,42 +38,39 @@ def sha256_file(path: Path) -> str:
 
 
 def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
-    if path.exists() or path.is_symlink():
-        raise ShadowIngestError(f"refusing to overwrite existing file: {path}")
+    """Create-once publish; concurrent writers cannot overwrite via replace."""
+    from cdr_atomic import ImmutablePathError, atomic_write_bytes
+
+    if path.is_symlink():
+        raise ShadowIngestError(f"refusing to write through symlink: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(dict(payload), sort_keys=True, indent=2) + "\n").encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(8).hex()}.tmp")
     try:
-        fd = os.open(str(tmp), flags, 0o644)
-        try:
-            os.write(fd, raw)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        if tmp.is_symlink() or not tmp.is_file():
-            raise ShadowIngestError(f"refusing non-regular temp path: {tmp}")
-        os.replace(tmp, path)
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        atomic_write_bytes(path, raw, create_once=True)
+    except ImmutablePathError as exc:
+        raise ShadowIngestError(str(exc)) from exc
     return hashlib.sha256(raw).hexdigest()
 
 
 OPERATOR_STEPS = [
     "Confirm daylight outside Australia/Hobart 00:30–02:00 quiet window.",
     "Ensure shared queue idle: python3 /usr/local/lib/shared-pi-queue/pi_shared_queue.py status",
-    "Create isolated tree: /srv/ar-local/canary/<generation>/{source,data/runs,data/state,evidence}",
+    "Create isolated tree: /srv/ar-local/canary/<generation>/"
+    "{source,data/runs,data/state,data/archive-spool,config,evidence}",
     "Detach worktree at exact TARGET_SHA into canary source (do not switch production HEAD).",
+    "Write isolated archive env at <canary>/config/day-archive.env with "
+    "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool and a canary-only remote "
+    "(never copy /etc/ar-local/day-archive.env or production rclone remotes).",
+    "Export AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env and "
+    "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool for the canary process only.",
     "Submit via pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 "
-    "--max-runtime <bounded> -- python3 <canary>/source/cdr_daily.py "
+    "--max-runtime <bounded> -- env AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env "
+    "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool "
+    "python3 <canary>/source/cdr_daily.py "
     "--runs <canary>/data/runs --state <canary>/data/state "
     "--ram-root /dev/shm/ar-local-canary-<generation> --banks-only --ram-stage",
-    "Abort if production runs/state mtimes change or dashboard health fails.",
+    "Abort if production runs/state OR /var/lib/ar-local-day-archives mtimes change, "
+    "or if /etc/ar-local/day-archive.env is read (env must be the canary file).",
     "On exit 0 with exports present, write receipt with gate=shadow_ingest, "
     "result=PASS, target_commit=TARGET_SHA, exit_code=0, and exports_dirs=[...].",
     "Canonicalize: python pi_canary_shadow_ingest.py canonicalize "
@@ -105,6 +101,7 @@ def emit_template(
         "forbidden": [
             "production activate / deploy",
             "mutating production --runs or --state",
+            "using /etc/ar-local/day-archive.env or /var/lib/ar-local-day-archives",
             "disabling ar-local-daily.timer",
             "fabricating PASS without exit 0 + exports",
         ],
