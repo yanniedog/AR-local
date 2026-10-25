@@ -182,6 +182,75 @@ def _validate_v2_asset_gzip(kind: str, raw: bytes, entry: Mapping[str, Any]) -> 
         )
 
 
+def _resolve_asset_by_sha(
+    asset_paths: Sequence[Path], *, expected_sha: str
+) -> Optional[tuple[Path, bytes]]:
+    """Locate an asset whose domain bytes hash to ``expected_sha``."""
+
+    for path in asset_paths:
+        if path.is_symlink() or not path.is_file():
+            continue
+        wire = path.read_bytes()
+        try:
+            body = _decode_asset_domain_bytes(wire, expected_bytes=None)
+        except Exception:  # noqa: BLE001 — try next candidate
+            continue
+        if emit.sha256_bytes(body) == expected_sha:
+            return path, body
+        # Also accept wire digest when transport is identity.
+        if emit.sha256_bytes(wire) == expected_sha:
+            return path, wire
+    return None
+
+
+def _verify_v2_base_assets(
+    gate_dir: Path,
+    *,
+    manifest: Mapping[str, Any],
+    asset_paths: Sequence[Path],
+    evidence_items: list[dict[str, str]],
+    checked: list[dict[str, Any]],
+) -> list[str]:
+    """Require base.core_sha / base.details_sha bytes before authorizing v2 PASS.
+
+    Mirrors ``app_payload_v2_archive.archive_v2`` which verifies both base assets
+    against the bound v1 hashes before accepting the bundle.
+    """
+
+    findings: list[str] = []
+    base = manifest.get("base")
+    if not isinstance(base, Mapping):
+        return ["v2 base object required"]
+    for kind in ("core", "details"):
+        expected_sha = base.get(f"{kind}_sha")
+        if not isinstance(expected_sha, str) or not canary.SHA256_RE.fullmatch(expected_sha):
+            findings.append(f"base.{kind}_sha missing or not 64 hex")
+            continue
+        resolved = _resolve_asset_by_sha(asset_paths, expected_sha=expected_sha)
+        if resolved is None:
+            findings.append(
+                f"base.{kind}_sha asset missing (expected sha256={expected_sha})"
+            )
+            continue
+        path, body = resolved
+        key = f"base_{kind}"
+        meta = {
+            "key": key,
+            "source_name": path.name,
+            "domain_bytes": len(body),
+            "sha256": expected_sha,
+        }
+        evidence_items.append(
+            emit.materialize_receipt(
+                gate_dir,
+                relative_path=f"receipts/public_asset_{key}.meta.json",
+                payload=meta,
+            )
+        )
+        checked.append(meta)
+    return findings
+
+
 def bind_producer_contracts(
     gate_dir: Path,
     *,
@@ -635,6 +704,19 @@ def bind_public_candidate_bytes(
     # v1 files.core is mandatory; v2 references core via base.core_sha, not files.core.
     if schema_version == 1 and "core" not in checked_keys:
         assets_complete = False
+    # v2: publication preservation also requires the bound v1 base assets.
+    if schema_version == 2:
+        base_findings = _verify_v2_base_assets(
+            gate_dir,
+            manifest=manifest,
+            asset_paths=asset_paths,
+            evidence_items=evidence_items,
+            checked=checked,
+        )
+        findings.extend(base_findings)
+        if base_findings:
+            assets_complete = False
+        checked_keys = {c["key"] for c in checked}
     # Match publication path: decompress + core/coverage checks before authorizing bytes.
     if schema_version == 3 and assets_complete:
         try:
