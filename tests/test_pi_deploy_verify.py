@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -547,6 +548,37 @@ def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
     assert not pi_deploy_verify.pi_ingest_timers_ok(
         _service_snapshot(WATCHDOG_TIMER_ENABLED="disabled")
     )
+
+
+def test_verify_sync_can_skip_unarmed_ingest_timer_check(monkeypatch):
+    commit = "a" * 40
+    snap = _verified_sync_snapshot(commit)
+    snap["WATCHDOG_TIMER_ENABLED"] = "disabled"
+    snap["WATCHDOG_TIMER_ACTIVE"] = "inactive"
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: snap,
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
+        == pi_deploy_verify.EXIT_OK
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=False)
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+
+
+def test_deploy_rejects_allow_unarmed_ingest_timers():
+    args = argparse.Namespace(
+        expected_commit="a" * 40,
+        allow_unarmed_ingest_timers=True,
+        allow_empty_rates=False,
+        dry_run=False,
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
 
 
 def test_ingest_fence_verification_rejects_partial_unit_rollout():

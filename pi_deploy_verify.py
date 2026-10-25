@@ -20,9 +20,17 @@ Environment (optional):
 
 Examples:
   python pi_deploy_verify.py --verify
+  python pi_deploy_verify.py --verify --allow-unarmed-ingest-timers
   python pi_deploy_verify.py --deploy --expected-commit <40-char-sha>
   python pi_deploy_verify.py --deploy --expected-commit <40-char-sha> --dry-run
   python pi_deploy_verify.py --needs-pi --ref origin/main~1
+
+Held-timer rollouts:
+  ``--verify --allow-unarmed-ingest-timers`` skips the daily/watchdog/capacity
+  timer arming check so soak/acceptance can proceed without enabling timers
+  merely to satisfy verify. Forbidden with ``--deploy`` (activation still
+  requires armed ingest timers). Day-archive timer state is out of scope for
+  this check and remains a separately authorized slice.
 """
 
 from __future__ import annotations
@@ -542,7 +550,10 @@ def wait_for_http_smoke(
 
 
 def verify_sync(
-    *, dry_run: bool = False, expected_commit: Optional[str] = None
+    *,
+    dry_run: bool = False,
+    expected_commit: Optional[str] = None,
+    allow_unarmed_ingest_timers: bool = False,
 ) -> int:
     local_main = origin_main_sha_local()
     if not local_main:
@@ -570,7 +581,13 @@ def verify_sync(
         return EXIT_VERIFY_FAIL
     if not pi_service_paths_ok(snap):
         return EXIT_VERIFY_FAIL
-    if not pi_ingest_timers_ok(snap):
+    if allow_unarmed_ingest_timers:
+        print(
+            "pi_deploy_verify: skipping ingest timer arming check "
+            "(--allow-unarmed-ingest-timers); timers not enabled by this verify"
+        )
+        _ = pi_ingest_timers_ok(snap)  # still print observed timer state
+    elif not pi_ingest_timers_ok(snap):
         return EXIT_VERIFY_FAIL
     if not pi_ingest_service_fences_ok(snap):
         return EXIT_VERIFY_FAIL
@@ -812,7 +829,10 @@ def changed_files_since(ref: str) -> list[str]:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    code = verify_sync(dry_run=args.dry_run)
+    code = verify_sync(
+        dry_run=args.dry_run,
+        allow_unarmed_ingest_timers=bool(args.allow_unarmed_ingest_timers),
+    )
     if code != EXIT_OK:
         return code
     if args.dry_run:
@@ -851,6 +871,13 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         print(
             "pi_deploy_verify: --deploy requires --expected-commit with an exact "
             "40-character lowercase SHA",
+            file=sys.stderr,
+        )
+        return EXIT_CONFIG
+    if args.allow_unarmed_ingest_timers:
+        print(
+            "pi_deploy_verify: --allow-unarmed-ingest-timers is verify-only; "
+            "forbidden with --deploy",
             file=sys.stderr,
         )
         return EXIT_CONFIG
@@ -971,6 +998,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-empty-rates",
         action="store_true",
         help="Pass HTTP smoke when /api/latest has zero banks_counts.rates.",
+    )
+    parser.add_argument(
+        "--allow-unarmed-ingest-timers",
+        action="store_true",
+        help=(
+            "Verify-only: do not fail when daily/watchdog/capacity timers are "
+            "unarmed. Does not enable timers. Forbidden with --deploy."
+        ),
     )
     parser.add_argument(
         "--expected-commit",
