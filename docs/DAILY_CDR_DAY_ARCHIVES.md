@@ -123,9 +123,11 @@ During 00:30–02:00 Australia/Hobart the upload is not attempted. Finalize stil
 succeeds, the raw tree stays, and a continuation request is written.
 `--once-pending` may run that continuation after the window, with same-day
 upload allowed only for that request. A verified continuation then resumes
-seal, terms capture, and cleanup. The next `cdr_daily` run does the same for
-any generation whose upload already passed. Ordinary same-day requests and
-historical backfill stay deferred. `ar-local-day-archive.timer` still only drains queued
+seal, terms capture, and cleanup while holding `state/daily-ingest.lock`.
+A continuation whose stage is gone and has no verified PASS is moved under
+the spool `blocked/` directory so later requests can drain. The next
+`cdr_daily` run also finishes ownership records whose upload already passed.
+Ordinary same-day requests and historical backfill stay deferred. `ar-local-day-archive.timer` still only drains queued
 requests; it is not enabled by this path and it is not the ingest cleanup gate.
 
 ## Google Drive write-hold lift (operator 1B)
