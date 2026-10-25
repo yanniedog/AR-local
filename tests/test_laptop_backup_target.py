@@ -1,0 +1,69 @@
+"""Cloud/UNC/network refuse checks for laptop backup targets."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+import laptop_backup_target as target_guard
+import laptop_pull_backup as receiver
+
+
+def test_refuse_cloud_backup_root_blocks_google_drive_label(tmp_path: Path):
+    target = tmp_path / "backups" / "AR-local-pi5"
+    target.mkdir(parents=True)
+    with pytest.raises(ValueError, match="cloud/virtual root"):
+        receiver.refuse_cloud_backup_root(
+            target,
+            probe={"root": "G:\\", "label": "Google Drive", "filesystem": "FAT32"},
+        )
+
+
+def test_refuse_cloud_backup_root_blocks_remote_filesystem(tmp_path: Path):
+    target = tmp_path / "mnt" / "share"
+    target.mkdir(parents=True)
+    with pytest.raises(ValueError, match="remote/virtual"):
+        receiver.refuse_cloud_backup_root(
+            target,
+            probe={"root": "/mnt/share", "label": "", "filesystem": "cifs"},
+        )
+
+
+def test_refuse_cloud_backup_root_blocks_unc_path():
+    with pytest.raises(ValueError, match="UNC/network"):
+        receiver.refuse_cloud_backup_root(Path(r"\\server\share\backups"))
+
+
+def test_refuse_cloud_backup_root_blocks_cloud_path_segment(tmp_path: Path):
+    target = tmp_path / "OneDrive" / "AR-local-pi5"
+    with pytest.raises(ValueError, match="cloud-synced"):
+        receiver.refuse_cloud_backup_root(target)
+
+
+def test_refuse_cloud_backup_root_blocks_remote_drive_type(tmp_path: Path):
+    target = tmp_path / "mapped" / "AR-local-pi5"
+    target.mkdir(parents=True)
+    with pytest.raises(ValueError, match="remote/network drive"):
+        receiver.refuse_cloud_backup_root(
+            target,
+            probe={"root": "Z:\\", "label": "Data", "filesystem": "NTFS", "drive_type": "4"},
+        )
+
+
+def test_canonical_target_refuses_before_mkdir(tmp_path: Path):
+    target = tmp_path / "Dropbox" / "missing" / "AR-local-pi5"
+    with pytest.raises(ValueError, match="cloud-synced"):
+        receiver.canonical_target(target)
+    assert not target.exists()
+
+
+def test_canonical_target_allows_local_volume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    target = tmp_path / "backups" / "AR-local-pi5"
+    monkeypatch.setattr(
+        target_guard,
+        "volume_probe",
+        lambda _path: {"root": str(tmp_path), "label": "Local Disk", "filesystem": "NTFS"},
+    )
+    monkeypatch.setattr(target_guard, "_windows_drive_type", lambda _path: 3)
+    assert receiver.canonical_target(target) == target.resolve()

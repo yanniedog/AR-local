@@ -33,11 +33,13 @@ When `C:` cannot hold the 50 GiB free-space floor plus projected write capacity,
 an attached **local** external volume (USB/NVMe enclosure with NTFS, exFAT, or
 similar local filesystem) may be named as `--target` instead, for example
 `E:\backups\AR-local-pi5`. The receiver still enforces the free-space floor on
-that volume. Cloud or virtual roots (Google Drive, OneDrive, Dropbox, CIFS/SMB,
-FUSE network mounts) are refused. The Drive write hold remains in force: do not
-point `--target` at Google Drive. Pi foundation commissioning remains a separate
-physically separate UUID at `/mnt/ar-local-backup` and is not replaced by this
-laptop alternate root.
+that volume. Cloud or virtual roots are refused before any directory is created:
+Google Drive / OneDrive / Dropbox path segments (even on ordinary NTFS), cloud
+volume labels, CIFS/SMB/UNC/mapped network drives (`GetDriveTypeW` remote), and
+FUSE network mounts. The Drive write hold remains in force: do not point
+`--target` at Google Drive or a sync-client folder. Pi foundation commissioning
+remains a separate physically separate UUID at `/mnt/ar-local-backup` and is not
+replaced by this laptop alternate root.
 
 ## Manual daylight sequence
 

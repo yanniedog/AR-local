@@ -45,6 +45,11 @@ from laptop_backup_archive import (
     tar_metadata,
     verify_tar_metadata,
 )
+from laptop_backup_target import (
+    canonical_target,
+    refuse_cloud_backup_root,
+    volume_probe,
+)
 from laptop_backup_transport import (
     add_transport_arguments,
     finish_stream_process,
@@ -89,23 +94,6 @@ LEGACY_PLAN_IDENTITIES = {
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
-# Cloud / virtual roots are not authorized D-004 receivers (Drive write hold; non-local FS).
-_CLOUD_VOLUME_LABEL_MARKERS = (
-    "google drive",
-    "google drive stream",
-    "onedrive",
-    "dropbox",
-    "icloud",
-)
-_CLOUD_FILESYSTEM_MARKERS = (
-    "fuse",
-    "9p",
-    "cifs",
-    "smb",
-    "nfs",
-    "davfs",
-    "sshfs",
-)
 MAX_HEADER_BYTES = 64 * 1024**2
 CHUNK = 4 * 1024**2
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -186,89 +174,6 @@ def git_state(repo: Path) -> dict[str, object]:
     commit = subprocess.run(("git", "-C", str(repo), "rev-parse", "HEAD"), text=True, capture_output=True, check=True).stdout.strip()
     dirty = subprocess.run(("git", "-C", str(repo), "status", "--porcelain"), text=True, capture_output=True, check=True).stdout.splitlines()
     return {"commit": commit, "clean": not dirty, "dirty_paths": dirty}
-
-
-def volume_probe(path: Path) -> dict[str, str]:
-    """Best-effort local volume identity for refuse-cloud checks (Windows + POSIX)."""
-    label = ""
-    filesystem = ""
-    root = str(path.anchor or path)
-    if os.name == "nt":
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            GetVolumeInformationW = ctypes.windll.kernel32.GetVolumeInformationW
-            volume_name = ctypes.create_unicode_buffer(261)
-            fs_name = ctypes.create_unicode_buffer(261)
-            serial = wintypes.DWORD()
-            max_comp = wintypes.DWORD()
-            flags = wintypes.DWORD()
-            drive = root if root.endswith("\\") else root + "\\"
-            ok = GetVolumeInformationW(
-                ctypes.c_wchar_p(drive),
-                volume_name,
-                len(volume_name),
-                ctypes.byref(serial),
-                ctypes.byref(max_comp),
-                ctypes.byref(flags),
-                fs_name,
-                len(fs_name),
-            )
-            if ok:
-                label = volume_name.value or ""
-                filesystem = fs_name.value or ""
-        except (AttributeError, OSError, ValueError):
-            pass
-    else:
-        try:
-            target = path.resolve()
-            with open("/proc/mounts", encoding="utf-8") as handle:
-                matches: list[tuple[int, str]] = []
-                for line in handle:
-                    parts = line.split()
-                    if len(parts) < 3:
-                        continue
-                    mountpoint, fstype = parts[1], parts[2]
-                    try:
-                        mount_path = Path(mountpoint).resolve()
-                    except OSError:
-                        continue
-                    try:
-                        target.relative_to(mount_path)
-                    except ValueError:
-                        continue
-                    matches.append((len(mount_path.parts), fstype))
-                if matches:
-                    filesystem = sorted(matches, reverse=True)[0][1]
-        except OSError:
-            pass
-    return {"root": root, "label": label, "filesystem": filesystem}
-
-
-def refuse_cloud_backup_root(path: Path, probe: Mapping[str, str] | None = None) -> None:
-    """Reject cloud/virtual volumes; external local NTFS/exFAT/ext4 targets remain allowed."""
-    identity = dict(probe) if probe is not None else volume_probe(path)
-    label = str(identity.get("label", "")).casefold()
-    filesystem = str(identity.get("filesystem", "")).casefold()
-    for marker in _CLOUD_VOLUME_LABEL_MARKERS:
-        if marker in label:
-            raise ValueError(f"backup target volume label is a cloud/virtual root ({identity.get('label')})")
-    for marker in _CLOUD_FILESYSTEM_MARKERS:
-        if marker in filesystem:
-            raise ValueError(f"backup target filesystem is remote/virtual ({identity.get('filesystem')})")
-
-
-def canonical_target(value: Path) -> Path:
-    configured = value.expanduser()
-    if not configured.is_absolute() or configured.is_symlink():
-        raise ValueError("backup target must be an absolute non-symlink path")
-    configured.mkdir(parents=True, exist_ok=True)
-    resolved = configured.resolve(strict=True)
-    if configured != resolved or not resolved.is_dir() or resolved.anchor == str(resolved):
-        raise ValueError("backup target must be a canonical directory below a volume root")
-    refuse_cloud_backup_root(resolved)
-    return resolved
 
 
 def is_within(path: Path, root: Path) -> bool:
