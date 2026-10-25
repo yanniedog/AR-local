@@ -44,7 +44,14 @@ SCHEMA = "ar-local-daily-cdr-day-archive-v1"
 COMPRESSION = "zstd-lossless-no-encryption-level-19"
 DEFAULT_DATA_ROOT = Path("/srv/ar-local/data")
 DEFAULT_SPOOL = Path("/var/lib/ar-local-day-archives")
-DEFAULT_RCLONE = Path("/var/lib/ar-local-drive-backup/credentials/rclone.conf")
+DEFAULT_RCLONE = Path(
+    "/var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf"
+)
+DEFAULT_REMOTE = (
+    "ar_local_drive_dedicated_20260913:"
+    "AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412/"
+    "daily-cdr-day-archives"
+)
 QUIET_START = (0, 30)
 QUIET_END = (2, 0)
 
@@ -435,13 +442,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Per-day unencrypted CDR archives to Google Drive")
     parser.add_argument("--data-root", type=Path, default=Path(os.environ.get("AR_LOCAL_DATA_ROOT", DEFAULT_DATA_ROOT)))
     parser.add_argument("--spool", type=Path, default=Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL)))
-    parser.add_argument("--rclone-config", type=Path, default=Path(os.environ.get("RCLONE_CONFIG", DEFAULT_RCLONE)))
+    parser.add_argument(
+        "--rclone-config",
+        type=Path,
+        default=Path(os.environ.get("RCLONE_CONFIG", DEFAULT_RCLONE)),
+    )
     parser.add_argument(
         "--rclone-remote",
-        default=os.environ.get(
-            "AR_LOCAL_DAY_ARCHIVE_REMOTE",
-            "ar_local_drive:AR-local Pi Backups/daily-cdr-day-archives",
-        ),
+        default=os.environ.get("AR_LOCAL_DAY_ARCHIVE_REMOTE", DEFAULT_REMOTE),
     )
     parser.add_argument(
         "--drive-root-folder-id",

@@ -9,10 +9,11 @@ caches are excluded.
 
 ## Drive layout
 
-Under the enrolled `drive.file` remote:
+Under the enrolled dedicated `drive.file` remote (see Pi
+`/etc/ar-local/drive-backup.env`):
 
 ```text
-AR-local Pi Backups/
+AR-local Pi Backups Dedicated …/
   restic/
   daily-cdr-day-archives/     # this series
     YYYY-MM-DD.tar.zst
@@ -55,8 +56,8 @@ Defaults:
 |--------|--------|
 | Data root | `/srv/ar-local/data` (`AR_LOCAL_DATA_ROOT`) |
 | Spool | `/var/lib/ar-local-day-archives` |
-| rclone config | `/var/lib/ar-local-drive-backup/credentials/rclone.conf` |
-| Remote | `ar_local_drive:AR-local Pi Backups/daily-cdr-day-archives` |
+| rclone config | dedicated verified conf under `/var/lib/ar-local-drive-backup/credentials/` |
+| Remote | `…/daily-cdr-day-archives` beside the enrolled `restic/` folder |
 
 Quiet window: refuses work **00:30–02:00** Australia/Hobart.
 

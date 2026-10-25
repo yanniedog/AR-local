@@ -14,6 +14,11 @@ install -d -m 0755 /var/lib/ar-local-day-archives/requests
 install -d -m 0755 /var/lib/ar-local-day-archives/work
 install -d -m 0755 /var/lib/ar-local-day-archives/verify
 
+# System python used by ar-local-daily / day-archive oneshot needs zstandard.
+if ! /usr/bin/python3 -c 'import zstandard' 2>/dev/null; then
+  /usr/bin/python3 -m pip install --break-system-packages 'zstandard==0.25.0'
+fi
+
 if [[ ! -f /etc/ar-local/day-archive.env ]]; then
   install -d -m 0755 /etc/ar-local
   install -m 0644 "$ROOT/deploy/pi/day-archive.env.example" /etc/ar-local/day-archive.env
