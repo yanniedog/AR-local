@@ -117,6 +117,7 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
         raise GateEmitError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    created_placeholder = False
     try:
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         fd = os.open(str(tmp), flags)
@@ -135,12 +136,16 @@ def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> str:
         # replace that empty placeholder with the fsynced temp payload.
         placeholder_fd = os.open(str(path), flags)
         os.close(placeholder_fd)
+        created_placeholder = True
         os.replace(str(tmp), str(path))
     except Exception:
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        # Only unlink destination if this invocation created the placeholder;
+        # never destroy a peer writer's published file on FileExistsError.
+        if created_placeholder:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
@@ -180,6 +185,7 @@ def materialize_bytes(
         raise GateEmitError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    created_placeholder = False
     try:
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         fd = os.open(str(tmp), flags)
@@ -196,12 +202,14 @@ def materialize_bytes(
             raise
         placeholder_fd = os.open(str(path), flags)
         os.close(placeholder_fd)
+        created_placeholder = True
         os.replace(str(tmp), str(path))
     except Exception:
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        if created_placeholder:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
         try:
             tmp.unlink(missing_ok=True)
         except OSError:

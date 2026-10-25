@@ -235,19 +235,27 @@ def bind_historical_integrity(
     preservation_snapshot_sha256: Optional[str],
     min_dates: int = 2,
     allow_scoped_index: bool = False,
+    expected_index_path: Optional[Path] = None,
 ) -> dict[str, Any]:
     """PASS only when an audit summary shows dates_passed == dates_checked.
 
     By default requires dates_checked >= min_dates (2) so a one-date probe cannot
     authorize historical_integrity. ``allow_scoped_index`` is tooling-drill-only:
     it never emits an authorizing PASS (scoped drills stay non-authorizing).
+
+    Authorizing PASS also requires ``expected_index_path`` whose bytes hash to the
+    summary ``index_sha256`` and whose date population equals ``dates_checked``.
     """
+
+    from cdr_history_validation import ordered_dates
 
     summary = _load_json(summary_path)
     checked = summary.get("dates_checked")
     passed = summary.get("dates_passed")
     index_sha = summary.get("index_sha256")
     findings: list[str] = []
+    expected_index_sha: Optional[str] = None
+    expected_index_dates: Optional[int] = None
     if not isinstance(checked, int) or not isinstance(passed, int):
         findings.append("dates_checked/dates_passed must be ints")
     elif checked <= 0:
@@ -261,6 +269,34 @@ def bind_historical_integrity(
             f"dates_checked {checked} < min_dates {min_dates} "
             "(scoped index cannot authorize historical_integrity)"
         )
+    if expected_index_path is None:
+        findings.append(
+            "expected dates index required to authorize historical_integrity "
+            "(pass --expected-index)"
+        )
+    elif expected_index_path.is_symlink() or not expected_index_path.is_file():
+        findings.append(f"expected index must be a regular file: {expected_index_path}")
+    else:
+        raw_index = expected_index_path.read_bytes()
+        expected_index_sha = emit.sha256_bytes(raw_index)
+        if isinstance(index_sha, str) and expected_index_sha != index_sha:
+            findings.append(
+                f"expected index sha256 {expected_index_sha} != "
+                f"summary index_sha256 {index_sha}"
+            )
+        try:
+            index_obj = json.loads(raw_index.decode("utf-8"))
+            dates = ordered_dates(index_obj)
+            expected_index_dates = len(dates)
+            if isinstance(checked, int) and checked != expected_index_dates:
+                findings.append(
+                    f"dates_checked {checked} != expected index population "
+                    f"{expected_index_dates}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            findings.append(
+                f"expected index invalid: {type(exc).__name__}: {exc}"
+            )
     if allow_scoped_index:
         # Explicit drill flag: never authorize. Keep FAIL even when dates match.
         findings.append(
@@ -277,6 +313,9 @@ def bind_historical_integrity(
         "dates_checked": checked,
         "dates_passed": passed,
         "index_sha256": index_sha,
+        "expected_index_path": str(expected_index_path) if expected_index_path else None,
+        "expected_index_sha256": expected_index_sha,
+        "expected_index_dates": expected_index_dates,
         "min_dates": min_dates,
         "allow_scoped_index": allow_scoped_index,
         "findings": findings,
@@ -340,6 +379,78 @@ def _decode_asset_domain_bytes(raw: bytes, *, expected_bytes: Optional[int]) -> 
         return raw
 
 
+def _validate_public_manifest_contract(manifest: Mapping[str, Any]) -> list[str]:
+    """Apply the publication-protocol validator for the declared schema version."""
+
+    findings: list[str] = []
+    schema_version = manifest.get("schema_version")
+    try:
+        if schema_version == 1:
+            from app_payload_revisions_state import validate_manifest
+
+            validate_manifest(dict(manifest))
+        elif schema_version == 2:
+            from app_payload_contracts import validate_v2_manifest
+
+            validate_v2_manifest(manifest)
+        elif schema_version == 3:
+            contract_validation.validate_contract(
+                "generation-manifest-v3.schema.json", manifest
+            )
+            capabilities = manifest.get("capabilities")
+            if not isinstance(capabilities, dict) or not capabilities:
+                findings.append("v3 manifest.capabilities required")
+        else:
+            findings.append(f"unsupported manifest schema_version={schema_version!r}")
+    except Exception as exc:  # noqa: BLE001
+        findings.append(f"manifest contract: {type(exc).__name__}: {exc}")
+    return findings
+
+
+def _public_asset_entries(
+    manifest: Mapping[str, Any],
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
+    """Enumerate assets by schema version (v3 capabilities vs legacy files)."""
+
+    findings: list[str] = []
+    schema_version = manifest.get("schema_version")
+    if schema_version == 3:
+        capabilities = manifest.get("capabilities")
+        if not isinstance(capabilities, dict):
+            return [], ["v3 manifest.capabilities must be an object"]
+        entries: list[tuple[str, dict[str, Any]]] = []
+        for key, entry in capabilities.items():
+            if not isinstance(entry, dict):
+                findings.append(f"{key}: capability descriptor not object")
+                continue
+            sha = entry.get("sha256")
+            encoding = entry.get("encoding") or "gzip"
+            suffix = ".json.gz" if encoding == "gzip" else ".json"
+            name = f"{sha}{suffix}" if isinstance(sha, str) else ""
+            entries.append(
+                (
+                    key,
+                    {
+                        "name": name,
+                        "sha256": sha,
+                        "bytes": entry.get("compressed_bytes"),
+                    },
+                )
+            )
+        return entries, findings
+
+    from app_payload_optional_assets import iter_payload_assets
+
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        return [], ["manifest.files required for schema_version 1/2"]
+    try:
+        return list(iter_payload_assets(manifest)), findings
+    except Exception as exc:  # noqa: BLE001
+        findings.append(f"iter_payload_assets: {type(exc).__name__}: {exc}")
+        return list(files.items()), findings
+
+
 def bind_public_candidate_bytes(
     gate_dir: Path,
     *,
@@ -351,8 +462,6 @@ def bind_public_candidate_bytes(
 ) -> dict[str, Any]:
     """PASS when decoded public assets match a schema-valid, identity-bound manifest."""
 
-    from app_payload_optional_assets import iter_payload_assets
-
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise GateBindError(f"expected regular manifest file: {manifest_path}")
     raw_manifest = manifest_path.read_bytes()
@@ -360,11 +469,7 @@ def bind_public_candidate_bytes(
     findings: list[str] = []
 
     schema_version = manifest.get("schema_version")
-    if schema_version not in (1, 2, 3):
-        findings.append(f"unsupported manifest schema_version={schema_version!r}")
-    files = manifest.get("files")
-    if not isinstance(files, dict) or "core" not in files:
-        findings.append("manifest.files.core required")
+    findings.extend(_validate_public_manifest_contract(manifest))
 
     # Bind candidate identity when the manifest declares it.
     producer = (
@@ -416,11 +521,9 @@ def bind_public_candidate_bytes(
     evidence_items.append(local_manifest)
 
     by_name = {path.name: path for path in asset_paths}
-    try:
-        asset_iter = list(iter_payload_assets(manifest)) if isinstance(files, dict) else []
-    except Exception as exc:  # noqa: BLE001
-        findings.append(f"iter_payload_assets: {type(exc).__name__}: {exc}")
-        asset_iter = list(files.items()) if isinstance(files, dict) else []
+    asset_iter, enum_findings = _public_asset_entries(manifest)
+    findings.extend(enum_findings)
+    required_keys = {key for key, _entry in asset_iter}
 
     for key, entry in asset_iter:
         if not isinstance(entry, dict):
@@ -472,18 +575,20 @@ def bind_public_candidate_bytes(
         )
         checked.append(meta)
 
-    result = (
-        "PASS"
-        if checked and not findings and "core" in {c["key"] for c in checked}
-        else "FAIL"
-    )
+    checked_keys = {c["key"] for c in checked}
+    assets_complete = bool(required_keys) and required_keys.issubset(checked_keys)
+    if schema_version in (1, 2) and "core" not in checked_keys:
+        assets_complete = False
+    result = "PASS" if assets_complete and not findings else "FAIL"
     receipt = {
         "schema_version": 1,
         "binder": "public_candidate_bytes",
         "target_commit": target_commit,
         "candidate_generation": candidate_generation,
+        "manifest_schema_version": schema_version,
         "manifest_source": str(manifest_path),
         "checked": checked,
+        "required_keys": sorted(required_keys),
         "findings": findings,
         "result": result,
     }

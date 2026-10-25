@@ -157,6 +157,140 @@ def test_write_json_atomic_publishes_via_replace(tmp_path: Path) -> None:
         emit.write_json_atomic(path, {"ok": False})
 
 
+def test_write_json_atomic_preserves_peer_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TOCTOU: peer owns destination after exists-check; do not unlink it."""
+
+    path = tmp_path / "peer.json"
+    path.write_text('{"peer": true}\n', encoding="utf-8")
+    before = path.read_bytes()
+    target = path.resolve()
+    orig_exists = Path.exists
+    orig_is_symlink = Path.is_symlink
+
+    def fake_exists(self: Path) -> bool:
+        try:
+            if self.resolve() == target:
+                return False
+        except OSError:
+            pass
+        return orig_exists(self)
+
+    def fake_is_symlink(self: Path) -> bool:
+        try:
+            if self.resolve() == target:
+                return False
+        except OSError:
+            pass
+        return orig_is_symlink(self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+    with pytest.raises(FileExistsError):
+        emit.write_json_atomic(path, {"hijack": True})
+    assert path.read_bytes() == before
+
+
+def test_historical_integrity_requires_expected_index_binding(tmp_path: Path) -> None:
+    index = {
+        "dates": ["2026-01-01", "2026-01-02", "2026-01-03"],
+        "revision_heads": {},
+    }
+    index_raw = (json.dumps(index, sort_keys=True) + "\n").encode("utf-8")
+    index_path = tmp_path / "dates-index.json"
+    index_path.write_bytes(index_raw)
+    index_sha = hashlib.sha256(index_raw).hexdigest()
+    # Scoped two-date audit claiming the full-index digest must still FAIL.
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "dates_checked": 2,
+                "dates_passed": 2,
+                "index_sha256": index_sha,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_historical_integrity(
+        gate_dir,
+        target_commit=COMMIT,
+        summary_path=summary,
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        expected_index_path=index_path,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "historical_integrity-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("population" in f for f in receipt["findings"])
+
+
+def test_public_candidate_rejects_incomplete_v1_manifest(tmp_path: Path) -> None:
+    manifest = {
+        "schema_version": 1,
+        "producer_commit": COMMIT,
+        "files": {
+            "core": {"name": "core.json.gz", "sha256": "a" * 64, "bytes": 1},
+        },
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[],
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any("manifest contract" in f for f in receipt["findings"])
+
+
+def test_public_candidate_enumerates_v3_capabilities(tmp_path: Path) -> None:
+    fixture = ROOT / "contracts" / "v3" / "fixtures" / "valid-generation-manifest-v3.json"
+    manifest = json.loads(fixture.read_text(encoding="utf-8"))
+    manifest["producer_commit"] = COMMIT
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_public_candidate_bytes(
+        gate_dir,
+        target_commit=COMMIT,
+        manifest_path=manifest_path,
+        asset_paths=[],
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+    )
+    # Missing asset bytes → FAIL, but must not demand legacy files.core.
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "public_candidate_bytes-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "core" in receipt.get("required_keys", [])
+    assert not any("files.core" in f for f in receipt["findings"])
+    assert not any("manifest.files" in f for f in receipt["findings"])
+
+
 def test_receipt_gate_rejects_missing_explicit_pass(tmp_path: Path) -> None:
     receipt = tmp_path / "r.json"
     receipt.write_text(

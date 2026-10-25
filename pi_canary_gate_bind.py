@@ -154,6 +154,7 @@ def run_harness(
     candidate_generation: str,
     preservation_snapshot_sha256: str,
     historical_summary: Optional[Path] = None,
+    expected_historical_index: Optional[Path] = None,
     restore_receipt: Optional[Path] = None,
     protected_code_sha: Optional[str] = None,
     public_manifest: Optional[Path] = None,
@@ -221,6 +222,7 @@ def run_harness(
                 summary_path=historical_summary,
                 candidate_generation=candidate_generation,
                 preservation_snapshot_sha256=preservation_snapshot_sha256,
+                expected_index_path=expected_historical_index,
             ),
         )
     else:
@@ -371,6 +373,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_hi = sub.add_parser("historical-integrity", help="Bind audit summary.json")
     add_common(p_hi, require_pass_bindings=True)
     p_hi.add_argument("--summary", required=True, type=Path)
+    p_hi.add_argument(
+        "--expected-index",
+        type=Path,
+        default=None,
+        help=(
+            "Candidate/authorizing dates-index.json whose SHA-256 and date "
+            "population must match the audit summary (required for PASS)"
+        ),
+    )
     p_hi.add_argument("--min-dates", type=int, default=2)
     p_hi.add_argument(
         "--allow-scoped-index",
@@ -409,6 +420,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_h = sub.add_parser("harness", help="Attempt all eight gates + status.json")
     add_common(p_h, require_pass_bindings=True)
     p_h.add_argument("--historical-summary", type=Path, default=None)
+    p_h.add_argument("--expected-historical-index", type=Path, default=None)
     p_h.add_argument("--restore-receipt", type=Path, default=None)
     p_h.add_argument(
         "--protected-code-sha",
@@ -449,6 +461,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 preservation_snapshot_sha256=args.preservation_snapshot_sha256,
                 min_dates=args.min_dates,
                 allow_scoped_index=args.allow_scoped_index,
+                expected_index_path=args.expected_index,
             )
         elif args.command == "public-candidate-bytes":
             payload = bind_public_candidate_bytes(
@@ -506,6 +519,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 candidate_generation=args.candidate_generation,
                 preservation_snapshot_sha256=args.preservation_snapshot_sha256,
                 historical_summary=args.historical_summary,
+                expected_historical_index=args.expected_historical_index,
                 restore_receipt=args.restore_receipt,
                 protected_code_sha=protected,
                 public_manifest=args.public_manifest,
