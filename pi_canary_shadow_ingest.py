@@ -21,8 +21,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-COMMIT_RE = __import__("re").compile(r"^[0-9a-f]{40}$")
-SHA256_RE = __import__("re").compile(r"^[0-9a-f]{64}$")
+import re
+
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+CANDIDATE_GENERATION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 class ShadowIngestError(ValueError):
@@ -76,11 +79,13 @@ OPERATOR_STEPS = [
     "Abort if production runs/state OR /var/lib/ar-local-day-archives mtimes change, "
     "or if /etc/ar-local/day-archive.env is read (env must be the canary file).",
     "On exit 0 with exports present, write receipt with gate=shadow_ingest, "
-    "result=PASS, target_commit=TARGET_SHA, exit_code=0, and exports_dirs=[...].",
+    "result=PASS, target_commit=TARGET_SHA, exit_code=0, exports_dirs=[...], "
+    "candidate_generation=<generation>, and preservation_snapshot_sha256=<snap>.",
     "Canonicalize: python pi_canary_shadow_ingest.py canonicalize "
     "--source-receipt <raw> --output <canonical> --target-commit TARGET_SHA",
     "Bind only the canonicalize output: python pi_canary_gate_bind.py "
-    "shadow-ingest --receipt <canonical> ...",
+    "shadow-ingest --receipt <canonical> "
+    "--candidate-generation <gen> --preservation-snapshot-sha256 <snap> ...",
 ]
 
 
@@ -161,6 +166,17 @@ def validate_and_canonicalize(
         or any(not isinstance(path, str) or not path.strip() for path in exports)
     ):
         findings.append("PASS requires non-empty exports_dirs/exports path evidence")
+    generation = raw.get("candidate_generation")
+    snapshot = raw.get("preservation_snapshot_sha256")
+    if not isinstance(generation, str) or not CANDIDATE_GENERATION_RE.fullmatch(generation):
+        findings.append(
+            "PASS requires candidate_generation matching "
+            "^[A-Za-z0-9._:-]{1,128}$"
+        )
+        generation = None
+    if not isinstance(snapshot, str) or not SHA256_RE.fullmatch(snapshot):
+        findings.append("PASS requires preservation_snapshot_sha256 (64 lowercase hex)")
+        snapshot = None
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,
@@ -172,7 +188,8 @@ def validate_and_canonicalize(
         "source_sha256": sha256_file(source_receipt),
         "findings": findings,
         "exports_dirs": exports,
-        "candidate_generation": raw.get("candidate_generation"),
+        "candidate_generation": generation,
+        "preservation_snapshot_sha256": snapshot,
         "canary_root": raw.get("canary_root"),
         "exit_code": raw.get("exit_code"),
     }

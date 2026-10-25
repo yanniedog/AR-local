@@ -19,6 +19,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+CANDIDATE_GENERATION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 API_LEVEL_RE = re.compile(r"^[1-9][0-9]{0,2}$")
 
 GATES = (
@@ -33,13 +34,15 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "cd mobile && npm ci && npm run ci (Jest + script tests + doctor + typecheck + lint).",
         "Record package versions, APK/IPA digests if built, and CI log path.",
         "Write receipt JSON with gate=stable_app_compatibility, target_commit=TARGET_SHA, "
-        "result=PASS, and ci={command,exit_code:0,log_sha256,suites,tests}.",
+        "result=PASS, candidate_generation, preservation_snapshot_sha256, and "
+        "ci={command,exit_code:0,log_sha256,suites,tests}.",
         "Do not reuse PASS from a different candidate SHA (e.g. prior product-evidence head).",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
         "--gate stable_app_compatibility --source-receipt <raw> --output <canonical> "
         "--target-commit TARGET_SHA",
         "Bind only the canonicalize output: python pi_canary_gate_bind.py "
-        "stable-app-compatibility --receipt <canonical> ...",
+        "stable-app-compatibility --receipt <canonical> "
+        "--candidate-generation <gen> --preservation-snapshot-sha256 <snap> ...",
     ],
     "candidate_emulator_matrix": [
         "Use released/candidate APK for TARGET_SHA only (docs/PRODUCT_EVIDENCE_ACCEPTANCE.md P-007).",
@@ -47,6 +50,7 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "Exercise current + repaired historical acquisition; capture screenshots/logs.",
         "Preserve emulator userdata_snapshot path + userdata_snapshot_sha256 in receipt.",
         "Write receipt with gate=candidate_emulator_matrix, target_commit, "
+        "candidate_generation, preservation_snapshot_sha256, "
         "devices=[{avd,api,abi,install_upgrade:true,acquisition_checks:true,"
         "userdata_snapshot,userdata_snapshot_sha256,result}], result=PASS|FAIL.",
         "Emulator PASS does not imply physical-device or native-v2 acceptance.",
@@ -54,20 +58,23 @@ OPERATOR_STEPS: dict[str, list[str]] = {
         "--gate candidate_emulator_matrix --source-receipt <raw> --output <canonical> "
         "--target-commit TARGET_SHA",
         "Bind only the canonicalize output: python pi_canary_gate_bind.py "
-        "candidate-emulator-matrix --receipt <canonical> ...",
+        "candidate-emulator-matrix --receipt <canonical> "
+        "--candidate-generation <gen> --preservation-snapshot-sha256 <snap> ...",
     ],
     "candidate_device_matrix": [
         "Physical devices only; do not infer from emulator PASS.",
         "Install candidate build bound to TARGET_SHA on each required device.",
         "Record model, OS version, ABI, install_upgrade=true, acquisition_checks=true.",
         "Attach lab_run_id and evidence_archive_sha256.",
-        "Write receipt with gate=candidate_device_matrix, target_commit, devices=[...], "
+        "Write receipt with gate=candidate_device_matrix, target_commit, "
+        "candidate_generation, preservation_snapshot_sha256, devices=[...], "
         "result=PASS only if matrix complete.",
         "Canonicalize: python pi_canary_app_matrix_receipts.py canonicalize "
         "--gate candidate_device_matrix --source-receipt <raw> --output <canonical> "
         "--target-commit TARGET_SHA",
         "Bind only the canonicalize output: python pi_canary_gate_bind.py "
-        "candidate-device-matrix --receipt <canonical> ...",
+        "candidate-device-matrix --receipt <canonical> "
+        "--candidate-generation <gen> --preservation-snapshot-sha256 <snap> ...",
     ],
 }
 
@@ -78,6 +85,22 @@ class AppMatrixError(ValueError):
 
 def _is_nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_bind_fields(raw: Mapping[str, Any], findings: list[str]) -> tuple[Optional[str], Optional[str]]:
+    """Require valid generation + snapshot bindings for canonicalize→bind PASS."""
+    generation = raw.get("candidate_generation")
+    snapshot = raw.get("preservation_snapshot_sha256")
+    if not isinstance(generation, str) or not CANDIDATE_GENERATION_RE.fullmatch(generation):
+        findings.append(
+            "PASS requires candidate_generation matching "
+            "^[A-Za-z0-9._:-]{1,128}$"
+        )
+        generation = None
+    if not isinstance(snapshot, str) or not SHA256_RE.fullmatch(snapshot):
+        findings.append("PASS requires preservation_snapshot_sha256 (64 lowercase hex)")
+        snapshot = None
+    return generation, snapshot
 
 
 def _is_api_level(value: Any) -> bool:
@@ -231,6 +254,7 @@ def canonicalize(
                     findings.append(f"devices[{index}] must be an object")
                     continue
                 findings.extend(_validate_matrix_device(gate, index, device))
+    generation, snapshot = _validate_bind_fields(raw, findings)
     result = "PASS" if not findings else "FAIL"
     payload = {
         "schema_version": 1,
@@ -241,7 +265,14 @@ def canonicalize(
         "source_receipt": str(source),
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "findings": findings,
+        "candidate_generation": generation,
+        "preservation_snapshot_sha256": snapshot,
     }
+    # Preserve validated gate-specific evidence so binders can authorize canonicalize output.
+    if result == "PASS" and gate == "stable_app_compatibility":
+        payload["ci"] = raw["ci"]
+    if result == "PASS" and gate.endswith("_matrix"):
+        payload["devices"] = raw["devices"]
     digest = write_json_atomic(output, payload)
     return {
         "gate": gate,
