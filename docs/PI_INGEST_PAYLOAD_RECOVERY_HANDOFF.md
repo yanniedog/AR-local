@@ -36943,7 +36943,7 @@ crash recovery and rollout procedure. Linux tests, harmless live canaries, exact
 merged source hashes and effective service readback must establish installation
 acceptance; future natural ingest remains unverified until observed.
 
-## 2026-10-25 — Drive write hold lift + daily CDR day-archives (operator 1B / ongoing)
+## 2026-10-25 - Drive write hold lift + daily CDR day-archives (operator 1B / ongoing)
 
 The operator authorized lifting the Google Drive write hold entirely and
 starting a dedicated unencrypted per-day CDR archive series under

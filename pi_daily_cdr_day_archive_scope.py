@@ -86,7 +86,11 @@ def _walk_files(root: Path) -> Iterator[Path]:
         return
     if root.is_symlink() or not root.is_dir():
         raise ValueError(f"included root is not a real directory: {root}")
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+
+    def _onerror(error: OSError) -> None:
+        raise RuntimeError(f"unreadable archive source during walk: {error}") from error
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=_onerror):
         dirnames[:] = sorted(name for name in dirnames if not _skip_dir(name))
         base = Path(dirpath)
         if base.is_symlink():
@@ -211,8 +215,9 @@ def export_journals(day: str, destination: Path, *, units: Iterable[str] = JOURN
                 text=True,
                 check=False,
             )
-        if completed.returncode not in (0, 1):
-            # journalctl exits 1 when the unit has no entries; keep empty file.
+        if completed.returncode != 0:
+            # journalctl returns 0 on success (including empty ranges). Nonzero means
+            # failure (permissions, missing journal, etc.) — never archive that as PASS.
             path.unlink(missing_ok=True)
             raise RuntimeError(
                 f"journalctl failed for {unit} on {day}: exit {completed.returncode}: {completed.stderr[:500]}"

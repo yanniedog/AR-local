@@ -542,3 +542,38 @@ def test_control_reuses_local_artifact(tmp_path: Path, monkeypatch):
     assert result["result"] == "PASS"
     assert result["sha256"] == first_sha
     assert rebuilt == []
+
+
+def test_journalctl_nonzero_exit_is_rejected(tmp_path: Path, monkeypatch):
+    class FakeCompleted:
+        returncode = 1
+        stderr = "Failed to open journal"
+
+    monkeypatch.setattr(
+        scope.subprocess,
+        "run",
+        lambda *args, **kwargs: FakeCompleted(),
+    )
+    with pytest.raises(RuntimeError, match="journalctl failed"):
+        scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+
+
+def test_walk_propagates_unreadable_directory(tmp_path: Path, monkeypatch):
+    root = tmp_path / "run"
+    root.mkdir()
+    (root / "ok.txt").write_text("x", encoding="utf-8")
+
+    def boom(error):
+        raise error
+
+    real_walk = scope.os.walk
+
+    def walk_with_error(*args, **kwargs):
+        onerror = kwargs.get("onerror")
+        if onerror:
+            onerror(PermissionError("denied: secret"))
+        return real_walk(*args, **kwargs)
+
+    monkeypatch.setattr(scope.os, "walk", walk_with_error)
+    with pytest.raises(RuntimeError, match="unreadable archive source"):
+        list(scope._walk_files(root))
