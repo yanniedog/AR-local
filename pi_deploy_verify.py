@@ -36,7 +36,6 @@ Held-timer rollouts:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import shlex
@@ -46,6 +45,12 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
+from pi_deploy_http_smoke import http_smoke, wait_for_http_smoke  # noqa: F401 — re-exported
+from pi_deploy_ingest_timers import (  # noqa: F401 — re-exported for tests
+    pi_ingest_timer_fields_observed,
+    pi_ingest_timers_allow_unarmed,
+    pi_ingest_timers_ok,
+)
 from pi_deploy_service_snapshot import pi_ingest_service_fences_ok, remote_snapshot
 
 from ar_local_pi_runtime import (
@@ -55,7 +60,6 @@ from ar_local_pi_runtime import (
     PI_REPO_ROOT,
     PI_SITE_REPO,
     is_raspberry_pi,
-    manifest_banks_rate_count,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -458,145 +462,6 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     for label, key in (("repo", "DF_AR"), ("site", "DF_SITE"), ("data", "DF_DATA")):
         print(f"pi_deploy_verify: df {label}: {snap.get(key, '')}")
     return ok
-
-
-_INGEST_TIMER_FIELDS = (
-    "DAILY_TIMER_ENABLED",
-    "DAILY_TIMER_ACTIVE",
-    "WATCHDOG_TIMER_ENABLED",
-    "WATCHDOG_TIMER_ACTIVE",
-    "CAPACITY_TIMER_ENABLED",
-    "CAPACITY_TIMER_ACTIVE",
-)
-
-_INGEST_TIMER_ARMED = {
-    "DAILY_TIMER_ENABLED": "enabled",
-    "DAILY_TIMER_ACTIVE": "active",
-    "WATCHDOG_TIMER_ENABLED": "enabled",
-    "WATCHDOG_TIMER_ACTIVE": "active",
-    "CAPACITY_TIMER_ENABLED": "enabled",
-    "CAPACITY_TIMER_ACTIVE": "active",
-}
-
-_INGEST_TIMER_UNARMED = {
-    "DAILY_TIMER_ENABLED": "disabled",
-    "DAILY_TIMER_ACTIVE": "inactive",
-    "WATCHDOG_TIMER_ENABLED": "disabled",
-    "WATCHDOG_TIMER_ACTIVE": "inactive",
-    "CAPACITY_TIMER_ENABLED": "disabled",
-    "CAPACITY_TIMER_ACTIVE": "inactive",
-}
-
-
-def _print_ingest_timer_fields(snap: dict[str, str]) -> None:
-    for field in _INGEST_TIMER_FIELDS:
-        print(f"pi_deploy_verify: {field}: {snap.get(field, '')}")
-
-
-def pi_ingest_timer_fields_observed(snap: dict[str, str]) -> bool:
-    """True when every ingest-timer field is present and non-empty."""
-    missing = [field for field in _INGEST_TIMER_FIELDS if not str(snap.get(field, "")).strip()]
-    if missing:
-        print(
-            "pi_deploy_verify: ingest timer state missing or unreadable: "
-            + ", ".join(missing),
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
-def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
-    _print_ingest_timer_fields(snap)
-    ok = all(snap.get(field, "") == value for field, value in _INGEST_TIMER_ARMED.items())
-    if not ok:
-        print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
-    return ok
-
-
-def pi_ingest_timers_allow_unarmed(snap: dict[str, str]) -> bool:
-    """Held-timer verify: require observed state; allow armed or explicitly unarmed."""
-    _print_ingest_timer_fields(snap)
-    if not pi_ingest_timer_fields_observed(snap):
-        return False
-    if all(snap.get(field, "") == value for field, value in _INGEST_TIMER_ARMED.items()):
-        return True
-    if all(snap.get(field, "") == value for field, value in _INGEST_TIMER_UNARMED.items()):
-        return True
-    print(
-        "pi_deploy_verify: ingest timers are neither fully armed nor fully unarmed "
-        "(held-timer bypass requires an explicit observed state)",
-        file=sys.stderr,
-    )
-    return False
-
-
-def http_smoke(
-    base_url: str,
-    *,
-    require_rates: bool = True,
-    timeout_seconds: float = 30.0,
-) -> int:
-    import urllib.error
-    import urllib.request
-
-    latest = base_url.rstrip("/") + "/api/latest"
-    try:
-        with urllib.request.urlopen(latest, timeout=timeout_seconds) as resp:
-            if int(resp.status) != 200:
-                print(f"pi_deploy_verify: {latest} HTTP {resp.status}", file=sys.stderr)
-                return EXIT_VERIFY_FAIL
-            payload = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        print(f"pi_deploy_verify: {latest} HTTP {exc.code}", file=sys.stderr)
-        return EXIT_VERIFY_FAIL
-    except Exception as exc:
-        print(f"pi_deploy_verify: {latest} failed: {exc}", file=sys.stderr)
-        return EXIT_VERIFY_FAIL
-
-    rates = manifest_banks_rate_count(payload)
-    run_date = payload.get("run_date")
-    if require_rates and rates <= 0:
-        print(
-            f"pi_deploy_verify: /api/latest run_date={run_date!r} banks_counts.rates={rates}",
-            file=sys.stderr,
-        )
-        return EXIT_VERIFY_FAIL
-    print(f"pi_deploy_verify: HTTP OK {latest} run_date={run_date} rates={rates}")
-    return EXIT_OK
-
-
-def wait_for_http_smoke(
-    base_url: str,
-    *,
-    require_rates: bool = True,
-    attempts: int = 13,
-    delay_seconds: float = 10.0,
-    budget_seconds: float = 120.0,
-) -> int:
-    """Allow the dashboard's preload phase to finish after a service restart."""
-    deadline = time.monotonic() + max(0.0, budget_seconds)
-    result = EXIT_VERIFY_FAIL
-    for attempt in range(1, attempts + 1):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        result = http_smoke(
-            base_url,
-            require_rates=require_rates,
-            timeout_seconds=min(30.0, remaining),
-        )
-        if result == EXIT_OK:
-            return EXIT_OK
-        remaining = deadline - time.monotonic()
-        if attempt < attempts and remaining > 0:
-            sleep_seconds = min(delay_seconds, remaining)
-            print(
-                f"pi_deploy_verify: dashboard not ready after restart "
-                f"(attempt {attempt}/{attempts}); retrying in {sleep_seconds:g}s"
-            )
-            time.sleep(sleep_seconds)
-    return result
 
 
 def verify_sync(
