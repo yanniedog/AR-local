@@ -321,6 +321,7 @@ def build_day_archive(
         "journal_units": inventory.get("journal_units", []),
         "compression": COMPRESSION,
         "include_journals": bool(include_journals),
+        "journal_classifier": inventory.get("journal_classifier", 2),
         "file_count": inventory["file_count"],
         "total_bytes": inventory["total_bytes"],
         "files": [
@@ -528,7 +529,9 @@ def _process_day_locked(
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             digest = sha_path.read_text(encoding="utf-8").split()[0]
             journals_match = bool(manifest.get("include_journals")) == build_journals
-            series_match = (not build_journals) or manifest.get("series") == SERIES
+            series_match = (not build_journals) or (
+                manifest.get("series") == SERIES and manifest.get("journal_classifier") == 2
+            )
             if (
                 journals_match
                 and series_match

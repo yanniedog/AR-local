@@ -194,13 +194,19 @@ def collect_control_files(data_root: Path) -> list[Path]:
     return sorted(set(found), key=lambda item: item.as_posix())
 
 
+# journalctl writes this exact placeholder when the range has no entries.
+_JOURNAL_EMPTY_MARKERS = (b"-- No entries --",)
+JOURNAL_CLASSIFIER = 2
+
+
 def _journal_file_status(path: Path) -> str:
     size = path.stat().st_size
     if size == 0:
         return "empty"
     if size > 4096:
         return "captured"
-    if not path.read_bytes().strip():
+    data = path.read_bytes().strip()
+    if not data or data in _JOURNAL_EMPTY_MARKERS:
         return "empty"
     return "captured"
 
@@ -393,6 +399,7 @@ def build_day_inventory(
         "date": day,
         "coverage": classify_coverage(day, rows),
         "journal_status": journal_status,
+        "journal_classifier": JOURNAL_CLASSIFIER,
         "journals_absent": journals_absent,
         "raw_banks_absent": banks_absent,
         "journal_units": journal_units,

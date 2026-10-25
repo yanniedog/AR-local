@@ -617,6 +617,21 @@ def test_journalctl_output_is_captured(tmp_path: Path, monkeypatch):
     assert result["paths"][0].read_text(encoding="utf-8") == "j"
 
 
+def test_journalctl_no_entries_marker_is_empty(tmp_path: Path, monkeypatch):
+    class FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    def _run(*args, **kwargs):
+        kwargs["stdout"].write("-- No entries --\n")
+        return FakeCompleted()
+
+    monkeypatch.setattr(scope.subprocess, "run", _run)
+    result = scope.export_journals("2026-05-13", tmp_path / "journals", units=["ar-local-daily.service"])
+    assert result["journal_status"] == "empty"
+    assert result["units"][0]["status"] == "empty"
+
+
 def test_reconstruction_exports_are_not_wire_raw(tmp_path: Path):
     data = tmp_path / "data"
     day = "2026-07-07"
