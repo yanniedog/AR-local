@@ -722,7 +722,7 @@ def archive_observation_day(
     generation_id: str | None = None,
     stage_roots: list[Path] | None = None,
     state_dir: Path | None = None,
-    runs_root: Path | None = None,
+    runs_root: Path | None = None, clean_ram_stage: bool | None = None,
 ) -> dict:
     """Synchronous raw-record upload before ingest deletes that day's files."""
     day = require_day(day)
@@ -738,8 +738,7 @@ def archive_observation_day(
             generation_id=generation_id,
             stage_roots=roots,
             data_root=root,
-            state_dir=state_dir,
-            runs_root=runs_root,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
         )
         return {
             "schema": SCHEMA,

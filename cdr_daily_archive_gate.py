@@ -26,7 +26,7 @@ def read_json(path: Path) -> dict:
 
 def write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root: Path,
                         cleanup_paths: tuple[Path, ...], seal_exports: Path | None,
-                        stage_roots: list[Path]) -> None:
+                        stage_roots: list[Path], *, clean_ram_stage: bool = True) -> None:
     path = ownership_path(state_dir, date, generation_id)
     if path.exists():
         return
@@ -38,6 +38,7 @@ def write_ram_ownership(state_dir: Path, date: str, generation_id: str, ram_root
         "cleanup_paths": [str(item.resolve()) for item in cleanup_paths],
         "stage_roots": [str(Path(item).resolve()) for item in stage_roots],
         "seal_exports": None if seal_exports is None else str(seal_exports.resolve()),
+        "clean_ram_stage": bool(clean_ram_stage),
     }
     atomic_write_json(path, payload, create_once=True)
 
@@ -107,7 +108,18 @@ def resume_owned_ram_cleanup(args: argparse.Namespace, state_dir: Path, runs_roo
     ownership = read_json(ownership_path(state_dir, date, generation))
     if ownership.get("generation_id") != generation or ownership.get("date") != date:
         return {"ram_cleanup": {"status": "PRESERVED", "reason": "ownership_generation_mismatch"}}
-    ram_root = Path(str(ownership.get("ram_root")))
+    if recorded.get("ram_staged") is not True:
+        if os.environ.get("AR_LOCAL_TERMS_ROOT", "").strip():
+            from cdr_daily import retry_terms_capture
+            terms = retry_terms_capture(marker, args, state_dir, runs_root, date)
+            return {"terms_evidence": terms, "ram_cleanup": {"status": "SKIPPED"}}
+        return {"ram_cleanup": {"status": "SKIPPED"}}
+    if ownership.get("clean_ram_stage") is False:
+        return {"ram_cleanup": {"status": "KEPT"}}
+    args = argparse.Namespace(**vars(args))
+    args.clean_ram_stage = True
+    args.ram_root = Path(str(ownership.get("ram_root")))
+    ram_root = args.ram_root
     targets = []
     for item in ownership.get("cleanup_paths") or []:
         allowed = _owned_removable(ram_root, runs_root, date, item)
@@ -154,7 +166,7 @@ def accept_finalized_retry(args: argparse.Namespace, state_dir: Path, runs_root:
     result = _archive_raw_day_before_cleanup(
         date, data_root=runs_root.parent, generation_id=generation,
         stage_roots=retry_stage_roots(state_dir, date, generation, recorded),
-        state_dir=state_dir, runs_root=runs_root,
+        state_dir=state_dir, runs_root=runs_root, clean_ram_stage=args.clean_ram_stage,
     )
     status = result.get("result")
     if status == "DEFERRED":
@@ -172,6 +184,18 @@ def accept_finalized_retry(args: argparse.Namespace, state_dir: Path, runs_root:
         return 2, resumed.get("terms_evidence") if isinstance(resumed.get("terms_evidence"), dict) else None
     terms = resumed.get("terms_evidence")
     return None, terms if isinstance(terms, dict) else None
+
+
+def _stage_matches_uploaded(progress: Path, day: str, generation: str, ownership: dict) -> bool:
+    from pi_daily_cdr_day_archive_ingest import generation_progress, root_has_files
+    from pi_daily_cdr_day_archive_scope import stage_source_fingerprint
+    prior = generation_progress(progress).get(f"{day}#{generation}")
+    if not prior or prior.get("result") != "PASS":
+        return False
+    roots = [Path(item) for item in (ownership.get("stage_roots") or []) if isinstance(item, str)]
+    if not any(root_has_files(path) for path in roots):
+        return True
+    return stage_source_fingerprint(roots) == prior.get("source_fingerprint")
 
 
 def finish_verified_stage_cleanups(args: argparse.Namespace, state_dir: Path, runs_root: Path) -> None:
@@ -192,9 +216,13 @@ def finish_verified_stage_cleanups(args: argparse.Namespace, state_dir: Path, ru
         marker = marker_for_generation(state_dir, day, generation)
         if marker is None:
             continue
+        if not _stage_matches_uploaded(progress, day, generation, ownership):
+            continue
         resumed = resume_owned_ram_cleanup(args, state_dir, runs_root, day, marker)
         cleanup = (resumed or {}).get("ram_cleanup") or {}
-        if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
+        if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "SKIPPED", "KEPT"}:
+            path.unlink(missing_ok=True)
+        elif isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
             print(f"raw cleanup still preserved ({day}): {cleanup.get('reason', '')}", file=sys.stderr)
 
 
@@ -216,10 +244,17 @@ def resume_job_cleanup(job: dict) -> None:
     marker = marker_for_generation(state_dir, day, generation)
     if marker is None:
         return
+    from pi_daily_cdr_day_archive import DEFAULT_SPOOL, progress_path
+    progress = progress_path(Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL)))
     ownership = read_json(ownership_path(state_dir, day, generation))
+    if not _stage_matches_uploaded(progress, day, generation, ownership):
+        return
     ram_root = Path(str(ownership.get("ram_root") or job.get("data_root")))
-    args = argparse.Namespace(ram_root=ram_root, clean_ram_stage=True)
+    clean = job.get("clean_ram_stage", ownership.get("clean_ram_stage", True))
+    args = argparse.Namespace(ram_root=ram_root, clean_ram_stage=bool(clean))
     finish_one = resume_owned_ram_cleanup(args, state_dir, runs_root, day, marker)
     cleanup = (finish_one or {}).get("ram_cleanup") or {}
     if isinstance(cleanup, dict) and cleanup.get("status") == "PRESERVED":
         raise RuntimeError(cleanup.get("reason") or "cleanup preserved")
+    if isinstance(cleanup, dict) and cleanup.get("status") in {"CLEANED", "SKIPPED", "KEPT"}:
+        ownership_path(state_dir, day, generation).unlink(missing_ok=True)

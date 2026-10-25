@@ -693,7 +693,10 @@ def test_existing_seal_is_not_recreated(tmp_path, monkeypatch):
     generation = "obs-2026-08-15-0123456789abcdef"
     write_ram_ownership(state, DATE, generation, ram, (raw,), None, [raw])
     marker = state / f"{DATE}.done.json"
-    marker.write_text(json.dumps({"generation_id": generation}), encoding="utf-8")
+    marker.write_text(
+        json.dumps({"generation_id": generation, "ram_staged": True, "ram_root": str(ram.resolve())}),
+        encoding="utf-8",
+    )
     receipt = seal_receipt_path(state, generation)
     receipt.parent.mkdir(parents=True, exist_ok=True)
     receipt.write_text("{}\n", encoding="utf-8")

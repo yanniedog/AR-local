@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -46,6 +47,12 @@ class StageMissing(ValueError):
     """The recorded capture stage is gone and this generation has no PASS."""
 
 
+def root_has_files(path: Path) -> bool:
+    if not path.is_dir() or path.is_symlink():
+        return False
+    return any(item.is_file() for item in path.rglob("*"))
+
+
 def cached_generation_upload(
     progress_file: Path,
     day: str,
@@ -56,14 +63,14 @@ def cached_generation_upload(
     """Return a reusable PASS, or None when a new upload is required."""
     prior = generation_progress(progress_file).get(f"{day}#{generation_id}")
     roots = list(stage_roots or [])
-    missing = bool(roots) and any((not path.is_dir()) or path.is_symlink() for path in roots)
-    if missing:
-        still_there = any(path.is_dir() and not path.is_symlink() for path in roots)
-        if prior and prior.get("result") == "PASS" and not still_there:
-            return prior
-        raise StageMissing("capture stage missing before a verified archive")
-    if prior and prior.get("result") == "PASS" and prior.get("source_fingerprint") == fingerprint:
+    has_files = any(root_has_files(path) for path in roots)
+    passed = bool(prior and prior.get("result") == "PASS")
+    if passed and roots and not has_files:
         return prior
+    if passed and prior.get("source_fingerprint") == fingerprint:
+        return prior
+    if roots and not has_files and any((not path.is_dir()) or path.is_symlink() for path in roots):
+        raise StageMissing("capture stage missing before a verified archive")
     return None
 
 
@@ -83,11 +90,16 @@ def _sidecar_stem(remote_name: str) -> str:
 
 
 def _retarget_sidecar(path: Path, remote_name: str, suffix: str, body: str | None = None) -> Path:
+    """Upload a generation-named copy and leave the date-named workspace file."""
     target = path.with_name(_sidecar_stem(remote_name) + suffix)
+    if target == path:
+        if body is not None:
+            path.write_text(body, encoding="utf-8")
+        return path
     if body is not None:
-        path.write_text(body, encoding="utf-8")
-    if target != path:
-        path.replace(target)
+        target.write_text(body, encoding="utf-8")
+    else:
+        shutil.copyfile(path, target)
     return target
 
 
@@ -153,6 +165,7 @@ def enqueue_ingest_continuation(
     data_root: Path,
     state_dir: Path | None = None,
     runs_root: Path | None = None,
+    clean_ram_stage: bool | None = None,
 ) -> Path:
     day = require_day(day)
     generation = require_generation(generation_id)
@@ -171,7 +184,8 @@ def enqueue_ingest_continuation(
         "data_root": str(Path(data_root).resolve()),
         "state_dir": None if state_dir is None else str(Path(state_dir).resolve()),
         "runs_root": None if runs_root is None else str(Path(runs_root).resolve()),
-        "reason": "quiet-window",
+        "clean_ram_stage": True if clean_ram_stage is None else bool(clean_ram_stage),
+        "reason": "archive-retry",
         "requested_at": datetime.now(tz=DAILY_INGEST_TZ).isoformat(),
     }
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -217,6 +231,8 @@ def _continuation_job(body: dict, day: str) -> dict | None:
         found = _absolute_path(body.get(key))
         if found is not None:
             job[key] = found
+    if "clean_ram_stage" in body:
+        job["clean_ram_stage"] = bool(body.get("clean_ram_stage"))
     return job
 
 

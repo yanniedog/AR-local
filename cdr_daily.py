@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -342,18 +343,38 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
+def _queue_archive_retry(date: str, *, data_root: Path, generation_id: str | None,
+                         stage_roots: list[Path], state_dir: Path | None,
+                         runs_root: Path | None, clean_ram_stage: bool | None) -> None:
+    if not generation_id or state_dir is None or runs_root is None:
+        return
+    from pi_daily_cdr_day_archive import DEFAULT_SPOOL
+    from pi_daily_cdr_day_archive_ingest import enqueue_ingest_continuation
+    spool = Path(os.environ.get("AR_LOCAL_DAY_ARCHIVE_SPOOL", DEFAULT_SPOOL))
+    enqueue_ingest_continuation(
+        date, spool=spool, generation_id=generation_id, stage_roots=stage_roots,
+        data_root=data_root, state_dir=state_dir, runs_root=runs_root,
+        clean_ram_stage=clean_ram_stage,
+    )
+
+
 def _archive_raw_day_before_cleanup(date: str, *, data_root: Path, generation_id: str | None,
                                     stage_roots: list[Path], state_dir: Path | None = None,
-                                    runs_root: Path | None = None) -> dict:
+                                    runs_root: Path | None = None,
+                                    clean_ram_stage: bool | None = None) -> dict:
     try:
         from pi_daily_cdr_day_archive import archive_observation_day
 
         result = archive_observation_day(
             date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
-            state_dir=state_dir, runs_root=runs_root,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
         )
     except Exception as archive_error:  # noqa: BLE001 — keep the raw tree
         print(f"day-archive failed before cleanup ({date}): {archive_error}", file=sys.stderr)
+        _queue_archive_retry(
+            date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
+        )
         return {"date": date, "result": "FAIL", "error": str(archive_error)[:500]}
     if not isinstance(result, dict):
         print(f"day-archive not verified before cleanup ({date}): FAIL", file=sys.stderr)
@@ -370,6 +391,10 @@ def _archive_raw_day_before_cleanup(date: str, *, data_root: Path, generation_id
     if status not in ("PASS", "DEFERRED"):
         detail = str(result.get("error") or result.get("reason") or "")
         print(f"day-archive not verified ({date}): {status} {detail}".rstrip(), file=sys.stderr)
+        _queue_archive_retry(
+            date, data_root=data_root, generation_id=generation_id, stage_roots=stage_roots,
+            state_dir=state_dir, runs_root=runs_root, clean_ram_stage=clean_ram_stage,
+        )
     return result
 
 
@@ -748,7 +773,8 @@ def run_once(args: argparse.Namespace) -> int:
         if ram_cleanup_paths is not None and not persistent_output_stage:
             seal_exports = staged_exports_to_install
         _write_ram_ownership(
-            state_dir, date, generation_id, args.ram_root, ram_cleanup_paths or (), seal_exports, stage_roots,
+            state_dir, date, generation_id, args.ram_root, ram_cleanup_paths or (), seal_exports,
+            stage_roots, clean_ram_stage=args.clean_ram_stage,
         )
     archive_result = _archive_raw_day_before_cleanup(
         date,
@@ -757,6 +783,7 @@ def run_once(args: argparse.Namespace) -> int:
         stage_roots=[path for path in stage_roots if path.is_dir()],
         state_dir=state_dir,
         runs_root=persistent_runs_root,
+        clean_ram_stage=args.clean_ram_stage,
     )
     finalized = {
         **finalized,
