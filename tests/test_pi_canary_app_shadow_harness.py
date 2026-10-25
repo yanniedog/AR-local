@@ -388,6 +388,8 @@ def test_shadow_template_forbids_production_archive(tmp_path: Path) -> None:
     assert "AR_LOCAL_DATA_ROOT" in steps
     assert "AR_LOCAL_DAY_ARCHIVE_ENV" in steps
     assert "day-archive.env" in steps
+    assert "type=local" in steps
+    assert "D-028" in steps
     assert any("day-archive.env" in item for item in body["forbidden"])
     assert any("AR_LOCAL_DATA_ROOT" in item for item in body["forbidden"])
 

@@ -14,6 +14,8 @@ from pathlib import Path
 
 FOLDER_NAME = "daily-cdr-raw-records"
 LEGACY_FOLDER_NAME = "daily-cdr-day-archives"
+PRODUCTION_DATA_ROOT = "/srv/ar-local/data"
+PRODUCTION_DAY_ARCHIVE_SPOOL = "/var/lib/ar-local-day-archives"
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _GEN = r"obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}"
 OBJECT_RE = re.compile(
@@ -24,12 +26,18 @@ OBJECT_RE = re.compile(
 )
 
 
-def resolve_archive_remote(remote: str) -> str:
-    """Pin uploads to daily-cdr-raw-records. The older day-archives folder is immutable."""
+def resolve_archive_remote(remote: str, *, preserve_absolute: bool = False) -> str:
+    """Pin uploads to daily-cdr-raw-records. The older day-archives folder is immutable.
+
+    When ``preserve_absolute`` is true (isolated canary local backend), keep a
+    leading ``/`` so rclone local remotes stay absolute under the canary tree.
+    """
     match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", remote.strip())
     if not match:
         raise ValueError("rclone remote must be name:path")
-    remote_name, remote_path = match.group(1), match.group(2).strip("/")
+    remote_name, raw_path = match.group(1), match.group(2)
+    absolute = bool(preserve_absolute and raw_path.startswith("/"))
+    remote_path = raw_path.strip("/")
     segments = [segment for segment in remote_path.split("/") if segment]
     if any(segment in (".", "..") for segment in segments):
         raise ValueError("day-archive remote path must not contain . or ..")
@@ -42,7 +50,64 @@ def resolve_archive_remote(remote: str) -> str:
         raise ValueError("daily-cdr-raw-records must be the final remote path segment")
     if not segments or segments[-1] != FOLDER_NAME:
         segments = [*segments, FOLDER_NAME]
-    return f"{remote_name}:{'/'.join(segments)}"
+    joined = "/".join(segments)
+    if absolute:
+        return f"{remote_name}:/{joined}"
+    return f"{remote_name}:{joined}"
+
+
+def _canary_root_from_env() -> Path:
+    """Derive ``<canary>`` from ``AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env``."""
+    override = os.environ.get("AR_LOCAL_DAY_ARCHIVE_ENV", "").strip()
+    if not override:
+        raise ValueError(
+            "local rclone archive requires AR_LOCAL_DAY_ARCHIVE_ENV (canary isolation)"
+        )
+    env_path = Path(override).expanduser().resolve(strict=False)
+    if env_path.name != "day-archive.env" or env_path.parent.name != "config":
+        raise ValueError(
+            "canary day-archive env must be <canary>/config/day-archive.env"
+        )
+    return env_path.parent.parent
+
+
+def _is_same_or_beneath(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_local_canary_destination(remote_path: str, canary_root: Path) -> Path:
+    """Require absolute local destination under the isolated canary tree only."""
+    if not remote_path.startswith("/"):
+        raise ValueError("canary local archive remote must use an absolute path")
+    destination = Path(remote_path).resolve(strict=False)
+    if not _is_same_or_beneath(destination, canary_root.resolve(strict=False)):
+        raise ValueError(
+            f"canary local archive remote must stay under canary root {canary_root}"
+        )
+    for forbidden in (PRODUCTION_DAY_ARCHIVE_SPOOL, PRODUCTION_DATA_ROOT):
+        if _is_same_or_beneath(destination, Path(forbidden).resolve(strict=False)):
+            raise ValueError(
+                f"canary local archive remote must not use production path {forbidden}"
+            )
+    return destination
+
+
+def _require_private_rclone_config(config: Path) -> None:
+    info = config.lstat()
+    if (
+        config != config.resolve()
+        or not stat.S_ISREG(info.st_mode)
+        or info.st_nlink != 1
+        or info.st_size > 1024**2
+        or stat.S_IMODE(info.st_mode) not in (0o400, 0o440, 0o600, 0o640)
+        # Root services may read a pi-owned conf under a root-only credentials dir.
+        or info.st_uid not in (0, os.getuid(), 1000)
+    ):
+        raise ValueError("private canonical existing rclone config required")
 
 
 def migrate_day_archive_env(text: str) -> str:
@@ -100,33 +165,34 @@ class DayArchiveTransportError(RuntimeError):
 class DayArchiveRclone:
     def __init__(self, config: Path, remote: str, root_folder_id: str, guard=lambda: None):
         self.config = Path(config)
-        self.remote = resolve_archive_remote(remote)
         self.root_folder_id = root_folder_id
         self.guard = guard
         self.executable = "/usr/bin/rclone"
-        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", self.remote)
+        self.local_backend = False
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", remote.strip())
         if not match:
             raise ValueError("rclone remote must be name:path")
         self.remote_name = match.group(1)
         if root_folder_id and not re.fullmatch(r"[a-zA-Z0-9_-]{10,200}", root_folder_id):
             raise ValueError("pinned Drive root folder ID invalid")
-        info = self.config.lstat()
-        if (
-            self.config != self.config.resolve()
-            or not stat.S_ISREG(info.st_mode)
-            or info.st_nlink != 1
-            or info.st_size > 1024**2
-            or stat.S_IMODE(info.st_mode) not in (0o400, 0o440, 0o600, 0o640)
-            # Root services may read a pi-owned conf under a root-only credentials dir.
-            or info.st_uid not in (0, os.getuid(), 1000)
-        ):
-            raise ValueError("private canonical existing rclone config required")
+        _require_private_rclone_config(self.config)
         parser = configparser.ConfigParser(interpolation=None)
         parser.read(self.config, encoding="utf-8")
+        if self.remote_name not in parser:
+            raise ValueError(f"rclone remote section missing: {self.remote_name}")
         section = parser[self.remote_name]
+        backend = section.get("type", "").strip()
+        if backend == "local":
+            self._init_local_canary(remote, section)
+            return
+        self.remote = resolve_archive_remote(remote)
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", self.remote)
+        if not match:
+            raise ValueError("rclone remote must be name:path")
+        self.remote_name = match.group(1)
         allowed_roots = (None, "", root_folder_id) if root_folder_id else (None, "")
         if (
-            section.get("type") != "drive"
+            backend != "drive"
             or section.get("scope") != "drive.file"
             or not json.loads(section.get("token", "{}")).get("refresh_token")
             or section.get("service_account_file")
@@ -135,6 +201,32 @@ class DayArchiveRclone:
             or section.get("root_folder_id") not in allowed_roots
         ):
             raise ValueError("reuse existing drive.file application credentials only")
+
+    def _init_local_canary(self, remote: str, section) -> None:
+        """Allow rclone ``type=local`` only for isolated canary trees (D-028: no Drive)."""
+        if self.root_folder_id:
+            raise ValueError("canary local archive must not set a Drive root folder id")
+        # Local backend must stay sparse: no Drive OAuth or shared-drive keys.
+        forbidden = (
+            "token",
+            "client_id",
+            "client_secret",
+            "service_account_file",
+            "service_account_credentials",
+            "team_drive",
+            "root_folder_id",
+            "scope",
+        )
+        if any(section.get(key) for key in forbidden):
+            raise ValueError("canary local rclone remote must not carry Drive credentials")
+        canary_root = _canary_root_from_env()
+        self.remote = resolve_archive_remote(remote, preserve_absolute=True)
+        match = re.fullmatch(r"([a-zA-Z0-9_-]+):(.*)", self.remote)
+        if not match:
+            raise ValueError("rclone remote must be name:path")
+        self.remote_name = match.group(1)
+        _validate_local_canary_destination(match.group(2), canary_root)
+        self.local_backend = True
 
     def path(self, relative: str) -> str:
         name = PureName(relative)

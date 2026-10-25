@@ -61,11 +61,16 @@ OPERATOR_STEPS = [
     "Create isolated tree: /srv/ar-local/canary/<generation>/"
     "{source,data/runs,data/state,data/archive-spool,config,evidence}",
     "Detach worktree at exact TARGET_SHA into canary source (do not switch production HEAD).",
+    "Prefer local-only archive under D-028: write <canary>/config/rclone.conf "
+    "with a type=local remote (mode 0600) and "
+    "AR_LOCAL_DAY_ARCHIVE_REMOTE=canary_local:<canary>/data/day-archive-remote "
+    "(absolute path under the canary tree). Do not enroll Drive / drive.file "
+    "credentials for isolated canary; never copy /etc/ar-local/day-archive.env "
+    "or production rclone remotes.",
     "Write isolated archive env at <canary>/config/day-archive.env with "
     "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool, "
-    "AR_LOCAL_DAY_ARCHIVE_REMOTE=<canary-only-remote>, and "
-    "RCLONE_CONFIG=<canary>/config/rclone.conf "
-    "(never copy /etc/ar-local/day-archive.env or production rclone remotes).",
+    "AR_LOCAL_DAY_ARCHIVE_REMOTE=canary_local:<canary>/data/day-archive-remote, and "
+    "RCLONE_CONFIG=<canary>/config/rclone.conf.",
     "Export AR_LOCAL_DATA_ROOT=<canary>/data, "
     "AR_LOCAL_DAY_ARCHIVE_ENV=<canary>/config/day-archive.env and "
     "AR_LOCAL_DAY_ARCHIVE_SPOOL=<canary>/data/archive-spool for the canary process only.",
