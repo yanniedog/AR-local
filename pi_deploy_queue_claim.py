@@ -78,6 +78,12 @@ def inherited_queue_admission(*, require_host: bool = False) -> str:
         or (require_host and "host" not in resources)
     ):
         return "refuse"
+    # Host queue claims already hold NativeHostGuard's production lock. Reusing
+    # that claim for deploy mutations nests install_candidate / unit activation
+    # on the same non-reentrant lock. Fail closed; admit a fresh wrap only when
+    # not already under a host-bearing unit (match is None → admit above).
+    if require_host:
+        return "refuse"
     return "reuse"
 
 

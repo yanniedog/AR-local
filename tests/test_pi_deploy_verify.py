@@ -149,10 +149,13 @@ def test_inherited_queue_admission_requires_exclusive_ar_local(tmp_path, monkeyp
     }
     state.write_text(json.dumps(good), encoding="utf-8")
     assert pi_deploy_queue_claim.inherited_queue_admission() == "reuse"
-    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "refuse"
+    assert pi_deploy_queue_claim.inherited_queue_claim(require_host=True) == "refuse"
     good["jobs"][0]["resources"] = ["ar-local", "host"]
     state.write_text(json.dumps(good), encoding="utf-8")
-    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "reuse"
+    # Host-bearing claims must not be reused (native lock nesting).
+    assert pi_deploy_queue_claim.inherited_queue_claim(require_host=True) == "refuse"
+    # ar-local-only reuse still allowed when host is extra on the claim.
+    assert pi_deploy_queue_claim.inherited_queue_claim() == "reuse"
     shared = {
         "jobs": [
             {
