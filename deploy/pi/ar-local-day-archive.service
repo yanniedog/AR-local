@@ -1,0 +1,26 @@
+[Unit]
+Description=AR-local daily CDR day-archive drain (unencrypted Drive)
+Documentation=file:///srv/ar-local/AR-local/docs/DAILY_CDR_DAY_ARCHIVES.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/etc/ar-local/drive-write-hold.json
+ConditionPathExists=!/etc/ar-local/.drive-write-hold-activation.lock
+
+[Service]
+Type=oneshot
+# Run as the application account — never root against the writable checkout.
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+EnvironmentFile=-/etc/ar-local/drive-backup.env
+EnvironmentFile=-/etc/ar-local/day-archive.env
+WorkingDirectory={{AR_LOCAL_REPO}}
+# Do not use python -I: repo-local imports (ar_local_*, pi_*) must resolve from WorkingDirectory.
+Environment=PYTHONPATH={{AR_LOCAL_REPO}}
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_cdr_day_archive.py --once-pending
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=21600
+
+[Install]
+WantedBy=multi-user.target

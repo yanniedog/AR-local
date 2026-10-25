@@ -337,6 +337,23 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
+def _reconcile_day_archive_request(date: str, *, reason: str) -> None:
+    """Idempotent enqueue after finalize / already-finalized / recovery paths.
+
+    Failures must never undo a verified finalize; surface and continue.
+    """
+    try:
+        from pi_daily_cdr_day_archive import request_day_archive
+
+        path = request_day_archive(date, reason=reason)
+        print(f"day-archive request reconciled: {path}")
+    except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
+        print(
+            f"day-archive enqueue failed ({reason}): {archive_error}",
+            file=sys.stderr,
+        )
+
+
 def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, exports: Optional[Path]) -> None:
     """Best-effort: emit the legacy v1 integrity manifest for compatibility.
 
@@ -421,6 +438,7 @@ def run_once(args: argparse.Namespace) -> int:
                 )
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
+            _reconcile_day_archive_request(date, reason="already-finalized-pointer")
             return 0
         recovered_marker = recover_pending_finalization(state_dir, date)
         if recovered_marker is not None:
@@ -437,6 +455,7 @@ def run_once(args: argparse.Namespace) -> int:
                 )
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
+            _reconcile_day_archive_request(date, reason="finalization-recovery")
             return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
@@ -461,6 +480,7 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
+            _reconcile_day_archive_request(date, reason="already-finalized-marker")
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
@@ -721,6 +741,29 @@ def run_once(args: argparse.Namespace) -> int:
             )
         for cleanup_path in ram_cleanup_paths:
             shutil.rmtree(cleanup_path, ignore_errors=True)
+    # Durable post-ingest enqueue after primary finalize only (not revisions).
+    # Failures here must not undo a verified finalize; surface and continue.
+    if not is_revision:
+        try:
+            from pi_daily_cdr_day_archive import request_day_archive
+
+            archive_request = request_day_archive(date, reason="post-ingest-finalize")
+            finalized = {
+                **finalized,
+                "day_archive_request": {"status": "QUEUED", "path": str(archive_request)},
+            }
+        except Exception as archive_error:  # noqa: BLE001 — never roll back finalize
+            print(
+                f"day-archive enqueue failed after finalize: {archive_error}",
+                file=sys.stderr,
+            )
+            finalized = {
+                **finalized,
+                "day_archive_request": {
+                    "status": "ENQUEUE_FAILED",
+                    "error": str(archive_error)[:300],
+                },
+            }
     print(json.dumps(finalized, indent=2, ensure_ascii=False))
     return 1
 
