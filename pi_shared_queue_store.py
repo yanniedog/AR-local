@@ -14,11 +14,11 @@ import tempfile
 import time
 import uuid
 
-from pi_shared_queue_post_hooks import retained_stop, completion_proved, verify_plain_service
+from pi_shared_queue_post_hooks import retained_stop, completion_proved, verify_plain_service, stop_grace
 
 FIXED_AR_UNITS = frozenset({'ar-local-daily.service', 'ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'})
 MAX_BYTES = 1024 * 1024
-UNIT = re.compile(r'(?:ar-local-(?:daily|daily-watchdog|ingest-now)|ar-local-plain-backup-[0-9a-f]{32}|ar-local-payload-[a-zA-Z0-9_.-]+|ar-local-queue-task-[a-zA-Z0-9_.-]+|shared-pi-task-[a-zA-Z0-9_.-]+)\.service\Z')
+UNIT = re.compile(r'(?:ar-local-(?:daily|daily-watchdog|ingest-now)|ar-local-plain-backup-[0-9a-f]{32}|ar-local-ci-activate-[0-9a-f]{64}|ar-local-payload-[a-zA-Z0-9_.-]+|ar-local-queue-task-[a-zA-Z0-9_.-]+|shared-pi-task-[a-zA-Z0-9_.-]+)\.service\Z')
 
 
 NAME = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
@@ -157,7 +157,7 @@ class Supervisor:
             raise ValueError('wrapper must be the exact service MainPID')
         if details.get('KillMode') != 'control-group' or details.get('SendSIGKILL') != 'yes':
             raise ValueError('supervisor must kill the whole service cgroup')
-        stop_limit = 900 if unit in FIXED_AR_UNITS else 60
+        stop_limit = 900 if unit in FIXED_AR_UNITS else stop_grace(unit, 60)
         if duration(details.get('TimeoutStopUSec', '')) > stop_limit:
             raise ValueError('supervisor stop grace exceeds its bounded unit allowance')
         if duration(details.get('CPUQuotaPerSecUSec', '')) > slots:
@@ -229,7 +229,7 @@ class Supervisor:
                 or details.get('NotifyAccess') != 'main'
                 or duration(details.get('RuntimeMaxUSec', '')) != job['max_duration_seconds']
                 or details.get('KillMode') != 'control-group' or details.get('SendSIGKILL') != 'yes'
-                or duration(details.get('TimeoutStopUSec', '')) > 45):
+                or duration(details.get('TimeoutStopUSec', '')) > stop_grace(job['unit'], 45)):
             raise ValueError('execution supervisor ownership or stop grace changed')
 
     def members(self, group):
