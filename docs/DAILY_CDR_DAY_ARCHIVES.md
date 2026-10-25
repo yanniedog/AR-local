@@ -1,11 +1,36 @@
-# Daily CDR day-archives (unencrypted Google Drive)
+# Daily CDR raw records (unencrypted Google Drive)
 
 Operator-authorized series of **one highly compressed, unencrypted**
 `YYYY-MM-DD.tar.zst` per Australia/Hobart calendar day since CDR ingests
-started (`2026-05-13`). Each archive holds the reconstructable primary material
-for that day (run tree, day-keyed state, optional archive/stage/log slices, and
-journalctl exports for AR-local units). Higher-order app payloads and dashboard
-caches are excluded.
+started (`2026-05-13`). Each object is a complete full raw record for that day:
+every byte still on disk that ingest requested or received, plus the logs of
+those attempts.
+
+Included when the file still exists:
+
+- `runs/<day>/` including `banks/` (`product-detail.json`, `product-id.txt`,
+  `product-detail.error.txt`, `failures.jsonl`), `holders/`,
+  `_raw-attempt-journals`, `attempt-evidence`, `_failed_attempts`, `_revisions`
+- `_exports/` for that day, including `local-cdr.sqlite` and
+  `banks-YYYY-MM-DD.json` / `.xlsx` when those are the surviving reconstruction
+  inputs
+- day-keyed state: `<day>.done.json`, `<day>.integrity.json`, `<day>.*.json`,
+  `export-contracts-v2/<day>`, `ledger-v2/events/<day>`,
+  `observation-selections-v1/<day>`, revision markers
+- day slices of `runs-archive`, `.daily-raw-stage`, `logs`, `predeploy`
+- systemd journals for that Hobart midnight-to-midnight window for
+  `ar-local-daily`, `ar-local-ingest-now`, `ar-local-daily-watchdog`, and
+  `ar-local-drive-backup` (written even when the range is empty)
+
+Excluded as derived serving or publication copies: directories named
+`dashboard-cache`, `app-payload`, and `app-payload-latest` (any
+`app-payload-*` directory). SQLite and `banks-YYYY-MM-DD` exports are kept.
+They do not by themselves make a day `wire_raw`.
+
+`daily-cdr-day-archives/` remains on Drive. Those objects were uploaded
+create-only and are export-only (no journals, no product-detail bodies). This
+worker does not delete them and does not upload the raw series into that
+folder, because `--immutable --ignore-existing` cannot replace them.
 
 ## Drive layout
 
@@ -15,7 +40,8 @@ Under the enrolled dedicated `drive.file` remote (see Pi
 ```text
 AR-local Pi Backups Dedicated …/
   restic/
-  daily-cdr-day-archives/     # this series
+  daily-cdr-day-archives/     # retained export-only series; do not reuse
+  daily-cdr-raw-records/      # this series
     YYYY-MM-DD.tar.zst
     YYYY-MM-DD.sha256
     YYYY-MM-DD.manifest.json
@@ -28,7 +54,7 @@ AR-local Pi Backups Dedicated …/
 Uploads are create-only (`rclone copyto --immutable --ignore-existing --checksum`).
 After a **re-download sha256 verify**, only the local compressed workspace files
 are removed. Source trees under `/srv/ar-local/data` are never deleted by this
-worker.
+worker. `--skip-journals` is rejected.
 
 ## Compression
 
@@ -57,11 +83,17 @@ Defaults:
 | Data root | `/srv/ar-local/data` (`AR_LOCAL_DATA_ROOT`) |
 | Spool | `/var/lib/ar-local-day-archives` |
 | rclone config | dedicated verified conf under `/var/lib/ar-local-drive-backup/credentials/` |
-| Remote | `…/daily-cdr-day-archives` beside the enrolled `restic/` folder |
+| Remote | `…/daily-cdr-raw-records` beside the enrolled `restic/` folder |
+| Journals | always on (`ar-local-daily`, `ar-local-ingest-now`, `ar-local-daily-watchdog`, `ar-local-drive-backup`) |
 
 Quiet window: refuses work **00:30–02:00** Australia/Hobart.
 
-Progress ledger: `/var/lib/ar-local-day-archives/progress.jsonl`.
+Progress ledger for this series: `/var/lib/ar-local-day-archives/meta/raw-progress.jsonl`.
+Older `progress.jsonl` PASS rows belong to `daily-cdr-day-archives/` and are not
+treated as done. The timer runs `--once-pending` with journals on. Install the
+unit against the day-archive seed checkout
+(`/var/lib/ar-local-day-archives/src/AR-local`), not by canary-bypassing
+`/srv/ar-local/AR-local`.
 
 ## Ongoing coverage
 
@@ -92,7 +124,18 @@ approval to lift the hold entirely:
 
 ## Coverage honesty
 
-Early retained days may be `exports_only` (cleaned SQLite/JSON without wire HTTP
-journals). Modern days with promoted attempt evidence classify as `wire_raw`.
-Missing historical wire corpora cannot be invented; the archive contains
-everything that still exists for that day.
+The manifest `coverage` is one of `wire_raw`, `exports_only`, `partial`, or
+`gap`.
+
+| Class | Meaning |
+|--------|---------|
+| `wire_raw` | A banks-tree `product-detail.json` / `product-id.txt` / `product-detail.error.txt`, or bytes under `_raw-attempt-journals`, `attempt-evidence`, or `_failed_attempts`, still exist |
+| `exports_only` | Surviving `_exports` (including sqlite and `banks-YYYY-MM-DD.json` / `.xlsx`) and no wire body |
+| `partial` | Some other day-keyed bytes, and neither wire bodies nor exports |
+| `gap` | Permanent gaps `2026-05-14` and `2026-06-26` only. `YYYY-MM-DD.GAP.json` markers, no fabricated archive |
+
+`raw_banks_absent` is true when `runs/<day>/banks/` is already gone. Do not
+invent it. `journal_status` is `captured`, `empty`, or `unavailable`.
+`journals_absent` is true when journalctl could not be read and no journal
+file was stored. Empty journal files are kept. A missing historical wire body
+stays missing.

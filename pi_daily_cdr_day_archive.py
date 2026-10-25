@@ -36,13 +36,15 @@ from pi_daily_cdr_day_archive_scope import (
     require_day,
 )
 from pi_daily_cdr_day_archive_transport import (
+    FOLDER_NAME,
     DayArchiveRclone,
     DayArchiveTransportError,
     sha256_file,
     verify_uploaded_archive,
 )
 
-SCHEMA = "ar-local-daily-cdr-day-archive-v1"
+SCHEMA = "ar-local-daily-cdr-raw-record-v1"
+SERIES = FOLDER_NAME
 COMPRESSION = "zstd-lossless-no-encryption-level-19"
 DEFAULT_DATA_ROOT = Path("/srv/ar-local/data")
 DEFAULT_SPOOL = Path("/var/lib/ar-local-day-archives")
@@ -53,7 +55,7 @@ DEFAULT_RCLONE = Path(
 DEFAULT_REMOTE = (
     "ar_local_drive_dedicated_20260913:"
     "AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412/"
-    "daily-cdr-day-archives"
+    + FOLDER_NAME
 )
 QUIET_START = (0, 30)
 QUIET_END = (2, 0)
@@ -126,30 +128,30 @@ def progress_dir(spool: Path) -> Path:
 
 
 def progress_path(spool: Path) -> Path:
-    return progress_dir(spool) / "progress.jsonl"
+    """New-series ledger. Legacy progress.jsonl PASS rows are a different Drive folder."""
+    return progress_dir(spool) / "raw-progress.jsonl"
 
 
 def load_progress(spool: Path) -> dict[str, dict]:
     result: dict[str, dict] = {}
-    # Prefer meta/; still honor a legacy root progress.jsonl from earlier installs.
-    for path in (Path(spool) / "progress.jsonl", progress_path(spool)):
-        if not path.is_file():
+    path = progress_path(spool)
+    if not path.is_file():
+        return result
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
             continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            day = row.get("date")
-            if isinstance(day, str):
-                result[day] = row
+        row = json.loads(line)
+        day = row.get("date")
+        if isinstance(day, str):
+            result[day] = row
     return result
 
 
 def record_progress(spool: Path, row: dict) -> None:
     meta = progress_dir(spool)
     meta.mkdir(parents=True, exist_ok=True)
-    _append_jsonl(meta / "progress.jsonl", row)
-    _atomic_json(meta / "latest.json", row)
+    _append_jsonl(progress_path(spool), row)
+    _atomic_json(meta / "raw-latest.json", row)
 
 
 def request_day_archive(day: str, *, spool: Path | None = None, reason: str = "post-ingest") -> Path:
@@ -279,14 +281,19 @@ def build_day_archive(
     work.mkdir(parents=True, exist_ok=True)
     if day in KNOWN_GAPS:
         gap = gap_record(day)
+        gap["series"] = SERIES
         gap_path = work / f"{day}.GAP.json"
         gap_path.write_text(json.dumps(gap, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         digest = sha256_file(gap_path, guard)
         return {
             "schema": SCHEMA,
+            "series": SERIES,
             "date": day,
             "kind": "gap",
             "coverage": "gap",
+            "journal_status": gap.get("journal_status"),
+            "journals_absent": gap.get("journals_absent"),
+            "raw_banks_absent": gap.get("raw_banks_absent"),
             "local_path": str(gap_path),
             "remote_name": f"{day}.GAP.json",
             "sha256": digest,
@@ -304,9 +311,14 @@ def build_day_archive(
         )
     manifest = {
         "schema": SCHEMA,
+        "series": SERIES,
         "scope_schema": SCOPE_SCHEMA,
         "date": day,
         "coverage": inventory["coverage"],
+        "journal_status": inventory.get("journal_status", "unavailable"),
+        "journals_absent": bool(inventory.get("journals_absent", True)),
+        "raw_banks_absent": bool(inventory.get("raw_banks_absent", True)),
+        "journal_units": inventory.get("journal_units", []),
         "compression": COMPRESSION,
         "include_journals": bool(include_journals),
         "file_count": inventory["file_count"],
@@ -329,9 +341,13 @@ def build_day_archive(
     sha_path.write_text(f"{digest}  {day}.tar.zst\n", encoding="utf-8")
     return {
         "schema": SCHEMA,
+        "series": SERIES,
         "date": day,
         "kind": "day",
         "coverage": inventory["coverage"],
+        "journal_status": manifest["journal_status"],
+        "journals_absent": manifest["journals_absent"],
+        "raw_banks_absent": manifest["raw_banks_absent"],
         "local_path": str(archive),
         "remote_name": f"{day}.tar.zst",
         "sha256": digest,
@@ -491,31 +507,43 @@ def _process_day_locked(
         manifest_path = work / f"{day}.manifest.json"
         if day in KNOWN_GAPS and existing_gap.is_file():
             digest = sha256_file(existing_gap, combined_guard)
+            gap = gap_record(day)
+            gap["series"] = SERIES
             return {
                 "schema": SCHEMA,
+                "series": SERIES,
                 "date": day,
                 "kind": "gap",
                 "coverage": "gap",
+                "journal_status": gap.get("journal_status"),
+                "journals_absent": gap.get("journals_absent"),
+                "raw_banks_absent": gap.get("raw_banks_absent"),
                 "local_path": str(existing_gap),
                 "remote_name": f"{day}.GAP.json",
                 "sha256": digest,
                 "bytes": existing_gap.stat().st_size,
-                "manifest": gap_record(day),
+                "manifest": gap,
             }
         if existing.is_file() and sha_path.is_file() and manifest_path.is_file():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             digest = sha_path.read_text(encoding="utf-8").split()[0]
-            options_match = bool(manifest.get("include_journals")) == build_journals
+            journals_match = bool(manifest.get("include_journals")) == build_journals
+            series_match = (not build_journals) or manifest.get("series") == SERIES
             if (
-                options_match
+                journals_match
+                and series_match
                 and len(digest) == 64
                 and sha256_file(existing, combined_guard) == digest
             ):
                 return {
                     "schema": SCHEMA,
+                    "series": SERIES,
                     "date": day,
                     "kind": "day",
                     "coverage": manifest.get("coverage"),
+                    "journal_status": manifest.get("journal_status"),
+                    "journals_absent": manifest.get("journals_absent"),
+                    "raw_banks_absent": manifest.get("raw_banks_absent"),
                     "local_path": str(existing),
                     "remote_name": f"{day}.tar.zst",
                     "sha256": digest,
@@ -543,9 +571,13 @@ def _process_day_locked(
         if dry_run:
             row = {
                 "schema": SCHEMA,
+                "series": SERIES,
                 "date": day,
                 "result": "DRY_RUN",
                 "coverage": built.get("coverage"),
+                "journal_status": built.get("journal_status"),
+                "journals_absent": built.get("journals_absent"),
+                "raw_banks_absent": built.get("raw_banks_absent"),
                 "kind": built.get("kind"),
                 "bytes": built.get("bytes"),
                 "sha256": built.get("sha256"),
@@ -577,9 +609,13 @@ def _process_day_locked(
             upload_and_verify(transport, built, spool / "verify", guard=combined_guard)
         row = {
             "schema": SCHEMA,
+            "series": SERIES,
             "date": day,
             "result": "PASS",
             "coverage": built.get("coverage"),
+            "journal_status": built.get("journal_status"),
+            "journals_absent": built.get("journals_absent"),
+            "raw_banks_absent": built.get("raw_banks_absent"),
             "kind": built.get("kind"),
             "bytes": built.get("bytes"),
             "sha256": built.get("sha256"),
@@ -744,13 +780,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--control", action="store_true", help="Upload CONTROL binding archive")
     parser.add_argument("--request", metavar="DATE", help="Enqueue a day without processing")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--skip-journals", action="store_true")
+    parser.add_argument(
+        "--skip-journals",
+        action="store_true",
+        help="Rejected. Raw records always capture systemd journals.",
+    )
     parser.add_argument("--max-days", type=int, default=0, help="Limit backfill days this invocation")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.skip_journals:
+        raise SystemExit(
+            "--skip-journals is rejected for daily-cdr-raw-records; "
+            "systemd journals are part of each raw record"
+        )
     spool = args.spool
     spool.mkdir(parents=True, exist_ok=True)
     if args.request:
@@ -821,7 +866,7 @@ def main(argv: list[str] | None = None) -> int:
             spool=spool,
             transport=transport,
             dry_run=args.dry_run,
-            include_journals=not args.skip_journals,
+            include_journals=True,
         )
         results.append(result)
         if result.get("result") == "FAIL":

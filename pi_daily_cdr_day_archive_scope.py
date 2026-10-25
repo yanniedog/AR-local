@@ -19,15 +19,17 @@ FIRST_DAY = date(2026, 5, 13)
 KNOWN_GAPS = frozenset({"2026-05-14", "2026-06-26"})
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 EXCLUDE_DIR_NAMES = frozenset({
-    ".git", ".ssh", "__pycache__", "node_modules", "app-payload", "dashboard-cache", "netdata",
+    ".git", ".ssh", "__pycache__", "node_modules", "app-payload", "app-payload-latest",
+    "dashboard-cache", "netdata",
 })
+# Derived publication/serving trees. Exact "app-payload" does not match "app-payload-latest".
+_DERIVED_DIR_PREFIXES = ("app-payload-",)
 EXCLUDE_FILE_NAMES = frozenset({".env", "rclone.conf", "restic.password"})
 JOURNAL_UNITS = (
     "ar-local-daily.service",
     "ar-local-ingest-now.service",
     "ar-local-daily-watchdog.service",
     "ar-local-drive-backup.service",
-    "ar-local-drive-backup-queue.service",
 )
 STATE_DAY_SUFFIXES = (".done.json", ".integrity.json")
 OPTIONAL_TOP = ("logs", "predeploy", "runs-archive", ".daily-raw-stage")
@@ -69,12 +71,17 @@ def gap_record(day: str) -> dict:
         "date": day,
         "status": status,
         "coverage": "gap",
+        "journal_status": "unavailable",
+        "journals_absent": True,
+        "raw_banks_absent": True,
         "reason": "permanent ingest gap; no fabricated observation archive",
     }
 
 
 def _skip_dir(name: str) -> bool:
-    return name in EXCLUDE_DIR_NAMES or name.startswith(".env")
+    if name in EXCLUDE_DIR_NAMES or name.startswith(".env"):
+        return True
+    return any(name.startswith(prefix) for prefix in _DERIVED_DIR_PREFIXES)
 
 
 def _skip_file(name: str) -> bool:
@@ -187,27 +194,40 @@ def collect_control_files(data_root: Path) -> list[Path]:
     return sorted(set(found), key=lambda item: item.as_posix())
 
 
-def export_journals(day: str, destination: Path, *, units: Iterable[str] = JOURNAL_UNITS) -> list[Path]:
-    """Capture journalctl for AR-local units covering the Hobart calendar day."""
-    day = require_day(day)
-    destination.mkdir(parents=True, exist_ok=True)
-    start = datetime.fromisoformat(f"{day}T00:00:00").replace(tzinfo=DAILY_INGEST_TZ)
-    end = start + timedelta(days=1)
-    written: list[Path] = []
-    for unit in units:
-        safe = unit.replace(".", "_")
-        path = destination / f"{safe}-{day}.log"
-        if path.exists():
-            raise ValueError(f"journal export destination already exists: {path}")
-        command = [
-            "journalctl",
-            "--no-pager",
-            "--output=short-iso-precise",
-            f"--unit={unit}",
-            f"--since={start.isoformat()}",
-            f"--until={end.isoformat()}",
-        ]
-        with path.open("xb") as handle:
+def _journal_file_status(path: Path) -> str:
+    size = path.stat().st_size
+    if size == 0:
+        return "empty"
+    if size > 4096:
+        return "captured"
+    if not path.read_bytes().strip():
+        return "empty"
+    return "captured"
+
+
+def _overall_journal_status(unit_rows: list[dict]) -> str:
+    if not unit_rows or any(row["status"] == "unavailable" for row in unit_rows):
+        return "unavailable"
+    if any(row["status"] == "captured" for row in unit_rows):
+        return "captured"
+    return "empty"
+
+
+def _export_one_journal(unit: str, day: str, destination: Path, start: datetime, end: datetime) -> tuple[Path | None, dict]:
+    safe = unit.replace(".", "_")
+    path = destination / f"{safe}-{day}.log"
+    if path.exists():
+        raise ValueError(f"journal export destination already exists: {path}")
+    command = [
+        "journalctl",
+        "--no-pager",
+        "--output=short-iso-precise",
+        f"--unit={unit}",
+        f"--since={start.isoformat()}",
+        f"--until={end.isoformat()}",
+    ]
+    try:
+        with path.open("x", encoding="utf-8", newline="") as handle:
             completed = subprocess.run(
                 command,
                 stdout=handle,
@@ -215,15 +235,45 @@ def export_journals(day: str, destination: Path, *, units: Iterable[str] = JOURN
                 text=True,
                 check=False,
             )
-        if completed.returncode != 0:
-            # journalctl returns 0 on success (including empty ranges). Nonzero means
-            # failure (permissions, missing journal, etc.) — never archive that as PASS.
-            path.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"journalctl failed for {unit} on {day}: exit {completed.returncode}: {completed.stderr[:500]}"
-            )
-        written.append(path)
-    return written
+    except OSError as error:
+        path.unlink(missing_ok=True)
+        return None, {
+            "unit": unit,
+            "status": "unavailable",
+            "bytes": 0,
+            "error": str(error)[:200],
+        }
+    if completed.returncode != 0:
+        path.unlink(missing_ok=True)
+        detail = (completed.stderr or "").strip().replace("\n", " ")[:200]
+        return None, {
+            "unit": unit,
+            "status": "unavailable",
+            "bytes": 0,
+            "error": f"exit {completed.returncode}: {detail}",
+        }
+    status = _journal_file_status(path)
+    return path, {"unit": unit, "status": status, "bytes": path.stat().st_size}
+
+
+def export_journals(day: str, destination: Path, *, units: Iterable[str] = JOURNAL_UNITS) -> dict:
+    """Capture Hobart-day journalctl output. Empty ranges stay; failures are unavailable."""
+    day = require_day(day)
+    destination.mkdir(parents=True, exist_ok=True)
+    start = datetime.fromisoformat(f"{day}T00:00:00").replace(tzinfo=DAILY_INGEST_TZ)
+    end = start + timedelta(days=1)
+    written: list[Path] = []
+    unit_rows: list[dict] = []
+    for unit in units:
+        path, row = _export_one_journal(unit, day, destination, start, end)
+        unit_rows.append(row)
+        if path is not None:
+            written.append(path)
+    return {
+        "paths": written,
+        "journal_status": _overall_journal_status(unit_rows),
+        "units": unit_rows,
+    }
 
 
 def logical_path(data_root: Path, path: Path) -> str:
@@ -258,23 +308,55 @@ def file_row(data_root: Path, path: Path, guard: Callable[[], None] = lambda: No
     }
 
 
+_RECONSTRUCTION_EXPORT_RE = re.compile(r"^banks-\d{4}-\d{2}-\d{2}\.(?:json|xlsx|csv)$")
+_SQLITE_NAMES = frozenset({"local-cdr.sqlite", "local-cdr.sqlite-wal", "local-cdr.sqlite-shm"})
+_WIRE_BASENAMES = frozenset({
+    "product-detail.json",
+    "product-id.txt",
+    "product-detail.error.txt",
+})
+_WIRE_DIR_TOKENS = ("_raw-attempt-journals", "attempt-evidence", "_failed_attempts")
+
+
+def _logical_parts(logical: str) -> list[str]:
+    return [part for part in logical.split("/") if part]
+
+
+def _is_raw_banks_logical_path(logical: str, day: str) -> bool:
+    """True for runs/<day>/banks/... files. banks-YYYY-MM-DD.json is not that tree."""
+    parts = _logical_parts(logical)
+    for index, part in enumerate(parts[:-1]):
+        if part == "banks" and index > 0 and parts[index - 1] == day:
+            return True
+    return False
+
+
+def _is_wire_logical_path(logical: str, day: str) -> bool:
+    """Wire bodies and attempt logs. SQLite and banks-YYYY-MM-DD exports are reconstructions."""
+    parts = _logical_parts(logical)
+    if not parts:
+        return False
+    name = parts[-1]
+    if name in _SQLITE_NAMES or _RECONSTRUCTION_EXPORT_RE.fullmatch(name):
+        return False
+    if any(token in part for part in parts for token in _WIRE_DIR_TOKENS):
+        return True
+    return _is_raw_banks_logical_path(logical, day) and name in _WIRE_BASENAMES
+
+
 def classify_coverage(day: str, rows: list[dict]) -> str:
     if day in KNOWN_GAPS:
         return "gap"
-    paths = {row["logical_path"] for row in rows}
-    has_exports = any("/_exports/" in path or path.endswith("/_exports") for path in paths)
-    has_wire = any(
-        "attempt-evidence" in path or "raw-attempt-journals" in path or "/_raw-attempt-journals" in path
-        for path in paths
-    )
-    has_banks = any("/banks/" in path for path in paths)
-    if has_wire and (has_exports or has_banks):
+    paths = [str(row["logical_path"]) for row in rows if not str(row["logical_path"]).startswith("journal/")]
+    if any(_is_wire_logical_path(path, day) for path in paths):
         return "wire_raw"
-    if has_exports:
+    if any("/_exports/" in path for path in paths):
         return "exports_only"
-    if paths:
-        return "partial"
     return "partial"
+
+
+def raw_banks_absent(day: str, rows: list[dict]) -> bool:
+    return not any(_is_raw_banks_logical_path(str(row["logical_path"]), day) for row in rows)
 
 
 def build_day_inventory(
@@ -290,20 +372,30 @@ def build_day_inventory(
     members = collect_run_files(data_root, day)
     members.extend(collect_state_files(data_root, day))
     members.extend(collect_optional_day_files(data_root, day))
+    journal_status = "unavailable"
+    journal_units: list[dict] = []
     journal_rows: list[dict] = []
     if journal_dir is not None:
-        for path in export_journals(day, journal_dir):
+        exported = export_journals(day, journal_dir)
+        journal_status = str(exported["journal_status"])
+        journal_units = list(exported["units"])
+        for path in exported["paths"]:
             row = file_row(data_root, path, guard)
             row["logical_path"] = f"journal/{path.name}"
             journal_rows.append(row)
     rows = [file_row(data_root, path, guard) for path in members]
     rows.extend(journal_rows)
     rows.sort(key=lambda row: row["logical_path"])
-    coverage = classify_coverage(day, rows)
+    banks_absent = raw_banks_absent(day, rows)
+    journals_absent = journal_status == "unavailable" and not journal_rows
     return {
         "schema": SCHEMA,
         "date": day,
-        "coverage": coverage,
+        "coverage": classify_coverage(day, rows),
+        "journal_status": journal_status,
+        "journals_absent": journals_absent,
+        "raw_banks_absent": banks_absent,
+        "journal_units": journal_units,
         "file_count": len(rows),
         "total_bytes": sum(row["size"] for row in rows),
         "files": rows,

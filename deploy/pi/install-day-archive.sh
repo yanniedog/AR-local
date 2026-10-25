@@ -62,6 +62,9 @@ if [[ -f "$SPOOL/latest.json" && ! -e "$SPOOL/meta/latest.json" ]]; then
   mv -n -- "$SPOOL/latest.json" "$SPOOL/meta/latest.json"
 fi
 chown -h "$run_user:$run_group" "$SPOOL/meta/progress.jsonl" "$SPOOL/meta/latest.json" 2>/dev/null || true
+# raw-progress.jsonl is the daily-cdr-raw-records ledger. Do not copy
+# progress.jsonl into it: those PASS rows are the immutable export-only series.
+chown -h "$run_user:$run_group" "$SPOOL/meta/raw-progress.jsonl" "$SPOOL/meta/raw-latest.json" 2>/dev/null || true
 
 # System python used by ar-local-daily / day-archive oneshot needs zstandard.
 if ! /usr/bin/python3 -c 'import zstandard' 2>/dev/null; then
