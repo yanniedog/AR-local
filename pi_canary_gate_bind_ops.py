@@ -13,7 +13,6 @@ from jsonschema import Draft202012Validator
 import pi_canary_acceptance as canary
 import pi_canary_gate_emit as emit
 from cdr_domain import contract_validation
-from pi_canary_gate_bind_checks import append_gate_specific_receipt_findings
 
 ROOT = Path(__file__).resolve().parent
 CONTRACTS_DIR = ROOT / "contracts"
@@ -486,3 +485,15 @@ def bind_preservation_restore(
     return payload
 
 from pi_canary_gate_bind_public import bind_public_candidate_bytes  # noqa: E402
+from pi_canary_gate_bind_receipts import bind_receipt_gate  # noqa: E402
+
+__all__ = (
+    "CONTRACTS_DIR",
+    "GateBindError",
+    "ROOT",
+    "bind_historical_integrity",
+    "bind_preservation_restore",
+    "bind_producer_contracts",
+    "bind_public_candidate_bytes",
+    "bind_receipt_gate",
+)
