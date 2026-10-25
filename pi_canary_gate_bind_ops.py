@@ -645,6 +645,7 @@ def bind_public_candidate_bytes(
     findings.extend(enum_findings)
     required_keys = {key for key, _entry in asset_iter}
     capability_bytes: dict[str, bytes] = {}
+    domain_by_name: dict[str, bytes] = {}
 
     for key, entry in asset_iter:
         if not isinstance(entry, dict):
@@ -690,9 +691,12 @@ def bind_public_candidate_bytes(
                 findings.append(f"{key}: v2 gzip validation: {type(exc).__name__}: {exc}")
                 continue
         capability_bytes[key] = body
+        if name:
+            domain_by_name[name] = body
         dest_rel = f"receipts/public_asset_{key}.meta.json"
         meta = {
             "key": key,
+            "name": name,
             "source_name": path.name,
             "wire_bytes": len(wire),
             "domain_bytes": len(body),
@@ -731,7 +735,7 @@ def bind_public_candidate_bytes(
             findings.append(f"v3 generation validation: {type(exc).__name__}: {exc}")
     # v1: historical catalogue/packed/ready envelopes must bind to files.core.
     if schema_version == 1 and assets_complete:
-        hist_findings = validate_v1_payload_root(manifest, asset_paths)
+        hist_findings = validate_v1_payload_root(manifest, domain_by_name)
         findings.extend(hist_findings)
         if hist_findings:
             assets_complete = False

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 import pi_canary_acceptance as canary
 
@@ -73,54 +73,45 @@ def append_gate_specific_receipt_findings(
 
 
 def validate_v1_payload_root(
-    manifest: Mapping[str, Any], asset_paths: Sequence[Path]
+    manifest: Mapping[str, Any], domain_by_name: Mapping[str, bytes]
 ) -> list[str]:
     """Run ``validate_manifest(..., root=)`` so historical envelopes bind to core.
 
     Digest checks alone cannot catch a catalogue envelope whose ``core_sha256``
     disagrees with ``files.core``; publication rejects those via local-asset
-    validation. Stage declared file names (including history namespaces) into a
-    temporary payload dir and apply the same root checks.
+    validation. Stage already-verified domain bytes for every descriptor from
+    ``iter_payload_assets`` (legacy files, history namespaces, executables) —
+    never re-read release wire/ciphertext from disk.
     """
 
-    from app_payload_revisions_state import NAMESPACE, validate_manifest
+    from app_payload_optional_assets import iter_payload_assets
+    from app_payload_revisions_state import validate_manifest
 
     findings: list[str] = []
-    by_name = {
-        path.name: path
-        for path in asset_paths
-        if path.is_file() and not path.is_symlink()
-    }
-    required_names: set[str] = set()
-    files = manifest.get("files")
-    if isinstance(files, Mapping):
-        for entry in files.values():
-            if isinstance(entry, Mapping):
-                name = Path(str(entry.get("name") or "")).name
-                if name:
-                    required_names.add(name)
-    for ns_key in (
-        NAMESPACE,
-        "bank_rate_history_catalogue_packed",
-        "bank_rate_history_ready",
-    ):
-        ns = manifest.get(ns_key)
-        if not isinstance(ns, Mapping):
-            continue
-        file_entry = ns.get("file")
-        if isinstance(file_entry, Mapping):
-            name = Path(str(file_entry.get("name") or "")).name
-            if name:
-                required_names.add(name)
+    try:
+        inventory = list(iter_payload_assets(dict(manifest)))
+    except Exception as exc:  # noqa: BLE001
+        findings.append(f"v1 asset inventory: {type(exc).__name__}: {exc}")
+        return findings
+    required_names: list[str] = []
+    for _key, entry in inventory:
+        if not isinstance(entry, Mapping):
+            findings.append("v1 asset descriptor not object")
+            return findings
+        name = Path(str(entry.get("name") or "")).name
+        if not name:
+            findings.append("v1 asset missing name")
+            return findings
+        required_names.append(name)
     try:
         with tempfile.TemporaryDirectory(prefix="canary-v1-payload-") as tmp:
             root = Path(tmp)
-            for name in sorted(required_names):
-                src = by_name.get(name)
-                if src is None:
-                    findings.append(f"v1 payload missing staged asset {name!r}")
+            for name in required_names:
+                body = domain_by_name.get(name)
+                if body is None:
+                    findings.append(f"v1 payload missing staged domain bytes {name!r}")
                     return findings
-                (root / name).write_bytes(src.read_bytes())
+                (root / name).write_bytes(body)
             validate_manifest(dict(manifest), root)
     except Exception as exc:  # noqa: BLE001 — surface publication rejection
         findings.append(f"v1 local/historical validation: {type(exc).__name__}: {exc}")
