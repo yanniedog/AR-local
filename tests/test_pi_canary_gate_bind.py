@@ -179,6 +179,35 @@ def test_receipt_gate_rejects_missing_explicit_pass(tmp_path: Path) -> None:
     assert (gate_dir / "receipts" / "shadow_ingest-source.json").is_file()
 
 
+def test_receipt_gate_rejects_generation_relabel(tmp_path: Path) -> None:
+    receipt = tmp_path / "r.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "target_commit": COMMIT,
+                "result": "PASS",
+                "candidate_generation": "prep-old",
+                "preservation_snapshot_sha256": SNAPSHOT,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_receipt_gate(
+        gate_dir,
+        gate="shadow_ingest",
+        target_commit=COMMIT,
+        receipt_path=receipt,
+        required_fields={"target_commit": COMMIT},
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        missing_reason="unused",
+    )
+    assert payload["result"] == "FAIL"
+
+
 def test_producer_contracts_reject_mismatched_target(tmp_path: Path) -> None:
     payload = bind.bind_producer_contracts(
         tmp_path,

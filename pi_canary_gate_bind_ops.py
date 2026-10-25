@@ -678,6 +678,28 @@ def bind_receipt_gate(
             True,
         }:
             findings.append("receipt status conflicts with result PASS")
+        # Do not relabel an older generation/snapshot receipt as PASS for a new bind.
+        if candidate_generation is not None:
+            receipt_gen = raw.get("candidate_generation")
+            if receipt_gen is None:
+                findings.append(
+                    "receipt missing candidate_generation required to bind this generation"
+                )
+            elif receipt_gen != candidate_generation:
+                findings.append(
+                    f"candidate_generation: got {receipt_gen!r}, expected {candidate_generation!r}"
+                )
+        if preservation_snapshot_sha256 is not None:
+            receipt_snap = raw.get("preservation_snapshot_sha256")
+            if receipt_snap is None:
+                findings.append(
+                    "receipt missing preservation_snapshot_sha256 required to bind this snapshot"
+                )
+            elif receipt_snap != preservation_snapshot_sha256:
+                findings.append(
+                    "preservation_snapshot_sha256: "
+                    f"got {receipt_snap!r}, expected {preservation_snapshot_sha256!r}"
+                )
         result = "PASS" if not findings else "FAIL"
         body = {
             "schema_version": 1,
