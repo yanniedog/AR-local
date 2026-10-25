@@ -156,6 +156,7 @@ def run_harness(
     historical_summary: Optional[Path] = None,
     expected_historical_index: Optional[Path] = None,
     restore_receipt: Optional[Path] = None,
+    restore_manifest: Optional[Path] = None,
     protected_code_sha: Optional[str] = None,
     public_manifest: Optional[Path] = None,
     public_assets: Sequence[Path] = (),
@@ -205,6 +206,7 @@ def run_harness(
             candidate_generation=candidate_generation,
             preservation_snapshot_sha256=preservation_snapshot_sha256,
             protected_code_sha=protected_code_sha,
+            restore_manifest=restore_manifest,
             ro_inventory=inventory,
         ),
     )
@@ -401,6 +403,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p_pr, require_pass_bindings=False)
     p_pr.add_argument("--restore-receipt", type=Path, default=None)
     p_pr.add_argument(
+        "--restore-manifest",
+        type=Path,
+        default=None,
+        help="Snapshot manifest JSON bound to receipt manifest_sha256",
+    )
+    p_pr.add_argument(
         "--protected-code-sha",
         default=None,
         help="Protected/restored baseline commit that receipt candidate_code_sha must match",
@@ -422,6 +430,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_h.add_argument("--historical-summary", type=Path, default=None)
     p_h.add_argument("--expected-historical-index", type=Path, default=None)
     p_h.add_argument("--restore-receipt", type=Path, default=None)
+    p_h.add_argument(
+        "--restore-manifest",
+        type=Path,
+        default=None,
+        help="Snapshot manifest JSON for preservation_restore acceptance checks",
+    )
     p_h.add_argument(
         "--protected-code-sha",
         default=None,
@@ -484,6 +498,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 candidate_generation=args.candidate_generation,
                 preservation_snapshot_sha256=args.preservation_snapshot_sha256,
                 protected_code_sha=protected,
+                restore_manifest=args.restore_manifest,
                 ro_inventory=inventory,
             )
         elif args.command in {
