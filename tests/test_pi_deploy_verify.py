@@ -321,6 +321,14 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
 
 
+@pytest.mark.parametrize(
+    "path",
+    ("pi_deploy_http_smoke.py", "pi_deploy_ingest_timers.py"),
+)
+def test_extracted_deploy_helpers_require_pi_deploy(path):
+    assert pi_deploy_verify.paths_touch_pi_deploy([path])
+
+
 @pytest.mark.parametrize("path", ["verify_local.py", "verify_local_compact.py", "verify_local_json_worker.py"])
 def test_runtime_verifier_modules_require_pi_deploy(path):
     assert pi_deploy_verify.paths_touch_pi_deploy([path])

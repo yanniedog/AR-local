@@ -102,6 +102,8 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "deploy/pi/",
     "pi_daily_sync.py",
     "pi_deploy_verify.py",
+    "pi_deploy_http_smoke.py",
+    "pi_deploy_ingest_timers.py",
     "pi_deploy_service_snapshot.py",
     "pi_observer_unit_contract.py",
     "pi_observer_unit_verify.py",
