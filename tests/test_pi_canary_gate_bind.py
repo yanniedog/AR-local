@@ -444,6 +444,55 @@ def test_producer_contracts_reject_mismatched_target(tmp_path: Path) -> None:
     assert payload["result"] == "FAIL"
 
 
+def test_producer_contracts_reject_invalid_v3_metaschema(tmp_path: Path) -> None:
+    """Syntactically valid but metaschema-invalid v3 schema must FAIL (not digest-only PASS)."""
+    import shutil
+
+    from cdr_domain import contract_validation
+
+    contracts_root = tmp_path / "contracts"
+    contracts_root.mkdir()
+    # Top-level schema must be Draft 2020-12 valid so only the v3 defect is exercised.
+    (contracts_root / "top.schema.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    v3_src = ROOT / "contracts" / "v3"
+    v3_dst = contracts_root / "v3"
+    v3_dst.mkdir()
+    for name in contract_validation.SCHEMA_FILES:
+        shutil.copy2(v3_src / name, v3_dst / name)
+    bad = v3_dst / "canonical-core-v3.schema.json"
+    schema = json.loads(bad.read_text(encoding="utf-8"))
+    schema["type"] = 42  # invalid JSON Schema type keyword
+    bad.write_text(json.dumps(schema) + "\n", encoding="utf-8")
+
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir()
+    payload = bind.bind_producer_contracts(
+        gate_dir,
+        target_commit=COMMIT,
+        candidate_generation=GENERATION,
+        preservation_snapshot_sha256=SNAPSHOT,
+        contracts_root=contracts_root,
+    )
+    assert payload["result"] == "FAIL"
+    receipt = json.loads(
+        (gate_dir / "receipts" / "producer_contracts-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert any(
+        f.startswith("v3/canonical-core-v3.schema.json:") for f in receipt["findings"]
+    )
+
+
 def test_harness_isolates_malformed_receipt(tmp_path: Path) -> None:
     bad = tmp_path / "bad.json"
     bad.write_text("{not-json", encoding="utf-8")
