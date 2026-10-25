@@ -166,3 +166,63 @@ def test_build_compressed_day_archive_roundtrip_sha(tmp_path: Path):
     assert Path(built["local_path"]).stat().st_size > 0
     assert len(built["sha256"]) == 64
     assert Path(built["sha_path"]).read_text(encoding="utf-8").startswith(built["sha256"])
+
+
+def test_journals_alone_are_not_primary(tmp_path: Path, monkeypatch):
+    data = tmp_path / "data"
+    day = "2026-05-15"
+    work = tmp_path / "work"
+    monkeypatch.setattr(
+        archive,
+        "build_day_inventory",
+        lambda *args, **kwargs: {
+            "schema": "x",
+            "date": day,
+            "coverage": "partial",
+            "file_count": 1,
+            "total_bytes": 3,
+            "files": [
+                {
+                    "logical_path": f"journal/unit-{day}.log",
+                    "source_path": str(tmp_path / "j.log"),
+                    "sha256": "a" * 64,
+                    "size": 3,
+                    "mode": "0o600",
+                    "uid": 0,
+                    "gid": 0,
+                    "mtime_ns": 0,
+                }
+            ],
+        },
+    )
+    (tmp_path / "j.log").write_text("log", encoding="utf-8")
+    with pytest.raises(archive.DayArchiveError, match="journal exports alone"):
+        archive.build_day_archive(data, day, work, include_journals=True)
+
+
+def test_pass_clears_pending_request(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    day = "2026-05-14"
+    request = archive.request_day_archive(day, spool=spool)
+    assert request.is_file()
+    archive.record_progress(
+        spool,
+        {
+            "schema": archive.SCHEMA,
+            "date": day,
+            "result": "PASS",
+            "kind": "gap",
+            "recorded_at": "now",
+        },
+    )
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    result = archive.process_day(
+        data_root=tmp_path / "data",
+        day=day,
+        spool=spool,
+        transport=None,
+        dry_run=True,
+        include_journals=False,
+    )
+    assert result["result"] == "PASS"
+    assert not request.exists()

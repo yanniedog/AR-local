@@ -84,6 +84,14 @@ def in_quiet_window(now: datetime | None = None) -> bool:
     return start <= minutes < end
 
 
+def quiet_window_guard() -> None:
+    """Abort mid-job if the Hobart quiet window begins after admission."""
+    if in_quiet_window():
+        raise DayArchiveError(
+            "day-archive work entered 00:30–02:00 Australia/Hobart quiet window"
+        )
+
+
 def progress_path(spool: Path) -> Path:
     return spool / "progress.jsonl"
 
@@ -196,8 +204,11 @@ def build_day_archive(
     journal_dir = work / "journal-exports" if include_journals else None
     inventory = build_day_inventory(data_root, day, journal_dir=journal_dir, guard=guard)
     rows = list(inventory["files"])
-    if not rows:
-        raise DayArchiveError(f"no recoverable primary files found for {day}")
+    primary_rows = [row for row in rows if not str(row["logical_path"]).startswith("journal/")]
+    if not primary_rows:
+        raise DayArchiveError(
+            f"no recoverable primary files found for {day} (journal exports alone are insufficient)"
+        )
     manifest = {
         "schema": SCHEMA,
         "scope_schema": SCOPE_SCHEMA,
@@ -333,15 +344,63 @@ def process_day(
         raise DayArchiveError("refusing day-archive work inside 00:30–02:00 Australia/Hobart quiet window")
     prior = load_progress(spool).get(day)
     if prior and prior.get("result") == "PASS":
+        request = spool / "requests" / f"{day}.json"
+        request.unlink(missing_ok=True)
         return prior
     work = spool / "work" / day
-    if work.exists():
-        shutil.rmtree(work)
     work.mkdir(parents=True, exist_ok=True)
-    try:
-        built = build_day_archive(
-            data_root, day, work, guard=guard, include_journals=include_journals and not dry_run
+    combined_guard: Callable[[], None] = lambda: (quiet_window_guard(), guard())
+
+    def _reuse_or_build() -> dict:
+        existing = work / f"{day}.tar.zst"
+        existing_gap = work / f"{day}.GAP.json"
+        sha_path = work / f"{day}.sha256"
+        manifest_path = work / f"{day}.manifest.json"
+        if day in KNOWN_GAPS and existing_gap.is_file():
+            digest = sha256_file(existing_gap, combined_guard)
+            return {
+                "schema": SCHEMA,
+                "date": day,
+                "kind": "gap",
+                "coverage": "gap",
+                "local_path": str(existing_gap),
+                "remote_name": f"{day}.GAP.json",
+                "sha256": digest,
+                "bytes": existing_gap.stat().st_size,
+                "manifest": gap_record(day),
+            }
+        if existing.is_file() and sha_path.is_file() and manifest_path.is_file():
+            digest = sha_path.read_text(encoding="utf-8").split()[0]
+            if len(digest) == 64 and sha256_file(existing, combined_guard) == digest:
+                return {
+                    "schema": SCHEMA,
+                    "date": day,
+                    "kind": "day",
+                    "coverage": json.loads(manifest_path.read_text(encoding="utf-8")).get("coverage"),
+                    "local_path": str(existing),
+                    "remote_name": f"{day}.tar.zst",
+                    "sha256": digest,
+                    "bytes": existing.stat().st_size,
+                    "manifest_path": str(manifest_path),
+                    "sha_path": str(sha_path),
+                    "manifest": json.loads(manifest_path.read_text(encoding="utf-8")),
+                }
+        # Fresh build only when no reusable verified-local artifact exists.
+        for path in work.iterdir():
+            if path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+        return build_day_archive(
+            data_root,
+            day,
+            work,
+            guard=combined_guard,
+            include_journals=include_journals and not dry_run,
         )
+
+    try:
+        built = _reuse_or_build()
         if dry_run:
             row = {
                 "schema": SCHEMA,
@@ -357,19 +416,20 @@ def process_day(
             return row
         if transport is None:
             raise DayArchiveError("transport required unless --dry-run")
+        quiet_window_guard()
         transport.ensure_folder()
         if transport.remote_exists(built["remote_name"]):
-            # Idempotent: verify existing remote against freshly built local bytes.
+            # Idempotent: verify existing remote against local archive bytes.
             verify_uploaded_archive(
                 transport,
                 built["remote_name"],
                 Path(built["local_path"]),
                 built["sha256"],
                 spool / "verify",
-                guard,
+                combined_guard,
             )
         else:
-            upload_and_verify(transport, built, spool / "verify", guard=guard)
+            upload_and_verify(transport, built, spool / "verify", guard=combined_guard)
         unlink_local_archive_only(built)
         row = {
             "schema": SCHEMA,

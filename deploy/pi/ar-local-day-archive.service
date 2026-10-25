@@ -13,7 +13,9 @@ Group=root
 EnvironmentFile=-/etc/ar-local/drive-backup.env
 EnvironmentFile=-/etc/ar-local/day-archive.env
 WorkingDirectory=/srv/ar-local/AR-local
-ExecStart=/usr/bin/python3 -I /srv/ar-local/AR-local/pi_daily_cdr_day_archive.py --once-pending
+# Do not use python -I: repo-local imports (ar_local_*, pi_*) must resolve from WorkingDirectory.
+Environment=PYTHONPATH=/srv/ar-local/AR-local
+ExecStart=/usr/bin/python3 /srv/ar-local/AR-local/pi_daily_cdr_day_archive.py --once-pending
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

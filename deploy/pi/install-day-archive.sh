@@ -10,9 +10,11 @@ if [[ "${2:-}" == "--enable" ]]; then
 fi
 
 install -d -m 0755 /var/lib/ar-local-day-archives
-install -d -m 0755 /var/lib/ar-local-day-archives/requests
+# Ingest runs as user pi and must be able to enqueue day-archive requests.
+install -d -m 0775 -o pi -g pi /var/lib/ar-local-day-archives/requests
 install -d -m 0755 /var/lib/ar-local-day-archives/work
 install -d -m 0755 /var/lib/ar-local-day-archives/verify
+chown pi:pi /var/lib/ar-local-day-archives
 
 # System python used by ar-local-daily / day-archive oneshot needs zstandard.
 if ! /usr/bin/python3 -c 'import zstandard' 2>/dev/null; then
