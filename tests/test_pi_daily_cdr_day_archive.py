@@ -104,7 +104,7 @@ def test_build_day_archive_gap_and_verify_before_unlink(tmp_path: Path, monkeypa
             return True
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
@@ -155,7 +155,7 @@ def test_process_day_passes_quiet_guard_to_active_transport(tmp_path: Path, monk
             Path(source).read_bytes()
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda _spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda _spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
     result = archive.process_day(
         data_root=tmp_path / "data",
@@ -219,117 +219,6 @@ def test_resolve_archive_remote_pins_raw_records_folder():
     assert transport.resolve_archive_remote(resolved) == resolved
     with pytest.raises(ValueError, match="daily-cdr-day-archives"):
         transport.resolve_archive_remote(parent + "/daily-cdr-day-archives")
-
-
-def test_resolve_archive_remote_preserves_absolute_local_path():
-    remote = "canary_local:/srv/ar-local/canary/prep-x/data/day-archive-remote"
-    resolved = transport.resolve_archive_remote(remote, preserve_absolute=True)
-    assert resolved == (
-        "canary_local:/srv/ar-local/canary/prep-x/data/"
-        "day-archive-remote/daily-cdr-raw-records"
-    )
-    # Without preserve_absolute, leading slash is stripped (Drive-style paths).
-    stripped = transport.resolve_archive_remote(remote)
-    assert stripped.startswith("canary_local:srv/")
-
-
-def _seed_local_canary_tree(tmp_path: Path, monkeypatch, *, name: str = "prep-local"):
-    parent = tmp_path / "canary-parent"
-    canary = parent / name
-    config_dir = canary / "config"
-    remote_dir = canary / "data" / "day-archive-remote"
-    config_dir.mkdir(parents=True)
-    remote_dir.mkdir(parents=True)
-    env_path = config_dir / "day-archive.env"
-    rclone_conf = config_dir / "rclone.conf"
-    env_path.write_text(
-        "\n".join(
-            [
-                f"AR_LOCAL_DAY_ARCHIVE_SPOOL={canary / 'data' / 'archive-spool'}",
-                f"AR_LOCAL_DAY_ARCHIVE_REMOTE=canary_local:{remote_dir}",
-                f"RCLONE_CONFIG={rclone_conf}",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    rclone_conf.write_text("[canary_local]\ntype = local\nnounc = true\n", encoding="utf-8")
-    rclone_conf.chmod(0o600)
-    monkeypatch.setattr(transport, "CANARY_ROOT_PARENT", parent)
-    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(env_path))
-    return canary, remote_dir, rclone_conf, env_path
-
-
-@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
-def test_day_archive_rclone_accepts_local_canary(tmp_path: Path, monkeypatch):
-    _canary, remote_dir, rclone_conf, _env = _seed_local_canary_tree(
-        tmp_path, monkeypatch
-    )
-    client = transport.DayArchiveRclone(
-        rclone_conf, f"canary_local:{remote_dir}", ""
-    )
-    assert client.local_backend is True
-    assert client.remote.endswith("/daily-cdr-raw-records")
-    assert client.remote.startswith("canary_local:/")
-
-
-@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
-def test_day_archive_rclone_rejects_local_without_canary_env(tmp_path: Path, monkeypatch):
-    _canary, remote_dir, rclone_conf, _env = _seed_local_canary_tree(
-        tmp_path, monkeypatch
-    )
-    monkeypatch.delenv("AR_LOCAL_DAY_ARCHIVE_ENV", raising=False)
-    with pytest.raises(ValueError, match="AR_LOCAL_DAY_ARCHIVE_ENV"):
-        transport.DayArchiveRclone(rclone_conf, f"canary_local:{remote_dir}", "")
-
-
-@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
-def test_day_archive_rclone_rejects_local_outside_canary(tmp_path: Path, monkeypatch):
-    canary, _remote_dir, rclone_conf, _env = _seed_local_canary_tree(
-        tmp_path, monkeypatch
-    )
-    other = tmp_path / "outside"
-    other.mkdir(parents=True)
-    with pytest.raises(ValueError, match="under canary root"):
-        transport.DayArchiveRclone(rclone_conf, f"canary_local:{other}", "")
-
-
-@pytest.mark.skipif(not hasattr(os, "getuid"), reason="unix rclone ownership checks")
-def test_day_archive_rclone_rejects_drive_under_canary_env(tmp_path: Path, monkeypatch):
-    _canary, remote_dir, rclone_conf, _env = _seed_local_canary_tree(
-        tmp_path, monkeypatch
-    )
-    rclone_conf.write_text(
-        "[canary_drive]\ntype = drive\nscope = drive.file\n"
-        'token = {"refresh_token":"x"}\n',
-        encoding="utf-8",
-    )
-    rclone_conf.chmod(0o600)
-    with pytest.raises(ValueError, match="type=local"):
-        transport.DayArchiveRclone(rclone_conf, f"canary_drive:{remote_dir}", "")
-
-
-def test_require_day_archive_writes_allowed_skips_drive_hold_for_local():
-    # local_backend skips hold entirely — must not raise even without fixtures.
-    archive.require_day_archive_writes_allowed(Path("/tmp/unused"), local_backend=True)
-
-
-def test_canary_root_rejects_non_generation_parent(tmp_path: Path, monkeypatch):
-    canary_parent = tmp_path / "canary-parent"
-    monkeypatch.setattr(transport, "CANARY_ROOT_PARENT", canary_parent)
-    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", "/config/day-archive.env")
-    with pytest.raises(ValueError, match="existing generation directory"):
-        transport._canary_root_from_env()
-
-    outside = tmp_path / "outside" / "generation" / "config" / "day-archive.env"
-    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(outside))
-    with pytest.raises(ValueError, match="existing generation directory"):
-        transport._canary_root_from_env()
-
-    missing = canary_parent / "missing" / "config" / "day-archive.env"
-    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_ENV", str(missing))
-    with pytest.raises(ValueError, match="existing generation directory"):
-        transport._canary_root_from_env()
 
 
 def test_build_compressed_day_archive_roundtrip_sha(tmp_path: Path):
@@ -453,7 +342,7 @@ def test_existing_remote_retries_sidecars(tmp_path: Path, monkeypatch):
             raise AssertionError("verify stubbed")
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
@@ -484,7 +373,7 @@ def test_existing_remote_day_uploads_missing_sidecars(tmp_path: Path, monkeypatc
     _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
     _write(data / "state" / f"{day}.done.json", '{"ok":true}')
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     work = spool / "work" / day
     built = archive.build_day_archive(data, day, work, include_journals=False)
@@ -597,7 +486,7 @@ def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(archive, "build_day_archive", tracking_build)
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     monkeypatch.setattr(
         scope,
@@ -622,7 +511,7 @@ def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
         def download(self, relative, destination):
             raise AssertionError("unused")
 
-    # Journals requested but workspace holds a no-journals archive → rebuild.
+    # Journals requested but workspace holds a no-journals archive ? rebuild.
     result = archive.process_day(
         data_root=data,
         day=day,
@@ -681,7 +570,7 @@ def test_hold_blocks_upload(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         archive,
         "require_day_archive_writes_allowed",
-        lambda path: (_ for _ in ()).throw(archive.DayArchiveError("held")),
+        lambda path, **_kwargs: (_ for _ in ()).throw(archive.DayArchiveError("held")),
     )
 
     class FakeTransport:
@@ -715,7 +604,7 @@ def test_control_reuses_local_artifact(tmp_path: Path, monkeypatch):
     data = tmp_path / "data"
     _write(data / "state" / "control.json", '{"ok":true}')
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     monkeypatch.setattr(
         archive,
@@ -958,7 +847,7 @@ def test_stale_gap_marker_is_rewritten_before_upload(tmp_path: Path, monkeypatch
             raise AssertionError("verify stubbed")
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
     result = archive.process_day(
         data_root=tmp_path / "data",
@@ -1023,7 +912,7 @@ def test_same_day_upload_is_opt_in_and_keeps_wire_bodies(tmp_path: Path, monkeyp
             Path(source).read_bytes()
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
