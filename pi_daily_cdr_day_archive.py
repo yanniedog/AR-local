@@ -23,7 +23,6 @@ import zstandard
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_daily_archive_gate import maybe_resume_job
 from cdr_file_lock import FileLock
-from pi_drive_backup_hold import Blocked, require_writes_allowed
 from pi_daily_cdr_day_archive_ingest import (
     StageMissing,
     cached_generation_upload,
@@ -51,6 +50,7 @@ from pi_daily_cdr_day_archive_transport import (
     FOLDER_NAME,
     DayArchiveRclone,
     DayArchiveTransportError,
+    require_day_archive_writes_allowed,
     sha256_file,
     verify_uploaded_archive,
 )
@@ -60,7 +60,6 @@ SERIES = FOLDER_NAME
 COMPRESSION = "zstd-lossless-no-encryption-level-19"
 DEFAULT_DATA_ROOT = Path("/srv/ar-local/data")
 DEFAULT_SPOOL = Path("/var/lib/ar-local-day-archives")
-DEFAULT_DRIVE_BACKUP_SPOOL = Path("/var/lib/ar-local-drive-backup")
 DEFAULT_RCLONE = Path(
     "/var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf"
 )
@@ -94,27 +93,6 @@ def _atomic_json(path: Path, payload: dict) -> None:
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
-
-
-def require_day_archive_writes_allowed(
-    spool: Path, *, local_backend: bool = False
-) -> None:
-    """Honor the global Drive write hold for direct CLI and service invocations.
-
-    Isolated canary ``type=local`` archives never touch Drive, so the Drive write
-    hold (D-028) must not block them when ``local_backend`` is true.
-    """
-    if local_backend:
-        return
-    try:
-        require_writes_allowed(Path(spool))
-        backup_spool = Path(
-            os.environ.get("AR_LOCAL_DRIVE_BACKUP_SPOOL", str(DEFAULT_DRIVE_BACKUP_SPOOL))
-        )
-        if backup_spool.resolve() != Path(spool).resolve():
-            require_writes_allowed(backup_spool)
-    except Blocked as error:
-        raise DayArchiveError(str(error)) from error
 
 
 def _append_jsonl(path: Path, payload: dict) -> None:

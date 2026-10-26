@@ -178,6 +178,34 @@ class DayArchiveTransportError(RuntimeError):
     """Fatal transport failure; abort without deleting local archives."""
 
 
+DEFAULT_DRIVE_BACKUP_SPOOL = Path("/var/lib/ar-local-drive-backup")
+
+
+def require_day_archive_writes_allowed(
+    spool: Path, *, local_backend: bool = False
+) -> None:
+    """Honor the global Drive write hold for direct CLI and service invocations.
+
+    Isolated canary ``type=local`` archives never touch Drive, so the Drive write
+    hold (D-028) must not block them when ``local_backend`` is true.
+    """
+    if local_backend:
+        return
+    from pi_drive_backup_hold import Blocked, require_writes_allowed
+
+    try:
+        require_writes_allowed(Path(spool))
+        backup_spool = Path(
+            os.environ.get(
+                "AR_LOCAL_DRIVE_BACKUP_SPOOL", str(DEFAULT_DRIVE_BACKUP_SPOOL)
+            )
+        )
+        if backup_spool.resolve() != Path(spool).resolve():
+            require_writes_allowed(backup_spool)
+    except Blocked as error:
+        raise DayArchiveTransportError(str(error)) from error
+
+
 class DayArchiveRclone:
     def __init__(self, config: Path, remote: str, root_folder_id: str, guard=lambda: None):
         self.config = Path(config)
