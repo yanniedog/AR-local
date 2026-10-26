@@ -31,7 +31,7 @@ def test_capture_stage_outside_data_root_is_wire_raw(tmp_path: Path, monkeypatch
     leaf.mkdir(parents=True)
     (leaf / "product-detail.json").write_bytes(b"opaque-wire-body")
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
     result = archive.process_day(
         data_root=data,
@@ -59,7 +59,7 @@ def test_revision_does_not_reuse_an_earlier_generation_pass(tmp_path: Path, monk
     first = "obs-2026-10-25-0123456789abcdef"
     second = "obs-2026-10-25-fedcba9876543210"
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
     common = dict(
         data_root=data, day=day, spool=tmp_path / "spool", transport=_transport(uploaded),
