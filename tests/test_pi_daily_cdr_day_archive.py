@@ -104,7 +104,7 @@ def test_build_day_archive_gap_and_verify_before_unlink(tmp_path: Path, monkeypa
             return True
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
@@ -155,7 +155,7 @@ def test_process_day_passes_quiet_guard_to_active_transport(tmp_path: Path, monk
             Path(source).read_bytes()
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda _spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda _spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
     result = archive.process_day(
         data_root=tmp_path / "data",
@@ -342,7 +342,7 @@ def test_existing_remote_retries_sidecars(tmp_path: Path, monkeypatch):
             raise AssertionError("verify stubbed")
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",
@@ -373,7 +373,7 @@ def test_existing_remote_day_uploads_missing_sidecars(tmp_path: Path, monkeypatc
     _write(data / "runs" / day / "_exports" / "local-cdr.sqlite", "abc")
     _write(data / "state" / f"{day}.done.json", '{"ok":true}')
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     work = spool / "work" / day
     built = archive.build_day_archive(data, day, work, include_journals=False)
@@ -486,7 +486,7 @@ def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(archive, "build_day_archive", tracking_build)
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     monkeypatch.setattr(
         scope,
@@ -511,7 +511,7 @@ def test_reuse_rejects_mismatched_journal_option(tmp_path: Path, monkeypatch):
         def download(self, relative, destination):
             raise AssertionError("unused")
 
-    # Journals requested but workspace holds a no-journals archive → rebuild.
+    # Journals requested but workspace holds a no-journals archive ? rebuild.
     result = archive.process_day(
         data_root=data,
         day=day,
@@ -570,7 +570,7 @@ def test_hold_blocks_upload(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         archive,
         "require_day_archive_writes_allowed",
-        lambda path: (_ for _ in ()).throw(archive.DayArchiveError("held")),
+        lambda path, **_kwargs: (_ for _ in ()).throw(archive.DayArchiveError("held")),
     )
 
     class FakeTransport:
@@ -604,7 +604,7 @@ def test_control_reuses_local_artifact(tmp_path: Path, monkeypatch):
     data = tmp_path / "data"
     _write(data / "state" / "control.json", '{"ok":true}')
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *a, **k: None)
     monkeypatch.setattr(
         archive,
@@ -847,7 +847,7 @@ def test_stale_gap_marker_is_rewritten_before_upload(tmp_path: Path, monkeypatch
             raise AssertionError("verify stubbed")
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
     result = archive.process_day(
         data_root=tmp_path / "data",
@@ -912,7 +912,7 @@ def test_same_day_upload_is_opt_in_and_keeps_wire_bodies(tmp_path: Path, monkeyp
             Path(source).read_bytes()
 
     monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
-    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool: None)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
     monkeypatch.setattr(
         archive,
         "verify_uploaded_archive",

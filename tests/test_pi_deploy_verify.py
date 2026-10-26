@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +12,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import pi_deploy_http_smoke  # noqa: E402
+import pi_deploy_queue_claim  # noqa: E402
 import pi_deploy_verify  # noqa: E402
 from tests.pi_ingest_service_fixtures import ingest_definition_fields
 
@@ -77,15 +81,114 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     assert calls == [("gate", expected, expected, True), ("pull", expected, True), ("services", True)]
 
 
+def test_wrap_shared_queue_fail_closed_and_skips_when_already_claimed(monkeypatch):
+    wrapped = pi_deploy_verify.wrap_shared_queue("echo deploy")
+    trusted = pi_deploy_queue_claim.TRUSTED_PI_SHARED_TASK
+    assert f"{trusted} --project ar-local --resource ar-local" in wrapped
+    assert "--resource host" not in wrapped
+    assert f"[ ! -x {trusted} ]" in wrapped or f"[ ! -x '{trusted}' ]" in wrapped
+    assert "command -v pi-shared-task" not in wrapped
+    assert f"exit {pi_deploy_verify.EXIT_CONFIG}" in wrapped
+    host_wrapped = pi_deploy_verify.wrap_shared_queue("echo nginx", require_host=True)
+    assert "--resource ar-local --resource host" in host_wrapped
+    monkeypatch.setattr(
+        pi_deploy_queue_claim, "inherited_queue_admission", lambda **_kwargs: "reuse"
+    )
+    assert pi_deploy_queue_claim.wrap_shared_queue("echo deploy") == "echo deploy"
+    assert (
+        pi_deploy_queue_claim.wrap_shared_queue("echo nginx", require_host=True)
+        == "echo nginx"
+    )
+    monkeypatch.setattr(
+        pi_deploy_queue_claim, "inherited_queue_admission", lambda **_kwargs: "refuse"
+    )
+    refused = pi_deploy_queue_claim.wrap_shared_queue("echo deploy")
+    assert "inherited queue claim insufficient" in refused
+    assert f"exit {pi_deploy_queue_claim.EXIT_CONFIG}" in refused
+
+
+def test_inherited_queue_admission_requires_exclusive_ar_local(tmp_path, monkeypatch):
+    state = tmp_path / "state.json"
+    ar_unit = "ar-local-queue-task-" + ("a" * 32) + ".service"
+    foreign_unit = "shared-pi-task-" + ("b" * 32) + ".service"
+    monkeypatch.setattr(pi_deploy_queue_claim, "SHARED_QUEUE_STATE", state)
+    monkeypatch.setattr(
+        pi_deploy_queue_claim,
+        "_read_self_cgroup",
+        lambda: f"0::/system.slice/{foreign_unit}",
+    )
+    # Generic shared-pi-task prefix never bypasses, even with forged AR state.
+    state.write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "unit": foreign_unit,
+                        "project": "ar-local",
+                        "mode": "exclusive",
+                        "resources": ["ar-local"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "refuse"
+    monkeypatch.setattr(
+        pi_deploy_queue_claim,
+        "_read_self_cgroup",
+        lambda: f"0::/system.slice/{ar_unit}",
+    )
+    good = {
+        "jobs": [
+            {
+                "unit": ar_unit,
+                "project": "ar-local",
+                "mode": "exclusive",
+                "resources": ["ar-local"],
+            }
+        ]
+    }
+    state.write_text(json.dumps(good), encoding="utf-8")
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "reuse"
+    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "refuse"
+    good["jobs"][0]["resources"] = ["ar-local", "host"]
+    state.write_text(json.dumps(good), encoding="utf-8")
+    # Host-bearing claims must not be reused (native lock nesting).
+    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "refuse"
+    # ar-local-only reuse still allowed when host is extra on the claim.
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "reuse"
+    shared = {
+        "jobs": [
+            {
+                "unit": ar_unit,
+                "project": "ar-local",
+                "mode": "shared",
+                "resources": ["ar-local", "host"],
+            }
+        ]
+    }
+    state.write_text(json.dumps(shared), encoding="utf-8")
+    assert pi_deploy_queue_claim.inherited_queue_admission(require_host=True) == "refuse"
+    monkeypatch.setattr(pi_deploy_queue_claim, "_read_self_cgroup", lambda: "0::/")
+    assert pi_deploy_queue_claim.inherited_queue_admission() == "admit"
+
+
 def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(monkeypatch):
     captured = []
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command)
+        or (0, '{"result":"PASS"}', ""),
     )
     assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
     command = captured[0]
+    assert (
+        f"{pi_deploy_queue_claim.TRUSTED_PI_SHARED_TASK} --project ar-local --resource ar-local"
+        in command
+    )
+    assert f"--max-runtime {pi_deploy_queue_claim.BACKUP_QUEUE_MAX_RUNTIME_SEC}" in command
     assert "/usr/local/bin/ar-local-backup-gate gate" in command
     assert "--candidate-sha" in command
     assert "--protected-code-sha" in command
@@ -109,11 +212,14 @@ def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command)
+        or (0, '{"result":"PASS"}', ""),
     )
     actual_command = "python pi_deploy_verify.py --deploy --expected-commit " + "a" * 40
     assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40, actual_command) == pi_deploy_verify.EXIT_OK
     command = captured[0]
+    assert "pi-shared-task --project ar-local --resource ar-local" in command
+    assert f"--max-runtime {pi_deploy_queue_claim.BACKUP_QUEUE_MAX_RUNTIME_SEC}" in command
     assert "record-deployment" in command
     assert "--protected-code-sha" in command
     assert "--candidate-sha" in command
@@ -151,7 +257,7 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: commands.append(command) or (0, "", ""),
+        lambda command, dry_run=False, timeout=None: commands.append(command) or (0, "", ""),
     )
     monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
     monkeypatch.setattr(
@@ -164,6 +270,7 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
         pi_deploy_verify.rollback_to_protected_commit(protected, candidate, "deploy command")
         == pi_deploy_verify.EXIT_OK
     )
+    assert "pi-shared-task --project ar-local --resource ar-local" in commands[0]
     assert "ar-local-backup-gate rollback-checkout" in commands[0]
     assert f"--protected-code-sha {protected}" in commands[0]
     assert "rm -f" not in commands[0]
@@ -177,10 +284,11 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, "", ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command) or (0, "", ""),
     )
     expected = "a" * 40
     assert pi_deploy_verify.deploy_pull_all(expected) == pi_deploy_verify.EXIT_OK
+    assert "pi-shared-task --project ar-local --resource ar-local" in captured[0]
     assert f"--candidate-sha {expected}" in captured[0]
     assert "ar-local-backup-gate install-checkout" in captured[0]
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
@@ -210,17 +318,24 @@ def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypa
     monkeypatch.setattr(
         pi_deploy_verify,
         "run_ssh",
-        lambda command, dry_run=False: captured.append(command) or (0, "", ""),
+        lambda command, dry_run=False, timeout=None: captured.append(command) or (0, "", ""),
     )
     assert pi_deploy_verify.deploy_services() == pi_deploy_verify.EXIT_OK
-    command = captured[0]
-    assert "chown -R" not in command
-    assert "mkdir -p" not in command
-    assert "apply-pi-runtime-units.sh" in command
-    assert "sudo sh /srv/ar-local/AR-local/deploy/pi/apply-pi-runtime-units.sh" not in command
-    assert "/srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data" in command
-    assert "systemctl cat ar-local-deploy-watchdog.service" in command
-    assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in command
+    assert len(captured) == 2
+    runtime, nginx = captured
+    assert "pi-shared-task --project ar-local --resource ar-local" in runtime
+    assert "--resource host" not in runtime
+    assert "chown -R" not in runtime
+    assert "mkdir -p" not in runtime
+    assert "apply-pi-runtime-units.sh" in runtime
+    assert "sudo sh /srv/ar-local/AR-local/deploy/pi/apply-pi-runtime-units.sh" not in runtime
+    assert "/srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data" in runtime
+    assert "systemctl cat ar-local-deploy-watchdog.service" in runtime
+    assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in runtime
+    assert "nginx" not in runtime
+    assert "--resource ar-local --resource host" in nginx
+    assert "apply-pi-runtime-units.sh" not in nginx
+    assert "reload-or-restart nginx" in nginx or "install-pi-dashboard-proxy.sh" in nginx
 
 
 def test_runtime_unit_activation_is_ingest_locked_and_complete():
@@ -317,6 +432,14 @@ def test_pi_runtime_health_changes_require_pi_deploy():
 
 def test_pi_capacity_monitor_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    ("pi_deploy_http_smoke.py", "pi_deploy_ingest_timers.py"),
+)
+def test_extracted_deploy_helpers_require_pi_deploy(path):
+    assert pi_deploy_verify.paths_touch_pi_deploy([path])
 
 
 @pytest.mark.parametrize("path", ["verify_local.py", "verify_local_compact.py", "verify_local_json_worker.py"])
@@ -549,6 +672,72 @@ def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
     )
 
 
+def test_verify_sync_can_skip_unarmed_ingest_timer_check(monkeypatch, capsys):
+    commit = "a" * 40
+    snap = _verified_sync_snapshot(commit)
+    for field, value in (
+        ("DAILY_TIMER_ENABLED", "disabled"),
+        ("DAILY_TIMER_ACTIVE", "inactive"),
+        ("WATCHDOG_TIMER_ENABLED", "disabled"),
+        ("WATCHDOG_TIMER_ACTIVE", "inactive"),
+        ("CAPACITY_TIMER_ENABLED", "disabled"),
+        ("CAPACITY_TIMER_ACTIVE", "inactive"),
+    ):
+        snap[field] = value
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: snap,
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
+        == pi_deploy_verify.EXIT_OK
+    )
+    captured = capsys.readouterr()
+    assert "daily ingest timers are not armed" not in captured.err
+    for field, value in (
+        ("DAILY_TIMER_ENABLED", "disabled"),
+        ("DAILY_TIMER_ACTIVE", "inactive"),
+        ("WATCHDOG_TIMER_ENABLED", "disabled"),
+        ("WATCHDOG_TIMER_ACTIVE", "inactive"),
+        ("CAPACITY_TIMER_ENABLED", "disabled"),
+        ("CAPACITY_TIMER_ACTIVE", "inactive"),
+    ):
+        assert f"{field}: {value}" in captured.out
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=False)
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+
+
+def test_verify_sync_held_timers_fail_when_timer_state_unreadable(monkeypatch, capsys):
+    commit = "a" * 40
+    snap = _verified_sync_snapshot(commit)
+    snap["WATCHDOG_TIMER_ENABLED"] = ""
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: commit)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: snap,
+    )
+    assert (
+        pi_deploy_verify.verify_sync(dry_run=True, allow_unarmed_ingest_timers=True)
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+    assert "missing or unreadable" in capsys.readouterr().err
+
+
+def test_deploy_rejects_allow_unarmed_ingest_timers():
+    args = argparse.Namespace(
+        expected_commit="a" * 40,
+        allow_unarmed_ingest_timers=True,
+        allow_empty_rates=False,
+        dry_run=False,
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+
+
 def test_ingest_fence_verification_rejects_partial_unit_rollout():
     assert pi_deploy_verify.pi_ingest_service_fences_ok(_service_snapshot())
     assert not pi_deploy_verify.pi_ingest_service_fences_ok(
@@ -652,14 +841,14 @@ def test_remote_wrapper_keeps_marker_outside_trailing_comment():
 def test_deploy_smoke_waits_for_dashboard_preload(monkeypatch):
     results = iter(
         [
-            pi_deploy_verify.EXIT_VERIFY_FAIL,
-            pi_deploy_verify.EXIT_VERIFY_FAIL,
-            pi_deploy_verify.EXIT_OK,
+            pi_deploy_http_smoke.EXIT_VERIFY_FAIL,
+            pi_deploy_http_smoke.EXIT_VERIFY_FAIL,
+            pi_deploy_http_smoke.EXIT_OK,
         ]
     )
     sleeps = []
-    monkeypatch.setattr(pi_deploy_verify, "http_smoke", lambda *_args, **_kwargs: next(results))
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke, "http_smoke", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
@@ -674,11 +863,11 @@ def test_deploy_smoke_returns_immediately_when_ready(monkeypatch):
     sleeps = []
     calls = []
     monkeypatch.setattr(
-        pi_deploy_verify,
+        pi_deploy_http_smoke,
         "http_smoke",
-        lambda *_args, **kwargs: calls.append(kwargs) or pi_deploy_verify.EXIT_OK,
+        lambda *_args, **kwargs: calls.append(kwargs) or pi_deploy_http_smoke.EXIT_OK,
     )
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
@@ -695,11 +884,11 @@ def test_deploy_smoke_fails_after_bounded_retries(monkeypatch):
     attempts = []
     sleeps = []
     monkeypatch.setattr(
-        pi_deploy_verify,
+        pi_deploy_http_smoke,
         "http_smoke",
-        lambda *_args, **_kwargs: attempts.append(True) or pi_deploy_verify.EXIT_VERIFY_FAIL,
+        lambda *_args, **_kwargs: attempts.append(True) or pi_deploy_http_smoke.EXIT_VERIFY_FAIL,
     )
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
@@ -715,10 +904,10 @@ def test_deploy_smoke_caps_request_to_remaining_budget(monkeypatch):
     timeouts = []
     sleeps = []
     ticks = iter([100.0, 100.0, 125.0, 125.0])
-    monkeypatch.setattr(pi_deploy_verify.time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(pi_deploy_http_smoke.time, "sleep", sleeps.append)
     monkeypatch.setattr(
-        pi_deploy_verify,
+        pi_deploy_http_smoke,
         "http_smoke",
         lambda *_args, **kwargs: timeouts.append(kwargs["timeout_seconds"])
         or pi_deploy_verify.EXIT_SSH,

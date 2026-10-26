@@ -53,6 +53,19 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert "ar-local-restore-drill.timer" not in runtime_apply
 
 
+def test_installer_uses_approved_commit_snapshot_for_installed_bytes() -> None:
+    installer = read("install-backup-foundation.sh")
+    assert 'git -C "$repo" archive --format=tar "$candidate"' in installer
+    assert 'tar -xf "$tmp/source.tar" -C "$source_tree"' in installer
+    assert 'sudo install -o root -g root -m 0644 "$source_tree/$name" "$trusted/$name"' in installer
+    assert 'cd "$source_tree"' in installer
+    assert 'sha256sum --quiet -c /etc/ar-local/backup-gate.sha256' in installer
+    assert "append_installed_wrapper_hash" in installer
+    assert "/usr/local/bin/ar-local-backup-gate" in installer
+    assert "require_regular_file" in installer
+    assert "disable_backup_timers" in installer
+
+
 def test_configuration_has_controlled_plan_identity_and_no_force_bypass() -> None:
     example = read("backup.env.example")
     assert "AR_BACKUP_PLAN_GIT_COMMIT=8efefe10890a295ef87f97b46d3cb981193cfddc" in example
