@@ -20,28 +20,113 @@ def units(start=DUE, active=False):
 def test_missing_scheduled_start_reports_even_if_recovered_elsewhere(tmp_path, monkeypatch):
     monkeypatch.setattr(watch, 'completion', lambda *_: 'COMPLETE')
     store = AlertStore(tmp_path)
-    watch.ingest_checks(store, tmp_path, NOW, units(DUE - timedelta(days=1)))
+    watch.ingest_checks(store, tmp_path, NOW, units(DUE - timedelta(days=1)), timer_triggered=None)
     row = store.read()['incidents']['ingest-schedule:2026-09-13']
     assert row['category'] == 'SCHEDULED_INGEST_NOT_STARTED' and row['active']
 
 
+def _schedule_row(store, date='2026-09-13'):
+    return store.read()['incidents'].get('ingest-schedule:' + date)
+
+
+def test_reboot_cleared_exec_main_not_miss_when_timer_triggered(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
+    store = AlertStore(tmp_path)
+    empty = units(start=None)
+    result = watch.ingest_checks(store, tmp_path, NOW, empty, timer_triggered=DUE + timedelta(minutes=1))
+    assert result['status'] == 'PARTIAL'
+    row = _schedule_row(store)
+    assert row is not None and row['active'] is False and row['revision'] == 0
+
+
+def test_reboot_cleared_exec_main_not_miss_when_observation_finalized(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
+    state = tmp_path / 'state'
+    pointers = state / 'observation-pointers-v2'
+    events = state / 'ledger-v2' / 'events' / '2026-09-13'
+    pointers.mkdir(parents=True)
+    events.mkdir(parents=True)
+    generation = 'gen-reboot-proof'
+    (pointers / 'latest-observation.json').write_text(json.dumps({
+        'observation_date': '2026-09-13', 'observation_state': 'partial',
+        'generation_id': generation, 'marker_path': 'markers/day.json',
+    }))
+    (events / (generation + '.json')).write_text(json.dumps({
+        'finalized_at': (DUE + timedelta(minutes=16)).isoformat().replace('+00:00', 'Z'),
+    }))
+    store = AlertStore(tmp_path / 'alerts')
+    watch.ingest_checks(store, state, NOW, units(start=None), timer_triggered=None)
+    row = _schedule_row(store)
+    assert row is not None and row['active'] is False and row['revision'] == 0
+
+
+def test_reboot_cleared_exec_main_not_miss_when_ingest_status_mtime_after_due(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'MISSING')
+    data = tmp_path / 'data'
+    state = data / 'state'
+    export = data / 'runs' / '2026-09-13' / '_exports'
+    state.mkdir(parents=True)
+    export.mkdir(parents=True)
+    status = export / 'ingest-status.json'
+    status.write_text('{"providers_attempted": 1}')
+    after = (DUE + timedelta(minutes=16)).timestamp()
+    os.utime(status, (after, after))
+    store = AlertStore(tmp_path / 'alerts')
+    watch.ingest_checks(store, state, NOW, units(start=None), timer_triggered=None)
+    row = _schedule_row(store)
+    assert row is not None and row['active'] is False and row['revision'] == 0
+
+
+def test_empty_start_without_durable_evidence_is_miss(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'MISSING')
+    store = AlertStore(tmp_path)
+    watch.ingest_checks(store, tmp_path, NOW, units(start=None), timer_triggered=None)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['category'] == 'SCHEDULED_INGEST_NOT_STARTED' and row['active']
+
+
+def test_open_schedule_miss_auto_closes_when_timer_evidence_appears(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
+    store = AlertStore(tmp_path)
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False)
+    assert store.read()['incidents']['ingest-schedule:2026-09-13']['active']
+    watch.ingest_checks(store, tmp_path, NOW, units(start=None),
+                        timer_triggered=DUE + timedelta(seconds=67))
+    assert store.read()['incidents']['ingest-schedule:2026-09-13']['active'] is False
+
+
 def test_active_ingest_is_not_missed_completion(tmp_path):
     store = AlertStore(tmp_path)
-    result = watch.ingest_checks(store, tmp_path, DUE + timedelta(minutes=45), units(active=True))
-    assert result['status'] == 'RUNNING' and store.read()['incidents'] == {}
+    result = watch.ingest_checks(store, tmp_path, DUE + timedelta(minutes=45), units(active=True),
+                                 timer_triggered=None)
+    row = _schedule_row(store)
+    assert result['status'] == 'RUNNING'
+    assert row is not None and row['active'] is False and row['revision'] == 0
+    assert all(not r.get('active') for r in store.read()['incidents'].values())
 
 
 def test_stuck_ingest_is_reported(tmp_path):
     store = AlertStore(tmp_path)
-    assert watch.ingest_checks(store, tmp_path, DUE + timedelta(hours=7), units(active=True))['status'] == 'STUCK'
+    assert watch.ingest_checks(store, tmp_path, DUE + timedelta(hours=7), units(active=True),
+                               timer_triggered=None)['status'] == 'STUCK'
     assert store.read()['incidents']['ingest:2026-09-13']['category'] == 'INGEST_RUNTIME_EXCEEDED'
 
 
 def test_partial_capture_is_not_called_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
     store = AlertStore(tmp_path)
-    assert watch.ingest_checks(store, tmp_path, NOW, units())['status'] == 'PARTIAL'
+    assert watch.ingest_checks(store, tmp_path, NOW, units(), timer_triggered=None)['status'] == 'PARTIAL'
     assert store.read()['incidents']['ingest:2026-09-13']['category'] == 'INGEST_PARTIAL'
+
+
+@pytest.mark.parametrize('value,expected', [
+    ('Sun 2026-09-13 06:00:00 UTC', NOW),
+    ('Sun 2026-09-13 06:00:00.123456 UTC', NOW.replace(microsecond=123456)),
+    ('', None), ('n/a', None), ('0', None), ('unexpected', None),
+])
+def test_parse_systemd_timestamp(value, expected):
+    assert watch.parse_systemd_timestamp(value) == expected
 
 
 def test_grace_does_not_read_or_alert(tmp_path):

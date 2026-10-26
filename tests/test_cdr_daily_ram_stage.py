@@ -585,3 +585,340 @@ def test_preserving_evidence_never_raises(tmp_path, monkeypatch, capsys):
     cdr_daily.preserve_attempt_evidence(tmp_path / "run", tmp_path / "_exports")
 
     assert "could not preserve raw attempt evidence" in capsys.readouterr().err
+
+
+def test_failed_day_archive_leaves_raw_tree_and_skips_seal(tmp_path, monkeypatch):
+    args, _runs, state, ram = _configure(tmp_path, monkeypatch)
+
+    def archive(date, **_kwargs):
+        raw = ram / "runs" / date
+        assert raw.is_dir()
+        assert (raw / "banks" / "ingest-status.json").is_file()
+        assert (raw / "_raw-attempt-journals-v1").is_dir()
+        return {"date": date, "result": "FAIL", "error": "upload not verified"}
+
+    def seal(*_args, **_kwargs):
+        raise AssertionError("seal ran without a verified day archive")
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    monkeypatch.setattr(cdr_daily, "seal_ram_capture_stage", seal)
+    assert cdr_daily.run_once(args) == 2
+    assert (ram / "runs" / DATE).is_dir()
+    assert (ram / "runs" / DATE / "_raw-attempt-journals-v1").is_dir()
+    assert (state / f"{DATE}.done.json").is_file()
+
+
+def test_ram_cleanup_runs_only_after_archive_pass(tmp_path, monkeypatch):
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+    order = []
+
+    def archive(date, **_kwargs):
+        assert (ram / "runs" / date / "_raw-attempt-journals-v1").is_dir()
+        order.append("archive")
+        return {"date": date, "result": "PASS", "sha256": "ab" * 32, "raw_banks_absent": False}
+
+    def seal(*_args, **_kwargs):
+        order.append("seal")
+        return {"status": "DISABLED"}
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    monkeypatch.setattr(cdr_daily, "seal_ram_capture_stage", seal)
+    assert cdr_daily.run_once(args) == 1
+    assert order == ["archive", "seal"]
+    assert not (ram / "runs" / DATE).exists()
+
+
+def test_finalized_retry_does_not_clean_raw_without_archive_pass(tmp_path, monkeypatch):
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cdr_daily,
+        "_archive_raw_day_before_cleanup",
+        lambda date, **_kwargs: {"date": date, "result": "FAIL", "error": "not uploaded"},
+    )
+    assert cdr_daily.run_once(args) == 2
+    assert cdr_daily.run_once(args) == 2
+    assert (ram / "runs" / DATE / "banks" / "ingest-status.json").is_file()
+
+
+def test_quiet_window_deferral_keeps_the_run_successful(tmp_path, monkeypatch):
+    args, _runs, state, ram = _configure(tmp_path, monkeypatch)
+
+    def archive(date, **_kwargs):
+        assert (ram / "runs" / date).is_dir()
+        return {"date": date, "result": "DEFERRED", "reason": "quiet-window"}
+
+    def seal(*_args, **_kwargs):
+        raise AssertionError("seal ran while the day archive was deferred")
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    monkeypatch.setattr(cdr_daily, "seal_ram_capture_stage", seal)
+    assert cdr_daily.run_once(args) == 1
+    assert (state / f"{DATE}.done.json").is_file()
+    assert (ram / "runs" / DATE / "banks" / "ingest-status.json").is_file()
+
+
+def test_later_archive_pass_cleans_the_original_ram_stage(tmp_path, monkeypatch):
+    args, _runs, state, ram = _configure(tmp_path, monkeypatch)
+    calls = {"n": 0}
+
+    def archive(date, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            assert (ram / "runs" / date).is_dir()
+            return {"date": date, "result": "FAIL", "error": "retry"}
+        assert any(path.name == date or path.name == "runs" for path in kwargs["stage_roots"])
+        return {"date": date, "result": "PASS", "sha256": "ab" * 32, "raw_banks_absent": False}
+
+    monkeypatch.setattr(cdr_daily, "_archive_raw_day_before_cleanup", archive)
+    assert cdr_daily.run_once(args) == 2
+    assert (ram / "runs" / DATE).is_dir()
+    ownership = list(state.glob(f"{DATE}.obs-*.ram-stage-ownership.json"))
+    assert len(ownership) == 1
+    assert cdr_daily.run_once(args) == 0
+    assert not (ram / "runs" / DATE).exists()
+
+
+def test_seal_receipt_does_not_authorize_replacement_stage_without_terms(tmp_path, monkeypatch):
+    from cdr_daily_archive_gate import _stage_matches_uploaded
+    from cdr_ram_capture_cleanup import seal_receipt_path
+    from pi_daily_cdr_day_archive_scope import stage_source_fingerprint
+
+    generation = "obs-2026-08-15-0123456789abcdef"
+    stage = tmp_path / "ram" / "runs" / DATE
+    stage.mkdir(parents=True)
+    payload = stage / "raw.json"
+    payload.write_text("archived bytes", encoding="utf-8")
+    fingerprint = stage_source_fingerprint([stage])
+    payload.write_text("unarchived replacement", encoding="utf-8")
+
+    state = tmp_path / "state"
+    state.mkdir()
+    receipt = seal_receipt_path(state, generation)
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text("{}\n", encoding="utf-8")
+    progress = tmp_path / "progress.jsonl"
+    progress.write_text(json.dumps({
+        "date": DATE,
+        "generation_id": generation,
+        "result": "PASS",
+        "source_fingerprint": fingerprint,
+    }) + "\n", encoding="utf-8")
+    monkeypatch.delenv("AR_LOCAL_TERMS_ROOT", raising=False)
+
+    assert not _stage_matches_uploaded(
+        progress, DATE, generation, {"stage_roots": [str(stage)]}, state,
+    )
+
+
+def test_finalized_retry_reuses_pass_for_persisted_sealed_cleanup_progress(
+    tmp_path, monkeypatch
+):
+    import argparse
+
+    import cdr_daily_archive_gate as gate
+    import pi_daily_cdr_day_archive as day_archive
+    from cdr_ram_capture_cleanup import seal_receipt_path
+    from pi_daily_cdr_day_archive_scope import stage_source_fingerprint
+
+    generation = "obs-2026-08-15-0123456789abcdef"
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    exports = ram / "exports" / DATE
+    _write_ingest(raw)
+    (exports / "banks").mkdir(parents=True)
+    (exports / "banks" / "rates.json").write_text("rates", encoding="utf-8")
+    stage_roots = [raw, exports]
+    fingerprint = stage_source_fingerprint(stage_roots)
+
+    state = tmp_path / "state"
+    state.mkdir()
+    runs = tmp_path / "data" / "runs"
+    terms = tmp_path / "terms"
+    spool = tmp_path / "spool"
+    monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(terms))
+    monkeypatch.setenv("AR_LOCAL_DAY_ARCHIVE_SPOOL", str(spool))
+    gate.write_ram_ownership(
+        state, DATE, generation, ram, (raw, exports), None, stage_roots,
+    )
+    marker = state / f"{DATE}.done.json"
+    marker.write_text(json.dumps({
+        "generation_id": generation, "ram_staged": True, "ram_root": str(ram.resolve()),
+    }), encoding="utf-8")
+    seal = seal_receipt_path(state, generation)
+    seal.parent.mkdir(parents=True)
+    seal.write_text("{}\n", encoding="utf-8")
+    day_archive.record_progress(spool, {
+        "date": DATE, "generation_id": generation, "result": "PASS",
+        "source_fingerprint": fingerprint,
+    })
+
+    (exports / "banks" / "rates.json").unlink()
+
+    monkeypatch.setattr(
+        cdr_daily, "_archive_raw_day_before_cleanup",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("partial sealed cleanup must reuse its verified PASS")
+        ),
+    )
+    monkeypatch.setattr(
+        gate, "resume_owned_ram_cleanup",
+        lambda *_args, **_kwargs: {"ram_cleanup": {"status": "CLEANED"}},
+    )
+    stopped, _terms = gate.accept_finalized_retry(
+        argparse.Namespace(clean_ram_stage=True, ram_root=ram),
+        state, runs, DATE, marker,
+    )
+
+    assert stopped is None
+
+
+def test_existing_seal_is_not_recreated(tmp_path, monkeypatch):
+    import argparse
+    import json
+
+    from cdr_daily_archive_gate import resume_owned_ram_cleanup, write_ram_ownership
+    from cdr_ram_capture_cleanup import seal_receipt_path
+
+    state = tmp_path / "state"
+    state.mkdir()
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    raw.mkdir(parents=True)
+    generation = "obs-2026-08-15-0123456789abcdef"
+    write_ram_ownership(state, DATE, generation, ram, (raw,), None, [raw])
+    marker = state / f"{DATE}.done.json"
+    marker.write_text(
+        json.dumps({"generation_id": generation, "ram_staged": True, "ram_root": str(ram.resolve())}),
+        encoding="utf-8",
+    )
+    receipt = seal_receipt_path(state, generation)
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(tmp_path / "terms"))
+
+    def reseal(*_args, **_kwargs):
+        raise AssertionError("resealed an existing generation")
+
+    monkeypatch.setattr("cdr_daily_archive_gate.seal_ram_capture_stage", reseal)
+    monkeypatch.setattr(
+        "cdr_daily.retry_terms_capture",
+        lambda *_args, **_kwargs: {"ram_cleanup": {"status": "CLEANED"}},
+    )
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, tmp_path / "runs", DATE, marker,
+    )
+    assert result["ram_cleanup"]["status"] == "CLEANED"
+
+
+def _persistent_export_cleanup_case(tmp_path, monkeypatch):
+    import json
+
+    from cdr_daily_archive_gate import write_ram_ownership
+    from cdr_ram_capture_cleanup import seal_receipt_path
+
+    state = tmp_path / "state"
+    state.mkdir()
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    raw.mkdir(parents=True)
+    runs = tmp_path / "data" / "runs"
+    stage = runs.parent / ".daily-export-stage" / DATE
+    (stage / "_exports").mkdir(parents=True)
+    finalized_exports = runs / DATE / "_exports"
+    finalized_exports.mkdir(parents=True)
+    (stage / "_exports" / "banks.json").write_text("generation output", encoding="utf-8")
+    (finalized_exports / "banks.json").write_text("generation output", encoding="utf-8")
+    generation = "obs-2026-08-15-0123456789abcdef"
+    write_ram_ownership(state, DATE, generation, ram, (raw, stage), None, [raw, stage])
+    marker = state / f"{DATE}.done.json"
+    marker.write_text(
+        json.dumps({
+            "generation_id": generation,
+            "ram_staged": True,
+            "ram_root": str(ram.resolve()),
+        }),
+        encoding="utf-8",
+    )
+    receipt = seal_receipt_path(state, generation)
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("AR_LOCAL_TERMS_ROOT", str(tmp_path / "terms"))
+    monkeypatch.setattr("cdr_daily_archive_gate.verify_completion_marker", lambda *_args: True)
+    monkeypatch.setattr(
+        "cdr_daily.retry_terms_capture",
+        lambda *_args, **_kwargs: {"ram_cleanup": {"status": "CLEANED"}},
+    )
+    return generation, marker, raw, runs, stage, state, ram
+
+
+def test_terms_cleanup_removes_generation_matched_persistent_export_stage(tmp_path, monkeypatch):
+    import argparse
+
+    from cdr_daily_archive_gate import resume_owned_ram_cleanup
+
+    _generation, marker, _raw, runs, stage, state, ram = _persistent_export_cleanup_case(
+        tmp_path, monkeypatch,
+    )
+
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, runs, DATE, marker,
+    )
+
+    assert result["ram_cleanup"]["status"] == "CLEANED"
+    assert not stage.exists()
+
+
+def test_terms_cleanup_preserves_replaced_persistent_export_stage(tmp_path, monkeypatch):
+    import argparse
+
+    from cdr_daily_archive_gate import resume_owned_ram_cleanup
+
+    _generation, marker, raw, runs, stage, state, ram = _persistent_export_cleanup_case(
+        tmp_path, monkeypatch,
+    )
+    (stage / "_exports" / "banks.json").write_text("replacement", encoding="utf-8")
+    retried = False
+
+    def retry(*_args, **_kwargs):
+        nonlocal retried
+        retried = True
+        return {"ram_cleanup": {"status": "CLEANED"}}
+
+    monkeypatch.setattr("cdr_daily.retry_terms_capture", retry)
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, runs, DATE, marker,
+    )
+
+    assert result["ram_cleanup"] == {
+        "status": "PRESERVED",
+        "reason": "persistent_export_stage_generation_mismatch",
+    }
+    assert not retried
+    assert stage.is_dir()
+    assert raw.is_dir()
+
+
+def test_terms_cleanup_retains_ownership_when_export_stage_removal_fails(tmp_path, monkeypatch):
+    import argparse
+
+    from cdr_daily_archive_gate import ownership_path, resume_owned_ram_cleanup
+
+    generation, marker, _raw, runs, stage, state, ram = _persistent_export_cleanup_case(
+        tmp_path, monkeypatch,
+    )
+    monkeypatch.setattr("cdr_daily_archive_gate.shutil.rmtree", lambda *_args, **_kwargs: None)
+
+    result = resume_owned_ram_cleanup(
+        argparse.Namespace(ram_root=ram, clean_ram_stage=True),
+        state, runs, DATE, marker,
+    )
+
+    assert result["ram_cleanup"] == {
+        "status": "PRESERVED",
+        "reason": "persistent_export_stage_cleanup_incomplete",
+    }
+    assert stage.is_dir()
+    assert ownership_path(state, DATE, generation).is_file()

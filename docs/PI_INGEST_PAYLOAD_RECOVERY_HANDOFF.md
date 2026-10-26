@@ -36942,3 +36942,70 @@ or enabling their timers. See `SHARED_PI_QUEUE.md` for the entry point, limits,
 crash recovery and rollout procedure. Linux tests, harmless live canaries, exact
 merged source hashes and effective service readback must establish installation
 acceptance; future natural ingest remains unverified until observed.
+
+## 2026-10-25 - Drive write hold lift + daily CDR day-archives (operator 1B / ongoing)
+
+The operator authorized lifting the Google Drive write hold entirely and
+starting a dedicated unencrypted per-day CDR archive series under
+`AR-local Pi Backups/daily-cdr-day-archives/`, with sequential backfill from
+`2026-05-13` and ongoing post-ingest enqueue.
+
+Hold lift uses `deploy/pi/lift-drive-write-hold.sh` (inventory hashes, remove
+markers, re-enable Restic timers). Day archives use
+`pi_daily_cdr_day_archive.py` (Zstd level 19, verify-before-unlink local
+`.tar.zst` only). See `docs/DAILY_CDR_DAY_ARCHIVES.md`. Source CDR trees
+remain immutable; permanent gaps `2026-05-14` and `2026-06-26` receive gap
+markers only.
+## 2026-10-25 — post-merge #991 day-archive Pi follow-up (fc40b17)
+
+PR #991 squash-merged as `fc40b17e913a7d4fcc2a19ec29965f3671a0343b`. Operator
+authorized post-merge runtime follow-up outside the 00:30–02:00 Hobart quiet
+window.
+
+### Production deploy (BLOCKED — canary gates not bypassed)
+
+- Production checkout `/srv/ar-local/AR-local` remains
+  `e350bb7b5aca6cb82da07dee8492f8caf7741edd` (71 commits behind `origin/main`).
+- Controlled `npm run pi:deploy -- --expected-commit fc40b17…` refused before
+  checkout mutation:
+  1. `australianrates` checkout behind its `origin/main` (unrelated site
+     mutation guard).
+  2. Trusted backup gate not installed: missing `/usr/local/bin/ar-local-backup-gate`,
+     `/usr/local/lib/ar-local-backup`, `/etc/ar-local/backup.env`, and
+     `/mnt/ar-local-backup`.
+  3. GitHub `pi-deploy-canary` cannot run: `pi-production` env has no
+     `AR_PI_CANARY_APPROVED_COMMIT` / `AR_PI_CANARY_MANIFEST_SHA256` /
+     `AR_PI_CANARY_RELEASE_TAG`, and no immutable `canary-acceptance.json`
+     release for this commit. Fabricating acceptance was refused.
+- Dry-run of the deploy verifier completed; live activation was not performed.
+
+### Interim day-archive runtime (seed)
+
+- Seed checkout `/var/lib/ar-local-day-archives/src/AR-local` detached at
+  `fc40b17e913a7d4fcc2a19ec29965f3671a0343b`.
+- `deploy/pi/install-day-archive.sh` re-run with that root and `--enable`.
+  `ar-local-day-archive.timer` **enabled**; unit `WorkingDirectory` points at
+  the seed until production canary deploy lands day-archive scripts on
+  `/srv/ar-local/AR-local`.
+- Progress ledger migrated to `meta/progress.jsonl` (hardlinked also as
+  legacy `progress.jsonl`); **not wiped**. In-flight root backfill PID 6691
+  (`--backfill --skip-journals`) left running.
+- rclone conf path made readable by `User=pi` (credentials dir `750 root:pi`,
+  verified conf `600 pi:pi`). Timer smoke `--once-pending` → IDLE.
+- Drive write hold remains lifted (no hold markers; Restic timers enabled).
+- CONTROL archive uploaded: `CONTROL.tar.zst` PASS
+  sha256 `7885e3e51f89e1b8d9aa7503005c6fde6d7075debc0e0c0e66180074913966da`
+  at 2026-10-25T16:57:40+11:00.
+- Backfill status at handoff write: pass_count **47** day/gap PASS entries,
+  last_pass **2026-06-28**, plus CONTROL PASS; continuing toward yesterday.
+
+### Next activation requirements
+
+1. Resolve australianrates checkout drift (or keep site HEAD==origin deliberately).
+2. Commission local backup foundation (`backup.env`, mount, gate install) **or**
+   run D-027 `pi_cdr_quality_activate` canary→seal→activate for exact
+   `fc40b17…`, **or** publish immutable canary-acceptance release + set
+   `AR_PI_CANARY_*` and run `pi-deploy-canary` with `DEPLOY_VERIFIED_CANARY`.
+3. After production HEAD=`fc40b17…`, reinstall day-archive units with
+   `ROOT=/srv/ar-local/AR-local --enable` and retire seed WorkingDirectory.
+

@@ -163,3 +163,76 @@ supervised harmless canaries: compatible jobs overlap; conflicting jobs execute
 in order; a dead wrapper with a live child retains its slot; a live native AR
 lease defers host work. Verify SSH and the Pi dashboard throughout. Source CI,
 merge, installed hashes and natural-cycle acceptance are separate evidence.
+
+## Exact AR-local rollout invocations (safe-head)
+
+Use these shapes only in **daylight** after post-ingest preflight. Substitute
+reviewed SHAs and paths. Do **not** treat this section as activation authority.
+Host claims must not nest a second production lease inside the command.
+
+### Dry-run admission (no mutate)
+
+AR-local jobs must declare the `ar-local` resource. Host-wide work declares
+both `ar-local` and `host`.
+
+```sh
+pi-shared-task --dry-run --project ar-local --resource ar-local --resource host \
+  --max-runtime 1800 -- /bin/true
+
+pi-shared-task --dry-run --project ar-local --resource ar-local --cpu-slots 1 \
+  --max-runtime 600 -- /bin/true
+```
+
+### Gate-bytes-only foundation (production HEAD unchanged)
+
+Requires an aligned disposable source tree with
+`HEAD == origin/main == <approved-40-char-sha>`, plus installer support for
+`--gate-bytes-only` (see `docs/PI_BACKUP_FOUNDATION.md`). Does not create
+`backup.env`, mount disks, or enable backup timers.
+
+The queue service does **not** forward caller shell variables. Substitute the
+absolute disposable tree path literally inside the queued command, and invoke
+the installer **from that tree** (not from protected production's older copy).
+Pass production only via `--prod-repo` / `--expect-prod-head`.
+
+```sh
+# Replace /path/to/aligned-disposable-tree with the absolute reviewed SRC path.
+pi-shared-task --project ar-local --resource ar-local --resource host \
+  --max-runtime 1800 -- \
+  /bin/bash -lc 'SRC=/path/to/aligned-disposable-tree; \
+    sh "$SRC/deploy/pi/install-backup-foundation.sh" --gate-bytes-only \
+      --prod-repo /srv/ar-local/AR-local \
+      --expect-prod-head <protected-production-sha> \
+      "$SRC" /srv/ar-local/australianrates /srv/ar-local/data \
+      <approved-40-char-sha>'
+```
+
+### Full backup-foundation install (after authorized mount + backup.env)
+
+Full install still runs against the production checkout after that checkout is
+the approved SHA (not a gate-bytes-only pin-preserve path):
+
+```sh
+pi-shared-task --project ar-local --resource ar-local --resource host \
+  --max-runtime 1800 -- \
+  /bin/bash -lc 'cd /srv/ar-local/AR-local && \
+    sh deploy/pi/install-backup-foundation.sh \
+      /srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data \
+      <approved-40-char-sha>'
+```
+
+### Exact-commit deploy (canary-approved only)
+
+Activation is **only** authorized through the protected workflow
+`.github/workflows/pi-deploy-on-main.yml` with matching immutable canary
+manifest/release evidence and protected `AR_PI_CANARY_*` values. That workflow
+fail-closes unless `pi-shared-task` is present on the Pi, and
+`pi_deploy_verify.py --deploy` wraps every mutating remote step with
+`pi-shared-task --project ar-local --resource ar-local` (plus `--resource host`
+for shared nginx/package mutations). Skip wrapping only when an inherited
+exclusive claim already covers those resources; an inherited foreign/shared
+claim fails closed. Runtime-unit activation stays on `ar-local` alone so a
+host claim's native production lease is not nested. A bare
+`python3 pi_deploy_verify.py --deploy --expected-commit <SHA>` on the Pi without
+those canary gates must not be used as a substitute activation path.
+Never use a bare `git pull` or moving-main checkout as the activation command.

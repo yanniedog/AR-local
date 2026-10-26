@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "gate": "shadow_ingest",
+  "result": "FAIL",
+  "target_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "completed_at": "2026-10-25T12:00:00+11:00",
+  "evidence": [
+    {
+      "path": "example/logs/PLACEHOLDER-shadow-ingest.log",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "notes": "FIXTURE ONLY — FAIL must not assemble"
+}

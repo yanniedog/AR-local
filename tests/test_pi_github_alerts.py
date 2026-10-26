@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta, timezone
 import json
 import pytest
 
 from pi_github_alerts import AlertStore, DeliveryError
+
+
+NOW = datetime(2026, 9, 13, 6, 0, tzinfo=timezone.utc)
 
 
 class GitHubStub:
@@ -158,3 +162,32 @@ def test_unexpected_delivery_error_text_is_not_exposed_in_incident_outcome(tmp_p
     result = store.flush(github)
     assert result['category'] == 'GITHUB_WORKER_FAILED'
     assert 'unit-secret' not in json.dumps(result)
+
+
+def test_stale_miss_cannot_overwrite_newer_healthy_watermark(tmp_path):
+    store = AlertStore(tmp_path)
+    newer = NOW + timedelta(seconds=30)
+    older = NOW + timedelta(seconds=10)
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=True, observation_at=newer)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['active'] is False and row['revision'] == 0
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=older)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['active'] is False and row['revision'] == 0
+
+
+def test_stale_miss_cannot_reactivate_after_newer_recovery(tmp_path):
+    store = AlertStore(tmp_path)
+    t0, t1, t2 = NOW, NOW + timedelta(seconds=10), NOW + timedelta(seconds=20)
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=t0)
+    assert store.read()['incidents']['ingest-schedule:2026-09-13']['active'] is True
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=True, observation_at=t2)
+    assert store.read()['incidents']['ingest-schedule:2026-09-13']['active'] is False
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=t1)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['active'] is False

@@ -15,10 +15,35 @@ from pi_github_alerts import configured_store, deliver
 
 UNITS = ("ar-local-daily.service", "ar-local-ingest-now.service",
          "ar-local-daily-watchdog.service", "ar-local-drive-backup.service")
+DAILY_TIMER = "ar-local-daily.timer"
 
 
 class EvidenceLimit(ValueError):
     pass
+
+
+def parse_systemd_timestamp(value):
+    """Parse a systemd show timestamp rendered under TZ=UTC / LC_ALL=C."""
+    if not isinstance(value, str) or not value or value in {"n/a", "0"}:
+        return None
+    for format in ("%a %Y-%m-%d %H:%M:%S UTC", "%a %Y-%m-%d %H:%M:%S.%f UTC"):
+        try:
+            return datetime.strptime(value, format).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def parse_iso_utc(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        return None
+    return stamp.astimezone(timezone.utc)
 
 
 def unit_state(name):
@@ -35,17 +60,93 @@ def unit_state(name):
     row = dict(line.split("=", 1) for line in response.stdout.splitlines() if "=" in line)
     if row.get("LoadState") != "loaded":
         raise ValueError("monitored unit unavailable")
-    for field, name in (("ExecMainStartTimestamp", "started_at"), ("ExecMainExitTimestamp", "finished_at")):
-        row[name] = None
-        for format in ("%a %Y-%m-%d %H:%M:%S UTC", "%a %Y-%m-%d %H:%M:%S.%f UTC"):
-            try:
-                row[name] = datetime.strptime(row.get(field, ""), format).replace(tzinfo=timezone.utc)
-                break
-            except ValueError:
-                continue
+    for field, key in (("ExecMainStartTimestamp", "started_at"), ("ExecMainExitTimestamp", "finished_at")):
+        row[key] = parse_systemd_timestamp(row.get(field, ""))
     # An unavailable start identity cannot prove recovery or quiet deferral,
     # but must not discard an actual OnFailure trigger before it is persisted.
     return row
+
+
+def timer_last_trigger(name=DAILY_TIMER):
+    """LastTriggerUSec for the daily timer; survives reboot when the timer unit does."""
+    if name != DAILY_TIMER:
+        raise ValueError("unexpected timer unit")
+    response = subprocess.run(
+        ["systemctl", "show", name, "-p", "LoadState", "-p", "LastTriggerUSec"],
+        env={**os.environ, "TZ": "UTC", "LC_ALL": "C"},
+        capture_output=True, text=True, timeout=5, check=True)
+    if len(response.stdout) > 16384:
+        raise ValueError("oversized timer response")
+    row = dict(line.split("=", 1) for line in response.stdout.splitlines() if "=" in line)
+    if row.get("LoadState") != "loaded":
+        raise ValueError("daily timer unavailable")
+    return parse_systemd_timestamp(row.get("LastTriggerUSec", ""))
+
+
+def _aware_at_or_after(stamp, due):
+    return isinstance(stamp, datetime) and stamp.tzinfo is not None and stamp >= due
+
+
+def durable_run_started(state_root, date, due):
+    """True when on-disk evidence shows a Hobart-date run at/after due.
+
+    Used when ExecMainStartTimestamp was cleared by reboot. Fail closed when
+    pointers, ledger timestamps, or dated run artifacts are absent or stale.
+    """
+    try:
+        pointer = read_json(state_root, "observation-pointers-v2/latest-observation.json")
+        if (pointer.get("observation_date") == date
+                and pointer.get("observation_state") in {"complete", "partial"}):
+            generation = pointer.get("generation_id")
+            if isinstance(generation, str) and generation:
+                event = read_json(state_root, f"ledger-v2/events/{date}/{generation}.json")
+                if _aware_at_or_after(parse_iso_utc(event.get("finalized_at")), due):
+                    return True
+            marker_path = pointer.get("marker_path")
+            if isinstance(marker_path, str) and marker_path:
+                marker = read_json(state_root, marker_path)
+                for key in ("finalized_at", "completed_at", "observed_at"):
+                    if _aware_at_or_after(parse_iso_utc(marker.get(key)), due):
+                        return True
+    except (FileNotFoundError, OSError, ValueError, KeyError, TypeError, EvidenceLimit):
+        pass
+    try:
+        data_root = state_root.resolve()
+        if not data_root.is_dir():
+            return False
+        parent = data_root.parent
+        for parts in (("runs", date, "_exports", "ingest-status.json"),
+                      ("runs", date, "banks", "ingest-status.json")):
+            path = parent.joinpath(*parts)
+            if path.is_symlink() or not path.is_file():
+                continue
+            resolved = path.resolve()
+            if parent not in resolved.parents:
+                continue
+            if path.stat().st_mtime >= due.timestamp():
+                return True
+            with path.open("rb") as stream:
+                raw = stream.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                continue
+            status = json.loads(raw)
+            if not isinstance(status, dict):
+                continue
+            for key in ("started_at", "completed_at", "finished_at", "observed_at"):
+                if _aware_at_or_after(parse_iso_utc(status.get(key)), due):
+                    return True
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return False
+
+
+def scheduled_ingest_started(*, due, service_started, timer_triggered, state_root, date):
+    """Prove the day's scheduled ingest started; empty ExecMainStart is not a miss alone."""
+    if _aware_at_or_after(service_started, due):
+        return True
+    if _aware_at_or_after(timer_triggered, due):
+        return True
+    return durable_run_started(state_root, date, due)
 
 
 def watchdog_recovery(store, row, due, now):
@@ -131,16 +232,26 @@ def completion(state_root, date):
         return "INVALID"
 
 
-def ingest_checks(store, state_root, now, units=None):
+def ingest_checks(store, state_root, now, units=None, timer_triggered=None):
     due = latest_daily_due_utc(now); date = expected_run_date_for_due(due)
     if now < due + timedelta(minutes=30):
         return {"status": "GRACE", "date": date}
     units = units if units is not None else {name: unit_state(name) for name in UNITS[:3]}
     daily = units[UNITS[0]]
-    started = daily.get("started_at")
-    scheduled_missed = started is None or started < due
+    if timer_triggered is None:
+        try:
+            timer_triggered = timer_last_trigger()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            # Timer probe failure is not proof of a miss; other durable signals remain.
+            timer_triggered = None
+    started = scheduled_ingest_started(
+        due=due, service_started=daily.get("started_at"),
+        timer_triggered=timer_triggered, state_root=state_root, date=date)
+    # Sample time after evidence read: a later stale miss cannot overwrite recovery.
+    observed_at = datetime.now(timezone.utc)
     store.observe("ingest-schedule:" + date, "Pi scheduled ingest missed: " + date,
-                  "SCHEDULED_INGEST_NOT_STARTED", healthy=not scheduled_missed)
+                  "SCHEDULED_INGEST_NOT_STARTED", healthy=started,
+                  observation_at=observed_at)
     watchdog_recovery(store, units[UNITS[2]], due, now)
     active = [r for r in units.values() if r.get("ActiveState") in {"active", "activating"}]
     if active:
