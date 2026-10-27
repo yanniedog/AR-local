@@ -16,7 +16,9 @@ from ar_local_ingest_schedule import DAILY_INGEST_TZ
 
 SCHEMA = "ar-local-daily-cdr-day-archive-scope-v1"
 FIRST_DAY = date(2026, 5, 13)
-KNOWN_GAPS = frozenset({"2026-05-14", "2026-06-26"})
+# 2026-10-08..10-10: ingest did not run; no recoverable primary files (runs, state,
+# journal or Drive objects). Archived as .GAP.json markers only.
+KNOWN_GAPS = frozenset({"2026-05-14", "2026-06-26", "2026-10-08", "2026-10-09", "2026-10-10"})
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 EXCLUDE_DIR_NAMES = frozenset({
     ".git", ".ssh", "__pycache__", "node_modules", "app-payload", "app-payload-latest",

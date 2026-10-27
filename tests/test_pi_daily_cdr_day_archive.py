@@ -33,6 +33,8 @@ def test_require_day_and_gaps():
     assert gap["coverage"] == "gap"
     assert gap["status"] == "known_gap"
     assert scope.gap_record("2026-06-26")["status"] == "unclassified_gap"
+    for day in ("2026-10-08", "2026-10-09", "2026-10-10"):
+        assert scope.gap_record(day)["status"] == "unclassified_gap"
 
 
 def test_iter_backfill_includes_gaps_and_stops_yesterday(monkeypatch):
