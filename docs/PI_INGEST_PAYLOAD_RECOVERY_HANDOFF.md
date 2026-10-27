@@ -37009,3 +37009,41 @@ window.
 3. After production HEAD=`fc40b17…`, reinstall day-archive units with
    `ROOT=/srv/ar-local/AR-local --enable` and retire seed WorkingDirectory.
 
+
+## 2026-10-28 - Drive full backfill status and Pi-to-head blocker packet
+
+Operator order 2026-10-28 ~08:29 AEDT: finish Drive full CDR backfill, then
+bring the Pi to GitHub main via the exact-commit canary path. No production
+mutation, timer change or deploy was performed in this entry.
+
+### Drive backfill (unique folder `AR-local-CDR-full-20261026-op094109`)
+
+- 163 of 163 eligible sealed day archives (`.tar.zst`, zstd-19) on Drive, plus
+  five permanent `.GAP.json` markers: 2026-05-14, 06-26, 10-08, 10-09, 10-10.
+  RAM package, live-shm snapshot/inventory and CONTROL archive present.
+- Only 2026-10-28 remains: the day is open and the archiver refuses to seal it
+  before the Hobart date rolls (03:07 one-day chunk returned no results).
+  `complete: false` solely for that reason.
+- Existing authorized waiter (`_drive_full_after_quiet.sh`, PID 571442) resumes
+  at 02:05 Hobart 2026-10-29, packs 10-28, refreshes CONTROL and verifies. No new
+  timer was created. Evidence: `.work/drive-full-backfill-20261026.md`.
+
+### Pi to head (NOT activated)
+
+- `origin/main` = `c77c510c1467f74eca7486e4af761225b9571974` (#1013). Pi
+  production HEAD = `e350bb7b5aca6cb82da07dee8492f8caf7741edd`, clean.
+- Latest canary freeze: `0583e23c7c5ce4318312d9ba1a85ae5cf3950229` 6/8
+  (shadow_ingest PASS; preservation_restore and device_matrix UNKNOWN). Main
+  moved 4 day-archive files since; `c77c510c` has no bound canary evidence and
+  needs a re-freeze before any dry-run. Not performed: both remaining gates
+  depend on hardware, and the tip is likely to move again.
+- Blocker 1: no eligible backup disk. `lsblk`: only `sda` 59.7G (below the ~680
+  GiB floor); NVMe is the production root; `/mnt/ar-local-backup` and
+  `/etc/ar-local/backup.env` absent. Needs a separate-UUID disk >= ~680 GiB.
+- Blocker 2: no physical Android device (`adb devices` empty). Emulator evidence
+  does not authorize device_matrix.
+- Armed next steps once hardware exists: commission backup (queue, see
+  `.work/pi-operator-unblock-20261026.md`), bind preservation_restore from the
+  real `latest-restore.json`, install APK and bind device matrix, re-freeze at
+  then-current `origin/main`, 8/8, `pi-deploy-canary` dry-run, exact-commit
+  activate in daylight, soak, `npm run verify:local -- --base-url=http://100.78.28.10/`.
