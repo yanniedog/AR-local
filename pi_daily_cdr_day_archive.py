@@ -553,7 +553,10 @@ def _process_day_locked(
                 "bytes": existing_gap.stat().st_size,
                 "manifest": gap,
             }
-        if existing.is_file() and sha_path.is_file() and manifest_path.is_file():
+        if (
+            day not in KNOWN_GAPS
+            and existing.is_file() and sha_path.is_file() and manifest_path.is_file()
+        ):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             digest = sha_path.read_text(encoding="utf-8").split()[0]
             journals_match = bool(manifest.get("include_journals")) == build_journals

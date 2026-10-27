@@ -33,6 +33,8 @@ def test_require_day_and_gaps():
     assert gap["coverage"] == "gap"
     assert gap["status"] == "known_gap"
     assert scope.gap_record("2026-06-26")["status"] == "unclassified_gap"
+    for day in ("2026-10-08", "2026-10-09", "2026-10-10"):
+        assert scope.gap_record(day)["status"] == "unclassified_gap"
 
 
 def test_iter_backfill_includes_gaps_and_stops_yesterday(monkeypatch):
@@ -863,6 +865,45 @@ def test_stale_gap_marker_is_rewritten_before_upload(tmp_path: Path, monkeypatch
     assert body["coverage"] == "gap"
     assert body["raw_banks_absent"] is True
     assert "{}" not in uploaded[f"{day}.GAP.json"]
+
+
+def test_stale_tar_for_known_gap_day_is_replaced_by_gap_marker(tmp_path: Path, monkeypatch):
+    spool = tmp_path / "spool"
+    day = "2026-10-08"
+    work = spool / "work" / day
+    work.mkdir(parents=True)
+    (work / f"{day}.tar.zst").write_bytes(b"stale")
+    (work / f"{day}.sha256").write_text("0" * 64 + "\n", encoding="utf-8")
+    (work / f"{day}.manifest.json").write_text("{}\n", encoding="utf-8")
+    uploaded: list[str] = []
+
+    class FakeTransport:
+        def ensure_folder(self):
+            return None
+
+        def remote_exists(self, relative):
+            return False
+
+        def upload(self, relative, source):
+            uploaded.append(relative)
+
+        def download(self, relative, destination):
+            raise AssertionError("verify stubbed")
+
+    monkeypatch.setattr(archive, "in_quiet_window", lambda now=None: False)
+    monkeypatch.setattr(archive, "require_day_archive_writes_allowed", lambda spool, **_kwargs: None)
+    monkeypatch.setattr(archive, "verify_uploaded_archive", lambda *args, **kwargs: None)
+    result = archive.process_day(
+        data_root=tmp_path / "data",
+        day=day,
+        spool=spool,
+        transport=FakeTransport(),
+        dry_run=False,
+        include_journals=False,
+    )
+    assert result["result"] == "PASS"
+    assert f"{day}.GAP.json" in uploaded
+    assert f"{day}.tar.zst" not in uploaded
 
 
 def test_skip_journals_is_rejected():

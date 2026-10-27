@@ -68,7 +68,7 @@ password** (`zstd-lossless-no-encryption-level-19`).
 
 ## Permanent gaps
 
-`2026-05-14` and `2026-06-26` receive a small `YYYY-MM-DD.GAP.json` marker only.
+`2026-05-14`, `2026-06-26`, `2026-10-08`, `2026-10-09` and `2026-10-10` receive a small `YYYY-MM-DD.GAP.json` marker only.
 No fabricated observation archive is uploaded.
 
 ## Worker
@@ -160,7 +160,7 @@ The manifest `coverage` is one of `wire_raw`, `exports_only`, `partial`, or
 | `wire_raw` | A banks-tree `product-detail.json` / `product-id.txt` / `product-detail.error.txt`, or bytes under `_raw-attempt-journals`, `attempt-evidence`, or `_failed_attempts`, still exist |
 | `exports_only` | Surviving `_exports` (including sqlite and `banks-YYYY-MM-DD.json` / `.xlsx`) and no wire body |
 | `partial` | Some other day-keyed bytes, and neither wire bodies nor exports |
-| `gap` | Permanent gaps `2026-05-14` and `2026-06-26` only. `YYYY-MM-DD.GAP.json` markers, no fabricated archive |
+| `gap` | Permanent gaps `2026-05-14`, `2026-06-26`, `2026-10-08`, `2026-10-09` and `2026-10-10` only. `YYYY-MM-DD.GAP.json` markers, no fabricated archive |
 
 `raw_banks_absent` is true when `runs/<day>/banks/` is already gone. Do not
 invent it. `journal_status` is `captured`, `empty`, or `unavailable`.
