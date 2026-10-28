@@ -16,8 +16,10 @@ HOBART = ZoneInfo("Australia/Hobart")
 UNIT = "ar-local-queue-task-daily-repair.service"
 CLAIMS = Path("/var/lib/ar-local-daily-repair")
 INGEST_UNITS = ("ar-local-daily.service", "ar-local-ingest-now.service")
-VALIDATOR = Path("/srv/ar-local/canary/drive-restore-715-20260913/code/verify_local.py")
-VALIDATOR_SHA256 = "22eafb96b3f5abeff9d0ac4e875d3949e5d79cd411c03f127a601ce720c4fdcc"
+# Runtime units invoke the verifier shipped with this exact checkout. Keep its
+# reviewed bytes pinned; a verifier change requires updating this contract too.
+VALIDATOR = Path(__file__).resolve().with_name("verify_local.py")
+VALIDATOR_SHA256 = "625b5f774985e6763523b8157693aac365dbe07672c90309b5b16eeb31eefaf2"
 PROPERTIES = "LoadState,ActiveState,MainPID,ControlPID,ControlGroup,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,InactiveEnterTimestampMonotonic"
 UNIT_PATHS = {
     INGEST_UNITS[0]: "/org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2eservice",
