@@ -110,7 +110,8 @@ def collect_check(*, unavailable=False, run=subprocess.run, clock=None) -> dict:
 
 def find_incidents(client, expected):
     """Bounded enumeration also retains distinct, already-reported Pi failures."""
-    title = "Pi ingest missed: " + expected
+    titles = {"Pi ingest missed: " + expected,
+              "Pi publication needs attention: " + expected}
     pi_titles = {"Pi ingest needs attention: " + expected: "ingest:",
                  "Pi scheduled ingest missed: " + expected: "ingest-schedule:",
                  "Pi ingest watchdog failed: " + expected: "ingest-watchdog:"}
@@ -122,7 +123,7 @@ def find_incidents(client, expected):
         for row in rows:
             if "pull_request" in row:
                 continue
-            if row.get("title") == title:
+            if row.get("title") in titles:
                 creator = row.get("user")
                 labels = row.get("labels", [])
                 legacy = isinstance(labels, list) and any(
@@ -207,7 +208,7 @@ def reconcile(client, report):
     body = issue_body(report)
     if issue is None:
         ensure_label(client)
-        title = "Pi ingest missed: " + report["expected_run_date"]
+        title = "Pi publication needs attention: " + report["expected_run_date"]
         created = client.request("POST", "issues", {"title": title, "body": body,
                                   "labels": [LABEL], "assignees": [OWNER]})
         if not isinstance(created, dict) or type(created.get("number")) is not int or created["number"] <= 0:
@@ -215,6 +216,9 @@ def reconcile(client, report):
         return {"status": "CREATED", "issue": created["number"], **evidence, "new_attention": True}
     number, assigned = issue_identity(issue)
     changes = {}
+    title = "Pi publication needs attention: " + report["expected_run_date"]
+    if issue.get("title") != title:
+        changes["title"] = title
     stored_body = issue.get("body")
     # GitHub may return CRLF for the LF body we submitted. Preserve all other
     # whitespace/content distinctions so real changes still trigger an update.

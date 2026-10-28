@@ -159,6 +159,17 @@ def test_closed_legacy_issue_reopens_instead_of_duplicate():
     cloud.reconcile(api, report())
     assert list(api.rows) == [1] and api.rows[1]["state"] == "open"
     assert not any(method == "POST" for method, _, _ in api.calls)
+    assert api.rows[1]["title"] == "Pi publication needs attention: 2026-10-11"
+    assert cloud.reconcile(api, report())["status"] == "UNCHANGED"
+
+
+def test_both_old_and_new_publication_titles_are_ambiguous():
+    modern = legacy(2)
+    modern["title"] = "Pi publication needs attention: 2026-10-11"
+    api = API([legacy(), modern])
+    with pytest.raises(cloud.DeliveryError, match="AMBIGUOUS"):
+        cloud.reconcile(api, report())
+    assert all(method == "GET" for method, _, _ in api.calls)
 
 
 @pytest.mark.parametrize("fault", ["untrusted-author", "unlabelled-legacy", "forged-new-marker"])
