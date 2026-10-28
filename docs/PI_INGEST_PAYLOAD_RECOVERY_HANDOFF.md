@@ -37161,3 +37161,72 @@ Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest 
   requires a separately admitted daytime operation, not bypassing the fixed
   service window or invoking the obsolete watchdog directly. Historical
   October 7-10 capture gaps remain; no backdated data is authorized.
+
+## 2026-10-29 - PR1021 deployed, sole 03:00 caller commissioned, bounded recovery found upstream gaps (OPS-20261029-REPAIR-02)
+
+- Authority: operator explicitly requested merge/deploy/schedule/alerts/recovery,
+  then authorized the recorded exact-commit deployment and daytime recovery
+  exception: "I fully authorise whatever you need to do. Don't keep asking me
+  for authorisation". Previous entry: OPS-20261029-INGEST-01.
+- Plan ARL-OPS-001 v1.5, controlled digest
+  a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada.
+  Exception: fresh restore/boot proof, full shadow canary/device matrix and
+  immutable protected canary approval were unavailable and explicitly waived
+  for PR1021. They are NOT reported as passed. Compensating controls: clean
+  exact merged source, idle ingest, shared queue, native lease, immutable source
+  checks, rollback SHA, focused tests and live acceptance.
+- PR1021 passed exact-head product CI and feedback gate, merged as
+  8590e238d00f093e7f6d20fccfc2377c7abf1aec. The merge CLI's subsequent local
+  cleanup failed because main belongs to another worktree; GitHub merge was
+  verified and that worktree preserved. Installed through shared queue job
+  3476f51687be4de981819bcadd4a57b2 and ar_local_checkout.install_candidate.
+  Previous production/rollback SHA edc0a28da70803ce0bba7e08ff81941b9152a6fc.
+  Rollback uses rollback_candidate under the same queue/native lease.
+- On-Pi deployment intent/results and preserved alert units:
+  /srv/ar-local/ops-20261029-1021/. Local scripts, task exports, native canary
+  tests and evidence: C:/Users/jkoka/.codex/audit-evidence/pi-ingest-20261029/.
+  Original dirty C:/code/AR-local checkout was not modified.
+- Hosted competing caller 6ad0ccf311d881918a8abb6a0c7385bd was verified ACTIVE
+  via its supported Scheduled UI, paused, and read back PAUSED. Existing Windows
+  task identity remains `AR-local daily Codex (20-00 Hobart)` to avoid duplicate
+  registration, but trigger and both dispatch checks are now 03:00 Hobart.
+  StartBoundary has no fixed UTC offset, using Windows Tasmania Standard Time;
+  next run is October 30 03:00. No catch-up/restart/demand start; IgnoreNew,
+  1190-second kill-on-close process job and 1200-second task deadline preserved.
+  Ten native tests passed including timeout and launcher-death descendant kills.
+  Corrected missing executable pin with unique-install fallback and limited
+  competing-automation detection to AR-local. Existing claims preserved. The
+  controller still requires Windows and the signed-in user; no Pi-only model
+  caller is claimed. Out-of-window installed invocation refused without a model.
+- Recovery exception: one daytime pass under shared queue job
+  9301886334ab42cea3c6aa263a5c849c, 1100-second kernel bound, standard production
+  locks and generation fences, permanent October 29 claim. Fresh deployed
+  natural_clearance passed before claim. All 11 affected providers were probed;
+  no positive progress, zero capture reservations. Result upstream_gaps_remain.
+  Bank of Melbourne returned an empty valid index (earlier diagnostic returned
+  products); Northern Inland public endpoint still requires authentication.
+  Do not reset the claim or imply those missing rows were recovered.
+- Final source verification: same obs-2026-10-29-ddf99f5d9aa79826 and ledger
+  a9a2140b51e8f2868a255ad4600aaa4738d95f0d0d646d5301314fc66cecaf28;
+  all 9710 contracted artifacts verify, read-only SQLite quick_check=ok.
+  Publication remains withheld: unverified_provider_population. Original 2869
+  products/16410 rates retained; no fabricated or backdated replacements.
+- Alerts: existing GitHub issue1020 verified in recipient Inbox without label
+  promotion or another test email. Removed broken duplicate SMTP OnFailure
+  dependencies from installed daily/watchdog base units, preserving originals
+  and existing deduplicated GitHub failure handlers. Empty OnFailure drop-in
+  alone did not remove the dependency; effective systemctl readback after base
+  correction proves only the GitHub handler remains. Credentials and unrelated
+  capacity/backup units unchanged. Follow-up PR1022 corrects misleading public
+  publication titles while retaining trusted legacy identity and deduplication;
+  50 focused tests pass, CI/merge pending at this checkpoint.
+- Runtime acceptance: pi_deploy_verify --verify PASS at exact deployed SHA;
+  npm run verify:pi PASS including series history; external Chrome shows
+  October 29, 7229 mortgage rows, 88 provider filters, no browser warnings/errors.
+  Dashboard active, daily timer enabled/active for October 30 01:00, queue empty.
+  After alert daemon-reload, today's old ExecStartPost execution metadata no
+  longer verifies; admission fails closed. Do not manufacture that record or
+  restart natural ingest. Tomorrow's real natural run must supply fresh proof.
+- Result: deployment/controller/alert routing PASS; current-day completeness
+  and public publication BLOCKED by upstream responses. Next natural-cycle
+  acceptance remains unobserved. Backup/day-archive/Restic decisions unchanged.
