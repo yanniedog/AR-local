@@ -37048,29 +37048,47 @@ mutation, timer change or deploy was performed in this entry.
   then-current `origin/main`, 8/8, `pi-deploy-canary` dry-run, exact-commit
   activate in daylight, soak, `npm run verify:local -- --base-url=http://100.78.28.10/`.
 
-## 2026-10-28 - Operator standing order: <=100 GiB Drive backup, then Pi to origin/main (waiver)
+## 2026-10-28 - Operator-waived Drive backup and Pi activation at fbe481ae (entry OPS-20261028-WAIVER-01)
 
-Operator order (2026-10-28 ~08:54 AEDT, user offsite) waived the backup-foundation
-disk, Android device_matrix, preservation_restore, Restic commissioning and prior
-6/8 canary gates for this session. Waived gates were bypassed, not marked PASS.
+- Entry ID / time: `OPS-20261028-WAIVER-01`; created 2026-10-28T12:55+11:00 Australia/Hobart (2026-10-28T01:55Z).
+- Author/operator: Cursor agent executing the operator standing order of 2026-10-28 ~08:54 AEDT (user offsite).
+- Result: `PASS` for Part 1 (backup) and Part 2 (activation) as scoped below; runtime acceptance of the first natural ingest on this head remains open.
+- Controlling plan: `ARL-OPS-001` v1.5, plan git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>" `9094a8e115958fcaf2cb36525736bd5e297e6b04`, controlled SHA-256
+  `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`, raw SHA-256
+  `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` (identity as recorded in the installed payload-archive manifest; not re-derived here).
+- Production state: before `e350bb7b5aca6cb82da07dee8492f8caf7741edd`, after `fbe481ae0fc78a5bbcee304cb0f67cf1a166c89c` (= `origin/main`),
+  path `/srv/ar-local/AR-local`, clean; `australianrates` `c2ef8db18f0893beb4f527767610dbc17ebefe43` (= its origin), clean.
 
-### Backup (Part 1, complete)
-- Drive: `AR-local Pi Backups Dedicated 20260913-326040d7.../AR-local-Pi-OS-ARlocal-backup-20261028-n7f3a1`;
-  8,728,405,925 bytes compressed (8.13 GiB; cap 100 GiB), 54 objects, per-object md5 verified.
-- OS: rootfs tar.zst (zstd-19) of the live NVMe root, boot partition raw+tar, sfdisk table, restore recipe.
-- AR-local: code + australianrates, `/var/lib/ar-local-*` small dirs, private credentials, `data/` state,
-  runs 2026-10-22..28, top-level evidence dirs. Full run history (day archives), canary/, staging excluded; no bytes counted twice.
-- Manifest, SHA256SUMS and COMPLETE.json in `_meta/`. Queue: `pi-shared-task` resource ar-local.
+### Deviation decision (runbook: append-only decision entry)
+- Reason: operator is offsite and ordered a bounded backup then activation without waiting for hardware (separate >=680 GiB disk, Android phone) or Restic commissioning.
+- Waived gates: backup-foundation disk and `/etc/ar-local/backup.env`/mount, device_matrix, preservation_restore (UNKNOWN), Restic `COMMISSIONING_CLOSED`, prior 6/8 canary scoreboard, `pi-deploy-canary` immutable acceptance. None marked PASS.
+- Risk: no fresh restore drill or boot proof; activation of 71+ unproven commits on the production Pi; first ingest on head not yet observed; backup is crash-consistent (live filesystem), not a snapshot.
+- Compensating controls: independent Drive backup of OS + AR-local taken first (below); exact 40-char commit via the trusted `install_candidate` (production lock, ff-only to fetched `origin/main`); removed pins copied for restore; real `verify:local` and `pi_deploy_verify --verify` plus live dashboard inspection after activation; rollback path below.
+- Revised acceptance: Drive object checksums verified; production HEAD == expected SHA; `verify:local` exit 0; `pi_deploy_verify --verify` exit 0; dashboard renders current-day rows; next natural ingest (2026-10-29 01:00) must be inspected before the head is considered ingest-accepted.
+- Authorisation/time: operator standing order 2026-10-28 ~08:54 AEDT (chat); executed 09:11-12:43 AEDT.
 
-### Activation (Part 2, complete)
-- Exact commit `fbe481ae0fc78a5bbcee304cb0f67cf1a166c89c` (= origin/main), from pin `e350bb7b5aca6cb82da07dee8492f8caf7741edd`.
-  Trusted `install_candidate` (production lock, ff-only to fetched origin/main) then `apply-pi-runtime-units.sh`, queued.
-  `pi_deploy_verify --deploy` not used (needs waived backup.env/mount/canary receipts); no deployment-record written.
-- Retired operator drop-ins that pinned the old commit or canary paths (copies in
-  `/srv/ar-local/deploy-waiver-20261028/retired-dropins/`): watchdog observer pin `zzz-ingest-observer-58f604fb19a7`,
-  daily `zzz-archive-readback-20261024` (launcher pinned to e350bb7b5 would fail ingest at new HEAD; fix is in head via #968/#973),
-  `zz-verifier702` on daily and ingest-now.
-- Verification: production HEAD == origin/main, clean; `npm run verify:local -- --base-url=http://100.78.28.10/` exit 0;
-  `pi_deploy_verify --verify` exit 0 (run_date 2026-10-28, rates 16418); on-Pi deploy-watchdog green.
-- Open: first natural ingest on head is 2026-10-29 01:00; unrelated failed units capacity-monitor (SMTP), drive-backup (hold), avalon-monitor-cycle.
-- Rollback: `rollback_candidate` to `e350bb7b5...` + `apply-pi-runtime-units.sh`; restore drop-ins from the evidence dir.
+### Part 1 - backup evidence
+- Drive remote (complete): `ar_local_drive_dedicated_20260913:AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412/AR-local-Pi-OS-ARlocal-backup-20261028-n7f3a1`.
+- Size: 8,728,403,871 bytes (8.13 GiB) in 53 objects after the correction below; cap 100 GiB. Every object uploaded with `rclone copy --checksum` then `rclone check --one-way`; `zstd -t` before upload.
+- Pi staging/evidence: `/var/lib/ar-local-os-backup-20261028-n7f3a1/` (`_meta/` has manifest.tsv sha256 `fe1ec599b0eae8cf4e6504beee761fab88539373e43684319d59df5194ad9374`, SHA256SUMS, COMPLETE.json, CHANGELOG.txt, RESTORE.md, per-artifact file lists).
+- Artifacts (zstd-19; evidence tier zstd-9): `os/rootfs-nvme0n1p2.tar.zst` 2,723,077,434 B sha256 `391ae7e4735c35f8fa36225254d4185171593df9ceaf89fdc4f2dda06df8183b` (243,506 entries, tar rc 0);
+  `os/boot-firmware.tar.zst` + `os/nvme0n1p1-boot-firmware.img.zst` + `os/nvme0n1.sfdisk` + first-4MiB; `arlocal/srv-ar-local-code.tar.zst` (AR-local + australianrates, `4db5fd2b...`);
+  `arlocal/var-lib-ar-local-small.tar.zst`; `arlocal/srv-ar-local-data-state.tar.zst` (`62cf94c0...`; tar rc 1, `state` changed while reading); `arlocal/srv-ar-local-data-runs-last7.tar.zst` (runs 2026-10-22..28, `57837865...`); `arlocal/srv-ar-local-evidence-tierB.tar.zst` (`55741246...`).
+  Excluded: full run history (Drive day archives), `canary/`, drive-backup staging, caches. OS image excludes `/srv/ar-local` and `/var/lib/ar-local-*` so no bytes are counted twice.
+- Credentials: an initial `drive-backup-credentials-PRIVATE.tar.zst` was uploaded, then deleted from Drive within the same session because repository policy (`docs/GOOGLE_DRIVE_BACKUP.md`, `docs/PI_BACKUP_FOUNDATION.md`) keeps secrets off Drive. It exists only on the Pi at `.../credentials-pi-only/` (mode 700). The OS tar excludes `/var/lib/ar-local-drive-backup`, so rclone/restic credentials must be restored from operator custody or re-enrolled.
+- Queue: `pi-shared-task --project ar-local --resource ar-local --cpu-slots 2` (no host-only job was queued; queue status empty besides this job). Capture was of a live filesystem; consistency is crash-level, accepted under the waiver.
+
+### Part 2 - activation evidence
+- Scripts: `.work/pi-deploy-exact-waiver-20261028.sh`, `.work/pi-deploy-retire-pins-20261028.sh` (untracked operator evidence); Pi dir `/srv/ar-local/deploy-waiver-20261028/` (`install-candidate.json` sha256 `065f6abe096bc0f024845b10f943c562495e9f62ec19d6d157759faac76b7f23`, `deploy.log`, `retired-dropins/`, unit-file listings before/after).
+- Not used: `pi_deploy_verify --deploy` / `ar-local-backup-gate` (require waived `backup.env`, mount and canary receipts); no deployment-acceptance record was written.
+- Ingest admission: `daily-ingest.lock` held by `install_candidate`; daily timer next fire 01:00, watchdog/boot observers verified idle by `pi_observer_unit_verify --idle-only` before and after; no ingest was running or queued. The interval between checkout (12:31:05) and pin retirement (12:37:45) contained no ingest start; the retired daily pin would otherwise have failed the launcher's HEAD check.
+- Retired drop-ins (copies retained): watchdog `zzz-ingest-observer-58f604fb19a7`, daily `zzz-archive-readback-20261024` (head contains the backported fix via #968/#973), `zz-verifier702` on daily and ingest-now (head units run `{repo}/verify_local.py` natively).
+- Verification at 12:37-12:55 AEDT: `npm run verify:local -- --base-url=http://100.78.28.10/` exit 0; `python pi_deploy_verify.py --verify` (from an `origin/main` worktree) exit 0, run_date 2026-10-28, rates 16418; on-Pi `ar-local-deploy-watchdog` green after the final drop-in change.
+- Live dashboard inspection (Browser, `http://100.78.28.10/`, 2026-10-28 ~12:50 AEDT): first load after the dashboard restart showed "Loading rates" (cold preload); after ~15 s it rendered run 2026-10-28, lowest rate 5.93%, 7,194 rows, 88 providers with logos, chart and current-slice table. Console log was not captured by the tool; no visible error state.
+- Unrelated failed units noted: `ar-local-capacity-monitor` (SMTP auth), `ar-local-drive-backup` (failed 12:30 before activation; write hold), `avalon-monitor-cycle`.
+
+### Next action and stop conditions
+- Inspect the 2026-10-29 01:00 natural ingest on head (`journalctl -u ar-local-daily.service`, `/api/latest` run_date, `pi_deploy_verify --verify`). Stop and roll back if it fails on a head-specific error.
+- Rollback: `ar_local_checkout.rollback_candidate(Path('/srv/ar-local/AR-local'), Path('/srv/ar-local/data'), 'e350bb7b5aca6cb82da07dee8492f8caf7741edd')` from `/usr/local/lib/ar-local-backup`, restore drop-ins from the evidence dir, `deploy/pi/apply-pi-runtime-units.sh`, then verify.
+- Prohibited advancement: do not treat this entry as canary acceptance, device-matrix PASS, restore-drill PASS, or permission to resume Drive writes beyond the lifted state of entry 2026-10-25.
+- Previous entry: `2026-10-28 - Drive full backfill status and Pi-to-head blocker packet`.
