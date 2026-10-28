@@ -37116,3 +37116,48 @@ mutation, timer change or deploy was performed in this entry.
 ### Re-enable condition for Restic (owned, not open-ended)
 Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest shows the new day's stage removed by finalize and the legacy stage dirs are empty via the content-verified cleanup path, and (2) a controlled canary dir/drop-in supplies the receipt chain. Until then day-archive is the routine path. Not marked PASS: Restic commissioning, restore drill, canary acceptance.
 - Previous entry: `2026-10-28 - Operator-waived Drive backup and Pi activation at fbe481ae`.
+
+## 2026-10-29 - Natural ingest verified; automatic repair blocked (OPS-20261029-INGEST-01)
+
+- Operator: Codex for jkoka; checked 08:04 AEDT (2026-10-28T21:04Z).
+  Authority: operator requested Pi accessibility and correct automatic daily
+  ingest including today. Result: BLOCKED for full daily acceptance; no runtime
+  mutation, recapture, publication, timer change or backup action performed.
+- Plan: ARL-OPS-001 v1.5; controlled digest
+  `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`.
+  Previous entry: OPS-20261028-HOLDLIFT-01; its backup decisions are preserved.
+- Production `/srv/ar-local/AR-local` clean at
+  `edc0a28da70803ce0bba7e08ff81941b9152a6fc`. SSH and dashboard reachable;
+  `npm run verify:pi` passed. Natural daily service started 01:00:03, main
+  exited 01:16:08, automatic post-start validation and whole unit completed
+  successfully 01:17:39. Timer enabled/active, next 2026-10-30 01:00 AEDT.
+- Capture/finalization: `obs-2026-10-29-ddf99f5d9aa79826`, partial, 2,869
+  products, 16,410 rates, 13 failure records, all 116 registered providers
+  attempted. SQLite read-only quick_check returned ok; current reachable
+  generation and all 9,710 contracted artifacts verified. Contract digest
+  `c0c5abaa2c06f36e46a12924fa01c0503a4297e443608e71042b1c313bc26c9e`;
+  event `a9a2140b51e8f2868a255ad4600aaa4738d95f0d0d646d5301314fc66cecaf28`.
+- Publication: withheld, public latest/index remain October 28. Bank of
+  Melbourne (prior 20 products/290 rates) and Northern Inland Credit Union
+  (39/107) disappeared. Contract gate returns `unverified_provider_population`.
+  Preserve the source absence and pending pointer; do not force publication.
+- Repair admission incorrectly pins the retired September canary verifier.
+  Actual successful post-start used `/srv/ar-local/AR-local/verify_local.py`,
+  SHA256 `625b5f774985e6763523b8157693aac365dbe07672c90309b5b16eeb31eefaf2`.
+  Read-only comparison: existing `natural_clearance` returns
+  `automatic_validation_failed`; candidate bound to the shipped verifier
+  accepts the exact same live executed-command evidence. All other admission
+  predicates remain intact. Candidate is not installed by this entry.
+- Windows task still dispatches at 20:00, outside Pi admission [03:00,05:00).
+  Its configured Codex executable is absent and its global automation check
+  rejects even an unrelated active payslip automation. No October 29 repair
+  claim exists. Observer watchdog is intentionally read-only. SMTP alert
+  service also fails with `SMTPServerDisconnected`.
+- Local evidence: `C:/Users/jkoka/.codex/audit-evidence/pi-ingest-20261029/`;
+  `admission-reproduction.json` and `admission-tests-pass.xml` (143 passing
+  focused tests). Next: exact-head CI/review for verifier binding, controlled
+  activation; separately qualify a single 03:00 caller and its executable,
+  duplicate-controller detection and process-tree deadlines. Today's repair
+  requires a separately admitted daytime operation, not bypassing the fixed
+  service window or invoking the obsolete watchdog directly. Historical
+  October 7-10 capture gaps remain; no backdated data is authorized.
