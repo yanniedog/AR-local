@@ -37092,3 +37092,27 @@ mutation, timer change or deploy was performed in this entry.
 - Rollback: `ar_local_checkout.rollback_candidate(Path('/srv/ar-local/AR-local'), Path('/srv/ar-local/data'), 'e350bb7b5aca6cb82da07dee8492f8caf7741edd')` from `/usr/local/lib/ar-local-backup`, restore drop-ins from the evidence dir, `deploy/pi/apply-pi-runtime-units.sh`, then verify.
 - Prohibited advancement: do not treat this entry as canary acceptance, device-matrix PASS, restore-drill PASS, or permission to resume Drive writes beyond the lifted state of entry 2026-10-25.
 - Previous entry: `2026-10-28 - Drive full backfill status and Pi-to-head blocker packet`.
+## 2026-10-28 - Drive write-hold drop-ins retired; Restic timers disabled; day-archive is the routine Drive path (entry OPS-20261028-HOLDLIFT-01)
+
+- Entry ID / time: `OPS-20261028-HOLDLIFT-01`; 2026-10-28T18:50+11:00 Australia/Hobart.
+- Author/operator: Cursor agents under the operator order of 2026-10-28 ~18:16 AEDT ("Permanently enable it. Make it do the backup today.").
+- Result: `PASS` for the routine Drive path (day-archive); Restic incremental `RETIRED FROM SCHEDULE` (blocked by a real precondition, not a hold). Evidence: Pi `/srv/ar-local/deploy-hold-lift-20261028/{before,after,retired,restic-timer-retire}`; untracked `.work/drive-write-hold-lift-20261028.md`.
+
+### Root cause of the repeating failures
+- 30-minute `BLOCKED`: the 2026-10-25 lift left drop-in `zzzzz-explicit-write-hold-20260916.conf` replacing `ExecStart` with `dispatch.py` (always BLOCKED, exit 2) plus `ar-local-drive-reclaim.service.d/explicit-write-hold-20260916.conf`. No hold markers existed. Both drop-ins retired (copies + sha256 retained). The effective chain reverted to the last-proven `canary/drive-targets-721-20260914` code.
+- Next failures after the lift: (a) `rclone credentials file must have mode 0600` at 18:21 (read-only `rclone lsd` token refresh resets 0640; restored to 0600); (b) 18:22/18:30 `complete successful Drive resource receipt required` and `transient data path is not empty: /srv/ar-local/data/.daily-export-stage`. (b) is one failure: the supervised workload exits non-zero on the stage precondition, so no PASS resource receipt is written.
+- Stage precondition: routine Restic scope policy v1 (`ar_local_backup_scope.TRANSIENT_EMPTY_DIRS`) requires `.daily-export-stage` empty. 21 legacy day copies (2026-09-19..2026-10-28, ~55 GiB) remain from pre-head ingest; every file exists in `runs/<date>/` with identical path and size (not hardlinks). Head code already removes a day's stage after finalize only when content sha256 inventories match `runs/<date>/_exports` and the completion marker verifies (`cdr_daily_archive_gate._persistent_export_stage_cleanup`). No runbook text authorises deleting the legacy copies, so none were deleted.
+
+### Decision (solution-first; no further operator approval requested)
+- A scope-policy PR cannot reach production today: the routine unit executes frozen canary code under drop-ins (721); changing it needs a new canary dir and drop-in, which is the controlled-deploy path. Cleaning the stage would not hold anyway (stage regrows until head ingest finalize cleanup is observed).
+- Chosen: `systemctl disable --now ar-local-drive-backup.timer ar-local-drive-backup-queue.timer`, `reset-failed ar-local-drive-backup.service`. Units, drop-ins, queue (42 retained requests), credentials, Restic repository and last snapshot (2026-09-16, `8058dfcc...`) preserved. Incident #713 stops receiving failures.
+- Routine Drive path: `ar-local-day-archive.timer` ENABLED (installed from production `/srv/ar-local/AR-local` 4fba25e1; hashes verified against origin/main). Unencrypted per-day `tar.zst` to `daily-cdr-raw-records/` (see `docs/DAILY_CDR_DAY_ARCHIVES.md`). Proof today via the shared queue (job 6cba35ec, 18:27-18:44): `2026-10-27` PASS, wire_raw, 195,668,478 B, sha256 `e84ff3de955ed6085a6f57517c3d298833a7a5354b94aaaef6bd3674db0b7204`, `.tar.zst` + `.sha256` + `.manifest.json` on Drive, ledger row recorded.
+- Same-day archive of 2026-10-28 is refused by design until the Hobart day ends. Unique-folder full backfill waiters (PIDs 571442, 626666) pack 2026-10-28 at 02:05 on 2026-10-29; head ingest at 01:00 writes a continuation request drained by the day-archive timer after 02:00.
+- Also on Drive (earlier waiver): `AR-local-Pi-OS-ARlocal-backup-20261028-n7f3a1` (8.13 GiB, includes runs through 2026-10-28).
+
+### Timer states at close (Pi)
+`ar-local-day-archive.timer` enabled/active (next 19:26:15, then hourly); `ar-local-drive-reclaim-reconcile.timer` enabled/active; `ar-local-drive-backup.timer` and `ar-local-drive-backup-queue.timer` disabled/inactive. Hold markers absent.
+
+### Re-enable condition for Restic (owned, not open-ended)
+Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest shows the new day's stage removed by finalize and the legacy stage dirs are empty via the content-verified cleanup path, and (2) a controlled canary dir/drop-in supplies the receipt chain. Until then day-archive is the routine path. Not marked PASS: Restic commissioning, restore drill, canary acceptance.
+- Previous entry: `2026-10-28 - Operator-waived Drive backup and Pi activation at fbe481ae`.
