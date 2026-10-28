@@ -37047,3 +37047,30 @@ mutation, timer change or deploy was performed in this entry.
   real `latest-restore.json`, install APK and bind device matrix, re-freeze at
   then-current `origin/main`, 8/8, `pi-deploy-canary` dry-run, exact-commit
   activate in daylight, soak, `npm run verify:local -- --base-url=http://100.78.28.10/`.
+
+## 2026-10-28 - Operator standing order: <=100 GiB Drive backup, then Pi to origin/main (waiver)
+
+Operator order (2026-10-28 ~08:54 AEDT, user offsite) waived the backup-foundation
+disk, Android device_matrix, preservation_restore, Restic commissioning and prior
+6/8 canary gates for this session. Waived gates were bypassed, not marked PASS.
+
+### Backup (Part 1, complete)
+- Drive: `AR-local Pi Backups Dedicated 20260913-326040d7.../AR-local-Pi-OS-ARlocal-backup-20261028-n7f3a1`;
+  8,728,405,925 bytes compressed (8.13 GiB; cap 100 GiB), 54 objects, per-object md5 verified.
+- OS: rootfs tar.zst (zstd-19) of the live NVMe root, boot partition raw+tar, sfdisk table, restore recipe.
+- AR-local: code + australianrates, `/var/lib/ar-local-*` small dirs, private credentials, `data/` state,
+  runs 2026-10-22..28, top-level evidence dirs. Full run history (day archives), canary/, staging excluded; no bytes counted twice.
+- Manifest, SHA256SUMS and COMPLETE.json in `_meta/`. Queue: `pi-shared-task` resource ar-local.
+
+### Activation (Part 2, complete)
+- Exact commit `fbe481ae0fc78a5bbcee304cb0f67cf1a166c89c` (= origin/main), from pin `e350bb7b5aca6cb82da07dee8492f8caf7741edd`.
+  Trusted `install_candidate` (production lock, ff-only to fetched origin/main) then `apply-pi-runtime-units.sh`, queued.
+  `pi_deploy_verify --deploy` not used (needs waived backup.env/mount/canary receipts); no deployment-record written.
+- Retired operator drop-ins that pinned the old commit or canary paths (copies in
+  `/srv/ar-local/deploy-waiver-20261028/retired-dropins/`): watchdog observer pin `zzz-ingest-observer-58f604fb19a7`,
+  daily `zzz-archive-readback-20261024` (launcher pinned to e350bb7b5 would fail ingest at new HEAD; fix is in head via #968/#973),
+  `zz-verifier702` on daily and ingest-now.
+- Verification: production HEAD == origin/main, clean; `npm run verify:local -- --base-url=http://100.78.28.10/` exit 0;
+  `pi_deploy_verify --verify` exit 0 (run_date 2026-10-28, rates 16418); on-Pi deploy-watchdog green.
+- Open: first natural ingest on head is 2026-10-29 01:00; unrelated failed units capacity-monitor (SMTP), drive-backup (hold), avalon-monitor-cycle.
+- Rollback: `rollback_candidate` to `e350bb7b5...` + `apply-pi-runtime-units.sh`; restore drop-ins from the evidence dir.
