@@ -1,0 +1,31 @@
+[Unit]
+Description=Retain one encrypted daily payload on GitHub without app promotion
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_CODE_ROOT={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+Environment=HOME={{AR_LOCAL_HOME}}
+Environment=PYTHONUNBUFFERED=1
+# Reuse the configured publisher identity and encryption key in place.
+EnvironmentFile=/etc/ar-local/app-payload.env
+UnsetEnvironment=AR_LOCAL_DRIVE_BACKUP_SPOOL
+CPUQuota=100%
+CPUWeight=100
+IOWeight=100
+Nice=10
+TimeoutStartSec=61s
+RuntimeMaxSec=1800s
+TimeoutStopSec=45s
+KillMode=control-group
+SendSIGKILL=yes
+Restart=no
+# Queue ownership lasts until the entire service cgroup is clear.
+ExecStart=/usr/bin/python3 -B /usr/local/lib/shared-pi-queue/pi_shared_queue.py run --project ar-local --resource ar-local --mode exclusive --cpu-slots 1 --wait-timeout 1 --max-runtime 1800 -- /usr/bin/python3 -B {{AR_LOCAL_REPO}}/pi_payload_daily_archive.py --once --since {{AR_LOCAL_ARCHIVE_START_DATE}}

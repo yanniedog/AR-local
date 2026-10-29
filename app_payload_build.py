@@ -333,6 +333,7 @@ def _compute_payload(
     include_history: bool = True,
     state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
+    archive_snapshot: bool = False,
 ) -> Dict[str, Any]:
     """Parse the run's exports into the (tag-independent) payload data.
 
@@ -345,7 +346,8 @@ def _compute_payload(
     if not run_date:
         raise ValueError("latest.json has no run_date")
     from app_payload_bank_rate_source import require_selected_current_export
-    require_selected_current_export(exports_dir, run_date)
+    if not archive_snapshot:
+        require_selected_current_export(exports_dir, run_date)
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
@@ -373,6 +375,20 @@ def _compute_payload(
         sections[section] = {
             "rates": compact_rows,
             "ribbon": aggregate_ribbon(section_rows, section),
+        }
+
+    if archive_snapshot:
+        # Retention is bound only to this verified source, including unselected
+        # partial generations. Do not consult mutable RBA/logo inputs, fetch the
+        # network, write source caches, or scan other dates' history here.
+        return {
+            "core": {"schema_version": SCHEMA_VERSION, "run_date": run_date,
+                     "sections": sections, "coverage": coverage},
+            "details": {"schema_version": SCHEMA_VERSION, "run_date": run_date,
+                        "products": build_details(products)},
+            "run_date": run_date,
+            "counts": latest.get("banks_counts") or banks.get("counts") or {},
+            "search_index": None, "history_banks": None, "bank_history": None,
         }
 
     shortcodes = load_brand_shortcodes(dashboard_dir)
