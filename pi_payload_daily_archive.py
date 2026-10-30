@@ -224,10 +224,16 @@ def run_once(repo_root: Path, *, day: str | None = None, since: str | None = Non
     if day and (date.fromisoformat(day).isoformat() != day or day > today):
         raise ValueError("archive date must be a retained date no later than today")
     root = archive_state(repo_root)
-    candidates = [day] if day else sorted({p.name for p in
-        (data_state_root(repo_root) / "export-contracts-v2").iterdir()
-        if p.is_dir() and re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.name)
-        and (since is None or since <= p.name) and p.name <= today}, reverse=True)
+    candidates = [day] if day else []
+    if day is None:
+        try:
+            candidates = sorted({p.name for p in
+                (data_state_root(repo_root) / "export-contracts-v2").iterdir()
+                if p.is_dir() and re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.name)
+                and (since is None or since <= p.name) and p.name <= today}, reverse=True)
+        except FileNotFoundError:
+            # No finalized observation yet; retain other I/O failures as blocked.
+            pass
     deferred = []
     for candidate in candidates:
         try:

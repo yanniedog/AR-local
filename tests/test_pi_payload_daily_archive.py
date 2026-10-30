@@ -87,6 +87,45 @@ def test_dry_run_creates_no_state(runtime, monkeypatch):
     assert not root.exists()
 
 
+@pytest.mark.parametrize("since", [None, DAY])
+def test_missing_contract_root_is_empty_without_writes(runtime, monkeypatch, since):
+    repo, root = runtime
+    monkeypatch.setattr(archive, "run_process_group", lambda *a, **kw: pytest.fail("no source"))
+    assert archive.run_once(repo, since=since) == {"status": "up_to_date", "deferred": []}
+    assert not root.exists()
+    assert not (repo / "state").exists()
+
+
+def test_contract_root_permission_error_remains_blocked(runtime, monkeypatch, capsys):
+    repo, _ = runtime
+    monkeypatch.setattr(archive, "REPO_ROOT", repo)
+    monkeypatch.setattr(Path, "iterdir", Mock(side_effect=PermissionError("unreadable")))
+    assert archive.main(["--once"]) == 1
+    assert json.loads(capsys.readouterr().out) == {"status": "blocked", "reason": "PermissionError"}
+
+
+def test_replacement_generation_does_not_bypass_day_cooldown(runtime):
+    _, root = runtime
+    archive._reserve(root, DAY, DIGEST, NOW)
+    assert archive._reserve(root, DAY, "b" * 64, NOW)["reason"] == "archive_retry_cooldown"
+    assert json.loads((root / "attempts" / (DAY + ".json")).read_bytes())["contract_digest"] == DIGEST
+
+
+@pytest.mark.parametrize("marker", [[], None, 1, "invalid"])
+def test_nonobject_marker_returns_structured_block_and_releases_lease(runtime, monkeypatch, capsys, marker):
+    repo, root = runtime
+    monkeypatch.setattr(archive, "REPO_ROOT", repo)
+    contract = {"contract_digest": DIGEST, "completion_marker_path": "marker.json"}
+    monkeypatch.setattr(archive, "selected_source", lambda *a: (contract, repo))
+    marker_path = repo / "state" / "marker.json"
+    marker_path.parent.mkdir(parents=True)
+    marker_path.write_text(json.dumps(marker))
+    assert archive.main(["--worker-date", DAY, "--expected-contract", DIGEST]) == 1
+    assert json.loads(capsys.readouterr().out) == {"status": "blocked", "reason": "TypeError"}
+    assert not (repo / "state" / "daily-ingest.lock").exists()
+    assert not root.exists()
+
+
 def test_latest_first_and_failed_source_does_not_starve_backlog(runtime, monkeypatch):
     repo, root = runtime
     for day in ("2026-10-28", DAY):
