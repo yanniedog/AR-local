@@ -988,6 +988,8 @@ def test_same_day_upload_is_opt_in_and_keeps_wire_bodies(tmp_path: Path, monkeyp
 
 
 def test_archive_observation_day_is_synchronous_same_day_with_journals(tmp_path: Path, monkeypatch):
+    # This orchestration fixture must never load host credentials.
+    monkeypatch.setattr(archive, "load_day_archive_env", lambda: None)
     seen = {}
 
     def fake_process_day(**kwargs):

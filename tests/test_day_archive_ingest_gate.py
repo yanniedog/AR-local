@@ -95,6 +95,8 @@ def test_revision_does_not_reuse_an_earlier_generation_pass(tmp_path: Path, monk
 
 
 def test_quiet_window_continuation_waits_until_the_window_ends(tmp_path: Path, monkeypatch):
+    # This orchestration fixture must never load host credentials.
+    monkeypatch.setattr(archive, "load_day_archive_env", lambda: None)
     day = archive.hobart_today().isoformat()
     generation = "obs-2026-10-25-0123456789abcdef"
     data = tmp_path / "data"

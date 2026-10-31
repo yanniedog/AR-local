@@ -12,6 +12,13 @@ NOW = datetime(2026, 9, 13, 6, 0, tzinfo=timezone.utc)
 DUE = watch.latest_daily_due_utc(NOW)
 
 
+@pytest.fixture(autouse=True)
+def isolated_daily_timer(monkeypatch):
+    # None asks ingest_checks to probe the host timer. These historical tests
+    # supply timer evidence explicitly and must not consult the live Pi.
+    monkeypatch.setattr(watch, 'timer_last_trigger', lambda: None)
+
+
 def units(start=DUE, active=False):
     return {name: {'started_at': start, 'ActiveState': 'active' if active else 'inactive'}
             for name in watch.UNITS[:3]}
