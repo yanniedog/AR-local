@@ -22,16 +22,17 @@ def test_committed_ready_fixture_reproduces_from_retained_observations():
     assert actual == fixture
 
 
-def test_ready_compiler_matches_reviewed_lvr_interval_consumer():
+def test_ready_compiler_matches_released_app_1_0_256():
     from app_payload_bank_history_ready_asset import compiler_identity, _invoke
-    # Independent pin exported from the matching AR-app LVR interval change.
-    # Publication still requires that consumer to be released and verified.
-    expected = "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7"
+    # Exact compiler from AR-app app-v1.0.256, commit
+    # 0f217f0a573dd072c019bef93b26f3b71d038d7d. Keep the consumer pin strict.
+    expected = "c6d1ff733a579a5fef1d17105922aee20bf73d96e66adc60aaa637ff2c1cec9b"
     assert compiler_identity()[1] == expected
     ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
     assert ready["compiler_sha256"] == expected
     assert _invoke(ready, validate=True) == expected
-    ready["compiler_sha256"] = "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3"
+    # The formerly published compiler is no longer this consumer's authority.
+    ready["compiler_sha256"] = "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7"
     with pytest.raises(ValueError, match="compilation/validation failed"):
         _invoke(ready, validate=True)
 
