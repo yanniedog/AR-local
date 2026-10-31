@@ -13,6 +13,17 @@ newer, which producer CI installs. Compiler pin, semantic validation, processing
 budget or runtime failures defer publication explicitly. They never silently
 replace ready history with raw history for new clients.
 
+The current compiler and manifest are exact Git blobs from AR-app release
+`app-v1.0.256`, commit `0f217f0a573dd072c019bef93b26f3b71d038d7d`, under
+`mobile/contracts/history-ready/`. The compiler SHA-256 is
+`c6d1ff733a579a5fef1d17105922aee20bf73d96e66adc60aaa637ff2c1cec9b`.
+Update the pair together when the released consumer changes its compiler pin;
+regenerate the real-observation fixture through the compiler and verify the
+result with the unchanged shipping app validator. A producer-only validation
+against its own stale pin cannot prove compatibility with the released app.
+Existing payloads retain their original compiler identity and immutable bytes;
+recompilation produces a new revision, never a relabelled old prepared asset.
+
 Each section has cohorts keyed by bank, exact structural profile dimensions,
 dated-evidence availability, broad availability and the curated feature bitmask.
 Cohorts carry sorted date/rate frequency changes. Multiplicity is preserved so
