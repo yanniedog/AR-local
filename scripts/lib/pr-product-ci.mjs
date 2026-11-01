@@ -29,6 +29,21 @@ export function productPrIdentity(pr) {
     repository: pr.base?.repo?.full_name, changedFiles: pr.changed_files };
 }
 
+/** Explicit post-merge policy; never reinterpret a closed PR as open. */
+export function mergedPrIdentity(pr, repository, number, defaultBranch, expectedHeadSha, expectedMergeSha) {
+  const meta = productPrIdentity(pr);
+  if (!SHA.test(expectedHeadSha || '') || !SHA.test(expectedMergeSha || '') ||
+      meta.number !== number || meta.state !== 'closed' || pr.merged !== true ||
+      !Number.isFinite(Date.parse(pr.merged_at || '')) || pr.merge_commit_sha !== expectedMergeSha ||
+      meta.headSha !== expectedHeadSha || !SHA.test(meta.baseSha || '') ||
+      meta.repository !== repository || !/^[\w.-]+\/[\w.-]+$/.test(meta.headRepository || '') ||
+      !meta.headRef || !defaultBranch || meta.baseRef !== defaultBranch ||
+      !Number.isInteger(meta.changedFiles) || meta.changedFiles < 0) {
+    throw new Error('Invalid pinned merged PR identity');
+  }
+  return { ...meta, merged: true, mergedAt: pr.merged_at, mergeSha: expectedMergeSha };
+}
+
 function validatePr(pr, repository, number, defaultBranch) {
   const meta = productPrIdentity(pr);
   if (meta.number !== number || meta.state !== 'open' || !SHA.test(meta.headSha || '') ||
@@ -126,7 +141,7 @@ function revalidateWorkflow(api, prefix, observation, meta) {
     { ...observation, run: { ...run, status: 'queued', conclusion: null }, jobs: [] };
 }
 
-export function readProductCi(prNumber, { repository, api = githubApi, expectedHeadSha } = {}) {
+export function readProductCi(prNumber, { repository, api = githubApi, expectedHeadSha, expectedMergeSha } = {}) {
   let meta = {};
   try {
     if (!Number.isSafeInteger(prNumber) || prNumber <= 0) throw new Error('Invalid PR number');
@@ -135,7 +150,10 @@ export function readProductCi(prNumber, { repository, api = githubApi, expectedH
     const prefix = `repos/${repository}`;
     const repo = api(prefix);
     const pr = api(`${prefix}/pulls/${prNumber}`);
-    meta = validatePr(pr, repository, prNumber, repo.default_branch);
+    if (expectedMergeSha !== undefined && repo.full_name !== repository) throw new Error('Unexpected repository identity');
+    const identity = (value) => expectedMergeSha === undefined ? productPrIdentity(value) :
+      mergedPrIdentity(value, repository, prNumber, repo.default_branch, expectedHeadSha, expectedMergeSha);
+    meta = expectedMergeSha === undefined ? validatePr(pr, repository, prNumber, repo.default_branch) : identity(pr);
     if (expectedHeadSha && meta.headSha !== expectedHeadSha) throw new Error('PR head changed before CI read');
     const files = readApiPages(api, `${prefix}/pulls/${prNumber}/files`, null, { maxPages: 31 });
     if (files.length !== meta.changedFiles) throw new Error('Changed-file list incomplete; cannot determine applicable product CI');
@@ -147,11 +165,17 @@ export function readProductCi(prNumber, { repository, api = githubApi, expectedH
     for (const workflow of workflows) {
       observations[workflow.path] = revalidateWorkflow(api, prefix, observations[workflow.path], meta);
     }
-    const current = productPrIdentity(api(`${prefix}/pulls/${prNumber}`));
+    const current = identity(api(`${prefix}/pulls/${prNumber}`));
     if (JSON.stringify(current) !== JSON.stringify(meta)) {
       return { ok: true, ...meta, pending: true, failed: false, pendingNames: ['PR identity changed'], failedNames: [], checks: [], detail: 'PR head/base changed during CI read; recheck the new head' };
     }
-    return evaluateProductCi({ meta, workflows, observations });
+    const result = evaluateProductCi({ meta, workflows, observations });
+    if (expectedMergeSha !== undefined) result.workflowRuns = workflows.map((workflow) => {
+      const run = observations[workflow.path].run;
+      return { path: workflow.path, runId: run?.id ?? null, runAttempt: run?.run_attempt ?? null,
+        status: run?.status ?? null, conclusion: run?.conclusion ?? null };
+    });
+    return result;
   } catch (error) {
     return { ok: false, ...meta, pending: false, failed: true, failedNames: ['product CI verification'], pendingNames: [], checks: [], error: error.message, detail: error.message };
   }

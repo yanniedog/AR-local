@@ -21,6 +21,19 @@ on:
         description: Optional previous 40-character head SHA whose owned pending evaluations should be retired
         required: false
         type: string
+      merged_revalidation:
+        description: Explicitly revalidate an already merged PR (requires both pinned SHAs)
+        required: false
+        default: false
+        type: boolean
+      expected_head:
+        description: Exact 40-character PR head SHA for merged revalidation
+        required: false
+        type: string
+      expected_merge:
+        description: Exact 40-character merge SHA for merged revalidation
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -61,8 +74,10 @@ jobs:
     # Discovery only reads current state. Coalesce repeated lifecycle events for
     # one source run, or direct events for one PR, before allocating a runner.
     # Prior-head retirement remains an independent, non-cancellable job.
+    # An explicit merged recovery must not be replaced by an automatic closed-PR
+    # event, which cannot recreate that request. Its discovery is unique per attempt.
     concurrency:
-      group: required-pr-gate-discover-${{ github.event_name == 'workflow_run' && format('run-{0}', github.event.workflow_run.id) || format('pr-{0}', github.event.pull_request.number || github.event.issue.number || inputs.pr_number) }}
+      group: required-pr-gate-discover-${{ github.event_name == 'workflow_dispatch' && inputs.merged_revalidation && format('merged-{0}-{1}', github.run_id, github.run_attempt) || github.event_name == 'workflow_run' && format('run-{0}', github.event.workflow_run.id) || format('pr-{0}', github.event.pull_request.number || github.event.issue.number || inputs.pr_number) }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -89,11 +104,13 @@ jobs:
       fail-fast: false
       matrix:
         pr: ${{ fromJSON(needs.discover.outputs.prs) }}
-    # A replaced pending reporter is harmless: the next reporter for THIS PR
-    # evaluates current state. Do not share a concurrency group between PRs.
+    # Serialize merged writers per PR in their own namespace. During reviewed-ref
+    # bootstrap, old default-branch jobs still use the normal single-slot group.
+    # Closed-PR admission and separate external_id ownership keep writes disjoint.
     concurrency:
-      group: required-pr-gate-${{ matrix.pr }}
+      group: ${{ github.event_name == 'workflow_dispatch' && inputs.merged_revalidation && format('required-merged-pr-gate-{0}', matrix.pr) || format('required-pr-gate-{0}', matrix.pr) }}
       cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
