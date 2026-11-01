@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ from pi_cdr_quality_activate_evidence import (
     record, relative, sha, source_acceptance, validate_manifest,
 )
 from pi_cdr_quality_runtime_state import control_state, require_controls, require_predecessor, rollback_contract
+from pi_cdr_quality_read_io import require_dropbehind_reads
 
 TIMERS = ("ar-local-daily-watchdog.timer", "ar-local-runtime-health.timer")
 TZ = ZoneInfo("Australia/Hobart")
@@ -186,6 +188,7 @@ def verified_cache_options(args) -> dict:
     return {"verified_cache": path, "verified_cache_sha256": digest}
 
 
+@require_dropbehind_reads()
 def canary_worker(args) -> dict:
     from app_payload_build import build_payload
     from app_payload_revisions_state import validate_manifest as validate_payload
@@ -318,6 +321,7 @@ def canary(args) -> dict:
     return result
 
 
+@require_dropbehind_reads()
 def seal(args) -> dict:
     layout(args.source, args.production, args.data_root, args.operation)
     target = clean_commit(args.source)
@@ -380,8 +384,11 @@ def smoke(source: Path, *, operation: Path, phase: str, commit: str, files: dict
 
     def bound_check(output, check):
         def verify_source():
-            if clean_commit(source) != commit or source_files(source) != files:
-                raise ValueError("smoke source differs from sealed commit or complete source inventory")
+            # Rollback retains its existing reader; a new cache capability
+            # requirement must not obstruct restoration after a forward failure.
+            with nullcontext() if phase == "rollback" else require_dropbehind_reads():
+                if clean_commit(source) != commit or source_files(source) != files:
+                    raise ValueError("smoke source differs from sealed commit or complete source inventory")
         verify_source()
         check(output)
         # A successful command cannot hide source changes during its execution.
@@ -407,10 +414,11 @@ def smoke(source: Path, *, operation: Path, phase: str, commit: str, files: dict
 
 def verify_runtime(production: Path, target: str, files: dict, data: Path, protected: dict, *, operation: Path,
                    verifier_source: Path) -> None:
-    if clean_commit(production) != target or source_files(production) != files:
-        raise ValueError("deployed code does not match sealed candidate")
-    if protected_files(data) != protected:
-        raise ValueError("protected observation changed during activation")
+    with require_dropbehind_reads():
+        if clean_commit(production) != target or source_files(production) != files:
+            raise ValueError("deployed code does not match sealed candidate")
+        if protected_files(data) != protected:
+            raise ValueError("protected observation changed during activation")
     if active("ar-local-daily.timer") != "active" or active("ar-local-dashboard.service") != "active":
         raise RuntimeError("required production units are not active")
     smoke(verifier_source, operation=operation, phase="post-switch", commit=target, files=files)
@@ -443,8 +451,9 @@ def activate(args) -> dict:
     require_predecessor(production, predecessor)
     require_controls(data, controls, predecessor)
     if args.dry_run:
-        if protected_files(data) != manifest["protected_files"]:
-            raise ValueError("protected observation changed since sealing")
+        with require_dropbehind_reads():
+            if protected_files(data) != manifest["protected_files"]:
+                raise ValueError("protected observation changed since sealing")
         return {"result": "READY", "target_commit": manifest["target_commit"], "mutated": False}
     transaction = operation / ("activation-" + uuid.uuid4().hex)
     transaction.mkdir()
@@ -466,9 +475,10 @@ def activate(args) -> dict:
             current_state(data)
             validate_manifest(args.manifest, args.manifest_sha256)
             require_receipt(read(checked(canary["resources"])))
-            if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
-                    or protected_files(data) != manifest["protected_files"]):
-                raise ValueError("production or protected data changed before activation lock")
+            with require_dropbehind_reads():
+                if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
+                        or protected_files(data) != manifest["protected_files"]):
+                    raise ValueError("production or protected data changed before activation lock")
             require_predecessor(production, predecessor)
             require_controls(data, controls, predecessor)
             smoke(source, operation=transaction, phase="pre-switch", commit=manifest["target_commit"], files=manifest["source_files"])

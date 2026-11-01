@@ -345,3 +345,36 @@ gated current-day repair when needed, verifies the new immutable release and
 selected public/app revision, and checks the independent Drive snapshot/restore
 receipt. Activation always labels Drive status UNVERIFIED; it cannot invent or
 replace that proof. Retain both commissioning and later natural scheduled results.
+
+### Required drop-behind snapshot reads
+
+The supervised canary worker and sealing require Linux `preadv2` with
+`RWF_DONTCACHE` (UAPI flag `0x80`) for identity-bound digest reads. Forward
+activation's protected snapshots, deployed inventory verification, and the
+pre/post-switch smoke inventory checks require the same reader. Reads use a
+reusable buffer of at most 1 MiB, explicit offsets, and a final growth probe,
+including for empty files. All original file/ancestor identity, no-follow,
+hardlink, mutation and final inventory checks remain in force.
+
+Missing APIs, unsupported filesystems and I/O errors fail the operation; there
+is no ordinary-read retry or configuration escape inside these scopes. Python
+3.11 need not export the flag constant, but the Linux kernel and actual backing
+filesystem must implement it. Standalone helpers and fresh child Python
+processes retain the portable reader and make no cache-qualification claim.
+Rollback keeps its existing reader so a new forward-read capability failure
+cannot prevent restoration. No resource threshold or rollback check is relaxed.
+
+This advice is best effort, not a hard cache bound, and does not cover every
+subprocess or independent payload/audit read. On 1 November 2026 a bounded
+scratch-only probe on the Pi's ext4/NVMe filesystem (Linux 6.18.50, aarch64,
+16 KiB pages) compared two 8 MiB fixtures. Matched initial residency masks
+showed ordinary versus flagged reads ending at 512 versus 0 resident pages
+from cold, 512 versus 512 from warm, and 512 versus 128 from a 128-page mixed
+state. All paired SHA-256 values agreed; append, truncation, overwrite,
+replacement, hardlink and symlink controls rejected changes. Host swap-out
+remained unchanged. A separate tmpfs probe returned `EOPNOTSUPP` as expected.
+These observations establish post-read residency on that filesystem, not peak
+cache use, continuous residency, production-scale behavior or canary success.
+Portable regression tests emulate the syscall seam without claiming kernel
+cache evidence. Normal exact-candidate CI, full guarded Pi canary, acceptance
+and rollback gates remain mandatory before activation.

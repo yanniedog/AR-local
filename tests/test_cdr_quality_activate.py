@@ -14,6 +14,7 @@ import pytest
 import pi_cdr_quality_activate as activate
 import pi_cdr_quality_activate_evidence as evidence
 import pi_cdr_quality_runtime_state as runtime_state
+from pi_cdr_quality_read_io import dropbehind_required
 from pi_cdr_quality_resources import GIB, Limits, SCHEMA as RESOURCE_SCHEMA
 from cdr_quality_accounting import canonical_digest
 
@@ -249,7 +250,10 @@ def runtime(sealed, monkeypatch):
     monkeypatch.setattr(activate, "guard", lambda *_: None)
     monkeypatch.setattr(activate, "main_commit", lambda _: TARGET)
     monkeypatch.setattr(activate, "clean_commit", lambda root: state["head"] if root == production else TARGET)
-    monkeypatch.setattr(activate, "protected_files", lambda _: manifest["protected_files"])
+    def protected(_):
+        assert dropbehind_required(), "forward activation sweep must require drop-behind"
+        return manifest["protected_files"]
+    monkeypatch.setattr(activate, "protected_files", protected)
     monkeypatch.setattr(activate, "current_state", lambda _: ("2026-09-12", "recorded-generation", production))
     monkeypatch.setattr(activate, "smoke", lambda _, **_kwargs: None)
     monkeypatch.setattr(activate, "active", lambda unit: state["timers"].get(unit, "inactive"))

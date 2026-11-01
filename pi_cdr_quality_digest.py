@@ -8,6 +8,8 @@ import stat
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from pi_cdr_quality_read_io import dropbehind_required, hash_dropbehind
+
 BLOCK_BYTES = 4 * 1024 * 1024
 
 
@@ -45,6 +47,8 @@ def _file_state(path: Path, root: Path) -> tuple:
 
 
 def _hash_stream(stream, size: int, capture: bool) -> tuple[str, bytes | None]:
+    if dropbehind_required():
+        return hash_dropbehind(stream.fileno(), size, capture)
     digest, blocks, remaining = hashlib.sha256(), [], size
     while remaining:
         block = stream.read(min(BLOCK_BYTES, remaining))
