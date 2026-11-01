@@ -17,6 +17,8 @@ import urllib.parse
 import urllib.request
 
 MAX_BYTES = 2 * 1024 * 1024
+# Bump when body wording/layout changes, even if canonical titles do not.
+BODY_PRESENTATION_VERSION = 1
 
 
 def utc() -> str:
@@ -227,7 +229,8 @@ class AlertStore:
                 if presentation_changed:
                     # Correct wording once on the same issue without inventing
                     # a failure/recovery transition or discarding its history.
-                    row.update(title=title, revision=row["revision"] + 1)
+                    row.update(title=title, revision=row["revision"] + 1,
+                               body_presentation_version=BODY_PRESENTATION_VERSION)
                 if not healthy and record_failure:
                     # A repeated failure advances the chronology fence without
                     # creating a new delivery revision or duplicate issue.
@@ -238,7 +241,8 @@ class AlertStore:
                     self.write(state)
                 # Healthy re-observe: keep existing last_observation_at fence; no rewrite.
                 return
-            row.update(title=title, active=not healthy, changed_at=utc(), revision=row["revision"] + 1)
+            row.update(title=title, active=not healthy, changed_at=utc(), revision=row["revision"] + 1,
+                       body_presentation_version=BODY_PRESENTATION_VERSION)
             if healthy:
                 row["recovered_at"] = utc()
             else:
@@ -247,6 +251,33 @@ class AlertStore:
                 row["last_observation_at"] = obs_iso
             # Commit before trying GitHub, including recovery before first delivery.
             self.write(state)
+
+    def refresh_presentations(self, titles: dict[str, str]) -> None:
+        """Queue wording updates for explicit existing incidents, never health observations."""
+        for key, title in titles.items():
+            if (not re.fullmatch(r"[a-z0-9:-]{1,100}", key) or len(title) > 160
+                    or any(c in title for c in "\r\n")):
+                raise ValueError("invalid incident presentation")
+        with lock(self.root / "state.lock"):
+            state = self.read()
+            changed = False
+            for key, title in titles.items():
+                row = state["incidents"].get(key)
+                if row is None or type(row.get("revision")) is not int or row["revision"] <= 0:
+                    continue  # Do not create incidents or publish healthy watermarks.
+                if (row.get("title") == title
+                        and row.get("body_presentation_version") == BODY_PRESENTATION_VERSION):
+                    continue
+                if (row["revision"] == row.get("delivered_revision")
+                        or row.get("presentation_only_revision") == row["revision"]):
+                    # Do not turn a wording refresh into a remote state change.
+                    # An already pending health transition keeps normal delivery.
+                    row["presentation_only_revision"] = row["revision"] + 1
+                row.update(title=title, body_presentation_version=BODY_PRESENTATION_VERSION,
+                           revision=row["revision"] + 1)
+                changed = True
+            if changed:
+                self.write(state)
 
     @staticmethod
     def body(row):
@@ -313,6 +344,9 @@ class AlertStore:
     def _publish(self, client, row):
         issue = client.find(row["marker"], row.get("issue_number"))
         value = {"title": row["title"], "body": self.body(row)}
+        presentation_only = row.get("presentation_only_revision") == row["revision"]
+        if presentation_only and issue is None:
+            raise DeliveryError("GITHUB_PRESENTATION_TARGET_MISSING")
         created = issue is None
         if issue is None:
             issue = client.request("POST", "issues", value)
@@ -321,6 +355,7 @@ class AlertStore:
             raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
         if not created or not row["active"]:
             client.request("PATCH", f"issues/{number}",
+                           value if presentation_only else
                            {**value, "state": "open" if row["active"] else "closed"})
         return number
 
