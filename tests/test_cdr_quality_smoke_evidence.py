@@ -8,6 +8,7 @@ import pytest
 
 import pi_cdr_quality_activate as activate
 import pi_cdr_quality_smoke as smoke
+from tests.cdr_dropbehind_helpers import dropbehind_syscall_contract
 from cdr_quality_accounting import canonical_digest
 
 
