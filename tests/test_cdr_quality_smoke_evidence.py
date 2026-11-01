@@ -1,37 +1,15 @@
 """Real child-output fixtures test diagnostic transport, not CDR acceptance."""
 import json
-import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from types import SimpleNamespace
 
 import pytest
 
 import pi_cdr_quality_activate as activate
 import pi_cdr_quality_smoke as smoke
-import pi_cdr_quality_read_io as read_io
+from tests.cdr_dropbehind_helpers import dropbehind_syscall_contract
 from cdr_quality_accounting import canonical_digest
-
-
-@pytest.fixture(autouse=True)
-def dropbehind_syscall_contract(monkeypatch):
-    """Test transport/identity on any CI filesystem, not kernel cache behavior."""
-    def preadv(fd, vectors, offset, flags):
-        assert flags == 0x80
-        if hasattr(os, "pread"):
-            block = os.pread(fd, len(vectors[0]), offset)
-        else:
-            previous = os.lseek(fd, 0, os.SEEK_CUR)
-            try:
-                os.lseek(fd, offset, os.SEEK_SET)
-                block = os.read(fd, len(vectors[0]))
-            finally:
-                os.lseek(fd, previous, os.SEEK_SET)
-        vectors[0][:len(block)] = block
-        return len(block)
-    monkeypatch.setattr(read_io, "sys", SimpleNamespace(platform="linux"))
-    monkeypatch.setattr(read_io, "os", SimpleNamespace(preadv=preadv))
 
 
 def sealed_source(tmp_path, program="print('verified')\n"):

@@ -348,13 +348,18 @@ replace that proof. Retain both commissioning and later natural scheduled result
 
 ### Required drop-behind snapshot reads
 
-The supervised canary worker and sealing require Linux `preadv2` with
+The supervised canary worker (including source-audit hashes) and sealing require Linux `preadv2` with
 `RWF_DONTCACHE` (UAPI flag `0x80`) for identity-bound digest reads. Forward
-activation's protected snapshots, deployed inventory verification, and the
+activation's two manifest-validation passes, protected snapshots, deployed inventory verification, and the
 pre/post-switch smoke inventory checks require the same reader. Reads use a
 reusable buffer of at most 1 MiB, explicit offsets, and a final growth probe,
 including for empty files. All original file/ancestor identity, no-follow,
 hardlink, mutation and final inventory checks remain in force.
+Source-audit contract hashing retains its cooperative entry, reserved-byte,
+actual-byte and deadline budget checks. Changing this audit reader changes the
+verified-cache semantic import closure: older sealed caches must be rejected,
+not relabelled or resealed as evidence from this candidate. Plan for a full audit
+or independently qualified evidence from the compatible code.
 
 Missing APIs, unsupported filesystems and I/O errors fail the operation; there
 is no ordinary-read retry or configuration escape inside these scopes. Python

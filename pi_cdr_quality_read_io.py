@@ -33,7 +33,7 @@ def dropbehind_required() -> bool:
     return _REQUIRED.get()
 
 
-def hash_dropbehind(descriptor: int, size: int, capture: bool) -> tuple[str, bytes | None]:
+def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | None]:
     """Read every byte through the caller's identity-bound descriptor.
 
     RWF_DONTCACHE is best-effort cache advice, not a memory limit. Missing API,
@@ -47,7 +47,11 @@ def hash_dropbehind(descriptor: int, size: int, capture: bool) -> tuple[str, byt
     view = memoryview(buffer)
     while offset < size:
         requested = min(len(view), size - offset)
+        if budget is not None:
+            budget(reserve_bytes=requested)
         count = os.preadv(descriptor, [view[:requested]], offset, RWF_DONTCACHE)
+        if budget is not None:
+            budget(size=count)
         if not 0 < count <= requested:
             raise ValueError("evidence size changed during read")
         digest.update(view[:count])
@@ -55,6 +59,8 @@ def hash_dropbehind(descriptor: int, size: int, capture: bool) -> tuple[str, byt
             blocks.append(bytes(view[:count]))
         offset += count
     # Even an empty file must exercise the required flag and check for growth.
+    if budget is not None:
+        budget()
     if os.preadv(descriptor, [view[:1]], offset, RWF_DONTCACHE):
         raise ValueError("evidence size changed during read")
     return digest.hexdigest(), b"".join(blocks) if capture else None

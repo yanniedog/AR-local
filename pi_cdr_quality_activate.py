@@ -433,7 +433,8 @@ def activation_admission(manifest: dict, *, current: datetime | None = None) -> 
 
 
 def activate(args) -> dict:
-    manifest = validate_manifest(args.manifest, args.manifest_sha256)
+    with require_dropbehind_reads():
+        manifest = validate_manifest(args.manifest, args.manifest_sha256)
     from pi_cdr_quality_resources import require_receipt
     canary = read(checked(manifest["evidence"]["canary"]))
     require_receipt(read(checked(canary["resources"])))
@@ -473,7 +474,8 @@ def activate(args) -> dict:
         with production_lock(data / "state/daily-ingest.lock", "quality-activation"):
             guard(data, production)
             current_state(data)
-            validate_manifest(args.manifest, args.manifest_sha256)
+            with require_dropbehind_reads():
+                validate_manifest(args.manifest, args.manifest_sha256)
             require_receipt(read(checked(canary["resources"])))
             with require_dropbehind_reads():
                 if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]

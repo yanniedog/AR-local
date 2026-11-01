@@ -67,6 +67,37 @@ def test_missing_platform_or_api_is_explicit(monkeypatch, platform, api):
         read_io.hash_dropbehind(42, 0, False)
 
 
+def test_budget_reserves_each_short_read_and_charges_only_actual_bytes(monkeypatch):
+    reader(monkeypatch, b"abcdefgh")
+    charges = []
+    read_io.hash_dropbehind(42, 8, False, budget=lambda **kw: charges.append(kw))
+    assert charges == [{"reserve_bytes": 7}, {"size": 3}, {"reserve_bytes": 5},
+                       {"size": 3}, {"reserve_bytes": 2}, {"size": 2}, {}]
+
+
+def test_budget_rejection_precedes_next_syscall(monkeypatch):
+    calls = reader(monkeypatch, b"abcdefgh")
+    consumed = 0
+    def budget(*, reserve_bytes=0, size=0):
+        nonlocal consumed
+        if consumed + reserve_bytes > 7:
+            raise ValueError("budget exhausted")
+        consumed += size
+    with pytest.raises(ValueError, match="budget exhausted"):
+        read_io.hash_dropbehind(42, 8, False, budget=budget)
+    assert len(calls) == 1 and consumed == 3
+
+
+def test_activation_initial_manifest_validation_requires_policy_and_cleans_up(monkeypatch):
+    def validate(*_):
+        assert read_io.dropbehind_required()
+        raise OSError("unsupported required read")
+    monkeypatch.setattr(activate, "validate_manifest", validate)
+    with pytest.raises(OSError, match="unsupported required read"):
+        activate.activate(SimpleNamespace(manifest=Path("manifest"), manifest_sha256="hash"))
+    assert not read_io.dropbehind_required()
+
+
 def test_required_routing_nested_context_and_exception_cleanup(monkeypatch):
     body = b"bounded control bytes"
     calls = reader(monkeypatch, body)

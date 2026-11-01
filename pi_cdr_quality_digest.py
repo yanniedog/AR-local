@@ -46,18 +46,25 @@ def _file_state(path: Path, root: Path) -> tuple:
     return _identity(info), ancestors
 
 
-def _hash_stream(stream, size: int, capture: bool) -> tuple[str, bytes | None]:
+def _hash_stream(stream, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | None]:
     if dropbehind_required():
-        return hash_dropbehind(stream.fileno(), size, capture)
+        return hash_dropbehind(stream.fileno(), size, capture, budget=budget)
     digest, blocks, remaining = hashlib.sha256(), [], size
     while remaining:
-        block = stream.read(min(BLOCK_BYTES, remaining))
+        amount = min(BLOCK_BYTES, remaining)
+        if budget is not None:
+            budget(reserve_bytes=amount)
+        block = stream.read(amount)
+        if budget is not None:
+            budget(size=len(block))
         if not block:
             raise ValueError("evidence size changed during read")
         remaining -= len(block)
         digest.update(block)
         if capture:
             blocks.append(block)
+    if budget is not None:
+        budget()
     if stream.read(1):
         raise ValueError("evidence size changed during read")
     return digest.hexdigest(), b"".join(blocks) if capture else None
@@ -76,7 +83,7 @@ class FileDigest:
 
 
 def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
-                max_bytes: int | None = None) -> tuple[FileDigest, bytes | None]:
+                max_bytes: int | None = None, budget=None) -> tuple[FileDigest, bytes | None]:
     """Bind the digest to one no-follow descriptor and unchanged path identity.
 
     O_NONBLOCK prevents a raced FIFO replacement from blocking before fstat.
@@ -84,6 +91,8 @@ def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
     and reject linked/reparse paths on both pathname observations.
     """
     root = root or path.parent
+    if budget is not None:
+        budget(entries=1)
     identity, ancestors = _file_state(path, root)
     size = identity[4]
     if max_bytes is not None and size > max_bytes:
@@ -95,7 +104,8 @@ def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
         if _identity(os.fstat(descriptor)) != identity:
             raise ValueError("evidence descriptor differs from its pathname")
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
-            digest, body = _hash_stream(stream, size, capture)
+            options = {"budget": budget} if budget is not None else {}
+            digest, body = _hash_stream(stream, size, capture, **options)
         if _identity(os.fstat(descriptor)) != identity:
             raise ValueError("evidence changed during descriptor read")
         result = FileDigest(digest, size, identity, ancestors)

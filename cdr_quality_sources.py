@@ -10,16 +10,25 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from cdr_export_contract import hash_file, load_contract
+from cdr_export_contract import hash_file as portable_hash_file, load_contract
 from cdr_ledger_v2 import verify_event
 from cdr_quality_accounting import audit_rows, canonical_digest, rate_rows_digest, product_rows_digest
 from cdr_quality_sqlite import database_files, database_view
+from pi_cdr_quality_digest import read_digest
+from pi_cdr_quality_read_io import dropbehind_required
 
 # v2 adds shared product-detail equality and stronger file replacement identity.
 # Cached v1 success did not prove that SQLite details matched publication JSON.
 # v3 accepts valid negative RateString values; v4 accounts for evidenced TD reclassification.
 # v5 binds source routing fields before deriving export/public coverage.
 AUDIT_VERSION = 5
+
+
+def hash_file(path: Path, *, budget=None) -> str:
+    """Use identity-bound required reads in supervised audit scopes only."""
+    if dropbehind_required():
+        return read_digest(path, budget=budget)[0].sha256
+    return portable_hash_file(path, budget=budget)
 
 
 def read_object(path: Path) -> dict:
