@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 BLOCK_BYTES = 4 * 1024 * 1024
@@ -107,10 +107,23 @@ class DigestSnapshot:
         self.root = root
         self.files: dict[Path, FileDigest] = {}
         self.directories: dict[Path, tuple] = {}
+        self._ancestor_chains: dict[tuple, tuple] = {}
+
+    def _retain(self, entry: FileDigest) -> FileDigest:
+        # Share only exactly equal immutable path/identity chains in this snapshot.
+        # Every original descriptor read and ancestor recheck still runs.
+        ancestors = self._ancestor_chains.setdefault(entry.ancestors, entry.ancestors)
+        return entry if ancestors is entry.ancestors else replace(entry, ancestors=ancestors)
+
+    def retain(self, path: Path, entry: FileDigest) -> FileDigest:
+        """Record an already-read entry through this snapshot's sharing boundary."""
+        retained = self._retain(entry)
+        self.files[path] = retained
+        return retained
 
     def digest(self, path: Path, descriptor: dict | None = None) -> str:
         if path not in self.files:
-            self.files[path] = read_digest(path, root=self.root)[0]
+            self.retain(path, read_digest(path, root=self.root)[0])
         entry = self.files[path]
         entry.recheck(path, self.root)
         if descriptor is not None and (entry.sha256 != descriptor["sha256"] or entry.size != descriptor["bytes"]):
@@ -125,7 +138,7 @@ class DigestSnapshot:
         value = json.loads(body)
         if not isinstance(value, dict):
             raise ValueError("evidence must be a JSON object")
-        self.files[path] = entry
+        self.retain(path, entry)
         return value
 
     def directory(self, path: Path) -> None:
