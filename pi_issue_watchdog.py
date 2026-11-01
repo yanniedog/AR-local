@@ -171,6 +171,16 @@ def watchdog_recovery(store, row, due, now):
                   "INGEST_WATCHDOG_FAILED", healthy=True, recovery_started_at=started)
 
 
+def refresh_current_ingest_presentations(store, now):
+    """Refresh only today's existing dated incidents, independently of recovery."""
+    day = now.astimezone(DAILY_INGEST_TZ).date().isoformat()
+    store.refresh_presentations({
+        "ingest:" + day: "Pi ingest needs attention: " + day,
+        "ingest-watchdog:" + day: WATCHDOG_TITLE + day,
+        "ingest-schedule:" + day: "Pi scheduled ingest missed: " + day,
+    })
+
+
 def read_json(root, relative, *, maximum=1024 * 1024):
     if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
         raise ValueError("invalid evidence path")
@@ -396,6 +406,7 @@ def main(argv=None):
         target = ReadOnlyStore()
     else:
         target = store
+        refresh_current_ingest_presentations(store, now)
     try:
         ingest = ingest_checks(target, Path(os.environ.get("AR_LOCAL_DATA_ROOT", "/srv/ar-local/data")) / "state", now)
     except (OSError, ValueError, RuntimeError, ImportError, subprocess.SubprocessError):
