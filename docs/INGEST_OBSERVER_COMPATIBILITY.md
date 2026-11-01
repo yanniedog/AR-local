@@ -18,6 +18,8 @@ No notification, repair, deployment or claim operation runs in these tests.
 The frozen detector imports current repository dependencies; this proves the
 adapter contract, not complete equivalence to the installed environment. Tests
 restore the import path so the retained remote code cannot affect later imports.
+The expected patched hash is pinned independently in the test; changing both
+the patch output and the manifest cannot silently establish a new accepted identity.
 
 The compressed source fixtures contain code only. Their SHA256 values and the
 installed paths are recorded in `tests/fixtures/observer-compat-20261102/manifest.json`.

@@ -18,6 +18,7 @@ from scripts import ingest_notification_snapshot as current
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tests/fixtures/observer-compat-20261102'
 MANIFEST = json.loads((FIXTURE / 'manifest.json').read_text())
+PATCHED_SHA256 = '5cc8123072e241665ecb048f8bb06234e1986638eb07c2239683feb63a63e5ba'
 NOW = datetime(2026, 11, 1, 16, 0, 39, 235198, tzinfo=timezone.utc)
 
 
@@ -38,6 +39,11 @@ def observer_function(source):
     return namespace['remote_snapshot']
 
 
+def verify_patched_identity(raw, manifest):
+    assert manifest['patched_snapshot_sha256'] == PATCHED_SHA256
+    assert hashlib.sha256(raw).hexdigest() == PATCHED_SHA256
+
+
 @pytest.fixture
 def patched_source(tmp_path):
     # Apply the actual review artifact, not a separate implementation of its edit.
@@ -49,7 +55,7 @@ def patched_source(tmp_path):
     subprocess.run([*command, '--check', str(patch)], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run([*command, str(patch)], cwd=tmp_path, check=True, capture_output=True)
     raw = target.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == MANIFEST['patched_snapshot_sha256']
+    verify_patched_identity(raw, MANIFEST)
     return raw
 
 
@@ -58,7 +64,7 @@ def detector(monkeypatch):
     # The retained remote function prepends the live Pi checkout. Restore this
     # process-global path after each test so later tests cannot import old code.
     monkeypatch.setattr(sys, 'path', list(sys.path))
-    # This is the deployed detector, not a changing implementation on main.
+    # Frozen detector from the recorded commit; no fresh live-hash claim.
     module = types.ModuleType('installed_detector_fixture')
     module.__file__ = str(ROOT / 'pi_issue_watchdog.py')
     exec(compile(retained('detector'), '<installed-detector-8590e238>', 'exec'), module.__dict__)
@@ -87,6 +93,20 @@ def test_retained_identity_matches_observed_old_caller_and_deployed_detector():
     assert hashlib.sha256(retained('snapshot')).hexdigest() == '350423b4af0eaa8998ab33c2e8e015fc0c12f865456cf62ec89f6f3bf3d179d6'
     assert hashlib.sha256(retained('detector')).hexdigest() == '5fad15564e6f0c6b2926b261419fa21ac961cfee62fa45860db51bc5e609d621'
     assert MANIFEST['detector_commit'] == '8590e238d00f093e7f6d20fccfc2377c7abf1aec'
+
+
+@pytest.mark.parametrize('change', ['manifest_only', 'bytes_only', 'bytes_and_manifest'])
+def test_patched_identity_rejects_manifest_or_matching_rebound_bytes(patched_source, change):
+    raw = patched_source
+    manifest = dict(MANIFEST)
+    if change in {'bytes_only', 'bytes_and_manifest'}:
+        raw += b'\n# unreviewed mutation\n'
+    if change == 'manifest_only':
+        manifest['patched_snapshot_sha256'] = '0' * 64
+    elif change == 'bytes_and_manifest':
+        manifest['patched_snapshot_sha256'] = hashlib.sha256(raw).hexdigest()
+    with pytest.raises(AssertionError):
+        verify_patched_identity(raw, manifest)
 
 
 def test_old_caller_reproduces_swallowed_keyword_error(detector, monkeypatch):
