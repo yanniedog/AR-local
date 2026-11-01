@@ -24,7 +24,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from cdr_atomic import atomic_write_json
-from cdr_quality_sources import AUDIT_VERSION, stat_fingerprint, verify_source
+from cdr_quality_sources import AUDIT_VERSION, require_materialized_contract, stat_fingerprint, verify_source
 from cdr_quality_sqlite import database_view
 from pi_cdr_quality_activate_evidence import junit_result, read, relative, sha
 
@@ -250,6 +250,7 @@ class VerifiedAuditCache:
                 raise ValueError("verified cache sealed file hash mismatch: " + name)
 
     def get(self, data_root: Path, source: dict, run_date: str) -> dict | None:
+        require_materialized_contract(source)
         # Current-day observations always execute the complete current algorithm.
         entry = self.manifest["entries"].get(source["key"])
         if source["run_date"] >= run_date or entry is None:
