@@ -138,7 +138,7 @@ function fixture(overrides = {}) {
       const value = overrides.api(endpoint, calls);
       if (value !== undefined) return value;
     }
-    if (endpoint === `repos/${repository}`) return { default_branch: 'main' };
+    if (endpoint === `repos/${repository}`) return { full_name: repository, default_branch: 'main' };
     if (endpoint === `repos/${repository}/pulls/42`) {
       prReads += 1;
       return structuredClone(prReads > 1 && overrides.finalPr ? overrides.finalPr : overrides.pr || pr);
@@ -169,6 +169,26 @@ assert.equal(read({ finalPr: { ...pr, head: { ...pr.head, sha: base } } }).pendi
 assert.equal(read({ finalPr: { ...pr, base: { ...pr.base, sha: head } } }).pending, true, 'base changes during read block');
 assert.equal(read({ api: () => { throw new Error('API unavailable'); } }).ok, false);
 assert.equal(readProductCi(42, { repository, ...fixture(), expectedHeadSha: base }).ok, false);
+
+// The same workflow/job/pagination/rerun rules apply under explicit merged policy.
+const mergeSha = 'c'.repeat(40);
+const mergedPr = { ...pr, state: 'closed', merged: true, merged_at: '2026-11-02T01:00:00Z', merge_commit_sha: mergeSha };
+const readMerged = (overrides = {}) => readProductCi(42, { repository,
+  ...fixture({ pr: mergedPr, ...overrides }), expectedHeadSha: head, expectedMergeSha: mergeSha });
+assert.equal(readMerged().failed, false);
+assert.equal(readMerged().workflowRuns[0].runAttempt, 1);
+for (const changes of [{ merged: false }, { merged_at: null }, { state: 'open' },
+  { merge_commit_sha: head }, { head: { ...pr.head, sha: base } }]) {
+  assert.equal(readMerged({ pr: { ...mergedPr, ...changes } }).ok, false);
+}
+assert.equal(readMerged({ pr: { ...mergedPr, changed_files: 2 } }).ok, false);
+assert.equal(readMerged({ refreshedRun: { ...run, run_attempt: 2, status: 'queued', conclusion: null } }).pending, true);
+assert.equal(readMerged({ runs: [{ ...run, run_attempt: 2, conclusion: 'failure' }],
+  refreshedRun: { ...run, run_attempt: 2, conclusion: 'failure' } }).failed, true);
+assert.equal(readMerged({ runs: [{ ...run, workflow_id: 999 }] }).pending, true);
+assert.equal(readMerged({ api: (endpoint) => endpoint.includes('/jobs?') ?
+  { jobs: jobs.map((job) => ({ ...job, head_sha: base })), total_count: jobs.length } : undefined }).failed, true);
+assert.equal(readMerged({ finalPr: { ...mergedPr, merge_commit_sha: head } }).ok, false);
 
 // Workflow A can rerun while workflow B's jobs are read. Revalidating A before
 // reading B misses the change even though the PR's head and base remain stable.

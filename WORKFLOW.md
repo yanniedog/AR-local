@@ -39,7 +39,7 @@ are verified. Bot authors and chore titles never waive product CI.
 The trusted reporter runs on PR lifecycle, review/comment and CI lifecycle
 events. Automatic evaluations execute only default-branch code with the
 GitHub Actions token; they never execute PR code or consume its artifacts.
-Reports are serialized per PR. Closing a PR stops further gate publication.
+Reports are serialized per PR. Closing a PR stops automatic gate publication.
 Main-branch tests and the merged-PR report can legitimately run after merge.
 
 If a thread was resolved without a new event, refresh the gate once:
@@ -58,6 +58,43 @@ a reporter change before it is merged. Only manual dispatch checks out that
 workflow's exact commit; automatic events always use the default branch.
 The reporter never manufactures a pass: the same current-head CI and thread
 requirements apply to bootstrap runs.
+
+If a merge races an in-progress gate and leaves the newest head check cancelled,
+an explicitly requested merged revalidation can recompute that gate. Use the
+trusted default-branch reporter, or an independently reviewed workflow ref whose
+exact head has passed applicable CI and feedback review under the bootstrap rule
+above. Pin both the original PR head and its merge commit; do not substitute a
+main-branch CI run or select an older successful gate:
+
+```sh
+gh workflow run pr-bot-feedback-check.yml --ref <reviewed-workflow-ref> \
+  -f pr_number=<number> -f merged_revalidation=true \
+  -f expected_head=<40-character-pr-head> -f expected_merge=<40-character-merge>
+```
+
+Before an authorized dispatch, verify that the workflow ref resolves to the
+reviewed reporter commit. Afterward, bind the Actions run's `head_sha`, attempt
+and new check ID to that commit and the requested head/merge. Manual checkout
+uses the event's immutable `github.sha`; this does not execute the target PR's
+code or artifacts. A moving ref can select different code before dispatch, so a
+mismatch requires stopping and a new review, not accepting its result.
+
+This mode requires a merged closed PR in the repository default-branch ancestry.
+It re-reads the merged identity, complete feedback and exact-head applicable CI
+with latest-attempt verification. It creates a new pending evaluation with a
+separate merged owner identity; ordinary closed/prior-head cleanup cannot retire
+it. Existing terminal checks remain unchanged. Missing/running CI stays pending;
+failed CI, incomplete evidence and identity races cannot produce success.
+Ordinary closed-PR events and manual refreshes still create no new check.
+
+The reporter's scope remains applicable CI and substantive feedback. It gains
+no permissions or credentials. D027's unchanged `producer_checks` separately
+requires fresh raw effective branch protection/rules, all required checks and
+statuses, complete resolved threads, and the newest check on the original head.
+Export fresh raw evidence for that existing validator; a new reporter success
+alone neither satisfies these remaining gates nor authorizes Pi deployment.
+Do not combine merged revalidation with `retired_head`, manually mark a check
+successful, remove cancelled history, or relax D027's latest-check selection.
 
 The tracked explicit closeout command is:
 

@@ -21,6 +21,19 @@ on:
         description: Optional previous 40-character head SHA whose owned pending evaluations should be retired
         required: false
         type: string
+      merged_revalidation:
+        description: Explicitly revalidate an already merged PR (requires both pinned SHAs)
+        required: false
+        default: false
+        type: boolean
+      expected_head:
+        description: Exact 40-character PR head SHA for merged revalidation
+        required: false
+        type: string
+      expected_merge:
+        description: Exact 40-character merge SHA for merged revalidation
+        required: false
+        type: string
 
 permissions:
   contents: read
