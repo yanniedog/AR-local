@@ -16,6 +16,7 @@ import pi_cdr_quality_activate_evidence as evidence
 import pi_cdr_quality_runtime_state as runtime_state
 from pi_cdr_quality_read_io import dropbehind_required
 from tests.cdr_dropbehind_helpers import dropbehind_syscall_contract
+from tests.sequential_pytest_fixture import add_suite_source, suite_fixture
 from pi_cdr_quality_resources import GIB, Limits, SCHEMA as RESOURCE_SCHEMA
 from cdr_quality_accounting import canonical_digest
 
@@ -81,11 +82,14 @@ def sealed(tmp_path):
         "def clear_payload_publication_pending(root): pass\n")
     files = {"worker.py": evidence.sha(source / "worker.py")}
     files["pi_daily_sync.py"] = evidence.sha(source / "pi_daily_sync.py")
+    add_suite_source(source)
+    from pi_cdr_pytest_proof import HELPERS
+    files.update({name: evidence.sha(source / name) for name in (*HELPERS, "tests/test_control.py")})
     controls = runtime_state.control_state(data)
     predecessor = runtime_state.rollback_contract(source, production)
     ci = ci_proof(operation)
     junit = operation / "pytest.xml"
-    junit.write_text('<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0"><testcase name="metadata"/></testsuite></testsuites>')
+    suite_fixture(operation, source, TARGET, files)
     audit = save(operation / "audit.json", {"status": "BLOCKED", "run_date": "2026-09-11", "issues": [],
         "capture": {"status": "PASS", "generation_id": "recorded-generation"}, "ledger": {"ok": True, "findings": []},
         "sources": [{"generation_id": "recorded-generation", "key": "runs/2026-09-11/_exports", "sqlite_to_export": {"status": "PASS"}}]})
@@ -100,12 +104,13 @@ def sealed(tmp_path):
     protected = {"state/pointer.json": "e" * 64}
     host = {"available_bytes": 6 * GIB, "swap_in_pages": 0, "swap_out_pages": 0, "page_size_bytes": 16384, "psi_avg10": None}
     resources = save(operation / "resources.json", {"schema": RESOURCE_SCHEMA, "result": "PASS", "mode": "sampled_cgroup_rss",
+        "cgroup": "/sys/fs/cgroup/system.slice/ar-local-quality-canary-0123456789ab.service",
         "limits": asdict(Limits()), "group_clean": True, "workload_exit_code": 0, "samples": 2,
         "peak_rss_bytes": 100000, "minimum_available_bytes": 6 * GIB, "maximum_sample_gap_seconds": 0.1,
         "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0,
         "baseline": host, "last_host_sample": host})
     canary = save(operation / "canary.json", {"schema": evidence.CANARY_SCHEMA, "result": "PASS", "target_commit": TARGET,
-        "source_files": files, "protected_files": protected, "tests": evidence.junit_result(junit),
+        "source_files": files, "protected_files": protected, "tests": evidence.canary_test_result(operation, source, TARGET, files),
         "publication_controls": controls, "rollback_contract": predecessor,
         "resources": resources, "source_audit": audit, "candidate_manifest": candidate, "run_date": "2026-09-11", "generation_id": "recorded-generation", "dispositions": {}})
     bundle = save(operation / "candidate.bundle", {"artifact": "candidate bundle metadata fixture"})

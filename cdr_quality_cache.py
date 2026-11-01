@@ -26,9 +26,9 @@ from pathlib import Path
 from cdr_atomic import atomic_write_json
 from cdr_quality_sources import AUDIT_VERSION, require_materialized_contract, stat_fingerprint, verify_source
 from cdr_quality_sqlite import database_view
-from pi_cdr_quality_activate_evidence import junit_result, read, relative, sha
+from pi_cdr_quality_activate_evidence import canary_test_result, read, relative, sha
 
-SCHEMA = "ar-local-verified-audit-cache-v1"
+SCHEMA = "ar-local-verified-audit-cache-v2"
 RESULT_LIMIT = 128 * 1024 * 1024
 REQUIRED_RESULT = {"key", "run_date", "fingerprint", "verified_at", "binding", "database",
                    "generation_id", "contract_digest", "observation_state", "accounting", "products",
@@ -148,7 +148,8 @@ def origin_evidence(source: Path, operation: Path, expected_commit: str) -> dict
             raise ValueError("original canary command does not bind the supplied paths")
     if Path(options["--python"]).resolve() != Path(sys.executable).resolve():
         raise ValueError("original canary test interpreter differs from the sealing runtime")
-    tests = junit_result(operation / "pytest.xml")
+    from pi_cdr_quality_activate import source_files
+    tests = canary_test_result(operation, source, expected_commit, source_files(source), resources=resources)
     files = semantics(source)
     blobs = {}
     for name in [*files, "pi_cdr_quality_activate.py"]:
@@ -159,6 +160,7 @@ def origin_evidence(source: Path, operation: Path, expected_commit: str) -> dict
     return {"commit": expected_commit, "source": str(source), "operation": str(operation),
             "worker_options": options,
             "resource_result": resources["result"], "resource_reason": resources.get("reason"),
+            "suite": file_record(operation / "pytest-suite.json"),
             "tests": {key: tests[key] for key in ("result", "tests", "failures", "errors", "skipped")},
             "semantics": files, "git_blobs": blobs, "runtime": runtime_identity(),
             "runtime_provenance": "measured_at_seal; operator_attests_unchanged_since_original_run"}
@@ -174,9 +176,13 @@ def seal_cache(source: Path, operation: Path, output: Path, expected_commit: str
            for i, a in enumerate((source, operation, output)) for b in (source, operation, output)[i + 1:]):
         raise ValueError("cache output and origin directories must be separate")
     origin = origin_evidence(source, operation, expected_commit)
-    evidence = {name: file_record(operation / name) for name in ("resources.json", "pytest.xml", "canary-service.txt")}
+    from pi_cdr_pytest_proof import evidence_names, validate_suite
+    suite = validate_suite(operation, expected_commit, source=source)
+    names = ["resources.json", "canary-service.txt", *evidence_names(suite)]
+    evidence = {name: file_record(relative(operation, name)) for name in names}
     output.mkdir(parents=True, exist_ok=False)
     for name in evidence:
+        (output / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(operation / name, output / name)
         if file_record(output / name) != evidence[name] or file_record(operation / name) != evidence[name]:
             raise ValueError("origin evidence changed while sealing")
@@ -233,7 +239,10 @@ class VerifiedAuditCache:
         resources = read(manifest_path.parent / "resources.json")
         if resources.get("group_clean") is not True or resources.get("result") != origin["resource_result"]:
             raise ValueError("verified cache origin is not a closed run")
-        tests = junit_result(manifest_path.parent / "pytest.xml")
+        tests = canary_test_result(manifest_path.parent, Path(origin["source"]), origin["commit"],
+                                   original_operation=Path(origin["operation"]), resources=resources)
+        if file_record(manifest_path.parent / "pytest-suite.json") != origin["suite"]:
+            raise ValueError("verified cache original suite proof mismatch")
         if any(tests[k] != value for k, value in origin["tests"].items()):
             raise ValueError("verified cache original tests mismatch")
         self.db = sqlite3.connect((manifest_path.parent / "index.sqlite").as_uri() + "?mode=ro&immutable=1", uri=True)
@@ -243,11 +252,18 @@ class VerifiedAuditCache:
         if sha(self.path) != self.expected_sha256:
             raise ValueError("verified cache manifest changed during audit")
         records = {"index.sqlite": self.manifest["index"], **self.manifest["evidence"]}
-        if set(records) != {"index.sqlite", "resources.json", "pytest.xml", "canary-service.txt"}:
-            raise ValueError("verified cache evidence inventory mismatch")
+        # Establish the sealed byte boundary before parsing any suite-provided
+        # paths or JSON. Corrupted evidence must fail as a sealed-file mismatch.
         for name, expected in records.items():
             if file_record(relative(self.path.parent, name)) != expected:
                 raise ValueError("verified cache sealed file hash mismatch: " + name)
+        from pi_cdr_pytest_proof import evidence_names, validate_suite
+        origin = self.manifest["origin"]
+        suite = validate_suite(self.path.parent, origin["commit"], source=Path(origin["source"]),
+                               original_operation=Path(origin["operation"]),
+                               resource_group=read(self.path.parent / "resources.json")["cgroup"])
+        if set(records) != {"index.sqlite", "resources.json", "canary-service.txt", *evidence_names(suite)}:
+            raise ValueError("verified cache evidence inventory mismatch")
 
     def get(self, data_root: Path, source: dict, run_date: str) -> dict | None:
         require_materialized_contract(source)

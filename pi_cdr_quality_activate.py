@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 from ar_local_operation_lock import production_lock
 from ar_local_backup_policy import atomic_create_json
 from pi_cdr_quality_activate_evidence import (
-    CANARY_SCHEMA, SCHEMA, app_binding, checked, ci_binding, junit_result, read,
+    CANARY_SCHEMA, SCHEMA, app_binding, canary_test_result, checked, ci_binding, read,
     record, relative, sha, source_acceptance, validate_manifest,
 )
 from pi_cdr_quality_runtime_state import control_state, require_controls, require_predecessor, rollback_contract
@@ -209,12 +209,10 @@ def canary_worker(args) -> dict:
     predecessor = rollback_contract(source, args.production)
     require_controls(data, controls, predecessor)
     run_date, generation, exports = current_state(data)
-    tests = operation / "pytest.xml"
     canary_phase(operation, "02-pytest")
-    run([args.python, "-u", "-B", "-m", "pytest", "tests", "-v", "-p", "no:cacheprovider",
-         "--basetemp", operation / "pytest-temp", f"--junitxml={tests}"], cwd=source,
-        timeout=3600, output=operation / "pytest.txt")
-    test_result = junit_result(tests)
+    from pi_cdr_pytest_runner import run_suite
+    run_suite(source, operation, args.python, target, files)
+    test_result = canary_test_result(operation, source, target, files)
     canary_phase(operation, "03-source-audit")
     report = audit(data, run_date, scrub=True, public=False, audit_root=operation / "source-audit", **cache_options)
     if report["capture"]["status"] != "PASS":
@@ -333,6 +331,9 @@ def seal(args) -> dict:
     require_receipt(read(checked(canary_result["resources"])))
     ci_binding(read(args.ci_binding), target)
     app_binding(read(args.app_acceptance), target, canary_result)
+    if canary_test_result(args.operation, args.source, target, canary_result["source_files"],
+                          resources=read(checked(canary_result["resources"]))) != canary_result["tests"]:
+        raise ValueError("canary lacks exact complete sequential suite proof")
     if canary_result.get("result") != "PASS" or canary_result.get("target_commit") != target:
         raise ValueError("candidate canary missing or failed")
     guard(args.data_root, args.production)

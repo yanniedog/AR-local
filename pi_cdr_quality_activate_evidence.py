@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -62,6 +63,21 @@ def junit_result(path: Path) -> dict:
             or cases <= counts["skipped"] or any(s.findall(".//failure") or s.findall(".//error") for s in suites)):
         raise ValueError("pytest result is failed, empty or incomplete")
     return {"result": "PASS", **counts, **record(path)}
+
+
+def canary_test_result(operation: Path, source: Path, target: str, files=None, *,
+                       original_operation=None, resources=None) -> dict:
+    """A standalone/partial JUnit document is not sequential full-suite proof."""
+    from pi_cdr_pytest_proof import validate_suite
+    if resources is not None and not resources.get("cgroup"):
+        raise ValueError("original resource cgroup is required")
+    proof = validate_suite(operation, target, source=source, source_files=files,
+                           original_operation=original_operation,
+                           resource_group=resources["cgroup"] if resources is not None else None)
+    if (proof["python"]["path"] != str(Path(sys.executable).absolute())
+            or proof["python"]["sha256"] != sha(Path(sys.executable).resolve())):
+        raise ValueError("suite interpreter differs from the validation runtime")
+    return {**junit_result(operation / "pytest.xml"), "suite": record(operation / "pytest-suite.json")}
 
 
 def ci_binding(value: dict, target: str) -> None:
@@ -191,7 +207,12 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
             or not SHA.fullmatch(str(rollback.get("previous_file_sha256", "")))
             or not SHA.fullmatch(str(rollback.get("previous_helpers_sha256", "")))):
         raise ValueError("invalid rollback publication helper binding")
-    junit_result(checked(canary["tests"]))
+    tests = checked(canary["tests"])
+    if tests.parent != operation:
+        raise ValueError("canary tests belong to another operation")
+    if canary_test_result(operation, root, value["target_commit"], value["source_files"],
+                          resources=read(checked(canary["resources"]))) != canary["tests"]:
+        raise ValueError("canary tests do not bind the complete sequential suite")
     source_acceptance(read(checked(canary["source_audit"])), canary["generation_id"], canary["dispositions"])
     candidate = read(checked(canary["candidate_manifest"]))
     if candidate.get("run_date") != canary["run_date"]:

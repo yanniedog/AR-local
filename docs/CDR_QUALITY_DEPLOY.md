@@ -21,9 +21,9 @@ and, on failure, only after workload cleanup. The latter describes post-cleanup
 state and cannot prove the exact zone watermark at the instant of failure.
 
 Private `phase-*.json` files identify source snapshot, pytest, audit, payload and
-reconciliation boundaries. `pytest.txt` uses verbose, unbuffered native pytest
-output so the active test is visible before it completes; there is no extra
-pytest plugin or host process scan. Read only a bounded tail when investigating
+reconciliation boundaries. The proposed sequential-suite amendment below retains
+verbose, unbuffered pytest output per module under `pytest-suite/`; earlier
+monolithic runs retain `pytest.txt`. Read only a bounded tail when investigating
 a stopped test. Progress files and partial pytest output are diagnostic evidence,
 not complete canary receipts. Preserve all original failed receipts, and require
 a fresh complete canary under the unchanged guards before activation.
@@ -149,6 +149,58 @@ full current-data canary. Drive resource enforcement remains separate: Go-based
 Restic/rclone virtual-address requirements need their own measured budget before
 reusing an address-space limit; no backup commissioning is inferred here.
 
+### Proposed phase-02 sequential-suite amendment
+
+This is a reviewable execution-policy amendment, not evidence of a deployed
+policy or a successful Pi canary. The full monolithic exact-head GitHub test job
+remains required complementary coverage. No resource threshold, host-swap rule,
+source-audit requirement, publication gate or rollback guard changes.
+
+The candidate worker first collects the complete `tests` inventory using the
+same prepared Python, source, configuration and reporting plugin. It then runs
+every whole module in deterministic path order, each in a fresh pytest process.
+There is no concurrent batch, retry, partial-success resume or omitted module.
+Collection skips are retained and must repeat exactly in their module run;
+an all-skipped module may return pytest's code 5 only with this exact proof.
+An empty or entirely skipped whole suite cannot pass. Filtering/deselection,
+duplicate/unexpected nodes, failed/interrupted collection, missing phase reports,
+failed setup/call/teardown, inconsistent exits or report tampering fail closed.
+Expected skips and xfails retain their original pytest outcomes; strict XPASS
+failures remain failures. Aggregate JUnit is derived from, then revalidated
+against, exact node identities and raw terminal setup/call/teardown reports.
+
+One 3,600-second monotonic budget includes full collection and every child;
+starting another module does not renew it. All children inherit the **same**
+existing protected systemd cgroup and the uninterrupted outer resource
+supervisor, baseline and overall deadline (at most 5,400 seconds). Before and
+after each child, the coordinator compares cgroup member PID/start identities
+with the original worker/supervisor owners. Survivors or ambiguous accounting
+prevent another module starting. It does not kill unknown processes; the
+original supervisor remains responsible for owned failure cleanup.
+
+Each child has a unique operation-local temporary/report directory. Raw
+collection, terminal reports, logs, commands and owner observations are retained.
+The raw per-module receipts are JSON phase reports, not native per-module JUnit;
+the single aggregate JUnit is derived from those complete reports.
+`pytest-suite.json` version 1 binds the candidate's full source inventory,
+runner/hook/validator hashes, interpreter, configuration, plugin versions,
+source/cgroup context and every raw report/log. Canary sealing, activation and
+audit-cache provenance require this proof; a standalone JUnit success no longer
+establishes current suite acceptance. Cache format v2 retains the complete proof
+and raw evidence. Existing v1 caches remain preserved but are incompatible.
+
+Session semantics change intentionally: session fixtures, imported globals,
+plugin sessions and pytest temporary factories now have module-session lifetime.
+Module/class/function lifetimes remain within one uninterrupted module run.
+The repository audit at this amendment found one module-local session fixture
+(`tests/test_cdr_historical_fee_lower_bound.py::retained`, decoded hash-bound
+retained JSON), three function-scoped autouse fixtures in `tests/conftest.py`,
+and no repository collection/session hooks. Imported-module interaction and
+session-wide contamination coverage still comes from monolithic CI. External
+plugin context is recorded and must agree across all batches. Additional startup
+cost and actual Pi memory/swap behavior remain to be measured by a fresh complete
+guarded canary; smaller sessions are not a claimed no-swap fix.
+
 The first full canary on 2026-09-12 stopped under the original zero-swap-in rule
 after three host read-in pages (49,152 bytes), with no swap-out, approximately
 304 MiB peak workload RSS and more than 6 GiB host MemAvailable. Its original FAIL
@@ -200,7 +252,7 @@ identity before stopping a child. An empty or truncated transcript cannot prove
 that no child exists, and this receipt alone never proves terminal cleanup or a
 passing canary.
 
-Retain `canary-unit.json`, `canary.json`, `pytest.xml`, `pytest.txt`, `source-audit/`, `payload/` and
+Retain `canary-unit.json`, `canary.json`, `pytest.xml`, `pytest-suite.json`, `pytest-suite/`, `source-audit/`, `payload/` and
 the systemd transcript. `canary-worker` is an internal stage and rejects writable
 source/production/data mounts; invoke the parent `canary` stage.
 
