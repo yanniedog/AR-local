@@ -20,7 +20,8 @@ from pi_github_alerts import DeliveryError, GitHub
 
 REPOSITORY = "yanniedog/AR-local"
 OWNER = "yanniedog"
-LABEL = "ingest-missed"
+LABEL = "app-publication-unverified"
+LEGACY_LABEL = "ingest-missed"
 GRACE = timedelta(minutes=90)
 MAX_CHECK_BYTES = 65536
 PUBLICATION_TITLE = "Pi app publication needs attention: "
@@ -128,7 +129,7 @@ def find_incidents(client, expected):
                 creator = row.get("user")
                 labels = row.get("labels", [])
                 legacy = isinstance(labels, list) and any(
-                    isinstance(label, dict) and label.get("name") == LABEL for label in labels)
+                    isinstance(label, dict) and label.get("name") == LEGACY_LABEL for label in labels)
                 marker = "<!-- ar-local-cloud-publication:" + expected + " -->"
                 if (not isinstance(creator, dict) or creator.get("login") != "github-actions[bot]"
                         or not (legacy or marker in str(row.get("body", "")))):
@@ -191,6 +192,24 @@ def issue_identity(issue):
     return number, [row["login"] for row in assignees]
 
 
+def publication_labels(issue):
+    labels = issue.get("labels")
+    if (not isinstance(labels, list) or any(not isinstance(row, dict)
+            or not isinstance(row.get("name"), str) or not row["name"] for row in labels)):
+        raise DeliveryError("GITHUB_INVALID_INCIDENT_LABELS")
+    return {row["name"] for row in labels}
+
+
+def migrate_publication_labels(client, number, names):
+    """Change only our labels, preserving unrelated labels and issue history."""
+    if LABEL not in names:
+        ensure_label(client)
+        client.request("POST", f"issues/{number}/labels", {"labels": [LABEL]})
+    if LEGACY_LABEL in names:
+        client.request("DELETE", f"issues/{number}/labels/{LEGACY_LABEL}")
+    return LABEL not in names or LEGACY_LABEL in names
+
+
 def reconcile(client, report):
     issue, reported = find_incidents(client, report["expected_run_date"])
     report["reported_ingest_incidents"] = [
@@ -219,6 +238,7 @@ def reconcile(client, report):
             raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
         return {"status": "CREATED", "issue": created["number"], **evidence, "new_attention": True}
     number, assigned = issue_identity(issue)
+    labels = publication_labels(issue)
     changes = {}
     title = PUBLICATION_TITLE + report["expected_run_date"]
     if issue.get("title") != title:
@@ -234,8 +254,12 @@ def reconcile(client, report):
         changes["assignees"] = [*assigned, OWNER]
     if changes:
         client.request("PATCH", f"issues/{number}", changes)
-    return {"status": "UPDATED" if changes else "UNCHANGED", "issue": number, **evidence,
-            "new_attention": bool(assigned_now) or (state == "open" and bool(changes))}
+    # Establish the durable publication marker before removing the legacy
+    # identity label. Interrupted migrations remain recognizable on retry.
+    labels_changed = migrate_publication_labels(client, number, labels)
+    changed = bool(changes) or labels_changed
+    return {"status": "UPDATED" if changed else "UNCHANGED", "issue": number, **evidence,
+            "new_attention": bool(assigned_now) or (state == "open" and changed)}
 
 
 def write_report(path, report):

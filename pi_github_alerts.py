@@ -255,6 +255,7 @@ class AlertStore:
             "INGEST_SERVICE_FAILED": "An ingest service failure event was recorded. This does not identify which capture, export or publication stage failed, or establish whether capture finalized.",
             "INGEST_MISSING": "No verifiable finalized capture was found for the expected date. This does not establish whether capture never started or remained unfinalized; publication is checked separately.",
             "INGEST_INVALID": "Finalized-capture metadata could not be validated. Capture completeness is unverified; this does not prove capture never ran or identify a publication failure.",
+            "INGEST_MONITOR_FAILED": "The ingest monitor check failed. The capture outcome is unverified; this does not prove capture was missed or failed.",
             "INGEST_UNVERIFIED_METADATA_LIMIT": "Capture metadata exceeded the check's bounded verification budget. Capture completeness is unverified, not established as missing or failed.",
             "INGEST_RUNTIME_EXCEEDED": "An observed ingest/check service exceeded the runtime threshold. This does not establish a finalized capture or publication outcome.",
             "INGEST_WATCHDOG_FAILED": "A watchdog/check service failure was recorded. Its underlying capture and publication results are unverified by this event; it does not by itself prove the ingest failed or never ran.",
