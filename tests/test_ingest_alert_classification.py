@@ -118,3 +118,42 @@ def test_delivered_watchdog_wording_patches_same_issue_once(tmp_path):
     assert github.rows[1]['state'] == 'open'
     assert new['last_failure_at'] == old['last_failure_at']
     assert new['revision'] == new['delivered_revision'] == 2
+
+
+@pytest.mark.parametrize('category,scope', [
+    ('INGEST_PARTIAL', 'incomplete provider coverage'),
+    ('INGEST_SERVICE_FAILED', 'does not identify which capture, export or publication stage failed'),
+    ('INGEST_MISSING', 'does not establish whether capture never started'),
+    ('INGEST_INVALID', 'Capture completeness is unverified'),
+    ('INGEST_UNVERIFIED_METADATA_LIMIT', 'not established as missing or failed'),
+    ('INGEST_RUNTIME_EXCEEDED', 'does not establish a finalized capture or publication outcome'),
+    ('INGEST_WATCHDOG_FAILED', 'underlying capture and publication results are unverified'),
+])
+def test_each_failure_scope_states_only_what_the_evidence_proves(tmp_path, category, scope):
+    store = AlertStore(tmp_path)
+    store.observe('ingest:2026-11-01', 'Needs attention', category, healthy=False)
+    row = store.read()['incidents']['ingest:2026-11-01']
+    assert row['active'] and row['category'] == category
+    assert 'Evidence scope: ' in store.body(row) and scope in store.body(row)
+
+
+@pytest.mark.parametrize('same_title', [False, True])
+def test_watchdog_aliases_for_one_key_are_ambiguous_before_any_mutation(same_title):
+    old = pi_incident(1, kind='ingest-watchdog')
+    new = pi_incident(2, kind='ingest-watchdog')
+    if not same_title:
+        new['title'] = watch.WATCHDOG_TITLE + '2026-10-11'
+    api = API([old, new])
+    with pytest.raises(cloud.DeliveryError, match='AMBIGUOUS_PI_INCIDENT'):
+        cloud.reconcile(api, report(current=True))
+    assert all(method == 'GET' for method, _, _ in api.calls)
+    assert api.rows[1] == old and api.rows[2] == new
+
+
+def test_distinct_watchdog_dates_are_not_alias_conflicts():
+    old = pi_incident(1, kind='ingest-watchdog', day='2026-10-10')
+    new = pi_incident(2, kind='ingest-watchdog')
+    new['title'] = watch.WATCHDOG_TITLE + '2026-10-11'
+    value = report(current=True)
+    cloud.reconcile(API([old,new]), value)
+    assert [row['issue'] for row in value['reported_ingest_incidents']] == [2]

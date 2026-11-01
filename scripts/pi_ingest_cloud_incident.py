@@ -116,7 +116,7 @@ def find_incidents(client, expected):
                  "Pi scheduled ingest missed: " + expected: "ingest-schedule:",
                  "Pi ingest watchdog failed: " + expected: "ingest-watchdog:",
                  "Pi ingest/publication check needs attention: " + expected: "ingest-watchdog:"}
-    matches, reported = [], []
+    matches, reported, reported_keys = [], [], set()
     for page in range(1, 21):
         rows = client.request("GET", f"issues?state=all&per_page=100&page={page}")
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
@@ -141,6 +141,9 @@ def find_incidents(client, expected):
                 if (not isinstance(creator, dict) or creator.get("login") != OWNER
                         or "<!-- ar-local-pi-incident:" + digest + " -->" not in str(row.get("body", ""))):
                     raise DeliveryError("GITHUB_PI_INCIDENT_IDENTITY_CHANGED")
+                if key in reported_keys:
+                    raise DeliveryError("GITHUB_AMBIGUOUS_PI_INCIDENT")
+                reported_keys.add(key)
                 reported.append((key, row))
         if len(rows) < 100:
             if len(matches) > 1:

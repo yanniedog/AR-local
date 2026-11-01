@@ -252,7 +252,12 @@ class AlertStore:
     def body(row):
         scope = {
             "INGEST_PARTIAL": "Capture finalized with incomplete provider coverage; this is not a missed ingest.",
-            "INGEST_WATCHDOG_FAILED": "The ingest/publication check returned failure. Missing capture, stale publication or unavailable check evidence can each cause this; it does not by itself prove the ingest failed or never ran.",
+            "INGEST_SERVICE_FAILED": "An ingest service failure event was recorded. This does not identify which capture, export or publication stage failed, or establish whether capture finalized.",
+            "INGEST_MISSING": "No verifiable finalized capture was found for the expected date. This does not establish whether capture never started or remained unfinalized; publication is checked separately.",
+            "INGEST_INVALID": "Finalized-capture metadata could not be validated. Capture completeness is unverified; this does not prove capture never ran or identify a publication failure.",
+            "INGEST_UNVERIFIED_METADATA_LIMIT": "Capture metadata exceeded the check's bounded verification budget. Capture completeness is unverified, not established as missing or failed.",
+            "INGEST_RUNTIME_EXCEEDED": "An observed ingest/check service exceeded the runtime threshold. This does not establish a finalized capture or publication outcome.",
+            "INGEST_WATCHDOG_FAILED": "A watchdog/check service failure was recorded. Its underlying capture and publication results are unverified by this event; it does not by itself prove the ingest failed or never ran.",
             "SCHEDULED_INGEST_NOT_STARTED": "The scheduled-start detector could not establish a start for this due date; capture completeness and publication are checked separately.",
         }.get(row["category"], "")
         return "\n".join([
