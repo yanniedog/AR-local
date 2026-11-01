@@ -9,7 +9,7 @@ import pi_issue_watchdog as watch
 from tests.test_pi_github_alerts import GitHubStub
 
 NOW = datetime(2026, 11, 1, 22, tzinfo=timezone.utc)
-DAY = '2026-11-02'  # Calendar day in Hobart, not the UTC date.
+DAY = '2026-11-02'  # Latest 01:00 Hobart due date, not the UTC date.
 KEY = 'ingest:' + DAY
 TITLE = 'Pi ingest needs attention: ' + DAY
 
@@ -32,6 +32,62 @@ def stable_fields(row):
     return {k: v for k, v in row.items() if k not in {
         'title', 'revision', 'delivered_revision', 'delivered_at',
         'body_presentation_version', 'presentation_only_revision'}}
+
+
+@pytest.mark.parametrize('stamp,day', [
+    ('2026-11-01T23:59:59+11:00', '2026-11-01'),
+    ('2026-11-02T00:00:00+11:00', '2026-11-01'),
+    ('2026-11-02T00:59:59.999999+11:00', '2026-11-01'),
+    ('2026-11-02T01:00:00+11:00', '2026-11-02'),
+    ('2026-07-01T00:59:59+10:00', '2026-06-30'),
+    ('2026-07-01T01:00:00+10:00', '2026-07-01'),
+    ('2027-01-01T00:00:00+11:00', '2026-12-31'),
+    ('2026-10-04T00:59:59+10:00', '2026-10-03'),  # DST starts later that morning.
+    ('2026-10-04T01:00:00+10:00', '2026-10-04'),
+    ('2026-10-04T03:00:00+11:00', '2026-10-04'),
+    ('2026-04-05T00:59:59+11:00', '2026-04-04'),  # DST ends later that morning.
+    ('2026-04-05T01:00:00+11:00', '2026-04-05'),
+    ('2026-04-05T02:30:00+11:00', '2026-04-05'),  # First occurrence.
+    ('2026-04-05T02:30:00+10:00', '2026-04-05'),  # Repeated hour.
+])
+def test_refresh_targets_latest_due_date_across_midnight_and_dst(stamp, day):
+    class Capture:
+        def refresh_presentations(self, titles):
+            self.titles = titles
+    store = Capture()
+    watch.refresh_current_ingest_presentations(store, datetime.fromisoformat(stamp).astimezone(timezone.utc))
+    assert store.titles == {
+        'ingest:' + day: 'Pi ingest needs attention: ' + day,
+        'ingest-watchdog:' + day: watch.WATCHDOG_TITLE + day,
+        'ingest-schedule:' + day: 'Pi scheduled ingest missed: ' + day,
+    }
+
+
+@pytest.mark.parametrize('stamp', ['2026-11-02T00:00:00+11:00', '2026-11-02T00:59:59+11:00'])
+def test_midnight_refresh_preserves_health_identity_and_other_days(tmp_path, stamp):
+    store = alerts.AlertStore(tmp_path); github = GitHubStub()
+    families = ('ingest', 'ingest-watchdog', 'ingest-schedule')
+    for day in ('2026-10-31', '2026-11-01', '2026-11-02'):
+        for family in families:
+            key = family + ':' + day
+            legacy(store, github, key, 'Old wording: ' + key)
+    before = store.read()['incidents']
+    github.methods.clear()
+    now = datetime.fromisoformat(stamp).astimezone(timezone.utc)
+    watch.refresh_current_ingest_presentations(store, now)
+    after = store.read()['incidents']
+    assert after.keys() == before.keys()
+    for key, row in after.items():
+        assert stable_fields(row) == stable_fields(before[key])
+        if key.endswith(':2026-11-01'):
+            assert row['revision'] == before[key]['revision'] + 1
+            assert row['presentation_only_revision'] == row['revision']
+        else:
+            assert row == before[key]
+    assert github.methods == []
+    snapshot = store.path.read_bytes()
+    watch.refresh_current_ingest_presentations(store, now)
+    assert store.path.read_bytes() == snapshot
 
 
 @pytest.mark.parametrize('recovered', [False, True])

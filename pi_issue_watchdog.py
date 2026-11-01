@@ -172,8 +172,8 @@ def watchdog_recovery(store, row, due, now):
 
 
 def refresh_current_ingest_presentations(store, now):
-    """Refresh only today's existing dated incidents, independently of recovery."""
-    day = now.astimezone(DAILY_INGEST_TZ).date().isoformat()
+    """Refresh existing incidents for the latest due ingest, independently of recovery."""
+    day = expected_run_date_for_due(latest_daily_due_utc(now))
     store.refresh_presentations({
         "ingest:" + day: "Pi ingest needs attention: " + day,
         "ingest-watchdog:" + day: WATCHDOG_TITLE + day,
