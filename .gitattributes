@@ -66,3 +66,7 @@ tests/fixtures/activity-v4/blobs/** -diff
 contracts/history_ready/compiler.cjs -text
 contracts/history_ready/compiler-manifest.json -text
 tests/fixtures/history-ready-real.json -text
+
+# Retained observer source and its exact compatibility patch are byte-bound.
+tests/fixtures/observer-compat-20261102/** -text
+deploy/windows/ingest-observer-context.patch -text
