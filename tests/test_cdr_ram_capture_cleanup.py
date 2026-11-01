@@ -616,13 +616,23 @@ def test_exact_32mib_canonical_seal_is_readable_and_replayable(tmp_path):
     path = tmp_path / 'exact.json'
     payload = {'protocol': 'x' * (cleanup.MAX_RECEIPT_BYTES - len(canonical_json_bytes({'protocol': ''})))}
     expected = canonical_json_bytes(payload)
+    assert len(expected) == 32 * 1024**2
+    expected_digest = hashlib.sha256(expected).digest()
+    # Keep the genuine large payload, but release its duplicate oracle bytes
+    # before exercising the real serializer and boundary reader.
+    del expected
     budget = cleanup.CleanupBudget()
     cleanup._once(path, payload, budget)
-    assert len(expected) == 32 * 1024**2
-    assert cleanup._read_receipt(path, budget) == expected
+    assert path.stat().st_size == 32 * 1024**2
+    assert hashlib.sha256(cleanup._read_receipt(path, budget)).digest() == expected_digest
     before = path.stat().st_ino
     cleanup._once(path, payload, budget)
-    assert path.stat().st_ino == before and path.read_bytes() == expected
+    assert path.stat().st_ino == before and path.stat().st_size == 32 * 1024**2
+    actual_digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024**2), b''):
+            actual_digest.update(block)
+    assert actual_digest.digest() == expected_digest
 
 
 @pytest.mark.parametrize('extra', [0, 1])
@@ -656,11 +666,22 @@ def test_seal_serialization_crossing_deadline_creates_no_immutable_state(tmp_pat
 
 def test_already_oversized_seal_is_preserved_without_replacement(tmp_path):
     path = tmp_path / 'old-seal.json'
-    original = b' ' * (cleanup.MAX_RECEIPT_BYTES + 1)
-    path.write_bytes(original)
+    size = cleanup.MAX_RECEIPT_BYTES + 1
+    assert size == 32 * 1024**2 + 1
+    block = b' ' * 1024**2
+    with path.open('wb') as stream:
+        remaining = size
+        while remaining:
+            chunk = block[:min(len(block), remaining)]
+            assert stream.write(chunk) == len(chunk)
+            remaining -= len(chunk)
+    before = path.stat().st_ino
     with pytest.raises(ValueError, match='receipt_exceeds'):
         cleanup._once(path, {'protocol': 'bounded new payload'}, cleanup.CleanupBudget())
-    assert path.read_bytes() == original
+    assert path.stat().st_ino == before and path.stat().st_size == size
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(len(block)), b''):
+            assert chunk == block[:len(chunk)]
 
 
 @pytest.mark.parametrize('boundary', ['steps', 'deadline', 'database_changed', 'wal_arrives'])
