@@ -6,7 +6,10 @@ import os
 import subprocess
 import sys
 from argparse import Namespace
+from contextlib import ExitStack, contextmanager, nullcontext
 from pathlib import Path
+
+import pytest
 
 import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
@@ -79,24 +82,85 @@ def test_windows_process_liveness_probe_does_not_terminate_target() -> None:
         child.wait(timeout=10)
 
 
-def test_process_ancestry_accepts_live_grandchild_without_signalling() -> None:
-    script = (
-        "import subprocess,sys,time; "
-        "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
-        "print(p.pid,flush=True); "
-        "\ntry: time.sleep(30)\nfinally: p.terminate(); p.wait()"
-    )
+@contextmanager
+def grandchild_exit_witness(pid: int):
+    """Retain kernel identity while alive; never signal a recycled numeric PID."""
+    if os.name == "nt":
+        import ctypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        kernel.WaitForSingleObject.restype = ctypes.c_uint32
+        kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
+        handle = kernel.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE, no signal rights.
+        assert handle, "cannot bind grandchild exit witness"
+        try:
+            yield lambda: kernel.WaitForSingleObject(handle, 5000) == 0
+        finally:
+            kernel.CloseHandle(handle)
+    else:
+        import select
+        descriptor = os.pidfd_open(pid)
+        try:
+            yield lambda: bool(select.select([descriptor], [], [], 5)[0])
+        finally:
+            os.close(descriptor)
+
+
+@pytest.mark.parametrize("cleanup_case", ["normal", "assertion", "timeout"])
+def test_process_ancestry_accepts_live_grandchild_without_signalling(cleanup_case: str) -> None:
+    # Terminating this intermediate Python bypasses finally and orphans p.
+    # Closing its stdin instead lets its actual parent stop AND reap p.
+    script = """
+import subprocess, sys, time
+# Only this parent owns the writer. Killing it also closes the grandchild's
+# stdin, so the grandchild exits even if this parent's finally cannot run.
+p = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()'],
+                     stdin=subprocess.PIPE, close_fds=True)
+try:
+    print(p.pid, flush=True)
+    if sys.argv[1] == 'timeout':
+        time.sleep(30)
+    else:
+        sys.stdin.read()
+finally:
+    try:
+        p.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait(timeout=5)
+"""
     child = subprocess.Popen(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script, cleanup_case],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
-    try:
-        assert child.stdout is not None
-        grandchild_pid = int(child.stdout.readline().strip())
-        assert receiver.process_descends_from(grandchild_pid, os.getpid())
-        assert receiver.process_alive(grandchild_pid)
-    finally:
-        child.terminate()
-        child.wait(timeout=10)
+    expected = (pytest.raises(AssertionError, match="injected fixture assertion")
+                if cleanup_case == "assertion" else nullcontext())
+    wait_grandchild, forced = None, False
+    with expected, ExitStack() as stack:
+        try:
+            assert child.stdout is not None
+            grandchild_pid = int(child.stdout.readline().strip())
+            assert receiver.process_descends_from(grandchild_pid, os.getpid())
+            assert receiver.process_alive(grandchild_pid)
+            wait_grandchild = stack.enter_context(grandchild_exit_witness(grandchild_pid))
+            if cleanup_case == "assertion":
+                raise AssertionError("injected fixture assertion")
+        finally:
+            try:
+                _stdout, stderr = child.communicate(timeout=0.05 if cleanup_case == "timeout" else 15)
+            except subprocess.TimeoutExpired:
+                forced = True
+                child.kill()  # Only the Popen-owned intermediate; never a bare grandchild PID.
+                _stdout, stderr = child.communicate(timeout=5)
+            if wait_grandchild is not None:
+                assert wait_grandchild(), "grandchild exit not proved"
+            else:
+                assert not forced, "forced teardown without grandchild exit witness"
+            assert forced == (cleanup_case == "timeout"), "unexpected teardown timeout"
+            if not forced:
+                assert child.returncode == 0, stderr
