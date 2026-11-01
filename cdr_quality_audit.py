@@ -25,7 +25,8 @@ from cdr_observation_selection import selected_observation
 from cdr_quality_history import history_context
 from cdr_quality_logs import audit_logs
 from cdr_quality_public import audit_public
-from cdr_quality_sources import AuditIndex, audit_source, inventory, read_object, stat_fingerprint
+from cdr_quality_sources import (AuditIndex, audit_source, inventory, materialize_source,
+                                read_object, stat_fingerprint, verify_contract_reference)
 
 
 def source_issues(result: dict) -> list[dict]:
@@ -43,8 +44,10 @@ def collect_sources(data_root: Path, index: AuditIndex, run_date: str, scrub: bo
                     verified_cache=None) -> tuple[list, list, int]:
     sources, issues = inventory(data_root)
     results, cached = [], 0
-    for source in sources:
+    for entry in sources:
+        source = None
         try:
+            source = materialize_source(data_root, entry)
             started = time.monotonic()
             print(f"[cdr-audit] fingerprint start {source['key']}", flush=True)
             fingerprint = stat_fingerprint(source)
@@ -52,19 +55,22 @@ def collect_sources(data_root: Path, index: AuditIndex, run_date: str, scrub: bo
                   f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
             result = (verified_cache.get(data_root, source, run_date) if verified_cache else
                       index.get(source["key"], fingerprint) if not scrub and source["run_date"] != run_date else None)
-            if result is None:
+            fresh = result is None
+            if fresh:
                 print(f"[cdr-audit] checking {source['key']}", flush=True)
                 result = audit_source(data_root, source)
                 result["verified_at"] = datetime.now(timezone.utc).isoformat()
+            verify_contract_reference(data_root, entry)
+            if fresh or verified_cache:
                 index.put(result)
-            else:
+            if not fresh:
                 cached += 1
-                if verified_cache:
-                    index.put(result)
             results.append(result)
             issues.extend(source_issues(result))
         except (OSError, ValueError, KeyError, TypeError, RuntimeError, sqlite3.Error) as exc:
-            issues.append({"code": "SOURCE_AUDIT_FAILED", "source": source["key"], "detail": str(exc)})
+            issues.append({"code": "SOURCE_AUDIT_FAILED", "source": entry["key"], "detail": str(exc)})
+        finally:
+            source = None  # Release even on cache hits/failures, before the next load.
     old = {row[0] for row in index.db.execute("SELECT source_key FROM audits")}
     if verified_cache:
         old.update(verified_cache.manifest["entries"])

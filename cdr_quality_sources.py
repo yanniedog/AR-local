@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import stat
 import time
 import zlib
 from datetime import date
@@ -44,8 +45,81 @@ def contained(root: Path, relative: str) -> Path:
     return child
 
 
+def require_materialized_contract(source: dict) -> None:
+    if "contract_ref" in source:
+        raise ValueError("contract reference must be explicitly materialized before source auditing")
+
+
+def _contract_identity(data_root: Path, relative: str) -> tuple[Path, list[int]]:
+    path = contained(data_root, relative)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > 16 * 1024**2:
+        raise ValueError("contract must remain a bounded regular file")
+    return path, [*stat_identity(info), info.st_mode, info.st_nlink]
+
+
+def _contract_hash(path: Path) -> str:
+    consumed = 0
+
+    def budget(*, size=0, reserve_bytes=0, entries=0):
+        nonlocal consumed
+        if consumed + max(size, reserve_bytes) > 16 * 1024**2:
+            raise ValueError("contract exceeds bounded read limit")
+        consumed += size
+
+    return hash_file(path, budget=budget)
+
+
+def _read_pinned_contract(data_root: Path, relative: str, expected: dict | None = None) -> tuple[dict, dict]:
+    path, before = _contract_identity(data_root, relative)
+    digest = _contract_hash(path)
+    if expected is not None and (before != expected["identity"] or digest != expected["sha256"]):
+        raise ValueError("contract identity or bytes changed since inventory")
+    contract = load_contract(path)  # Preserve the complete schema/generation/digest validation.
+    if _contract_hash(path) != digest or _contract_identity(data_root, relative)[1] != before:
+        raise ValueError("contract changed during inventory/materialization")
+    reference = {"path": relative, "identity": before, "sha256": digest,
+                 **{key: contract[key] for key in
+                    ("source_path", "observation_date", "generation_id", "contract_digest")}}
+    if expected is not None and reference != expected:
+        raise ValueError("contract routing or digest changed since inventory")
+    return contract, reference
+
+
+def _inventory_contract(data_root: Path, path: Path) -> dict:
+    # The full dictionary dies with this call, before the next contract is read.
+    contract, reference = _read_pinned_contract(data_root, path.relative_to(data_root).as_posix())
+    return {"key": contract["source_path"], "root": contained(data_root, contract["source_path"]),
+            "run_date": contract["observation_date"], "contract_ref": reference}
+
+
+def materialize_source(data_root: Path, source: dict) -> dict:
+    """Resolve one pinned inventory entry without mutating the compact inventory."""
+    if "contract_ref" not in source:
+        return source  # Existing full-contract and genuinely legacy inputs retain their API.
+    reference = source["contract_ref"]
+    if (source["key"] != reference["source_path"] or source["run_date"] != reference["observation_date"]
+            or source["root"] != contained(data_root, reference["source_path"])):
+        raise ValueError("inventory source routing differs from its contract reference")
+    contract, _ = _read_pinned_contract(data_root, reference["path"], reference)
+    result = {key: value for key, value in source.items() if key != "contract_ref"}
+    result["contract"] = contract
+    return result
+
+
+def verify_contract_reference(data_root: Path, source: dict) -> None:
+    """Close the contract fence before accepting/caching a source calculation."""
+    if "contract_ref" not in source:
+        return
+    reference = source["contract_ref"]
+    path, before = _contract_identity(data_root, reference["path"])
+    if (before != reference["identity"] or _contract_hash(path) != reference["sha256"]
+            or _contract_identity(data_root, reference["path"])[1] != before):
+        raise ValueError("contract changed during source audit")
+
+
 def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
-    """Include every contract plus legacy primary/revision/archive/failed export."""
+    """Validate every contract; return compact references plus every legacy export."""
     sources, errors, seen = [], [], set()
     state = data_root / "state"
     started = time.monotonic()
@@ -53,11 +127,9 @@ def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
     for path in sorted((state / "export-contracts-v2").glob("*/*.json")):
         print(f"[cdr-audit] inventory contract {path}", flush=True)
         try:
-            contract = load_contract(path)
-            root = contained(data_root, contract["source_path"])
-            sources.append({"key": contract["source_path"], "root": root,
-                            "run_date": contract["observation_date"], "contract": contract})
-            seen.add(root)
+            source = _inventory_contract(data_root, path)
+            sources.append(source)
+            seen.add(source["root"])
         except (OSError, ValueError, KeyError) as exc:
             errors.append({"code": "INVALID_CONTRACT", "path": str(path), "detail": str(exc)})
     print(f"[cdr-audit] inventory contracts complete sources={len(sources)} errors={len(errors)} "
@@ -98,6 +170,7 @@ def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
 
 
 def source_files(source: dict) -> list[tuple[Path, dict | None]]:
+    require_materialized_contract(source)
     root, contract = source["root"], source["contract"]
     names = ["local-cdr.sqlite", f"banks-{source['run_date']}.sqlite", "ingest-status.json",
              "failures.txt", "ingest-failures.json", "ingest-errors.json",
@@ -131,6 +204,7 @@ def stat_identity(info) -> tuple[int, ...]:
 
 
 def verify_source(data_root: Path, source: dict) -> dict:
+    require_materialized_contract(source)
     contained(data_root, source["root"].relative_to(data_root).as_posix())
     contract = source["contract"]
     if contract:
