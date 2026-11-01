@@ -16,6 +16,7 @@ from pi_github_alerts import configured_store, deliver
 UNITS = ("ar-local-daily.service", "ar-local-ingest-now.service",
          "ar-local-daily-watchdog.service", "ar-local-drive-backup.service")
 DAILY_TIMER = "ar-local-daily.timer"
+WATCHDOG_TITLE = "Pi ingest/publication check needs attention: "
 
 
 class EvidenceLimit(ValueError):
@@ -166,7 +167,7 @@ def watchdog_recovery(store, row, due, now):
     except (ValueError, TypeError):
         return
     date = expected_run_date_for_due(due)
-    store.observe("ingest-watchdog:" + date, "Pi ingest watchdog failed: " + date,
+    store.observe("ingest-watchdog:" + date, WATCHDOG_TITLE + date,
                   "INGEST_WATCHDOG_FAILED", healthy=True, recovery_started_at=started)
 
 
@@ -276,7 +277,7 @@ def failure_event(store, unit, now):
             return {"status": "QUIET_WINDOW_DEFERRED"}
         key, title, category = "drive-backup", "Pi Google Drive backup failed", "BACKUP_SERVICE_FAILED"
     elif unit == "ar-local-daily-watchdog.service":
-        key, title, category = "ingest-watchdog:" + date, "Pi ingest watchdog failed: " + date, "INGEST_WATCHDOG_FAILED"
+        key, title, category = "ingest-watchdog:" + date, WATCHDOG_TITLE + date, "INGEST_WATCHDOG_FAILED"
     else:
         key, title, category = "ingest:" + date, "Pi ingest needs attention: " + date, "INGEST_SERVICE_FAILED"
     store.observe(key, title, category, healthy=False,
