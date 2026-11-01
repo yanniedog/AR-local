@@ -23,6 +23,7 @@ OWNER = "yanniedog"
 LABEL = "ingest-missed"
 GRACE = timedelta(minutes=90)
 MAX_CHECK_BYTES = 65536
+PUBLICATION_TITLE = "Pi app publication needs attention: "
 
 
 def unique_object(pairs):
@@ -110,10 +111,11 @@ def collect_check(*, unavailable=False, run=subprocess.run, clock=None) -> dict:
 
 def find_incidents(client, expected):
     """Bounded enumeration also retains distinct, already-reported Pi failures."""
-    title = "Pi ingest missed: " + expected
+    titles = {"Pi ingest missed: " + expected, PUBLICATION_TITLE + expected}
     pi_titles = {"Pi ingest needs attention: " + expected: "ingest:",
                  "Pi scheduled ingest missed: " + expected: "ingest-schedule:",
-                 "Pi ingest watchdog failed: " + expected: "ingest-watchdog:"}
+                 "Pi ingest watchdog failed: " + expected: "ingest-watchdog:",
+                 "Pi ingest/publication check needs attention: " + expected: "ingest-watchdog:"}
     matches, reported = [], []
     for page in range(1, 21):
         rows = client.request("GET", f"issues?state=all&per_page=100&page={page}")
@@ -122,7 +124,7 @@ def find_incidents(client, expected):
         for row in rows:
             if "pull_request" in row:
                 continue
-            if row.get("title") == title:
+            if row.get("title") in titles:
                 creator = row.get("user")
                 labels = row.get("labels", [])
                 legacy = isinstance(labels, list) and any(
@@ -207,7 +209,7 @@ def reconcile(client, report):
     body = issue_body(report)
     if issue is None:
         ensure_label(client)
-        title = "Pi ingest missed: " + report["expected_run_date"]
+        title = PUBLICATION_TITLE + report["expected_run_date"]
         created = client.request("POST", "issues", {"title": title, "body": body,
                                   "labels": [LABEL], "assignees": [OWNER]})
         if not isinstance(created, dict) or type(created.get("number")) is not int or created["number"] <= 0:
@@ -215,6 +217,9 @@ def reconcile(client, report):
         return {"status": "CREATED", "issue": created["number"], **evidence, "new_attention": True}
     number, assigned = issue_identity(issue)
     changes = {}
+    title = PUBLICATION_TITLE + report["expected_run_date"]
+    if issue.get("title") != title:
+        changes["title"] = title
     stored_body = issue.get("body")
     # GitHub may return CRLF for the LF body we submitted. Preserve all other
     # whitespace/content distinctions so real changes still trigger an update.

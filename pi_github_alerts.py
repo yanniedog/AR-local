@@ -223,12 +223,18 @@ class AlertStore:
                                   "first_seen": utc(), "revision": 0, "delivered_revision": 0}
             changed = row.get("active") != (not healthy) or (not healthy and row.get("category") != category)
             if not changed:
+                presentation_changed = row.get("revision", 0) > 0 and row.get("title") != title
+                if presentation_changed:
+                    # Correct wording once on the same issue without inventing
+                    # a failure/recovery transition or discarding its history.
+                    row.update(title=title, revision=row["revision"] + 1)
                 if not healthy and record_failure:
                     # A repeated failure advances the chronology fence without
                     # creating a new delivery revision or duplicate issue.
                     row["last_failure_at"] = utc()
                     if obs_iso is not None:
                         row["last_observation_at"] = obs_iso
+                if presentation_changed or (not healthy and record_failure):
                     self.write(state)
                 # Healthy re-observe: keep existing last_observation_at fence; no rewrite.
                 return
@@ -244,10 +250,16 @@ class AlertStore:
 
     @staticmethod
     def body(row):
+        scope = {
+            "INGEST_PARTIAL": "Capture finalized with incomplete provider coverage; this is not a missed ingest.",
+            "INGEST_WATCHDOG_FAILED": "The ingest/publication check returned failure. Missing capture, stale publication or unavailable check evidence can each cause this; it does not by itself prove the ingest failed or never ran.",
+            "SCHEDULED_INGEST_NOT_STARTED": "The scheduled-start detector could not establish a start for this due date; capture completeness and publication are checked separately.",
+        }.get(row["category"], "")
         return "\n".join([
             row["marker"], "", "Automatically reported by the AR-local Pi.", "",
             "State: " + ("**Needs attention**" if row["active"] else "**Recovered**"),
             "Category: `" + row["category"] + "`",
+            *(["Evidence scope: " + scope] if scope else []),
             "First observed (UTC): " + row["first_seen"],
             "Latest failure (UTC): " + row["last_failure_at"],
             "Last transition (UTC): " + row["changed_at"],

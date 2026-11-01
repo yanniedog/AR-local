@@ -79,7 +79,10 @@ def test_repeated_failure_advances_atomic_fence_without_duplicate_delivery(tmp_p
     monkeypatch.setattr(watch, 'unit_state', lambda _: successful_units()[watch.UNITS[2]])
     watch.failure_event(store, watch.UNITS[2], NOW)
     row = store.read()['incidents'][KEY]
-    assert row['revision'] == row['delivered_revision'] == 1
+    # One wording correction queues the same issue; repeated failures do not.
+    assert row['revision'] == 2 and row['delivered_revision'] == 1
+    watch.failure_event(store, watch.UNITS[2], NOW)
+    assert store.read()['incidents'][KEY]['revision'] == 2
     assert row['last_failure_at'] == later_failure.isoformat()
     watch.watchdog_recovery(store, successful_units()[watch.UNITS[2]], watch.latest_daily_due_utc(NOW), NOW)
     assert store.read()['incidents'][KEY]['active'] is True
