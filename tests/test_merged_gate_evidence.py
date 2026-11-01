@@ -40,6 +40,13 @@ def test_new_evaluation_keeps_cancelled_history_and_latest_check_authority(monke
         rows[-1]["conclusion"] = outcome
         with pytest.raises(ValueError, match="checks do not satisfy"):
             checks.producer_checks(value, merge)
+    rows[-1]["conclusion"] = "success"
+    # A stale pre-merge reporter can still publish after the separate merged
+    # writer. Fresh latest-ID acceptance must reject its newer cancelled check.
+    rows.append({**rows[0], "id": 6, "conclusion": "cancelled"})
+    documents["check_runs"]["total_count"] = len(rows)
+    with pytest.raises(ValueError, match="checks do not satisfy"):
+        checks.producer_checks(value, merge)
 
 
 @pytest.mark.parametrize("missing", ["protection", "rules", "unknown_required", "threads", "pagination"])

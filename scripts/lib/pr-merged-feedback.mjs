@@ -1,5 +1,21 @@
 /** Bounded, complete feedback snapshot for an explicitly pinned merged PR. */
-import { ghJson } from './gh-pr-review-threads.mjs';
+import { classifyThreads, ghJson } from './gh-pr-review-threads.mjs';
+
+/** Unknown authors cannot turn unresolved feedback into empty or bot-noise evidence. */
+export function mergedFeedbackViolations(threads) {
+  if (!Array.isArray(threads)) throw new Error('Review threads unavailable');
+  return threads.flatMap((thread) => {
+    if (thread?.isResolved === true) return [];
+    if (thread?.isResolved !== false || !Array.isArray(thread.comments?.nodes)) {
+      throw new Error('Incomplete feedback resolution evidence');
+    }
+    if (!thread.comments.nodes.length || thread.comments.nodes.some((comment) =>
+      typeof comment?.author?.login !== 'string' || !comment.author.login.trim())) {
+      return [{ kind: 'unresolved-unknown-author', threadId: thread.id }];
+    }
+    return classifyThreads([thread]);
+  });
+}
 
 const COMMENTS = `totalCount pageInfo { hasNextPage endCursor }
   nodes { id author { login __typename } body createdAt }`;

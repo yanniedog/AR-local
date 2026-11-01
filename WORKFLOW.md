@@ -81,7 +81,19 @@ mismatch requires stopping and a new review, not accepting its result.
 
 This mode requires a merged closed PR in the repository default-branch ancestry.
 It re-reads the merged identity, complete feedback and exact-head applicable CI
-with latest-attempt verification. It creates a new pending evaluation with a
+with latest-attempt verification. Before success, a final complete feedback read
+must match the initial snapshot; unresolved threads with absent authors or no
+comments block. Explicit discovery has its own run/attempt namespace. Merged
+evaluations use a separate per-PR group, with `queue: max`, so old default-branch
+automatic jobs cannot replace a queued recovery during reviewed-ref bootstrap.
+Merged writers remain serialized; closed-PR admission and separate check ownership
+keep their writes disjoint from ordinary reporters. GitHub's queue limit still
+applies; a cancelled or unreported dispatch is never acceptance evidence.
+There is no cross-kind serialization: reconcile any active legacy reporter before
+dispatch. A stale pre-merge writer can still create a newer cancelled check.
+After dispatch, fetch fresh exact-head check IDs and apply unchanged D027 latest
+selection; never accept the recovered success if a newer blocking check exists.
+It creates a new pending evaluation with a
 separate merged owner identity; ordinary closed/prior-head cleanup cannot retire
 it. Existing terminal checks remain unchanged. Missing/running CI stays pending;
 failed CI, incomplete evidence and identity races cannot produce success.

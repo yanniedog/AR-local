@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { mergedDispatch, publishMergedGate } from './lib/pr-merged-gate.mjs';
-import { readMergedFeedback } from './lib/pr-merged-feedback.mjs';
+import { mergedFeedbackViolations, readMergedFeedback } from './lib/pr-merged-feedback.mjs';
 import { publishRequiredGate, retirePriorEventGate } from './lib/pr-required-gate.mjs';
 
 const repository = 'owner/repo', head = 'a'.repeat(40), merge = 'b'.repeat(40), reporter = 'c'.repeat(40);
@@ -41,7 +41,7 @@ function fixture(overrides = {}) {
     throw new Error(`Unexpected request ${endpoint}`);
   };
   const write = (endpoint, body, method = 'POST') => { writes.push({ endpoint, body, method }); return { id: 101 }; };
-  const threadReader = () => overrides.threads || [];
+  const threadReader = overrides.threadReader || (() => overrides.threads || []);
   return { api, write, threadReader, writes, calls };
 }
 function publish(overrides = {}) {
@@ -86,6 +86,43 @@ for (const product of [{ ok: false, error: 'API unavailable' }, { ok: true, fail
 const comment = { id: 'C1', author: { login: 'reviewer', __typename: 'User' }, body: 'Handle this failure.', createdAt: pr.merged_at };
 assert.equal(publish({ threads: [{ isResolved: false, comments: { nodes: [comment] } }] }).result.conclusion, 'failure');
 
+const quotaComment = { ...comment, id: 'quota', author: { login: 'github-actions[bot]', __typename: 'Bot' }, body: 'API quota exceeded' };
+const unresolved = (nodes) => ({ id: 'unknown-author-thread', isResolved: false, comments: { nodes } });
+for (const nodes of [[], ...[null, undefined, {}, { login: '' }, { login: ' ' }].map((author) => [{ ...comment, author }]),
+  [{ ...comment, author: null }, quotaComment], [quotaComment, { ...comment, author: null }]]) {
+  assert.equal(publish({ threads: [unresolved(nodes)] }).result.conclusion, 'failure',
+    'unknown/empty unresolved feedback cannot be filtered or reclassified using a later visible author');
+}
+assert.equal(publish({ threads: [{ ...unresolved([{ ...comment, author: null }]), isResolved: true }] }).result.conclusion,
+  'success', 'resolved deleted-author history remains valid');
+assert.equal(publish({ threads: [unresolved([quotaComment])] }).result.conclusion, 'success',
+  'known-author bot-noise policy is unchanged');
+
+// The complete second feedback snapshot must be the last evidence read before PATCH.
+const resolved = { id: 'T-stable', isResolved: true, comments: { nodes: [comment] } };
+const observed = [];
+const stableFixture = fixture();
+const stable = publishMergedGate(42, { ...options, ...stableFixture,
+  api: (endpoint) => { observed.push('api'); return stableFixture.api(endpoint); },
+  threadReader: () => { observed.push('feedback'); return structuredClone([resolved]); },
+  write: (...args) => { observed.push('write'); return stableFixture.write(...args); } });
+assert.equal(stable.conclusion, 'success');
+assert.equal(observed.filter((value) => value === 'feedback').length, 2);
+assert.deepEqual(observed.slice(-2), ['feedback', 'write']);
+for (const final of [[resolved, unresolved([comment])], [{ ...resolved, isResolved: false }], [],
+  [{ ...resolved, comments: { nodes: [{ ...comment, body: 'Edited review' }] } }],
+  [{ ...resolved, isResolved: undefined }], null]) {
+  let reads = 0;
+  const changed = publish({ threadReader: () => ++reads === 1 ? structuredClone([resolved]) : final });
+  assert.equal(changed.result.conclusion, 'failure', 'added/reopened/deleted/edited/malformed feedback cannot reuse stale success');
+  assert.equal(changed.writes.at(-1).body.conclusion, 'failure');
+}
+let feedbackReads = 0;
+assert.equal(publish({ threadReader: () => {
+  if (++feedbackReads === 1) return [resolved];
+  throw new Error('Second complete feedback read unavailable');
+} }).result.conclusion, 'failure');
+
 // Automatic closure/prior-head cleanup cannot cancel explicit merged ownership.
 const oldCancelled = { id: 99, name: 'bot-feedback-gate', head_sha: head, status: 'completed', conclusion: 'cancelled',
   app: { id: 15368, slug: 'github-actions' }, external_id: `ar-local-required:42:${head}` };
@@ -108,6 +145,9 @@ const feedbackPage = (threads) => ({ repository: { nameWithOwner: repository, pu
   baseRefName: 'main', mergeCommit: { oid: merge }, reviewThreads: threads } } });
 const thread = (id) => ({ id, isResolved: true, comments: connection([comment]) });
 assert.equal(readMergedFeedback(repository, 42, identity, { query: () => feedbackPage(connection([thread('T1')])) }).length, 1);
+const deletedAuthor = { ...thread('T-deleted'), isResolved: false, comments: connection([{ ...comment, author: null }]) };
+const deletedSnapshot = readMergedFeedback(repository, 42, identity, { query: () => feedbackPage(connection([deletedAuthor])) });
+assert.equal(mergedFeedbackViolations(deletedSnapshot).length, 1, 'complete GraphQL null-author snapshot blocks publication');
 const manyThreads = Array.from({ length: 101 }, (_, i) => thread(`T${i}`));
 assert.equal(readMergedFeedback(repository, 42, identity, { query: (_, vars) => feedbackPage(vars.after ?
   connection(manyThreads.slice(100), 101) : connection(manyThreads.slice(0, 100), 101, true, 'next')) }).length, 101);
@@ -132,7 +172,8 @@ for (const closed of [{ state: 'CLOSED', merged: false }, { state: 'CLOSED', mer
 
 const yaml = fs.readFileSync(new URL('../.github/workflows/pr-bot-feedback-check.yml', import.meta.url), 'utf8');
 assert.match(yaml, /merged_revalidation:[\s\S]*?type: boolean/);
-assert.match(yaml, /group: required-pr-gate-\$\{\{ matrix.pr \}\}/);
+assert.match(yaml, /format\('required-merged-pr-gate-\{0\}', matrix.pr\) \|\| format\('required-pr-gate-\{0\}', matrix.pr\)/,
+  'old automatic jobs cannot replace pending merged recovery; each writer mode remains serialized per PR');
 assert.match(yaml, /github.event_name == 'workflow_dispatch' && github.sha \|\| github.event.repository.default_branch/);
 assert.doesNotMatch(yaml, /administration:|contents: write|pull-requests: write|download-artifact|pull_request.head.sha/);
 const source = fs.readFileSync(new URL('lib/pr-merged-gate.mjs', import.meta.url), 'utf8');

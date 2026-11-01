@@ -1,8 +1,7 @@
 /** Opt-in recovery of a merged head's gate; no open-PR or deployment policy changes. */
-import { classifyThreads } from './gh-pr-review-threads.mjs';
 import { githubApi, mergedPrIdentity, readProductCi } from './pr-product-ci.mjs';
 import { combineRequiredGate, REQUIRED_GATE_NAME, validPrNumber, writeCheck } from './pr-required-gate.mjs';
-import { readMergedFeedback } from './pr-merged-feedback.mjs';
+import { mergedFeedbackViolations, readMergedFeedback } from './pr-merged-feedback.mjs';
 
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -65,12 +64,21 @@ export function publishMergedGate(prNumber, {
   let outcome, product;
   try {
     const threads = threadReader(repository, prNumber, initial);
-    if (!Array.isArray(threads)) throw new Error('Review threads unavailable');
+    const violations = mergedFeedbackViolations(threads);
+    const feedbackSnapshot = JSON.stringify(threads);
     product = productReader(prNumber, { repository, api, expectedHeadSha, expectedMergeSha });
     // Keep the live substantive-feedback rules, not the historical audit's leniency.
-    outcome = combineRequiredGate(product, classifyThreads(threads));
+    outcome = combineRequiredGate(product, violations);
     const current = snapshot(api, repository, prNumber, expectedHeadSha, expectedMergeSha);
     if (JSON.stringify(current) !== JSON.stringify(initial)) throw new Error('Merged identity or default branch changed during revalidation');
+    if (outcome.conclusion === 'success') {
+      // Feedback can be added, reopened, edited or deleted during CI/identity reads.
+      // Make a complete second snapshot the final evidence read before publication.
+      const finalThreads = threadReader(repository, prNumber, current);
+      const finalViolations = mergedFeedbackViolations(finalThreads);
+      if (JSON.stringify(finalThreads) !== feedbackSnapshot) throw new Error('Review feedback changed during revalidation');
+      outcome = combineRequiredGate(product, finalViolations);
+    }
   } catch (error) {
     outcome = { status: 'completed', conclusion: 'failure', title: 'Merged gate verification unavailable', summary: error.message };
   }

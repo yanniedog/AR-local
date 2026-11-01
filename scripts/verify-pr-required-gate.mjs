@@ -210,15 +210,19 @@ const discoveryEvents = discoveryJob.match(/contains\(fromJSON\('([^']+)'\), git
 assert.deepEqual(JSON.parse(discoveryEvents), ['pull_request', 'pull_request_review', 'pull_request_review_comment'],
   'all review bridge sources and product PR runs refresh gates; main push/manual product runs do not');
 assert.match(discoveryJob,
-  /group: required-pr-gate-discover-\$\{\{ github\.event_name == 'workflow_run' && format\('run-\{0\}', github\.event\.workflow_run\.id\) \|\| format\('pr-\{0\}', github\.event\.pull_request\.number \|\| github\.event\.issue\.number \|\| inputs\.pr_number\) \}\}/,
-  'discovery coalesces only the same source run or direct PR, with distinct identity namespaces');
+  /group: required-pr-gate-discover-\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.merged_revalidation && format\('merged-\{0\}-\{1\}', github\.run_id, github\.run_attempt\) \|\| github\.event_name == 'workflow_run' && format\('run-\{0\}', github\.event\.workflow_run\.id\) \|\| format\('pr-\{0\}', github\.event\.pull_request\.number \|\| github\.event\.issue\.number \|\| inputs\.pr_number\) \}\}/,
+  'explicit merged discovery has a unique attempt namespace; automatic discovery still coalesces the same run or PR');
 assert.match(discoveryJob, /cancel-in-progress: true/);
 assert.doesNotMatch(discoveryJob, /checks: write|--publish|--retire-event/,
   'only read-only discovery may be cancelled');
 assert.match(discoveryJob, /node scripts\/pr-required-gate\.mjs --discover/);
 const evaluationJob = workflow.split('\n  evaluate-gates:')[1];
-assert.match(evaluationJob, /group: required-pr-gate-\$\{\{ matrix\.pr \}\}/);
+assert.match(evaluationJob,
+  /group: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.merged_revalidation && format\('required-merged-pr-gate-\{0\}', matrix.pr\) \|\| format\('required-pr-gate-\{0\}', matrix.pr\) \}\}/,
+  'ordinary reports retain their group; explicit merged writers have separate per-PR serialization during bootstrap');
 assert.match(evaluationJob, /cancel-in-progress: false/);
+assert.match(evaluationJob, /queue: max/,
+  'multiple explicit recoveries queue instead of replacing a pending recovery');
 assert.equal((workflow.match(/cancel-in-progress: true/g) || []).length, 1,
   'check writers must finish or be superseded through owned-check retirement');
 assert.doesNotMatch(workflow, /\n  bot-feedback-gate:/, 'Actions job cannot compete with the published required check');
