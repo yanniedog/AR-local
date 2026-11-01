@@ -252,6 +252,11 @@ class VerifiedAuditCache:
         if sha(self.path) != self.expected_sha256:
             raise ValueError("verified cache manifest changed during audit")
         records = {"index.sqlite": self.manifest["index"], **self.manifest["evidence"]}
+        # Establish the sealed byte boundary before parsing any suite-provided
+        # paths or JSON. Corrupted evidence must fail as a sealed-file mismatch.
+        for name, expected in records.items():
+            if file_record(relative(self.path.parent, name)) != expected:
+                raise ValueError("verified cache sealed file hash mismatch: " + name)
         from pi_cdr_pytest_proof import evidence_names, validate_suite
         origin = self.manifest["origin"]
         suite = validate_suite(self.path.parent, origin["commit"], source=Path(origin["source"]),
@@ -259,9 +264,6 @@ class VerifiedAuditCache:
                                resource_group=read(self.path.parent / "resources.json")["cgroup"])
         if set(records) != {"index.sqlite", "resources.json", "canary-service.txt", *evidence_names(suite)}:
             raise ValueError("verified cache evidence inventory mismatch")
-        for name, expected in records.items():
-            if file_record(relative(self.path.parent, name)) != expected:
-                raise ValueError("verified cache sealed file hash mismatch: " + name)
 
     def get(self, data_root: Path, source: dict, run_date: str) -> dict | None:
         require_materialized_contract(source)

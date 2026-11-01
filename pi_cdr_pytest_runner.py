@@ -24,12 +24,17 @@ def write_json(path, value):
 def membership(group):
     from pi_cdr_quality_resources import members
     pids = members(group)
-    result = {}
-    for pid in sorted(pids):
-        fields = (Path("/proc") / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()
-        require(len(fields) > 19 and fields[19].isdigit(), "ambiguous batch process identity")
-        result[str(pid)] = int(fields[19])
+    def identities():
+        result = {}
+        for pid in sorted(pids):
+            fields = (Path("/proc") / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()
+            require(len(fields) > 19 and fields[19].isdigit(), "ambiguous batch process identity")
+            result[str(pid)] = int(fields[19])
+        return result
+    result = identities()
     require(members(group) == pids, "cgroup changed during batch ownership observation")
+    require(identities() == result and members(group) == pids,
+            "process identity changed during batch ownership observation")
     return result
 
 

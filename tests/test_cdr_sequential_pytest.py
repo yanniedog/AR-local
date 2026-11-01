@@ -148,9 +148,39 @@ def test_cache_inventory_includes_all_exact_suite_evidence(suite, monkeypatch):
     instance = cache.VerifiedAuditCache.__new__(cache.VerifiedAuditCache)
     instance.path, instance.manifest, instance.expected_sha256 = path, manifest, cache.sha(path)
     instance.verify_files()
+    raw_path = operation / "pytest-suite/00000/report.json"
+    saved = raw_path.read_bytes()
+    raw_path.write_bytes(b"not JSON; sealed bytes must reject before parsing")
+    with pytest.raises(ValueError, match="verified cache sealed file hash mismatch"):
+        instance.verify_files()
+    raw_path.write_bytes(saved)
     del manifest["evidence"]["pytest-suite/00000/report.json"]
     with pytest.raises(ValueError, match="inventory"):
         instance.verify_files()
+
+
+@pytest.mark.parametrize("second_start", [456, 789])
+def test_membership_resamples_start_identity_even_when_pid_set_is_unchanged(monkeypatch, second_start):
+    import pi_cdr_quality_resources as resources
+    calls, reads = [], []
+    def members(group):
+        calls.append(str(group))
+        return {123}
+    ticks = iter([456, second_start])
+    def read_stat(path, *args, **kwargs):
+        assert path.as_posix() == "/proc/123/stat"
+        reads.append(path)
+        return "123 (control process) S " + "0 " * 18 + str(next(ticks))
+    monkeypatch.setattr(resources, "members", members)
+    monkeypatch.setattr(Path, "read_text", read_stat)
+    if second_start == 456:
+        assert runner.membership(Path("/control-group")) == {"123": 456}
+        assert len(calls) == 3
+    else:
+        with pytest.raises(ValueError, match="process identity changed"):
+            runner.membership(Path("/control-group"))
+        assert len(calls) == 2
+    assert len(reads) == 2
 
 
 @pytest.mark.parametrize("failure", ["timeout", "survivor", "pid_reuse"])
