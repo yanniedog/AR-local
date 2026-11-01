@@ -191,3 +191,23 @@ def test_stale_miss_cannot_reactivate_after_newer_recovery(tmp_path):
                   'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=t1)
     row = store.read()['incidents']['ingest-schedule:2026-09-13']
     assert row['active'] is False
+
+
+def test_monitor_failure_body_keeps_capture_outcome_unverified(tmp_path):
+    store = AlertStore(tmp_path)
+    store.observe('ingest:2026-11-01', 'Pi ingest check needs attention: 2026-11-01',
+                  'INGEST_MONITOR_FAILED', healthy=False)
+    body = store.body(store.read()['incidents']['ingest:2026-11-01'])
+    assert 'Evidence scope: The ingest monitor check failed.' in body
+    assert 'The capture outcome is unverified' in body
+    assert 'does not prove capture was missed or failed' in body
+    assert 'No verifiable finalized capture was found' not in body
+
+
+def test_missing_capture_body_retains_its_distinct_evidence_scope(tmp_path):
+    store = AlertStore(tmp_path)
+    store.observe('ingest:2026-11-01', 'Pi ingest needs attention: 2026-11-01',
+                  'INGEST_MISSING', healthy=False)
+    body = store.body(store.read()['incidents']['ingest:2026-11-01'])
+    assert 'No verifiable finalized capture was found for the expected date.' in body
+    assert 'The ingest monitor check failed' not in body

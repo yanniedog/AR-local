@@ -28,12 +28,28 @@ def test_checks_remain_distinct_and_alertable(result, expected):
 
 
 def test_cloud_migrates_misleading_title_once_without_new_issue_or_recovery():
-    api = API([legacy()])
+    row = legacy()
+    unrelated = {'name': 'operator-investigating', 'id': 7}
+    row['labels'].append(unrelated)
+    row.update(comments=5, created_at='2026-10-11T00:00:00Z')
+    api = API([row])
     assert cloud.reconcile(api, report())['status'] == 'UPDATED'
     assert api.rows[1]['title'] == cloud.PUBLICATION_TITLE + '2026-10-11'
     assert api.rows[1]['state'] == 'open'
+    assert api.rows[1]['labels'] == [unrelated, {'name': 'app-publication-unverified'}]
+    for field in ('number', 'user', 'comments', 'created_at'):
+        assert api.rows[1][field] == row[field]
+    mutations = [(method, path, value) for method, path, value in api.calls if method != 'GET']
+    # Only presentation and our labels change on the existing issue; no issue
+    # creation/deletion, comment, or recovery transition is authorized here.
+    assert [(method, path) for method, path, _ in mutations] == [
+        ('PATCH', 'issues/1'), ('POST', 'issues/1/labels'),
+        ('DELETE', 'issues/1/labels/ingest-missed')]
+    assert 'state' not in mutations[0][2]
+    assert mutations[1][2] == {'labels': ['app-publication-unverified']}
+    api.calls.clear()
     assert cloud.reconcile(api, report())['status'] == 'UNCHANGED'
-    assert not any(method in {'POST', 'DELETE'} for method, _, _ in api.calls)
+    assert all(method == 'GET' for method, _, _ in api.calls)
 
 
 def test_new_and_legacy_publication_titles_are_not_two_distinct_incidents():
