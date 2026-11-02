@@ -55,7 +55,7 @@ def population_queue(pending, day, *, successor=None):
     if not isinstance(pending, dict) or 'selection_retry' in pending:
         return None
     head, queued = pending.get('pointer'), pending.get('queued_pointers', [])
-    if (not isinstance(head, dict) or not isinstance(queued, list) or len(queued) > 1024
+    if (not isinstance(head, dict) or not isinstance(queued, list)
             or pending.get('run_date') != head.get('observation_date')):
         return None
     entries = [head, *queued]

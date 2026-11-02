@@ -5,7 +5,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -32,6 +32,31 @@ def mix(previous, current, position=1):
     rows.insert(position, current)
     return {**previous, 'pointer': rows[0], 'run_date': rows[0]['observation_date'],
             'queued_pointers': rows[1:]}
+
+
+def test_writer_backlog_above_1024_preserves_current_recovery_admission(tmp_path, monkeypatch):
+    state, previous, old, new = runtime(tmp_path, monkeypatch)
+    history = [historical((date.fromisoformat(DATE) - timedelta(days=n)).isoformat())
+               for n in range(1025, 0, -1)]
+    previous = {**previous, 'pointer': history[0], 'run_date': history[0]['observation_date'],
+                'queued_pointers': history[1:]}
+    atomic_write_json(sync.payload_publication_pending_path(tmp_path), previous)
+    sync.mark_payload_publication_pending(tmp_path, 'current hold', old['pointer'])
+    pending = sync.read_payload_publication_pending(tmp_path)
+    assert len(pending['queued_pointers']) == 1025
+    assert population_queue(pending, DATE) == (old['pointer'], [*history, old['pointer']])
+    assert population_pending_recovery_allowed(pending, old)
+    worker = SimpleNamespace(REPO_ROOT=tmp_path, run_payload_retry=Mock(), run_recovery_ingest=Mock())
+    recovery = Mock();recovery.recovery_block_reason.return_value = '';recovery.selected_observation.return_value = old
+    repair(worker, recovery, DATE, NOW, read_pending=lambda _: pending, execution_deadline=1100)
+    recovery.run_same_day_recovery.assert_called_once_with(tmp_path, now_utc=NOW, dry_run=False,
+        launch=worker.run_recovery_ingest, daily_pass=True, execution_deadline=1100)
+    worker.run_payload_retry.assert_not_called()
+    assert sync.read_payload_publication_pending(tmp_path) == pending
+    # Admission does not waive the independent bounded immutable-receipt contract.
+    sync.mark_payload_publication_pending(tmp_path, 'successor', new['pointer'], allow_policy_supersession=True)
+    assert sync.read_payload_publication_pending(tmp_path)['queued_pointers'] == [*pending['queued_pointers'], new['pointer']]
+    assert not (state / 'population-publication-supersessions-v1').exists()
 
 
 @pytest.mark.parametrize('position', [0, 1, 2])
