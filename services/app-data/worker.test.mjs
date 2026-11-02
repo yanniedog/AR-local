@@ -229,6 +229,10 @@ test('explicit capability admits only its index and immutable approved assets', 
   }
   assert.equal(releaseRoute(request(observedManifest.replace('2026-11-02-r000001', '2024-02-29-r999999'))).tag,
     'app-payload-observed-v1-2024-02-29-r999999');
+  for (const day of ['0001-01-01', '9999-12-31']) {
+    assert.equal(releaseRoute(request(observedManifest.replace('2026-11-02', day))).tag,
+      `app-payload-observed-v1-${day}-r000001`);
+  }
   // Fetch's Request rejects credentials itself; verify the parser independently too.
   assert.throws(() => releaseRoute({ url: observedManifest.replace('service.example', 'user:password@service.example'),
     headers: new Headers() }), /Invalid capability route/);
@@ -246,6 +250,8 @@ const invalidObserved = [
   observedManifest.replace('-r000001', '-r000000'),
   observedManifest.replace('-r000001', '-r1'),
   observedManifest.replace('-r000001', '-r1000000'),
+  observedManifest.replace('2026-11-02', '0000-01-01'),
+  observedManifest.replace('2026-11-02', '0000-02-29'),
   observedManifest.replace('2026-11-02', '2026-02-30'),
   observedManifest.replace('2026-11-02', '2026-13-02'),
   observedManifest.replace('-r000001', ''),

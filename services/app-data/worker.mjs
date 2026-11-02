@@ -28,7 +28,7 @@ function observedRoute(url, request) {
     if (asset !== 'dates-index.json') throw new Error('Candidate index only');
   } else {
     const edition = /^app-payload-observed-v1-([0-9]{4}-[0-9]{2}-[0-9]{2})-r([0-9]{6})$/.exec(tag);
-    if (!edition || Number(edition[2]) === 0 ||
+    if (!edition || edition[1].startsWith('0000-') || Number(edition[2]) === 0 ||
         !Number.isFinite(Date.parse(`${edition[1]}T00:00:00Z`)) ||
         new Date(`${edition[1]}T00:00:00Z`).toISOString().slice(0, 10) !== edition[1] ||
         !(DOCUMENTS.has(asset) || PAYLOAD.test(asset))) throw new Error('Invalid candidate edition');
