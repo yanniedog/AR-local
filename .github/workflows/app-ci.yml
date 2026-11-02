@@ -96,7 +96,8 @@ jobs:
 
   payload:
     name: payload builder (pytest)
-    runs-on: ubuntu-latest
+    # The qualified Python 3.13.5 build exists on 24.04, not the moving 26.04 image.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

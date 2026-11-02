@@ -67,10 +67,11 @@ def main():
     require(matched or args.development, "Linux Python 3.13.5 / pytest 9.1.1 qualification runtime required")
     output = args.output.absolute()
     output.mkdir(parents=True, exist_ok=False)
-    listing = ["git", "ls-files", "-z"]
-    if args.development:
-        listing += ["--cached", "--others", "--exclude-standard"]
+    listing = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
     tracked = source_inventory(SOURCE, listing)
+    if not args.development:
+        require(tracked == source_inventory(SOURCE, ["git", "ls-files", "-z"]),
+                "untracked source is not reviewed commit evidence")
     files = {name: hashlib.sha256((SOURCE / name).read_bytes()).hexdigest() for name in tracked}
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=SOURCE).decode().strip()
     whole, row = invoke(output, "tests", "whole")

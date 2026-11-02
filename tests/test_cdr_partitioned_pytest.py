@@ -2,12 +2,15 @@
 import copy
 import hashlib
 import json
-from pathlib import Path
+import itertools
+import sys
+from pathlib import Path, PurePosixPath
 
 import pytest
 
 import pi_cdr_pytest_partition as partition
 import pi_cdr_pytest_proof as proof
+import pi_cdr_pytest_runner as runner
 from tests.sequential_pytest_fixture import add_suite_source, reference, save, suite_fixture
 
 
@@ -41,6 +44,9 @@ def suite(tmp_path, monkeypatch):
         argv = proof.command(value["python"]["path"], source, operation, selector, index, collect,
                              partitioned=True, discovery=discovery)
         raw.update(argv=argv[5:], collect_only=collect, discovery=discovery)
+        visited = modules if collect else [selector]
+        raw.update(collected_modules=visited,
+                   module_outcomes=[{"module": m, "outcome": "passed"} for m in visited])
         if discovery:
             raw.update(collected=[], exitstatus=5, discovered_modules=modules)
         elif selector == empty:
@@ -119,3 +125,65 @@ def test_partition_order_and_boundaries_are_deterministic():
     plan = partition.partitions(modules)
     assert [len(p) for p in plan] == [48, 48, 1]
     assert [m for p in plan for m in p] == modules
+
+
+@pytest.mark.parametrize("stage,field", [(stage, field) for stage in ("discovery", "collections", "batches")
+                                        for field in ("collected_modules", "module_outcomes")])
+def test_empty_module_or_terminal_record_cannot_disappear(suite, stage, field):
+    _, operation, _, value = suite
+    row = value[stage] if stage == "discovery" else value[stage][-1]
+    path = operation / row["report"]["path"]
+    raw = json.loads(path.read_bytes())
+    raw[field].pop()
+    save(path, raw); row["report"] = reference(operation, path)
+    with pytest.raises(ValueError, match="module"): validate(suite)
+
+
+@pytest.mark.parametrize("fail_collection", [False, True])
+def test_runner_uses_one_discovery_budget_and_executes_empty_modules(suite, monkeypatch, fail_collection):
+    """Exercise orchestration with explicit synthetic process receipts, not Pi proof."""
+    import pi_cdr_quality_resources as resources
+    source, original, files, fixture = suite
+    operation = original.parent / "new-operation"
+    operation.mkdir()
+    owners = fixture["owners"]
+    rows = {Path(r["report"]["path"]).parent.name: r for r in
+            [fixture["discovery"], *fixture["collections"], *fixture["batches"]]}
+    calls = []
+    monkeypatch.setattr(resources, "own_cgroup", lambda: PurePosixPath(fixture["group"]))
+    monkeypatch.setattr(runner, "membership", lambda _: owners)
+    monkeypatch.setattr(runner.os, "getpid", lambda: 123)
+    clock = itertools.count(100, 10)
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+    original_remaining = runner.remaining
+    monkeypatch.setattr(runner, "remaining", lambda started: original_remaining(started, clock=runner.time.monotonic))
+    monkeypatch.setattr(runner, "file_ref", reference)
+
+    def child(src, out, python, selector, index, collect, started, group, actual_owners, **mode):
+        assert src == source and out == operation and started == 100 and actual_owners == owners
+        assert mode["partitioned"] is True and str(group) == fixture["group"]
+        calls.append(index)
+        if fail_collection and index.startswith("collect-"):
+            raise RuntimeError("synthetic collection failure")
+        row = copy.deepcopy(rows[index])
+        raw = json.loads((original / row["report"]["path"]).read_bytes())
+        argv = proof.command(python, source, operation, selector, index, collect, **mode)
+        raw["argv"] = argv[5:]
+        directory = operation / "pytest-suite" / index
+        save(directory / "report.json", raw)
+        (directory / "output.txt").write_text("Synthetic process receipt\n")
+        row.update(command=argv, report=reference(operation, directory / "report.json"),
+                   log=reference(operation, directory / "output.txt"))
+        return row, raw
+
+    monkeypatch.setattr(runner, "child", child)
+    if fail_collection:
+        with pytest.raises(RuntimeError, match="synthetic collection failure"):
+            runner.run_suite(source, operation, Path(sys.executable), "a" * 40, files)
+        assert calls == ["discover", "collect-00000"]
+        assert (operation / "pytest-suite-failure.json").exists()
+        assert not (operation / "pytest-suite.json").exists()
+    else:
+        result = runner.run_suite(source, operation, Path(sys.executable), "a" * 40, files)
+        assert calls == ["discover", "collect-00000", "00000", "00001"]
+        assert result["schema"] == proof.PARTITION_SCHEMA and result["budget_seconds"] == 3600

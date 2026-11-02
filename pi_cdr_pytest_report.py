@@ -36,7 +36,7 @@ def pytest_configure(config):
                              "collection_skips": [], "collection_errors": [], "reports": [],
                              "errors": [], "collection_finished": False,
                              "partitioned": partitioned, "discovery": discovery,
-                             "discovered_modules": []}
+                             "discovered_modules": [], "collected_modules": [], "module_outcomes": []}
     reporter = Reporter(config)
     config.pluginmanager.register(reporter, "protected-canary-recorder")
     if partitioned:
@@ -89,13 +89,15 @@ class Reporter:
 
     def pytest_collection_finish(self, session):
         if hasattr(self.config, "_canary_discovery"):
-            self.config._canary_discovery.audit()
+            self.config._canary_discovery.finish()
         self.value["collected"] = [{"nodeid": item.nodeid,
                                      "module": item.path.relative_to(self.config.rootpath).as_posix()}
                                     for item in session.items]
         self.value["collection_finished"] = True
 
     def pytest_collectreport(self, report):
+        if hasattr(self.config, "_canary_discovery"):
+            self.config._canary_discovery.terminal(report)
         if report.failed or report.skipped:
             key = "collection_errors" if report.failed else "collection_skips"
             self.value[key].append({"nodeid": report.nodeid, "detail": str(report.longrepr)})
@@ -115,7 +117,7 @@ class Reporter:
     @pytest.hookimpl(trylast=True)
     def pytest_sessionfinish(self, session, exitstatus):
         if hasattr(self.config, "_canary_discovery"):
-            self.config._canary_discovery.audit()
+            self.config._canary_discovery.finish()
         self.value["context_after"] = context(self.config)
         self.value.update(complete=True, exitstatus=int(session.exitstatus))
         path = Path(self.config.getoption("canary_report"))

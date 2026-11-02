@@ -48,12 +48,16 @@ def test_native_discovery_and_parameterized_partition_equivalence(tmp_path):
     assert result.returncode == 5
     assert discovery["collected"] == []
     assert discovery["discovered_modules"] == ["tests/sub/test_b.py", "tests/test_a.py", "tests/test_empty.py"]
+    assert discovery["collected_modules"] == discovery["discovered_modules"]
+    assert discovery["module_outcomes"] == [{"module": m, "outcome": "passed"} for m in discovery["discovered_modules"]]
     _, whole = run(source, "whole")
     collected = []
     for i, module in enumerate(discovery["discovered_modules"]):
         result, part = run(source, "part" + str(i), [module])
         assert result.returncode == (0 if part["collected"] else 5)
         assert part["context"] == whole["context"] == discovery["context"]
+        assert part["collected_modules"] == [module]
+        assert part["module_outcomes"] == [{"module": module, "outcome": "passed"}]
         collected += part["collected"]
     assert collected == whole["collected"]
     assert len(collected) == 3
@@ -84,6 +88,8 @@ def test_module_import_skip_or_failure_is_deferred_not_omitted(tmp_path, body, e
     result, part = run(source, "part", ["tests/test_a.py"])
     assert result.returncode == expected
     assert part["collection_skips" if expected == 5 else "collection_errors"]
+    assert part["collected_modules"] == ["tests/test_a.py"]
+    assert part["module_outcomes"] == [{"module": "tests/test_a.py", "outcome": "skipped" if expected == 5 else "failed"}]
 
 
 @pytest.mark.parametrize("hook", [
@@ -91,6 +97,7 @@ def test_module_import_skip_or_failure_is_deferred_not_omitted(tmp_path, body, e
     "def pytest_collection_modifyitems(items): items.extend(items)\n",
     "def pytest_ignore_collect(collection_path): return True\n",
     "def pytest_collect_file(file_path, parent): return None\n",
+    "def pytest_generate_tests(metafunc): pass\n",
 ])
 def test_unsupported_global_hooks_fail_closed_including_late_conftest(tmp_path, hook):
     source = tree(tmp_path, {"tests/sub/conftest.py": hook, "tests/sub/test_a.py": "def test_a(): pass\n"})
@@ -104,6 +111,32 @@ def test_per_module_parametrization_hook_remains_supported(tmp_path):
     result, report = run(source, "run", collect=False)
     assert result.returncode == 0 and len(report["collected"]) == 2
     assert not report["errors"]
+
+
+def test_global_parametrization_can_differ_across_sessions_and_is_rejected(tmp_path):
+    source = tree(tmp_path, {
+        "tests/conftest.py": "counter = 0\ndef pytest_generate_tests(metafunc):\n global counter\n counter += 1\n metafunc.parametrize('x', [counter])\n",
+        "tests/test_a.py": "def test_a(x): pass\n",
+        "tests/test_b.py": "def test_b(x): pass\n",
+    })
+    _, whole = run(source, "legacy-whole", partitioned=False)
+    _, alone = run(source, "legacy-alone", ["tests/test_b.py"], partitioned=False)
+    assert [row for row in whole["collected"] if row["module"] == "tests/test_b.py"] != alone["collected"]
+    result, guarded = run(source, "guarded")
+    assert result.returncode != 0
+    assert "unsupported global collection hook: pytest_generate_tests" in guarded["errors"]
+    assert guarded["collected"] == []
+
+
+def test_empty_module_receipt_records_native_visits_not_requested_selectors(tmp_path):
+    source = tree(tmp_path, {"tests/test_empty.py": "VALUE = 1\n"})
+    result, report = run(source, "duplicate", ["tests/test_empty.py", "tests/test_empty.py"])
+    assert result.returncode == 5 and report["collected"] == []
+    # Pytest caches this collector. The raw evidence must not fabricate a second
+    # visit from argv; the proof's exact selector/visit equality rejects it.
+    assert report["argv"].count("tests/test_empty.py") == 2
+    assert report["collected_modules"] == ["tests/test_empty.py"]
+    assert report["module_outcomes"] == [{"module": "tests/test_empty.py", "outcome": "passed"}]
 
 
 @pytest.mark.parametrize("selectors", [["tests/test_a.py", "tests/test_a.py"], ["tests/test_a.py"]])

@@ -12,7 +12,7 @@ GLOBAL_HOOKS = (
     "pytest_collection", "pytest_collection_modifyitems", "pytest_collection_finish",
     "pytest_ignore_collect", "pytest_collect_directory", "pytest_collect_file",
     "pytest_pycollect_makemodule", "pytest_pycollect_makeitem", "pytest_make_collect_report", "pytest_collectstart",
-    "pytest_collectreport", "pytest_itemcollected", "pytest_deselected",
+    "pytest_collectreport", "pytest_itemcollected", "pytest_deselected", "pytest_generate_tests",
 )
 
 
@@ -27,6 +27,27 @@ class Discovery:
         self.reporter = reporter
         self.value = config._canary_report
         self.seen = set()
+        self.module_nodeids = {}
+        self.terminal_modules = set()
+
+    def terminal(self, report):
+        module = self.module_nodeids.get(report.nodeid)
+        if module is None:
+            return  # Session, directory and class reports are not module outcomes.
+        if module in self.terminal_modules:
+            self.value["errors"].append("duplicate module terminal report: " + module)
+        self.terminal_modules.add(module)
+        if report.outcome not in ("passed", "skipped", "failed"):
+            self.value["errors"].append("invalid module terminal outcome: " + module)
+        self.value["module_outcomes"].append({"module": module, "outcome": report.outcome})
+
+    def finish(self):
+        self.audit()
+        terminal = [row["module"] for row in self.value["module_outcomes"]]
+        if terminal != self.value["collected_modules"]:
+            message = "missing or reordered module terminal reports"
+            if message not in self.value["errors"]:
+                self.value["errors"].append(message)
 
     def audit(self):
         """Global hooks can change cross-module semantics; reject unknown owners."""
@@ -74,10 +95,12 @@ class Discovery:
         if isinstance(collector, pytest.Module):
             if not relative.startswith("tests/") or not relative.endswith(".py"):
                 raise pytest.Collector.CollectError("unexpected non-Python test module")
+            if relative in self.seen or collector.nodeid in self.module_nodeids:
+                raise pytest.Collector.CollectError("duplicate collected module")
+            self.seen.add(relative)
+            self.module_nodeids[collector.nodeid] = relative
+            self.value["collected_modules"].append(relative)
             if self.value["discovery"]:
-                if relative in self.seen:
-                    raise pytest.Collector.CollectError("duplicate discovered module")
-                self.seen.add(relative)
                 self.value["discovered_modules"].append(relative)
                 return CollectReport(collector.nodeid, "passed", None, [])
         return None

@@ -10,6 +10,17 @@ from pi_cdr_pytest_proof import (aggregate, cases_for_batch, inventory, module_o
 PARTITION_SIZE = 48
 
 
+def module_records(raw, expected):
+    require(raw.get("collected_modules") == expected, "missing/repeated/out-of-order collected module")
+    outcomes = raw.get("module_outcomes")
+    require(isinstance(outcomes, list) and [row.get("module") for row in outcomes] == expected
+            and all(row.get("outcome") in ("passed", "skipped") for row in outcomes),
+            "missing or failed terminal module collection")
+    skipped = {row["nodeid"] for row in raw["collection_skips"]}
+    require(all((row["module"] in skipped) == (row["outcome"] == "skipped") for row in outcomes),
+            "module collection skip differs from terminal outcome")
+
+
 def discovery_inventory(raw, files):
     nodes, skips = inventory(raw)
     require(raw.get("partitioned") is True and raw.get("discovery") is True
@@ -21,6 +32,7 @@ def discovery_inventory(raw, files):
             "empty or duplicate discovered modules")
     for module in modules:
         require(module_of(module) == module and module in files, "unbound discovered test module")
+    module_records(raw, modules)
     return modules
 
 
@@ -34,6 +46,7 @@ def collection_inventory(modules, reports, context):
     nodes, skips = [], []
     for expected, raw in zip(plan, reports):
         current, omitted = inventory(raw)
+        module_records(raw, expected)
         require(raw.get("partitioned") is True and raw.get("discovery") is False
                 and raw["collect_only"] is True and raw["exitstatus"] == (0 if current else 5)
                 and not raw["reports"] and raw["context"] == context,
@@ -90,6 +103,7 @@ def validate_partitioned_suite(root, proof, files):
     for index, row in enumerate(proof["batches"]):
         module = row["module"]
         raw, previous = read_run(root, proof, row, module, f"{index:05d}", False, previous)
+        module_records(raw, [module])
         require(raw.get("partitioned") is True and raw.get("discovery") is False
                 and raw["context"] == context, "execution context differs from collection")
         cases.extend(cases_for_batch(raw, [n for n in nodes if n["module"] == module],

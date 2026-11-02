@@ -10,12 +10,16 @@ collection before importing every test module together and records the ordered
 module inventory. Discovery is not allowed to narrow its selector, follow linked
 paths, ignore an error or skip an unverified directory. Unsupported global
 collection hooks and nonstandard collectors fail closed. Per-module
-parametrization remains native pytest behavior.
+parametrization remains native pytest behavior; global/conftest
+`pytest_generate_tests` hooks are unsupported because they can carry state
+between modules that disappears at a partition boundary.
 
 Fresh child processes collect contiguous groups of at most 48 discovered modules.
 The proof binds every selector, ordered node ID, parametrization, collection skip,
 runtime/context and raw report. Every discovered module, including an empty
-module, then executes as a whole module in another child. Its collected nodes and
+module, has an explicit visit and terminal collection outcome, and then executes
+as a whole module in another child. An absent module cannot masquerade as an
+empty one. Its collected nodes and
 skips must exactly match the corresponding collection evidence. Every test needs
 the original terminal setup/call/teardown evidence. The final XML is reconstructed
 from those raw identities and phases, never accepted by test counts alone.
@@ -34,6 +38,8 @@ ordered node records, skips and context. It rechecks source filenames, bytes and
 commit and retains the raw evidence as a CI artifact. The reported architecture
 is explicit: this differential qualification does not replace actual Pi canary
 acceptance. `--development` always labels evidence development-only.
+Both qualification modes inventory nonignored untracked files before and after;
+normal CI additionally refuses an initial untracked source inventory.
 
 An unsupported collection hook, dependency/platform-specific behavior or changed
 inventory must produce a failure requiring review. Do not seed Pi expectations

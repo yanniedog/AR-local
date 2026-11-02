@@ -10,7 +10,8 @@ from pathlib import Path
 
 from pi_cdr_pytest_proof import (BUDGET, PARTITION_HELPERS, PARTITION_SCHEMA, aggregate, cases_for_batch, command,
                                 file_ref, inventory, module_of, module_plan, read_body, require, validate_suite)
-from pi_cdr_pytest_partition import (PARTITION_SIZE, collection_inventory, discovery_inventory, partitions)
+from pi_cdr_pytest_partition import (PARTITION_SIZE, collection_inventory, discovery_inventory,
+                                    module_records, partitions)
 
 
 def write_once(path, body):
@@ -107,6 +108,7 @@ def run_suite(source: Path, operation: Path, python: Path, target: str, files: d
             print(f"[cdr-canary-pytest] module {index + 1}: {module}", flush=True)
             row, report = child(source, operation, python, module, f"{index:05d}", False, started, group, owners,
                                 partitioned=True)
+            module_records(report, [module])
             require(report["context"] == raw["context"], "pytest batch context changed")
             cases += cases_for_batch(report, [n for n in nodes if n["module"] == module],
                                      [s for s in skips if module_of(s["nodeid"]) == module])
