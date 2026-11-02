@@ -35,7 +35,9 @@ def mix(previous, current, position=1):
 
 
 def test_writer_backlog_above_1024_preserves_current_recovery_admission(tmp_path, monkeypatch):
+    import pi_population_publication
     state, previous, old, new = runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(pi_population_publication, 'reconcile_selected_population_pending', lambda *a: False)
     history = [historical((date.fromisoformat(DATE) - timedelta(days=n)).isoformat())
                for n in range(1025, 0, -1)]
     previous = {**previous, 'pointer': history[0], 'run_date': history[0]['observation_date'],
