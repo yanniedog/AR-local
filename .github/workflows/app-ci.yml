@@ -147,7 +147,12 @@ jobs:
         # This remains CI-only; no packages or settings change on the Pi.
         run: python -m pip install --quiet pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 zstandard==0.25.0 tzdata
       - name: Prove exhaustive partitioned collection equivalence
-        run: python -B scripts/qualify-partitioned-collection.py --output "$RUNNER_TEMP/collection-equivalence"
+        # Keep post-test artifacts for diagnosis; qualify the same reviewed Git
+        # commit in a pristine worktree rather than ignoring/cleaning extra files.
+        run: |
+          git status --porcelain --untracked-files=all
+          git worktree add --detach "$RUNNER_TEMP/collection-source" HEAD
+          python -B "$RUNNER_TEMP/collection-source/scripts/qualify-partitioned-collection.py" --output "$RUNNER_TEMP/collection-equivalence"
       - name: Retain native collection evidence
         if: always()
         uses: actions/upload-artifact@v4

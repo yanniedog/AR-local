@@ -40,6 +40,9 @@ is explicit: this differential qualification does not replace actual Pi canary
 acceptance. `--development` always labels evidence development-only.
 Both qualification modes inventory nonignored untracked files before and after;
 normal CI additionally refuses an initial untracked source inventory.
+CI records the post-test checkout status and qualifies a pristine detached
+worktree at the identical Git commit. It preserves original test artifacts and
+does not clean, ignore or admit them into the source qualification.
 
 An unsupported collection hook, dependency/platform-specific behavior or changed
 inventory must produce a failure requiring review. Do not seed Pi expectations
