@@ -33,8 +33,8 @@ def dropbehind_required() -> bool:
     return _REQUIRED.get()
 
 
-def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | None]:
-    """Read every byte through the caller's identity-bound descriptor.
+def chunks_dropbehind(descriptor: int, size: int, *, budget=None):
+    """Read a complete file through the caller's identity-bound descriptor.
 
     RWF_DONTCACHE is best-effort cache advice, not a memory limit. Missing API,
     unsupported filesystem and I/O errors propagate; resource guards still apply.
@@ -42,7 +42,7 @@ def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -
     """
     if sys.platform != "linux" or not callable(getattr(os, "preadv", None)):
         raise RuntimeError("required drop-behind hashing needs Linux preadv2/RWF_DONTCACHE")
-    digest, blocks, offset = hashlib.sha256(), [], 0
+    offset = 0
     buffer = bytearray(min(READ_BYTES, max(size, 1)))
     view = memoryview(buffer)
     while offset < size:
@@ -54,13 +54,19 @@ def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -
             budget(size=count)
         if not 0 < count <= requested:
             raise ValueError("evidence size changed during read")
-        digest.update(view[:count])
-        if capture:
-            blocks.append(bytes(view[:count]))
         offset += count
+        yield bytes(view[:count])
     # Even an empty file must exercise the required flag and check for growth.
     if budget is not None:
         budget()
     if os.preadv(descriptor, [view[:1]], offset, RWF_DONTCACHE):
         raise ValueError("evidence size changed during read")
+
+
+def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | None]:
+    digest, blocks = hashlib.sha256(), []
+    for block in chunks_dropbehind(descriptor, size, budget=budget):
+        digest.update(block)
+        if capture:
+            blocks.append(block)
     return digest.hexdigest(), b"".join(blocks) if capture else None

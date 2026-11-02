@@ -92,15 +92,19 @@ def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = 
         raise
     expected_size = remaining = source.st_size
     with stream:
-        while remaining:
-            amount = min(1024 * 1024, remaining)
-            budget(reserve_bytes=amount)
-            chunk = stream.read(amount)
-            budget(size=len(chunk))
-            if not chunk:
-                raise ValueError("artifact changed during bounded verification")
-            remaining -= len(chunk)
-            yield chunk
+        from pi_cdr_quality_read_io import chunks_dropbehind, dropbehind_required
+        if dropbehind_required():
+            yield from chunks_dropbehind(stream.fileno(), expected_size, budget=budget)
+        else:
+            while remaining:
+                amount = min(1024 * 1024, remaining)
+                budget(reserve_bytes=amount)
+                chunk = stream.read(amount)
+                budget(size=len(chunk))
+                if not chunk:
+                    raise ValueError("artifact changed during bounded verification")
+                remaining -= len(chunk)
+                yield chunk
         budget()
         after = path.lstat()
         if (not stat.S_ISREG(after.st_mode) or after.st_size != expected_size
