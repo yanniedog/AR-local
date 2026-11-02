@@ -10,6 +10,38 @@ import pytest
 SOURCE = Path(__file__).resolve().parents[1]
 
 
+def test_hook_audit_uses_raw_relay_and_preserves_external_hook_rejection():
+    from _pytest.config import get_config
+    from pi_cdr_pytest_discovery import Discovery
+
+    config = get_config()
+    raw = config.pluginmanager.hook
+
+    class CompatibilityRelay:
+        def __getattr__(self, name):
+            hook = getattr(raw, name)
+            if name == "pytest_ignore_collect":
+                return lambda **kwargs: hook(**kwargs)
+            return hook
+
+    class ExternalPlugin:
+        def pytest_ignore_collect(self, collection_path, config):
+            return None
+
+    config.hook = CompatibilityRelay()
+    config._canary_report = {"errors": []}
+    discovery = Discovery(config, object())
+    try:
+        assert not hasattr(config.hook.pytest_ignore_collect, "get_hookimpls")
+        assert discovery.audit()
+        config.pluginmanager.register(ExternalPlugin(), "external-test-hook")
+        assert not discovery.audit()
+        assert config._canary_report["errors"] == [
+            "unsupported global collection hook: pytest_ignore_collect"]
+    finally:
+        config._ensure_unconfigure()
+
+
 def tree(tmp_path, files):
     source = tmp_path / "source"
     source.mkdir()

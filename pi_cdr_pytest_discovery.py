@@ -52,7 +52,7 @@ class Discovery:
     def audit(self):
         """Global hooks can change cross-module semantics; reject unknown owners."""
         for name in GLOBAL_HOOKS:
-            for impl in getattr(self.config.hook, name).get_hookimpls():
+            for impl in getattr(self.config.pluginmanager.hook, name).get_hookimpls():
                 if impl.plugin is self or impl.plugin is self.reporter:
                     continue
                 if impl.function.__module__.startswith("_pytest."):
