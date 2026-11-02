@@ -182,11 +182,15 @@ Each child has a unique operation-local temporary/report directory. Raw
 collection, terminal reports, logs, commands and owner observations are retained.
 The raw per-module receipts are JSON phase reports, not native per-module JUnit;
 the single aggregate JUnit is derived from those complete reports.
-`pytest-suite.json` version 1 binds the candidate's full source inventory,
+New `pytest-suite.json` receipts use `ar-local-sequential-pytest-v2` and bind the
+native exhaustive module discovery and partitioned collection described in
+[PYTEST_COLLECTION_PROOF.md](PYTEST_COLLECTION_PROOF.md), the full source inventory,
 runner/hook/validator hashes, interpreter, configuration, plugin versions,
 source/cgroup context and every raw report/log. Canary sealing, activation and
 audit-cache provenance require this proof; a standalone JUnit success no longer
-establishes current suite acceptance. Cache format v2 retains the complete proof
+establishes current suite acceptance. Previously sealed
+`ar-local-sequential-pytest-v1` receipts remain verifiable through their original
+validation path; they are not relabelled as v2. Cache format v2 retains the complete proof
 and raw evidence. Existing v1 caches remain preserved but are incompatible.
 
 Session semantics change intentionally: session fixtures, imported globals,
