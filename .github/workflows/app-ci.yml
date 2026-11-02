@@ -137,6 +137,23 @@ jobs:
         # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so
         # these guards actually gate, not just test_app_payload.py.
         run: python -m pytest tests/ -q
+      - name: Use the qualified Pi collection interpreter version
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Install matched collection dependencies
+        # Match the qualified Pi runtime's collection-sensitive direct versions.
+        # This remains CI-only; no packages or settings change on the Pi.
+        run: python -m pip install --quiet pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 zstandard==0.25.0 tzdata
+      - name: Prove exhaustive partitioned collection equivalence
+        run: python -B scripts/qualify-partitioned-collection.py --output "$RUNNER_TEMP/collection-equivalence"
+      - name: Retain native collection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-equivalence
+          path: ${{ runner.temp }}/collection-equivalence
+          if-no-files-found: error
 
   dispatcher-windows:
     name: dispatcher contract (Windows PowerShell 5.1)

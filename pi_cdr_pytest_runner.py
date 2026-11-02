@@ -8,8 +8,9 @@ import sys
 import time
 from pathlib import Path
 
-from pi_cdr_pytest_proof import (BUDGET, HELPERS, SCHEMA, aggregate, cases_for_batch, command,
+from pi_cdr_pytest_proof import (BUDGET, PARTITION_HELPERS, PARTITION_SCHEMA, aggregate, cases_for_batch, command,
                                 file_ref, inventory, module_of, module_plan, read_body, require, validate_suite)
+from pi_cdr_pytest_partition import (PARTITION_SIZE, collection_inventory, discovery_inventory, partitions)
 
 
 def write_once(path, body):
@@ -44,10 +45,12 @@ def remaining(started, clock=time.monotonic):
     return value
 
 
-def child(source, operation, python, selector, index, collect, started, group, owners):
+def child(source, operation, python, selector, index, collect, started, group, owners, *,
+          partitioned=False, discovery=False):
     directory = operation / "pytest-suite" / index
     directory.mkdir(exist_ok=False)
-    argv = command(python, source, operation, selector, index, collect)
+    argv = command(python, source, operation, selector, index, collect,
+                   partitioned=partitioned, discovery=discovery)
     before = membership(group)
     require(before == owners, "previous batch survivors or changed supervisor ownership")
     row = {"command": argv, "module": selector, "start": time.monotonic() - started,
@@ -82,22 +85,28 @@ def run_suite(source: Path, operation: Path, python: Path, target: str, files: d
     group = own_cgroup()
     owners = membership(group)
     require(str(os.getpid()) in owners, "worker missing from protected pytest cgroup")
-    proof = {"schema": SCHEMA, "result": "PASS", "target_commit": target,
+    proof = {"schema": PARTITION_SCHEMA, "result": "PASS", "target_commit": target,
              "source": str(source), "operation": str(operation), "source_files": files,
-             "helpers": {name: files[name] for name in HELPERS}, "budget_seconds": BUDGET,
+             "helpers": {name: files[name] for name in PARTITION_HELPERS}, "budget_seconds": BUDGET,
              "group": str(group), "owners": owners,
              "python": {"path": str(python), "sha256": file_ref(python.resolve().parent, python.resolve())["sha256"]},
-             "batches": []}
+             "partition_size": PARTITION_SIZE, "collections": [], "batches": []}
     try:
-        collection, raw = child(source, operation, python, "tests", "collect", True, started, group, owners)
-        proof["collection"] = collection
-        nodes, skips = inventory(raw)
-        require(raw["exitstatus"] == 0 and raw["collect_only"] is True and nodes and not raw["reports"],
-                "full successful test inventory required")
+        discovery, raw = child(source, operation, python, "tests", "discover", True, started, group, owners,
+                               partitioned=True, discovery=True)
+        proof["discovery"] = discovery
+        modules = discovery_inventory(raw, files)
+        collected = []
+        for index, selectors in enumerate(partitions(modules)):
+            row, report = child(source, operation, python, selectors, f"collect-{index:05d}", True,
+                                started, group, owners, partitioned=True)
+            proof["collections"].append(row); collected.append(report)
+        nodes, skips = collection_inventory(modules, collected, raw["context"])
         cases = []
-        for index, module in enumerate(module_plan(raw)):
+        for index, module in enumerate(modules):
             print(f"[cdr-canary-pytest] module {index + 1}: {module}", flush=True)
-            row, report = child(source, operation, python, module, f"{index:05d}", False, started, group, owners)
+            row, report = child(source, operation, python, module, f"{index:05d}", False, started, group, owners,
+                                partitioned=True)
             require(report["context"] == raw["context"], "pytest batch context changed")
             cases += cases_for_batch(report, [n for n in nodes if n["module"] == module],
                                      [s for s in skips if module_of(s["nodeid"]) == module])
@@ -111,7 +120,7 @@ def run_suite(source: Path, operation: Path, python: Path, target: str, files: d
         write_json(operation / "pytest-suite.json", proof)
         return proof
     except BaseException as error:
-        write_json(operation / "pytest-suite-failure.json", {"schema": SCHEMA, "result": "FAIL",
+        write_json(operation / "pytest-suite-failure.json", {"schema": PARTITION_SCHEMA, "result": "FAIL",
                    "target_commit": target, "elapsed_seconds": time.monotonic() - started,
                    "error_type": type(error).__name__, "detail": str(error),
                    "completed_modules": [row["module"] for row in proof["batches"]]})

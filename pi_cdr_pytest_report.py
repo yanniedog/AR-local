@@ -16,6 +16,8 @@ SCHEMA = "ar-local-pytest-report-v1"
 def pytest_addoption(parser):
     group = parser.getgroup("protected-canary")
     group.addoption("--canary-report", required=False)
+    group.addoption("--canary-partitioned", action="store_true")
+    group.addoption("--canary-discover-modules", action="store_true")
 
 
 def pytest_configure(config):
@@ -24,10 +26,23 @@ def pytest_configure(config):
         raise pytest.UsageError("protected reporter requires a unique report path")
     if os.path.lexists(path):
         raise pytest.UsageError("protected report already exists")
+    partitioned = config.getoption("canary_partitioned")
+    discovery = config.getoption("canary_discover_modules")
+    if discovery and not (partitioned and config.option.collectonly):
+        raise pytest.UsageError("module discovery requires partitioned collect-only")
+    if discovery and config.args != ["tests"]:
+        raise pytest.UsageError("module discovery requires the entire tests root")
     config._canary_report = {"schema": SCHEMA, "complete": False, "collected": [],
                              "collection_skips": [], "collection_errors": [], "reports": [],
-                             "errors": [], "collection_finished": False}
-    config.pluginmanager.register(Reporter(config), "protected-canary-recorder")
+                             "errors": [], "collection_finished": False,
+                             "partitioned": partitioned, "discovery": discovery,
+                             "discovered_modules": []}
+    reporter = Reporter(config)
+    config.pluginmanager.register(reporter, "protected-canary-recorder")
+    if partitioned:
+        from pi_cdr_pytest_discovery import Discovery
+        config._canary_discovery = Discovery(config, reporter)
+        config.pluginmanager.register(config._canary_discovery, "protected-canary-discovery")
 
 
 def context(config):
@@ -36,7 +51,7 @@ def context(config):
                   ("keyword", "markexpr", "deselect", "ignore", "ignore_glob", "lf", "noconftest", "confcutdir")}
     if any(selections.values()):
         config._canary_report["errors"].append("selection override is forbidden")
-    return {"source": str(config.rootpath), "inipath": str(config.inipath) if config.inipath else None,
+    value = {"source": str(config.rootpath), "inipath": str(config.inipath) if config.inipath else None,
             "ini": dict(config.inicfg), "python": str(Path(sys.executable).absolute()),
             "prefix": sys.prefix, "version": platform.python_version(), "platform": sys.platform,
             "cgroup": Path("/proc/self/cgroup").read_text() if sys.platform == "linux" else None,
@@ -46,6 +61,10 @@ def context(config):
                          "sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
             "environment": {name: os.environ.get(name) for name in
                             ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTEST_DISABLE_PLUGIN_AUTOLOAD")}}
+    if config.getoption("canary_partitioned"):
+        from pi_cdr_pytest_discovery import identity
+        value["discovery_helper"] = identity()
+    return value
 
 
 class Reporter:
@@ -54,6 +73,8 @@ class Reporter:
         self.value = config._canary_report
 
     def pytest_sessionstart(self, session):
+        if hasattr(self.config, "_canary_discovery"):
+            self.config._canary_discovery.audit()
         self.value["context"] = context(self.config)
         self.value["argv"] = list(self.config.invocation_params.args)
         self.value["collect_only"] = bool(self.config.option.collectonly)
@@ -67,6 +88,8 @@ class Reporter:
             self.value["errors"].append("collection filtered or duplicated node IDs")
 
     def pytest_collection_finish(self, session):
+        if hasattr(self.config, "_canary_discovery"):
+            self.config._canary_discovery.audit()
         self.value["collected"] = [{"nodeid": item.nodeid,
                                      "module": item.path.relative_to(self.config.rootpath).as_posix()}
                                     for item in session.items]
@@ -91,6 +114,8 @@ class Reporter:
 
     @pytest.hookimpl(trylast=True)
     def pytest_sessionfinish(self, session, exitstatus):
+        if hasattr(self.config, "_canary_discovery"):
+            self.config._canary_discovery.audit()
         self.value["context_after"] = context(self.config)
         self.value.update(complete=True, exitstatus=int(session.exitstatus))
         path = Path(self.config.getoption("canary_report"))
