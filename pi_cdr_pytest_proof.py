@@ -11,8 +11,10 @@ from pathlib import Path
 from pi_cdr_quality_digest import read_digest
 
 SCHEMA = "ar-local-sequential-pytest-v1"
+PARTITION_SCHEMA = "ar-local-sequential-pytest-v2"
 BUDGET = 3600
 HELPERS = ("pi_cdr_pytest_runner.py", "pi_cdr_pytest_report.py", "pi_cdr_pytest_proof.py")
+PARTITION_HELPERS = (*HELPERS, "pi_cdr_pytest_discovery.py", "pi_cdr_pytest_partition.py")
 
 
 def require(condition, message):
@@ -116,17 +118,21 @@ def aggregate(cases):
     return ET.tostring(suite, encoding="utf-8", xml_declaration=True)
 
 
-def command(python, source, operation, selector, index, collect=False):
+def command(python, source, operation, selector, index, collect=False, *, partitioned=False, discovery=False):
     report = operation / "pytest-suite" / index / "report.json"
-    argv = [str(python), "-u", "-B", "-m", "pytest", selector, "-v", "-p", "no:cacheprovider",
+    selectors = [selector] if isinstance(selector, str) else list(selector)
+    argv = [str(python), "-u", "-B", "-m", "pytest", *selectors, "-v", "-p", "no:cacheprovider",
             "-p", "pi_cdr_pytest_report", "--rootdir", str(source), "--basetemp",
             str(operation / "pytest-suite" / index / "tmp"), "--canary-report", str(report)]
-    return argv + (["--collect-only"] if collect else [])
+    return (argv + (["--collect-only"] if collect else [])
+            + (["--canary-partitioned"] if partitioned else [])
+            + (["--canary-discover-modules"] if discovery else []))
 
 
 def validate_run(row, report, proof, selector, index, collect, previous_end):
     expected = command(proof["python"]["path"], Path(proof["source"]), Path(proof["operation"]),
-                       selector, index, collect)
+                       selector, index, collect, partitioned=proof["schema"] == PARTITION_SCHEMA,
+                       discovery=index == "discover" and proof["schema"] == PARTITION_SCHEMA)
     require(row["command"] == expected and report["argv"] == expected[5:], "pytest command/context mismatch")
     require(row["report"]["path"] == f"pytest-suite/{index}/report.json"
             and row["log"]["path"] == f"pytest-suite/{index}/output.txt", "batch evidence path mismatch")
@@ -142,7 +148,7 @@ def validate_suite(root: Path, target: str, *, source=None, source_files=None, p
                    original_operation=None, resource_group=None):
     """Validate retained raw evidence; also works on byte-identical sealed copies."""
     proof = json.loads(read_body(root / "pytest-suite.json")) if proof is None else proof
-    require(proof.get("schema") == SCHEMA and proof.get("result") == "PASS"
+    require(proof.get("schema") in (SCHEMA, PARTITION_SCHEMA) and proof.get("result") == "PASS"
             and proof.get("target_commit") == target and re.fullmatch("[0-9a-f]{40}", target),
             "versioned exact-candidate suite proof required")
     require(proof["budget_seconds"] == BUDGET and 0 <= proof["elapsed_seconds"] <= BUDGET,
@@ -155,9 +161,13 @@ def validate_suite(root: Path, target: str, *, source=None, source_files=None, p
     require(source is None or proof["source"] == str(source), "suite source mismatch")
     files = proof["source_files"]
     require(bool(files) and (source_files is None or files == source_files), "suite source inventory mismatch")
-    require(proof["helpers"] == {name: files[name] for name in HELPERS}, "runner/hook code binding mismatch")
+    helpers = PARTITION_HELPERS if proof["schema"] == PARTITION_SCHEMA else HELPERS
+    require(proof["helpers"] == {name: files[name] for name in helpers}, "runner/hook code binding mismatch")
     require(all(re.fullmatch("[0-9a-f]{64}", value) for value in [*files.values(), proof["python"]["sha256"]]),
             "invalid source/runtime digests")
+    if proof["schema"] == PARTITION_SCHEMA:
+        from pi_cdr_pytest_partition import validate_partitioned_suite
+        return validate_partitioned_suite(root, proof, files)
     collection = json.loads(referenced(root, proof["collection"]["report"]))
     nodes, skips = inventory(collection)
     require(bool(nodes) and collection["collect_only"] is True and collection["exitstatus"] == 0
@@ -190,5 +200,7 @@ def validate_suite(root: Path, target: str, *, source=None, source_files=None, p
 
 
 def evidence_names(proof):
+    rows = ([proof["discovery"], *proof["collections"], *proof["batches"]]
+            if proof["schema"] == PARTITION_SCHEMA else [proof["collection"], *proof["batches"]])
     return ["pytest-suite.json", proof["aggregate"]["path"],
-            *[row[key]["path"] for row in [proof["collection"], *proof["batches"]] for key in ("report", "log")]]
+            *[row[key]["path"] for row in rows for key in ("report", "log")]]
