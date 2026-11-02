@@ -57,7 +57,7 @@ def supersede_population_pending(state,previous,pointer,replacement):
         'replacement_contract_digest':new['contract']['contract_digest']}
     raw=canonical_json_bytes(receipt)
     if len(raw)>65536:
-        raise ValueError('population supersession receipt exceeds metadata budget')
+        return None  # Retain ordinary pending work when its audit exceeds the bound.
     name=hashlib.sha256(raw).hexdigest()+'.json'
     relative='population-publication-supersessions-v1/'+name
     atomic_write_json(state/relative,receipt,create_once=True)

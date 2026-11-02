@@ -268,3 +268,30 @@ def test_mixed_successor_requires_current_selection_and_bound_reconciliation(tmp
     assert result['pointer'] == previous['pointer']
     assert result['queued_pointers'][:len(previous['queued_pointers'])] == previous['queued_pointers']
     assert not (state/'population-publication-supersessions-v1').exists()
+
+
+def test_oversized_supersession_receipt_keeps_ordinary_pending_without_raising(tmp_path, monkeypatch):
+    state, previous, old, new = runtime(tmp_path, monkeypatch)
+    previous = mix(previous, old['pointer'])
+    previous['retained_metadata'] = 'x' * 65536
+    atomic_write_json(sync.payload_publication_pending_path(tmp_path), previous)
+    sync.mark_payload_publication_pending(tmp_path, 'recovered', new['pointer'], allow_policy_supersession=True)
+    pending = sync.read_payload_publication_pending(tmp_path)
+    assert pending == {**previous, 'queued_pointers': [*previous['queued_pointers'], new['pointer']]}
+    assert not (state/'population-publication-supersessions-v1').exists()
+
+
+def test_daily_historical_only_queue_reaches_existing_current_recovery(tmp_path, monkeypatch):
+    import pi_population_publication as policy
+    _, previous, old, _ = runtime(tmp_path, monkeypatch)
+    pending = mix(previous, old['pointer'])
+    pending['queued_pointers'] = [p for p in pending['queued_pointers'] if p != old['pointer']]
+    before = copy.deepcopy(pending)
+    monkeypatch.setattr(policy, 'reconcile_selected_population_pending', lambda *a: False)
+    worker = SimpleNamespace(REPO_ROOT=tmp_path, run_payload_retry=Mock(), run_recovery_ingest=Mock())
+    recovery = Mock();recovery.recovery_block_reason.return_value = '';recovery.selected_observation.return_value = old
+    repair(worker, recovery, DATE, NOW, read_pending=lambda _: pending, execution_deadline=1100)
+    recovery.run_same_day_recovery.assert_called_once_with(tmp_path, now_utc=NOW, dry_run=False,
+        launch=worker.run_recovery_ingest, daily_pass=True, execution_deadline=1100)
+    worker.run_payload_retry.assert_not_called()
+    assert pending == before
