@@ -142,11 +142,15 @@ def run_recovery_ingest(date_text: str, timeout_seconds: float, generation: str)
                      timeout_seconds=timeout_seconds, expected_generation=generation)
 
 
-def run_payload_retry(dry_run: bool) -> dict:
+def run_payload_retry(dry_run: bool, *, source_key: str | None = None) -> dict:
     if not _app_payload_enabled():
         return {"status": "deferred", "reason": "publication_disabled"}
     admission = {"status": "deferred", "reason": "no_pending_marker"}
     candidates = publication_retry_candidates(read_payload_publication_pending(REPO_ROOT))
+    if source_key is not None:
+        candidates = [item for item in candidates if publication_source_key(item) == source_key]
+        if not candidates:
+            return {"status": "deferred", "reason": "source_no_longer_pending"}
     candidates.sort(key=lambda item: str(item["pointer"].get("observation_date") or "")
                     if isinstance(item.get("pointer"), dict) else "", reverse=True)
     for candidate in candidates:
