@@ -4,6 +4,8 @@ import hashlib
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
+from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
 
@@ -202,3 +204,67 @@ def test_mixed_receipt_crash_preserves_pending_and_retries_idempotently(tmp_path
     assert after['pointer'] == previous['pointer']
     assert after['queued_pointers'] == [new['pointer'], previous['queued_pointers'][1]]
     assert len(list((state/'population-publication-supersessions-v1').glob('*.json'))) == 1
+
+
+@pytest.mark.parametrize('entry', ['watchdog', 'daily_worker'])
+@pytest.mark.parametrize('hold', [True, False])
+def test_observed_oct29_oct30_nov1_nov2_queue_at_both_entry_points(tmp_path, monkeypatch, entry, hold):
+    import pi_cdr_recovery as recovery
+    import pi_population_publication as policy
+    fixture = json.loads((Path(__file__).parent/'fixtures/population-pending-20261102.json').read_bytes())
+    pending, selected = fixture['pending'], fixture['selected']
+    assert [pending['pointer']['observation_date'], *[p['observation_date'] for p in pending['queued_pointers']]] == [
+        '2026-10-29', '2026-10-30', '2026-11-01', '2026-11-02']
+    observation = {'pointer': selected, 'contract': {'observation_date': '2026-11-02',
+        'coverage': {'provider_population_unverified': [{'provider': 'Wise'}]} if hold else {}}}
+    before = copy.deepcopy(pending)
+    assert population_pending_recovery_allowed(pending, observation) is hold
+    monkeypatch.setattr(policy, 'reconcile_selected_population_pending', lambda *a: False)
+    monkeypatch.setattr(recovery, 'selected_observation', lambda *a: observation)
+    monkeypatch.setattr(recovery, 'reconsider_saved_selection', lambda *a: None)
+    monkeypatch.setattr(sync, 'read_payload_publication_pending', lambda _: copy.deepcopy(pending))
+    monkeypatch.setattr(sync, 'payload_publication_pending', lambda _: True)
+    now = datetime(2026, 11, 2, 0, tzinfo=timezone.utc)
+    launch = Mock()
+    if entry == 'watchdog':
+        # Sentinel is after the production queue guard, before any provider work.
+        health = Mock(side_effect=RuntimeError('admitted after pending guard'))
+        monkeypatch.setattr(recovery, '_coverage_health', health)
+        if hold:
+            with pytest.raises(RuntimeError, match='admitted after pending guard'):
+                recovery._recover_locked(tmp_path, tmp_path/'state', now, launch)
+        else:
+            result = recovery._recover_locked(tmp_path, tmp_path/'state', now, launch)
+            assert result['status'] == 'pending_publication_must_settle'
+            health.assert_not_called()
+    else:
+        worker = SimpleNamespace(REPO_ROOT=tmp_path, run_payload_retry=Mock(), run_recovery_ingest=launch)
+        model = Mock();model.recovery_block_reason.return_value = '';model.selected_observation.return_value = observation
+        repair(worker, model, '2026-11-02', now, read_pending=lambda _: copy.deepcopy(pending), execution_deadline=1100)
+        assert model.run_same_day_recovery.call_count == int(hold)
+        worker.run_payload_retry.assert_not_called()
+    assert pending == before
+    launch.assert_not_called()
+
+
+@pytest.mark.parametrize('fault', ['baseline_digest', 'selected_generation', 'unreconciled'])
+def test_mixed_successor_requires_current_selection_and_bound_reconciliation(tmp_path, monkeypatch, fault):
+    import pi_population_publication as policy
+    state, previous, old, new = runtime(tmp_path, monkeypatch, bad_source=fault == 'baseline_digest')
+    previous = mix(previous, old['pointer'])
+    atomic_write_json(sync.payload_publication_pending_path(tmp_path), previous)
+    if fault == 'selected_generation':
+        monkeypatch.setattr(policy, 'selected_observation', lambda *a: old)
+    elif fault == 'unreconciled':
+        load = policy.load_pointer_observation
+        def unreconciled(*args):
+            value = copy.deepcopy(load(*args))
+            if value['pointer'] == new['pointer']:
+                value['status']['same_day_reuse']['reconciled'] = False
+            return value
+        monkeypatch.setattr(policy, 'load_pointer_observation', unreconciled)
+    sync.mark_payload_publication_pending(tmp_path, 'retry', new['pointer'], allow_policy_supersession=True)
+    result = sync.read_payload_publication_pending(tmp_path)
+    assert result['pointer'] == previous['pointer']
+    assert result['queued_pointers'][:len(previous['queued_pointers'])] == previous['queued_pointers']
+    assert not (state/'population-publication-supersessions-v1').exists()
