@@ -13,6 +13,7 @@ from typing import Any
 from cdr_export_contract import hash_file as portable_hash_file, load_contract
 from cdr_ledger_v2 import verify_event
 from cdr_quality_accounting import audit_rows, canonical_digest, rate_rows_digest, product_rows_digest
+from cdr_quality_discovery import export_candidates
 from cdr_quality_sqlite import database_files, database_view
 from pi_cdr_quality_digest import read_digest
 from pi_cdr_quality_read_io import dropbehind_required
@@ -145,14 +146,14 @@ def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
           f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     started = time.monotonic()
     print("[cdr-audit] inventory discovery start tree=runs", flush=True)
-    candidates = set((data_root / "runs").rglob("_exports"))
+    candidates = set(export_candidates(data_root / "runs"))
     print(f"[cdr-audit] inventory discovery complete tree=runs candidates={len(candidates)} "
           f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     archive = data_root / "runs-archive"
     if archive.is_dir():
         started = time.monotonic()
         print("[cdr-audit] inventory discovery start tree=runs-archive", flush=True)
-        candidates.update(archive.rglob("_exports"))
+        candidates.update(export_candidates(archive))
         print(f"[cdr-audit] inventory discovery complete tree=runs-archive candidates={len(candidates)} "
               f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     for root in sorted(candidates):
