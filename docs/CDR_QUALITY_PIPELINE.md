@@ -176,6 +176,13 @@ reads. Copies retain descriptor identity, digest and deadline checks; JSON and
 contract validation retain their existing limits. Standalone portable reads are
 unchanged, and unsupported required reads fail without a fallback.
 
+Contract streams bind the pathname identity before opening and recheck both
+the descriptor and pathname after reading. Required JSON capture fills one
+bounded bytearray directly, rather than retaining chunks and joining a second
+payload-sized copy. Capture budgets are checked before allocation and charged
+per read. Consumers accept the buffer without changing its bytes before digest
+and schema validation; portable reads continue returning bytes.
+
 This routing does not prove reduced host cache use or explain every increase in
 kernel Buffers. SQLite still writes and checks its private recovery copy, and
 later log scanning still uses ordinary reads. Exact-candidate Linux tests and

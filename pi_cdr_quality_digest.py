@@ -46,7 +46,7 @@ def _file_state(path: Path, root: Path) -> tuple:
     return _identity(info), ancestors
 
 
-def _hash_stream(stream, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | None]:
+def _hash_stream(stream, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | bytearray | None]:
     if dropbehind_required():
         return hash_dropbehind(stream.fileno(), size, capture, budget=budget)
     digest, blocks, remaining = hashlib.sha256(), [], size
@@ -83,7 +83,7 @@ class FileDigest:
 
 
 def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
-                max_bytes: int | None = None, budget=None) -> tuple[FileDigest, bytes | None]:
+                max_bytes: int | None = None, budget=None) -> tuple[FileDigest, bytes | bytearray | None]:
     """Bind the digest to one no-follow descriptor and unchanged path identity.
 
     O_NONBLOCK prevents a raced FIFO replacement from blocking before fstat.

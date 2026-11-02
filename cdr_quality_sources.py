@@ -42,7 +42,7 @@ def read_object(path: Path) -> dict:
     return result
 
 
-def read_source_bytes(path: Path, maximum: int) -> bytes:
+def read_source_bytes(path: Path, maximum: int) -> bytes | bytearray:
     if dropbehind_required():
         return read_digest(path, capture=True, max_bytes=maximum)[1]
     return path.read_bytes()

@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import tracemalloc
+import xml.etree.ElementTree as ET
 
 import pytest
 import pi_cdr_quality_read_io as reader
@@ -138,3 +140,105 @@ def test_metadata_and_dashboard_route_through_helper(tmp_path,monkeypatch):
                for n in ast.walk(function))
     assert not any(isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='read_bytes'
                    for n in ast.walk(function))
+
+
+@pytest.mark.parametrize('required',[False,True])
+def test_contract_open_must_match_preopen_identity(tmp_path,monkeypatch,preadv,required):
+    path=tmp_path/'original';path.write_bytes(b'original')
+    replacement=tmp_path/'replacement';replacement.write_bytes(b'replaced')
+    original_open=os.open
+    # Model a replacement during open, restored before the reader can lstat.
+    monkeypatch.setattr(contracts.os,'open',lambda p,flags:original_open(replacement,flags))
+    charges=[]
+    from contextlib import nullcontext
+    with (reader.require_dropbehind_reads() if required else nullcontext()):
+        with pytest.raises(ValueError,match='identity changed before'):
+            list(contracts._budgeted_chunks(path,lambda **k:charges.append(k)))
+    assert charges==[{'entries':1}] and not preadv
+
+
+@pytest.mark.parametrize('required',[False,True])
+def test_contract_rejects_same_inode_modification(tmp_path,preadv,required):
+    path=tmp_path/'artifact';path.write_bytes(b'original')
+    from contextlib import nullcontext
+    with (reader.require_dropbehind_reads() if required else nullcontext()):
+        chunks=contracts._budgeted_chunks(path,lambda **_:None)
+        assert next(chunks)==b'original'
+        original=path.stat()
+        os.utime(path,ns=(original.st_atime_ns,original.st_mtime_ns+1000000000))
+        with pytest.raises(ValueError,match='changed during'):list(chunks)
+
+
+def test_capture_has_one_payload_allocation_and_consumer_compatibility(tmp_path,preadv,request):
+    size=8*reader.READ_BYTES
+    path=tmp_path/'capture'
+    path.write_bytes(b' '*(size-2)+b'{}')
+    with path.open('rb') as stream:
+        tracemalloc.start()
+        try:
+            digest,body=reader.hash_dropbehind(stream.fileno(),size,True)
+            _,peak=tracemalloc.get_traced_memory()
+        finally:tracemalloc.stop()
+    request.node.user_properties.extend([('capture_bytes',size),('capture_peak_bytes',peak)])
+    assert isinstance(body,bytearray) and len(body)==size
+    # Includes the test syscall emulator's transient 1 MiB bytes allocation.
+    # The old blocks+join implementation needs at least two payloads.
+    assert peak<size+3*reader.READ_BYTES
+    assert json.loads(body)=={} and hashlib.sha256(body).hexdigest()==digest
+    assert ast.parse(bytearray(b'x=1').decode('utf-8-sig'))
+    assert ET.fromstring(bytearray(b'<testsuite/>')).tag=='testsuite'
+
+
+@pytest.mark.skipif(os.name!='posix',reason='requires rename of an open inode')
+@pytest.mark.parametrize('required',[False,True])
+def test_contract_real_replacement_restoration_during_open(tmp_path,monkeypatch,preadv,required):
+    path=tmp_path/'original';path.write_bytes(b'original')
+    replacement=tmp_path/'replacement';replacement.write_bytes(b'replaced')
+    saved=tmp_path/'saved'
+    original_open=os.open
+    def substituted_open(p,flags):
+        path.rename(saved)
+        replacement.rename(path)
+        descriptor=original_open(p,flags)
+        path.rename(replacement)
+        saved.rename(path)
+        return descriptor
+    monkeypatch.setattr(contracts.os,'open',substituted_open)
+    from contextlib import nullcontext
+    with (reader.require_dropbehind_reads() if required else nullcontext()):
+        with pytest.raises(ValueError,match='identity changed before'):
+            list(contracts._budgeted_chunks(path,lambda **_:None))
+    assert path.read_bytes()==b'original' and not preadv
+
+
+def test_dashboard_audit_uses_required_capture_not_path_read(tmp_path,monkeypatch):
+    run_date='2026-01-01'
+    path=tmp_path/'dashboard-cache'/run_date/'banks.json'
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b'{}')  # Empty transport seam; no business observations.
+    monkeypatch.setattr(sources,'stat_fingerprint',lambda _: 'unchanged')
+    monkeypatch.setattr(sources,'verify_source',lambda *_: {})
+    monkeypatch.setattr(sources,'read_database',lambda *_: ([],[],{}))
+    monkeypatch.setattr(sources,'audit_rows',lambda *_: {})
+    monkeypatch.setattr(sources,'hash_file',lambda _: 'digest')
+    monkeypatch.setattr(Path,'read_bytes',lambda _:pytest.fail('ordinary path read'))
+    calls=[]
+    def capture(p,**kw):
+        calls.append((p,kw))
+        return None,bytearray(b'{}')
+    monkeypatch.setattr(sources,'read_digest',capture)
+    with reader.require_dropbehind_reads():
+        result=sources.audit_source(tmp_path,dict(root=tmp_path,run_date=run_date,key='seam',contract=None))
+    assert result['sqlite_to_export']=={'status':'PASS','json_sha256':'digest'}
+    assert calls==[(path,dict(capture=True,max_bytes=512*1024**2))]
+
+
+def test_capture_budget_rejection_precedes_allocation_and_read(monkeypatch,preadv):
+    monkeypatch.setattr(reader,'bytearray',lambda *_:pytest.fail('allocated before budget'),raising=False)
+    charges=[]
+    def budget(**kw):
+        charges.append(kw)
+        raise ValueError('budget exhausted')
+    with pytest.raises(ValueError,match='budget exhausted'):
+        reader.hash_dropbehind(42,512*1024**2,True,budget=budget)
+    assert charges==[{'reserve_bytes':512*1024**2}] and not preadv

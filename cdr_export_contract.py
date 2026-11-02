@@ -73,17 +73,24 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _read_identity(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns)
+
+
 def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = None):
     """Cooperative checks bound work between reads, not an OS-blocked read."""
     budget(entries=1)
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    if path.is_symlink():
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode):
         raise ValueError("bounded verification requires a regular unlinked file")
     descriptor = os.open(path, flags)
     try:
         source = os.fstat(descriptor)
         if not stat.S_ISREG(source.st_mode):
             raise ValueError("bounded verification requires a regular file")
+        if _read_identity(source) != _read_identity(before):
+            raise ValueError("artifact identity changed before bounded verification")
         if max_bytes is not None and source.st_size > max_bytes:
             raise ValueError("verification JSON exceeds bounded read limit")
         stream = os.fdopen(descriptor, "rb")
@@ -107,8 +114,13 @@ def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = 
                 yield chunk
         budget()
         after = path.lstat()
-        if (not stat.S_ISREG(after.st_mode) or after.st_size != expected_size
-                or (after.st_dev,after.st_ino) != (source.st_dev,source.st_ino)):
+        opened_after = os.fstat(stream.fileno())
+        # Windows pathname and descriptor ctimes differ; compare each to its
+        # own baseline, while binding the portable fields across both APIs.
+        if (_read_identity(after) != _read_identity(before)
+                or after.st_ctime_ns != before.st_ctime_ns
+                or _read_identity(opened_after) != _read_identity(source)
+                or opened_after.st_ctime_ns != source.st_ctime_ns):
             raise ValueError("artifact size changed during bounded verification")
 
 
