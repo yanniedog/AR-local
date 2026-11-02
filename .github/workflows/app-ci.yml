@@ -128,6 +128,10 @@ jobs:
               throw "PowerShell parse failed: $($_.FullName)"
             }
           }
+      - name: Verify retained category fixture equivalence
+        # This full-source preparation check runs on CI, not inside the bounded
+        # Pi pytest suite. Runtime tests consume the independently pinned stream.
+        run: python -B scripts/regenerate-category-rate-fixture.py
       - name: Test
         # Run the whole server-side suite (payload, ribbon kernel, ledger
         # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so
