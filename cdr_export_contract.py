@@ -83,16 +83,17 @@ def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = 
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode):
-        raise ValueError("bounded verification requires a regular unlinked file")
+        kind = "regular unlinked file" if stat.S_ISLNK(before.st_mode) else "regular file"
+        raise ValueError(f"bounded verification requires a {kind}")
     descriptor = os.open(path, flags)
     try:
         source = os.fstat(descriptor)
         if not stat.S_ISREG(source.st_mode):
             raise ValueError("bounded verification requires a regular file")
-        if _read_identity(source) != _read_identity(before):
-            raise ValueError("artifact identity changed before bounded verification")
         if max_bytes is not None and source.st_size > max_bytes:
             raise ValueError("verification JSON exceeds bounded read limit")
+        if _read_identity(source) != _read_identity(before):
+            raise ValueError("artifact identity changed before bounded verification")
         stream = os.fdopen(descriptor, "rb")
     except BaseException:
         os.close(descriptor)
