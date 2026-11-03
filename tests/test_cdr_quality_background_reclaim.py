@@ -70,6 +70,7 @@ def test_context_counts_are_bounded_and_consistent(fault):
         receipt['low_with_refault_samples'] = 1
         if fault == 'refault_positive':
             last['pressure']['counters']['workingset_refault_file'] += 1
+            last['pressure']['node_refaults'][0][2] += 1
             receipt['cumulative']['workingset_refault_file'] = 1
             receipt['maximum_interval']['workingset_refault_file'] = 1
             receipt['last_sha256'] = pressure.fingerprint(last['pressure'])
@@ -80,6 +81,7 @@ def test_context_counts_are_bounded_and_consistent(fault):
     elif fault == 'activity_only_refault_hidden':
         last['pressure']['counters']['pgscan_kswapd'] -= 1
         last['pressure']['counters']['workingset_refault_file'] += 1
+        last['pressure']['node_refaults'][0][2] += 1
         for name in ('cumulative', 'maximum_interval'):
             receipt[name]['pgscan_kswapd'] = 0
             receipt[name]['workingset_refault_file'] = 1
@@ -156,8 +158,10 @@ def refault_receipt(*, final_low=False):
     first = host()
     middle = next_host(first)
     middle['pressure']['counters']['workingset_refault_file'] += 1
+    middle['pressure']['node_refaults'][0][2] += 1
     last = next_host(middle)
     last['pressure']['counters']['workingset_refault_file'] += 1
+    last['pressure']['node_refaults'][0][2] += 1
     last['pressure']['counters']['pgscan_file'] += 1
     if final_low:
         last['pressure']['zones'][0]['pages free'] = 250
@@ -213,7 +217,7 @@ def test_sparse_refault_evidence_rejects_tampering(fault):
     elif fault == 'shape':
         rows[0] = {}
     elif fault == 'zero_delta':
-        rows[0][3:] = [0, 0]
+        rows[0][4:6] = [0, 0]
     elif fault == 'negative_delta':
         rows[0][4] = -1
     elif fault == 'missing_delta':
@@ -227,9 +231,9 @@ def test_sparse_refault_evidence_rejects_tampering(fault):
     elif fault == 'time_after_terminal':
         rows[1][1] += 1
     elif fault == 'terminal_low':
-        rows[1][2] += 1
+        rows[1][3] += 1
     elif fault == 'below_minimum_low':
-        rows[0][2] -= 1
+        rows[0][3] -= 1
     elif fault == 'altered_delta':
         rows[0][4] += 1
     with pytest.raises(ValueError):
@@ -244,12 +248,13 @@ def test_refault_evidence_has_no_row_for_zero_delta_intervals():
         current = next_host(current)
         if index in (2, 5):
             current['pressure']['counters']['workingset_refault_anon'] += 3
+            current['pressure']['node_refaults'][0][1] += 3
         tracker.observe(current)
     receipt = tracker.receipt()
     assert [row[0] for row in receipt['refault_events']] == [2, 5]
     pressure.require_pressure_receipt(receipt, first, current)
-    receipt['refault_events'][0][4] = 99
-    assert tracker.receipt()['refault_events'][0][4] == 0
+    receipt['refault_events'][0][5] = 99
+    assert tracker.receipt()['refault_events'][0][5] == 0
 
 
 def test_refault_evidence_capacity_fails_closed_without_truncation(monkeypatch):
@@ -260,9 +265,11 @@ def test_refault_evidence_capacity_fails_closed_without_truncation(monkeypatch):
     for _ in range(2):
         current = next_host(current)
         current['pressure']['counters']['workingset_refault_file'] += 1
+        current['pressure']['node_refaults'][0][2] += 1
         tracker.observe(current)
     current = next_host(current)
     current['pressure']['counters']['workingset_refault_file'] += 1
+    current['pressure']['node_refaults'][0][2] += 1
     with pytest.raises(ValueError, match='evidence_capacity'):
         tracker.observe(current)
     assert len(tracker.receipt()['refault_events']) == 2
@@ -272,12 +279,12 @@ def test_refault_evidence_capacity_fails_closed_without_truncation(monkeypatch):
 
 
 def test_refault_record_size_budget_matches_receipt_serialization():
-    row = [pressure.MAX_VALUE, pressure.MAX_VALUE, -pressure.MAX_VALUE,
-           pressure.MAX_VALUE, pressure.MAX_VALUE]
+    row = [pressure.MAX_VALUE, pressure.MAX_VALUE, 9999, -pressure.MAX_VALUE,
+           pressure.MAX_VALUE, pressure.MAX_VALUE, -pressure.MAX_VALUE]
     def encoded(rows):
         return json.dumps({'pressure_evidence': {'host': {'refault_events': rows}}}, indent=2)
     per_row = len(encoded([row, row])) - len(encoded([row]))
-    assert per_row <= 256
+    assert per_row <= 384
     assert pressure.MAX_REFAULT_EVENTS * per_row < 32 * 1024**2
     assert pressure.MAX_REFAULT_EVENTS > 5400 / .1 + 2
 
@@ -293,8 +300,10 @@ def test_refault_event_peaks_bound_independently_of_matching_totals():
     first = host()
     middle = next_host(first)
     middle['pressure']['counters']['workingset_refault_file'] += 1
+    middle['pressure']['node_refaults'][0][2] += 1
     last = next_host(middle)
     last['pressure']['counters']['workingset_refault_file'] += 3
+    last['pressure']['node_refaults'][0][2] += 3
     tracker = pressure.PressureTracker(first)
     tracker.observe(middle)
     tracker.observe(last)
@@ -303,6 +312,6 @@ def test_refault_event_peaks_bound_independently_of_matching_totals():
     assert receipt['cumulative']['workingset_refault_file'] == 4
     assert receipt['maximum_interval']['workingset_refault_file'] == 3
     for row in receipt['refault_events']:
-        row[4] = 2
+        row[5] = 2
     with pytest.raises(ValueError, match='event_counter_binding'):
         pressure.require_pressure_receipt(receipt, first, last)

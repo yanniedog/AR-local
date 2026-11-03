@@ -211,7 +211,7 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
     if tests.parent != operation:
         raise ValueError("canary tests belong to another operation")
     resources = read(checked(canary["resources"]))
-    if resources.get("schema") == "ar-local-quality-resources-v3":
+    if resources.get("schema") == "ar-local-quality-resources-v4":
         from pi_cdr_quality_resources import require_receipt
         require_receipt(resources, expected_operation=operation, expected_commit=value["target_commit"])
         service_binding = resources["pressure_evidence"]["service"]["binding"]
@@ -219,7 +219,7 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
                 or service_binding["source_sha256"] != value["source_files"].get("pi_cdr_quality_service.py")):
             raise ValueError("canary pressure policy does not bind the exact helper and profile")
     elif canary.get("pressure_profile", "legacy") != "legacy":
-        raise ValueError("enhanced pressure policy requires a v3 resource receipt")
+        raise ValueError("enhanced pressure policy requires a v4 resource receipt")
     if canary_test_result(operation, root, value["target_commit"], value["source_files"],
                           resources=resources) != canary["tests"]:
         raise ValueError("canary tests do not bind the complete sequential suite")
