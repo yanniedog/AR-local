@@ -104,6 +104,23 @@ def normalize_banking_products_url(endpoint_raw: str) -> str:
     return safe_url(raw) + "/cds-au/v1/banking/products"
 
 
+def product_index_request_url(url: str) -> str:
+    """Use the documented index route without changing registered identity.
+
+    These two providers publish a terminal-slash product-index endpoint. Keep
+    the normalized register endpoint (and derived provider UID) unchanged;
+    this compatibility rule applies only to the actual index request path.
+    Query parameters and all other hosts/paths, including details, are intact.
+    """
+    parts = urllib.parse.urlsplit(url)
+    if (parts.scheme == "https" and not parts.fragment
+            and parts.netloc.lower() in {
+                "digital-api.bankofmelbourne.com.au", "digital-api.stgeorge.com.au"}
+            and parts.path == "/cds-au/v1/banking/products"):
+        return urllib.parse.urlunsplit(parts._replace(path=parts.path + "/"))
+    return url
+
+
 def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
     """Yield banking PRD brand rows from one register payload."""
     if is_record(payload):
