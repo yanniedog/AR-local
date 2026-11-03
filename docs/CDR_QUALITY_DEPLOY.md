@@ -509,14 +509,20 @@ Known B-A refaults use the existing MGLRU same-node/classic-global low-zone rule
 If G0 differs from sum(A), or G1-G0 includes more activity than B-A, initial
 attribution is unknown: any low zone plus observed initial refault movement
 fails. Later intervals retain the ordinary closing-to-closing deltas without
-counting overlapping capture increments twice. The independent validator
-checks capture windows do not overlap. `cumulative` and `node_cumulative` remain
+counting overlapping capture increments twice. Live checks reject overlapping
+capture windows for every observation; independent replay checks the retained
+capture windows. `cumulative` and `node_cumulative` remain
 closing-baseline-to-closing-terminal totals; initial movement is retained in
-`baseline.capture` and checked separately, not included in those totals. It
-reconstructs these checks from the mandatory raw snapshots; old proofs cannot
-supply the new fields by relabelling. Completed raw captures that fail validation
-are retained as `failed_pressure_capture` diagnostics and cannot accompany a
-successful resource receipt. Earlier read/identity errors may occur before a
+`baseline.capture` and checked separately, not included in those totals.
+Baseline, terminal and positive-refault raw snapshots are replayed. Successful
+quiet intermediate captures contribute aggregate counts, extrema and the live
+failure latch; their individual raw counter/clock checks cannot be reconstructed
+from the receipt. Full independent replay of every quiet capture would require
+a separately designed bounded evidence format and is not claimed here. Old
+proofs cannot supply the new fields by relabelling. Completed captures rejected
+during admission are retained as `failed_pressure_capture` diagnostics; workload
+monitor failures retain the triggering `failure_sample.host`. Neither failure
+path is acceptance evidence. Earlier read/identity errors may occur before a
 complete diagnostic snapshot exists. Bounded evidence and the existing 2-second
 sample/read/observation limits remain in force. Equality of sampled published
 counters does not establish atomic reads or absence of unreported kernel activity.
