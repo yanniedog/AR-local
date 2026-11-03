@@ -17,6 +17,8 @@ import threading
 import time
 import uuid
 
+from pi_cdr_quality_service_identity import IDENTITY_SECONDS, read_dashboard_identity, validate_identity
+
 SCHEMA = 'ar-local-service-companion-v1'
 SNAPSHOT_SCHEMA = 'ar-local-service-snapshot-v1'
 RECEIPT_SCHEMA = 'ar-local-service-receipt-v1'
@@ -269,12 +271,18 @@ def _probe(endpoint, deadline):
 
 SNAPSHOT_FIELDS = {'schema', 'binding_sha256', 'seq', 'started_monotonic', 'finished_monotonic',
     'initial_pass_finished_monotonic', 'probe_count', 'failed_probe_count', 'failure_latched',
-    'max_latency_s', 'max_round_gap_s', 'max_pair_duration_s', 'probes'}
+    'max_latency_s', 'max_round_gap_s', 'max_pair_duration_s', 'probes', 'dashboard_identity'}
 
 
 def _snapshot(value, binding_sha, previous, now):
     _require(isinstance(value, dict) and set(value) == SNAPSHOT_FIELDS, 'snapshot_fields')
     _require(value['schema'] == SNAPSHOT_SCHEMA and value['binding_sha256'] == binding_sha, 'snapshot_binding')
+    identity = value['dashboard_identity']
+    _require(isinstance(identity, dict) and set(identity) == {'before', 'after'}, 'dashboard_identity_fields')
+    validate_identity(identity['before']); validate_identity(identity['after'])
+    _require(identity['before'] == identity['after'], 'dashboard_identity_changed')
+    if previous is not None:
+        _require(identity == previous['dashboard_identity'], 'dashboard_identity_reset')
     for key in ('started_monotonic','finished_monotonic','initial_pass_finished_monotonic',
                 'max_latency_s','max_round_gap_s','max_pair_duration_s'):
         _require(_number(value[key]), 'snapshot_number')
@@ -340,24 +348,41 @@ class ServiceCompanion:
 
     def _round(self):
         start = _monotonic(); deadline = start + PAIR_SECONDS; probes = []
+        identity = {'before': None, 'after': None}
+        identity_ok = False
+        try:
+            identity['before'] = read_dashboard_identity(min(deadline, start + IDENTITY_SECONDS))
+            validate_identity(identity['before'])
+            _require(self._last is None or identity['before'] == self._last['dashboard_identity']['after'],
+                     'dashboard_identity_reset')
+            identity_ok = True
+        except Exception:
+            pass
         for endpoint in ENDPOINTS:
             began = _monotonic()
             probe = {'endpoint':endpoint,'status':'FAIL','http_status':None,'run_date':None,'rate_count':None}
             try:
-                probe.update(_probe(endpoint, min(deadline, began + PROBE_SECONDS)))
+                _require(identity_ok, 'dashboard_identity_unavailable')
+                probe.update(_probe(endpoint, min(deadline - IDENTITY_SECONDS, began + PROBE_SECONDS)))
                 probe['status'] = 'PASS'
             except Exception:
                 pass  # Never persist URLs, exception strings or response bodies.
             probe['latency_s'] = _monotonic() - began
             if probe['latency_s'] > PROBE_SECONDS: probe['status'] = 'FAIL'
             probes.append(probe)
+        try:
+            identity['after'] = read_dashboard_identity(deadline)
+            validate_identity(identity['after'])
+            _require(identity_ok and identity['before'] == identity['after'], 'dashboard_identity_changed')
+        except Exception:
+            probes[-1]['status'] = 'FAIL'
         finish = _monotonic(); previous = self._last
         if finish - start > PAIR_SECONDS: probes[-1]['status'] = 'FAIL'
         failed = sum(p['status'] == 'FAIL' for p in probes) + (previous['failed_probe_count'] if previous else 0)
         value = {'schema':SNAPSHOT_SCHEMA,'binding_sha256':self.binding_sha256,
             'seq': previous['seq'] + 1 if previous else 1, 'started_monotonic':start,'finished_monotonic':finish,
             'initial_pass_finished_monotonic':previous['initial_pass_finished_monotonic'] if previous else (finish if not failed else 0),
-            'failed_probe_count':failed,'failure_latched':failed > 0,'probes':probes,
+            'failed_probe_count':failed,'failure_latched':failed > 0,'probes':probes,'dashboard_identity':identity,
             'max_latency_s':max([p['latency_s'] for p in probes] + [previous['max_latency_s'] if previous else 0]),
             'max_pair_duration_s':max(finish-start, previous['max_pair_duration_s'] if previous else 0),
             'max_round_gap_s':max(start-previous['started_monotonic'], previous['max_round_gap_s']) if previous else 0}

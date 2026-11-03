@@ -195,6 +195,7 @@ def canary_worker(args) -> dict:
     from app_payload_details import build_details
     from cdr_quality_accounting import SECTIONS, canonical_digest, rate_rows_digest, reconcile_public_core
     from cdr_quality_audit import audit
+    from cdr_quality_sources import read_source_bytes
     source, data, operation = args.source, args.data_root, args.operation
     layout(source, args.production, data, operation)
     if os.name != "posix" or any(os.access(p, os.W_OK) for p in (source, args.production, data)):
@@ -235,7 +236,8 @@ def canary_worker(args) -> dict:
         if rate_rows_digest(rows) != current["published_rate_digests"][section]:
             raise ValueError("candidate payload rate content differs from verified source")
     details = json.loads(gzip.decompress((output / manifest["files"]["details"]["name"]).read_bytes()))
-    exported = json.loads((exports / "dashboard-cache" / run_date / "banks.json").read_bytes())
+    exported = json.loads(read_source_bytes(
+        exports / "dashboard-cache" / run_date / "banks.json", 512 * 1024**2))
     if canonical_digest(details["products"]) != canonical_digest(build_details(exported["products"])):
         raise ValueError("candidate payload product details differ from verified source")
     canary_phase(operation, "06-final-inventory")

@@ -28,7 +28,12 @@ def host(t):
 
 
 def snapshot(binding):
+    identity = {'schema':'ar-local-dashboard-identity-v1','unit':'ar-local-dashboard.service',
+        'invocation_id':'c'*32,'main_pid':1149,'start_ticks':7098,
+        'exec_start_monotonic_usec':70989441,'cgroup':'/system.slice/ar-local-dashboard.service',
+        'listener_inode':12345,'port':8808}
     return {'schema':service.SNAPSHOT_SCHEMA, 'binding_sha256':service._binding(binding),
+        'dashboard_identity':{'before':dict(identity),'after':dict(identity)},
         'seq':1, 'started_monotonic':100., 'finished_monotonic':101.,
         'initial_pass_finished_monotonic':101., 'probe_count':2, 'failed_probe_count':0,
         'failure_latched':False, 'max_latency_s':.5, 'max_round_gap_s':0., 'max_pair_duration_s':1.,

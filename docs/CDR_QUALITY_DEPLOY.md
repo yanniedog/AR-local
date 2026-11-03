@@ -484,6 +484,19 @@ service; the worker cannot modify the companion observations. Each binding pins
 the operation, exact service unit, candidate commit, helper hash, boot and nonce.
 The supervisor additionally receives the binding SHA-256 in its command.
 
+Each HTTP pair is bracketed by authenticated dashboard listener observations.
+The fixed `ar-local-dashboard.service` must be active/running with the same
+InvocationID, MainPID, process start ticks, systemd start timestamp and cgroup.
+Bounded reads of only that MainPID's file descriptors must prove ownership of
+the unique IPv4 loopback/wildcard port 8808 listening socket. Unit and process
+identity are reread around inspection. Ambiguous/unsupported listeners,
+unreadable ownership, service restarts and socket replacement fail closed.
+Before/after identities are retained in each snapshot and validated throughout
+the final receipt; HTTP content alone cannot establish dashboard availability.
+Each identity observation is limited to two seconds within the existing
+30-second pair budget, with two seconds reserved for the final identity check.
+No host-wide process scan, service action or privileged read is performed.
+
 Probes use numeric loopback addresses, no proxy, redirects or retries, bounded
 headers/body, the existing 15-second endpoint timeout and a 30-second pair
 deadline. They require HTTP 200 and a dated manifest with banking rates. The

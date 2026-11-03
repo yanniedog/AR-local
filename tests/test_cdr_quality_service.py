@@ -11,10 +11,18 @@ import pi_cdr_quality_service as service
 BOOT = 'cf36b73c-1111-4111-8111-111111111111'
 
 
+def dashboard_identity():
+    return {'schema':'ar-local-dashboard-identity-v1','unit':'ar-local-dashboard.service',
+            'invocation_id':'c'*32,'main_pid':1149,'start_ticks':7098,
+            'exec_start_monotonic_usec':70989441,'cgroup':'/system.slice/ar-local-dashboard.service',
+            'listener_inode':12345,'port':8808}
+
+
 @pytest.fixture
 def binding(tmp_path, monkeypatch):
     operation = tmp_path/'operation'; operation.mkdir()
     monkeypatch.setattr(service, '_boot_id', lambda: BOOT)
+    monkeypatch.setattr(service, 'read_dashboard_identity', lambda deadline: dashboard_identity())
     return {'schema':service.SCHEMA,'source_sha256':service.source_sha256(),'source_commit':'a'*40,
             'operation':str(operation),'unit':'ar-local-quality-test.service','boot_id':BOOT,'nonce':'b'*64}
 
@@ -24,6 +32,7 @@ def snapshot(binding, *, seq=1, start=100., finish=101.):
             'started_monotonic':start,'finished_monotonic':finish,'initial_pass_finished_monotonic':101.,
             'probe_count':seq*2,'failed_probe_count':0,'failure_latched':False,'max_latency_s':.5,
             'max_round_gap_s':0. if seq==1 else 6.,'max_pair_duration_s':1.,
+            'dashboard_identity':{'before':dashboard_identity(),'after':dashboard_identity()},
             'probes':[{'endpoint':name,'status':'PASS','http_status':200,'run_date':'2026-11-03',
                        'rate_count':16273,'latency_s':.5} for name in service.ENDPOINTS]}
 
@@ -205,6 +214,42 @@ def test_context_first_pass_and_bounded_stop(binding,monkeypatch):
         assert companion._last['seq']==1 and companion._last['probe_count']==2
         assert companion.binding_sha256==service.read_binding(companion.directory)[1]
     assert not companion._thread.is_alive()
+
+
+def test_healthy_http_cannot_replace_unavailable_service_identity(binding,monkeypatch):
+    calls=[]
+    monkeypatch.setattr(service,'_probe',lambda *args:calls.append(args))
+    monkeypatch.setattr(service,'read_dashboard_identity',lambda *args:(_ for _ in ()).throw(PermissionError()))
+    companion=service.ServiceCompanion(Path(binding['operation'])/'pressure',binding)
+    with pytest.raises(ValueError):companion.__enter__()
+    assert calls==[] and companion._last['failure_latched']
+    assert not companion._thread.is_alive()
+
+
+@pytest.mark.parametrize('field',['invocation_id','main_pid','start_ticks','listener_inode','exec_start_monotonic_usec'])
+def test_identity_change_during_pair_latches_failure(binding,monkeypatch,field):
+    calls=[]
+    def read(deadline):
+        value=dashboard_identity();calls.append(deadline)
+        if len(calls)==2:value[field]='d'*32 if field=='invocation_id' else value[field]+1
+        return value
+    monkeypatch.setattr(service,'read_dashboard_identity',read)
+    monkeypatch.setattr(service,'_probe',lambda *a:{'http_status':200,'run_date':'2026-11-03','rate_count':3})
+    companion=service.ServiceCompanion(Path(binding['operation'])/'pressure',binding)
+    with pytest.raises(ValueError):companion.__enter__()
+    assert len(calls)==2 and companion._last['failure_latched']
+    assert not companion._thread.is_alive()
+
+
+@pytest.mark.parametrize('fault',['missing','changed_pair','changed_round'])
+def test_receipt_requires_same_authenticated_dashboard(binding,fault):
+    value=receipt(binding)
+    final=value['last_snapshot']
+    if fault=='missing':del final['dashboard_identity']
+    elif fault=='changed_pair':final['dashboard_identity']['after']['listener_inode']+=1
+    else:
+        for point in ('before','after'):final['dashboard_identity'][point]['listener_inode']+=1
+    with pytest.raises(ValueError):service.require_service_receipt(value,binding)
 
 
 def test_startup_failure_stops_thread(binding,monkeypatch):
