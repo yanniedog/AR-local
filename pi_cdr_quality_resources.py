@@ -22,6 +22,7 @@ from pi_cdr_quality_telemetry import MEMORY_FIELDS, VM_FIELDS, counter_context, 
 
 GIB = 1024**3
 SCHEMA = "ar-local-quality-resources-v2"
+PRESSURE_SCHEMA = "ar-local-quality-resources-v3"
 UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
 
 
@@ -67,20 +68,24 @@ def swap_counters(path: Path, *, text: str | None = None) -> dict[str, int]:
     return values
 
 
-def host_sample(proc: Path = Path("/proc"), *, page_size_bytes: int | None = None) -> dict:
+def host_sample(proc: Path = Path("/proc"), *, page_size_bytes: int | None = None, pressure=False) -> dict:
     memory_text, vm_text = (proc / "meminfo").read_text(), (proc / "vmstat").read_text()
     memory = numeric_fields(proc / "meminfo", text=memory_text)
     vm = swap_counters(proc / "vmstat", text=vm_text)
     page_size = os.sysconf("SC_PAGE_SIZE") if page_size_bytes is None else page_size_bytes
     pressure_path = proc / "pressure/memory"
-    pressure = None
+    psi = None
     if pressure_path.exists():
         rows = pressure_path.read_text().splitlines()
-        pressure = float(dict(item.split("=") for item in rows[0].split()[1:])["avg10"])
-    return {"available_bytes": memory["MemAvailable"], "swap_in_pages": vm["pswpin"],
-            "swap_out_pages": vm["pswpout"], "page_size_bytes": page_size, "psi_avg10": pressure,
+        psi = float(dict(item.split("=") for item in rows[0].split()[1:])["avg10"])
+    result = {"available_bytes": memory["MemAvailable"], "swap_in_pages": vm["pswpin"],
+            "swap_out_pages": vm["pswpout"], "page_size_bytes": page_size, "psi_avg10": psi,
             "diagnostics": {"memory_bytes": counter_context(memory_text, MEMORY_FIELDS, kib=True),
                             "vmstat": counter_context(vm_text, VM_FIELDS)}}
+    if pressure:
+        from pi_cdr_quality_pressure import sample_pressure
+        result["pressure"] = sample_pressure(proc, memory_text, vm_text)
+    return result
 
 
 def swap_progress(sample: dict, baseline: dict, previous: dict | None = None) -> dict:
@@ -99,12 +104,13 @@ def swap_progress(sample: dict, baseline: dict, previous: dict | None = None) ->
             "swap_out_bytes": (sample["swap_out_pages"] - baseline["swap_out_pages"]) * page_size}
 
 
-def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=False, previous=None) -> str | None:
+def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=False, previous=None,
+                   _pressure_verified=False) -> str | None:
     progress = swap_progress(sample, baseline, previous)
     needed = limits.reserve_bytes + limits.margin_bytes + (limits.workload_bytes if admission else 0)
     if sample["available_bytes"] < needed:
         return "host_reserve_headroom"
-    if progress["swap_out_bytes"]:
+    if progress["swap_out_bytes"] and not _pressure_verified:
         return "host_swap_out_activity"
     if progress["swap_in_bytes"] > limits.cold_swap_in_bytes:
         return "host_cold_swap_in_budget"
@@ -113,14 +119,19 @@ def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=Fa
     return None
 
 
-def preflight(limits: Limits = Limits(), *, admission=False) -> dict:
+def preflight(limits: Limits = Limits(), *, admission=False, pressure_context=None) -> dict:
     limits.validate()
     if sys.platform != "linux" or not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
         raise RuntimeError("Linux pidfd supervision is required")
-    first = host_sample()
+    first = host_sample() if pressure_context is None else host_sample(pressure=True)
+    if pressure_context is not None:
+        pressure_context.observe(first)
     time.sleep(0.2)
-    second = host_sample()
-    reason = host_violation(second, first, limits, admission=admission)
+    second = host_sample() if pressure_context is None else host_sample(pressure=True)
+    if pressure_context is not None:
+        pressure_context.observe(second)
+    reason = host_violation(second, first, limits, admission=admission,
+                            _pressure_verified=pressure_context is not None)
     if reason:
         raise RuntimeError(f"resource preflight blocked: {reason}")
     # Keep the first counters so admission readback counts toward the same
@@ -276,12 +287,13 @@ def check_priority(guard: Callable[[], str | None] | None, receipt: dict) -> Non
 
 
 def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dict, receipt: dict,
-            priority_guard: Callable[[], str | None] | None = None) -> None:
+            priority_guard: Callable[[], str | None] | None = None, pressure_context=None) -> None:
     started = previous = time.monotonic()
     previous_host = baseline.get("admission_sample", baseline)
     while True:
         check_priority(priority_guard, receipt)
-        sample, host = aggregate(cgroup), host_sample()
+        sample = aggregate(cgroup)
+        host = host_sample() if pressure_context is None else host_sample(pressure=True)
         now = time.monotonic()
         gap = now - previous
         receipt.update(samples=receipt["samples"] + 1,
@@ -292,7 +304,15 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
         progress = swap_progress(host, baseline, previous_host)
         receipt.update(cold_swap_in_bytes=progress["swap_in_bytes"],
             peak_workload_swap_bytes=max(receipt["peak_workload_swap_bytes"], sample["swap_bytes"]))
-        reason = host_violation(host, baseline, limits, previous=previous_host)
+        reason = None
+        if pressure_context is not None:
+            try:
+                pressure_context.observe(host)
+            except (ValueError, OSError, KeyError, TypeError) as error:
+                reason = f"pressure_evidence: {type(error).__name__}: {error}"
+        if reason is None:
+            reason = host_violation(host, baseline, limits, previous=previous_host,
+                                    _pressure_verified=pressure_context is not None)
         if sample["rss_bytes"] >= limits.workload_bytes - limits.margin_bytes:
             reason = "aggregate_rss_early_stop"
         elif sample["swap_bytes"]:
@@ -322,7 +342,8 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
 
 
 def supervise(command: list[str], output: Path, limits: Limits, *,
-              priority_guard: Callable[[], str | None] | None = None) -> dict:
+              priority_guard: Callable[[], str | None] | None = None,
+              pressure_binding_sha256: str | None = None) -> dict:
     limits.validate()
     if not command or not output.is_absolute() or output.resolve() != output or output.exists():
         raise ValueError("command and a new canonical absolute resource receipt path required")
@@ -333,13 +354,20 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
     child = cgroup = None
     owned = False
     saved_signals = {}
+    pressure_context = None
     try:
         cgroup = own_cgroup()
         if members(cgroup) != {os.getpid()}:
             raise RuntimeError("new workload cgroup already contains another process")
         owned = True
+        if pressure_binding_sha256 is not None:
+            from pi_cdr_quality_pressure_runtime import PressureContext
+            receipt["schema"] = PRESSURE_SCHEMA
+            pressure_context = PressureContext(output.parent / "pressure", pressure_binding_sha256,
+                                                unit=cgroup.name, operation=output.parent)
         receipt["admission_zones"] = zone_snapshot(stage="before_resource_preflight")
-        baseline = preflight(limits, admission=True)
+        baseline = (preflight(limits, admission=True) if pressure_context is None else
+                    preflight(limits, admission=True, pressure_context=pressure_context))
         receipt.update(cgroup=str(cgroup), baseline=baseline,
             minimum_available_bytes=min(baseline["available_bytes"], baseline["admission_sample"]["available_bytes"]),
             page_size_bytes=baseline["page_size_bytes"],
@@ -353,7 +381,9 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
         child = subprocess.Popen(command, shell=False, start_new_session=True,
             preexec_fn=lambda: restrict_address_space(limits.address_space_bytes))
         receipt['workload_started'] = True
-        if priority_guard is None:
+        if pressure_context is not None:
+            monitor(child, cgroup, limits, baseline, receipt, priority_guard, pressure_context)
+        elif priority_guard is None:
             monitor(child, cgroup, limits, baseline, receipt)
         else:
             monitor(child, cgroup, limits, baseline, receipt, priority_guard)
@@ -379,6 +409,11 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
             # snapshot, never a claim about exact zone watermarks at failure.
             receipt["post_cleanup_zones"] = zone_snapshot(stage="after_workload_cleanup")
         receipt["early_stop_overshoot_bytes"] = max(0, receipt["peak_rss_bytes"] - (limits.workload_bytes - limits.margin_bytes))
+        if pressure_context is not None:
+            try:
+                receipt["pressure_evidence"] = pressure_context.receipt()
+            except Exception as error:
+                receipt.update(result="FAIL" if child else "BLOCKED", pressure_receipt_error=type(error).__name__)
         for signum, handler in saved_signals.items():
             signal.signal(signum, handler)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -390,11 +425,22 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
     return receipt
 
 
-def require_receipt(receipt: dict) -> None:
+def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=None) -> None:
     limits = Limits(**receipt["limits"])
     limits.validate()
     progress = swap_progress(receipt["last_host_sample"], receipt["baseline"], receipt["baseline"].get("admission_sample"))
-    if (receipt.get("schema") != SCHEMA or receipt.get("result") != "PASS"
+    pressure_verified = False
+    if receipt.get("schema") == PRESSURE_SCHEMA:
+        from pi_cdr_quality_pressure_runtime import require_pressure_evidence
+        require_pressure_evidence(receipt)
+        binding = receipt["pressure_evidence"]["service"]["binding"]
+        if (expected_operation is None or not re.fullmatch("[0-9a-f]{40}", expected_commit or "")
+                or binding["operation"] != str(expected_operation) or binding["source_commit"] != expected_commit):
+            raise ValueError("pressure receipt requires exact external operation and candidate binding")
+        pressure_verified = True
+    elif "pressure_evidence" in receipt:
+        raise ValueError("pressure receipt cannot be relabelled as legacy")
+    if (receipt.get("schema") not in {SCHEMA, PRESSURE_SCHEMA} or receipt.get("result") != "PASS"
             or receipt.get("mode") != "sampled_cgroup_rss" or receipt.get("group_clean") is not True
             or receipt.get("workload_exit_code") != 0 or receipt.get("samples", 0) < 1
             or receipt.get("peak_rss_bytes", 3 * GIB) >= limits.workload_bytes - limits.margin_bytes
@@ -404,7 +450,8 @@ def require_receipt(receipt: dict) -> None:
             or receipt.get("page_size_bytes") != receipt["baseline"]["page_size_bytes"]
             or receipt.get("cold_swap_in_bytes") != progress["swap_in_bytes"]
             or receipt.get("peak_workload_swap_bytes") != 0
-            or host_violation(receipt["last_host_sample"], receipt["baseline"], limits)):
+            or host_violation(receipt["last_host_sample"], receipt["baseline"], limits,
+                              _pressure_verified=pressure_verified)):
         raise ValueError("complete successful bounded-resource receipt required")
 
 
@@ -415,12 +462,13 @@ def main(argv=None) -> int:
     parser.add_argument("--workload-mib", type=int, default=3072)
     parser.add_argument("--margin-mib", type=int, default=512)
     parser.add_argument("--address-space-mib", type=int, default=3072)
+    parser.add_argument("--pressure-binding-sha256")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     result = supervise(command, args.output, Limits(workload_bytes=args.workload_mib * 1024**2,
         margin_bytes=args.margin_mib * 1024**2, address_space_bytes=args.address_space_mib * 1024**2,
-        runtime_seconds=args.runtime_seconds))
+        runtime_seconds=args.runtime_seconds), pressure_binding_sha256=args.pressure_binding_sha256)
     print(json.dumps({"result": result["result"], "resource_receipt": str(args.output)}), flush=True)
     return 0 if result["result"] == "PASS" else 2
 

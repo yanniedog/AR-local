@@ -66,3 +66,52 @@ def test_unit_receipt_failure_prevents_any_host_launch(canary_args, monkeypatch)
     monkeypatch.setattr(activate, "run", lambda *_a, **_k: pytest.fail("host launch preceded durable receipt"))
     with pytest.raises(OSError, match="durable write failure"):
         activate.canary(canary_args)
+
+
+def test_pressure_companion_is_readonly_private_and_cleaned_after_failed_launch(canary_args, monkeypatch):
+    import pi_cdr_quality_service as service
+    args = canary_args; args.pressure_profile = 'allocation-v1'
+    events = []
+    monkeypatch.setattr(activate, 'sha', lambda _: 'd'*64)
+    original = Path.read_text
+    monkeypatch.setattr(Path, 'read_text', lambda path, *a, **k:
+        'cf36b73c-1111-4111-8111-111111111111' if path == Path('/proc/sys/kernel/random/boot_id')
+        else original(path, *a, **k))
+    class Companion:
+        binding_sha256 = 'e'*64
+        def __init__(self, directory, binding):
+            assert directory == args.operation/'pressure'
+            assert binding['source_commit'] == args.expected_commit
+            receipt = json.loads((args.operation/'canary-unit.json').read_bytes())
+            assert binding['unit'] == receipt['unit']
+            events.append('created')
+        def __enter__(self): events.append('ready'); return self
+        def __exit__(self, *a): events.append('cleaned')
+    monkeypatch.setattr(service, 'ServiceCompanion', Companion)
+    def launch(command, **kwargs):
+        assert events == ['created','ready']
+        assert '--property=PrivateNetwork=true' in command
+        assert '--property=ReadOnlyPaths='+str(args.operation/'pressure') in command
+        assert command[command.index('--pressure-binding-sha256')+1] == 'e'*64
+        events.append('launch')
+        raise RuntimeError('injected unit failure')
+    monkeypatch.setattr(activate, 'run', launch)
+    with pytest.raises(RuntimeError, match='unit failure'): activate.canary(args)
+    assert events == ['created','ready','launch','cleaned']
+
+
+def test_pressure_startup_failure_prevents_workload_launch(canary_args, monkeypatch):
+    import pi_cdr_quality_service as service
+    args = canary_args; args.pressure_profile = 'allocation-v1'
+    monkeypatch.setattr(activate, 'sha', lambda _: 'd'*64)
+    original = Path.read_text
+    monkeypatch.setattr(Path, 'read_text', lambda path, *a, **k:
+        'cf36b73c-1111-4111-8111-111111111111' if path == Path('/proc/sys/kernel/random/boot_id')
+        else original(path, *a, **k))
+    class Companion:
+        def __init__(self, *a): pass
+        def __enter__(self): raise ValueError('initial service failed')
+        def __exit__(self, *a): pass
+    monkeypatch.setattr(service, 'ServiceCompanion', Companion)
+    monkeypatch.setattr(activate, 'run', lambda *a, **k: pytest.fail('workload must not launch'))
+    with pytest.raises(ValueError, match='initial service failed'): activate.canary(args)

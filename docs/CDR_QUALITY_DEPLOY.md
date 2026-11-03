@@ -12,7 +12,9 @@ capture, public publication, app installation, Drive restore, or natural timer r
 
 ## Prerequisites
 
-Canary paging diagnostics do not waive the no-host-swap guard. Resource receipts
+Canary paging diagnostics do not waive the selected resource policy. The default
+legacy profile still rejects any host swap-out; the explicit `allocation-v1`
+profile below requires additional host and service evidence. Resource receipts
 retain allowlisted memory/reclaim counters from the same reads used by the
 supervisor, plus the previous and triggering samples, elapsed time and UTC when
 a sampled resource limit fires. Missing or malformed optional telemetry is explicitly unavailable;
@@ -87,7 +89,7 @@ at two cores, process count at 256, I/O weight remains 10 and runtime is at most
 03:30–22:00 window, idle ingest and at least 8 GiB free disk. A resource or
 dependency failure stays BLOCKED.
 
-The Pi kernel may lack both the memory cgroup controller and memory PSI. The
+The following legacy policy remains the default. The Pi kernel may lack both the memory cgroup controller and memory PSI. The
 helper does not claim an ineffective `MemoryMax` protects the workload. It always
 runs `pi_cdr_quality_resources.py` inside the same undelegated systemd cgroup as
 the worker. On kernels supporting memory cgroups, it additionally retains the
@@ -439,3 +441,79 @@ cache use, continuous residency, production-scale behavior or canary success.
 Portable regression tests emulate the syscall seam without claiming kernel
 cache evidence. Normal exact-candidate CI, full guarded Pi canary, acceptance
 and rollback gates remain mandatory before activation.
+
+## Explicit allocation-pressure profile
+
+`canary --pressure-profile allocation-v1` selects resource receipt schema v3.
+Omitting the option preserves the legacy v2 policy, including zero host swap-out.
+This selection is a source-reviewed policy amendment, not a runtime acceptance
+claim. It changes no kernel, swap, credential, network or production settings.
+
+The zero-host-swap rule originated with PR674 and was deliberately retained when
+PR676 allowed bounded cold swap-in. It is a repository safety proxy for a host
+without effective memory-cgroup/PSI protection, not a Linux kernel requirement.
+
+Global `pswpout` measures host paging, not workload ownership or service harm.
+The enhanced profile permits background swap-out only with complete additional
+evidence. It does not add a megabyte allowance. All existing workload swap, RSS,
+host reserve, reaction margin, cold swap-in, sample-gap, deadline, pidfd cleanup,
+ownership, source integrity and publication-window checks still apply.
+
+The enhanced host profile requires the four suffixed `allocstall` counters,
+direct scan/steal, compaction stalls, OOM kills, background scan/steal, cache and
+refault counters, and every managed memory zone. Missing, malformed, reset or
+changing telemetry fails closed; the fixed counter profile is an explicit
+capability requirement, not a claim that every Linux build exposes these fields.
+Missing PSI remains `null`, never an invented zero. If present, PSI availability
+must remain stable and the existing 10% limit applies to its retained peak.
+
+Any allocation stall, direct reclaim, compaction stall or OOM increment since
+the first admission sample causes a latched failure, with or without swap.
+These are conservative indicators of allocation pressure; they do not establish
+which process caused it or quantify user-visible disruption. A sampled zone at
+or below its printed minimum also fails. Low-zone headroom with concurrent
+reclaim/refault activity fails. The printed watermarks already include boost;
+the separate boost field is not added again. Cache growth or a refault by itself
+does not establish thrashing. Zone inventory, minimum margins, cache extrema,
+cumulative counters and maximum sampling gaps are retained through completion.
+
+A read-only host-side companion thread checks the existing nginx and direct
+dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
+Its parent creates `operation/pressure` and binds it read-only into the quality
+service; the worker cannot modify the companion observations. Each binding pins
+the operation, exact service unit, candidate commit, helper hash, boot and nonce.
+The supervisor additionally receives the binding SHA-256 in its command.
+
+Probes use numeric loopback addresses, no proxy, redirects or retries, bounded
+headers/body, the existing 15-second endpoint timeout and a 30-second pair
+deadline. They require HTTP 200 and a dated manifest with banking rates. The
+companion waits five seconds between rounds. The maximum snapshot age is 37
+seconds: two endpoint budgets, that cadence and the existing two-second
+observation margin. A failed round remains failed in every later snapshot;
+stale, changed, replayed or mismatched observations fail closed. This is an
+availability deadline, not a newly claimed response-time SLO. The thread is
+stopped and joined after the owned workload; failed companion cleanup prevents
+the parent from accepting the canary.
+
+Before starting the companion, admission reserves its 32-second startup budget,
+31-second exit budget and the original 45-second unit/controller margin. After
+the initial healthy round, the parent recomputes the remaining workload time
+against 22:00 Hobart and refuses if fewer than 300 workload seconds remain.
+The 5,400-second maximum is unchanged; slow readiness never extends the window.
+
+The supervisor samples pressure and service evidence during both admission
+samples and every workload iteration. The v3 validator independently checks the
+same cumulative limits, extrema, sampling coverage and service proof. It requires
+an externally supplied exact operation and candidate commit. Seal/activation also
+bind the helper hash and selected profile to the candidate's source inventory.
+Legacy or failed receipts cannot be relabelled as successful v3 evidence; an
+earlier breach cannot be erased by a healthy final sample.
+
+The retained November 3 R10 run remains failed: it had four allocation stalls and
+432 directly reclaimed pages before the 656 KiB swap-out trigger. This profile
+would reject those allocation-pressure observations too. Idle capability probes
+show field availability only, not harmlessness or acceptance under load. Any
+future policy tolerating positive allocation stalls needs separately justified
+duration/impact criteria. No such tolerance is introduced here. A fresh full
+exact-candidate canary, app acceptance, rollback and publication checks remain
+necessary before deployment or data-success claims.

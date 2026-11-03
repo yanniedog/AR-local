@@ -254,6 +254,19 @@ def canary_worker(args) -> dict:
             "completed_at": datetime.now(timezone.utc).isoformat()}
 
 
+def pressure_launch_budget(command, closing) -> int:
+    # Retain the original 45-second unit-stop/controller margin and reserve
+    # the companion's additional bounded 31-second exit. Startup has elapsed.
+    runtime = min(5400, int((closing - datetime.now(TZ)).total_seconds()) - 76)
+    if runtime < 300:
+        raise ValueError("insufficient time after service readiness for canary and cleanup")
+    for index, item in enumerate(command):
+        if isinstance(item, str) and item.startswith("--property=RuntimeMaxSec="):
+            command[index] = f"--property=RuntimeMaxSec={runtime}s"
+    command[command.index("--runtime-seconds") + 1] = str(runtime - 15)
+    return runtime
+
+
 def canary(args) -> dict:
     layout(args.source, args.production, args.data_root, args.operation)
     guard(args.data_root, args.production)
@@ -268,10 +281,14 @@ def canary(args) -> dict:
     (args.operation / "tmp").mkdir()
     (args.operation / "home").mkdir()
     unit = f"ar-local-quality-canary-{uuid.uuid4().hex[:12]}.service"
+    pressure_profile = getattr(args, "pressure_profile", "legacy")
+    if pressure_profile not in {"legacy", "allocation-v1"}:
+        raise ValueError("unsupported pressure policy profile")
     command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect", f"--unit={unit}"]
     current = datetime.now(TZ)
     closing = current.replace(hour=22, minute=0, second=0, microsecond=0)
-    runtime = min(5400, int((closing - current).total_seconds()) - 45)
+    margin = 108 if pressure_profile == "allocation-v1" else 45
+    runtime = min(5400, int((closing - current).total_seconds()) - margin)
     if runtime < 300:
         raise ValueError("insufficient time for canary before recovery cutoff")
     properties = [f"User={getpass.getuser()}", f"WorkingDirectory={args.source}", "ProtectSystem=strict",
@@ -294,6 +311,10 @@ def canary(args) -> dict:
         properties += ["MemoryHigh=2500M", "MemoryMax=3G", "MemorySwapMax=0"]
     if cache_options:
         properties.append(f"ReadOnlyPaths={args.verified_cache.parent}")
+    if pressure_profile == "allocation-v1":
+        # The host parent writes these observations. Private-network workers
+        # can only read the directory and cannot forge service-health samples.
+        properties.append(f"ReadOnlyPaths={args.operation / 'pressure'}")
     command += [f"--property={p}" for p in properties]
     command += [args.python, "-B", args.source / "pi_cdr_quality_resources.py",
                 "--output", args.operation / "resources.json", "--runtime-seconds", str(runtime - 15), "--",
@@ -310,10 +331,27 @@ def canary(args) -> dict:
         "schema_version": 1, "unit": unit, "source": str(args.source),
         "operation": str(args.operation), "expected_commit": args.expected_commit,
     })
-    run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
+    companion = nullcontext()
+    if pressure_profile == "allocation-v1":
+        from pi_cdr_quality_service import ServiceCompanion
+        companion = ServiceCompanion(args.operation / "pressure", {
+            "schema": "ar-local-service-companion-v1",
+            "source_sha256": sha(args.source / "pi_cdr_quality_service.py"),
+            "source_commit": args.expected_commit, "operation": str(args.operation), "unit": unit,
+            "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            "nonce": uuid.uuid4().hex + uuid.uuid4().hex,
+        })
+    with companion as service:
+        if service is not None:
+            position = command.index("--")
+            command[position:position] = ["--pressure-binding-sha256", service.binding_sha256]
+            runtime = pressure_launch_budget(command, closing)
+        run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
     from pi_cdr_quality_resources import require_receipt
-    require_receipt(read(args.operation / "resources.json"))
+    require_receipt(read(args.operation / "resources.json"),
+                    expected_operation=args.operation, expected_commit=args.expected_commit)
     result = read(args.operation / "canary-worker.json")
+    result["pressure_profile"] = pressure_profile
     result["resources"] = record(args.operation / "resources.json")
     write(args.operation / "canary.json", result)
     return result
@@ -328,7 +366,8 @@ def seal(args) -> dict:
     canary_path = args.operation / "canary.json"
     canary_result = read(canary_path)
     from pi_cdr_quality_resources import require_receipt
-    require_receipt(read(checked(canary_result["resources"])))
+    require_receipt(read(checked(canary_result["resources"])),
+                    expected_operation=args.operation, expected_commit=target)
     ci_binding(read(args.ci_binding), target)
     app_binding(read(args.app_acceptance), target, canary_result)
     if canary_test_result(args.operation, args.source, target, canary_result["source_files"],
@@ -438,7 +477,8 @@ def activate(args) -> dict:
         manifest = validate_manifest(args.manifest, args.manifest_sha256)
     from pi_cdr_quality_resources import require_receipt
     canary = read(checked(manifest["evidence"]["canary"]))
-    require_receipt(read(checked(canary["resources"])))
+    require_receipt(read(checked(canary["resources"])),
+                    expected_operation=manifest["operation_root"], expected_commit=manifest["target_commit"])
     source, production, data, operation = (Path(manifest[key]) for key in
                                          ("source_root", "production_root", "data_root", "operation_root"))
     layout(source, production, data, operation)
@@ -477,7 +517,8 @@ def activate(args) -> dict:
             current_state(data)
             with require_dropbehind_reads():
                 validate_manifest(args.manifest, args.manifest_sha256)
-            require_receipt(read(checked(canary["resources"])))
+            require_receipt(read(checked(canary["resources"])),
+                            expected_operation=operation, expected_commit=manifest["target_commit"])
             with require_dropbehind_reads():
                 if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
                         or protected_files(data) != manifest["protected_files"]):
@@ -564,6 +605,7 @@ def main(argv=None) -> int:
     parser.add_argument("--dispositions", type=Path)
     parser.add_argument("--verified-cache", type=Path)
     parser.add_argument("--verified-cache-sha256")
+    parser.add_argument("--pressure-profile", choices=("legacy", "allocation-v1"), default="legacy")
     parser.add_argument("--ci-binding", type=Path)
     parser.add_argument("--app-acceptance", type=Path)
     parser.add_argument("--manifest", type=Path)
@@ -571,6 +613,8 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.command != "canary" and args.pressure_profile != "legacy":
+            raise ValueError("pressure profile is selected only by the canary parent")
         if args.command == "activate" and (not args.manifest or not args.manifest_sha256):
             raise ValueError("activate requires --manifest and --manifest-sha256")
         if args.command != "activate" and (not args.source or not args.operation):
