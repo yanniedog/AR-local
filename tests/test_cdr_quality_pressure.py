@@ -19,6 +19,8 @@ def host(t=1_000_000_000):
               'counters':{k:10 for k in p.COUNTERS},'cache_bytes':cache,
               'zones':[{'node':0,'zone':'Normal','managed':10000,'pages free':5000,
                         'boost':100,'min':200,'low':300,'high':400}]}
+    pressure['capture'] = {'global_before': pressure['counters'], 'global_after': pressure['counters'],
+                           'nodes_before': pressure['node_refaults'], 'nodes_after': pressure['node_refaults']}
     return {'page_size_bytes':16384,'available_bytes':7*1024**3,'pressure':pressure,
             'swap_out_pages':0,'swap_in_pages':0,'psi_avg10':None}
 

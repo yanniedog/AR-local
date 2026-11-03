@@ -12,7 +12,7 @@ import time
 
 from pi_cdr_quality_telemetry import MAX_COUNTER_TEXT, MAX_ZONE_TEXT, parse_zones
 
-PROFILE = 'ar-local-host-pressure-v3'
+PROFILE = 'ar-local-host-pressure-v4'
 MAX_VALUE = 2**64 - 1
 MAX_GAP_NS = 2_000_000_000
 # One seven-integer row per positive node/interval, <=384 bytes even with
@@ -94,7 +94,7 @@ def validate_snapshot(value):
     if not isinstance(value, dict) or value.get('profile') != PROFILE:
         raise ValueError('pressure_profile_or_boot')
     exact_keys(value, ('profile','boot_id','page_size_bytes','monotonic_ns','read_elapsed_ns','counters','cache_bytes','zones',
-                       'lru_gen_enabled','node_refaults'))
+                       'lru_gen_enabled','node_refaults','capture'))
     if value['profile'] != PROFILE or not isinstance(value['boot_id'], str) or not re.fullmatch('[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', value['boot_id']):
         raise ValueError('pressure_profile_or_boot')
     page = integer(value['page_size_bytes'], minimum=1024, maximum=1024**2)
@@ -142,6 +142,7 @@ def validate_snapshot(value):
             raise ValueError('pressure_node_order_or_identity')
     if any(sum(row[i + 1] for row in nodes) != value['counters'][key] for i, key in enumerate(REFAULT_COUNTERS)):
         raise ValueError('pressure_node_global_refault_mismatch')
+    validate_capture(value)
     return value
 
 
@@ -177,29 +178,20 @@ def read_node_refaults(sysfs, nodes):
 
 
 def sample_pressure(proc, memory_text, vm_text, *, sysfs=Path('/sys')):
-    """Strict read-only profile. Missing capabilities raise; no substituted zeroes."""
+    """Measured G0/zones/A/B/G1 capture; caller vm_text remains a reset/pressure guard."""
     started = time.monotonic_ns()
     proc = Path(proc)
     sysfs = Path(sysfs)
     boot = bounded_text(proc/'sys/kernel/random/boot_id', 128).strip()
     mode = lru_mode(bounded_text(sysfs/'kernel/mm/lru_gen/enabled', 32))
     nodes = online_nodes(bounded_text(sysfs/'devices/system/node/online', 1024))
-    counters = numeric_map(vm_text, COUNTERS)
+    before = numeric_map(bounded_text(proc/'vmstat', MAX_COUNTER_TEXT), COUNTERS)
     zones = sorted(parse_zones(bounded_text(proc/'zoneinfo', MAX_ZONE_TEXT)), key=lambda z: (z['node'], z['zone']))
     if nodes != sorted({z['node'] for z in zones}):
         raise ValueError('pressure_node_zone_inventory')
-    node_refaults = read_node_refaults(sysfs, nodes)
-    # Compare every counter, not merely sums: a reset on one node must not be
-    # cancelled by growth on another. No retry may erase this observation.
-    if read_node_refaults(sysfs, nodes) != node_refaults:
-        raise ValueError('pressure_node_counters_changed_during_capture')
+    opening_nodes = read_node_refaults(sysfs, nodes)
+    closing_nodes = read_node_refaults(sysfs, nodes)
     after = numeric_map(bounded_text(proc/'vmstat', MAX_COUNTER_TEXT), COUNTERS)
-    if any(after[key] < counters[key] for key in COUNTERS):
-        raise ValueError('pressure_counter_reset_during_capture')
-    if any(after[key] > counters[key] for key in PRESSURE_COUNTERS):
-        raise ValueError('host_allocation_pressure_during_capture')
-    if any(after[key] != counters[key] for key in REFAULT_COUNTERS):
-        raise ValueError('pressure_refault_capture_incoherent')
     if (online_nodes(bounded_text(sysfs/'devices/system/node/online', 1024)) != nodes
             or lru_mode(bounded_text(sysfs/'kernel/mm/lru_gen/enabled', 32)) != mode):
         raise ValueError('pressure_node_or_lru_mode_changed_during_capture')
@@ -207,10 +199,89 @@ def sample_pressure(proc, memory_text, vm_text, *, sysfs=Path('/sys')):
     if bounded_text(proc/'sys/kernel/random/boot_id', 128).strip() != boot:
         raise ValueError('pressure_boot_changed_during_sample')
     ended = time.monotonic_ns()
-    return validate_snapshot({'profile': PROFILE, 'boot_id': boot, 'page_size_bytes': page,
+    value = {'profile': PROFILE, 'boot_id': boot, 'page_size_bytes': page,
                               'monotonic_ns': ended, 'read_elapsed_ns': ended - started,
-                              'counters': counters, 'lru_gen_enabled': mode, 'node_refaults': node_refaults,
-                              'cache_bytes': numeric_map(memory_text, CACHE_FIELDS, kib=True), 'zones': zones})
+                              'counters': after, 'lru_gen_enabled': mode, 'node_refaults': closing_nodes,
+                              'capture': {'global_before': before, 'nodes_before': opening_nodes,
+                                          'nodes_after': closing_nodes, 'global_after': after},
+                              'cache_bytes': numeric_map(memory_text, CACHE_FIELDS, kib=True), 'zones': zones}
+    try:
+        caller = numeric_map(vm_text, COUNTERS)
+        if any(before[key] < caller[key] for key in COUNTERS):
+            raise ValueError('pressure_counter_reset_during_capture')
+        if any(before[key] != caller[key] for key in PRESSURE_COUNTERS):
+            raise ValueError('host_allocation_pressure_during_capture')
+        return validate_snapshot(value)
+    except ValueError as error:
+        raise PressureCaptureError(str(error), value) from error
+
+
+class PressureCaptureError(ValueError):
+    """Bounded failed raw capture for diagnostic retention, never acceptance."""
+    def __init__(self, reason, value):
+        self.capture = copy.deepcopy(value)
+        super().__init__(reason)
+
+
+def validate_capture(value):
+    raw = value['capture']
+    exact_keys(raw, ('global_before', 'nodes_before', 'nodes_after', 'global_after'))
+    for key in ('global_before', 'global_after'):
+        exact_keys(raw[key], COUNTERS)
+        for number in raw[key].values():
+            integer(number)
+    nodes = value['node_refaults']
+    for key in ('nodes_before', 'nodes_after'):
+        rows = raw[key]
+        if not isinstance(rows, list) or len(rows) != len(nodes):
+            raise ValueError('pressure_capture_node_inventory')
+        for row, node in zip(rows, nodes):
+            if not isinstance(row, list) or len(row) != 3:
+                raise ValueError('pressure_capture_node_shape')
+            for number in row:
+                integer(number)
+            if row[0] != node[0]:
+                raise ValueError('pressure_capture_node_identity')
+    if raw['nodes_after'] != nodes or raw['global_after'] != value['counters']:
+        raise ValueError('pressure_capture_closing_binding')
+    for opening, closing in zip(raw['nodes_before'], raw['nodes_after']):
+        if any(closing[i] < opening[i] for i in (1, 2)):
+            raise ValueError('pressure_node_counter_reset_during_capture')
+    if any(raw['global_after'][k] < raw['global_before'][k] for k in COUNTERS):
+        raise ValueError('pressure_counter_reset_during_capture')
+    if any(raw['global_after'][k] != raw['global_before'][k] for k in PRESSURE_COUNTERS):
+        raise ValueError('host_allocation_pressure_during_capture')
+
+
+def require_capture_link(previous, current):
+    """Opening reads cannot hide resets subsequently recovered by closing reads."""
+    raw = current['capture']
+    if current['monotonic_ns'] - current['read_elapsed_ns'] < previous['monotonic_ns']:
+        raise ValueError('pressure_capture_windows_overlap')
+    if any(raw['global_before'][k] < previous['counters'][k] for k in COUNTERS):
+        raise ValueError('pressure_counter_reset_between_captures')
+    if any(raw['global_before'][k] != previous['counters'][k] for k in PRESSURE_COUNTERS):
+        raise ValueError('host_allocation_pressure_observed')
+    for before, opening in zip(previous['node_refaults'], raw['nodes_before']):
+        if before[0] != opening[0] or any(opening[i] < before[i] for i in (1, 2)):
+            raise ValueError('pressure_node_counter_reset_between_captures')
+
+
+def require_initial_capture(value):
+    """Do not erase pre-baseline refault movement into a closing-read baseline."""
+    raw = value['capture']; lows = node_lows(value['zones'])
+    changes = [[b[i] - a[i] for i in (1, 2)]
+               for a, b in zip(raw['nodes_before'], raw['nodes_after'])]
+    global_changes = [raw['global_after'][key] - raw['global_before'][key] for key in REFAULT_COUNTERS]
+    unknown = any(raw['global_before'][key] != sum(row[i + 1] for row in raw['nodes_before'])
+                  or global_changes[i] > sum(row[i] for row in changes)
+                  for i, key in enumerate(REFAULT_COUNTERS))
+    active = any(global_changes) or any(any(row) for row in changes)
+    low = any(number <= 0 for number in lows.values())
+    if ((unknown or not value['lru_gen_enabled'] & 1) and active and low
+            or value['lru_gen_enabled'] & 1 and any(lows[node[0]] <= 0 and any(change)
+                for node, change in zip(raw['nodes_after'], changes))):
+        raise ValueError('host_zone_low_with_initial_refault')
 
 
 def fingerprint(value):
@@ -276,9 +347,13 @@ class PressureTracker:
         self._check_initial()
 
     def _check_initial(self):
-        if any(row['min'] <= 0 for row in self.minimum_margins.values()):
-            self.failure = 'host_zone_minimum_headroom'
-            raise ValueError(self.failure)
+        try:
+            require_initial_capture(self.baseline)
+            if any(row['min'] <= 0 for row in self.minimum_margins.values()):
+                raise ValueError('host_zone_minimum_headroom')
+        except ValueError as error:
+            self.failure = str(error)
+            raise PressureCaptureError(self.failure, self.baseline) from error
 
     def observe(self, host, companion_snapshot=None, now=None):
         if self.failure is not None:
@@ -332,8 +407,10 @@ class PressureTracker:
             for zone, levels in current_margins.items():
                 for level, number in levels.items():
                     self.minimum_margins[zone][level] = min(self.minimum_margins[zone][level], number)
+            previous = self.last
             self.last = value
             self.samples += 1
+            require_capture_link(previous, value)
             low_activity = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in ACTIVITY_COUNTERS)
             low_refault = any(row[3] <= 0 for row in events) if value['lru_gen_enabled'] & 1 else (
                 any(z['low'] <= 0 for z in current_margins.values()) and bool(events))
@@ -425,6 +502,7 @@ def require_pressure_receipt(summary, baseline_host, last_host):
         low, high = integer(summary['cache_min_bytes'][key]), integer(summary['cache_max_bytes'][key])
         if not low <= min(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= max(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= high:
             raise ValueError('pressure_receipt_cache_extrema')
+    require_capture_link(baseline, last)
     require_refault_sources(summary, baseline, last, count)
     require_refault_events(summary, baseline, last, count, gap)
     require_low_activity_counts(summary, last_zones, count)
@@ -496,6 +574,7 @@ def require_refault_sources(summary, baseline, last, count):
         for key in CACHE_FIELDS:
             if not summary['cache_min_bytes'][key] <= value['cache_bytes'][key] <= summary['cache_max_bytes'][key]:
                 raise ValueError('pressure_refault_source_cache_extrema')
+        require_capture_link(previous, value)
         current_margins = margins(value['zones'])
         for zone, levels in current_margins.items():
             if levels['min'] <= 0 or any(levels[key] < summary['minimum_zone_margins'][zone][key] for key in levels):
@@ -514,6 +593,8 @@ def require_refault_sources(summary, baseline, last, count):
             raise ValueError('pressure_refault_source_evidence_capacity')
         expected_rows.extend(group)
         previous, previous_seq = value, seq
+    if previous is not last and previous_seq < count - 1:
+        require_capture_link(previous, last)
     if expected_rows != events:
         raise ValueError('pressure_refault_source_event_binding')
     if total_bytes != recorded_bytes:

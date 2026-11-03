@@ -18,13 +18,17 @@ BOOT = 'cf36b73c-1111-4111-8111-111111111111'
 def host(t):
     cache = {key: 1024 for key in pressure.CACHE_FIELDS}
     cache.update(MemTotal=8*resources.GIB, MemAvailable=7*resources.GIB)
-    return {'page_size_bytes':16384, 'available_bytes':7*resources.GIB,
+    value = {'page_size_bytes':16384, 'available_bytes':7*resources.GIB,
         'swap_in_pages':0, 'swap_out_pages':0, 'psi_avg10':None,
         'pressure':{'profile':pressure.PROFILE, 'boot_id':BOOT, 'page_size_bytes':16384,
             'monotonic_ns':t, 'read_elapsed_ns':1000000,'lru_gen_enabled':0,'node_refaults':[[0,10,10]],
             'counters':{key:10 for key in pressure.COUNTERS}, 'cache_bytes':cache,
             'zones':[{'node':0,'zone':'Normal','managed':10000,'pages free':5000,
                       'boost':100,'min':200,'low':300,'high':400}]}}
+    q = value['pressure']
+    q['capture'] = {'global_before': q['counters'], 'global_after': q['counters'],
+                    'nodes_before': q['node_refaults'], 'nodes_after': q['node_refaults']}
+    return value
 
 
 def snapshot(binding):
@@ -116,7 +120,7 @@ def test_low_background_reclaim_requires_complete_service_proof(scenario):
     receipt = complete(scenario)
     require(receipt, scenario)
     host_proof = receipt['pressure_evidence']['host']
-    assert host_proof['profile'] == 'ar-local-host-pressure-v3'
+    assert host_proof['profile'] == 'ar-local-host-pressure-v4'
     assert host_proof['low_with_activity_samples'] == 1
     assert host_proof['low_with_refault_samples'] == 0
     receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True
@@ -136,7 +140,7 @@ def test_mglru_node_evidence_composes_with_full_service_and_resource_validation(
         evidence['node_refaults'][1][2] = 6
         evidence['counters']['workingset_refault_file'] += 6
     receipt = complete(scenario)
-    assert receipt['schema'] == 'ar-local-quality-resources-v4'
+    assert receipt['schema'] == 'ar-local-quality-resources-v5'
     assert receipt['pressure_evidence']['host']['refault_scope'] == 'mglru_same_node'
     require(receipt, scenario)
     receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True

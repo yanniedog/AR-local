@@ -444,7 +444,7 @@ and rollback gates remain mandatory before activation.
 
 ## Explicit allocation-pressure profile
 
-`canary --pressure-profile allocation-v1` selects resource receipt schema v4.
+`canary --pressure-profile allocation-v1` selects resource receipt schema v5.
 Omitting the option preserves the legacy v2 policy, including zero host swap-out.
 This selection is a source-reviewed policy amendment, not a runtime acceptance
 claim. It changes no kernel, swap, credential, network or production settings.
@@ -462,7 +462,7 @@ ownership, source integrity and publication-window checks still apply.
 The enhanced host profile requires the four suffixed `allocstall` counters,
 direct scan/steal, compaction stalls, OOM kills, background scan/steal, cache and
 refault counters, and every managed memory zone. Missing, malformed, reset or
-changing telemetry fails closed; the fixed counter profile is an explicit
+incoherent telemetry fails closed; the fixed counter profile is an explicit
 capability requirement, not a claim that every Linux build exposes these fields.
 Missing PSI remains `null`, never an invented zero. If present, PSI availability
 must remain stable and the existing 10% limit applies to its retained peak.
@@ -480,10 +480,10 @@ the separate boost field is not added again. Cache growth or a refault by itself
 does not establish thrashing. Zone inventory, minimum margins, cache extrema,
 cumulative counters and maximum sampling gaps are retained through completion.
 
-The internal host evidence profile is now `ar-local-host-pressure-v3` and
-resource receipt schema is v4. The CLI selector remains `allocation-v1`; its
-exact reviewed source commit selects this implementation. Old v1/v2 host
-proofs and v3 resource receipts cannot be relabelled or reinterpreted. R14 and
+The internal host evidence profile is now `ar-local-host-pressure-v4` and
+resource receipt schema is v5. The CLI selector remains `allocation-v1`; its
+exact reviewed source commit selects this implementation. Old v1/v2/v3 host
+proofs and v3/v4 resource receipts cannot be relabelled or reinterpreted. R15 and
 all earlier failed receipts remain immutable; fresh full acceptance is required.
 
 Each sample requires a fixed online node inventory exactly matching the managed
@@ -492,16 +492,35 @@ anonymous/file refault counters. Bit 0 enables MGLRU; bits 1 and 2 are optional
 page-table optimizations, so `0x0003` qualifies. Unknown bits, unavailable sysfs
 (including on classic-LRU systems), missing/malformed counters, mode changes,
 node changes or resets fail closed. One bounded capture checks boot, mode and
-online inventory on both sides of the read. It requires the original caller's
-global refault counters to equal the exact node sums and the closing global
-read. A second complete node read must equal the opening node counters before
-the closing global read; a reset on one node cannot be cancelled by growth on
-another. There is no tolerance, discarded residual, counter rescaling or retry.
-Any allocation-pressure counter increment observed in that closing read also
-fails, even if it was absent from the original caller sample. Active accounting
-or folding may prevent a coherent capture; that is an explicit evidence failure,
-not guaranteed acceptance or permission to loosen the check. The existing
-2-second sample/read/observation limits remain in force.
+online inventory on both sides of the read. Within the measured window its fixed
+read order is global counters G0, zones, node counters A, node counters B, then
+global counters G1. All four raw counter sets are retained. The caller's earlier
+vmstat still guards against resets or newly observed allocation pressure before
+G0; it is not silently replaced. Canonical nodes are B and canonical global
+counters are G1, with exact per-type sum(B) == G1. Mismatch fails closed.
+Each component must be monotone within a capture and across captures: B >= A,
+G1 >= G0, current A >= previous B, and current G0 >= previous G1. Allocation
+pressure counters must stay unchanged. A node reset cannot be cancelled by
+another node's growth or hidden by a recovered closing read. No tolerance,
+rescaling, discarded residual or capture retry is introduced.
+
+Initial capture movement is checked before adopting the closing baseline.
+Known B-A refaults use the existing MGLRU same-node/classic-global low-zone rule.
+If G0 differs from sum(A), or G1-G0 includes more activity than B-A, initial
+attribution is unknown: any low zone plus observed initial refault movement
+fails. Later intervals retain the ordinary closing-to-closing deltas without
+counting overlapping capture increments twice. The independent validator
+checks capture windows do not overlap. `cumulative` and `node_cumulative` remain
+closing-baseline-to-closing-terminal totals; initial movement is retained in
+`baseline.capture` and checked separately, not included in those totals. It
+reconstructs these checks from the mandatory raw snapshots; old proofs cannot
+supply the new fields by relabelling. Completed raw captures that fail validation
+are retained as `failed_pressure_capture` diagnostics and cannot accompany a
+successful resource receipt. Earlier read/identity errors may occur before a
+complete diagnostic snapshot exists. Bounded evidence and the existing 2-second
+sample/read/observation limits remain in force. Equality of sampled published
+counters does not establish atomic reads or absence of unreported kernel activity.
+
 
 With stable MGLRU enabled, a low zone and positive refault delta must concern
 the same node to trigger the low-plus-refault failure. On classic LRU the
@@ -556,9 +575,9 @@ FAIL before appending any partial interval; it never truncates evidence or
 turns incomplete evidence into PASS. No new production helper module is added;
 existing source inventories bind the amended pressure, resource and activation
 validators. There is no new memory/reclaim allowance, service mutation, kernel
-setting, or privilege change. Activation accepts only explicit v4 enhanced or
+setting, or privilege change. Activation accepts only explicit v5 enhanced or
 v2 legacy resource schemas and fully validates either; a legacy label cannot
-bypass validation of an old v3, unknown, missing or disguised enhanced receipt.
+bypass validation of an old v3/v4, unknown, missing or disguised enhanced receipt.
 
 A read-only host-side companion thread checks the existing nginx and direct
 dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
@@ -598,11 +617,11 @@ against 22:00 Hobart and refuses if fewer than 300 workload seconds remain.
 The 5,400-second maximum is unchanged; slow readiness never extends the window.
 
 The supervisor samples pressure and service evidence during both admission
-samples and every workload iteration. The v3 validator independently checks the
+samples and every workload iteration. The resource validator independently checks the
 same cumulative limits, extrema, sampling coverage and service proof. It requires
 an externally supplied exact operation and candidate commit. Seal/activation also
 bind the helper hash and selected profile to the candidate's source inventory.
-Legacy or failed receipts cannot be relabelled as successful v3 evidence; an
+Legacy or failed receipts cannot be relabelled as successful enhanced evidence; an
 earlier breach cannot be erased by a healthy final sample.
 
 The retained November 3 R10 run remains failed: it had four allocation stalls and
