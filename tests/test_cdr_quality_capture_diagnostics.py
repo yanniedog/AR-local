@@ -8,7 +8,16 @@ import pytest
 import pi_cdr_quality_pressure as pressure
 import pi_cdr_quality_resources as resources
 import pi_cdr_quality_pressure_runtime as runtime
-from tests.test_cdr_quality_pressure_integration import scenario
+from tests.test_cdr_quality_pressure_integration import scenario as single_node_scenario
+
+
+@pytest.fixture
+def scenario(single_node_scenario):
+    for value in single_node_scenario[4]:
+        q = value['pressure']
+        q['zones'].append(dict(q['zones'][0], node=1))
+        q['node_refaults'].append([1,0,0])
+    return single_node_scenario
 
 
 def quiet_failure(value, fault):
@@ -17,6 +26,13 @@ def quiet_failure(value, fault):
     if fault == 'node_reset':
         q['capture']['nodes_before'] = copy.deepcopy(q['node_refaults'])
         q['capture']['nodes_before'][0][2] -= 1
+        # Keep the ordered sums valid with real growth on the second node;
+        # only the componentwise opening-vs-previous node check rejects this.
+        q['capture']['nodes_before'][1][2] += 1
+        q['node_refaults'][1][2] += 1
+        q['counters']['workingset_refault_file'] += 1
+        q['capture']['nodes_after'] = copy.deepcopy(q['node_refaults'])
+        q['capture']['global_after'] = copy.deepcopy(q['counters'])
     elif fault == 'global_reset':
         q['capture']['global_before'] = copy.deepcopy(q['counters'])
         q['capture']['global_before']['pgmajfault'] -= 1

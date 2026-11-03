@@ -444,7 +444,7 @@ and rollback gates remain mandatory before activation.
 
 ## Explicit allocation-pressure profile
 
-`canary --pressure-profile allocation-v1` selects resource receipt schema v5.
+`canary --pressure-profile allocation-v1` selects resource receipt schema v6.
 Omitting the option preserves the legacy v2 policy, including zero host swap-out.
 This selection is a source-reviewed policy amendment, not a runtime acceptance
 claim. It changes no kernel, swap, credential, network or production settings.
@@ -480,10 +480,10 @@ the separate boost field is not added again. Cache growth or a refault by itself
 does not establish thrashing. Zone inventory, minimum margins, cache extrema,
 cumulative counters and maximum sampling gaps are retained through completion.
 
-The internal host evidence profile is now `ar-local-host-pressure-v4` and
-resource receipt schema is v5. The CLI selector remains `allocation-v1`; its
-exact reviewed source commit selects this implementation. Old v1/v2/v3 host
-proofs and v3/v4 resource receipts cannot be relabelled or reinterpreted. R15 and
+The internal host evidence profile is now `ar-local-host-pressure-v5` and
+resource receipt schema is v6. The CLI selector remains `allocation-v1`; its
+exact reviewed source commit selects this implementation. Old v1/v2/v3/v4 host
+proofs and v3/v4/v5 resource receipts cannot be relabelled or reinterpreted. R17 and
 all earlier failed receipts remain immutable; fresh full acceptance is required.
 
 Each sample requires a fixed online node inventory exactly matching the managed
@@ -497,7 +497,20 @@ read order is global counters G0, zones, node counters A, node counters B, then
 global counters G1. All four raw counter sets are retained. The caller's earlier
 vmstat still guards against resets or newly observed allocation pressure before
 G0; it is not silently replaced. Canonical nodes are B and canonical global
-counters are G1, with exact per-type sum(B) == G1. Mismatch fails closed.
+counters are G1. For each refault type, require the ordered published-counter
+bracket `G0 <= sum(A) <= sum(B) <= G1`; outside-bracket captures fail closed.
+Global and node values are independent reads, not an atomic equality contract.
+Upstream Linux v6.18 independently updates the node and global atomics in
+[node_page_state_add](https://github.com/torvalds/linux/blob/v6.18/include/linux/vmstat.h#L156-L160);
+[global vmstat](https://github.com/torvalds/linux/blob/v6.18/mm/vmstat.c#L1775-L1800)
+and [node vmstat](https://github.com/torvalds/linux/blob/v6.18/drivers/base/node.c#L554-L579)
+read their corresponding published counters separately. These upstream sources
+are not a verified build-source identity for the installed downstream kernel.
+The retained R17 sample has file counts 183983/183983/183988/184005: a supported
+ordered bracket with a 17-base-page published-counter residual of unknown node
+attribution, not 17 additional events beyond the measured global delta or proof
+that every refault was harmless. R17 remains failed; only a new versioned full
+canary can qualify.
 Each component must be monotone within a capture and across captures: B >= A,
 G1 >= G0, current A >= previous B, and current G0 >= previous G1. Allocation
 pressure counters must stay unchanged. A node reset cannot be cancelled by
@@ -506,15 +519,23 @@ rescaling, discarded residual or capture retry is introduced.
 
 Initial capture movement is checked before adopting the closing baseline.
 Known B-A refaults use the existing MGLRU same-node/classic-global low-zone rule.
-If G0 differs from sum(A), or G1-G0 includes more activity than B-A, initial
-attribution is unknown: any low zone plus observed initial refault movement
-fails. Later intervals retain the ordinary closing-to-closing deltas without
-counting overlapping capture increments twice. Live checks reject overlapping
+Define nonnegative prefix `P=sum(A)-G0` and tail `T=G1-sum(B)`, separately
+for anonymous/file refaults. Any initial P or T represents unknown attribution:
+any low zone fails initial admission, even when B-A is zero. Later intervals
+retain both measured global delta and measured per-node B deltas. Their exact
+identity is `delta(G1)=sum(delta(B))+Tcurrent-Tprevious`; global totals and peaks
+must not be replaced by node totals or peaks. A previous tail settling into a
+node may yield positive node activity with zero global delta and is not dropped.
+Either endpoint tail makes attribution uncertain for that interval, so any low
+zone fails regardless of MGLRU node attribution. Residuals are uncertainty
+bounds, not extra exact event counts. No sampling tail is discarded. Live checks
+reject overlapping
 capture windows for every observation; independent replay checks the retained
 capture windows. `cumulative` and `node_cumulative` remain
 closing-baseline-to-closing-terminal totals; initial movement is retained in
 `baseline.capture` and checked separately, not included in those totals.
-Baseline, terminal and positive-refault raw snapshots are replayed. Successful
+Baseline, terminal, positive-node and endpoint-residual raw snapshots are
+replayed. Successful
 quiet intermediate captures contribute aggregate counts, extrema and the live
 failure latch; their individual raw counter/clock checks cannot be reconstructed
 from the receipt. Full independent replay of every quiet capture would require
@@ -529,7 +550,8 @@ counters does not establish atomic reads or absence of unreported kernel activit
 
 
 With stable MGLRU enabled, a low zone and positive refault delta must concern
-the same node to trigger the low-plus-refault failure. On classic LRU the
+the same node to trigger the low-plus-refault failure when both endpoint tails
+are zero. On classic LRU the
 previous conservative **any-low-zone plus global-refault** rule remains.
 This distinction follows the [Raspberry Pi 6.18 workingset implementation](https://github.com/raspberrypi/linux/blob/rpi-6.18.y/mm/workingset.c):
 MGLRU increments refault counters only when the eviction and replacement lruvec
@@ -541,21 +563,32 @@ Quiet capability samples are not active-load qualification or attribution of R14
 All global allocation stalls/direct reclaim/compaction/OOM gates and every-zone
 minimum, service, PSI, RSS, workload-swap and cleanup requirements remain intact.
 
-`low_with_activity_samples` still records the global low-plus-background-activity
-context. `low_with_refault_samples` records the applicable mode-specific failure
+`low_with_activity_samples` records low-plus-background activity, including
+measured node increments and endpoint uncertainty even when global delta is zero.
+`low_with_refault_samples` records the applicable mode-specific failure
 conjunction and must be zero for PASS. Each positive **node/interval** retains a
 seven-integer row: interval sequence, monotonic timestamp, node ID, that node's
 minimum low margin, anonymous delta, file delta and global minimum low margin.
 Counters remain base-page counts. Rows sharing an interval have the same time
 and global margin and strictly increasing node IDs. Independent validation
-reconciles every node's sums, peaks and endpoint counters; global peaks are sums
-across nodes **within each interval**, not maxima across individual nodes. It
+reconciles every node's sums, peaks and endpoint counters. Global totals and
+peaks come from the separately measured global deltas, reconciled by endpoint
+tails rather than forced to equal the node sums. It
 also checks ordered time/sequence coverage, terminal margins, corresponding
 node extrema and fingerprints. Omitted, duplicate, reordered, node-swapped or
 inconsistent rows fail. Zero-refault node/intervals need no row.
 
-Every positive interval also retains one complete captured pressure snapshot,
-its sequence and fingerprint. Independent replay derives every event field
+Every positive-node or endpoint-residual interval also retains one complete
+captured pressure snapshot, its sequence and fingerprint, plus a nine-integer
+interval row: sequence, timestamp, global low margin, measured anonymous/file
+global deltas, previous anonymous/file tails, current anonymous/file tails.
+Tail-only intervals retain a snapshot and interval row even with no node event.
+After a positive-tail snapshot, the next source must be the immediately following
+sequence: the ordered bracket forces that tail to settle into observed nodes.
+Zero-tail quiet gaps cannot change the refault carry. Independent replay derives
+all interval fields from the raw source and previous retained endpoint, including
+uncertainty, actual zone margins and measured global deltas. It derives every
+event field
 from that snapshot's raw zones and node counters, requiring exact equality,
 not just a lower bound from aggregate zone minima. It verifies monotone raw
 counters, unchanged allocation-pressure counters, positive zone minima, cache
@@ -569,21 +602,23 @@ The trust anchor is the existing sealed resources SHA in the canary artifact,
 which is itself bound by the externally expected activation-manifest hash.
 
 Each row has a conservative 384-byte bound and an absolute 87,381-row cap.
-The **combined** retained snapshots and event rows must also fit within 32 MiB
+The **combined** retained snapshots, node-event and interval rows must fit within
+32 MiB
 of the existing 64 MiB receipt budget. Accounting uses each bounded item's
 actual `indent=2` encoding plus eight spaces per line for its final nesting,
 comma/newline overhead and a fixed envelope reserve. The observer increments
 the byte total once per new batch; it does not reserialize the full ledger on
 each sample. Independent validation recomputes the same bound. One interval
-can contain a 64-node/64-zone snapshot and up to 64 event rows, so the budget
+can contain a 64-node/64-zone snapshot and up to 64 node-event rows plus one
+interval row, so the budget
 is not a guarantee that every full-duration activity pattern fits. Exhaustion latches
 FAIL before appending any partial interval; it never truncates evidence or
 turns incomplete evidence into PASS. No new production helper module is added;
 existing source inventories bind the amended pressure, resource and activation
 validators. There is no new memory/reclaim allowance, service mutation, kernel
-setting, or privilege change. Activation accepts only explicit v5 enhanced or
+setting, or privilege change. Activation accepts only explicit v6 enhanced or
 v2 legacy resource schemas and fully validates either; a legacy label cannot
-bypass validation of an old v3/v4, unknown, missing or disguised enhanced receipt.
+bypass validation of an old v3/v4/v5, unknown, missing or disguised enhanced receipt.
 
 A read-only host-side companion thread checks the existing nginx and direct
 dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
