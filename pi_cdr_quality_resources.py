@@ -425,7 +425,14 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
     return receipt
 
 
-def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=None) -> None:
+def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=None,
+                    expected_profile=None) -> None:
+    if expected_profile is not None:
+        if expected_profile not in ("legacy", "allocation-v1"):
+            raise ValueError("unsupported expected pressure profile")
+        expected_schema = PRESSURE_SCHEMA if expected_profile == "allocation-v1" else SCHEMA
+        if receipt.get("schema") != expected_schema:
+            raise ValueError("resource schema differs from expected pressure profile")
     limits = Limits(**receipt["limits"])
     limits.validate()
     progress = swap_progress(receipt["last_host_sample"], receipt["baseline"], receipt["baseline"].get("admission_sample"))
