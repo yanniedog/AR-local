@@ -12,9 +12,12 @@ import time
 
 from pi_cdr_quality_telemetry import MAX_COUNTER_TEXT, MAX_ZONE_TEXT, parse_zones
 
-PROFILE = 'ar-local-host-pressure-v1'
+PROFILE = 'ar-local-host-pressure-v2'
 MAX_VALUE = 2**64 - 1
 MAX_GAP_NS = 2_000_000_000
+# Reserve half the existing 64 MiB receipt-read budget. A five-integer event
+# takes at most 256 bytes with the resource receipt's indentation/field widths.
+MAX_REFAULT_EVENTS = (32 * 1024**2) // 256
 COUNTERS = (
     'allocstall_dma', 'allocstall_dma32', 'allocstall_normal', 'allocstall_movable',
     'pgscan_direct', 'pgsteal_direct', 'compact_stall', 'oom_kill',
@@ -27,6 +30,7 @@ COUNTERS = (
 PRESSURE_COUNTERS = COUNTERS[:8]
 ACTIVITY_COUNTERS = ('pgscan_kswapd', 'pgscan_anon', 'pgscan_file', 'pgsteal_kswapd',
                      'pgsteal_anon', 'pgsteal_file', 'workingset_refault_anon', 'workingset_refault_file')
+REFAULT_COUNTERS = ('workingset_refault_anon', 'workingset_refault_file')
 CACHE_FIELDS = ('MemTotal', 'MemAvailable', 'MemFree', 'Buffers', 'Cached', 'Shmem',
                 'SwapFree', 'SwapCached', 'Active(anon)', 'Inactive(anon)',
                 'Active(file)', 'Inactive(file)', 'SReclaimable', 'Dirty', 'Writeback')
@@ -173,6 +177,8 @@ class PressureTracker:
         self.cache_max = dict(self.baseline['cache_bytes'])
         self.max_interval = {k: 0 for k in COUNTERS}
         self.low_activity_samples = 0
+        self.low_refault_samples = 0
+        self.refault_events = []
         self._check_initial()
 
     def _check_initial(self):
@@ -202,6 +208,16 @@ class PressureTracker:
                 raise ValueError('pressure_counter_reset')
             cumulative = {k: value['counters'][k] - self.baseline['counters'][k] for k in COUNTERS}
             current_margins = margins(value['zones'])
+            if any(delta[key] for key in REFAULT_COUNTERS):
+                if len(self.refault_events) >= MAX_REFAULT_EVENTS:
+                    raise ValueError('pressure_refault_evidence_capacity')
+                # Sparse intervals: sequence, timestamp, minimum low margin,
+                # anon delta, file delta. Zero-refault intervals need no row.
+                self.refault_events.append([
+                    self.samples, value['monotonic_ns'],
+                    min(row['low'] for row in current_margins.values()),
+                    *(delta[key] for key in REFAULT_COUNTERS),
+                ])
             self.max_gap_ns = max(self.max_gap_ns, gap)
             for key in COUNTERS:
                 self.max_interval[key] = max(self.max_interval[key], delta[key])
@@ -214,13 +230,17 @@ class PressureTracker:
             self.last = value
             self.samples += 1
             low_activity = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in ACTIVITY_COUNTERS)
+            low_refault = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in REFAULT_COUNTERS)
             self.low_activity_samples += int(low_activity)
+            self.low_refault_samples += int(low_refault)
             if any(cumulative[k] for k in PRESSURE_COUNTERS):
                 raise ValueError('host_allocation_pressure_observed')
             if any(z['min'] <= 0 for z in current_margins.values()):
                 raise ValueError('host_zone_minimum_headroom')
-            if low_activity:
-                raise ValueError('host_zone_low_with_reclaim_or_refault')
+            # Below low is the normal kswapd wakeup condition. Scan/steal alone
+            # is context; retain the conservative low-plus-refault stop.
+            if low_refault:
+                raise ValueError('host_zone_low_with_refault')
         except (ValueError, TypeError, KeyError, OverflowError) as error:
             self.failure = str(error)
             raise ValueError(self.failure) from error
@@ -236,7 +256,10 @@ class PressureTracker:
                 'cumulative': {k: self.last['counters'][k] - self.baseline['counters'][k] for k in COUNTERS},
                 'maximum_interval': dict(self.max_interval), 'minimum_zone_margins': copy.deepcopy(self.minimum_margins),
                 'cache_min_bytes': dict(self.cache_min), 'cache_max_bytes': dict(self.cache_max),
-                'low_with_activity_samples': self.low_activity_samples, 'service_validation': 'external_required'}
+                'low_with_activity_samples': self.low_activity_samples,
+                'low_with_refault_samples': self.low_refault_samples,
+                'refault_events': [list(row) for row in self.refault_events],
+                'service_validation': 'external_required'}
 
 
 def require_pressure_receipt(summary, baseline_host, last_host):
@@ -281,11 +304,68 @@ def require_pressure_receipt(summary, baseline_host, last_host):
                 raise ValueError('pressure_receipt_zone_extrema')
         if not values['min'] > 0 or not values['high'] <= values['low'] <= values['min']:
             raise ValueError('pressure_receipt_zone_pressure')
-    if type(summary['low_with_activity_samples']) is not int or summary['low_with_activity_samples'] != 0:
-        raise ValueError('pressure_receipt_low_reclaim')
+    require_low_activity_counts(summary, last_zones, count)
+    require_refault_events(summary, baseline, last, count, gap)
     for key in ('cache_min_bytes','cache_max_bytes'):
         exact_keys(summary[key], CACHE_FIELDS)
     for key in CACHE_FIELDS:
         low, high = integer(summary['cache_min_bytes'][key]), integer(summary['cache_max_bytes'][key])
         if not low <= min(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= max(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= high:
             raise ValueError('pressure_receipt_cache_extrema')
+
+
+def require_low_activity_counts(summary, last_zones, count):
+    """Check aggregate consistency without inventing unretained intervals."""
+    activity = integer(summary['low_with_activity_samples'], maximum=count - 1)
+    refault = integer(summary['low_with_refault_samples'], maximum=activity)
+    total = sum(summary['cumulative'][key] for key in ACTIVITY_COUNTERS)
+    refault_total = sum(summary['cumulative'][key] for key in REFAULT_COUNTERS)
+    ever_low = any(row['low'] <= 0 for row in summary['minimum_zone_margins'].values())
+    if (activity > total or refault > refault_total
+            or activity - refault > total - refault_total or (activity and not ever_low)):
+        raise ValueError('pressure_receipt_low_activity_context')
+    # With exactly one interval the endpoint and counter deltas determine this
+    # conjunction exactly. Longer runs retain counts, not every intermediate sample.
+    if count == 2:
+        low = any(row['low'] <= 0 for row in last_zones.values())
+        expected_refault = low and any(summary['cumulative'][key] for key in REFAULT_COUNTERS)
+        if activity != int(low and total > 0) or refault != int(expected_refault):
+            raise ValueError('pressure_receipt_low_activity_context')
+    if refault:
+        raise ValueError('pressure_receipt_low_refault')
+
+
+def require_refault_events(summary, baseline, last, count, gap):
+    """Replay every positive refault interval; totals prevent omitted events."""
+    events = summary['refault_events']
+    if not isinstance(events, list) or len(events) > min(MAX_REFAULT_EVENTS, count - 1):
+        raise ValueError('pressure_refault_event_inventory')
+    totals, peaks = [0, 0], [0, 0]
+    previous_seq, previous_time = 0, baseline['monotonic_ns']
+    minimum_low = min(row['low'] for row in summary['minimum_zone_margins'].values())
+    terminal_low = min(row['low'] for row in margins(last['zones']).values())
+    low_refaults = 0
+    for row in events:
+        if not isinstance(row, list) or len(row) != 5:
+            raise ValueError('pressure_refault_event_shape')
+        seq = integer(row[0], minimum=previous_seq + 1, maximum=count - 1)
+        timestamp = integer(row[1], minimum=previous_time + 1, maximum=last['monotonic_ns'])
+        low = integer(row[2], minimum=minimum_low)
+        deltas = [integer(number) for number in row[3:]]
+        if not any(deltas) or not seq - previous_seq <= timestamp - previous_time <= gap * (seq - previous_seq):
+            raise ValueError('pressure_refault_event_coverage')
+        if seq == count - 1 and (timestamp != last['monotonic_ns'] or low != terminal_low):
+            raise ValueError('pressure_refault_event_terminal_binding')
+        for index, delta in enumerate(deltas):
+            totals[index] += delta
+            peaks[index] = max(peaks[index], delta)
+        low_refaults += int(low <= 0)
+        previous_seq, previous_time = seq, timestamp
+    remaining = count - 1 - previous_seq
+    if not remaining <= last['monotonic_ns'] - previous_time <= gap * remaining:
+        raise ValueError('pressure_refault_event_coverage')
+    for index, key in enumerate(REFAULT_COUNTERS):
+        if totals[index] != summary['cumulative'][key] or peaks[index] != summary['maximum_interval'][key]:
+            raise ValueError('pressure_refault_event_counter_binding')
+    if low_refaults != summary['low_with_refault_samples'] or low_refaults:
+        raise ValueError('pressure_refault_event_low_conjunction')
