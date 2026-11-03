@@ -41,15 +41,22 @@ def test_zero_swap_enhanced_receipt_cannot_be_downgraded(scenario):
         resources.require_receipt(value, expected_profile='allocation-v1', **context)
 
 
-@pytest.mark.parametrize('caller', ['canary', 'seal'])
-def test_actual_caller_validation_forwards_its_requested_profile_before_writing(caller):
-    # Execute the actual finalization/validation statements, substituting only
-    # filesystem artifact providers. No systemd/HTTP/Pi process is launched.
+def caller_validation_nodes(caller):
     tree = ast.parse(Path(activate.__file__).read_bytes())
     function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == caller)
     start = next(i for i,n in enumerate(function.body)
                  if isinstance(n, ast.ImportFrom) and n.module == 'pi_cdr_quality_resources')
-    nodes = function.body[start:-1] if caller == 'canary' else function.body[start:start+2]
+    end = next(i for i,n in enumerate(function.body[start:], start)
+               if isinstance(n,ast.Expr) and isinstance(n.value,ast.Call)
+               and isinstance(n.value.func,ast.Name) and n.value.func.id == 'require_receipt')
+    return function.body[start:-1] if caller == 'canary' else function.body[start:end+1]
+
+
+@pytest.mark.parametrize('caller', ['canary', 'seal'])
+def test_actual_caller_validation_forwards_its_requested_profile_before_writing(caller):
+    # Execute the actual finalization/validation statements, substituting only
+    # filesystem artifact providers. No systemd/HTTP/Pi process is launched.
+    nodes = caller_validation_nodes(caller)
     writes = []; value = receipt()
     environment = {'args':SimpleNamespace(operation=Path('/bound-operation'),expected_commit='a'*40),
                    'target':'a'*40,'pressure_profile':'allocation-v1',
@@ -61,6 +68,31 @@ def test_actual_caller_validation_forwards_its_requested_profile_before_writing(
     with pytest.raises(ValueError, match='expected pressure profile'):
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'actual-profile-finalization','exec'),environment)
     assert not writes
+
+
+@pytest.mark.parametrize('schema', [resources.SCHEMA, resources.PRESSURE_SCHEMA])
+def test_serialized_null_profile_is_not_unspecified_context_during_seal(schema, scenario):
+    value = complete(scenario) if schema == resources.PRESSURE_SCHEMA else receipt()
+    resources.require_receipt(value, expected_operation=scenario[0], expected_commit='a'*40)
+    environment = {'args':SimpleNamespace(operation=scenario[0]),'target':'a'*40,
+                   'canary_result':{'pressure_profile':None,'resources':{}},
+                   'checked':lambda entry:Path('/bound-operation/resources.json'),
+                   'read':lambda path:value}
+    with pytest.raises(ValueError, match='recorded pressure profile must not be null'):
+        exec(compile(ast.Module(body=caller_validation_nodes('seal'),type_ignores=[]),
+                     'actual-null-profile-seal-validation','exec'),environment)
+
+
+def test_missing_historical_profile_means_legacy_only_during_seal():
+    value = receipt()
+    environment = {'args':SimpleNamespace(operation=Path('/bound-operation')),'target':'a'*40,
+                   'canary_result':{'resources':{}},'checked':lambda entry:Path('/bound-operation/resources.json'),
+                   'read':lambda path:value}
+    code = compile(ast.Module(body=caller_validation_nodes('seal'),type_ignores=[]),
+                   'actual-missing-profile-seal-validation','exec')
+    exec(code,environment)
+    value['schema'] = resources.PRESSURE_SCHEMA
+    with pytest.raises(ValueError, match='expected pressure profile'):exec(code,environment)
 
 
 def in_range_sequence_gap():
