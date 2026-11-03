@@ -104,6 +104,47 @@ def test_background_swap_needs_complete_bound_pressure_and_service_proof(scenari
     with pytest.raises(ValueError): resources.require_receipt(legacy)
 
 
+def low_background_samples(scenario):
+    for value in scenario[4][1:]:
+        value['pressure']['zones'][0]['pages free'] = 250
+        for key in ('pgscan_kswapd', 'pgscan_file', 'pgsteal_kswapd', 'pgsteal_file'):
+            value['pressure']['counters'][key] += 1152
+
+
+def test_low_background_reclaim_requires_complete_service_proof(scenario):
+    low_background_samples(scenario)
+    receipt = complete(scenario)
+    require(receipt, scenario)
+    host_proof = receipt['pressure_evidence']['host']
+    assert host_proof['profile'] == 'ar-local-host-pressure-v2'
+    assert host_proof['low_with_activity_samples'] == 1
+    assert host_proof['low_with_refault_samples'] == 0
+    receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True
+    with pytest.raises(ValueError):
+        require(receipt, scenario)
+
+
+@pytest.mark.parametrize('fault', ['refault', 'minimum', 'allocation', 'psi'])
+def test_low_background_activity_does_not_excuse_pressure(scenario, fault):
+    low_background_samples(scenario)
+    _, _, context, clock, values = scenario
+    if fault == 'psi':
+        values[0]['psi_avg10'] = 0.
+    context.observe(values[0])
+    clock[0] = 102.21
+    if fault == 'refault':
+        values[1]['pressure']['counters']['workingset_refault_file'] += 1
+    elif fault == 'minimum':
+        values[1]['pressure']['zones'][0]['pages free'] = 200
+    elif fault == 'allocation':
+        values[1]['pressure']['counters']['pgscan_direct'] += 1
+    elif fault == 'psi':
+        values[1]['psi_avg10'] = 10.
+    with pytest.raises(ValueError):
+        context.observe(values[1])
+    assert context.receipt()['failure'] is not None
+
+
 @pytest.mark.parametrize('fault', ['old_failure','rss','reserve','workload_swap','gap','cold_readback',
     'cleanup','descendants','count','service_latch','pressure_count','pressure_counter','psi_peak','binding'])
 def test_enhanced_proof_does_not_waive_existing_or_new_guards(scenario, fault):

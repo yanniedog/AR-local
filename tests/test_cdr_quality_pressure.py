@@ -71,13 +71,18 @@ def test_printed_minimum_already_includes_boost(margin):
         assert tracker.receipt()['minimum_zone_margins']['0:Normal']['min']==1
 
 
-@pytest.mark.parametrize('counter',p.ACTIVITY_COUNTERS)
-def test_low_zone_and_interval_activity_rejected(counter):
+@pytest.mark.parametrize('counter',p.REFAULT_COUNTERS)
+def test_low_zone_and_interval_refault_rejected(counter):
     first=host();tracker=p.PressureTracker(first);last=next_host(first)
     last['pressure']['zones'][0]['pages free']=300
     last['pressure']['counters'][counter]+=1
-    with pytest.raises(ValueError,match='low_with_reclaim_or_refault'):tracker.observe(last)
+    with pytest.raises(ValueError,match='low_with_refault'):tracker.observe(last)
     assert tracker.receipt()['low_with_activity_samples']==1
+    assert tracker.receipt()['low_with_refault_samples']==1
+    with pytest.raises(ValueError):
+        p.require_pressure_receipt(tracker.receipt(),first,last)
+    forged={**tracker.receipt(),'result':'PASS','failure':None}
+    with pytest.raises(ValueError):p.require_pressure_receipt(forged,first,last)
 
 
 def test_temporary_zone_breach_cannot_be_erased_by_terminal_health():
