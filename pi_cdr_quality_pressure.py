@@ -358,6 +358,7 @@ class PressureTracker:
     def observe(self, host, companion_snapshot=None, now=None):
         if self.failure is not None:
             raise ValueError('pressure_tracker_latched: ' + self.failure)
+        value = None
         try:
             if companion_snapshot is not None:
                 raise ValueError('service_proof_requires_separate_validation')
@@ -426,6 +427,8 @@ class PressureTracker:
                 raise ValueError('host_zone_low_with_refault')
         except (ValueError, TypeError, KeyError, OverflowError) as error:
             self.failure = str(error)
+            if value is not None:
+                raise PressureCaptureError(self.failure, value) from error
             raise ValueError(self.failure) from error
 
     def receipt(self):
@@ -452,7 +455,12 @@ class PressureTracker:
 
 
 def require_pressure_receipt(summary, baseline_host, last_host):
-    """Validate sealed aggregate evidence; cannot recreate unretained samples."""
+    """Replay retained raw samples and validate quiet-interval aggregates.
+
+    Live checks cover every capture. Only baseline, terminal and positive
+    refault captures are replayable here; quiet intermediates are not retained.
+    The externally bound artifact hash authenticates the complete live result.
+    """
     baseline, last = host_pressure(baseline_host), host_pressure(last_host)
     template = PressureTracker(baseline_host).receipt()
     exact_keys(summary, template)
