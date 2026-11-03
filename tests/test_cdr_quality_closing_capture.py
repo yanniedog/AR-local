@@ -63,8 +63,8 @@ def test_invalid_closing_capture_rejected_independently(fault):
     last = moving(first)
     q = last['pressure']; raw = q['capture']
     if fault == 'sum':
-        q['counters']['workingset_refault_file'] += 1
-        raw['global_after']['workingset_refault_file'] += 1
+        q['counters']['workingset_refault_file'] -= 1
+        raw['global_after']['workingset_refault_file'] -= 1
     elif fault == 'node_reset_offset':
         raw['nodes_before'][0][2] += 1
         raw['nodes_before'][1][2] = 0
@@ -82,7 +82,9 @@ def test_invalid_closing_capture_rejected_independently(fault):
 def test_opening_reset_cannot_be_hidden_by_closing_recovery(field):
     first = raw_capture(two_nodes()); last = moving(first)
     raw = last['pressure']['capture']
-    if field == 'node': raw['nodes_before'][0][2] -= 1
+    if field == 'node':
+        raw['nodes_before'][0][2] -= 1
+        raw['nodes_before'][1][2] += 1
     elif field == 'global': raw['global_before']['pgmajfault'] -= 1
     else:
         raw['global_before']['allocstall_normal'] += 1
@@ -140,6 +142,10 @@ def test_no_event_gap_still_checks_next_opening_against_prior_closing():
     first = raw_capture(two_nodes()); middle = moving(first)
     quiet = raw_capture(next_host(middle)); last = moving(quiet)
     last['pressure']['capture']['nodes_before'][1][2] -= 1
+    last['pressure']['capture']['nodes_before'][0][2] += 1
+    delta(last,0,file=1)
+    last['pressure']['capture']['nodes_after'] = copy.deepcopy(last['pressure']['node_refaults'])
+    last['pressure']['capture']['global_after'] = copy.deepcopy(last['pressure']['counters'])
     tracker = p.PressureTracker(first); tracker.observe(middle); tracker.observe(quiet)
     with pytest.raises(ValueError, match='between_captures'): tracker.observe(last)
 
@@ -182,7 +188,7 @@ def test_failed_complete_capture_retains_bounded_raw_proof(tmp_path, monkeypatch
         return text
     monkeypatch.setattr(p, 'bounded_text', reader)
     monkeypatch.setattr(p.os, 'sysconf', lambda _: 16384, raising=False)
-    with pytest.raises(p.PressureCaptureError, match='mismatch') as result:
+    with pytest.raises(p.PressureCaptureError, match='bracket') as result:
         p.sample_pressure(tmp_path, memory, vm, sysfs=tmp_path/'sysfs')
     assert result.value.capture['capture']['nodes_after'] == [[0, 0, 1]]
     assert p.evidence_item_bytes(result.value.capture) < p.MAX_REFAULT_EVIDENCE_BYTES

@@ -120,7 +120,7 @@ def test_low_background_reclaim_requires_complete_service_proof(scenario):
     receipt = complete(scenario)
     require(receipt, scenario)
     host_proof = receipt['pressure_evidence']['host']
-    assert host_proof['profile'] == 'ar-local-host-pressure-v4'
+    assert host_proof['profile'] == 'ar-local-host-pressure-v5'
     assert host_proof['low_with_activity_samples'] == 1
     assert host_proof['low_with_refault_samples'] == 0
     receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True
@@ -140,7 +140,7 @@ def test_mglru_node_evidence_composes_with_full_service_and_resource_validation(
         evidence['node_refaults'][1][2] = 6
         evidence['counters']['workingset_refault_file'] += 6
     receipt = complete(scenario)
-    assert receipt['schema'] == 'ar-local-quality-resources-v5'
+    assert receipt['schema'] == 'ar-local-quality-resources-v6'
     assert receipt['pressure_evidence']['host']['refault_scope'] == 'mglru_same_node'
     require(receipt, scenario)
     receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True

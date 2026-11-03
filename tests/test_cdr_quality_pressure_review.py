@@ -96,7 +96,8 @@ def manifest_fixture(tmp_path, monkeypatch, resource_schema, profile='legacy'):
     return path, digest, now
 
 
-@pytest.mark.parametrize('schema', ['ar-local-quality-resources-v3','unknown',None])
+@pytest.mark.parametrize('schema', ['ar-local-quality-resources-v3','ar-local-quality-resources-v4',
+                                    'ar-local-quality-resources-v5','unknown',None])
 def test_activation_legacy_label_cannot_bypass_unknown_resource_schema(tmp_path, monkeypatch, schema):
     path, digest, now = manifest_fixture(tmp_path, monkeypatch, schema)
     with pytest.raises(ValueError): evidence.validate_manifest(path,digest,current=now)
@@ -188,8 +189,12 @@ def test_64_node_64_zone_maximum_width_indented_bytes_are_bounded():
     pressure.validate_snapshot(value)
     source = {'sequence':maximum,'sha256':pressure.fingerprint(value),'pressure':value}
     rows = [[maximum,maximum,node,2,maximum//64,maximum//64,2] for node in range(9936,10000)]
-    evidence_bytes = pressure.REFAULT_EVIDENCE_OVERHEAD + pressure.evidence_item_bytes(source) + sum(map(pressure.evidence_item_bytes,rows))
+    interval = [maximum,maximum,-maximum,maximum,maximum,maximum,maximum,maximum,maximum]
+    assert pressure.evidence_item_bytes(interval) <= 384
+    evidence_bytes = (pressure.REFAULT_EVIDENCE_OVERHEAD + pressure.evidence_item_bytes(source)
+                      + sum(map(pressure.evidence_item_bytes,rows)) + pressure.evidence_item_bytes(interval))
     actual = len(json.dumps({'pressure_evidence':{'host':{'refault_events':rows,'refault_snapshots':[source],
+                                                         'refault_intervals':[interval],
                                                        'refault_evidence_bytes':evidence_bytes}}},indent=2).encode())
     assert actual <= evidence_bytes <= pressure.MAX_REFAULT_EVIDENCE_BYTES
     assert pressure.MAX_REFAULT_EVIDENCE_BYTES == 32*1024**2

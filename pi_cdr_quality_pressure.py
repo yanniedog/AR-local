@@ -12,7 +12,7 @@ import time
 
 from pi_cdr_quality_telemetry import MAX_COUNTER_TEXT, MAX_ZONE_TEXT, parse_zones
 
-PROFILE = 'ar-local-host-pressure-v4'
+PROFILE = 'ar-local-host-pressure-v5'
 MAX_VALUE = 2**64 - 1
 MAX_GAP_NS = 2_000_000_000
 # One seven-integer row per positive node/interval, <=384 bytes even with
@@ -21,6 +21,10 @@ MAX_GAP_NS = 2_000_000_000
 MAX_REFAULT_EVENTS = (32 * 1024**2) // 384
 MAX_REFAULT_EVIDENCE_BYTES = 32 * 1024**2
 REFAULT_EVIDENCE_OVERHEAD = 1024
+# Interval row: sequence, timestamp, global low, two measured global deltas,
+# two previous tails, two current tails. Residuals are not extra page counts.
+INTERVAL_GLOBAL = slice(3, 5)
+INTERVAL_TAILS = slice(5, 9)
 COUNTERS = (
     'allocstall_dma', 'allocstall_dma32', 'allocstall_normal', 'allocstall_movable',
     'pgscan_direct', 'pgsteal_direct', 'compact_stall', 'oom_kill',
@@ -140,8 +144,6 @@ def validate_snapshot(value):
             integer(number)
         if row[0] != node:
             raise ValueError('pressure_node_order_or_identity')
-    if any(sum(row[i + 1] for row in nodes) != value['counters'][key] for i, key in enumerate(REFAULT_COUNTERS)):
-        raise ValueError('pressure_node_global_refault_mismatch')
     validate_capture(value)
     return value
 
@@ -251,6 +253,27 @@ def validate_capture(value):
         raise ValueError('pressure_counter_reset_during_capture')
     if any(raw['global_after'][k] != raw['global_before'][k] for k in PRESSURE_COUNTERS):
         raise ValueError('host_allocation_pressure_during_capture')
+    for index, key in enumerate(REFAULT_COUNTERS, 1):
+        if not (raw['global_before'][key] <= sum(row[index] for row in raw['nodes_before'])
+                <= sum(row[index] for row in raw['nodes_after']) <= raw['global_after'][key]):
+            raise ValueError('pressure_node_global_refault_bracket')
+
+
+def refault_tail(value):
+    return [value['counters'][key] - sum(row[i + 1] for row in value['node_refaults'])
+            for i, key in enumerate(REFAULT_COUNTERS)]
+
+
+def refault_interval(previous, current, sequence):
+    """Measured global movement and endpoint uncertainty, never added page counts."""
+    return [sequence, current['monotonic_ns'], min(node_lows(current['zones']).values()),
+            *(current['counters'][key] - previous['counters'][key] for key in REFAULT_COUNTERS),
+            *refault_tail(previous), *refault_tail(current)]
+
+
+def require_interval_coverage(intervals, elapsed, gap):
+    if not 0 <= intervals <= elapsed <= gap * intervals:
+        raise ValueError('pressure_refault_event_coverage')
 
 
 def require_capture_link(previous, current):
@@ -273,12 +296,11 @@ def require_initial_capture(value):
     changes = [[b[i] - a[i] for i in (1, 2)]
                for a, b in zip(raw['nodes_before'], raw['nodes_after'])]
     global_changes = [raw['global_after'][key] - raw['global_before'][key] for key in REFAULT_COUNTERS]
-    unknown = any(raw['global_before'][key] != sum(row[i + 1] for row in raw['nodes_before'])
-                  or global_changes[i] > sum(row[i] for row in changes)
-                  for i, key in enumerate(REFAULT_COUNTERS))
+    unknown = any(sum(row[i + 1] for row in raw['nodes_before']) - raw['global_before'][key]
+                  for i, key in enumerate(REFAULT_COUNTERS)) or any(refault_tail(value))
     active = any(global_changes) or any(any(row) for row in changes)
     low = any(number <= 0 for number in lows.values())
-    if ((unknown or not value['lru_gen_enabled'] & 1) and active and low
+    if ((unknown or not value['lru_gen_enabled'] & 1 and active) and low
             or value['lru_gen_enabled'] & 1 and any(lows[node[0]] <= 0 and any(change)
                 for node, change in zip(raw['nodes_after'], changes))):
         raise ValueError('host_zone_low_with_initial_refault')
@@ -342,6 +364,7 @@ class PressureTracker:
         self.low_refault_samples = 0
         self.refault_events = []
         self.refault_snapshots = []
+        self.refault_intervals = []
         self.refault_evidence_bytes = REFAULT_EVIDENCE_OVERHEAD
         self.node_max_interval = {str(row[0]): [0, 0] for row in self.baseline['node_refaults']}
         self._check_initial()
@@ -389,12 +412,18 @@ class PressureTracker:
                                    min(row['low'] for row in current_margins.values())])
             if len(self.refault_events) + len(events) > MAX_REFAULT_EVENTS:
                 raise ValueError('pressure_refault_evidence_capacity')
-            source = {'sequence': self.samples, 'sha256': fingerprint(value), 'pressure': copy.deepcopy(value)} if events else None
-            extra_bytes = sum(evidence_item_bytes(row) for row in events) + (evidence_item_bytes(source) if source else 0)
+            interval = refault_interval(self.last, value, self.samples)
+            unknown = any(interval[INTERVAL_TAILS])
+            retained = bool(events) or unknown
+            source = {'sequence': self.samples, 'sha256': fingerprint(value), 'pressure': copy.deepcopy(value)} if retained else None
+            extra_bytes = sum(evidence_item_bytes(row) for row in events)
+            if source:
+                extra_bytes += evidence_item_bytes(source) + evidence_item_bytes(interval)
             if self.refault_evidence_bytes + extra_bytes > MAX_REFAULT_EVIDENCE_BYTES:
                 raise ValueError('pressure_refault_source_evidence_capacity')
             if source:
                 self.refault_snapshots.append(source)
+                self.refault_intervals.append(interval)
             self.refault_evidence_bytes += extra_bytes
             self.refault_events.extend(events)
             for row in events:
@@ -412,9 +441,10 @@ class PressureTracker:
             self.last = value
             self.samples += 1
             require_capture_link(previous, value)
-            low_activity = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in ACTIVITY_COUNTERS)
-            low_refault = any(row[3] <= 0 for row in events) if value['lru_gen_enabled'] & 1 else (
-                any(z['low'] <= 0 for z in current_margins.values()) and bool(events))
+            low = any(z['low'] <= 0 for z in current_margins.values())
+            low_activity = low and (any(delta[k] for k in ACTIVITY_COUNTERS) or retained)
+            low_refault = (low and unknown or any(row[3] <= 0 for row in events)
+                           if value['lru_gen_enabled'] & 1 else low and retained)
             self.low_activity_samples += int(low_activity)
             self.low_refault_samples += int(low_refault)
             if any(cumulative[k] for k in PRESSURE_COUNTERS):
@@ -450,6 +480,7 @@ class PressureTracker:
                 'node_maximum_interval': copy.deepcopy(self.node_max_interval),
                 'refault_events': [list(row) for row in self.refault_events],
                 'refault_snapshots': copy.deepcopy(self.refault_snapshots),
+                'refault_intervals': copy.deepcopy(self.refault_intervals),
                 'refault_evidence_bytes': self.refault_evidence_bytes,
                 'service_validation': 'external_required'}
 
@@ -521,20 +552,22 @@ def require_low_activity_counts(summary, last_zones, count):
     activity = integer(summary['low_with_activity_samples'], maximum=count - 1)
     refault = integer(summary['low_with_refault_samples'], maximum=activity)
     total = sum(summary['cumulative'][key] for key in ACTIVITY_COUNTERS)
-    refault_total = sum(summary['cumulative'][key] for key in REFAULT_COUNTERS)
+    refault_support = len(summary['refault_intervals'])
+    nonrefault_total = sum(summary['cumulative'][key] for key in ACTIVITY_COUNTERS if key not in REFAULT_COUNTERS)
     ever_low = any(row['low'] <= 0 for row in summary['minimum_zone_margins'].values())
-    if (activity > total or refault > refault_total
-            or (summary['refault_scope'] == 'classic_global' and activity - refault > total - refault_total)
+    if (activity > nonrefault_total + refault_support or refault > refault_support
+            or (summary['refault_scope'] == 'classic_global' and activity - refault > nonrefault_total)
             or (activity and not ever_low)):
         raise ValueError('pressure_receipt_low_activity_context')
     # With exactly one interval the endpoint and counter deltas determine this
     # conjunction exactly. Longer runs retain counts, not every intermediate sample.
     if count == 2:
         low = any(row['low'] <= 0 for row in last_zones.values())
-        expected_refault = (any(node_lows_value <= 0 and any(summary['node_cumulative'][node])
+        unknown = any(any(row[INTERVAL_TAILS]) for row in summary['refault_intervals'])
+        expected_refault = (low and unknown or any(node_lows_value <= 0 and any(summary['node_cumulative'][node])
                                for node, node_lows_value in _summary_terminal_lows(last_zones).items())
-                            if summary['refault_scope'] == 'mglru_same_node' else low and refault_total > 0)
-        if activity != int(low and total > 0) or refault != int(expected_refault):
+                            if summary['refault_scope'] == 'mglru_same_node' else low and refault_support > 0)
+        if activity != int(low and (total > 0 or refault_support > 0)) or refault != int(expected_refault):
             raise ValueError('pressure_receipt_low_activity_context')
     if refault:
         raise ValueError('pressure_receipt_low_refault')
@@ -551,19 +584,22 @@ def require_refault_sources(summary, baseline, last, count):
     Fingerprints bind this evidence together; the external trust anchor remains
     the sealed resources artifact hash in the externally bound activation chain.
     """
-    sources, events = summary['refault_snapshots'], summary['refault_events']
-    if (not isinstance(sources, list) or not isinstance(events, list)
+    sources, events, intervals = summary['refault_snapshots'], summary['refault_events'], summary['refault_intervals']
+    if (not isinstance(sources, list) or not isinstance(events, list) or not isinstance(intervals, list)
+            or len(intervals) != len(sources)
             or len(sources) > min(count - 1, MAX_REFAULT_EVENTS)
             or len(events) > min(MAX_REFAULT_EVENTS, (count - 1) * len(baseline['node_refaults']))):
         raise ValueError('pressure_refault_source_inventory')
     recorded_bytes = integer(summary['refault_evidence_bytes'], minimum=REFAULT_EVIDENCE_OVERHEAD,
                              maximum=MAX_REFAULT_EVIDENCE_BYTES)
     total_bytes = REFAULT_EVIDENCE_OVERHEAD
-    expected_rows = []
+    expected_rows, expected_intervals = [], []
     previous, previous_seq = baseline, 0
     for source in sources:
         exact_keys(source, ('sequence','sha256','pressure'))
         seq = integer(source['sequence'], minimum=previous_seq + 1, maximum=count - 1)
+        if any(refault_tail(previous)) and seq != previous_seq + 1:
+            raise ValueError('pressure_refault_tail_coverage')
         value = validate_snapshot(source['pressure'])
         if source['sha256'] != fingerprint(value):
             raise ValueError('pressure_refault_source_fingerprint')
@@ -572,6 +608,8 @@ def require_refault_sources(summary, baseline, last, count):
             raise ValueError('pressure_refault_source_identity')
         if not previous['monotonic_ns'] < value['monotonic_ns'] <= last['monotonic_ns']:
             raise ValueError('pressure_refault_source_clock')
+        distance = seq - previous_seq
+        require_interval_coverage(distance, value['monotonic_ns'] - previous['monotonic_ns'], summary['maximum_gap_ns'])
         if seq == count - 1 and value != last:
             raise ValueError('pressure_refault_source_terminal_binding')
         for key in COUNTERS:
@@ -594,17 +632,32 @@ def require_refault_sources(summary, baseline, last, count):
             changes = [node[i] - before_node[i] for i in (1, 2)]
             if any(changes):
                 group.append([seq, value['monotonic_ns'], node[0], lows[node[0]], *changes, min(lows.values())])
-        if not group:
+        interval = refault_interval(previous, value, seq)
+        if not group and not any(interval[INTERVAL_TAILS]):
             raise ValueError('pressure_refault_source_without_event')
-        total_bytes += evidence_item_bytes(source) + sum(evidence_item_bytes(row) for row in group)
+        total_bytes += evidence_item_bytes(source) + evidence_item_bytes(interval) + sum(evidence_item_bytes(row) for row in group)
         if total_bytes > MAX_REFAULT_EVIDENCE_BYTES:
             raise ValueError('pressure_refault_source_evidence_capacity')
         expected_rows.extend(group)
+        expected_intervals.append(interval)
         previous, previous_seq = value, seq
     if previous is not last and previous_seq < count - 1:
         require_capture_link(previous, last)
+        if any(refault_tail(previous)) or any(refault_tail(last)):
+            raise ValueError('pressure_refault_terminal_tail_coverage')
+        if previous['node_refaults'] != last['node_refaults']:
+            raise ValueError('pressure_refault_terminal_node_coverage')
+    distance = count - 1 - previous_seq
+    require_interval_coverage(distance, last['monotonic_ns'] - previous['monotonic_ns'], summary['maximum_gap_ns'])
     if expected_rows != events:
         raise ValueError('pressure_refault_source_event_binding')
+    for interval in intervals:
+        if not isinstance(interval, list) or len(interval) != 9:
+            raise ValueError('pressure_refault_interval_shape')
+        for i, number in enumerate(interval):
+            integer(number, minimum=-MAX_VALUE if i == 2 else 0)
+    if expected_intervals != intervals:
+        raise ValueError('pressure_refault_source_interval_binding')
     if total_bytes != recorded_bytes:
         raise ValueError('pressure_refault_source_byte_binding')
 
@@ -625,9 +678,8 @@ def require_refault_events(summary, baseline, last, count, gap):
         raise ValueError('pressure_refault_event_inventory')
     totals = {node: [0, 0] for node in nodes}
     peaks = {node: [0, 0] for node in nodes}
-    global_peaks = [0, 0]
     previous_seq, previous_time, previous_node = 0, baseline['monotonic_ns'], -1
-    previous_low, group_deltas, group_low, low_refaults = None, [0, 0], False, 0
+    previous_low, group_low, low_sequences = None, False, set()
     minimum_lows = _summary_terminal_lows(summary['minimum_zone_margins'])
     terminal_lows = node_lows(last['zones'])
     global_minimum = min(minimum_lows.values())
@@ -646,11 +698,10 @@ def require_refault_events(summary, baseline, last, count, gap):
             raise ValueError('pressure_refault_event_empty')
         if seq != previous_seq:
             intervals = seq - previous_seq
-            if not intervals > 0 or not intervals <= timestamp - previous_time <= gap * intervals:
-                raise ValueError('pressure_refault_event_coverage')
-            global_peaks = [max(a, b) for a, b in zip(global_peaks, group_deltas)]
-            low_refaults += int(group_low)
-            previous_node, group_deltas, group_low = -1, [0, 0], False
+            require_interval_coverage(intervals, timestamp - previous_time, gap)
+            if group_low:
+                low_sequences.add(previous_seq)
+            previous_node, group_low = -1, False
         elif timestamp != previous_time or global_low != previous_low:
             raise ValueError('pressure_refault_event_interval_binding')
         if node <= previous_node:
@@ -660,20 +711,27 @@ def require_refault_events(summary, baseline, last, count, gap):
             raise ValueError('pressure_refault_event_terminal_binding')
         totals[str(node)] = [a + b for a, b in zip(totals[str(node)], deltas)]
         peaks[str(node)] = [max(a, b) for a, b in zip(peaks[str(node)], deltas)]
-        group_deltas = [a + b for a, b in zip(group_deltas, deltas)]
         group_low |= (low <= 0 if baseline['lru_gen_enabled'] & 1 else global_low <= 0)
         previous_seq, previous_time, previous_node, previous_low = seq, timestamp, node, global_low
-    global_peaks = [max(a, b) for a, b in zip(global_peaks, group_deltas)]
-    low_refaults += int(group_low)
+    if group_low:
+        low_sequences.add(previous_seq)
     remaining = count - 1 - previous_seq
-    if not remaining <= last['monotonic_ns'] - previous_time <= gap * remaining:
-        raise ValueError('pressure_refault_event_coverage')
+    require_interval_coverage(remaining, last['monotonic_ns'] - previous_time, gap)
     for node in nodes:
         expected = [endpoints[node][i] - nodes[node][i] for i in range(2)]
         if totals[node] != expected or summary['node_cumulative'][node] != expected or summary['node_maximum_interval'][node] != peaks[node]:
             raise ValueError('pressure_node_event_counter_binding')
     for index, key in enumerate(REFAULT_COUNTERS):
-        if sum(row[index] for row in totals.values()) != summary['cumulative'][key] or global_peaks[index] != summary['maximum_interval'][key]:
+        # Published global and node counters are independent measurements. The
+        # endpoint tails reconcile them; they are not additional exact events.
+        measured_total = sum(row[INTERVAL_GLOBAL][index] for row in summary['refault_intervals'])
+        measured_peak = max((row[INTERVAL_GLOBAL][index] for row in summary['refault_intervals']), default=0)
+        endpoint_total = sum(row[index] for row in totals.values()) + refault_tail(last)[index] - refault_tail(baseline)[index]
+        if (measured_total != summary['cumulative'][key] or endpoint_total != measured_total
+                or measured_peak != summary['maximum_interval'][key]):
             raise ValueError('pressure_refault_event_counter_binding')
-    if low_refaults != summary['low_with_refault_samples'] or low_refaults:
+    for row in summary['refault_intervals']:
+        if row[2] <= 0 and (any(row[INTERVAL_TAILS]) or not baseline['lru_gen_enabled'] & 1):
+            low_sequences.add(row[0])
+    if len(low_sequences) != summary['low_with_refault_samples'] or low_sequences:
         raise ValueError('pressure_refault_event_low_conjunction')

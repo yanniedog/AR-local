@@ -109,6 +109,7 @@ def in_range_sequence_gap():
     # so the target timing-coverage predicate, not an unrelated bound, rejects it.
     summary['refault_events'][1][0] = 2
     summary['refault_snapshots'][1]['sequence'] = 2
+    summary['refault_intervals'][1][0] = 2
     return summary, first, current
 
 
@@ -120,16 +121,8 @@ def test_in_range_sequence_time_gap_reaches_coverage_predicate():
 
 
 def test_sequence_gap_control_detects_removal_of_target_predicate(monkeypatch):
-    tree = ast.parse(Path(pressure.__file__).read_bytes())
-    function = next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name == 'require_refault_events')
-    changes = 0
-    for node in ast.walk(function):
-        if isinstance(node,ast.If) and isinstance(node.test,ast.BoolOp) and 'intervals > 0' in ast.unparse(node.test):
-            node.test = ast.parse('not intervals > 0',mode='eval').body;changes += 1
-    assert changes == 1
-    namespace = dict(vars(pressure))
-    exec(compile(ast.fix_missing_locations(ast.Module(body=[function],type_ignores=[])),
-                 'coverage-mutation-control','exec'),namespace)
     summary, first, last = in_range_sequence_gap()
-    monkeypatch.setattr(pressure,'require_refault_events',namespace['require_refault_events'])
+    # Source and event replay share the same coverage predicate. Remove only
+    # that predicate; all structural, source, byte and endpoint checks remain.
+    monkeypatch.setattr(pressure,'require_interval_coverage',lambda *_:None)
     pressure.require_pressure_receipt(summary,first,last)
