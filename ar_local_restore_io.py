@@ -14,6 +14,7 @@ from pathlib import Path
 import stat
 
 from cdr_sqlite_budget import check_deadline, current_deadline
+from pi_cdr_quality_read_io import chunks_dropbehind, dropbehind_required
 
 CHUNK_BYTES = 1024 * 1024
 _database_paths = ContextVar('restore_pinned_database_paths', default=None)
@@ -84,6 +85,14 @@ def pinned_reader(path: Path, *, expected=None):
 
 
 def chunks(stream, size):
+    if dropbehind_required():
+        if stream.tell() != 0:
+            raise ValueError("required complete-file copy must begin at offset zero")
+        for block in chunks_dropbehind(stream.fileno(), size, budget=checkpoint):
+            stream.seek(stream.tell() + len(block))
+            yield block
+        checkpoint()
+        return
     remaining = size
     while remaining:
         checkpoint()
