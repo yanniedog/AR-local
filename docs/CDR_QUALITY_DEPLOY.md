@@ -617,11 +617,11 @@ against 22:00 Hobart and refuses if fewer than 300 workload seconds remain.
 The 5,400-second maximum is unchanged; slow readiness never extends the window.
 
 The supervisor samples pressure and service evidence during both admission
-samples and every workload iteration. The v3 validator independently checks the
+samples and every workload iteration. The resource validator independently checks the
 same cumulative limits, extrema, sampling coverage and service proof. It requires
 an externally supplied exact operation and candidate commit. Seal/activation also
 bind the helper hash and selected profile to the candidate's source inventory.
-Legacy or failed receipts cannot be relabelled as successful v3 evidence; an
+Legacy or failed receipts cannot be relabelled as successful enhanced evidence; an
 earlier breach cannot be erased by a healthy final sample.
 
 The retained November 3 R10 run remains failed: it had four allocation stalls and
