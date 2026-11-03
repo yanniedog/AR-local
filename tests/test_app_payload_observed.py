@@ -77,13 +77,18 @@ def acceptance(directory):
                         json.loads(raw)["source_observation"])
 
 
-class MemoryStore:
+class MemoryStore(p.ObservedBackend):
     repo = p.REPO
 
     def __init__(self):
         self.data, self.events = {}, []
         self.fail_at = None
         self.after_archive = None
+
+    def validate_candidate(self, manifest):
+        assert manifest["tag"] == p.edition(DAY, 2)
+        assert manifest["consumer_contract"] == p.CHANNEL
+        assert manifest["repo"] == self.repo
 
     def read(self, tag, name, limit=p.MAX_FILE, *, require_encrypted=False):
         assert require_encrypted, "all publication reads must require encryption"
@@ -122,6 +127,21 @@ class MemoryStore:
 def publish(candidate, tmp_path, store, accepted=None):
     return p.publish_candidate(candidate, tmp_path / "state", accepted or acceptance(candidate),
                                production_lock_path=tmp_path / "production.lock", store=store)
+
+
+@pytest.fixture(autouse=True)
+def portable_protocol_state_directory(request, monkeypatch):
+    """Windows protocol tests do not pretend mode bits establish Windows ACLs.
+
+    Real permission controls below retain the production helper; Linux executes
+    the entire suite against its real permission checks without this substitution.
+    """
+    if os.name == "posix" or request.node.name.startswith("test_private_directory"):
+        return
+    def task_owned_protocol_directory(path):
+        assert path.absolute() == path.resolve()
+        path.mkdir(mode=0o700, exist_ok=True)
+    monkeypatch.setattr(p, "private_directory", task_owned_protocol_directory)
 
 
 def test_accepted_assets_first_index_last_and_retry(candidate, tmp_path):
@@ -419,3 +439,85 @@ def test_inherited_commit_predecessor_recheck_rejects_plaintext(candidate, tmp_p
         with pytest.raises(PlaintextTransportError):
             store.replace_index(p.INDEX_TAG, candidate / "dates-index.json", before)
     reserve.assert_called_once_with(p.INDEX_TAG)
+
+
+@pytest.mark.parametrize("kind", ["generic", "duck_typed"])
+def test_uncontracted_backend_refused_before_lock_or_staging(candidate, tmp_path, kind):
+    if kind == "generic":
+        store = p.GitHubRevisionStore(p.REPO, gh="never-executed")
+    else:
+        explicit = MemoryStore()
+        store = SimpleNamespace(repo=p.REPO, **{name: getattr(explicit, name) for name in (
+            "read", "ensure_release", "archive", "replace_index", "restore_missing_index", "validate_candidate")})
+    with patch.object(p, "production_lock", side_effect=AssertionError("unexpected lock acquisition")):
+        with pytest.raises(p.RevisionError, match="explicit isolated"):
+            publish(candidate, tmp_path, store)
+    assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize("difference", ["candidate", "reservation", "asset_allowlist"])
+def test_real_backend_exact_reservation_required_before_staging(candidate, tmp_path, difference):
+    m = json.loads((candidate / "manifest.json").read_bytes())
+    configured = copy.deepcopy(m)
+    if difference == "candidate":
+        configured["generated_at"] = "2026-05-19T05:00:00Z"
+    store = p.ObservedStore(configured, gh="never-executed")
+    if difference == "reservation": store.reservations[p.INDEX_TAG] = "other"
+    if difference == "asset_allowlist": store.names[m["tag"]].add("unaccepted.json")
+    with patch.object(store, "_run", side_effect=AssertionError("unexpected egress")):
+        with pytest.raises(p.RevisionError, match="reservation differs"):
+            publish(candidate, tmp_path, store)
+    assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize("mode,uid", [
+    (stat.S_IFDIR | 0o755, 1000), (stat.S_IFDIR | 0o750, 1000),
+    (stat.S_IFDIR | 0o770, 1000), (stat.S_IFDIR | 0o1700, 1000),
+    (stat.S_IFDIR | 0o700, 1001), (stat.S_IFREG | 0o700, 1000),
+])
+def test_private_directory_mode_or_owner_refusal(mode, uid):
+    with pytest.raises(p.RevisionError, match="current-owner mode 0700"):
+        p.require_private_mode(SimpleNamespace(st_mode=mode, st_uid=uid), 1000)
+
+
+def test_private_directory_mode_and_owner_accepted():
+    p.require_private_mode(SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1000), 1000)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="real POSIX mode/owner evidence requires POSIX")
+def test_private_directory_created_and_existing_private_unchanged(tmp_path):
+    path = tmp_path / "state"
+    p.private_directory(path)
+    before = path.stat()
+    assert stat.S_IMODE(before.st_mode) == 0o700 and before.st_uid == os.geteuid()
+    p.private_directory(path)
+    after = path.stat()
+    assert (before.st_mode, before.st_uid, before.st_ino) == (after.st_mode, after.st_uid, after.st_ino)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="real POSIX mode/owner evidence requires POSIX")
+def test_private_directory_existing_exposure_refused_without_permission_rewrite(candidate, tmp_path):
+    state = tmp_path / "state"
+    state.mkdir()
+    state.chmod(0o755)  # Deliberately construct this test's exposed pre-existing state.
+    before = state.stat()
+    store = MemoryStore()
+    with pytest.raises(p.RevisionError, match="current-owner mode 0700"):
+        publish(candidate, tmp_path, store)
+    after = state.stat()
+    assert (before.st_mode, before.st_uid, before.st_ctime_ns) == (after.st_mode, after.st_uid, after.st_ctime_ns)
+    assert not list(state.iterdir()) and not store.events
+
+
+@pytest.mark.skipif(os.name != "posix", reason="real POSIX directory creation requires POSIX")
+def test_private_directory_does_not_create_default_mode_intermediate_parents(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        p.private_directory(tmp_path / "missing" / "state")
+    assert not (tmp_path / "missing").exists()
+
+
+@pytest.mark.skipif(os.name == "posix", reason="non-POSIX publication refusal only")
+def test_private_directory_non_posix_refused_without_false_acl_claim(tmp_path):
+    with pytest.raises(p.RevisionError, match="requires POSIX permission validation"):
+        p.private_directory(tmp_path / "state")
+    assert not (tmp_path / "state").exists()

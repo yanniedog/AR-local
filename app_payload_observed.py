@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import stat
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,11 +61,22 @@ def bounded_file(path):
     return raw
 
 
+def require_private_mode(info, owner_uid):
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != owner_uid
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise RevisionError("publication state requires current-owner mode 0700")
+
+
 def private_directory(path):
+    if os.name != "posix":
+        raise RevisionError("private publication state requires POSIX permission validation")
     if path.absolute() != path.resolve():
         raise RevisionError("publication state directory follows a link")
-    path.mkdir(parents=True, exist_ok=True)
-    if not stat.S_ISDIR(path.lstat().st_mode) or path.absolute() != path.resolve():
+    # Parent must already exist. parents=True would create intermediate directories
+    # using default permissions; never broaden or rewrite existing permissions.
+    path.mkdir(mode=0o700, exist_ok=True)
+    require_private_mode(path.lstat(), os.geteuid())
+    if path.absolute() != path.resolve():
         raise RevisionError("unsafe publication state directory")
 
 
@@ -170,7 +182,39 @@ def advance_index(before, candidate, manifest):
     return output
 
 
-class ObservedStore(GitHubRevisionStore):
+class ObservedBackend(ABC):
+    """Explicit isolated backend contract, including deliberately declared doubles.
+
+    Implementations must preserve observed prerelease reservations, encrypted reads,
+    immutable uploads and predecessor-checked index commits. Generic legacy stores
+    do not implement this contract. Acceptance of arbitrary duck-typed I/O is unsafe.
+    """
+    @abstractmethod
+    def validate_candidate(self, manifest):
+        """Reject unless configured for this exact accepted reservation."""
+
+    @abstractmethod
+    def read(self, tag, name, limit=MAX_FILE, *, require_encrypted=True):
+        """Read only isolated assets, requiring authenticated ARE2."""
+
+    @abstractmethod
+    def ensure_release(self, tag):
+        """Reserve or verify the exact isolated prerelease metadata."""
+
+    @abstractmethod
+    def archive(self, tag, paths):
+        """Upload immutable encrypted assets with authenticated readback."""
+
+    @abstractmethod
+    def replace_index(self, tag, path, expected):
+        """Replace the isolated index only after an exact predecessor check."""
+
+    @abstractmethod
+    def restore_missing_index(self, tag, path):
+        """Restore the isolated predecessor only while absent."""
+
+
+class ObservedStore(GitHubRevisionStore, ObservedBackend):
     """Restrict generic encrypted I/O to this transaction's two prereleases."""
     def __init__(self, manifest, gh=None):
         if (manifest.get("consumer_contract") != CHANNEL or manifest.get("repo") != REPO
@@ -186,6 +230,17 @@ class ObservedStore(GitHubRevisionStore):
         }
         self.names = {self.tag: {"manifest.json", *(f["name"] for f in manifest["files"].values())},
                       INDEX_TAG: {"dates-index.json"}}
+
+    def validate_candidate(self, manifest):
+        expected = canonical({"schema_version": 1, "channel": CHANNEL,
+                              "manifest_sha256": digest(canonical(manifest)),
+                              "source_observation": manifest["source_observation"]}).decode()
+        names = {"manifest.json", *(f["name"] for f in manifest["files"].values())}
+        if (self.repo != REPO or self.tag != manifest["tag"]
+                or self.reservations != {self.tag: expected, INDEX_TAG: canonical({
+                    "schema_version": 1, "channel": CHANNEL, "role": "index"}).decode()}
+                or self.names != {self.tag: names, INDEX_TAG: {"dates-index.json"}}):
+            raise RevisionError("backend reservation differs from accepted candidate")
 
     def read(self, tag, name, limit=MAX_FILE, *, require_encrypted=True):
         # Generic legacy helpers permit plaintext predecessors. This channel never
@@ -247,10 +302,13 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
     permits only its exact predecessor/target on re-entry; never overwrite a
     changed head. State is private trusted coordinator storage, outside fixture.
     """
+    if not isinstance(store, ObservedBackend):
+        raise RevisionError("explicit isolated observed backend required")
     with production_lock(production_lock_path, "observed-population-publication"):
         manifest, index, files = load_candidate(directory, accepted)
         if store.repo != REPO:
             raise RevisionError("wrong publication repository")
+        store.validate_candidate(manifest)
         tag = manifest["tag"]
         private_directory(state)
         transaction = state / tag

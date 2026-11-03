@@ -34,8 +34,19 @@ shared queue, window, resource and ownership gates. The function acquires the
 global production lock itself; do not nest that non-reentrant lock. All publishers
 must share it because GitHub does not provide compare-and-swap for release assets.
 Persistent state must be private coordinator-owned storage outside the immutable
-candidate, preserved across interruption and rollback. No CLI, timer or automatic
-activation is introduced by this module.
+candidate, preserved across interruption and rollback. Each new state directory
+is created with POSIX mode 0700 under an already existing parent. Existing state
+directories must have that exact mode and belong to the current effective user;
+otherwise publication refuses before staging or egress, without changing existing
+permissions. Publication is unsupported on non-POSIX platforms: mode bits do not
+establish Windows ACL privacy. No CLI, timer or automatic activation is introduced.
+
+Backends must explicitly implement `ObservedBackend` and validate their exact
+candidate reservation before staging. The ordinary `GitHubRevisionStore` and
+uncontracted duck-typed objects are rejected before even acquiring the publication
+lock. The real `ObservedStore` verifies repository, edition, reservation metadata
+and asset allowlists against the accepted candidate; this preserves prerelease
+and encryption behavior rather than accepting a generic legacy backend.
 
 ## Commit ordering and recovery
 
@@ -78,6 +89,10 @@ only publication-protocol metadata and faults are constructed. They are not
 source-membership, observed-population domain or installed-app acceptance.
 Encryption/backend controls use synthetic keys and mocked wire/CLI transport,
 never real credentials or network requests.
+On Windows, protocol tests explicitly substitute the private-directory seam; they
+do not claim Windows ACL or POSIX filesystem validation. Separate real POSIX tests
+verify creation mode, ownership and refusal without permission rewriting on Linux.
+Non-POSIX production refusal and pure mode/owner predicates are tested separately.
 
 For the separately accepted private Nov3 R2 fixture, set
 `AR_OBSERVED_PUBLICATION_FIXTURE` to its unchanged directory and run the same suite.
