@@ -221,7 +221,7 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
     elif (resources.get("schema") != "ar-local-quality-resources-v2"
           or canary.get("pressure_profile", "legacy") != "legacy"
           or "pressure_evidence" in resources):
-        raise ValueError("only known v2 legacy or v4 enhanced resource receipts are accepted")
+        raise ValueError("only known v2 legacy or v5 enhanced resource receipts are accepted")
     else:
         from pi_cdr_quality_resources import require_receipt
         require_receipt(resources)

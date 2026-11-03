@@ -575,9 +575,9 @@ FAIL before appending any partial interval; it never truncates evidence or
 turns incomplete evidence into PASS. No new production helper module is added;
 existing source inventories bind the amended pressure, resource and activation
 validators. There is no new memory/reclaim allowance, service mutation, kernel
-setting, or privilege change. Activation accepts only explicit v4 enhanced or
+setting, or privilege change. Activation accepts only explicit v5 enhanced or
 v2 legacy resource schemas and fully validates either; a legacy label cannot
-bypass validation of an old v3, unknown, missing or disguised enhanced receipt.
+bypass validation of an old v3/v4, unknown, missing or disguised enhanced receipt.
 
 A read-only host-side companion thread checks the existing nginx and direct
 dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
