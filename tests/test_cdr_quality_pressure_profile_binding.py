@@ -124,5 +124,7 @@ def test_sequence_gap_control_detects_removal_of_target_predicate(monkeypatch):
     summary, first, last = in_range_sequence_gap()
     # Source and event replay share the same coverage predicate. Remove only
     # that predicate; all structural, source, byte and endpoint checks remain.
-    monkeypatch.setattr(pressure,'require_interval_coverage',lambda *_:None)
+    calls = []
+    monkeypatch.setattr(pressure,'require_interval_coverage',lambda *args:calls.append(args))
     pressure.require_pressure_receipt(summary,first,last)
+    assert any(not 0 <= intervals <= elapsed <= gap * intervals for intervals,elapsed,gap in calls)

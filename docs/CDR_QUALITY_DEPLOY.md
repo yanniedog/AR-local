@@ -444,7 +444,7 @@ and rollback gates remain mandatory before activation.
 
 ## Explicit allocation-pressure profile
 
-`canary --pressure-profile allocation-v1` selects resource receipt schema v5.
+`canary --pressure-profile allocation-v1` selects resource receipt schema v6.
 Omitting the option preserves the legacy v2 policy, including zero host swap-out.
 This selection is a source-reviewed policy amendment, not a runtime acceptance
 claim. It changes no kernel, swap, credential, network or production settings.
