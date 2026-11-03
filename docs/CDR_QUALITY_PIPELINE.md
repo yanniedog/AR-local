@@ -169,25 +169,16 @@ WAL/rollback journals are applied only to verified private copies. Reports retai
 all provider/product membership changes and failure recurrence; product absence
 is not automatically treated as data loss or retirement.
 
-Within the protected canary's required read scope, SQLite source copying,
-dashboard/status JSON and contract parsing use the same bounded drop-behind
-reader as hashing. Hashing alone did not cover these later ordinary content
-reads. Copies retain descriptor identity, digest and deadline checks; JSON and
-contract validation retain their existing limits. Standalone portable reads are
-unchanged, and unsupported required reads fail without a fallback.
+Protected canary reads require bounded drop-behind I/O for SQLite source copies,
+dashboard/status JSON, contract parsing and final source-export reconciliation.
+Identity, digest and byte/deadline checks remain enforced; unsupported required
+reads fail without fallback. JSON capture checks its budget before allocating a
+single buffer. Portable reads outside this scope are unchanged.
 
-Contract streams bind the pathname identity before opening and recheck both
-the descriptor and pathname after reading. Required JSON capture fills one
-bounded bytearray directly, rather than retaining chunks and joining a second
-payload-sized copy. Capture budgets are checked before allocation and charged
-per read. Consumers accept the buffer without changing its bytes before digest
-and schema validation; portable reads continue returning bytes.
-
-This routing does not prove reduced host cache use or explain every increase in
-kernel Buffers. SQLite still writes and checks its private recovery copy, and
-later log scanning still uses ordinary reads. Exact-candidate Linux tests and
-unchanged runtime resource acceptance remain necessary; no global cache drop,
-swap change or resource-limit relaxation is implied.
+This does not prove lower host cache use or explain all kernel Buffers growth.
+SQLite private-copy writes/reads and later log scanning remain ordinary I/O.
+Require exact-candidate Linux tests and unchanged runtime resource acceptance;
+do not drop global caches or change swap settings or resource limits.
 
 After a code repair is tested, reviewed, merged, canaried and deployed, use
 `python pi_cdr_quality_repair.py --expected-commit <deployed-sha>
