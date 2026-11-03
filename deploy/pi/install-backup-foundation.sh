@@ -184,6 +184,7 @@ for name in \
   ar_local_rollback_record.py \
   ar_local_restore_verification.py \
   ar_local_restore_io.py \
+  pi_cdr_quality_read_io.py \
   ar_local_ingest_schedule.py \
   pi_backup_foundation.py \
   pi_ingest_terminal.py \
@@ -233,6 +234,7 @@ done
     ar_local_rollback_record.py \
     ar_local_restore_verification.py \
     ar_local_restore_io.py \
+    pi_cdr_quality_read_io.py \
     ar_local_ingest_schedule.py \
     pi_backup_foundation.py \
     pi_ingest_terminal.py \

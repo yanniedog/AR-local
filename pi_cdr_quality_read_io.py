@@ -33,34 +33,52 @@ def dropbehind_required() -> bool:
     return _REQUIRED.get()
 
 
-def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | None]:
-    """Read every byte through the caller's identity-bound descriptor.
+def _require_reader():
+    if sys.platform != "linux" or not callable(getattr(os, "preadv", None)):
+        raise RuntimeError("required drop-behind hashing needs Linux preadv2/RWF_DONTCACHE")
+
+
+def _views_dropbehind(descriptor: int, size: int, *, captured=None, budget=None):
+    _require_reader()
+    offset = 0
+    view = memoryview(captured if captured is not None else bytearray(min(READ_BYTES, max(size, 1))))
+    while offset < size:
+        requested = min(READ_BYTES, size - offset)
+        target = view[offset:offset + requested] if captured is not None else view[:requested]
+        if budget is not None:
+            budget(reserve_bytes=requested)
+        count = os.preadv(descriptor, [target], offset, RWF_DONTCACHE)
+        if budget is not None:
+            budget(size=count)
+        if not 0 < count <= requested:
+            raise ValueError("evidence size changed during read")
+        offset += count
+        yield target[:count]
+    # A separate one-byte probe also covers an empty capture buffer.
+    if budget is not None:
+        budget()
+    if os.preadv(descriptor, [bytearray(1)], offset, RWF_DONTCACHE):
+        raise ValueError("evidence size changed during read")
+
+
+def chunks_dropbehind(descriptor: int, size: int, *, budget=None):
+    """Read a complete file through the caller's identity-bound descriptor.
 
     RWF_DONTCACHE is best-effort cache advice, not a memory limit. Missing API,
     unsupported filesystem and I/O errors propagate; resource guards still apply.
     The caller retains all before/open/after file and ancestor identity checks.
     """
-    if sys.platform != "linux" or not callable(getattr(os, "preadv", None)):
-        raise RuntimeError("required drop-behind hashing needs Linux preadv2/RWF_DONTCACHE")
-    digest, blocks, offset = hashlib.sha256(), [], 0
-    buffer = bytearray(min(READ_BYTES, max(size, 1)))
-    view = memoryview(buffer)
-    while offset < size:
-        requested = min(len(view), size - offset)
-        if budget is not None:
-            budget(reserve_bytes=requested)
-        count = os.preadv(descriptor, [view[:requested]], offset, RWF_DONTCACHE)
-        if budget is not None:
-            budget(size=count)
-        if not 0 < count <= requested:
-            raise ValueError("evidence size changed during read")
-        digest.update(view[:count])
-        if capture:
-            blocks.append(bytes(view[:count]))
-        offset += count
-    # Even an empty file must exercise the required flag and check for growth.
-    if budget is not None:
-        budget()
-    if os.preadv(descriptor, [view[:1]], offset, RWF_DONTCACHE):
-        raise ValueError("evidence size changed during read")
-    return digest.hexdigest(), b"".join(blocks) if capture else None
+    for block in _views_dropbehind(descriptor, size, budget=budget):
+        yield bytes(block)
+
+
+def hash_dropbehind(descriptor: int, size: int, capture: bool, *, budget=None) -> tuple[str, bytearray | None]:
+    """Capture into one allocation; callers must not mutate it before validation."""
+    _require_reader()
+    if capture and budget is not None:
+        budget(reserve_bytes=size)
+    digest = hashlib.sha256()
+    captured = bytearray(size) if capture else None
+    for block in _views_dropbehind(descriptor, size, captured=captured, budget=budget):
+        digest.update(block)
+    return digest.hexdigest(), captured
