@@ -12,7 +12,7 @@ import time
 
 from pi_cdr_quality_telemetry import MAX_COUNTER_TEXT, MAX_ZONE_TEXT, parse_zones
 
-PROFILE = 'ar-local-host-pressure-v1'
+PROFILE = 'ar-local-host-pressure-v2'
 MAX_VALUE = 2**64 - 1
 MAX_GAP_NS = 2_000_000_000
 COUNTERS = (
@@ -27,6 +27,7 @@ COUNTERS = (
 PRESSURE_COUNTERS = COUNTERS[:8]
 ACTIVITY_COUNTERS = ('pgscan_kswapd', 'pgscan_anon', 'pgscan_file', 'pgsteal_kswapd',
                      'pgsteal_anon', 'pgsteal_file', 'workingset_refault_anon', 'workingset_refault_file')
+REFAULT_COUNTERS = ('workingset_refault_anon', 'workingset_refault_file')
 CACHE_FIELDS = ('MemTotal', 'MemAvailable', 'MemFree', 'Buffers', 'Cached', 'Shmem',
                 'SwapFree', 'SwapCached', 'Active(anon)', 'Inactive(anon)',
                 'Active(file)', 'Inactive(file)', 'SReclaimable', 'Dirty', 'Writeback')
@@ -173,6 +174,7 @@ class PressureTracker:
         self.cache_max = dict(self.baseline['cache_bytes'])
         self.max_interval = {k: 0 for k in COUNTERS}
         self.low_activity_samples = 0
+        self.low_refault_samples = 0
         self._check_initial()
 
     def _check_initial(self):
@@ -214,13 +216,17 @@ class PressureTracker:
             self.last = value
             self.samples += 1
             low_activity = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in ACTIVITY_COUNTERS)
+            low_refault = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in REFAULT_COUNTERS)
             self.low_activity_samples += int(low_activity)
+            self.low_refault_samples += int(low_refault)
             if any(cumulative[k] for k in PRESSURE_COUNTERS):
                 raise ValueError('host_allocation_pressure_observed')
             if any(z['min'] <= 0 for z in current_margins.values()):
                 raise ValueError('host_zone_minimum_headroom')
-            if low_activity:
-                raise ValueError('host_zone_low_with_reclaim_or_refault')
+            # Below low is the normal kswapd wakeup condition. Scan/steal alone
+            # is context; retain the conservative low-plus-refault stop.
+            if low_refault:
+                raise ValueError('host_zone_low_with_refault')
         except (ValueError, TypeError, KeyError, OverflowError) as error:
             self.failure = str(error)
             raise ValueError(self.failure) from error
@@ -236,7 +242,8 @@ class PressureTracker:
                 'cumulative': {k: self.last['counters'][k] - self.baseline['counters'][k] for k in COUNTERS},
                 'maximum_interval': dict(self.max_interval), 'minimum_zone_margins': copy.deepcopy(self.minimum_margins),
                 'cache_min_bytes': dict(self.cache_min), 'cache_max_bytes': dict(self.cache_max),
-                'low_with_activity_samples': self.low_activity_samples, 'service_validation': 'external_required'}
+                'low_with_activity_samples': self.low_activity_samples,
+                'low_with_refault_samples': self.low_refault_samples, 'service_validation': 'external_required'}
 
 
 def require_pressure_receipt(summary, baseline_host, last_host):
@@ -281,11 +288,31 @@ def require_pressure_receipt(summary, baseline_host, last_host):
                 raise ValueError('pressure_receipt_zone_extrema')
         if not values['min'] > 0 or not values['high'] <= values['low'] <= values['min']:
             raise ValueError('pressure_receipt_zone_pressure')
-    if type(summary['low_with_activity_samples']) is not int or summary['low_with_activity_samples'] != 0:
-        raise ValueError('pressure_receipt_low_reclaim')
+    require_low_activity_counts(summary, last_zones, count)
     for key in ('cache_min_bytes','cache_max_bytes'):
         exact_keys(summary[key], CACHE_FIELDS)
     for key in CACHE_FIELDS:
         low, high = integer(summary['cache_min_bytes'][key]), integer(summary['cache_max_bytes'][key])
         if not low <= min(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= max(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= high:
             raise ValueError('pressure_receipt_cache_extrema')
+
+
+def require_low_activity_counts(summary, last_zones, count):
+    """Check aggregate consistency without inventing unretained intervals."""
+    activity = integer(summary['low_with_activity_samples'], maximum=count - 1)
+    refault = integer(summary['low_with_refault_samples'], maximum=activity)
+    total = sum(summary['cumulative'][key] for key in ACTIVITY_COUNTERS)
+    refault_total = sum(summary['cumulative'][key] for key in REFAULT_COUNTERS)
+    ever_low = any(row['low'] <= 0 for row in summary['minimum_zone_margins'].values())
+    if (activity > total or refault > refault_total
+            or activity - refault > total - refault_total or (activity and not ever_low)):
+        raise ValueError('pressure_receipt_low_activity_context')
+    # With exactly one interval the endpoint and counter deltas determine this
+    # conjunction exactly. Longer runs retain counts, not every intermediate sample.
+    if count == 2:
+        low = any(row['low'] <= 0 for row in last_zones.values())
+        expected_refault = low and any(summary['cumulative'][key] for key in REFAULT_COUNTERS)
+        if activity != int(low and total > 0) or refault != int(expected_refault):
+            raise ValueError('pressure_receipt_low_activity_context')
+    if refault:
+        raise ValueError('pressure_receipt_low_refault')

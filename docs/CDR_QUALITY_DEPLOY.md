@@ -472,10 +472,25 @@ the first admission sample causes a latched failure, with or without swap.
 These are conservative indicators of allocation pressure; they do not establish
 which process caused it or quantify user-visible disruption. A sampled zone at
 or below its printed minimum also fails. Low-zone headroom with concurrent
-reclaim/refault activity fails. The printed watermarks already include boost;
+refault activity fails. Plain background scan/steal remains recorded context:
+Linux normally wakes asynchronous kswapd below low and reclaims toward high
+([kernel reclaim documentation](https://docs.kernel.org/admin-guide/mm/concepts.html#reclaim)).
+It is not, by itself, evidence of allocation stalls or service harm. The printed watermarks already include boost;
 the separate boost field is not added again. Cache growth or a refault by itself
 does not establish thrashing. Zone inventory, minimum margins, cache extrema,
 cumulative counters and maximum sampling gaps are retained through completion.
+
+The internal host evidence profile is now `ar-local-host-pressure-v2`.
+`low_with_activity_samples` retains low-plus-scan/steal/refault context;
+`low_with_refault_samples` must be zero for PASS. Both counts are bounded by
+observed intervals and checked against retained counters and zone extrema.
+The CLI selector remains `allocation-v1`, selecting the reviewed implementation
+in the exact candidate commit; receipt validation requires the new internal
+profile, so old v1 receipts cannot be reinterpreted. R11's original policy FAIL
+remains immutable. This correction introduces no reclaim-byte allowance and
+changes none of the other allocation, service, PSI or resource guards. Host-wide
+counters cannot attribute activity to a particular zone or process; the
+low-plus-refault rule remains conservative. Fresh full acceptance is required.
 
 A read-only host-side companion thread checks the existing nginx and direct
 dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
