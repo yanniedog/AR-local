@@ -12,12 +12,15 @@ import time
 
 from pi_cdr_quality_telemetry import MAX_COUNTER_TEXT, MAX_ZONE_TEXT, parse_zones
 
-PROFILE = 'ar-local-host-pressure-v2'
+PROFILE = 'ar-local-host-pressure-v3'
 MAX_VALUE = 2**64 - 1
 MAX_GAP_NS = 2_000_000_000
-# Reserve half the existing 64 MiB receipt-read budget. A five-integer event
-# takes at most 256 bytes with the resource receipt's indentation/field widths.
-MAX_REFAULT_EVENTS = (32 * 1024**2) // 256
+# One seven-integer row per positive node/interval, <=384 bytes even with
+# receipt indentation. At 64 nodes each interval can consume 64 rows. Capacity
+# is a total byte budget, not a promise to retain unlimited active intervals.
+MAX_REFAULT_EVENTS = (32 * 1024**2) // 384
+MAX_REFAULT_EVIDENCE_BYTES = 32 * 1024**2
+REFAULT_EVIDENCE_OVERHEAD = 1024
 COUNTERS = (
     'allocstall_dma', 'allocstall_dma32', 'allocstall_normal', 'allocstall_movable',
     'pgscan_direct', 'pgsteal_direct', 'compact_stall', 'oom_kill',
@@ -88,7 +91,10 @@ def bounded_text(path, limit):
 
 
 def validate_snapshot(value):
-    exact_keys(value, ('profile','boot_id','page_size_bytes','monotonic_ns','read_elapsed_ns','counters','cache_bytes','zones'))
+    if not isinstance(value, dict) or value.get('profile') != PROFILE:
+        raise ValueError('pressure_profile_or_boot')
+    exact_keys(value, ('profile','boot_id','page_size_bytes','monotonic_ns','read_elapsed_ns','counters','cache_bytes','zones',
+                       'lru_gen_enabled','node_refaults'))
     if value['profile'] != PROFILE or not isinstance(value['boot_id'], str) or not re.fullmatch('[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', value['boot_id']):
         raise ValueError('pressure_profile_or_boot')
     page = integer(value['page_size_bytes'], minimum=1024, maximum=1024**2)
@@ -122,22 +128,88 @@ def validate_snapshot(value):
         identities.add(identity)
     if zones != sorted(zones, key=lambda z: (z['node'], z['zone'])):
         raise ValueError('pressure_zone_order')
+    integer(value['lru_gen_enabled'], maximum=7)
+    nodes = value['node_refaults']
+    expected = sorted({z['node'] for z in zones})
+    if not isinstance(nodes, list) or len(nodes) != len(expected):
+        raise ValueError('pressure_node_inventory')
+    for row, node in zip(nodes, expected):
+        if not isinstance(row, list) or len(row) != 3:
+            raise ValueError('pressure_node_shape')
+        for number in row:
+            integer(number)
+        if row[0] != node:
+            raise ValueError('pressure_node_order_or_identity')
+    if any(sum(row[i + 1] for row in nodes) != value['counters'][key] for i, key in enumerate(REFAULT_COUNTERS)):
+        raise ValueError('pressure_node_global_refault_mismatch')
     return value
 
 
-def sample_pressure(proc, memory_text, vm_text):
+def online_nodes(text):
+    if not isinstance(text, str) or not re.fullmatch(r'[0-9,-]+\n?', text) or len(text) > 1024:
+        raise ValueError('pressure_online_node_format')
+    result = []
+    for item in text.strip().split(','):
+        if not re.fullmatch(r'[0-9]{1,4}(?:-[0-9]{1,4})?', item):
+            raise ValueError('pressure_online_node_format')
+        endpoints = list(map(int, item.split('-')))
+        first, last = endpoints[0], endpoints[-1]
+        if last < first or len(result) + last - first + 1 > 64:
+            raise ValueError('pressure_online_node_bound')
+        result.extend(range(first, last + 1))
+    if result != sorted(set(result)):
+        raise ValueError('pressure_online_node_order')
+    return result
+
+
+def lru_mode(text):
+    if not isinstance(text, str) or not re.fullmatch(r'0x[0-9a-fA-F]{4}\n?', text):
+        raise ValueError('pressure_lru_mode_format')
+    return integer(int(text.strip(), 16), maximum=7)
+
+
+def read_node_refaults(sysfs, nodes):
+    result = []
+    for node in nodes:
+        values = numeric_map(bounded_text(sysfs/f'devices/system/node/node{node}/vmstat', MAX_COUNTER_TEXT), REFAULT_COUNTERS)
+        result.append([node, *(values[key] for key in REFAULT_COUNTERS)])
+    return result
+
+
+def sample_pressure(proc, memory_text, vm_text, *, sysfs=Path('/sys')):
     """Strict read-only profile. Missing capabilities raise; no substituted zeroes."""
     started = time.monotonic_ns()
     proc = Path(proc)
+    sysfs = Path(sysfs)
     boot = bounded_text(proc/'sys/kernel/random/boot_id', 128).strip()
+    mode = lru_mode(bounded_text(sysfs/'kernel/mm/lru_gen/enabled', 32))
+    nodes = online_nodes(bounded_text(sysfs/'devices/system/node/online', 1024))
+    counters = numeric_map(vm_text, COUNTERS)
     zones = sorted(parse_zones(bounded_text(proc/'zoneinfo', MAX_ZONE_TEXT)), key=lambda z: (z['node'], z['zone']))
+    if nodes != sorted({z['node'] for z in zones}):
+        raise ValueError('pressure_node_zone_inventory')
+    node_refaults = read_node_refaults(sysfs, nodes)
+    # Compare every counter, not merely sums: a reset on one node must not be
+    # cancelled by growth on another. No retry may erase this observation.
+    if read_node_refaults(sysfs, nodes) != node_refaults:
+        raise ValueError('pressure_node_counters_changed_during_capture')
+    after = numeric_map(bounded_text(proc/'vmstat', MAX_COUNTER_TEXT), COUNTERS)
+    if any(after[key] < counters[key] for key in COUNTERS):
+        raise ValueError('pressure_counter_reset_during_capture')
+    if any(after[key] > counters[key] for key in PRESSURE_COUNTERS):
+        raise ValueError('host_allocation_pressure_during_capture')
+    if any(after[key] != counters[key] for key in REFAULT_COUNTERS):
+        raise ValueError('pressure_refault_capture_incoherent')
+    if (online_nodes(bounded_text(sysfs/'devices/system/node/online', 1024)) != nodes
+            or lru_mode(bounded_text(sysfs/'kernel/mm/lru_gen/enabled', 32)) != mode):
+        raise ValueError('pressure_node_or_lru_mode_changed_during_capture')
     page = os.sysconf('SC_PAGE_SIZE')
     if bounded_text(proc/'sys/kernel/random/boot_id', 128).strip() != boot:
         raise ValueError('pressure_boot_changed_during_sample')
     ended = time.monotonic_ns()
     return validate_snapshot({'profile': PROFILE, 'boot_id': boot, 'page_size_bytes': page,
                               'monotonic_ns': ended, 'read_elapsed_ns': ended - started,
-                              'counters': numeric_map(vm_text, COUNTERS),
+                              'counters': counters, 'lru_gen_enabled': mode, 'node_refaults': node_refaults,
                               'cache_bytes': numeric_map(memory_text, CACHE_FIELDS, kib=True), 'zones': zones})
 
 
@@ -165,6 +237,25 @@ def margins(zones):
     return {str(z['node']) + ':' + z['zone']: {level: z['pages free'] - z[level] for level in ('min','low','high')} for z in zones}
 
 
+def node_lows(zones):
+    return {node: min(z['pages free'] - z['low'] for z in zones if z['node'] == node)
+            for node in {z['node'] for z in zones}}
+
+
+def refault_scope(mask):
+    return 'mglru_same_node' if mask & 1 else 'classic_global'
+
+
+def evidence_item_bytes(value):
+    """Conservative final indent=2 size at resources.pressure_evidence.host.
+
+    List items are nested four levels (eight added spaces per line). Count
+    only the new bounded item during observation, never reserialize the ledger.
+    """
+    text = json.dumps(value, indent=2, allow_nan=False)
+    return len(text.encode('utf-8')) + 8 * (text.count('\n') + 1) + 2
+
+
 class PressureTracker:
     def __init__(self, binding):
         self.baseline = host_pressure(binding)
@@ -179,6 +270,9 @@ class PressureTracker:
         self.low_activity_samples = 0
         self.low_refault_samples = 0
         self.refault_events = []
+        self.refault_snapshots = []
+        self.refault_evidence_bytes = REFAULT_EVIDENCE_OVERHEAD
+        self.node_max_interval = {str(row[0]): [0, 0] for row in self.baseline['node_refaults']}
         self._check_initial()
 
     def _check_initial(self):
@@ -193,7 +287,7 @@ class PressureTracker:
             if companion_snapshot is not None:
                 raise ValueError('service_proof_requires_separate_validation')
             value = host_pressure(host)
-            if any(value[k] != self.baseline[k] for k in ('profile','boot_id','page_size_bytes')):
+            if any(value[k] != self.baseline[k] for k in ('profile','boot_id','page_size_bytes','lru_gen_enabled')):
                 raise ValueError('pressure_identity_changed')
             if zone_identity(value['zones']) != zone_identity(self.baseline['zones']):
                 raise ValueError('pressure_zone_inventory_changed')
@@ -208,16 +302,27 @@ class PressureTracker:
                 raise ValueError('pressure_counter_reset')
             cumulative = {k: value['counters'][k] - self.baseline['counters'][k] for k in COUNTERS}
             current_margins = margins(value['zones'])
-            if any(delta[key] for key in REFAULT_COUNTERS):
-                if len(self.refault_events) >= MAX_REFAULT_EVENTS:
-                    raise ValueError('pressure_refault_evidence_capacity')
-                # Sparse intervals: sequence, timestamp, minimum low margin,
-                # anon delta, file delta. Zero-refault intervals need no row.
-                self.refault_events.append([
-                    self.samples, value['monotonic_ns'],
-                    min(row['low'] for row in current_margins.values()),
-                    *(delta[key] for key in REFAULT_COUNTERS),
-                ])
+            lows = node_lows(value['zones'])
+            events = []
+            for before_node, node in zip(self.last['node_refaults'], value['node_refaults']):
+                changes = [node[i] - before_node[i] for i in (1, 2)]
+                if any(change < 0 for change in changes):
+                    raise ValueError('pressure_node_counter_reset')
+                if any(changes):
+                    events.append([self.samples, value['monotonic_ns'], node[0], lows[node[0]], *changes,
+                                   min(row['low'] for row in current_margins.values())])
+            if len(self.refault_events) + len(events) > MAX_REFAULT_EVENTS:
+                raise ValueError('pressure_refault_evidence_capacity')
+            source = {'sequence': self.samples, 'sha256': fingerprint(value), 'pressure': copy.deepcopy(value)} if events else None
+            extra_bytes = sum(evidence_item_bytes(row) for row in events) + (evidence_item_bytes(source) if source else 0)
+            if self.refault_evidence_bytes + extra_bytes > MAX_REFAULT_EVIDENCE_BYTES:
+                raise ValueError('pressure_refault_source_evidence_capacity')
+            if source:
+                self.refault_snapshots.append(source)
+            self.refault_evidence_bytes += extra_bytes
+            self.refault_events.extend(events)
+            for row in events:
+                self.node_max_interval[str(row[2])] = [max(a, b) for a, b in zip(self.node_max_interval[str(row[2])], row[4:6])]
             self.max_gap_ns = max(self.max_gap_ns, gap)
             for key in COUNTERS:
                 self.max_interval[key] = max(self.max_interval[key], delta[key])
@@ -230,7 +335,8 @@ class PressureTracker:
             self.last = value
             self.samples += 1
             low_activity = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in ACTIVITY_COUNTERS)
-            low_refault = any(z['low'] <= 0 for z in current_margins.values()) and any(delta[k] for k in REFAULT_COUNTERS)
+            low_refault = any(row[3] <= 0 for row in events) if value['lru_gen_enabled'] & 1 else (
+                any(z['low'] <= 0 for z in current_margins.values()) and bool(events))
             self.low_activity_samples += int(low_activity)
             self.low_refault_samples += int(low_refault)
             if any(cumulative[k] for k in PRESSURE_COUNTERS):
@@ -258,7 +364,13 @@ class PressureTracker:
                 'cache_min_bytes': dict(self.cache_min), 'cache_max_bytes': dict(self.cache_max),
                 'low_with_activity_samples': self.low_activity_samples,
                 'low_with_refault_samples': self.low_refault_samples,
+                'refault_scope': refault_scope(self.baseline['lru_gen_enabled']),
+                'node_cumulative': {str(b[0]): [e[i] - b[i] for i in (1, 2)]
+                                    for b, e in zip(self.baseline['node_refaults'], self.last['node_refaults'])},
+                'node_maximum_interval': copy.deepcopy(self.node_max_interval),
                 'refault_events': [list(row) for row in self.refault_events],
+                'refault_snapshots': copy.deepcopy(self.refault_snapshots),
+                'refault_evidence_bytes': self.refault_evidence_bytes,
                 'service_validation': 'external_required'}
 
 
@@ -274,6 +386,9 @@ def require_pressure_receipt(summary, baseline_host, last_host):
             raise ValueError('pressure_receipt_identity')
     if zone_identity(last['zones']) != zone_identity(baseline['zones']):
         raise ValueError('pressure_receipt_zone_identity')
+    if (last['lru_gen_enabled'] != baseline['lru_gen_enabled']
+            or summary['refault_scope'] != refault_scope(baseline['lru_gen_enabled'])):
+        raise ValueError('pressure_receipt_lru_identity')
     if summary['baseline_sha256'] != fingerprint(baseline) or summary['last_sha256'] != fingerprint(last):
         raise ValueError('pressure_receipt_snapshot_binding')
     if (integer(summary['baseline_monotonic_ns'], minimum=1) != baseline['monotonic_ns']
@@ -304,14 +419,15 @@ def require_pressure_receipt(summary, baseline_host, last_host):
                 raise ValueError('pressure_receipt_zone_extrema')
         if not values['min'] > 0 or not values['high'] <= values['low'] <= values['min']:
             raise ValueError('pressure_receipt_zone_pressure')
-    require_low_activity_counts(summary, last_zones, count)
-    require_refault_events(summary, baseline, last, count, gap)
     for key in ('cache_min_bytes','cache_max_bytes'):
         exact_keys(summary[key], CACHE_FIELDS)
     for key in CACHE_FIELDS:
         low, high = integer(summary['cache_min_bytes'][key]), integer(summary['cache_max_bytes'][key])
         if not low <= min(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= max(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= high:
             raise ValueError('pressure_receipt_cache_extrema')
+    require_refault_sources(summary, baseline, last, count)
+    require_refault_events(summary, baseline, last, count, gap)
+    require_low_activity_counts(summary, last_zones, count)
 
 
 def require_low_activity_counts(summary, last_zones, count):
@@ -322,50 +438,153 @@ def require_low_activity_counts(summary, last_zones, count):
     refault_total = sum(summary['cumulative'][key] for key in REFAULT_COUNTERS)
     ever_low = any(row['low'] <= 0 for row in summary['minimum_zone_margins'].values())
     if (activity > total or refault > refault_total
-            or activity - refault > total - refault_total or (activity and not ever_low)):
+            or (summary['refault_scope'] == 'classic_global' and activity - refault > total - refault_total)
+            or (activity and not ever_low)):
         raise ValueError('pressure_receipt_low_activity_context')
     # With exactly one interval the endpoint and counter deltas determine this
     # conjunction exactly. Longer runs retain counts, not every intermediate sample.
     if count == 2:
         low = any(row['low'] <= 0 for row in last_zones.values())
-        expected_refault = low and any(summary['cumulative'][key] for key in REFAULT_COUNTERS)
+        expected_refault = (any(node_lows_value <= 0 and any(summary['node_cumulative'][node])
+                               for node, node_lows_value in _summary_terminal_lows(last_zones).items())
+                            if summary['refault_scope'] == 'mglru_same_node' else low and refault_total > 0)
         if activity != int(low and total > 0) or refault != int(expected_refault):
             raise ValueError('pressure_receipt_low_activity_context')
     if refault:
         raise ValueError('pressure_receipt_low_refault')
 
 
+def _summary_terminal_lows(zones):
+    return {node: min(value['low'] for key, value in zones.items() if key.split(':')[0] == node)
+            for node in {key.split(':')[0] for key in zones}}
+
+
+def require_refault_sources(summary, baseline, last, count):
+    """Derive each row from its retained raw captured snapshot, not asserted lows.
+
+    Fingerprints bind this evidence together; the external trust anchor remains
+    the sealed resources artifact hash in the externally bound activation chain.
+    """
+    sources, events = summary['refault_snapshots'], summary['refault_events']
+    if (not isinstance(sources, list) or not isinstance(events, list)
+            or len(sources) > min(count - 1, MAX_REFAULT_EVENTS)
+            or len(events) > min(MAX_REFAULT_EVENTS, (count - 1) * len(baseline['node_refaults']))):
+        raise ValueError('pressure_refault_source_inventory')
+    recorded_bytes = integer(summary['refault_evidence_bytes'], minimum=REFAULT_EVIDENCE_OVERHEAD,
+                             maximum=MAX_REFAULT_EVIDENCE_BYTES)
+    total_bytes = REFAULT_EVIDENCE_OVERHEAD
+    expected_rows = []
+    previous, previous_seq = baseline, 0
+    for source in sources:
+        exact_keys(source, ('sequence','sha256','pressure'))
+        seq = integer(source['sequence'], minimum=previous_seq + 1, maximum=count - 1)
+        value = validate_snapshot(source['pressure'])
+        if source['sha256'] != fingerprint(value):
+            raise ValueError('pressure_refault_source_fingerprint')
+        if (any(value[key] != baseline[key] for key in ('profile','boot_id','page_size_bytes','lru_gen_enabled'))
+                or zone_identity(value['zones']) != zone_identity(baseline['zones'])):
+            raise ValueError('pressure_refault_source_identity')
+        if not previous['monotonic_ns'] < value['monotonic_ns'] <= last['monotonic_ns']:
+            raise ValueError('pressure_refault_source_clock')
+        if seq == count - 1 and value != last:
+            raise ValueError('pressure_refault_source_terminal_binding')
+        for key in COUNTERS:
+            if not previous['counters'][key] <= value['counters'][key] <= last['counters'][key]:
+                raise ValueError('pressure_refault_source_counter_binding')
+            if key in PRESSURE_COUNTERS and value['counters'][key] != baseline['counters'][key]:
+                raise ValueError('pressure_refault_source_allocation_pressure')
+        for key in CACHE_FIELDS:
+            if not summary['cache_min_bytes'][key] <= value['cache_bytes'][key] <= summary['cache_max_bytes'][key]:
+                raise ValueError('pressure_refault_source_cache_extrema')
+        current_margins = margins(value['zones'])
+        for zone, levels in current_margins.items():
+            if levels['min'] <= 0 or any(levels[key] < summary['minimum_zone_margins'][zone][key] for key in levels):
+                raise ValueError('pressure_refault_source_zone_binding')
+        lows = node_lows(value['zones']); group = []
+        for before_node, node, end_node in zip(previous['node_refaults'], value['node_refaults'], last['node_refaults']):
+            if any(not before_node[i] <= node[i] <= end_node[i] for i in (1, 2)):
+                raise ValueError('pressure_refault_source_node_counter_binding')
+            changes = [node[i] - before_node[i] for i in (1, 2)]
+            if any(changes):
+                group.append([seq, value['monotonic_ns'], node[0], lows[node[0]], *changes, min(lows.values())])
+        if not group:
+            raise ValueError('pressure_refault_source_without_event')
+        total_bytes += evidence_item_bytes(source) + sum(evidence_item_bytes(row) for row in group)
+        if total_bytes > MAX_REFAULT_EVIDENCE_BYTES:
+            raise ValueError('pressure_refault_source_evidence_capacity')
+        expected_rows.extend(group)
+        previous, previous_seq = value, seq
+    if expected_rows != events:
+        raise ValueError('pressure_refault_source_event_binding')
+    if total_bytes != recorded_bytes:
+        raise ValueError('pressure_refault_source_byte_binding')
+
+
 def require_refault_events(summary, baseline, last, count, gap):
-    """Replay every positive refault interval; totals prevent omitted events."""
+    """Replay every positive node/interval; exact totals forbid lost residuals."""
+    nodes = {str(row[0]): row[1:] for row in baseline['node_refaults']}
+    endpoints = {str(row[0]): row[1:] for row in last['node_refaults']}
+    for key in ('node_cumulative', 'node_maximum_interval'):
+        exact_keys(summary[key], nodes)
+        for row in summary[key].values():
+            if not isinstance(row, list) or len(row) != 2:
+                raise ValueError('pressure_node_aggregate_shape')
+            for number in row:
+                integer(number)
     events = summary['refault_events']
-    if not isinstance(events, list) or len(events) > min(MAX_REFAULT_EVENTS, count - 1):
+    if not isinstance(events, list) or len(events) > min(MAX_REFAULT_EVENTS, (count - 1) * len(nodes)):
         raise ValueError('pressure_refault_event_inventory')
-    totals, peaks = [0, 0], [0, 0]
-    previous_seq, previous_time = 0, baseline['monotonic_ns']
-    minimum_low = min(row['low'] for row in summary['minimum_zone_margins'].values())
-    terminal_low = min(row['low'] for row in margins(last['zones']).values())
-    low_refaults = 0
+    totals = {node: [0, 0] for node in nodes}
+    peaks = {node: [0, 0] for node in nodes}
+    global_peaks = [0, 0]
+    previous_seq, previous_time, previous_node = 0, baseline['monotonic_ns'], -1
+    previous_low, group_deltas, group_low, low_refaults = None, [0, 0], False, 0
+    minimum_lows = _summary_terminal_lows(summary['minimum_zone_margins'])
+    terminal_lows = node_lows(last['zones'])
+    global_minimum = min(minimum_lows.values())
     for row in events:
-        if not isinstance(row, list) or len(row) != 5:
+        if not isinstance(row, list) or len(row) != 7:
             raise ValueError('pressure_refault_event_shape')
-        seq = integer(row[0], minimum=previous_seq + 1, maximum=count - 1)
-        timestamp = integer(row[1], minimum=previous_time + 1, maximum=last['monotonic_ns'])
-        low = integer(row[2], minimum=minimum_low)
-        deltas = [integer(number) for number in row[3:]]
-        if not any(deltas) or not seq - previous_seq <= timestamp - previous_time <= gap * (seq - previous_seq):
-            raise ValueError('pressure_refault_event_coverage')
-        if seq == count - 1 and (timestamp != last['monotonic_ns'] or low != terminal_low):
+        seq = integer(row[0], minimum=1, maximum=count - 1)
+        timestamp = integer(row[1], minimum=baseline['monotonic_ns'] + 1, maximum=last['monotonic_ns'])
+        node = integer(row[2], maximum=9999)
+        if str(node) not in nodes:
+            raise ValueError('pressure_refault_event_node')
+        low = integer(row[3], minimum=minimum_lows[str(node)])
+        deltas = [integer(number) for number in row[4:6]]
+        global_low = integer(row[6], minimum=global_minimum, maximum=low)
+        if not any(deltas):
+            raise ValueError('pressure_refault_event_empty')
+        if seq != previous_seq:
+            intervals = seq - previous_seq
+            if not intervals > 0 or not intervals <= timestamp - previous_time <= gap * intervals:
+                raise ValueError('pressure_refault_event_coverage')
+            global_peaks = [max(a, b) for a, b in zip(global_peaks, group_deltas)]
+            low_refaults += int(group_low)
+            previous_node, group_deltas, group_low = -1, [0, 0], False
+        elif timestamp != previous_time or global_low != previous_low:
+            raise ValueError('pressure_refault_event_interval_binding')
+        if node <= previous_node:
+            raise ValueError('pressure_refault_event_node_order')
+        if seq == count - 1 and (timestamp != last['monotonic_ns'] or low != terminal_lows[node]
+                                 or global_low != min(terminal_lows.values())):
             raise ValueError('pressure_refault_event_terminal_binding')
-        for index, delta in enumerate(deltas):
-            totals[index] += delta
-            peaks[index] = max(peaks[index], delta)
-        low_refaults += int(low <= 0)
-        previous_seq, previous_time = seq, timestamp
+        totals[str(node)] = [a + b for a, b in zip(totals[str(node)], deltas)]
+        peaks[str(node)] = [max(a, b) for a, b in zip(peaks[str(node)], deltas)]
+        group_deltas = [a + b for a, b in zip(group_deltas, deltas)]
+        group_low |= (low <= 0 if baseline['lru_gen_enabled'] & 1 else global_low <= 0)
+        previous_seq, previous_time, previous_node, previous_low = seq, timestamp, node, global_low
+    global_peaks = [max(a, b) for a, b in zip(global_peaks, group_deltas)]
+    low_refaults += int(group_low)
     remaining = count - 1 - previous_seq
     if not remaining <= last['monotonic_ns'] - previous_time <= gap * remaining:
         raise ValueError('pressure_refault_event_coverage')
+    for node in nodes:
+        expected = [endpoints[node][i] - nodes[node][i] for i in range(2)]
+        if totals[node] != expected or summary['node_cumulative'][node] != expected or summary['node_maximum_interval'][node] != peaks[node]:
+            raise ValueError('pressure_node_event_counter_binding')
     for index, key in enumerate(REFAULT_COUNTERS):
-        if totals[index] != summary['cumulative'][key] or peaks[index] != summary['maximum_interval'][key]:
+        if sum(row[index] for row in totals.values()) != summary['cumulative'][key] or global_peaks[index] != summary['maximum_interval'][key]:
             raise ValueError('pressure_refault_event_counter_binding')
     if low_refaults != summary['low_with_refault_samples'] or low_refaults:
         raise ValueError('pressure_refault_event_low_conjunction')

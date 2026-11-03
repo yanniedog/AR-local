@@ -444,7 +444,7 @@ and rollback gates remain mandatory before activation.
 
 ## Explicit allocation-pressure profile
 
-`canary --pressure-profile allocation-v1` selects resource receipt schema v3.
+`canary --pressure-profile allocation-v1` selects resource receipt schema v4.
 Omitting the option preserves the legacy v2 policy, including zero host swap-out.
 This selection is a source-reviewed policy amendment, not a runtime acceptance
 claim. It changes no kernel, swap, credential, network or production settings.
@@ -472,7 +472,7 @@ the first admission sample causes a latched failure, with or without swap.
 These are conservative indicators of allocation pressure; they do not establish
 which process caused it or quantify user-visible disruption. A sampled zone at
 or below its printed minimum also fails. Low-zone headroom with concurrent
-refault activity fails. Plain background scan/steal remains recorded context:
+refault activity fails under the versioned attribution rule below. Plain background scan/steal remains recorded context:
 Linux normally wakes asynchronous kswapd below low and reclaims toward high
 ([kernel reclaim documentation](https://docs.kernel.org/admin-guide/mm/concepts.html#reclaim)).
 It is not, by itself, evidence of allocation stalls or service harm. The printed watermarks already include boost;
@@ -480,34 +480,85 @@ the separate boost field is not added again. Cache growth or a refault by itself
 does not establish thrashing. Zone inventory, minimum margins, cache extrema,
 cumulative counters and maximum sampling gaps are retained through completion.
 
-The internal host evidence profile is now `ar-local-host-pressure-v2`.
-`low_with_activity_samples` retains low-plus-scan/steal/refault context;
-`low_with_refault_samples` must be zero for PASS. Both counts are bounded by
-observed intervals and checked against retained counters and zone extrema.
-Every interval with a positive refault delta also retains a compact five-integer
-row: interval sequence, monotonic timestamp, minimum low-watermark margin,
-anonymous refault delta and file refault delta. Independent validation replays
-each low/refault conjunction, checks ordered sequence/time coverage and terminal
-endpoint bindings, and reconciles per-counter sums and peaks with the retained
-baseline/terminal counters. Zero-refault intervals need no row. Omissions,
-duplicates, reordering or inconsistent deltas fail; changing only the aggregate
-low-refault count cannot turn an intermediate failed interval into PASS.
+The internal host evidence profile is now `ar-local-host-pressure-v3` and
+resource receipt schema is v4. The CLI selector remains `allocation-v1`; its
+exact reviewed source commit selects this implementation. Old v1/v2 host
+proofs and v3 resource receipts cannot be relabelled or reinterpreted. R14 and
+all earlier failed receipts remain immutable; fresh full acceptance is required.
 
-The proof permits at most 131,072 positive-refault intervals. Each row fits a
-256-byte bound in the resource receipt's indented JSON, reserving at most 32 MiB
-of its existing 64 MiB read budget. This covers every default 0.1-second sample
-over 5,400 seconds. A faster legal sampling rate with more positive-refault
-intervals can exhaust that evidence capacity: it latches an explicit FAIL,
-without truncation, rather than claiming pressure or producing incomplete PASS
-evidence. Ordinary background scan/steal without refault creates no event rows.
+Each sample requires a fixed online node inventory exactly matching the managed
+zone nodes, a recognized `/sys/kernel/mm/lru_gen/enabled` mask, and per-node
+anonymous/file refault counters. Bit 0 enables MGLRU; bits 1 and 2 are optional
+page-table optimizations, so `0x0003` qualifies. Unknown bits, unavailable sysfs
+(including on classic-LRU systems), missing/malformed counters, mode changes,
+node changes or resets fail closed. One bounded capture checks boot, mode and
+online inventory on both sides of the read. It requires the original caller's
+global refault counters to equal the exact node sums and the closing global
+read. A second complete node read must equal the opening node counters before
+the closing global read; a reset on one node cannot be cancelled by growth on
+another. There is no tolerance, discarded residual, counter rescaling or retry.
+Any allocation-pressure counter increment observed in that closing read also
+fails, even if it was absent from the original caller sample. Active accounting
+or folding may prevent a coherent capture; that is an explicit evidence failure,
+not guaranteed acceptance or permission to loosen the check. The existing
+2-second sample/read/observation limits remain in force.
 
-The CLI selector remains `allocation-v1`, selecting the reviewed implementation
-in the exact candidate commit; receipt validation requires the new internal
-profile, so old v1 receipts cannot be reinterpreted. R11's original policy FAIL
-remains immutable. This correction introduces no reclaim-byte allowance and
-changes none of the other allocation, service, PSI or resource guards. Host-wide
-counters cannot attribute activity to a particular zone or process; the
-low-plus-refault rule remains conservative. Fresh full acceptance is required.
+With stable MGLRU enabled, a low zone and positive refault delta must concern
+the same node to trigger the low-plus-refault failure. On classic LRU the
+previous conservative **any-low-zone plus global-refault** rule remains.
+This distinction follows the [Raspberry Pi 6.18 workingset implementation](https://github.com/raspberrypi/linux/blob/rpi-6.18.y/mm/workingset.c):
+MGLRU increments refault counters only when the eviction and replacement lruvec
+match, whereas classic LRU can count on the replacement node. These are sampled,
+batched counters: node correlation does not establish an individual event's
+exact time, a process owner, thrashing or user-visible disruption. The reviewed
+vendor branch is not proof of the exact installed kernel binary's build source.
+Quiet capability samples are not active-load qualification or attribution of R14.
+All global allocation stalls/direct reclaim/compaction/OOM gates and every-zone
+minimum, service, PSI, RSS, workload-swap and cleanup requirements remain intact.
+
+`low_with_activity_samples` still records the global low-plus-background-activity
+context. `low_with_refault_samples` records the applicable mode-specific failure
+conjunction and must be zero for PASS. Each positive **node/interval** retains a
+seven-integer row: interval sequence, monotonic timestamp, node ID, that node's
+minimum low margin, anonymous delta, file delta and global minimum low margin.
+Counters remain base-page counts. Rows sharing an interval have the same time
+and global margin and strictly increasing node IDs. Independent validation
+reconciles every node's sums, peaks and endpoint counters; global peaks are sums
+across nodes **within each interval**, not maxima across individual nodes. It
+also checks ordered time/sequence coverage, terminal margins, corresponding
+node extrema and fingerprints. Omitted, duplicate, reordered, node-swapped or
+inconsistent rows fail. Zero-refault node/intervals need no row.
+
+Every positive interval also retains one complete captured pressure snapshot,
+its sequence and fingerprint. Independent replay derives every event field
+from that snapshot's raw zones and node counters, requiring exact equality,
+not just a lower bound from aggregate zone minima. It verifies monotone raw
+counters, unchanged allocation-pressure counters, positive zone minima, cache
+extrema, stable boot/mode/inventory and exact terminal bindings. A failed
+intermediate low/refault interval cannot become PASS merely by raising its
+asserted event margin after the terminal zone has recovered. Missing, extra,
+reordered or altered source snapshots fail; returned receipts are deep copies.
+These internal fingerprints bind retained evidence together, but are not an
+independent authenticity authority if an attacker rewrites both data and hash.
+The trust anchor is the existing sealed resources SHA in the canary artifact,
+which is itself bound by the externally expected activation-manifest hash.
+
+Each row has a conservative 384-byte bound and an absolute 87,381-row cap.
+The **combined** retained snapshots and event rows must also fit within 32 MiB
+of the existing 64 MiB receipt budget. Accounting uses each bounded item's
+actual `indent=2` encoding plus eight spaces per line for its final nesting,
+comma/newline overhead and a fixed envelope reserve. The observer increments
+the byte total once per new batch; it does not reserialize the full ledger on
+each sample. Independent validation recomputes the same bound. One interval
+can contain a 64-node/64-zone snapshot and up to 64 event rows, so the budget
+is not a guarantee that every full-duration activity pattern fits. Exhaustion latches
+FAIL before appending any partial interval; it never truncates evidence or
+turns incomplete evidence into PASS. No new production helper module is added;
+existing source inventories bind the amended pressure, resource and activation
+validators. There is no new memory/reclaim allowance, service mutation, kernel
+setting, or privilege change. Activation accepts only explicit v4 enhanced or
+v2 legacy resource schemas and fully validates either; a legacy label cannot
+bypass validation of an old v3, unknown, missing or disguised enhanced receipt.
 
 A read-only host-side companion thread checks the existing nginx and direct
 dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
