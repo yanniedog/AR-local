@@ -150,3 +150,159 @@ def test_old_host_summary_rejected_with_new_valid_snapshots():
     receipt['profile'] = 'ar-local-host-pressure-v1'
     with pytest.raises(ValueError, match='successful_pressure_profile_required'):
         pressure.require_pressure_receipt(receipt, first, last)
+
+
+def refault_receipt(*, final_low=False):
+    first = host()
+    middle = next_host(first)
+    middle['pressure']['counters']['workingset_refault_file'] += 1
+    last = next_host(middle)
+    last['pressure']['counters']['workingset_refault_file'] += 1
+    last['pressure']['counters']['pgscan_file'] += 1
+    if final_low:
+        last['pressure']['zones'][0]['pages free'] = 250
+    tracker = pressure.PressureTracker(first)
+    tracker.observe(middle)
+    if final_low:
+        with pytest.raises(ValueError, match='low_with_refault'):
+            tracker.observe(last)
+    else:
+        tracker.observe(last)
+    return tracker.receipt(), first, last
+
+
+def test_multi_interval_refault_cannot_be_hidden_by_zeroing_summary():
+    receipt, first, last = refault_receipt(final_low=True)
+    assert receipt['cumulative']['workingset_refault_file'] == 2
+    assert receipt['maximum_interval']['workingset_refault_file'] == 1
+    receipt.update(result='PASS', failure=None, low_with_refault_samples=0)
+    # The old aggregate checks alone accepted this exact combination.
+    pressure.require_low_activity_counts(receipt, pressure.margins(last['pressure']['zones']), 3)
+    with pytest.raises(ValueError, match='refault_event_low_conjunction'):
+        pressure.require_pressure_receipt(receipt, first, last)
+
+
+def test_intermediate_low_refault_cannot_be_hidden_by_healthy_endpoint():
+    receipt, first, failed = refault_receipt(final_low=True)
+    last = next_host(failed)
+    last['pressure']['zones'][0]['pages free'] = 5000
+    # A live tracker is latched and cannot produce this forged continuation.
+    # Independent receipt validation must also reject the retained bad interval.
+    receipt.update(result='PASS', failure=None, low_with_refault_samples=0,
+                   observations=4, last_monotonic_ns=last['pressure']['monotonic_ns'],
+                   last_sha256=pressure.fingerprint(last['pressure']))
+    with pytest.raises(ValueError, match='refault_event_low_conjunction'):
+        pressure.require_pressure_receipt(receipt, first, last)
+
+
+@pytest.mark.parametrize('fault', [
+    'omitted', 'duplicate', 'reordered', 'shape', 'zero_delta', 'negative_delta',
+    'missing_delta', 'bool_sequence', 'sequence_gap', 'time_reversed',
+    'time_after_terminal', 'terminal_low', 'below_minimum_low', 'altered_delta',
+])
+def test_sparse_refault_evidence_rejects_tampering(fault):
+    receipt, first, last = refault_receipt()
+    pressure.require_pressure_receipt(receipt, first, last)
+    rows = receipt['refault_events']
+    if fault == 'omitted':
+        rows.pop(0)
+    elif fault == 'duplicate':
+        rows[1] = list(rows[0])
+    elif fault == 'reordered':
+        rows.reverse()
+    elif fault == 'shape':
+        rows[0] = {}
+    elif fault == 'zero_delta':
+        rows[0][3:] = [0, 0]
+    elif fault == 'negative_delta':
+        rows[0][4] = -1
+    elif fault == 'missing_delta':
+        rows[0].pop()
+    elif fault == 'bool_sequence':
+        rows[0][0] = True
+    elif fault == 'sequence_gap':
+        rows[1][0] = 3
+    elif fault == 'time_reversed':
+        rows[1][1] = rows[0][1]
+    elif fault == 'time_after_terminal':
+        rows[1][1] += 1
+    elif fault == 'terminal_low':
+        rows[1][2] += 1
+    elif fault == 'below_minimum_low':
+        rows[0][2] -= 1
+    elif fault == 'altered_delta':
+        rows[0][4] += 1
+    with pytest.raises(ValueError):
+        pressure.require_pressure_receipt(receipt, first, last)
+
+
+def test_refault_evidence_has_no_row_for_zero_delta_intervals():
+    first = host()
+    tracker = pressure.PressureTracker(first)
+    current = first
+    for index in range(1, 8):
+        current = next_host(current)
+        if index in (2, 5):
+            current['pressure']['counters']['workingset_refault_anon'] += 3
+        tracker.observe(current)
+    receipt = tracker.receipt()
+    assert [row[0] for row in receipt['refault_events']] == [2, 5]
+    pressure.require_pressure_receipt(receipt, first, current)
+    receipt['refault_events'][0][4] = 99
+    assert tracker.receipt()['refault_events'][0][4] == 0
+
+
+def test_refault_evidence_capacity_fails_closed_without_truncation(monkeypatch):
+    monkeypatch.setattr(pressure, 'MAX_REFAULT_EVENTS', 2)
+    first = host()
+    tracker = pressure.PressureTracker(first)
+    current = first
+    for _ in range(2):
+        current = next_host(current)
+        current['pressure']['counters']['workingset_refault_file'] += 1
+        tracker.observe(current)
+    current = next_host(current)
+    current['pressure']['counters']['workingset_refault_file'] += 1
+    with pytest.raises(ValueError, match='evidence_capacity'):
+        tracker.observe(current)
+    assert len(tracker.receipt()['refault_events']) == 2
+    assert tracker.receipt()['result'] == 'FAIL'
+    with pytest.raises(ValueError, match='latched'):
+        tracker.observe(next_host(current))
+
+
+def test_refault_record_size_budget_matches_receipt_serialization():
+    row = [pressure.MAX_VALUE, pressure.MAX_VALUE, -pressure.MAX_VALUE,
+           pressure.MAX_VALUE, pressure.MAX_VALUE]
+    def encoded(rows):
+        return json.dumps({'pressure_evidence': {'host': {'refault_events': rows}}}, indent=2)
+    per_row = len(encoded([row, row])) - len(encoded([row]))
+    assert per_row <= 256
+    assert pressure.MAX_REFAULT_EVENTS * per_row < 32 * 1024**2
+    assert pressure.MAX_REFAULT_EVENTS > 5400 / .1 + 2
+
+
+def test_refault_event_inventory_capacity_checked_before_iteration(monkeypatch):
+    receipt, first, last = refault_receipt()
+    monkeypatch.setattr(pressure, 'MAX_REFAULT_EVENTS', 1)
+    with pytest.raises(ValueError, match='event_inventory'):
+        pressure.require_pressure_receipt(receipt, first, last)
+
+
+def test_refault_event_peaks_bound_independently_of_matching_totals():
+    first = host()
+    middle = next_host(first)
+    middle['pressure']['counters']['workingset_refault_file'] += 1
+    last = next_host(middle)
+    last['pressure']['counters']['workingset_refault_file'] += 3
+    tracker = pressure.PressureTracker(first)
+    tracker.observe(middle)
+    tracker.observe(last)
+    receipt = tracker.receipt()
+    pressure.require_pressure_receipt(receipt, first, last)
+    assert receipt['cumulative']['workingset_refault_file'] == 4
+    assert receipt['maximum_interval']['workingset_refault_file'] == 3
+    for row in receipt['refault_events']:
+        row[4] = 2
+    with pytest.raises(ValueError, match='event_counter_binding'):
+        pressure.require_pressure_receipt(receipt, first, last)

@@ -484,6 +484,23 @@ The internal host evidence profile is now `ar-local-host-pressure-v2`.
 `low_with_activity_samples` retains low-plus-scan/steal/refault context;
 `low_with_refault_samples` must be zero for PASS. Both counts are bounded by
 observed intervals and checked against retained counters and zone extrema.
+Every interval with a positive refault delta also retains a compact five-integer
+row: interval sequence, monotonic timestamp, minimum low-watermark margin,
+anonymous refault delta and file refault delta. Independent validation replays
+each low/refault conjunction, checks ordered sequence/time coverage and terminal
+endpoint bindings, and reconciles per-counter sums and peaks with the retained
+baseline/terminal counters. Zero-refault intervals need no row. Omissions,
+duplicates, reordering or inconsistent deltas fail; changing only the aggregate
+low-refault count cannot turn an intermediate failed interval into PASS.
+
+The proof permits at most 131,072 positive-refault intervals. Each row fits a
+256-byte bound in the resource receipt's indented JSON, reserving at most 32 MiB
+of its existing 64 MiB read budget. This covers every default 0.1-second sample
+over 5,400 seconds. A faster legal sampling rate with more positive-refault
+intervals can exhaust that evidence capacity: it latches an explicit FAIL,
+without truncation, rather than claiming pressure or producing incomplete PASS
+evidence. Ordinary background scan/steal without refault creates no event rows.
+
 The CLI selector remains `allocation-v1`, selecting the reviewed implementation
 in the exact candidate commit; receipt validation requires the new internal
 profile, so old v1 receipts cannot be reinterpreted. R11's original policy FAIL
