@@ -159,6 +159,76 @@ def test_accepted_assets_first_index_last_and_retry(candidate, tmp_path):
     assert all(k[0].startswith(p.PREFIX) for k in store.data)
 
 
+def tree_bytes(root):
+    return {str(path.relative_to(root)): path.read_bytes() if path.is_file() else None
+            for path in root.rglob("*")}
+
+
+@pytest.mark.parametrize("placement", [
+    "same-state", "state-inside-candidate", "candidate-inside-state",
+    "lock-inside-candidate", "lock-is-candidate-file", "lock-is-candidate",
+    "lock-ancestor", "lock-inside-state", "lock-is-state", "state-inside-lock",
+    "state-is-recovery-lock", "state-inside-recovery-lock", "dotdot-alias",
+])
+def test_overlapping_publication_paths_refused_before_any_write(candidate, tmp_path, placement):
+    state, lock = tmp_path / "state", tmp_path / "production.lock"
+    if placement == "same-state": state = candidate
+    if placement == "state-inside-candidate": state = candidate / "new" / "state"
+    if placement == "candidate-inside-state": state = tmp_path
+    if placement == "lock-inside-candidate": lock = candidate / "new" / "production.lock"
+    if placement == "lock-is-candidate-file": lock = candidate / "manifest.json"
+    if placement == "lock-is-candidate": lock = candidate
+    if placement == "lock-ancestor": lock = tmp_path
+    if placement == "lock-inside-state": lock = state / "production.lock"
+    if placement == "lock-is-state": lock = state
+    if placement == "state-inside-lock": state = lock / "state"
+    if placement == "state-is-recovery-lock": state = p.recovery_lock_path(lock)
+    if placement == "state-inside-recovery-lock": state = p.recovery_lock_path(lock) / "state"
+    if placement == "dotdot-alias": state = candidate / ".." / candidate.name
+    approved, before, store = acceptance(candidate), tree_bytes(tmp_path), MemoryStore()
+    with patch.object(p, "production_lock", side_effect=AssertionError("unexpected lock write")), \
+            patch.object(p, "private_directory", side_effect=AssertionError("unexpected state write")), \
+            patch.object(store, "read", side_effect=AssertionError("unexpected remote read")):
+        with pytest.raises(p.RevisionError, match="disjoint|canonical"):
+            p.publish_candidate(candidate, state, approved, production_lock_path=lock, store=store)
+    assert tree_bytes(tmp_path) == before
+    assert not store.events and not store.data
+
+
+@pytest.mark.skipif(os.name != "posix", reason="real links require POSIX test filesystem")
+@pytest.mark.parametrize("alias", ["candidate", "state", "lock-parent", "recovery", "hardlink"])
+def test_publication_link_alias_refused_before_lock_or_staging(candidate, tmp_path, alias):
+    directory, state, lock = candidate, tmp_path / "state", tmp_path / "production.lock"
+    link = tmp_path / "alias"
+    if alias == "candidate":
+        link.symlink_to(candidate, target_is_directory=True)
+        directory = link
+    if alias == "state":
+        link.symlink_to(candidate, target_is_directory=True)
+        state = link / "new-state"
+    if alias == "lock-parent":
+        link.symlink_to(candidate, target_is_directory=True)
+        lock = link / "new.lock"
+    if alias == "recovery":
+        p.recovery_lock_path(lock).symlink_to(candidate / "manifest.json")
+    if alias == "hardlink": os.link(candidate / "manifest.json", lock)
+    before, store = tree_bytes(tmp_path), MemoryStore()
+    with patch.object(p, "production_lock", side_effect=AssertionError("unexpected lock write")):
+        with pytest.raises(p.RevisionError, match="canonical|link|control inode"):
+            p.publish_candidate(directory, state, acceptance(candidate), production_lock_path=lock, store=store)
+    assert tree_bytes(tmp_path) == before and not store.events
+
+
+def test_disjoint_sibling_prefix_paths_remain_supported(candidate, tmp_path):
+    # String-prefix comparison would wrongly reject these separate paths.
+    state, lock = tmp_path / "candidate-state", tmp_path / "candidate.lock"
+    before = tree_bytes(candidate)
+    receipt = p.publish_candidate(candidate, state, acceptance(candidate),
+                                  production_lock_path=lock, store=MemoryStore())
+    assert receipt["manifest_sha256"] == acceptance(candidate).manifest_sha256
+    assert tree_bytes(candidate) == before
+
+
 @pytest.mark.parametrize("target", ["core", "details", "manifest"])
 def test_interruption_preserves_index_then_resumes(candidate, tmp_path, target):
     store = MemoryStore()

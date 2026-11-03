@@ -34,8 +34,14 @@ shared queue, window, resource and ownership gates. The function acquires the
 global production lock itself; do not nest that non-reentrant lock. All publishers
 must share it because GitHub does not provide compare-and-swap for release assets.
 Persistent state must be private coordinator-owned storage outside the immutable
-candidate, preserved across interruption and rollback. Each new state directory
-is created with POSIX mode 0700 under an already existing parent. Existing state
+candidate, preserved across interruption and rollback. The state directory
+and the production lock (including its recovery control file) must be disjoint
+from the candidate and from each other: equality or containment in either
+direction is refused before lock acquisition or staging. Paths must be canonical,
+without symlink aliases; existing lock/control files must be singly linked regular
+files. Coordinator-owned parent directories must remain stable during publication.
+Each new state directory is created with POSIX mode 0700 under an already existing
+parent. Existing state
 directories must have that exact mode and belong to the current effective user;
 otherwise publication refuses before staging or egress, without changing existing
 permissions. Publication is unsupported on non-POSIX platforms: mode bits do not

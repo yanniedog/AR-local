@@ -20,7 +20,7 @@ from app_payload_revisions_state import (
     validate_manifest,
 )
 from app_payload_secure_upload import publication_key
-from ar_local_operation_lock import production_lock
+from ar_local_operation_lock import production_lock, recovery_lock_path
 
 REPO = "yanniedog/AR-local"
 CHANNEL = "observed-population-v1"
@@ -78,6 +78,30 @@ def private_directory(path):
     require_private_mode(path.lstat(), os.geteuid())
     if path.absolute() != path.resolve():
         raise RevisionError("unsafe publication state directory")
+
+
+def publication_paths(directory, state, lock):
+    """Reject overlapping coordinator paths before any lock or state writes."""
+    paths = [Path(value).absolute() for value in (directory, state, lock)]
+    # Resolve aliases before containment checks, but do not follow links during
+    # publication. Trusted coordinator parents must remain stable throughout.
+    resolved = [path.resolve() for path in paths]
+    if paths != resolved:
+        raise RevisionError("publication paths must be canonical and not follow links")
+    directory, state, lock = resolved
+    controls = (lock, recovery_lock_path(lock))
+    roots = (directory, state)
+    overlaps = lambda a, b: a == b or a in b.parents or b in a.parents
+    if overlaps(directory, state) or any(overlaps(root, control) for root in roots for control in controls):
+        raise RevisionError("candidate, state and publication lock paths must be disjoint")
+    for control in controls:
+        if control.resolve() != control:
+            raise RevisionError("publication control path follows a link")
+        if control.exists():
+            info = control.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise RevisionError("unsafe publication control inode")
+    return directory, state, lock
 
 
 def validate_index(raw):
@@ -304,6 +328,7 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
     """
     if not isinstance(store, ObservedBackend):
         raise RevisionError("explicit isolated observed backend required")
+    directory, state, production_lock_path = publication_paths(directory, state, production_lock_path)
     with production_lock(production_lock_path, "observed-population-publication"):
         manifest, index, files = load_candidate(directory, accepted)
         if store.repo != REPO:
