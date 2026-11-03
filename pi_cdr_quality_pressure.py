@@ -19,6 +19,8 @@ MAX_GAP_NS = 2_000_000_000
 # receipt indentation. At 64 nodes each interval can consume 64 rows. Capacity
 # is a total byte budget, not a promise to retain unlimited active intervals.
 MAX_REFAULT_EVENTS = (32 * 1024**2) // 384
+MAX_REFAULT_EVIDENCE_BYTES = 32 * 1024**2
+REFAULT_EVIDENCE_OVERHEAD = 1024
 COUNTERS = (
     'allocstall_dma', 'allocstall_dma32', 'allocstall_normal', 'allocstall_movable',
     'pgscan_direct', 'pgsteal_direct', 'compact_stall', 'oom_kill',
@@ -166,6 +168,14 @@ def lru_mode(text):
     return integer(int(text.strip(), 16), maximum=7)
 
 
+def read_node_refaults(sysfs, nodes):
+    result = []
+    for node in nodes:
+        values = numeric_map(bounded_text(sysfs/f'devices/system/node/node{node}/vmstat', MAX_COUNTER_TEXT), REFAULT_COUNTERS)
+        result.append([node, *(values[key] for key in REFAULT_COUNTERS)])
+    return result
+
+
 def sample_pressure(proc, memory_text, vm_text, *, sysfs=Path('/sys')):
     """Strict read-only profile. Missing capabilities raise; no substituted zeroes."""
     started = time.monotonic_ns()
@@ -178,10 +188,11 @@ def sample_pressure(proc, memory_text, vm_text, *, sysfs=Path('/sys')):
     zones = sorted(parse_zones(bounded_text(proc/'zoneinfo', MAX_ZONE_TEXT)), key=lambda z: (z['node'], z['zone']))
     if nodes != sorted({z['node'] for z in zones}):
         raise ValueError('pressure_node_zone_inventory')
-    node_refaults = []
-    for node in nodes:
-        values = numeric_map(bounded_text(sysfs/f'devices/system/node/node{node}/vmstat', MAX_COUNTER_TEXT), REFAULT_COUNTERS)
-        node_refaults.append([node, *(values[key] for key in REFAULT_COUNTERS)])
+    node_refaults = read_node_refaults(sysfs, nodes)
+    # Compare every counter, not merely sums: a reset on one node must not be
+    # cancelled by growth on another. No retry may erase this observation.
+    if read_node_refaults(sysfs, nodes) != node_refaults:
+        raise ValueError('pressure_node_counters_changed_during_capture')
     after = numeric_map(bounded_text(proc/'vmstat', MAX_COUNTER_TEXT), COUNTERS)
     if any(after[key] < counters[key] for key in COUNTERS):
         raise ValueError('pressure_counter_reset_during_capture')
@@ -235,6 +246,16 @@ def refault_scope(mask):
     return 'mglru_same_node' if mask & 1 else 'classic_global'
 
 
+def evidence_item_bytes(value):
+    """Conservative final indent=2 size at resources.pressure_evidence.host.
+
+    List items are nested four levels (eight added spaces per line). Count
+    only the new bounded item during observation, never reserialize the ledger.
+    """
+    text = json.dumps(value, indent=2, allow_nan=False)
+    return len(text.encode('utf-8')) + 8 * (text.count('\n') + 1) + 2
+
+
 class PressureTracker:
     def __init__(self, binding):
         self.baseline = host_pressure(binding)
@@ -249,6 +270,8 @@ class PressureTracker:
         self.low_activity_samples = 0
         self.low_refault_samples = 0
         self.refault_events = []
+        self.refault_snapshots = []
+        self.refault_evidence_bytes = REFAULT_EVIDENCE_OVERHEAD
         self.node_max_interval = {str(row[0]): [0, 0] for row in self.baseline['node_refaults']}
         self._check_initial()
 
@@ -290,6 +313,13 @@ class PressureTracker:
                                    min(row['low'] for row in current_margins.values())])
             if len(self.refault_events) + len(events) > MAX_REFAULT_EVENTS:
                 raise ValueError('pressure_refault_evidence_capacity')
+            source = {'sequence': self.samples, 'sha256': fingerprint(value), 'pressure': copy.deepcopy(value)} if events else None
+            extra_bytes = sum(evidence_item_bytes(row) for row in events) + (evidence_item_bytes(source) if source else 0)
+            if self.refault_evidence_bytes + extra_bytes > MAX_REFAULT_EVIDENCE_BYTES:
+                raise ValueError('pressure_refault_source_evidence_capacity')
+            if source:
+                self.refault_snapshots.append(source)
+            self.refault_evidence_bytes += extra_bytes
             self.refault_events.extend(events)
             for row in events:
                 self.node_max_interval[str(row[2])] = [max(a, b) for a, b in zip(self.node_max_interval[str(row[2])], row[4:6])]
@@ -339,6 +369,8 @@ class PressureTracker:
                                     for b, e in zip(self.baseline['node_refaults'], self.last['node_refaults'])},
                 'node_maximum_interval': copy.deepcopy(self.node_max_interval),
                 'refault_events': [list(row) for row in self.refault_events],
+                'refault_snapshots': copy.deepcopy(self.refault_snapshots),
+                'refault_evidence_bytes': self.refault_evidence_bytes,
                 'service_validation': 'external_required'}
 
 
@@ -387,14 +419,15 @@ def require_pressure_receipt(summary, baseline_host, last_host):
                 raise ValueError('pressure_receipt_zone_extrema')
         if not values['min'] > 0 or not values['high'] <= values['low'] <= values['min']:
             raise ValueError('pressure_receipt_zone_pressure')
-    require_refault_events(summary, baseline, last, count, gap)
-    require_low_activity_counts(summary, last_zones, count)
     for key in ('cache_min_bytes','cache_max_bytes'):
         exact_keys(summary[key], CACHE_FIELDS)
     for key in CACHE_FIELDS:
         low, high = integer(summary['cache_min_bytes'][key]), integer(summary['cache_max_bytes'][key])
         if not low <= min(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= max(baseline['cache_bytes'][key], last['cache_bytes'][key]) <= high:
             raise ValueError('pressure_receipt_cache_extrema')
+    require_refault_sources(summary, baseline, last, count)
+    require_refault_events(summary, baseline, last, count, gap)
+    require_low_activity_counts(summary, last_zones, count)
 
 
 def require_low_activity_counts(summary, last_zones, count):
@@ -424,6 +457,67 @@ def require_low_activity_counts(summary, last_zones, count):
 def _summary_terminal_lows(zones):
     return {node: min(value['low'] for key, value in zones.items() if key.split(':')[0] == node)
             for node in {key.split(':')[0] for key in zones}}
+
+
+def require_refault_sources(summary, baseline, last, count):
+    """Derive each row from its retained raw captured snapshot, not asserted lows.
+
+    Fingerprints bind this evidence together; the external trust anchor remains
+    the sealed resources artifact hash in the externally bound activation chain.
+    """
+    sources, events = summary['refault_snapshots'], summary['refault_events']
+    if (not isinstance(sources, list) or not isinstance(events, list)
+            or len(sources) > min(count - 1, MAX_REFAULT_EVENTS)
+            or len(events) > min(MAX_REFAULT_EVENTS, (count - 1) * len(baseline['node_refaults']))):
+        raise ValueError('pressure_refault_source_inventory')
+    recorded_bytes = integer(summary['refault_evidence_bytes'], minimum=REFAULT_EVIDENCE_OVERHEAD,
+                             maximum=MAX_REFAULT_EVIDENCE_BYTES)
+    total_bytes = REFAULT_EVIDENCE_OVERHEAD
+    expected_rows = []
+    previous, previous_seq = baseline, 0
+    for source in sources:
+        exact_keys(source, ('sequence','sha256','pressure'))
+        seq = integer(source['sequence'], minimum=previous_seq + 1, maximum=count - 1)
+        value = validate_snapshot(source['pressure'])
+        if source['sha256'] != fingerprint(value):
+            raise ValueError('pressure_refault_source_fingerprint')
+        if (any(value[key] != baseline[key] for key in ('profile','boot_id','page_size_bytes','lru_gen_enabled'))
+                or zone_identity(value['zones']) != zone_identity(baseline['zones'])):
+            raise ValueError('pressure_refault_source_identity')
+        if not previous['monotonic_ns'] < value['monotonic_ns'] <= last['monotonic_ns']:
+            raise ValueError('pressure_refault_source_clock')
+        if seq == count - 1 and value != last:
+            raise ValueError('pressure_refault_source_terminal_binding')
+        for key in COUNTERS:
+            if not previous['counters'][key] <= value['counters'][key] <= last['counters'][key]:
+                raise ValueError('pressure_refault_source_counter_binding')
+            if key in PRESSURE_COUNTERS and value['counters'][key] != baseline['counters'][key]:
+                raise ValueError('pressure_refault_source_allocation_pressure')
+        for key in CACHE_FIELDS:
+            if not summary['cache_min_bytes'][key] <= value['cache_bytes'][key] <= summary['cache_max_bytes'][key]:
+                raise ValueError('pressure_refault_source_cache_extrema')
+        current_margins = margins(value['zones'])
+        for zone, levels in current_margins.items():
+            if levels['min'] <= 0 or any(levels[key] < summary['minimum_zone_margins'][zone][key] for key in levels):
+                raise ValueError('pressure_refault_source_zone_binding')
+        lows = node_lows(value['zones']); group = []
+        for before_node, node, end_node in zip(previous['node_refaults'], value['node_refaults'], last['node_refaults']):
+            if any(not before_node[i] <= node[i] <= end_node[i] for i in (1, 2)):
+                raise ValueError('pressure_refault_source_node_counter_binding')
+            changes = [node[i] - before_node[i] for i in (1, 2)]
+            if any(changes):
+                group.append([seq, value['monotonic_ns'], node[0], lows[node[0]], *changes, min(lows.values())])
+        if not group:
+            raise ValueError('pressure_refault_source_without_event')
+        total_bytes += evidence_item_bytes(source) + sum(evidence_item_bytes(row) for row in group)
+        if total_bytes > MAX_REFAULT_EVIDENCE_BYTES:
+            raise ValueError('pressure_refault_source_evidence_capacity')
+        expected_rows.extend(group)
+        previous, previous_seq = value, seq
+    if expected_rows != events:
+        raise ValueError('pressure_refault_source_event_binding')
+    if total_bytes != recorded_bytes:
+        raise ValueError('pressure_refault_source_byte_binding')
 
 
 def require_refault_events(summary, baseline, last, count, gap):

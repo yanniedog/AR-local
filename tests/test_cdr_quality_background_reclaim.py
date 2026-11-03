@@ -292,7 +292,7 @@ def test_refault_record_size_budget_matches_receipt_serialization():
 def test_refault_event_inventory_capacity_checked_before_iteration(monkeypatch):
     receipt, first, last = refault_receipt()
     monkeypatch.setattr(pressure, 'MAX_REFAULT_EVENTS', 1)
-    with pytest.raises(ValueError, match='event_inventory'):
+    with pytest.raises(ValueError, match='source_inventory'):
         pressure.require_pressure_receipt(receipt, first, last)
 
 
@@ -313,5 +313,5 @@ def test_refault_event_peaks_bound_independently_of_matching_totals():
     assert receipt['maximum_interval']['workingset_refault_file'] == 3
     for row in receipt['refault_events']:
         row[5] = 2
-    with pytest.raises(ValueError, match='event_counter_binding'):
+    with pytest.raises(ValueError, match='source_event_binding'):
         pressure.require_pressure_receipt(receipt, first, last)

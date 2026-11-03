@@ -494,7 +494,9 @@ page-table optimizations, so `0x0003` qualifies. Unknown bits, unavailable sysfs
 node changes or resets fail closed. One bounded capture checks boot, mode and
 online inventory on both sides of the read. It requires the original caller's
 global refault counters to equal the exact node sums and the closing global
-read. There is no tolerance, discarded residual, counter rescaling or retry.
+read. A second complete node read must equal the opening node counters before
+the closing global read; a reset on one node cannot be cancelled by growth on
+another. There is no tolerance, discarded residual, counter rescaling or retry.
 Any allocation-pressure counter increment observed in that closing read also
 fails, even if it was absent from the original caller sample. Active accounting
 or folding may prevent a coherent capture; that is an explicit evidence failure,
@@ -527,15 +529,36 @@ also checks ordered time/sequence coverage, terminal margins, corresponding
 node extrema and fingerprints. Omitted, duplicate, reordered, node-swapped or
 inconsistent rows fail. Zero-refault node/intervals need no row.
 
-Each row has a conservative 384-byte bound in the indented resource JSON.
-At most 87,381 rows reserve under 32 MiB of the existing 64 MiB receipt budget.
-A single interval can consume up to 64 rows, so the budget is not a guarantee
-that every possible full-duration activity pattern fits. Exhaustion latches
+Every positive interval also retains one complete captured pressure snapshot,
+its sequence and fingerprint. Independent replay derives every event field
+from that snapshot's raw zones and node counters, requiring exact equality,
+not just a lower bound from aggregate zone minima. It verifies monotone raw
+counters, unchanged allocation-pressure counters, positive zone minima, cache
+extrema, stable boot/mode/inventory and exact terminal bindings. A failed
+intermediate low/refault interval cannot become PASS merely by raising its
+asserted event margin after the terminal zone has recovered. Missing, extra,
+reordered or altered source snapshots fail; returned receipts are deep copies.
+These internal fingerprints bind retained evidence together, but are not an
+independent authenticity authority if an attacker rewrites both data and hash.
+The trust anchor is the existing sealed resources SHA in the canary artifact,
+which is itself bound by the externally expected activation-manifest hash.
+
+Each row has a conservative 384-byte bound and an absolute 87,381-row cap.
+The **combined** retained snapshots and event rows must also fit within 32 MiB
+of the existing 64 MiB receipt budget. Accounting uses each bounded item's
+actual `indent=2` encoding plus eight spaces per line for its final nesting,
+comma/newline overhead and a fixed envelope reserve. The observer increments
+the byte total once per new batch; it does not reserialize the full ledger on
+each sample. Independent validation recomputes the same bound. One interval
+can contain a 64-node/64-zone snapshot and up to 64 event rows, so the budget
+is not a guarantee that every full-duration activity pattern fits. Exhaustion latches
 FAIL before appending any partial interval; it never truncates evidence or
 turns incomplete evidence into PASS. No new production helper module is added;
 existing source inventories bind the amended pressure, resource and activation
 validators. There is no new memory/reclaim allowance, service mutation, kernel
-setting, or privilege change.
+setting, or privilege change. Activation accepts only explicit v4 enhanced or
+v2 legacy resource schemas and fully validates either; a legacy label cannot
+bypass validation of an old v3, unknown, missing or disguised enhanced receipt.
 
 A read-only host-side companion thread checks the existing nginx and direct
 dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
