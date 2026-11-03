@@ -211,7 +211,7 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
     if tests.parent != operation:
         raise ValueError("canary tests belong to another operation")
     resources = read(checked(canary["resources"]))
-    if resources.get("schema") == "ar-local-quality-resources-v4":
+    if resources.get("schema") == "ar-local-quality-resources-v5":
         from pi_cdr_quality_resources import require_receipt
         require_receipt(resources, expected_operation=operation, expected_commit=value["target_commit"])
         service_binding = resources["pressure_evidence"]["service"]["binding"]

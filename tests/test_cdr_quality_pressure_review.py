@@ -183,6 +183,8 @@ def test_64_node_64_zone_maximum_width_indented_bytes_are_bounded():
                       for node in range(9936,10000)]
     value['node_refaults'] = [[node,maximum//64,maximum//64] for node in range(9936,10000)]
     for key in pressure.REFAULT_COUNTERS:value['counters'][key] = 64*(maximum//64)
+    value['capture'] = {'global_before': value['counters'], 'global_after': value['counters'],
+                        'nodes_before': value['node_refaults'], 'nodes_after': value['node_refaults']}
     pressure.validate_snapshot(value)
     source = {'sequence':maximum,'sha256':pressure.fingerprint(value),'pressure':value}
     rows = [[maximum,maximum,node,2,maximum//64,maximum//64,2] for node in range(9936,10000)]
