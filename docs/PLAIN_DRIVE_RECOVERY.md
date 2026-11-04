@@ -29,7 +29,37 @@ read-only source view. Verification never clears or adopts that holder's lock.
 
 The existing source freezer preserves every retained raw attempt, failed
 observation, revision, database, state/log and predeploy namespace in its explicit
-scope. Unknown top-level namespaces fail closed. Existing credential/cache and
+scope. The explicit manual plaintext pipeline also preserves a nonempty
+`.daily-export-stage` as private frozen copies, including retained export bytes
+and consistent plus original SQLite representations. Its catalog scope records
+policy version 2 and `retained_export_stage_policy: include-if-present`; catalog,
+file-index and pack schemas remain unchanged. Routine legacy snapshots retain
+their version 1 empty-stage requirement. The coupled probe checks this same
+read-only source scope before reporting success, without freezing or cloud calls.
+For retained staging, directory identities are recorded before traversal in the
+private SQLite manifest index, including empty directories. They are checked
+after traversal and before catalog/candidate acceptance; copied retained-file
+identities are also rechecked. A concurrent addition, removal, replacement or
+content change rejects acceptance. These proofs stream from disk with the
+existing bounded SQLite cache rather than retaining the tree in memory.
+The probe additionally validates retained-stage descendant metadata with the
+same excluded-namespace, symlink and unique-regular-file checks, limited to
+500,000 metadata checks or 60 seconds within its existing operation deadline.
+That probe-only entry budget allows approximately three times the measured
+168,438-check retained tree, which completed metadata-only validation in 10.33s.
+The source validator's legacy 100,000-check default remains unchanged. The probe
+checks its absolute monotonic deadline for every entry, verifies the complete
+sealed lease before and after validation and at 100ms checkpoints during it, and
+retains the independent Root monitor and existing 120-second probe limit.
+It reads no retained payload bytes and does not claim a complete archive proof.
+
+Legacy source freezes keep their 1,200-second default. The typed manual plaintext
+path uses the remaining sealed host-operation monotonic deadline for its first
+full inventory, which can exceed 20 minutes on large archives. It creates no
+separate timeout allowance: the six-hour outer deadline, quiet window, free-space
+and whole-cgroup resource guards continue to stop work. A local freeze timeout
+reports only the fixed `source_freeze_deadline` code, without source paths.
+Unknown top-level namespaces fail closed. Existing credential/cache and
 telemetry exclusions remain explicit; this is a CDR recovery archive, not a
 whole-filesystem image. Mutable SQLite input is copied privately, including the
 original database/journal bytes, before deriving its consistent committed copy.
@@ -92,9 +122,17 @@ source-relative path, logical member, pack ID, bytes/hash and metadata. An
 `exact_source_bytes` representation can justify omitting a duplicate file from
 the system image only after comparing its actual bytes/metadata. A
 `sqlite_committed_view` is derived and cannot justify such an omission; its
-`sqlite-original` counterpart preserves the exact original components. External
-control files remain in their packs and are not included in this CDR data index.
+`sqlite-original` counterpart preserves the exact original components. This raw
+pipeline rejects external control files before reading or freezing sources;
+only the root-attested CDR data tree is admitted. Full operating-system controls
+belong in the separately approved system image.
 Never infer whole-directory image exclusions from one covered descendant.
+
+Pack paths must be canonical, contain no backslashes and remain unique under
+case folding across the disk-backed index. Signed PAX timestamps preserve the
+original nanosecond value, including times before the Unix epoch. Every transfer
+constructs its own fixed-direction local/allowlisted-remote endpoints; there is
+no public arbitrary copy command.
 
 After independently accepted native execution, keep the catalog digest/path,
 source scope and exclusions, resource receipt, broker restoration proof and

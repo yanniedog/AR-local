@@ -22,14 +22,24 @@ def repair(watchdog, recovery, day, now, read_pending=None, *, execution_deadlin
         if reconcile_selected_population_pending(watchdog.REPO_ROOT,day):
             pending = (read_pending or watchdog.read_payload_publication_pending)(watchdog.REPO_ROOT)
     if pending:
+        from cdr_population_recovery import population_pending_recovery_allowed
+        from cdr_population_pending import only_historical, population_queue
+        recovery_pending = (population_pending_recovery_allowed(pending, observation)
+                            or only_historical(pending, day))
         pointer = pending.get("pointer", {})
         queued = pending.get("queued_pointers", [])
-        if (not isinstance(pointer, dict) or pending.get("run_date") != day
+        if not recovery_pending and (not isinstance(pointer, dict) or pending.get("run_date") != day
                 or pointer.get("observation_date") != day or not isinstance(queued, list)
                 or queued or "selection_retry" in pending):
+            scope = population_queue(pending, day)
+            from app_payload_observation_gate import publication_allowed
+            if (scope and scope[0] == observation.get('pointer')
+                    and publication_allowed(observation['contract'])[0]):
+                from pi_payload_retry_policy import publication_source_key
+                outcome = watchdog.run_payload_retry(False, source_key=publication_source_key({'pointer': scope[0]}))
+                return {"status": "publication_attempted", "outcome": outcome}
             return {"status": "blocked", "reason": "publication_scope_not_exclusively_today"}
-        from cdr_population_recovery import population_pending_recovery_allowed
-        if not population_pending_recovery_allowed(pending, observation):
+        if not recovery_pending:
             outcome = watchdog.run_payload_retry(False)
             return {"status": "publication_attempted", "outcome": outcome}
     return recovery.run_same_day_recovery(watchdog.REPO_ROOT, now_utc=now,

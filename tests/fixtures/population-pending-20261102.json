@@ -1,0 +1,57 @@
+{
+  "scope": "Observed pending source identities only; no product/rate data or acceptance fixture",
+  "observed_at_utc": "2026-11-02T10:48:28.558394+00:00",
+  "production": "8590e238d00f093e7f6d20fccfc2377c7abf1aec",
+  "pending": {
+    "created_at": "2026-10-28T14:16:04Z",
+    "pointer": {
+      "export_path": "runs/2026-10-29/_exports",
+      "generation_id": "obs-2026-10-29-ddf99f5d9aa79826",
+      "ledger_event_digest": "a9a2140b51e8f2868a255ad4600aaa4738d95f0d0d646d5301314fc66cecaf28",
+      "marker_path": "2026-10-29.done.json",
+      "observation_date": "2026-10-29",
+      "observation_state": "partial",
+      "schema_version": 2
+    },
+    "queued_pointers": [
+      {
+        "export_path": "runs/2026-10-30/_exports",
+        "generation_id": "obs-2026-10-30-bdece85b0dd34e38",
+        "ledger_event_digest": "a6e5601bed234a1da3155397d48eacd141c7bf37f8553c0aca08d8aff5b00d37",
+        "marker_path": "2026-10-30.done.json",
+        "observation_date": "2026-10-30",
+        "observation_state": "partial",
+        "schema_version": 2
+      },
+      {
+        "export_path": "runs/2026-11-01/_exports",
+        "generation_id": "obs-2026-11-01-0819d0d75a8d7412",
+        "ledger_event_digest": "3816b9aa2b6491b9ca2c7aa543226387dd1670935f4f755e019f793b38bb0e9c",
+        "marker_path": "2026-11-01.done.json",
+        "observation_date": "2026-11-01",
+        "observation_state": "partial",
+        "schema_version": 2
+      },
+      {
+        "export_path": "runs/2026-11-02/_exports",
+        "generation_id": "obs-2026-11-02-38a5c0cd5ac0a1d1",
+        "ledger_event_digest": "128475966146cf6cce54c24698db7e8bbbda6d6a5baf7f6e3f860ac0eab355f5",
+        "marker_path": "2026-11-02.done.json",
+        "observation_date": "2026-11-02",
+        "observation_state": "partial",
+        "schema_version": 2
+      }
+    ],
+    "reason": "publication_started",
+    "run_date": "2026-10-29"
+  },
+  "selected": {
+    "export_path": "runs/2026-11-02/_exports",
+    "generation_id": "obs-2026-11-02-38a5c0cd5ac0a1d1",
+    "ledger_event_digest": "128475966146cf6cce54c24698db7e8bbbda6d6a5baf7f6e3f860ac0eab355f5",
+    "marker_path": "2026-11-02.done.json",
+    "observation_date": "2026-11-02",
+    "observation_state": "partial",
+    "schema_version": 2
+  }
+}

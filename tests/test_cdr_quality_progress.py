@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import pi_cdr_quality_activate as activate
+import pi_cdr_pytest_runner as runner
 
 
 @pytest.fixture
@@ -29,10 +30,13 @@ def worker_command(tmp_path, monkeypatch):
     captured = {}
     class ReachedPytest(Exception):
         pass
-    def stop_at_pytest(command, **kwargs):
-        captured.update(command=command, **kwargs)
+    def stop_at_pytest(source, operation, python, target, files):
+        output = operation / "pytest-suite" / "00000" / "output.txt"
+        output.parent.mkdir(parents=True)
+        captured.update(command=runner.command(python, source, operation, "tests", "00000"),
+                        output=output, cwd=source, target=target, files=files)
         raise ReachedPytest()
-    monkeypatch.setattr(activate, "run", stop_at_pytest)
+    monkeypatch.setattr(runner, "run_suite", stop_at_pytest)
     with pytest.raises(ReachedPytest):
         activate.canary_worker(args)
     return roots, captured
@@ -48,7 +52,8 @@ def test_phase_markers_are_create_once_and_precede_pytest(worker_command):
     with pytest.raises(FileExistsError):
         activate.canary_phase(roots["operation"], "02-pytest")
     assert phases[1].read_bytes() == original
-    assert captured["output"] == roots["operation"] / "pytest.txt"
+    assert captured["output"] == roots["operation"] / "pytest-suite/00000/output.txt"
+    assert captured["target"] == "a" * 40
     assert "-u" in captured["command"] and "-v" in captured["command"] and "-q" not in captured["command"]
 
 
@@ -67,7 +72,8 @@ def test_native_pytest_progress_identifies_test_while_its_body_is_still_running(
     log = captured["output"]
     with log.open("xb") as stream:
         child = subprocess.Popen(list(map(str, captured["command"])), cwd=captured["cwd"],
-                                 stdout=stream, stderr=subprocess.STDOUT)
+                                 stdout=stream, stderr=subprocess.STDOUT,
+                                 env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
         try:
             deadline = time.monotonic() + 10
             while not (roots["source"] / "ready").exists() and child.poll() is None and time.monotonic() < deadline:

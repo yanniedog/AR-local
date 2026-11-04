@@ -1,25 +1,24 @@
 # Ready history compiler
 
-## LVR interval consumer candidate (2026-10-15)
+## Current proposed producer artifact (2026-10-31)
 
-The LVR interval change exports compiler SHA-256
-`7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7`
-from the matching AR-app source. The producer and consumer copies are identical;
-the retained-real fixture is regenerated from unchanged source observations.
-This is a reviewed-code compatibility candidate, not a commissioned APK.
-The consumer is AR-app PR #400; this compiler was exported from source commit
-`cbf88fbc8cca5c3e1fb3f71c1b85780a9e1228b5`.
-This integrates the redesigned consumer from current AR-app main. It supersedes
-the uncommissioned `19ab1892...` candidate in AR-local PR #932; the retained-real
-output changes only its compiler receipt, preserving its source observations
-and prepared semantics. It also includes the reviewed app corrections for
-choosing the narrowest interval and filtering calculated LVR per rate without
-saved-profile fallback outside published bounds. A candidate pin is not evidence
-of publication.
-Do not publish this compiler's prepared assets until the matching app consumer
-has been separately released and verified. The commissioned consumer evidence
-below remains the record for the previously published pin and is not evidence
-that the new pin has shipped. See `docs/LVR_INTERVAL_CONTRACT.md`.
+The compiler and manifest in this checkout are exact Git blobs from AR-app
+release `app-v1.0.256`, source commit
+`0f217f0a573dd072c019bef93b26f3b71d038d7d`. The compiler SHA-256 is
+`c6d1ff733a579a5fef1d17105922aee20bf73d96e66adc60aaa637ff2c1cec9b`.
+Use this pair for regeneration and candidate validation; the older pins below
+are historical records, not alternative current artifacts.
+
+The released app's unchanged validator accepts output from this compiler.
+Independent compilation of the verified October 31 catalogue matches the
+released app's TypeScript compiler exactly, with source dates, products and
+cohorts preserved. This establishes local compatibility, not Pi commissioning:
+the producer change is not deployed, a corrected public revision has not been
+published, and device acceptance has not been established by these tests.
+Complete controlled deployment and publication acceptance before treating this
+producer artifact as commissioned. See `docs/PACKED_BANK_HISTORY.md`.
+
+## Artifact regeneration and validation
 
 `compiler.cjs` is a generated standalone artifact from the reviewed AR-app
 TypeScript source, including its exact access and feature classifiers. It is
@@ -56,11 +55,34 @@ processing performance. Neither a compiler hash nor tests prove publication.
 
 Bundled third-party code retains the licenses in this directory.
 
-## Commissioned consumer contract (2026-10-12)
+## Historical LVR interval candidate (2026-10-15)
 
-The producer artifact is copied byte-for-byte from AR-app's reviewed compiler
+The October 15 LVR interval change exported compiler SHA-256
+`7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7`
+from the matching AR-app source. Its producer and consumer copies were identical;
+its retained-real fixture was regenerated from unchanged source observations.
+This was a reviewed-code compatibility candidate, not a commissioned APK.
+The consumer was AR-app PR #400; this compiler was exported from source commit
+`cbf88fbc8cca5c3e1fb3f71c1b85780a9e1228b5`.
+It integrated the redesigned consumer from AR-app main at that time and superseded
+the uncommissioned `19ab1892...` candidate in AR-local PR #932; the retained-real
+output changed only its compiler receipt, preserving its source observations
+and prepared semantics. It also included the reviewed app corrections for
+choosing the narrowest interval and filtering calculated LVR per rate without
+saved-profile fallback outside published bounds. A candidate pin is not evidence
+of publication.
+At that time, publication required the matching app consumer to be separately
+released and verified. The October 12 evidence below did not commission that
+October 15 candidate. Neither historical record commissions the proposed
+October 31 producer. See `docs/LVR_INTERVAL_CONTRACT.md`.
+
+## Historical commissioned consumer evidence (2026-10-12)
+
+This section preserves the October 12 record; it does not describe the artifact
+currently in this checkout or commission the proposed October 31 producer.
+The producer artifact at that time was copied byte-for-byte from AR-app's reviewed compiler
 with SHA-256 `5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e`.
-Both commissioned app sources carry these exact compiler and manifest bytes:
+Both recorded commissioned app sources carried those compiler and manifest bytes:
 
 | Consumer | AR-app source commit |
 | --- | --- |

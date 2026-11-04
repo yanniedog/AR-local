@@ -1,34 +1,35 @@
 """Dashboard SQL and published rows agree on retained real product categories."""
-import gzip
 import json
 import sqlite3
 from pathlib import Path
 
 import pytest
 
+from tests.retained_category_rates import core_metadata, rate_sections
 from app_payload_common import section_filter
 from cdr_dashboard_server import bank_section_rate_filter, read_bank_history_db, register_bank_category_filter
 
 
 def test_dashboard_filters_real_misclassified_products_like_the_publisher():
-    evidence = Path(__file__).parents[1] / 'docs/evidence/backup-observation-20260911/publication/v1-core.json.gz'
-    core = json.loads(gzip.decompress(evidence.read_bytes()))
+    core = core_metadata()
     db = sqlite3.connect(':memory:')
     try:
         register_bank_category_filter(db)
         db.execute("CREATE TABLE bank_products (run_date TEXT, dataset TEXT, product_key TEXT NOT NULL, category TEXT, details_json TEXT DEFAULT '{}')")
         db.execute('CREATE TABLE bank_rates (run_date TEXT, dataset TEXT, product_key TEXT, rate TEXT, rate_family TEXT, rate_type TEXT)')
         excluded = 0
-        for section, data in core['sections'].items():
-            rows = [{**r, 'dataset': section, 'rate_family': 'lending' if section == 'Mortgage' else 'deposit'} for r in data['rates']]
-            products = {(r['product_key'], r.get('category')) for r in rows}
-            db.executemany('INSERT INTO bank_products (run_date,dataset,product_key,category) VALUES (?,?,?,?)', [(core['run_date'], section, *p) for p in products])
-            db.executemany('INSERT INTO bank_rates VALUES (?,?,?,?,?,?)', [(core['run_date'], section, r['product_key'], r['rate'], r['rate_family'], r.get('rate_type')) for r in rows])
-            tail, params = bank_section_rate_filter(core['run_date'], section)
-            actual = db.execute("SELECT product_key, rate FROM bank_rates WHERE run_date=? AND dataset=? AND rate IS NOT NULL AND rate != ''" + tail, [core['run_date'], section, *params]).fetchall()
-            expected = [(r['product_key'], r['rate']) for r in rows if section_filter(section, r)]
-            assert sorted(actual) == sorted(expected)
-            excluded += len(rows) - len(actual)
+        with rate_sections() as sections:
+            for section, data in sections:
+                rows = [{**r, 'dataset': section, 'rate_family': 'lending' if section == 'Mortgage' else 'deposit'} for r in data['rates']]
+                products = {(r['product_key'], r.get('category')) for r in rows}
+                db.executemany('INSERT INTO bank_products (run_date,dataset,product_key,category) VALUES (?,?,?,?)', [(core['run_date'], section, *p) for p in products])
+                db.executemany('INSERT INTO bank_rates VALUES (?,?,?,?,?,?)', [(core['run_date'], section, r['product_key'], r['rate'], r['rate_family'], r.get('rate_type')) for r in rows])
+                tail, params = bank_section_rate_filter(core['run_date'], section)
+                actual = db.execute("SELECT product_key, rate FROM bank_rates WHERE run_date=? AND dataset=? AND rate IS NOT NULL AND rate != ''" + tail, [core['run_date'], section, *params]).fetchall()
+                expected = [(r['product_key'], r['rate']) for r in rows if section_filter(section, r)]
+                assert sorted(actual) == sorted(expected)
+                excluded += len(rows) - len(actual)
+                del data, rows, products
         assert excluded == 27
     finally:
         db.close()
@@ -36,10 +37,15 @@ def test_dashboard_filters_real_misclassified_products_like_the_publisher():
 
 @pytest.mark.parametrize('section', ['Mortgage', ''])
 def test_history_reader_keeps_each_dates_category_scope(tmp_path, section):
-    evidence = Path(__file__).parents[1] / 'docs/evidence/backup-observation-20260911/publication/v1-core.json.gz'
-    core = json.loads(gzip.decompress(evidence.read_bytes()))
-    real = next(row for row in core['sections']['Mortgage']['rates']
-                if row.get('category') == 'RESIDENTIAL_MORTGAGES' and row.get('rate_type') != 'DISCOUNT')
+    core = core_metadata()
+    real = None
+    with rate_sections() as sections:
+        for name, data in sections:
+            if name == 'Mortgage':
+                real = next(row for row in data['rates']
+                            if row.get('category') == 'RESIDENTIAL_MORTGAGES' and row.get('rate_type') != 'DISCOUNT')
+            del data
+    assert real is not None
     day = core['run_date']
     db_path = tmp_path / 'history.sqlite'
     with sqlite3.connect(db_path) as db:
@@ -57,24 +63,25 @@ def test_history_reader_keeps_each_dates_category_scope(tmp_path, section):
 
 
 def test_unscoped_history_matches_all_scoped_sections_on_retained_real_rows(tmp_path):
-    evidence = Path(__file__).parents[1] / 'docs/evidence/backup-observation-20260911/publication/v1-core.json.gz'
-    core = json.loads(gzip.decompress(evidence.read_bytes()))
+    core = core_metadata()
     db_path = tmp_path / 'history.sqlite'
     expected = {}
     source_count = 0
     with sqlite3.connect(db_path) as db:
         db.execute("CREATE TABLE bank_products (run_date TEXT, dataset TEXT, product_key TEXT, category TEXT, details_json TEXT DEFAULT '{}')")
         db.execute('CREATE TABLE bank_rates (run_date TEXT, dataset TEXT, product_key TEXT, rate TEXT, rate_family TEXT, rate_type TEXT)')
-        for section, data in core['sections'].items():
-            family = 'lending' if section == 'Mortgage' else 'deposit'
-            rows = [{**row, 'dataset': section, 'rate_family': family} for row in data['rates']]
-            source_count += len(rows)
-            products = {(row['product_key'], row.get('category')) for row in rows}
-            db.executemany('INSERT INTO bank_products (run_date,dataset,product_key,category) VALUES (?,?,?,?)',
-                           [(core['run_date'], section, *product) for product in products])
-            db.executemany('INSERT INTO bank_rates VALUES (?,?,?,?,?,?)',
-                           [(core['run_date'], section, row['product_key'], row['rate'], family, row.get('rate_type')) for row in rows])
-            expected[section] = sorted((row['product_key'], row['rate']) for row in rows if section_filter(section, row))
+        with rate_sections() as sections:
+            for section, data in sections:
+                family = 'lending' if section == 'Mortgage' else 'deposit'
+                rows = [{**row, 'dataset': section, 'rate_family': family} for row in data['rates']]
+                source_count += len(rows)
+                products = {(row['product_key'], row.get('category')) for row in rows}
+                db.executemany('INSERT INTO bank_products (run_date,dataset,product_key,category) VALUES (?,?,?,?)',
+                               [(core['run_date'], section, *product) for product in products])
+                db.executemany('INSERT INTO bank_rates VALUES (?,?,?,?,?,?)',
+                               [(core['run_date'], section, row['product_key'], row['rate'], family, row.get('rate_type')) for row in rows])
+                expected[section] = sorted((row['product_key'], row['rate']) for row in rows if section_filter(section, row))
+                del data, rows, products
     unscoped = read_bank_history_db(db_path, core['run_date'], '')
     assert source_count - len(unscoped) == 27
     for section in core['sections']:

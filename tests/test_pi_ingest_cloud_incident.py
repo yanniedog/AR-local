@@ -43,17 +43,27 @@ class API:
         if method == "GET" and path.startswith("issues?"):
             page = int(path.rsplit("=", 1)[1])
             return list(self.rows.values())[(page - 1) * 100:page * 100]
-        if method == "GET" and path == "labels/ingest-missed":
+        if method == "GET" and path == "labels/" + cloud.LABEL:
             if not self.label:
                 raise cloud.DeliveryError("GITHUB_HTTP_404")
-            return {"name": "ingest-missed"}
+            return {"name": cloud.LABEL}
         if method == "POST" and path == "labels":
             self.label = True
             return value
+        if method == "POST" and path.endswith("/labels"):
+            row = self.rows[int(path.split("/")[1])]
+            names = {label["name"] for label in row["labels"]}
+            row["labels"] = [*row["labels"], *({"name": name} for name in value["labels"] if name not in names)]
+            return row["labels"]
+        if method == "DELETE" and "/labels/" in path:
+            row = self.rows[int(path.split("/")[1])]
+            row["labels"] = [label for label in row["labels"] if label["name"] != path.rsplit("/", 1)[1]]
+            return row["labels"]
         if method == "POST" and path == "issues":
             number = max(self.rows, default=0) + 1
             self.rows[number] = {**value, "number": number, "state": "open",
                                  "user": {"login": "github-actions[bot]"},
+                                 "labels": [{"name": name} for name in value["labels"]],
                                  "assignees": [{"login": name} for name in value["assignees"]]}
             if self.ambiguous_create:
                 self.ambiguous_create = False
@@ -151,6 +161,7 @@ def test_repeated_failure_creates_one_assigned_issue_without_comments_or_updates
     mutations = [(method, path) for method, path, _ in api.calls if method != "GET"]
     assert mutations == [("POST", "labels"), ("POST", "issues")]
     assert api.rows[1]["assignees"] == [{"login": "yanniedog"}]
+    assert api.rows[1]["labels"] == [{"name": "app-publication-unverified"}]
     assert "does not prove a full ingest" in api.rows[1]["body"]
 
 
@@ -158,7 +169,7 @@ def test_closed_legacy_issue_reopens_instead_of_duplicate():
     api = API([legacy(state="closed")])
     cloud.reconcile(api, report())
     assert list(api.rows) == [1] and api.rows[1]["state"] == "open"
-    assert not any(method == "POST" for method, _, _ in api.calls)
+    assert not any(method == "POST" and path == "issues" for method, path, _ in api.calls)
 
 
 @pytest.mark.parametrize("fault", ["untrusted-author", "unlabelled-legacy", "forged-new-marker"])
@@ -320,3 +331,94 @@ def test_unknown_check_fails_even_when_its_issue_is_unchanged(tmp_path, monkeypa
     monkeypatch.setattr(cloud, "collect_check", lambda **k: value)
     monkeypatch.setattr(cloud, "GitHub", lambda *a: api)
     assert cloud.main(["--output", str(tmp_path / "check.json")]) == 1
+
+
+@pytest.mark.parametrize("current", [False, True])
+def test_trusted_legacy_migration_preserves_labels_identity_history_and_retries(current):
+    row = legacy()
+    unrelated = {"name": "operator-investigating", "id": 7}
+    row["labels"].append(unrelated)
+    row["comments"] = 5
+    row["created_at"] = "2026-10-11T00:00:00Z"
+    api = API([row]); value = report(current=current)
+    assert cloud.reconcile(api, value)["status"] == "UPDATED"
+    migrated = api.rows[1]
+    assert migrated["labels"] == [unrelated, {"name": "app-publication-unverified"}]
+    assert migrated["comments"] == 5 and migrated["created_at"] == row["created_at"]
+    assert migrated["number"] == 1 and migrated["user"] == row["user"]
+    assert migrated["state"] == ("closed" if current else "open")
+    writes = [(method, path) for method, path, _ in api.calls if method != "GET"]
+    assert writes == [("PATCH", "issues/1"), ("POST", "issues/1/labels"),
+                      ("DELETE", "issues/1/labels/ingest-missed")]
+    api.calls.clear()
+    assert cloud.reconcile(api, value)["status"] == "UNCHANGED"
+    assert all(method == "GET" for method, _, _ in api.calls)
+
+
+def test_publication_label_without_trusted_marker_is_not_legacy_identity():
+    row = legacy(); row["labels"] = [{"name": "app-publication-unverified"}]
+    api = API([row])
+    with pytest.raises(cloud.DeliveryError, match="IDENTITY_CHANGED"):
+        cloud.reconcile(api, report())
+    assert all(method == "GET" for method, _, _ in api.calls)
+
+
+def test_trusted_publication_marker_reconciles_removed_labels():
+    value = report(); row = legacy()
+    row.update(title=cloud.PUBLICATION_TITLE + value["expected_run_date"],
+               body=cloud.issue_body(value), labels=[], assignees=[{"login": cloud.OWNER}])
+    api = API([row])
+    assert cloud.reconcile(api, value)["status"] == "UPDATED"
+    assert api.rows[1]["labels"] == [{"name": "app-publication-unverified"}]
+    assert not any(method == "PATCH" for method, _, _ in api.calls)
+
+
+def test_interrupted_label_migration_keeps_identity_and_finishes_without_duplicate():
+    api = API([legacy()]); original = api.request
+    def interrupted(method, path, value=None):
+        if method == "DELETE":
+            raise cloud.DeliveryError("GITHUB_REQUEST_TIMEOUT")
+        return original(method, path, value)
+    api.request = interrupted
+    with pytest.raises(cloud.DeliveryError):
+        cloud.reconcile(api, report())
+    assert "<!-- ar-local-cloud-publication:2026-10-11 -->" in api.rows[1]["body"]
+    assert {row["name"] for row in api.rows[1]["labels"]} == {"ingest-missed", "app-publication-unverified"}
+    api.request = original
+    assert cloud.reconcile(api, report())["status"] == "UPDATED"
+    assert api.rows[1]["labels"] == [{"name": "app-publication-unverified"}]
+    assert cloud.reconcile(api, report())["status"] == "UNCHANGED"
+    assert not any(method == "POST" and path == "issues" for method, path, _ in api.calls)
+
+
+def test_failed_marker_update_keeps_legacy_identity_label():
+    row = legacy(); api = API([row]); original = api.request
+    def failed(method, path, value=None):
+        if method == "PATCH":
+            raise cloud.DeliveryError("GITHUB_REQUEST_TIMEOUT")
+        return original(method, path, value)
+    api.request = failed
+    with pytest.raises(cloud.DeliveryError):
+        cloud.reconcile(api, report())
+    assert api.rows[1] == row
+    assert all(method == "GET" for method, _, _ in api.calls)
+
+
+def test_genuine_scheduled_capture_miss_is_not_relabelled_or_closed():
+    row = pi_incident(kind="ingest-schedule")
+    row.update(labels=[{"name": "ingest-missed"}, {"name": "operator-investigating"}],
+               assignees=[{"login": cloud.OWNER}])
+    api = API([row]); value = report(current=True)
+    cloud.reconcile(api, value)
+    assert api.rows[row["number"]] == row
+    assert value["reported_ingest_incidents"][0]["key"] == "ingest-schedule:2026-10-11"
+    assert all(method == "GET" for method, _, _ in api.calls)
+
+
+def test_malformed_publication_labels_cannot_discard_operator_labels():
+    row = legacy(); row.update(body=cloud.issue_body(report()), labels=[{"id": 7}])
+    api = API([row])
+    with pytest.raises(cloud.DeliveryError, match="INVALID_INCIDENT_LABELS"):
+        cloud.reconcile(api, report())
+    assert api.rows[1] == row
+    assert all(method == "GET" for method, _, _ in api.calls)

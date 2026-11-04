@@ -421,6 +421,23 @@ def build_v2_sidecar(
         "capabilities": sorted(files),
         "files": files,
     }
+    # Preserve verifiable v1 identity bindings so public-candidate gates can bind
+    # the sidecar to the same producer commit / generation as the base revision.
+    for key in (
+        "repo",
+        "tag",
+        "producer_commit",
+        "git_commit",
+        "source_commit",
+        "candidate_generation",
+        "generation_id",
+    ):
+        value = v1_manifest.get(key)
+        if value is not None and key not in manifest:
+            manifest[key] = value
+    source_obs = v1_manifest.get("source_observation")
+    if isinstance(source_obs, Mapping) and "source_observation" not in manifest:
+        manifest["source_observation"] = dict(source_obs)
     validate_v2_manifest(manifest)
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
     if len(manifest_text.encode("utf-8")) > MAX_V2_MANIFEST_BYTES:

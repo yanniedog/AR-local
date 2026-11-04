@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta, timezone
 import json
 import pytest
 
 from pi_github_alerts import AlertStore, DeliveryError
+
+
+NOW = datetime(2026, 9, 13, 6, 0, tzinfo=timezone.utc)
 
 
 class GitHubStub:
@@ -158,3 +162,52 @@ def test_unexpected_delivery_error_text_is_not_exposed_in_incident_outcome(tmp_p
     result = store.flush(github)
     assert result['category'] == 'GITHUB_WORKER_FAILED'
     assert 'unit-secret' not in json.dumps(result)
+
+
+def test_stale_miss_cannot_overwrite_newer_healthy_watermark(tmp_path):
+    store = AlertStore(tmp_path)
+    newer = NOW + timedelta(seconds=30)
+    older = NOW + timedelta(seconds=10)
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=True, observation_at=newer)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['active'] is False and row['revision'] == 0
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=older)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['active'] is False and row['revision'] == 0
+
+
+def test_stale_miss_cannot_reactivate_after_newer_recovery(tmp_path):
+    store = AlertStore(tmp_path)
+    t0, t1, t2 = NOW, NOW + timedelta(seconds=10), NOW + timedelta(seconds=20)
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=t0)
+    assert store.read()['incidents']['ingest-schedule:2026-09-13']['active'] is True
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=True, observation_at=t2)
+    assert store.read()['incidents']['ingest-schedule:2026-09-13']['active'] is False
+    store.observe('ingest-schedule:2026-09-13', 'Pi scheduled ingest missed: 2026-09-13',
+                  'SCHEDULED_INGEST_NOT_STARTED', healthy=False, observation_at=t1)
+    row = store.read()['incidents']['ingest-schedule:2026-09-13']
+    assert row['active'] is False
+
+
+def test_monitor_failure_body_keeps_capture_outcome_unverified(tmp_path):
+    store = AlertStore(tmp_path)
+    store.observe('ingest:2026-11-01', 'Pi ingest check needs attention: 2026-11-01',
+                  'INGEST_MONITOR_FAILED', healthy=False)
+    body = store.body(store.read()['incidents']['ingest:2026-11-01'])
+    assert 'Evidence scope: The ingest monitor check failed.' in body
+    assert 'The capture outcome is unverified' in body
+    assert 'does not prove capture was missed or failed' in body
+    assert 'No verifiable finalized capture was found' not in body
+
+
+def test_missing_capture_body_retains_its_distinct_evidence_scope(tmp_path):
+    store = AlertStore(tmp_path)
+    store.observe('ingest:2026-11-01', 'Pi ingest needs attention: 2026-11-01',
+                  'INGEST_MISSING', healthy=False)
+    body = store.body(store.read()['incidents']['ingest:2026-11-01'])
+    assert 'No verifiable finalized capture was found for the expected date.' in body
+    assert 'The ingest monitor check failed' not in body
