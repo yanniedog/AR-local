@@ -11,8 +11,10 @@
 # target, typed RUN_GUARDED_CANARY plus a reviewed dispositions hash for
 # canary mode, and the helper's own fail-closed gates.
 #
-# The candidate checkout (/srv/ar-local/quality-candidate) is moved only to the
-# exact requested commit and only when clean. Production, data and timers are
+# The candidate checkout is per commit, /srv/ar-local/quality-candidate-<sha12>
+# (the layout earlier D-027 canaries used). After queue admission it is cloned
+# from the canonical origin if absent, or reused only when clean, and detached
+# at the exact requested commit. Production, data and timers are
 # untouched by this workflow; the helper enforces its own window, idle-ingest,
 # disk and resource gates and fails closed.
 name: pi-quality-canary
@@ -45,7 +47,7 @@ on:
       dispositions:
         description: "Absolute path to reviewed historical-dispositions JSON"
         required: true
-        default: "/srv/ar-local/quality-evidence/historical-dispositions.json"
+        default: "docs/evidence/cdr-quality-20260912/historical-dispositions.json"
         type: string
       dispositions_sha256:
         description: "Reviewed SHA-256 of the dispositions file (required for canary)"
@@ -89,7 +91,9 @@ jobs:
           set -euo pipefail
           [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PY" =~ ^/[A-Za-z0-9._/+-]+$ ]]
-          [[ "$DISP" =~ ^/[A-Za-z0-9._/+-]+$ ]]
+          # Absolute Pi path, or a path inside the candidate checkout (reviewed,
+          # committed evidence such as the default).
+          [[ "$DISP" =~ ^/?[A-Za-z0-9._/+-]+$ && "$DISP" != *..* ]]
           if [ "$MODE" = "canary" ]; then
             test "$CONFIRM" = "RUN_GUARDED_CANARY"
             [[ "$DISP_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::canary requires dispositions_sha256"; exit 1; }
@@ -144,13 +148,15 @@ jobs:
 
       - name: Read-only Pi preflight
         env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
           PY: ${{ inputs.python }}
           DISP: ${{ inputs.dispositions }}
         run: |
           set -uo pipefail
-          ssh ar-local-pi5 bash -s -- "$PY" "$DISP" <<'REMOTE'
+          ssh ar-local-pi5 bash -s -- "$PY" "$DISP" "$TARGET_COMMIT" <<'REMOTE'
           set -u
-          PY="$1"; DISP="$2"; C=/srv/ar-local/quality-candidate
+          PY="$1"; DISP="$2"; COMMIT="$3"; C="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
+          echo "candidate path: $C$( [ -e "$C" ] || echo ' (absent; canary will clone it)')"
           echo "hobart: $(TZ=Australia/Hobart date -Is)"
           echo "production HEAD: $(git -C /srv/ar-local/AR-local rev-parse HEAD 2>&1)"
           echo "production dirty: $(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
@@ -163,8 +169,12 @@ jobs:
             *) echo "candidate origin: NOT CANONICAL (value withheld)" ;;
           esac
           systemctl show ar-local-daily.service -p ActiveState -p Result -p ExecMainExitTimestamp 2>&1 | sed 's/^/daily last run: /'
-          test -x "$PY" && echo "python: $("$PY" --version 2>&1)" || echo "python: MISSING $PY"
-          test -f "$DISP" && echo "dispositions sha256: $(sha256sum "$DISP" | cut -d' ' -f1)" || echo "dispositions: MISSING $DISP"
+          test -x "$PY" && echo "python: $("$PY" --version 2>&1); pytest: $("$PY" -m pytest --version 2>&1 | head -1)" || echo "python: MISSING $PY"
+          case "$DISP" in
+            /*) DREF="$DISP" ;;
+            *) DREF="/srv/ar-local/AR-local/$DISP"; echo "dispositions is candidate-relative; production-checkout copy shown, canary rehashes the candidate copy" ;;
+          esac
+          test -f "$DREF" && echo "dispositions sha256: $(sha256sum "$DREF" | cut -d' ' -f1)" || echo "dispositions: MISSING $DREF"
           test -x /usr/local/bin/pi-shared-task && echo "pi-shared-task: present" || echo "pi-shared-task: MISSING"
           systemctl is-active ar-local-daily.service 2>&1 | sed 's/^/daily service: /'
           systemctl is-enabled ar-local-daily.timer 2>&1 | sed 's/^/daily timer enabled: /'
@@ -272,15 +282,15 @@ jobs:
           set -euo pipefail
           COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
           CTL=/srv/ar-local/quality-gh-control
-          C=/srv/ar-local/quality-candidate
+          C="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
           OP="/srv/ar-local/quality-operation-$OP_ID"
           child_unit() {
             [ -f "$OP/canary-unit.json" ] || return 0
-            python3 - "$OP/canary-unit.json" "$OP" "$COMMIT" <<'PY'
+            python3 - "$OP/canary-unit.json" "$OP" "$COMMIT" "$C" <<'PY'
           import json, sys
           r = json.load(open(sys.argv[1]))
           ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
-                and r.get("source") == "/srv/ar-local/quality-candidate"
+                and r.get("source") == sys.argv[4]
                 and r.get("expected_commit") == sys.argv[3]
                 and str(r.get("unit", "")).endswith(".service"))
           print(r["unit"] if ok else "MISMATCH")
@@ -315,11 +325,16 @@ jobs:
           [ "$D_ACTIVE" = inactive ] && [ "$D_RESULT" = success ] || { echo "daily ingest not terminally successful ($D_ACTIVE/$D_RESULT)"; exit 1; }
           D_DAY="$(TZ=Australia/Hobart date -d "$D_EXIT" +%F 2>/dev/null || echo none)"
           [ "$D_DAY" = "$(TZ=Australia/Hobart date +%F)" ] || { echo "today natural ingest/validation has not completed (last exit: $D_EXIT)"; exit 1; }
+          if [ ! -e "$C" ]; then
+            git clone --quiet --no-checkout https://github.com/yanniedog/AR-local.git "$C"
+          fi
           case "$(git -C "$C" remote get-url origin)" in
             https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git) ;;
             *) echo "candidate origin is not the canonical AR-local URL"; exit 1 ;;
           esac
-          test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
+          if git -C "$C" rev-parse --verify -q HEAD >/dev/null; then
+            test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
+          fi
           test ! -e "$OP" || { echo "operation $OP already exists"; exit 1; }
           git -C "$C" fetch --quiet origin main
           test "$(git -C "$C" rev-parse FETCH_HEAD)" = "$COMMIT" || { echo "fetched main != $COMMIT"; exit 1; }
@@ -327,7 +342,8 @@ jobs:
           test "$(git -C "$C" rev-parse HEAD)" = "$COMMIT"
           DCOPY="$CTL/$OP_ID.dispositions.json"
           test ! -e "$DCOPY" || { echo "dispositions copy already exists"; exit 1; }
-          (umask 077; cp --no-preserve=all "$DISP" "$DCOPY")
+          case "$DISP" in /*) DSRC="$DISP" ;; *) DSRC="$C/$DISP" ;; esac
+          (umask 077; cp --no-preserve=all "$DSRC" "$DCOPY")
           chmod 0400 "$DCOPY"
           test "$(sha256sum "$DCOPY" | cut -d' ' -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
           echo "operation: $OP"
@@ -408,11 +424,11 @@ jobs:
           busy() { case "$(systemctl is-active "$1" 2>/dev/null || true)" in active|activating|deactivating|reloading) return 0 ;; *) return 1 ;; esac; }
           R="$OP/canary-unit.json"
           if [ -f "$R" ]; then
-            UNIT="$(python3 - "$R" "$OP" "$COMMIT" <<'PY'
+            UNIT="$(python3 - "$R" "$OP" "$COMMIT" "/srv/ar-local/quality-candidate-${COMMIT:0:12}" <<'PY'
           import json, sys
           r = json.load(open(sys.argv[1]))
           ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
-                and r.get("source") == "/srv/ar-local/quality-candidate"
+                and r.get("source") == sys.argv[4]
                 and r.get("expected_commit") == sys.argv[3]
                 and str(r.get("unit", "")).endswith(".service"))
           print(r["unit"] if ok else "")
