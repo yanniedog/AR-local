@@ -18,7 +18,7 @@ import time as clock
 from ar_local_backup_scope import build_data_scope
 from pi_drive_backup_manifest import close_manifest, encoded
 from pi_drive_backup_read import discard_created_cache
-from pi_drive_backup_source import canonical_directory, digest, freeze, validate_layout, verify_direct_sources
+from pi_drive_backup_source import SourceFreezeDeadline, canonical_directory, digest, freeze, validate_layout, verify_direct_sources
 from pi_plain_backup_packs import SCHEMA, PackIndex, build_pack, verify_pack, write_manifest
 
 
@@ -90,6 +90,10 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
     pipeline; no routine uploader is enabled or acknowledged by this function.
     """
     data, operation = Path(data), Path(operation)
+    # This raw-data protocol grants only the attested data root. Filesystem and
+    # operating-system controls belong to the separately approved image set.
+    if controls:
+        raise ValueError('raw recovery does not admit external control files')
     canonical_directory(data)
     if not callable(guard):
         raise ValueError('bounded operation guard required')
@@ -108,7 +112,8 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
     try:
         # Hold proof stays valid throughout the entire backup, not only freeze.
         with inherited_lease.hold(data):
-            manifest = freeze(data, frozen, controls=controls, guard=guard, inherited_lease=inherited_lease)
+            manifest = freeze(data, frozen, controls=controls, guard=guard,
+                inherited_lease=inherited_lease, include_retained_export_stage=True, max_freeze_seconds=None)
             index = PackIndex(operation / 'packs.sqlite', manifest['files'], guard, data=data)
             verify_direct_sources(manifest, guard)
             catalog = operation / 'catalog.json'
@@ -149,7 +154,7 @@ def run(data: Path, operation: Path, transport, *, controls, inherited_lease, gu
                 raise ValueError('verified pack file total differs from full source manifest')
             verify_direct_sources(manifest, guard)
             index.verify_directories(guard)
-            if build_data_scope(data).manifest() != manifest['scope']:
+            if build_data_scope(data, include_retained_export_stage=True).manifest() != manifest['scope']:
                 raise ValueError('source namespace scope changed during backup')
             catalog_id = digest(catalog, guard)
             remote = 'catalogs/' + catalog_id + '.json'
@@ -188,7 +193,6 @@ def main(argv=None):
     parser.add_argument('--drive-root-folder-id', required=True)
     parser.add_argument('--attestation-fd', type=int, required=True)
     parser.add_argument('--deadline', required=True)
-    parser.add_argument('--control-file', action='append', type=Path, default=[])
     args = parser.parse_args(argv)
     deadline = datetime.fromisoformat(args.deadline.replace('Z', '+00:00'))
     remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
@@ -211,10 +215,17 @@ def main(argv=None):
     guard()
     lease.verify(args.data_root)
     transport = Rclone(args.rclone_config, args.remote, args.drive_root_folder_id, guard)
-    result = run(args.data_root, args.operation, transport, controls=args.control_file,
+    result = run(args.data_root, args.operation, transport, controls=[],
         inherited_lease=lease, guard=guard)
     print(json.dumps(result, sort_keys=True))
     return 0
+
+
+def failure_receipt(error):
+    result = {'result': 'FAIL', 'error_type': type(error).__name__}
+    if isinstance(error, SourceFreezeDeadline):
+        result['error_code'] = 'source_freeze_deadline'
+    return result
 
 
 if __name__ == '__main__':
@@ -222,5 +233,5 @@ if __name__ == '__main__':
         raise SystemExit(main())
     except Exception as error:
         # No provider stderr, raw payloads, credentials, tokens or config bytes.
-        print(json.dumps({'result': 'FAIL', 'error_type': type(error).__name__}))
+        print(json.dumps(failure_receipt(error)))
         raise SystemExit(1)

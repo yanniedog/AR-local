@@ -19,6 +19,7 @@ from cdr_quality_sources import AUDIT_VERSION, AuditIndex, audit_source
 from pi_cdr_quality_activate import verified_cache_options
 from pi_cdr_quality_activate_evidence import sha
 from tests.test_cdr_quality_sources import retained_partition
+from tests.sequential_pytest_fixture import add_suite_source, suite_fixture
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -44,6 +45,7 @@ def original_run(tmp_path):
         target = checkout / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / name, target)
+    add_suite_source(checkout)
     run_git(checkout, "init", "-q")
     run_git(checkout, "config", "core.autocrlf", "false")
     run_git(checkout, "config", "user.email", "structural-test@example.invalid")
@@ -52,13 +54,13 @@ def original_run(tmp_path):
     run_git(checkout, "commit", "-qm", "Retained source audit validation files")
     commit = run_git(checkout, "rev-parse", "HEAD")
     resources = {"result": "FAIL", "reason": "RuntimeError: host_swap_out", "group_clean": True,
+        "cgroup": "/sys/fs/cgroup/system.slice/ar-local-quality-canary-0123456789ab.service",
         "command": [sys.executable, "-B", str(checkout / "pi_cdr_quality_activate.py"), "canary-worker",
                     "--source", str(checkout), "--production", str(tmp_path / "production"),
                     "--data-root", str(data), "--python", sys.executable, "--operation", str(operation)]}
     (operation / "resources.json").write_text(json.dumps(resources), encoding="utf-8")
-    (operation / "pytest.xml").write_text(
-        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
-        '<testcase name="structural-provenance-fixture"/></testsuite></testsuites>', encoding="utf-8")
+    from pi_cdr_quality_activate import source_files
+    suite_fixture(operation, checkout, commit, source_files(checkout))
     (operation / "canary-service.txt").write_text("Structural prior-run metadata fixture\n", encoding="utf-8")
     return SimpleNamespace(data=data, source=source, export=export, result=result, operation=operation,
                            checkout=checkout, commit=commit, sealed=tmp_path / "sealed")
@@ -134,7 +136,8 @@ def test_current_new_or_changed_real_sources_run_complete_audit(original_run, mo
         cache.close()
 
 
-@pytest.mark.parametrize("target", ["manifest.json", "index.sqlite", "resources.json", "pytest.xml", "canary-service.txt"])
+@pytest.mark.parametrize("target", ["manifest.json", "index.sqlite", "resources.json", "pytest.xml", "canary-service.txt",
+                                    "pytest-suite.json", "pytest-suite/00000/report.json", "pytest-suite/collect/output.txt"])
 def test_tampered_sealed_files_cannot_supply_audit_results(original_run, target):
     old = original_run
     sealed = seal(old)

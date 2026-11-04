@@ -1,0 +1,313 @@
+{
+  "boot_id": "cf36b73c-7655-4bbc-8445-e917f3a85012",
+  "cache_bytes": {
+    "Active(anon)": 715210752,
+    "Active(file)": 177422336,
+    "Buffers": 184909824,
+    "Cached": 5911347200,
+    "Dirty": 1048576,
+    "Inactive(anon)": 127565824,
+    "Inactive(file)": 5872517120,
+    "MemAvailable": 7270236160,
+    "MemFree": 1052639232,
+    "MemTotal": 8453947392,
+    "SReclaimable": 259751936,
+    "Shmem": 46596096,
+    "SwapCached": 671744,
+    "SwapFree": 2033549312,
+    "Writeback": 0
+  },
+  "capture": {
+    "global_after": {
+      "allocstall_dma": 0,
+      "allocstall_dma32": 0,
+      "allocstall_movable": 119,
+      "allocstall_normal": 1,
+      "compact_stall": 0,
+      "kswapd_high_wmark_hit_quickly": 1623,
+      "kswapd_low_wmark_hit_quickly": 6066,
+      "nr_vmscan_write": 42343,
+      "oom_kill": 0,
+      "pgmajfault": 32240,
+      "pgscan_anon": 98870,
+      "pgscan_direct": 12924,
+      "pgscan_file": 5847509,
+      "pgscan_kswapd": 5933455,
+      "pgsteal_anon": 42341,
+      "pgsteal_direct": 12851,
+      "pgsteal_file": 5843518,
+      "pgsteal_kswapd": 5873008,
+      "workingset_activate_anon": 5533,
+      "workingset_activate_file": 595,
+      "workingset_refault_anon": 13163,
+      "workingset_refault_file": 184005,
+      "workingset_restore_anon": 215,
+      "workingset_restore_file": 4849
+    },
+    "global_before": {
+      "allocstall_dma": 0,
+      "allocstall_dma32": 0,
+      "allocstall_movable": 119,
+      "allocstall_normal": 1,
+      "compact_stall": 0,
+      "kswapd_high_wmark_hit_quickly": 1623,
+      "kswapd_low_wmark_hit_quickly": 6066,
+      "nr_vmscan_write": 42343,
+      "oom_kill": 0,
+      "pgmajfault": 32240,
+      "pgscan_anon": 98870,
+      "pgscan_direct": 12924,
+      "pgscan_file": 5847509,
+      "pgscan_kswapd": 5933455,
+      "pgsteal_anon": 42341,
+      "pgsteal_direct": 12851,
+      "pgsteal_file": 5843518,
+      "pgsteal_kswapd": 5873008,
+      "workingset_activate_anon": 5533,
+      "workingset_activate_file": 595,
+      "workingset_refault_anon": 13163,
+      "workingset_refault_file": 183983,
+      "workingset_restore_anon": 215,
+      "workingset_restore_file": 4849
+    },
+    "nodes_after": [
+      [
+        0,
+        7301,
+        97535
+      ],
+      [
+        1,
+        1197,
+        12691
+      ],
+      [
+        2,
+        763,
+        11929
+      ],
+      [
+        3,
+        1873,
+        13696
+      ],
+      [
+        4,
+        773,
+        13478
+      ],
+      [
+        5,
+        602,
+        11219
+      ],
+      [
+        6,
+        232,
+        10308
+      ],
+      [
+        7,
+        422,
+        13132
+      ]
+    ],
+    "nodes_before": [
+      [
+        0,
+        7301,
+        97535
+      ],
+      [
+        1,
+        1197,
+        12691
+      ],
+      [
+        2,
+        763,
+        11929
+      ],
+      [
+        3,
+        1873,
+        13691
+      ],
+      [
+        4,
+        773,
+        13478
+      ],
+      [
+        5,
+        602,
+        11219
+      ],
+      [
+        6,
+        232,
+        10308
+      ],
+      [
+        7,
+        422,
+        13132
+      ]
+    ]
+  },
+  "counters": {
+    "allocstall_dma": 0,
+    "allocstall_dma32": 0,
+    "allocstall_movable": 119,
+    "allocstall_normal": 1,
+    "compact_stall": 0,
+    "kswapd_high_wmark_hit_quickly": 1623,
+    "kswapd_low_wmark_hit_quickly": 6066,
+    "nr_vmscan_write": 42343,
+    "oom_kill": 0,
+    "pgmajfault": 32240,
+    "pgscan_anon": 98870,
+    "pgscan_direct": 12924,
+    "pgscan_file": 5847509,
+    "pgscan_kswapd": 5933455,
+    "pgsteal_anon": 42341,
+    "pgsteal_direct": 12851,
+    "pgsteal_file": 5843518,
+    "pgsteal_kswapd": 5873008,
+    "workingset_activate_anon": 5533,
+    "workingset_activate_file": 595,
+    "workingset_refault_anon": 13163,
+    "workingset_refault_file": 184005,
+    "workingset_restore_anon": 215,
+    "workingset_restore_file": 4849
+  },
+  "lru_gen_enabled": 3,
+  "monotonic_ns": 71705301091038,
+  "node_refaults": [
+    [
+      0,
+      7301,
+      97535
+    ],
+    [
+      1,
+      1197,
+      12691
+    ],
+    [
+      2,
+      763,
+      11929
+    ],
+    [
+      3,
+      1873,
+      13696
+    ],
+    [
+      4,
+      773,
+      13478
+    ],
+    [
+      5,
+      602,
+      11219
+    ],
+    [
+      6,
+      232,
+      10308
+    ],
+    [
+      7,
+      422,
+      13132
+    ]
+  ],
+  "page_size_bytes": 16384,
+  "profile": "ar-local-host-pressure-v4",
+  "read_elapsed_ns": 5062892,
+  "zones": [
+    {
+      "boost": 0,
+      "high": 251,
+      "low": 188,
+      "managed": 63461,
+      "min": 125,
+      "node": 0,
+      "pages free": 32971,
+      "zone": "DMA"
+    },
+    {
+      "boost": 0,
+      "high": 259,
+      "low": 194,
+      "managed": 65279,
+      "min": 129,
+      "node": 1,
+      "pages free": 2205,
+      "zone": "DMA"
+    },
+    {
+      "boost": 0,
+      "high": 259,
+      "low": 194,
+      "managed": 65279,
+      "min": 129,
+      "node": 2,
+      "pages free": 5997,
+      "zone": "DMA"
+    },
+    {
+      "boost": 0,
+      "high": 243,
+      "low": 182,
+      "managed": 61183,
+      "min": 121,
+      "node": 3,
+      "pages free": 5096,
+      "zone": "DMA"
+    },
+    {
+      "boost": 0,
+      "high": 259,
+      "low": 194,
+      "managed": 65279,
+      "min": 129,
+      "node": 4,
+      "pages free": 4738,
+      "zone": "Normal"
+    },
+    {
+      "boost": 0,
+      "high": 259,
+      "low": 194,
+      "managed": 65279,
+      "min": 129,
+      "node": 5,
+      "pages free": 3644,
+      "zone": "Normal"
+    },
+    {
+      "boost": 0,
+      "high": 259,
+      "low": 194,
+      "managed": 65279,
+      "min": 129,
+      "node": 6,
+      "pages free": 5923,
+      "zone": "Normal"
+    },
+    {
+      "boost": 0,
+      "high": 256,
+      "low": 192,
+      "managed": 64949,
+      "min": 128,
+      "node": 7,
+      "pages free": 3674,
+      "zone": "Normal"
+    }
+  ]
+}

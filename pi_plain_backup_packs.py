@@ -47,17 +47,22 @@ class PackIndex:
         self.db = sqlite3.connect(path)
         self.db.execute('PRAGMA cache_size=-2048')
         self.db.execute('PRAGMA temp_store=FILE')
-        self.db.execute('CREATE TABLE rows (group_key TEXT, logical TEXT PRIMARY KEY, value TEXT)')
+        self.db.execute('CREATE TABLE rows (group_key TEXT, logical TEXT PRIMARY KEY, folded TEXT UNIQUE, value TEXT)')
         self.db.execute('CREATE INDEX grouped ON rows(group_key,logical)')
         self.db.execute('CREATE TABLE source_dirs (path TEXT PRIMARY KEY, identity TEXT)')
         self.db.execute('CREATE TABLE verified_packs (group_key TEXT PRIMARY KEY, pack_id TEXT)')
         for number, row in enumerate(rows):
             guard()
+            if '\\' in row['logical_path'] or str(PurePosixPath(row['logical_path'])) != row['logical_path']:
+                raise ValueError('nonportable or noncanonical recovery path')
             validate_archive_path(row['logical_path'], {})
             if len(row['logical_path'].encode('utf-8')) > 4096 or type(row['size']) is not int or row['size'] < 0:
                 raise ValueError('invalid archive path/size')
-            self.db.execute('INSERT INTO rows VALUES(?,?,?)',
-                (group_for(row['logical_path']), row['logical_path'], encoded(row).decode()))
+            try:
+                self.db.execute('INSERT INTO rows VALUES(?,?,?,?)',
+                    (group_for(row['logical_path']), row['logical_path'], row['logical_path'].casefold(), encoded(row).decode()))
+            except sqlite3.IntegrityError as error:
+                raise ValueError('duplicate or case-colliding recovery path') from error
             if row.get('direct') and data is not None:
                 parent = Path(row['source_path']).parent
                 while parent != data:
@@ -189,7 +194,8 @@ def header(name, row):
     info.uid, info.gid = row['uid'], row['gid']
     ns = row['mtime_ns']
     info.mtime = ns // 10**9
-    info.pax_headers = {'mtime': f'{ns // 10**9}.{ns % 10**9:09d}'}
+    magnitude = abs(ns)
+    info.pax_headers = {'mtime': f'{"-" if ns < 0 else ""}{magnitude // 10**9}.{magnitude % 10**9:09d}'}
     return info
 
 
