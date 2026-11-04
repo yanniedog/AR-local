@@ -607,6 +607,50 @@ def test_missing_index_with_published_history_fails_closed(candidate, tmp_path):
     assert not [x for x in store.events if x[0] in ("asset", "index")]
 
 
+def _durable(tmp_path, tag, target, *, predecessor=None, receipt=False):
+    d = tmp_path / "state" / tag
+    d.mkdir(parents=True, mode=0o700, exist_ok=True)
+    (tmp_path / "state").chmod(0o700)
+    (d / "transaction.json").write_bytes(p.canonical({"manifest_sha256": "0" * 64,
+        "predecessor_hex": predecessor.hex() if predecessor is not None else None,
+        "target_hex": target.hex()}))
+    if receipt:
+        (d / "receipt.json").write_text("{}")
+
+
+def _with_previous_day(candidate):
+    old = json.loads(prior_index(candidate))
+    h = copy.deepcopy(old["revision_heads"][DAY])
+    h["manifest_url"] = p.url(p.edition(PREVIOUS_DAY, 1), "manifest.json")
+    old["revision_heads"] = {PREVIOUS_DAY: h}
+    old.update(dates=[PREVIOUS_DAY], count=1, min_date=PREVIOUS_DAY, latest_date=PREVIOUS_DAY)
+    return p.canonical(old)
+
+
+def test_missing_index_with_pending_transaction_only_fails_closed(candidate, tmp_path):
+    """An edition that committed but crashed before its receipt still holds history."""
+    store = MemoryStore()
+    _durable(tmp_path, p.edition(PREVIOUS_DAY, 1), _with_previous_day(candidate))
+    with pytest.raises(p.RevisionError, match="earlier editions were published"):
+        publish(candidate, tmp_path, store)
+    assert not [x for x in store.events if x[0] in ("asset", "index")]
+
+
+@pytest.mark.parametrize("receipt", [True, False])
+def test_valid_index_omitting_durable_dates_fails_closed(candidate, tmp_path, receipt):
+    """A valid but incomplete remote index must not silently drop published dates."""
+    store = MemoryStore()
+    store.data[p.INDEX_TAG, "dates-index.json"] = prior_index(candidate)
+    prior = _with_previous_day(candidate)
+    if receipt:
+        _durable(tmp_path, p.edition(PREVIOUS_DAY, 1), prior, receipt=True)
+    else:
+        _durable(tmp_path, p.edition(PREVIOUS_DAY, 2), prior, predecessor=prior)
+    with pytest.raises(p.RevisionError, match="omits durable published dates: " + PREVIOUS_DAY):
+        publish(candidate, tmp_path, store)
+    assert not [x for x in store.events if x[0] in ("asset", "index")]
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission control")
 def test_restore_staging_directory_is_private_before_index_replacement(candidate, tmp_path):
     store = MemoryStore()

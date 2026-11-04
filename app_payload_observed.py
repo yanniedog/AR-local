@@ -206,6 +206,44 @@ def advance_index(before, candidate, manifest):
     return output
 
 
+def durable_history_dates(state, tag):
+    """Dates that durable local records prove were, or may have been, published.
+
+    A receipted edition proves its committed target index. A pending transaction
+    may have committed its target before crashing, and its predecessor was the
+    live index, so both establish history the next index must keep.
+    """
+    dates = set()
+    for other in sorted(state.iterdir()):
+        if other.name == tag:
+            continue
+        record, receipt = other / "transaction.json", other / "receipt.json"
+        if not record.exists():
+            if receipt.exists():
+                raise RevisionError("publication receipt without its transaction record")
+            continue
+        saved = decode_document(bounded_file(record))
+        held = [saved["target_hex"]]
+        if not receipt.exists() and saved["predecessor_hex"] is not None:
+            held.append(saved["predecessor_hex"])
+        for raw in held:
+            dates.update(validate_index(bytes.fromhex(raw))["revision_heads"])
+    return dates
+
+
+def require_durable_history(state, tag, current):
+    """Refuse an index that would drop dates durable local state proves exist."""
+    if current is None:
+        if any((other / name).exists() for other in state.iterdir() if other.name != tag
+               for name in ("receipt.json", "transaction.json")):
+            # An empty-channel index would drop earlier editions from discovery.
+            raise RevisionError("observed index missing although earlier editions were published")
+        return
+    missing = durable_history_dates(state, tag) - set(validate_index(current)["revision_heads"])
+    if missing:
+        raise RevisionError("observed index omits durable published dates: " + ", ".join(sorted(missing)))
+
+
 class ObservedBackend(ABC):
     """Explicit isolated backend contract, including deliberately declared doubles.
 
@@ -348,11 +386,7 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
                     or after != advance_index(before, index, manifest)):
                 raise RevisionError("reserved local transaction differs")
         else:
-            if current is None and any((other / "receipt.json").exists()
-                                       for other in state.iterdir() if other.name != tag):
-                # Durable state shows earlier published editions; an empty-channel
-                # index would drop them from discovery. Recover the index first.
-                raise RevisionError("observed index missing although earlier editions were published")
+            require_durable_history(state, tag, current)
             before, after = current, advance_index(current, index, manifest)
             write_once(record, canonical({"manifest_sha256": accepted.manifest_sha256,
                        "predecessor_hex": before.hex() if before is not None else None,
