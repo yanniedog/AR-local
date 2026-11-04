@@ -316,6 +316,21 @@ def test_retained_ownership_requires_exact_current_invocation_and_empty_cgroup()
     assert s.ownership(j)=='live'
 
 
+def test_collected_retained_unit_releases_only_with_root_completion_proof(monkeypatch):
+    j=job(state='running');s=FakeSupervisor();s.processes=[]
+    s.details.update(LoadState='not-found',InvocationID='',ControlGroup='',MainPID='0',ActiveState='inactive')
+    monkeypatch.setattr(store,'completion_proved',lambda job:False)
+    assert s.ownership(j)=='unknown'
+    monkeypatch.setattr(store,'completion_proved',lambda job:True)
+    assert s.ownership(j)=='gone'
+    s.processes=[j['pid']]
+    assert s.ownership(j)=='unknown'
+    s.processes=[];s.details['LoadState']='loaded'
+    assert s.ownership(j)=='unknown'
+    s.details['LoadState']='not-found';s.boot='22222222-2222-4222-8222-222222222222'
+    assert s.ownership(j)=='unknown'
+
+
 def test_image_recovery_callback_is_independent_even_if_existing_pass_raises(monkeypatch):
     calls=[]
     monkeypatch.setattr(reclaim,'reconcile_owned',lambda *a:(_ for _ in ()).throw(RuntimeError('damaged journal')))

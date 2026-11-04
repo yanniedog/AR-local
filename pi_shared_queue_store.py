@@ -92,6 +92,13 @@ def allow_collected_show(result, records):
             raise subprocess.CalledProcessError(result.returncode, result.args)
 
 
+
+def collected(details):
+    """systemd's view of an unloaded (garbage-collected) unit with no processes."""
+    return (details.get('LoadState') == 'not-found' and details.get('InvocationID', '') == ''
+            and details.get('ControlGroup', '') == '' and details.get('MainPID') in ('0', '')
+            and details.get('ActiveState') in ('inactive', 'failed'))
+
 class Supervisor:
     def __init__(self, proc=Path('/proc'), cgroups=Path('/sys/fs/cgroup')):
         self.proc, self.cgroups = proc, cgroups
@@ -259,7 +266,7 @@ class Supervisor:
                 and self.cgroup(os.getpid()) == current['cgroup']
                 and not self.wrapper_alive(job))
 
-    def ownership(self, job):
+    def ownership(self, job):  # noqa: C901 - explicit fail-closed state table
         validate_job(job)
         retained = retained_stop(job['unit'])
         if job['boot_id'] != self.boot_id() and not retained:
@@ -279,6 +286,11 @@ class Supervisor:
                 return 'gone'
             return 'unknown'
         if self.safe_fixed_handoff(job, details, members):
+            return 'gone'
+        if retained and not members and collected(details) and completion_proved(job):
+            # A --collect unit is unloaded after it ends: its invocation and
+            # cgroup read back empty. An empty saved cgroup plus the exact root
+            # completion record proves termination, so cleanup may proceed.
             return 'gone'
         if retained:
             return 'unknown'
