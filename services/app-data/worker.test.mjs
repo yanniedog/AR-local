@@ -219,7 +219,7 @@ const observedManifest = `${observedPrefix}${observedTag}/manifest.json`;
 test('explicit capability admits only its index and immutable approved assets', () => {
   assert.equal(releaseRoute(request(observedIndex)).tag, 'app-payload-observed-v1-candidate');
   for (const asset of ['manifest.json', 'core-2026-11-02-123456789abc.json.gz',
-    'details-2026-11-02-123456789abc.json.gz.enc', 'bank-history-2026-11-02-123456789abc.json.gz']) {
+    'details-2026-11-02-123456789abc.json.gz', 'bank-history-2026-11-02-123456789abc.json.gz']) {
     const target = `${observedPrefix}${observedTag}/${asset}`;
     const route = releaseRoute(request(target));
     assert.equal(route.canonical, target);
@@ -256,6 +256,7 @@ const invalidObserved = [
   observedManifest.replace('-r000001', ''),
   ...['manifest-v2.json', 'dates-index.json', 'revision-delta.json', 'base-manifest.json', 'source-manifest.json']
     .map(name => observedManifest.replace('manifest.json', name)),
+  observedManifest.replace('manifest.json', 'details-2026-11-02-123456789abc.json.gz.enc'),
   observedManifest.replace('manifest.json', 'key.json'),
   observedManifest.replace('manifest.json', 'publication-provenance.json'),
   observedManifest.replace('manifest.json', 'preservation.json'),
@@ -285,6 +286,16 @@ test('capability does not negotiate with version headers or legacy decode hints'
     const req = new Request(url, { headers: { 'X-App-Version': version, 'X-AR-Capability': version } });
     assert.equal(releaseRoute(req).upstream, releaseRoute(request(url)).upstream);
     assert.equal((await handleRequest(req, env, context, fetcher, null)).status, 200);
+    for (const target of [observedManifest, observedIndex]) {
+      const versioned = new Request(target, { headers: { 'X-App-Version': version, 'X-AR-Capability': version } });
+      assert.deepEqual(releaseRoute(versioned), releaseRoute(request(target)));
+      const response = await handleRequest(versioned, env, context, fetcher, null);
+      const plain = await handleRequest(request(target), env, context, fetcher, null);
+      assert.equal(response.status, 200);
+      assert.equal(response.status, plain.status);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(await plain.arrayBuffer()));
+      assert.equal(response.headers.get('cache-control'), plain.headers.get('cache-control'));
+    }
   }
 });
 

@@ -35,7 +35,9 @@ function observedRoute(url, request) {
     if (!edition || edition[1].startsWith('0000-') || Number(edition[2]) === 0 ||
         !Number.isFinite(Date.parse(`${edition[1]}T00:00:00Z`)) ||
         new Date(`${edition[1]}T00:00:00Z`).toISOString().slice(0, 10) !== edition[1] ||
-        !(OBSERVED_DOCUMENTS.has(asset) || PAYLOAD.test(asset))) throw new Error('Invalid candidate edition');
+        // ObservedStore publishes plain .json.gz payload names only; inner ARE1
+        // (.json.gz.enc) needs a verified legacy hint this route never accepts.
+        !(OBSERVED_DOCUMENTS.has(asset) || PAYLOAD.test(asset) && !asset.endsWith('.enc'))) throw new Error('Invalid candidate edition');
   }
   // The mutable candidate index is selection state: never edge-cached, so an
   // older in-flight fetch can never overwrite a newer index for a TTL.
