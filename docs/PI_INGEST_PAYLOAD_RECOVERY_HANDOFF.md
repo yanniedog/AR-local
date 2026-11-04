@@ -37161,3 +37161,21 @@ Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest 
   requires a separately admitted daytime operation, not bypassing the fixed
   service window or invoking the obsolete watchdog directly. Historical
   October 7-10 capture gaps remain; no backdated data is authorized.
+
+
+## 2026-11-03 - R15 canary failed before deployment (OPS-20261103-R15-01)
+
+- Candidate `d491e3de5e936308c4a9c47309d77948b42c8996` failed at
+  2026-11-03T09:35:04Z during `source_snapshot` with
+  `pressure_node_counters_changed_during_capture`. This is a failed formal
+  acceptance result, not a benign or accepted run.
+- The terminal receipt recorded 154 samples, peak workload RSS 100,057,088 bytes,
+  zero workload swap, clean workload group and restored timers. Production
+  remained clean at `8590e238d00f093e7f6d20fccfc2377c7abf1aec`.
+  No activation or publication occurred.
+- Evidence: `evidence/d027-ci-d491e3de-validation-r15-20261103/checkpoint-final.json`
+  in the retained operator workspace. Preserve this result and all prior receipts.
+- Next source correction prepares coherent closing-read telemetry without a
+  quiescence requirement, while retaining reset, allocation, minimum-headroom,
+  low/refault, service and resource gates. It requires independent review,
+  exact-head CI and a fresh full guarded canary; preparation is not deployment.

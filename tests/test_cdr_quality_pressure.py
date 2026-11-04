@@ -15,10 +15,12 @@ def host(t=1_000_000_000):
     cache={k:1024 for k in p.CACHE_FIELDS}
     cache.update(MemTotal=8*1024**3,MemAvailable=7*1024**3)
     pressure={'profile':p.PROFILE,'boot_id':BOOT,'page_size_bytes':16384,
-              'monotonic_ns':t,'read_elapsed_ns':1_000_000,
+              'monotonic_ns':t,'read_elapsed_ns':1_000_000,'lru_gen_enabled':0,'node_refaults':[[0,10,10]],
               'counters':{k:10 for k in p.COUNTERS},'cache_bytes':cache,
               'zones':[{'node':0,'zone':'Normal','managed':10000,'pages free':5000,
                         'boost':100,'min':200,'low':300,'high':400}]}
+    pressure['capture'] = {'global_before': pressure['counters'], 'global_after': pressure['counters'],
+                           'nodes_before': pressure['node_refaults'], 'nodes_after': pressure['node_refaults']}
     return {'page_size_bytes':16384,'available_bytes':7*1024**3,'pressure':pressure,
             'swap_out_pages':0,'swap_in_pages':0,'psi_avg10':None}
 
@@ -32,6 +34,7 @@ def test_healthy_background_swap_and_cache_are_not_byte_allowance():
     first=host();tracker=p.PressureTracker(first);last=next_host(first)
     last['swap_out_pages']=10**12
     for key in p.ACTIVITY_COUNTERS:last['pressure']['counters'][key]+=50
+    last['pressure']['node_refaults'][0][1:] = [60,60]
     last['pressure']['cache_bytes']['Cached']+=1024**3
     tracker.observe(last,None,1.1)
     summary=tracker.receipt()
@@ -71,13 +74,19 @@ def test_printed_minimum_already_includes_boost(margin):
         assert tracker.receipt()['minimum_zone_margins']['0:Normal']['min']==1
 
 
-@pytest.mark.parametrize('counter',p.ACTIVITY_COUNTERS)
-def test_low_zone_and_interval_activity_rejected(counter):
+@pytest.mark.parametrize('counter',p.REFAULT_COUNTERS)
+def test_low_zone_and_interval_refault_rejected(counter):
     first=host();tracker=p.PressureTracker(first);last=next_host(first)
     last['pressure']['zones'][0]['pages free']=300
     last['pressure']['counters'][counter]+=1
-    with pytest.raises(ValueError,match='low_with_reclaim_or_refault'):tracker.observe(last)
+    last['pressure']['node_refaults'][0][1+p.REFAULT_COUNTERS.index(counter)]+=1
+    with pytest.raises(ValueError,match='low_with_refault'):tracker.observe(last)
     assert tracker.receipt()['low_with_activity_samples']==1
+    assert tracker.receipt()['low_with_refault_samples']==1
+    with pytest.raises(ValueError):
+        p.require_pressure_receipt(tracker.receipt(),first,last)
+    forged={**tracker.receipt(),'result':'PASS','failure':None}
+    with pytest.raises(ValueError):p.require_pressure_receipt(forged,first,last)
 
 
 def test_temporary_zone_breach_cannot_be_erased_by_terminal_health():
@@ -199,6 +208,10 @@ def proc_fixture(tmp_path):
     (tmp_path/'zoneinfo').write_text('Node 0, zone Normal\n pages free 5000\n boost 100\n min 200\n low 300\n high 400\n managed 10000\n')
     memory=''.join(k+': '+str(8*1024**2 if k=='MemTotal' else 1024)+' kB\n' for k in p.CACHE_FIELDS)
     vm=''.join(k+' 0\n' for k in p.COUNTERS)
+    (tmp_path/'vmstat').write_text(vm)
+    sysfs=tmp_path/'sysfs'
+    for relative,body in [('kernel/mm/lru_gen/enabled','0x0003\n'),('devices/system/node/online','0\n'),('devices/system/node/node0/vmstat','workingset_refault_anon 0\nworkingset_refault_file 0\n')]:
+        path=sysfs/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(body.encode('ascii'))
     return memory,vm
 
 
@@ -206,7 +219,7 @@ def test_actual_bounded_sampler_and_timestamp(tmp_path,monkeypatch):
     memory,vm=proc_fixture(tmp_path)
     monkeypatch.setattr(p.os,'sysconf',lambda name:16384,raising=False)
     clocks=iter([1_000_000_000,1_001_000_000]);monkeypatch.setattr(p.time,'monotonic_ns',lambda:next(clocks))
-    snapshot=p.sample_pressure(tmp_path,memory,vm)
+    snapshot=p.sample_pressure(tmp_path,memory,vm,sysfs=tmp_path/'sysfs')
     assert snapshot['boot_id']==BOOT and snapshot['monotonic_ns']==1_001_000_000
     assert snapshot['read_elapsed_ns']==1_000_000 and snapshot['zones'][0]['min']==200
 
@@ -223,7 +236,7 @@ def test_sampler_unavailable_and_invalid_inputs(tmp_path,monkeypatch,fault):
     if fault=='missing_boot':(tmp_path/'sys/kernel/random/boot_id').unlink()
     if fault=='slow_read':
         clocks=iter([1_000_000_000,4_000_000_000]);monkeypatch.setattr(p.time,'monotonic_ns',lambda:next(clocks))
-    with pytest.raises((ValueError,OSError)):p.sample_pressure(tmp_path,memory,vm)
+    with pytest.raises((ValueError,OSError)):p.sample_pressure(tmp_path,memory,vm,sysfs=tmp_path/'sysfs')
 
 
 def test_r10_remains_failed_under_cumulative_pressure_semantics():

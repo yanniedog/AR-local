@@ -18,13 +18,17 @@ BOOT = 'cf36b73c-1111-4111-8111-111111111111'
 def host(t):
     cache = {key: 1024 for key in pressure.CACHE_FIELDS}
     cache.update(MemTotal=8*resources.GIB, MemAvailable=7*resources.GIB)
-    return {'page_size_bytes':16384, 'available_bytes':7*resources.GIB,
+    value = {'page_size_bytes':16384, 'available_bytes':7*resources.GIB,
         'swap_in_pages':0, 'swap_out_pages':0, 'psi_avg10':None,
         'pressure':{'profile':pressure.PROFILE, 'boot_id':BOOT, 'page_size_bytes':16384,
-            'monotonic_ns':t, 'read_elapsed_ns':1000000,
+            'monotonic_ns':t, 'read_elapsed_ns':1000000,'lru_gen_enabled':0,'node_refaults':[[0,10,10]],
             'counters':{key:10 for key in pressure.COUNTERS}, 'cache_bytes':cache,
             'zones':[{'node':0,'zone':'Normal','managed':10000,'pages free':5000,
                       'boost':100,'min':200,'low':300,'high':400}]}}
+    q = value['pressure']
+    q['capture'] = {'global_before': q['counters'], 'global_after': q['counters'],
+                    'nodes_before': q['node_refaults'], 'nodes_after': q['node_refaults']}
+    return value
 
 
 def snapshot(binding):
@@ -102,6 +106,82 @@ def test_background_swap_needs_complete_bound_pressure_and_service_proof(scenari
         resources.require_receipt(legacy)
     del legacy['pressure_evidence']
     with pytest.raises(ValueError): resources.require_receipt(legacy)
+
+
+def low_background_samples(scenario):
+    for value in scenario[4][1:]:
+        value['pressure']['zones'][0]['pages free'] = 250
+        for key in ('pgscan_kswapd', 'pgscan_file', 'pgsteal_kswapd', 'pgsteal_file'):
+            value['pressure']['counters'][key] += 1152
+
+
+def test_low_background_reclaim_requires_complete_service_proof(scenario):
+    low_background_samples(scenario)
+    receipt = complete(scenario)
+    require(receipt, scenario)
+    host_proof = receipt['pressure_evidence']['host']
+    assert host_proof['profile'] == 'ar-local-host-pressure-v5'
+    assert host_proof['low_with_activity_samples'] == 1
+    assert host_proof['low_with_refault_samples'] == 0
+    receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True
+    with pytest.raises(ValueError):
+        require(receipt, scenario)
+
+
+def test_mglru_node_evidence_composes_with_full_service_and_resource_validation(scenario):
+    for value in scenario[4]:
+        evidence = value['pressure']
+        evidence['lru_gen_enabled'] = 3
+        evidence['zones'].append(dict(evidence['zones'][0], node=1))
+        evidence['node_refaults'].append([1,0,0])
+    for value in scenario[4][1:]:
+        evidence = value['pressure']
+        evidence['zones'][0]['pages free'] = 250
+        evidence['node_refaults'][1][2] = 6
+        evidence['counters']['workingset_refault_file'] += 6
+    receipt = complete(scenario)
+    assert receipt['schema'] == 'ar-local-quality-resources-v6'
+    assert receipt['pressure_evidence']['host']['refault_scope'] == 'mglru_same_node'
+    require(receipt, scenario)
+    receipt['pressure_evidence']['service']['last_snapshot']['failure_latched'] = True
+    with pytest.raises(ValueError): require(receipt, scenario)
+
+
+def test_old_v3_resource_receipt_is_not_upgraded(scenario):
+    receipt = complete(scenario)
+    receipt['schema'] = 'ar-local-quality-resources-v3'
+    with pytest.raises(ValueError): require(receipt, scenario)
+
+
+@pytest.mark.parametrize('counter', pressure.PRESSURE_COUNTERS)
+def test_mglru_does_not_waive_any_allocation_counter(scenario, counter):
+    _, _, context, clock, values = scenario
+    for value in values: value['pressure']['lru_gen_enabled'] = 3
+    context.observe(values[0]); clock[0] = 102.21
+    values[1]['pressure']['counters'][counter] += 1
+    with pytest.raises(ValueError, match='allocation_pressure'): context.observe(values[1])
+
+
+@pytest.mark.parametrize('fault', ['refault', 'minimum', 'allocation', 'psi'])
+def test_low_background_activity_does_not_excuse_pressure(scenario, fault):
+    low_background_samples(scenario)
+    _, _, context, clock, values = scenario
+    if fault == 'psi':
+        values[0]['psi_avg10'] = 0.
+    context.observe(values[0])
+    clock[0] = 102.21
+    if fault == 'refault':
+        values[1]['pressure']['counters']['workingset_refault_file'] += 1
+        values[1]['pressure']['node_refaults'][0][2] += 1
+    elif fault == 'minimum':
+        values[1]['pressure']['zones'][0]['pages free'] = 200
+    elif fault == 'allocation':
+        values[1]['pressure']['counters']['pgscan_direct'] += 1
+    elif fault == 'psi':
+        values[1]['psi_avg10'] = 10.
+    with pytest.raises(ValueError):
+        context.observe(values[1])
+    assert context.receipt()['failure'] is not None
 
 
 @pytest.mark.parametrize('fault', ['old_failure','rss','reserve','workload_swap','gap','cold_readback',

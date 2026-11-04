@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import importlib.metadata
 import json
 import os
+from pathlib import Path
+import subprocess
+import sys
 import tracemalloc
 import weakref
 from types import SimpleNamespace
@@ -233,28 +237,170 @@ def test_contract_lifetime_ends_before_next_load(tmp_path, monkeypatch, mode):
     assert all(reference() is None for reference in references)
 
 
-def test_inventory_allocation_scales_with_one_contract_not_aggregate(tmp_path, record_property):
+def _inventory_allocation_probe(tmp_path, *, retain_contracts=False):
     single, many = tmp_path / "single", tmp_path / "many"
     make_contract(single, count=1536)
     for ordinal in range(1, 9):
         make_contract(many, ordinal, count=1536)
 
     def measured(root):
+        retained_contracts = []
+        original_load = sources.load_contract
+
+        def leaking_load(path):
+            value = original_load(path)
+            retained_contracts.append(value)
+            return value
+
         gc.collect()
         tracemalloc.start()
         try:
+            if retain_contracts:
+                sources.load_contract = leaking_load
             entries, errors = sources.inventory(root)
             retained, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
+            sources.load_contract = original_load
         assert not errors
         assert all("contract" not in entry and "contract_ref" in entry for entry in entries)
         return len(entries), retained, peak
 
-    one, eight = measured(single), measured(many)
-    record_property("allocation_single", json.dumps(one))
-    record_property("allocation_eight", json.dumps(eight))
-    print(f"contract allocation bytes single={one} eight={eight}")
+    return measured(single), measured(many)
+
+
+def _isolated_inventory_allocations(tmp_path, *, retain_contracts=False):
+    # tracemalloc is process-global: unrelated pytest threads can otherwise be
+    # charged to inventory. Verify the Python build/dependencies and keep fixtures.
+    code = (
+        "import json,sys; from pathlib import Path; "
+        "from tests.test_cdr_quality_contract_memory import _inventory_allocation_probe; "
+        "result=_inventory_allocation_probe(Path(sys.argv[1]), "
+        "retain_contracts=sys.argv[2]=='retain'); "
+        "output=Path(sys.argv[1])/'allocation-result.json'; "
+        "output.open('x', encoding='utf-8').write(json.dumps(result))"
+    )
+    output = tmp_path / 'allocation-result.json'
+    assert not output.exists()
+    subprocess.run(
+        _qualified_probe_command(code, str(tmp_path), 'retain' if retain_contracts else 'normal'),
+        cwd=Path(__file__).resolve().parents[1], check=True, timeout=90,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
+    with output.open('rb') as stream:
+        raw = stream.read(4097)
+    assert len(raw) <= 4096
+    result = json.loads(raw)
+    assert isinstance(result, list) and len(result) == 2
+    assert all(isinstance(row, list) and len(row) == 3 and
+               all(type(value) is int and value >= 0 for value in row) for row in result)
+    return result
+
+
+def _qualified_probe_command(code, *arguments):
+    # Windows venv python.exe can redirect to a different PID. Execute the same
+    # underlying Python build directly, restoring and verifying this environment's
+    # exact dependency search path before importing the measured source.
+    source = Path(sources.__file__).resolve()
+    binding = {
+        'version': sys.version, 'cache_tag': sys.implementation.cache_tag,
+        'maxsize': sys.maxsize, 'path': list(sys.path), 'code': code,
+        'source': str(source), 'sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        'dependencies': {name: importlib.metadata.version(name) for name in
+                         ('jsonschema', 'attrs', 'referencing', 'rpds-py', 'jsonschema-specifications')},
+    }
+    bootstrap = '''
+import json, sys
+binding = json.loads(sys.argv[1])
+assert (sys.version, sys.implementation.cache_tag, sys.maxsize) == (
+    binding['version'], binding['cache_tag'], binding['maxsize'])
+sys.path[:] = binding['path']
+import hashlib, importlib.metadata
+from pathlib import Path
+import cdr_quality_sources as source
+assert str(Path(source.__file__).resolve()) == binding['source']
+assert hashlib.sha256(Path(source.__file__).read_bytes()).hexdigest() == binding['sha256']
+assert {name: importlib.metadata.version(name) for name in binding['dependencies']} == binding['dependencies']
+sys.argv = [sys.argv[0], *sys.argv[2:]]
+exec(compile(binding['code'], 'qualified-contract-memory-probe', 'exec'))
+'''
+    executable = getattr(sys, '_base_executable', sys.executable) if os.name == 'nt' else sys.executable
+    return [executable, '-I', '-S', '-B', '-c', bootstrap, json.dumps(binding), *arguments]
+
+
+def _assert_inventory_allocations(one, eight):
     assert one[0] == 1 and eight[0] == 8
     assert eight[1] < 1024**2
     assert eight[2] < one[2] * 2 + 1024**2
+
+
+def test_inventory_allocation_scales_with_one_contract_not_aggregate(tmp_path, record_property):
+    one, eight = _isolated_inventory_allocations(tmp_path)
+    record_property("allocation_single", json.dumps(one))
+    record_property("allocation_eight", json.dumps(eight))
+    print(f"contract allocation bytes single={one} eight={eight}")
+    _assert_inventory_allocations(one, eight)
+
+
+def test_inventory_probe_excludes_unrelated_parent_allocations(tmp_path):
+    tracemalloc.start()
+    try:
+        unrelated = bytearray(4 * 1024**2)
+        one, eight = _isolated_inventory_allocations(tmp_path)
+        assert len(unrelated) == 4 * 1024**2
+        assert tracemalloc.get_traced_memory()[0] >= len(unrelated)
+    finally:
+        tracemalloc.stop()
+    _assert_inventory_allocations(one, eight)
+
+
+def test_inventory_probe_still_detects_deliberately_retained_contracts(tmp_path):
+    one, eight = _isolated_inventory_allocations(tmp_path, retain_contracts=True)
+    assert one[0] == 1 and eight[0] == 8
+    assert eight[1] >= 1024**2
+    with pytest.raises(AssertionError):
+        _assert_inventory_allocations(one, eight)
+
+
+def test_inventory_probe_timeout_reaps_actual_qualified_interpreter(tmp_path, monkeypatch):
+    marker = tmp_path / 'worker.pid'
+    code = (
+        "import os,sys,time; from pathlib import Path; "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+    )
+    children = []
+    original_popen = subprocess.Popen
+
+    def tracked_popen(*args, **kwargs):
+        child = original_popen(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(subprocess, 'Popen', tracked_popen)
+    with pytest.raises(subprocess.TimeoutExpired):
+        subprocess.run(_qualified_probe_command(code, str(marker)),
+                       cwd=Path(__file__).resolve().parents[1], timeout=3,
+                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    assert marker.exists(), 'actual interpreter never reached the timeout control'
+    assert len(children) == 1 and int(marker.read_text()) == children[0].pid
+    # This owned process handle/PID is the actual interpreter, not a redirector.
+    assert children[0].returncode is not None
+    assert children[0].wait(timeout=1) == children[0].returncode
+
+
+@pytest.mark.parametrize('fault', ['version', 'source_hash', 'dependency'])
+def test_inventory_probe_rejects_changed_qualified_runtime(fault):
+    command = _qualified_probe_command("print('UNQUALIFIED_PROBE_RAN')")
+    binding = json.loads(command[6])
+    if fault == 'version':
+        binding['version'] = 'different Python build'
+    elif fault == 'source_hash':
+        binding['sha256'] = '0' * 64
+    else:
+        binding['dependencies']['jsonschema'] = 'unqualified-version'
+    command[6] = json.dumps(binding)
+    completed = subprocess.run(command, cwd=Path(__file__).resolve().parents[1],
+                               capture_output=True, text=True, timeout=10,
+                               creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    assert completed.returncode != 0 and 'AssertionError' in completed.stderr
+    assert 'UNQUALIFIED_PROBE_RAN' not in completed.stdout
