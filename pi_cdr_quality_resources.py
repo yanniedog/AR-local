@@ -22,7 +22,7 @@ from pi_cdr_quality_telemetry import MEMORY_FIELDS, VM_FIELDS, counter_context, 
 
 GIB = 1024**3
 SCHEMA = "ar-local-quality-resources-v2"
-PRESSURE_SCHEMA = "ar-local-quality-resources-v3"
+PRESSURE_SCHEMA = "ar-local-quality-resources-v6"
 UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
 
 
@@ -390,6 +390,9 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
         receipt["result"] = "PASS"
     except Exception as error:
         receipt.update(result="FAIL" if child else "BLOCKED", reason=f"{type(error).__name__}: {error}")
+        from pi_cdr_quality_pressure import PressureCaptureError
+        if isinstance(error, PressureCaptureError):
+            receipt["failed_pressure_capture"] = error.capture
         if isinstance(error, MemoryAccountingError):
             receipt["accounting_error"] = error.details
         if isinstance(error, PriorityYield):
@@ -425,7 +428,16 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
     return receipt
 
 
-def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=None) -> None:
+def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=None,
+                    expected_profile=None) -> None:
+    if expected_profile is not None:
+        if expected_profile not in ("legacy", "allocation-v1"):
+            raise ValueError("unsupported expected pressure profile")
+        expected_schema = PRESSURE_SCHEMA if expected_profile == "allocation-v1" else SCHEMA
+        if receipt.get("schema") != expected_schema:
+            raise ValueError("resource schema differs from expected pressure profile")
+    if "failed_pressure_capture" in receipt:
+        raise ValueError("failed pressure capture cannot be accepted")
     limits = Limits(**receipt["limits"])
     limits.validate()
     progress = swap_progress(receipt["last_host_sample"], receipt["baseline"], receipt["baseline"].get("admission_sample"))

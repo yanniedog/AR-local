@@ -351,7 +351,8 @@ def canary(args) -> dict:
         run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
     from pi_cdr_quality_resources import require_receipt
     require_receipt(read(args.operation / "resources.json"),
-                    expected_operation=args.operation, expected_commit=args.expected_commit)
+                    expected_operation=args.operation, expected_commit=args.expected_commit,
+                    expected_profile=pressure_profile)
     result = read(args.operation / "canary-worker.json")
     result["pressure_profile"] = pressure_profile
     result["resources"] = record(args.operation / "resources.json")
@@ -368,8 +369,12 @@ def seal(args) -> dict:
     canary_path = args.operation / "canary.json"
     canary_result = read(canary_path)
     from pi_cdr_quality_resources import require_receipt
+    recorded_profile = canary_result.get("pressure_profile", "legacy")
+    if recorded_profile is None:
+        raise ValueError("recorded pressure profile must not be null")
     require_receipt(read(checked(canary_result["resources"])),
-                    expected_operation=args.operation, expected_commit=target)
+                    expected_operation=args.operation, expected_commit=target,
+                    expected_profile=recorded_profile)
     ci_binding(read(args.ci_binding), target)
     app_binding(read(args.app_acceptance), target, canary_result)
     if canary_test_result(args.operation, args.source, target, canary_result["source_files"],
