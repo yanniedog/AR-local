@@ -671,3 +671,19 @@ def test_catalog_matched_raw_file_change_after_match_refuses_finalize(tmp_path):
     (root / "data/raw.json").write_bytes(b"new")
     with pytest.raises(ValueError, match="changed after matching: data/raw.json"):
         capture.verify_external_unchanged(work, {"root": str(root)})
+
+
+def test_hardlink_created_after_prepare_across_scopes_refuses_finalize(tmp_path):
+    database = sqlite3.connect(tmp_path / "inventory.sqlite")
+    database.execute("CREATE TABLE entries(phase TEXT,tree TEXT,path TEXT,value TEXT)")
+    database.execute("CREATE TABLE links(phase TEXT,tree TEXT,dev INTEGER,ino INTEGER,path TEXT)")
+    def add(name, ino, nlink):
+        database.execute("INSERT INTO entries VALUES ('final','root',?,?)", (name, json.dumps({"source": [1, ino, stat.S_IFREG | 0o644, 1, 0, 0, 0, 0, nlink]})))
+        database.execute("INSERT INTO links VALUES ('final','root',1,?,?)", (ino, name))
+    add("etc/a", 7, 2); add("etc/b", 7, 2)       # both links inside the mutable scope
+    database.commit()
+    capture.require_final_links_within_scope(tmp_path)
+    add("etc/new-link", 9, 2)                     # second link is /usr/bin/item, outside
+    database.commit(); database.close()
+    with pytest.raises(ValueError, match="crosses mutable/online OS scopes.*etc/new-link"):
+        capture.require_final_links_within_scope(tmp_path)

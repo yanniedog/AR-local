@@ -625,6 +625,31 @@ def clear_mutable_entries(work, scopes):
     database.close()
 
 
+def require_final_links_within_scope(work):
+    """Every current hardlink group of a mutable file must lie wholly inside the
+    re-inventoried mutable scopes.
+
+    The prepared link check cannot see links created after preparation. The
+    final walk covers only the mutable scopes, so a group whose observed member
+    count is below its st_nlink has a member elsewhere (an online OS path):
+    copying it separately would silently split the hardlink.
+    """
+    database = sqlite3.connect(work / "inventory.sqlite")
+    crossing = []
+    for device, inode, members in database.execute(
+            "SELECT dev,ino,COUNT(*) FROM links WHERE phase='final' AND tree='root' GROUP BY dev,ino"):
+        name, = database.execute("SELECT MIN(path) FROM links WHERE phase='final' AND tree='root' AND dev=? AND ino=?",
+                                 (device, inode)).fetchone()
+        value = json.loads(database.execute("SELECT value FROM entries WHERE phase='final' AND tree='root' AND path=?",
+                                            (name,)).fetchone()[0])
+        if value["source"][8] != members:
+            crossing.append(name)
+    database.close()
+    if crossing:
+        raise ValueError("hardlink group crosses mutable/online OS scopes; expand the reviewed mutable scope: "
+                         + ", ".join(sorted(crossing)[:20]))
+
+
 def finalize(args):
     work, settings = workspace(args.workspace)
     before = quiescence(args.quiescence)
@@ -640,6 +665,7 @@ def finalize(args):
     boot_before = tree_manifest(settings["boot"], work / "boot-source-before.jsonl")
     clear_mutable_entries(work, scopes)
     source_listing(work, settings, "final", starts=scopes)
+    require_final_links_within_scope(work)
     remove_obsolete_stage_entries(work, previous="prepared")
     # Mutable state can grow between prepare and finalize; recheck before copying.
     capacity_preflight(work, "final", staged=json.loads((work / "prepared-capacity.json").read_text()))
