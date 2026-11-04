@@ -209,3 +209,176 @@ test('successful cache bypasses origin but still requires rate limit', async () 
     { match: async () => new Response(content) });
   assert.equal(response.status, 200);
 });
+
+// Transport controls only: these bytes are not an observed-population data fixture.
+const observedPrefix = 'https://service.example/v1/capabilities/observed-population-v1/release/';
+const observedTag = 'app-payload-observed-v1-2026-11-02-r000001';
+const observedIndex = `${observedPrefix}app-payload-observed-v1-candidate/dates-index.json`;
+const observedManifest = `${observedPrefix}${observedTag}/manifest.json`;
+
+test('explicit capability admits only its index and immutable approved assets', () => {
+  assert.equal(releaseRoute(request(observedIndex)).tag, 'app-payload-observed-v1-candidate');
+  for (const asset of ['manifest.json', 'core-2026-11-02-123456789abc.json.gz',
+    'details-2026-11-02-123456789abc.json.gz', 'bank-history-2026-11-02-123456789abc.json.gz']) {
+    const target = `${observedPrefix}${observedTag}/${asset}`;
+    const route = releaseRoute(request(target));
+    assert.equal(route.canonical, target);
+    assert.equal(route.legacySha, null);
+    assert.equal(route.upstream, `https://github.com/yanniedog/AR-local/releases/download/${observedTag}/${asset}`);
+  }
+  assert.equal(releaseRoute(request(observedManifest.replace('2026-11-02-r000001', '2024-02-29-r999999'))).tag,
+    'app-payload-observed-v1-2024-02-29-r999999');
+  for (const day of ['0001-01-01', '9999-12-31']) {
+    assert.equal(releaseRoute(request(observedManifest.replace('2026-11-02', day))).tag,
+      `app-payload-observed-v1-${day}-r000001`);
+  }
+  // Fetch's Request rejects credentials itself; verify the parser independently too.
+  assert.throws(() => releaseRoute({ url: observedManifest.replace('service.example', 'user:password@service.example'),
+    headers: new Headers() }), /Invalid capability route/);
+});
+
+const invalidObserved = [
+  `${observedPrefix}app-payload-observed-v1-candidate/manifest.json`,
+  `${observedPrefix}app-payload-observed-v1-candidate/core-2026-11-02-123456789abc.json.gz`,
+  `${observedPrefix}app-payload-latest/manifest.json`,
+  `${observedPrefix}app-payload-2026-11-02-r000001/manifest.json`,
+  observedManifest.replace('observed-population-v1', 'observed-population-v2'),
+  observedManifest.replace('observed-population-v1', 'unknown'),
+  observedManifest.replace('/capabilities/observed-population-v1', ''),
+  observedIndex.replace('/capabilities/observed-population-v1', ''),
+  observedManifest.replace('-r000001', '-r000000'),
+  observedManifest.replace('-r000001', '-r1'),
+  observedManifest.replace('-r000001', '-r1000000'),
+  observedManifest.replace('2026-11-02', '0000-01-01'),
+  observedManifest.replace('2026-11-02', '0000-02-29'),
+  observedManifest.replace('2026-11-02', '2026-02-30'),
+  observedManifest.replace('2026-11-02', '2026-13-02'),
+  observedManifest.replace('-r000001', ''),
+  ...['manifest-v2.json', 'dates-index.json', 'revision-delta.json', 'base-manifest.json', 'source-manifest.json']
+    .map(name => observedManifest.replace('manifest.json', name)),
+  observedManifest.replace('manifest.json', 'details-2026-11-02-123456789abc.json.gz.enc'),
+  observedManifest.replace('manifest.json', 'key.json'),
+  observedManifest.replace('manifest.json', 'publication-provenance.json'),
+  observedManifest.replace('manifest.json', 'preservation.json'),
+  observedManifest.replace('manifest.json', 'core-secret.json.gz'),
+  observedManifest.replace('manifest.json', 'core-2026-11-02-xyz.json.gz'),
+  observedManifest.replace('manifest.json', 'a%2Fb.json'),
+  observedManifest.replace('manifest.json', '%6danifest.json'),
+  observedManifest.replace('manifest.json', '../manifest.json'),
+  observedManifest.replace('manifest.json', 'manifest.json/extra'),
+  observedManifest.replace('https:', 'http:'),
+  ...['?_=123', '?legacy_sha256=' + 'a'.repeat(64), '?url=https://example.org', '?', '#fragment', '#']
+    .map(suffix => observedManifest + suffix),
+];
+for (const target of invalidObserved) test(`capability rejects invalid or cross-channel request ${target}`, async () => {
+  let calls = 0;
+  const forbidden = async () => { calls++; throw new Error('must reject before dependencies'); };
+  const response = await handleRequest(request(target), { RATE_LIMITER: { limit: forbidden } }, context,
+    forbidden, { match: forbidden, put: forbidden });
+  assert.equal(response.status, 400);
+  assert.equal(calls, 0);
+});
+
+test('capability does not negotiate with version headers or legacy decode hints', async () => {
+  const rejected = new Request(observedManifest, { headers: { 'X-AR-Legacy-SHA256': 'a'.repeat(64) } });
+  assert.equal((await handleRequest(rejected, env, context, fetcher, null)).status, 400);
+  for (const version of ['', '1', 'observed-population-v1']) {
+    const req = new Request(url, { headers: { 'X-App-Version': version, 'X-AR-Capability': version } });
+    assert.equal(releaseRoute(req).upstream, releaseRoute(request(url)).upstream);
+    assert.equal((await handleRequest(req, env, context, fetcher, null)).status, 200);
+    for (const target of [observedManifest, observedIndex]) {
+      const versioned = new Request(target, { headers: { 'X-App-Version': version, 'X-AR-Capability': version } });
+      assert.deepEqual(releaseRoute(versioned), releaseRoute(request(target)));
+      const response = await handleRequest(versioned, env, context, fetcher, null);
+      const plain = await handleRequest(request(target), env, context, fetcher, null);
+      assert.equal(response.status, 200);
+      assert.equal(response.status, plain.status);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(await plain.arrayBuffer()));
+      assert.equal(response.headers.get('cache-control'), plain.headers.get('cache-control'));
+    }
+  }
+});
+
+for (const reverse of [false, true]) test(`legacy/capability cold and warm cache isolation (reverse=${reverse})`, async () => {
+  const legacyIndex = 'https://service.example/v1/release/app-payload-latest/dates-index.json';
+  const legacyManifest = 'https://service.example/v1/release/app-payload-2026-11-02-r000001/manifest.json';
+  const targets = [legacyIndex, observedIndex, legacyManifest, observedManifest];
+  if (reverse) targets.reverse();
+  const domain = new Map(targets.map(target => [target, Buffer.from('isolated protocol control: ' + target)]));
+  const encrypted = new Map(await Promise.all(targets.map(async target => [releaseRoute(request(target)).upstream, await envelope(domain.get(target))])));
+  const entries = new Map();
+  const calls = [];
+  const pending = [];
+  const cache = { match: async key => entries.get(key)?.clone(), put: async (key, value) => { entries.set(key, value); } };
+  const origin = async target => {
+    calls.push(target);
+    const upstream = new URL(target); upstream.search = '';
+    assert.ok(encrypted.has(upstream.toString()));
+    return new Response(encrypted.get(upstream.toString()));
+  };
+  for (let pass = 0; pass < 2; pass++) for (const target of targets) {
+    const response = await handleRequest(request(target), env, { waitUntil: p => pending.push(p) }, origin, cache);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('location'), null);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), domain.get(target));
+    assert.equal(response.headers.get('etag'), `"${hex(await crypto.subtle.digest('SHA-256', domain.get(target)))}"`);
+    assert.equal(response.headers.get('content-encoding'), null);
+    assert.equal(response.headers.get('cache-control'), target.includes('r000001') ? 'public, max-age=31536000, immutable'
+      : target.includes('candidate') ? 'no-store' : 'public, max-age=30');
+    await Promise.all(pending);
+  }
+  // The mutable observed index is fetched on every pass and never stored.
+  assert.equal(calls.length, 5);
+  assert.equal(entries.size, 3);
+  assert.deepEqual(new Set([...entries.keys()].map(k => new URL(k).pathname)),
+    new Set(targets.filter(k => !k.includes('candidate')).map(k => new URL(k).pathname)));
+  for (const target of calls) assert.equal(new URL(target).searchParams.has('_'), target.includes('latest') || target.includes('candidate'));
+  for (const bad of [observedManifest.replace('/capabilities/observed-population-v1', ''),
+    observedManifest.replace(observedTag, 'app-payload-2026-11-02-r000001'),
+    observedManifest.replace('observed-population-v1', 'unknown')]) {
+    assert.equal((await handleRequest(request(bad), env, context, origin, cache)).status, 400);
+  }
+  assert.equal(calls.length, 5);
+});
+
+test('older candidate index fetch can never overwrite a newer one', async () => {
+  const puts = [];
+  const cache = { match: async () => { throw new Error('candidate index must not be read from cache'); },
+    put: async key => { puts.push(key); } };
+  const response = await handleRequest(request(observedIndex), env, context, fetcher, cache);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(puts, []);
+});
+
+test('capability retains encrypted, redirect, rate, size and secret boundaries', async () => {
+  let calls = 0;
+  const redirected = await handleRequest(request(observedManifest), env, context, async target => {
+    calls++;
+    if (calls === 1) {
+      assert.equal(target, releaseRoute(request(observedManifest)).upstream);
+      return new Response(null, { status: 302, headers: { location: 'https://release-assets.githubusercontent.com/controlled' } });
+    }
+    assert.equal(target, 'https://release-assets.githubusercontent.com/controlled');
+    return new Response(wire);
+  }, null);
+  assert.equal(redirected.status, 200); assert.equal(calls, 2);
+  assert.deepEqual(Buffer.from(await redirected.arrayBuffer()), content);
+  assert.equal(redirected.headers.get('location'), null);
+  assert.equal(JSON.stringify([...redirected.headers]).includes(hex(keyBytes)), false);
+  const tampered = wire.slice(); tampered[tampered.length - 1] ^= 1;
+  for (const upstream of [() => new Response(content), () => new Response(tampered),
+    () => new Response(null, { status: 404 }),
+    () => new Response(null, { status: 302, headers: { location: url } }),
+    () => new Response(wire, { headers: { 'content-length': String(MAX_BYTES + 73) } })]) {
+    assert.equal((await handleRequest(request(observedManifest), env, context, upstream, null)).status, 502);
+  }
+  assert.equal((await handleRequest(request(observedManifest), { RELEASE_KEYS: secret }, context, fetcher, null)).status, 429);
+  let denied = 0;
+  const deniedEnv = { ...env, RATE_LIMITER: { limit: async () => ({ success: false }) } };
+  const neverOrigin = async () => { denied++; throw new Error('denied request must not fetch'); };
+  const neverCache = { match: async () => { denied++; throw new Error('denied request must not read cache'); }, put: neverOrigin };
+  assert.equal((await handleRequest(request(observedManifest), deniedEnv, context, neverOrigin, neverCache)).status, 429);
+  assert.equal(denied, 0);
+  assert.equal((await handleRequest(request(observedManifest), { ...env, RELEASE_KEYS: '{}' }, context, fetcher, null)).status, 502);
+});
