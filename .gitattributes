@@ -70,3 +70,12 @@ tests/fixtures/history-ready-real.json -text
 # Public original responses and cross-language pricing contracts are hash-bound.
 tests/fixtures/public_rates/** -text whitespace=cr-at-eol
 contracts/public_rates/** -text whitespace=cr-at-eol
+
+# Retained observer source and its exact compatibility patch are byte-bound.
+tests/fixtures/observer-compat-20261102/** -text
+tests/fixtures/pressure-r11-v1-failed.json -text
+deploy/windows/ingest-observer-context.patch -text
+
+# Retained bank/register response bytes include original CRLF in the register.
+tests/fixtures/cdr-official-single-page-2026-11-04/*.json -text whitespace=cr-at-eol
+tests/fixtures/cdr-bom-page100-2026-11-04/*.json -text whitespace=cr-at-eol

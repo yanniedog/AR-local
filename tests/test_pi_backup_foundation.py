@@ -691,6 +691,7 @@ def _write_finalized_observation(data_root: Path, run_date: str = "2026-08-24") 
         "product_facts": [],
         "product_changes": [],
         "failures": [],
+        "holder_attempts": [],
     }
     cdr_outputs.rebuild_run_db(exports / "local-cdr.sqlite", run_date, banks)
     (exports / f"banks-{run_date}.json").write_text(
@@ -852,7 +853,7 @@ def test_restored_state_accepts_fully_bound_latest_observation(tmp_path: Path) -
     )
 
 
-def test_restored_state_preserves_older_schema_without_current_reconciliation(
+def test_restored_state_rejects_known_version_without_its_schema(
     tmp_path: Path,
 ) -> None:
     historical = tmp_path / "runs/2026-08-23/_exports"
@@ -867,13 +868,13 @@ def test_restored_state_preserves_older_schema_without_current_reconciliation(
     ledger_report = verify_ledger(tmp_path / "state")
     assert ledger_report["ok"], ledger_report
     report = backup._verify_restored_state(tmp_path)
-    assert report["ok"], report["findings"]
+    assert not report["ok"]
+    assert any(item.startswith("daily_export_mismatch:") for item in report["findings"])
     historical_record = next(
         item
         for item in report["sqlite"]
         if item["path"].startswith("runs/2026-08-23/")
     )
-    assert historical_record["schema_version"] == "7"
     assert "export_reconciliation" not in historical_record
 
 
@@ -951,14 +952,14 @@ def test_restore_drill_rejects_post_copy_data_corruption(
     (snapshot / "manifest.json").write_text(
         json.dumps(valid_snapshot_manifest(files)), encoding="utf-8"
     )
-    original_copytree = backup.shutil.copytree
+    original_copytree = backup.restore_copy_tree
 
     def corrupt_copy(source, destination, *args, **kwargs):
         result = original_copytree(source, destination, *args, **kwargs)
         (Path(destination) / "evidence.bin").write_bytes(b"bad!")
         return result
 
-    monkeypatch.setattr(backup.shutil, "copytree", corrupt_copy)
+    monkeypatch.setattr(backup, "restore_copy_tree", corrupt_copy)
     monkeypatch.setattr(
         backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []}
     )
@@ -1125,7 +1126,7 @@ def test_restore_drill_records_exception_without_replacing_last_pass(monkeypatch
     def fail_copy(*_args, **_kwargs):
         raise OSError("simulated restore I/O failure")
 
-    monkeypatch.setattr(backup.shutil, "copytree", fail_copy)
+    monkeypatch.setattr(backup, "restore_copy_tree", fail_copy)
     with pytest.raises(RuntimeError, match="receipt="):
         backup.restore_drill(policy, snapshot_id, tmp_path / "scratch", "pytest", ["restore"])
     failure_receipts = list((policy.backup_dir / "receipts").glob("*.restore.*.json"))

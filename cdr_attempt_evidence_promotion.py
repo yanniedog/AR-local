@@ -18,6 +18,7 @@ from cdr_atomic import (
 from cdr_file_lock import FileLock
 from cdr_raw_attempt_journal import RawAttemptJournal
 from cdr_provider_identity_registry import REGISTRY_FILENAME
+from ar_local_restore_io import checkpoint, hash_file as restore_hash_file, identity, optional_read_bytes, read_budget
 
 
 PROMOTION_SCHEMA_VERSION = 1
@@ -149,6 +150,9 @@ def _reject_other_promotion_state(
 
 def _hash_file(path: Path) -> tuple[int, str]:
     before = _validate_node(path, directory=False)
+    if read_budget() is not None:
+        digest = restore_hash_file(path, expected=identity(before))
+        return before.st_size, digest
     digest = hashlib.sha256()
     try:
         with path.open("rb") as stream:
@@ -169,11 +173,14 @@ def _inventory(root: Path, *, exclude: frozenset[str] = frozenset()) -> list[dic
     _validate_node(root, directory=True)
     records: list[dict[str, Any]] = []
     for current_text, directories, files in os.walk(root, topdown=True, followlinks=False):
+        checkpoint()
         current = Path(current_text)
         _validate_node(current, directory=True)
         for name in list(directories):
+            checkpoint()
             _validate_node(current / name, directory=True)
         for name in files:
+            checkpoint()
             path = current / name
             relative = path.relative_to(root).as_posix()
             if relative in exclude:
@@ -226,6 +233,9 @@ def _verified_source(
             )
         journal = RawAttemptJournal(run_root / SOURCE_NAMESPACE, session_id)
         summary = journal.summary(recover=False)
+        checkpoint()
+    except TimeoutError:
+        raise
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError("attempt journal source verification failed") from error
     for field in (
@@ -294,7 +304,9 @@ def _verify_promoted(
 ) -> tuple[dict[str, Any], str]:
     manifest_path = destination / PROMOTION_MANIFEST
     try:
-        manifest_bytes = manifest_path.read_bytes()
+        manifest_bytes = optional_read_bytes(manifest_path)
+    except TimeoutError:
+        raise
     except OSError as error:
         raise AttemptEvidencePromotionError("promotion manifest is unreadable") from error
     if manifest_bytes != canonical_json_bytes(expected_manifest):
@@ -310,6 +322,9 @@ def _verify_promoted(
         summary = RawAttemptJournal(destination.parent, session_id).summary(
             recover=False
         )
+        checkpoint()
+    except TimeoutError:
+        raise
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError("promoted attempt journal verification failed") from error
     if summary != expected_manifest["journal"]:
@@ -363,8 +378,11 @@ def verify_promoted_attempt_evidence(
         )
     manifest_path = export_root.joinpath(*manifest_relative.parts)
     try:
-        manifest_bytes = manifest_path.read_bytes()
+        manifest_bytes = optional_read_bytes(manifest_path)
         manifest = json.loads(manifest_bytes)
+        checkpoint()
+    except TimeoutError:
+        raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise AttemptEvidencePromotionError(
             "promoted attempt evidence manifest is unreadable"
@@ -386,6 +404,9 @@ def verify_promoted_attempt_evidence(
     journal = RawAttemptJournal(destination.parent, session_id)
     try:
         summary = journal.summary(recover=False)
+        checkpoint()
+    except TimeoutError:
+        raise
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError(
             "promoted attempt journal verification failed"

@@ -2,16 +2,21 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import subprocess
 import sys
 
+from pi_observer_unit_contract import COMMAND_TYPE, command_matches, native_property, unprivileged_user
+
 SERVICE = "org.freedesktop.systemd1"
 INTERFACE = SERVICE + ".Service"
-COMMAND_TYPE = "a(sasbttttuii)"
-COMMAND_PROPERTIES = ("ExecStart", "ExecCondition", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost")
-PROPERTIES = (*COMMAND_PROPERTIES, "Environment", "UnsetEnvironment")
+COMMAND_PROPERTIES = ("ExecStartEx", "ExecConditionEx", "ExecStartPreEx", "ExecStartPostEx", "ExecStopEx", "ExecStopPostEx")
+PROPERTIES = (*COMMAND_PROPERTIES, "Environment", "UnsetEnvironment", "User")
+UNITS = ("ar-local-daily-watchdog.service", "ar-local-boot-recovery.service")
+
+
+class ObserverBusy(ValueError):
+    pass
 
 
 def _run(command):
@@ -28,23 +33,24 @@ def read_service(unit, run=_run):
     encoded = "".join(char if char.isalnum() else f"_{ord(char):02x}" for char in unit)
     output = run(["busctl", "--system", "--json=short", "--timeout=10", "get-property",
                   SERVICE, "/org/freedesktop/systemd1/unit/" + encoded, INTERFACE, *PROPERTIES])
-    rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+    rows = [line for line in output.splitlines() if line.strip()]
     if len(rows) != len(PROPERTIES):
         raise ValueError(f"{unit}: incomplete property readback")
     values = {}
     for name, row in zip(PROPERTIES, rows):
-        expected_type = COMMAND_TYPE if name.startswith("Exec") else "as"
-        if not isinstance(row, dict) or row.get("type") != expected_type or not isinstance(row.get("data"), list):
+        expected_type = COMMAND_TYPE if name.startswith("Exec") else ("s" if name == "User" else "as")
+        value = native_property(row, expected_type)
+        if not isinstance(value, str if name == "User" else list):
             raise ValueError(f"{unit}: invalid {name} readback")
-        values[name] = row["data"]
+        values[name] = value
     return values
 
 
-def verify_service(unit, expected, repo, values):
-    commands = values["ExecStart"]
-    if (len(commands) != 1 or not isinstance(commands[0], list) or len(commands[0]) != 10
-            or commands[0][0] != expected[0] or commands[0][1] != expected or commands[0][2] is not False):
+def verify_service(unit, expected, repo, user, values):
+    if not command_matches(values["ExecStartEx"], expected):
         raise ValueError(f"{unit}: effective ExecStart differs from the intended observer")
+    if not unprivileged_user(user, "1") or values["User"] != user:
+        raise ValueError(f"{unit}: effective service user differs from the intended non-root user")
     if any(values[name] for name in COMMAND_PROPERTIES[1:]):
         raise ValueError(f"{unit}: inherited execution hooks require explicit review")
     environment = values["Environment"]
@@ -56,25 +62,55 @@ def verify_service(unit, expected, repo, values):
         raise ValueError(f"{unit}: inherited path-valued AR_LOCAL_REPO is not unset")
 
 
-def verify(repo, run=_run):
+def verify_idle(run=_run):
+    for unit in UNITS:
+        output = run(["systemctl", "show", unit,
+                      "--property=LoadState,ActiveState,SubState,MainPID,ControlPID"])
+        rows = [line.split("=", 1) for line in output.splitlines() if line]
+        values = dict(rows)
+        if (len(rows) != 5 or len(values) != 5 or values.get("LoadState") not in {"loaded", "not-found"}
+                or values.get("ActiveState") not in {"inactive", "failed"}
+                or values.get("SubState") not in {"dead", "failed"}
+                or values.get("MainPID") != "0" or values.get("ControlPID") != "0"):
+            raise ObserverBusy(f"{unit}: observer invocation is active or idle evidence is incomplete; defer rollout")
+
+
+def verify(repo, user, run=_run):
+    if (not unprivileged_user(user, "1")
+            or not unprivileged_user(user, run(["id", "-u", "--", user]).strip())):
+        raise ValueError("expected observer user must resolve to a non-root account")
+    verify_idle(run)
     commands = {
         "ar-local-daily-watchdog.service": ["/usr/bin/python3", "-B", repo + "/pi_ingest_observe.py"],
         "ar-local-boot-recovery.service": ["/usr/bin/sh", repo + "/deploy/pi/ar-local-boot-recovery.sh"],
     }
     for unit, expected in commands.items():
-        verify_service(unit, expected, repo, read_service(unit, run))
+        verify_service(unit, expected, repo, user, read_service(unit, run))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("repo", type=Path)
+    parser.add_argument("repo", type=Path, nargs="?")
+    parser.add_argument("--user", help="expected existing non-root service account")
+    parser.add_argument("--idle-only", action="store_true", help="defer before any unit rollout if an old observer is active")
     args = parser.parse_args(argv)
     try:
-        verify(str(args.repo.resolve(strict=True)))
+        if args.idle_only:
+            verify_idle()
+        else:
+            if args.repo is None or args.user is None:
+                parser.error("repo and --user are required for full verification")
+            verify(str(args.repo.resolve(strict=True)), args.user)
+    except ObserverBusy as exc:
+        print(f"Observer rollout deferred; no activation authorized: {exc}", file=sys.stderr)
+        return 75
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(f"Observer unit verification failed; no activation authorized: {exc}", file=sys.stderr)
         return 1
-    print("Effective watchdog and boot observation commands verified; no units started.")
+    if args.idle_only:
+        print("Watchdog and boot observer idle metadata verified; no units started.")
+    else:
+        print("Effective watchdog and boot observation commands verified; no units started.")
     return 0
 
 

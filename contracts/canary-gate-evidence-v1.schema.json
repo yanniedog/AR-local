@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yanniedog/AR-local/contracts/canary-gate-evidence-v1.schema.json",
+  "title": "AR-local Pi canary per-gate evidence v1",
+  "description": "One file per acceptance gate. result PASS is the only value that can authorize assembling canary-acceptance.json. UNKNOWN and FAIL never default to true.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gate",
+    "result",
+    "target_commit",
+    "completed_at",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "gate": {
+      "type": "string",
+      "enum": [
+        "preservation_restore",
+        "historical_integrity",
+        "shadow_ingest",
+        "producer_contracts",
+        "stable_app_compatibility",
+        "candidate_emulator_matrix",
+        "candidate_device_matrix",
+        "public_candidate_bytes"
+      ]
+    },
+    "result": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "UNKNOWN"]
+    },
+    "target_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "candidate_generation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "preservation_snapshot_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

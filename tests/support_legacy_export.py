@@ -1,4 +1,4 @@
-"""Create immutable v7/v8 backup fixtures; never used by production ingest."""
+"""Create exact immutable v6/v7/v8 backup fixtures; never used by production ingest."""
 
 from __future__ import annotations
 
@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS bank_product_changes (
 """
 
 
-def write_legacy_export(root: Path, date: str) -> Path:
+def write_legacy_export(root: Path, date: str, *, schema_version: str = "8") -> Path:
+    if schema_version not in {"6", "7", "8"}:
+        raise ValueError("unsupported legacy fixture version")
     exports = root / f"data/runs/{date}/_exports"
     (exports / "dashboard-cache").mkdir(parents=True)
     groups = {
@@ -124,6 +126,14 @@ def write_legacy_export(root: Path, date: str) -> Path:
         "fees": [], "features": [], "eligibility": [], "constraints": [],
         "failures": [{}, {}, {}], "holder_attempts": [{}, {}],
     }
+    schema = SCHEMA
+    if schema_version in {"6", "7"}:
+        schema = schema.split("CREATE TABLE IF NOT EXISTS bank_product_facts")[0]
+        groups.pop("product_facts")
+        groups.pop("product_changes")
+    if schema_version == "6":
+        schema = schema.replace("  account_class TEXT,\n", "")
+        groups.pop("holder_attempts")
     counts = {key: len(value) for key, value in groups.items()}
     (exports / f"banks-{date}.json").write_text(json.dumps(groups), encoding="utf-8")
     (exports / "dashboard-cache/latest.json").write_text(
@@ -134,10 +144,10 @@ def write_legacy_export(root: Path, date: str) -> Path:
     try:
         # sqlite_master preserves the indentation from the historical schema
         # literal. Keep it exact so the immutable v8 definition hashes verify.
-        connection.executescript(textwrap.indent(SCHEMA, "        "))
+        connection.executescript(textwrap.indent(schema, "        "))
         connection.executemany(
             "INSERT INTO schema_meta VALUES (?, ?)",
-            (("version", "8"), ("normalization_version", "legacy-test")),
+            (("version", schema_version), ("normalization_version", "legacy-test")),
         )
         connection.execute(
             "INSERT INTO runs VALUES (?, ?, ?)",

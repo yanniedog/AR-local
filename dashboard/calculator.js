@@ -11,7 +11,7 @@
 
   const $ = (id) => document.getElementById(id);
   const { normalizeRows } = window.LocalCdrUtils;
-  const { isProjectionSafeMortgageRate, isProjectionSafeSavingsRate } = window.AR.calculatorEligibility;
+  const { isProjectionSafeMortgageRate, isProjectionSafeSavingsRate, mortgageLvrEligible } = window.AR.calculatorEligibility;
 
   const AUD0 = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
   const AUD2 = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -180,12 +180,6 @@
     return true;
   }
 
-  /** Upper LVR bound (%) from an lvr_tier slug like 'lvr_70-80%'; null when unrestricted/unknown. */
-  function lvrTierMax(row) {
-    const m = /(\d+(?:\.\d+)?)%$/.exec(String(row.lvr_tier || ''));
-    return m ? Number(m[1]) : null;
-  }
-
   /** Fixed-rate period in months (ribbon_fixed_term is whole years), 0 if variable/unknown. */
   function fixedTermMonths(row) {
     if (String(row.ribbon_rate_structure || '') !== 'fixed') return 0;
@@ -217,9 +211,7 @@
       if (String(row.ribbon_repayment_type || '') === 'interest_only') return false;
       // Fixed rates with no stated fixed term can't be projected honestly.
       if (String(row.ribbon_rate_structure || '') === 'fixed' && !fixedTermMonths(row)) return false;
-      // Rates restricted to a lower LVR tier than the borrower's are ineligible.
-      const tierMax = lvrTierMax(row);
-      if (tierMax !== null && tierMax < f.lvrPct) return false;
+      if (!mortgageLvrEligible(row, f.lvrPct)) return false;
       if (f.structure && String(row.ribbon_rate_structure || '') !== f.structure) return false;
       if (f.purpose && String(row.loan_purpose || '') && String(row.loan_purpose) !== f.purpose) return false;
       if (f.repay && String(row.ribbon_repayment_type || '') && String(row.ribbon_repayment_type) !== f.repay) return false;

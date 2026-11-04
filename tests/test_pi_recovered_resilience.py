@@ -365,7 +365,8 @@ def test_ingest_units_kill_the_whole_process_tree(name: str) -> None:
     text = (ROOT / "deploy" / "pi" / name).read_text(encoding="utf-8")
     assert "KillMode=control-group" in text
     assert "TimeoutStopSec=45s" in text
-    assert "TimeoutStartSec=6h15min" in text
+    deadline = "60s" if name == "ar-local-daily-watchdog.service" else "6h15min"
+    assert f"TimeoutStartSec={deadline}" in text
     assert "RuntimeMaxSec=" not in text
     if name == "ar-local-daily-watchdog.service":
         assert "ExecStopPost=" not in text

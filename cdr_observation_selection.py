@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from cdr_export_contract import hash_file, load_contract
+from cdr_export_contract import hash_file, load_contract, read_bytes, read_json
 from cdr_atomic import canonical_json_bytes
 from cdr_compatibility import pagination_accounting_error, response_shape_error
 from cdr_http_policy import sanitize_url
@@ -35,15 +35,18 @@ def safe_child(root: Path, relative: Any) -> Path:
 
 
 def read_bound_bytes(root: Path, contract: Mapping[str, Any], relative: str,
-                     *, max_bytes: int = MAX_STATUS_BYTES) -> bytes:
+                     *, max_bytes: int = MAX_STATUS_BYTES, budget=None) -> bytes:
     records = [row for row in contract["artifacts"] if row["path"] == relative]
     if len(records) != 1:
         raise ValueError("observation metadata is not bound to its contract")
     path = safe_child(root, relative)
     if path.stat().st_size > max_bytes:
         raise ValueError("observation metadata exceeds its size budget")
-    with path.open("rb") as stream:
-        body = stream.read(max_bytes + 1)
+    if budget is None:
+        with path.open("rb") as stream:
+            body = stream.read(max_bytes + 1)
+    else:
+        body = read_bytes(path, budget=budget, max_bytes=max_bytes)
     record = records[0]
     if len(body) != record["bytes"] or hashlib.sha256(body).hexdigest() != record["sha256"]:
         raise ValueError("observation metadata changed after finalization")
@@ -51,28 +54,28 @@ def read_bound_bytes(root: Path, contract: Mapping[str, Any], relative: str,
 
 
 def read_bound_json(root: Path, contract: Mapping[str, Any], relative: str,
-                    *, max_bytes: int = MAX_STATUS_BYTES) -> dict:
-    body = read_bound_bytes(root, contract, relative, max_bytes=max_bytes)
+                    *, max_bytes: int = MAX_STATUS_BYTES, budget=None) -> dict:
+    body = read_bound_bytes(root, contract, relative, max_bytes=max_bytes, budget=budget)
     result = json.loads(body)
     if not isinstance(result, dict):
         raise ValueError("observation metadata is not an object")
     return result
 
 
-def load_pointer_observation(state: Path, pointer: Mapping[str, Any]) -> dict:
+def load_pointer_observation(state: Path, pointer: Mapping[str, Any], *, budget=None) -> dict:
     """Validate marker/event/contract identity and hash the small status artifact.
 
     A live recovery verifies all retained source artifacts again before seeding.
     Monitoring does not re-hash gigabytes of immutable exports each probe tick.
     """
     state = state.resolve()
-    marker = json.loads(safe_child(state, pointer.get("marker_path")).read_bytes())
+    marker = read_json(safe_child(state, pointer.get("marker_path")), budget=budget,max_bytes=65536)
     contract_path = safe_child(state, marker.get("export_contract_path"))
-    contract = load_contract(contract_path)
-    event = json.loads(safe_child(
+    contract = load_contract(contract_path, budget=budget)
+    event = read_json(safe_child(
         state, f"ledger-v2/events/{contract['observation_date']}/{contract['generation_id']}.json"
-    ).read_bytes())
-    verify_event(state, event)
+    ), budget=budget,max_bytes=65536)
+    verify_event(state, event, budget=budget)
     for name in ("generation_id", "observation_state"):
         if pointer.get(name) != contract[name] or marker.get(name) != contract[name]:
             raise ValueError("observation pointer identity mismatch")
@@ -92,7 +95,7 @@ def load_pointer_observation(state: Path, pointer: Mapping[str, Any]) -> dict:
     return {
         "pointer": dict(pointer), "marker": marker, "contract": contract,
         "event": event, "export_root": root,
-        "status": read_bound_json(root, contract, "ingest-status.json"),
+        "status": read_bound_json(root, contract, "ingest-status.json", budget=budget),
     }
 
 
@@ -164,7 +167,9 @@ def _verified_withdrawal_index(observation: Mapping, provider: str, proof: dict)
     if proof.get("fresh_index_sha256") != expected_digest:
         raise ValueError("withdrawal index digest mismatch")
     observed: set[str] = set()
-    expected_url = provider_directories(status)[provider]["endpoint_url"]
+    from cdr_ingest_support import product_index_request_url
+    endpoint = provider_directories(status)[provider]["endpoint_url"]
+    expected_url = product_index_request_url(endpoint)
     for number, row in enumerate(pages, start=1):
         prefix = f"{journal_path}/events/{int(row['event_seq']):08d}-"
         matches = [entry["path"] for entry in contract["artifacts"] if entry["path"].startswith(prefix)]
@@ -189,7 +194,17 @@ def _verified_withdrawal_index(observation: Mapping, provider: str, proof: dict)
         if has_cdr_errors(parsed) or response_shape_error(parsed, phase="products_index"):
             raise ValueError("withdrawal index body is invalid")
         url = event["request"]["url"]
-        if sanitize_url(url) != sanitize_url(expected_url):
+        # Retained proofs may predate request-route compatibility. Accept only
+        # the exact registered legacy endpoint or the current initial request;
+        # Melbourne's earlier 1000-page-size proofs remain valid unchanged.
+        # every later page must still match its preceding response's next link.
+        legacy_first = number == 1 and sanitize_url(url) == sanitize_url(endpoint)
+        prior_melbourne_first = (
+            number == 1
+            and expected_url == "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products/?page=1&page-size=100"
+            and url == expected_url + "0"
+        )
+        if sanitize_url(url) != sanitize_url(expected_url) and not (legacy_first or prior_melbourne_first):
             raise ValueError("withdrawal index pagination is discontinuous")
         expected_url = next_link(parsed, url)
         for product in extract_products(parsed):

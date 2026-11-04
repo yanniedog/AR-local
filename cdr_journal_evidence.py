@@ -18,6 +18,7 @@ from cdr_ingest_support import (
 )
 from cdr_product_accounting import validate_product_accounting
 from cdr_raw_attempt_journal import RawAttemptJournal
+from ar_local_restore_io import checkpoint, optional_read_bytes
 
 
 PRODUCT_PHASES = frozenset(
@@ -32,6 +33,7 @@ def journal_product_evidence(
 
     evidence: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
     for record in journal.evidence_records(recover=False):
+        checkpoint()
         if record["outcome"] != "success" or not 200 <= record["status"] < 300:
             continue
         context = record["context"]
@@ -40,11 +42,14 @@ def journal_product_evidence(
         if not provider or phase not in PRODUCT_PHASES:
             continue
         try:
-            body = (journal.root / str(record["body_path"])).read_bytes()
+            body = optional_read_bytes(journal.root / str(record["body_path"]))
+            checkpoint()
             parsed = json.loads(body)
             canonical_digest = hashlib.sha256(
                 canonical_json_bytes(parsed)
             ).hexdigest()
+        except TimeoutError:
+            raise
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
             continue
         digest = str(record["body_sha256"])
@@ -69,6 +74,7 @@ def journal_product_evidence(
         except ValueError:
             continue
         for item in products:
+            checkpoint()
             product_id = pick_text(item, ["productId", "id"])
             if product_id:
                 dataset = DATASET_TO_FOLDER.get(
@@ -82,6 +88,7 @@ def journal_product_evidence(
                         "phase": phase,
                     }
                 )
+    checkpoint()
     return evidence
 
 
@@ -93,6 +100,7 @@ def _provider_directories(
     seen_directories: set[str] = set()
     directories: dict[str, str] = {}
     for raw in provider_states:
+        checkpoint()
         if not isinstance(raw, Mapping):
             raise ValueError("promoted ingest provider state is invalid")
         uid = str(raw.get("provider_uid") or "")
@@ -127,6 +135,7 @@ def validate_journal_evidence(
     records_by_provider: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     successful_indexes: set[str] = set()
     for record in journal.evidence_records(recover=False):
+        checkpoint()
         context = record["context"]
         phase = str(context.get("phase") or "")
         provider_dir = str(context.get("provider") or "")
@@ -140,9 +149,12 @@ def validate_journal_evidence(
         ):
             try:
                 payload = json.loads(
-                    (journal.root / str(record["body_path"])).read_bytes()
+                    optional_read_bytes(journal.root / str(record["body_path"]))
                 )
+                checkpoint()
                 extract_products(payload)
+            except TimeoutError:
+                raise
             except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
                 continue
             successful_indexes.add(provider_dir)
@@ -151,6 +163,7 @@ def validate_journal_evidence(
     if set(records_by_provider) - known_directories:
         raise ValueError("journal attempt references an unknown provider")
     for uid, provider in providers.items():
+        checkpoint()
         directory = directories[uid]
         attempts = records_by_provider[directory]
         if provider["attempted"] is True and not attempts:
@@ -167,6 +180,7 @@ def validate_journal_evidence(
 
     product_evidence = journal_product_evidence(journal)
     for product in accounting["products"]:
+        checkpoint()
         key = (directories[product["provider_uid"]], product["cdr_product_id"])
         records = product_evidence.get(key, ())
         available = {item["body_sha256"] for item in records}

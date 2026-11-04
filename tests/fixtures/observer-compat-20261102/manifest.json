@@ -1,0 +1,9 @@
+{
+  "snapshot_sha256": "350423b4af0eaa8998ab33c2e8e015fc0c12f865456cf62ec89f6f3bf3d179d6",
+  "detector_sha256": "5fad15564e6f0c6b2926b261419fa21ac961cfee62fa45860db51bc5e609d621",
+  "detector_commit": "8590e238d00f093e7f6d20fccfc2377c7abf1aec",
+  "patched_snapshot_sha256": "5cc8123072e241665ecb048f8bb06234e1986638eb07c2239683feb63a63e5ba",
+  "snapshot_path": "C:/code/AR-local-alerts-20261011/scripts/ingest_notification_snapshot.py",
+  "incident": "2026-11-02 03:00 Australia/Hobart scheduled snapshot",
+  "snapshot_provenance": "Retained readable installed bytes; historical checkout Git provenance unavailable. Original command recorded path, not source hash."
+}

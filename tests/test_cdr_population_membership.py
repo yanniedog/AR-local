@@ -54,7 +54,11 @@ def test_current_population_not_old_rows_and_unknown_register_does_not_clear_los
         db_path=custom if use_persistent else None)
     report=population(current)
     held=prior_nonempty and mode!='nonempty'
-    assert report['status']==('WARN' if held else 'PASS')
+    expected = 'WARN' if held else ('PASS' if prior_nonempty else 'UNKNOWN')
+    assert report['status']==expected
+    if not prior_nonempty:
+        assert report['reason']=='population_bootstrap_incomplete'
+        assert report['bootstrap_history']['missing_dates']
     completion=seal(current,state,DAY)
     observation=selected_observation(state,DAY);coverage=observation['contract']['coverage']
     assert coverage['failure_records']==status['total']

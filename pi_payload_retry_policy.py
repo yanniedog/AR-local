@@ -25,7 +25,9 @@ def payload_retry_window_reason(now_utc: datetime | None = None) -> str:
     now = now_utc or datetime.now(timezone.utc)
     local = now.astimezone(DAILY_INGEST_TZ)
     if not daytime(3, 30) <= local.time() < daytime(22):
-        return "protected_natural_ingest_window"
+        from pi_daily_repair_admission import early_daily_allowed
+        if not early_daily_allowed(now):
+            return "protected_natural_ingest_window"
     closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
     if (closing - local).total_seconds() < PAYLOAD_TIMEOUT_SECONDS + CLEANUP_SECONDS:
         return "insufficient_publication_window"

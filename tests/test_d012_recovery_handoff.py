@@ -25,6 +25,21 @@ def _frozen_source(relative: str) -> bytes:
     # D-015 retires the UAC route. Preserve its exact source evidence while the
     # two explicitly authorized user-session implementation files evolve.
     path = relative.replace("\\", "/")
+    retired_verifiers = {
+        "pi_backup_foundation.py": ("backup-foundation", "847fcc1b132dc231581cb53f8855d1abdc6abc366fbf7c6b7aa616627cd4c73b"),
+        "cdr_observation_db.py": ("observation-db", "f530f29b3edf767f1383e098268bf06415489bd4d52a054fc4e9b03d9ba5d5c6"),
+        "cdr_observation.py": ("observation", "7d387e47e267b043926011edc9f073490310d83ff11a6e35bb93325aa9eb8403"),
+        "cdr_journal_evidence.py": ("journal-evidence", "0ad5be96f1e051e10acdd0ceafd7bbda07faeedf6eeaf86445e8776005d7b353"),
+    }
+    if path in retired_verifiers:
+        # Live restore deadlines must not rewrite retired D-012 source maps.
+        # Exact Git bytes at both f7f89a93 and 381e578f share these identities;
+        # archived copies also preserve the proof in shallow CI checkouts.
+        name, digest = retired_verifiers[path]
+        archive = ROOT / f"tests/fixtures/d012-retired-{name}-{digest[:8]}.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == digest
+        return payload
     if path == "laptop_backup_dispatcher.py":
         # Windows liveness probes now use process handles. The retired D-012
         # record must still verify the original dispatcher, including in CI's
@@ -73,6 +88,16 @@ def _frozen_source(relative: str) -> bytes:
         payload = gzip.decompress(archive.read_bytes())
         assert hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest() == (
             "6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43"
+        )
+        return payload
+    if path == "laptop_backup_daily_verify.py":
+        # Restore verification now supplies a private journal-recovery view.
+        # Retired D-012 authority maps still bind these exact 381e578f bytes,
+        # including in shallow CI; never rewrite their historical source hash.
+        archive = ROOT / "tests/fixtures/d012-retired-daily-verify-fe0a1894.py.gz"
+        payload = gzip.decompress(archive.read_bytes())
+        assert hashlib.sha256(payload).hexdigest() == (
+            "fe0a189467adee07f7ee577b53edd220fb598564a86afb0e26fed06dd111803e"
         )
         return payload
     if path in {"laptop_backup_transport.py", "laptop_pull_backup.py"}:

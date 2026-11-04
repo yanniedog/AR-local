@@ -15,6 +15,7 @@ import sys
 import time
 
 from pi_shared_queue_store import validate_job
+from pi_shared_queue_post_hooks import retained_stop, approval
 
 NATIVE_LOCK = Path('/srv/ar-local/data/state/daily-ingest.lock')
 FIXED_ROOTS = {'AR_LOCAL_DATA_ROOT': '/srv/ar-local/data',
@@ -159,6 +160,51 @@ def mark_native_manual(job, path=NATIVE_LOCK):
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def retain_native_for_stop_hook(job, path=NATIVE_LOCK, recovery_lock_factory=None):
+    """Preserve the same exact manual lease through its root stop callback.
+
+    Replacing only our verified metadata inode makes production_lock's original
+    descriptor-based finalizer leave this durable successor in place. Never
+    change an incumbent/ambiguous record or expose an absent-path gap.
+    """
+    if not retained_stop(job['unit']):
+        return False
+    approval(job['unit'], current=True)
+    factory = recovery_lock_factory or _native_recovery_lock
+    with factory(path):
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        temporary = path.with_name('.' + path.name + '.plain-handoff-' + job['id'])
+        created = False
+        try:
+            info, values = _native_values(fd)
+            expected = {'pid': str(job['pid']), 'boot_id': job['boot_id'],
+                        'role': 'shared-pi-host-task:' + job['id'], 'recovery': 'manual'}
+            if values != expected or job['pid'] != os.getpid():
+                raise ValueError('native stop-hook handoff owner differs')
+            body = ''.join(key + '=' + value + '\n' for key, value in expected.items()).encode('ascii')
+            writer = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            created = True
+            try:
+                if os.write(writer, body) != len(body):
+                    raise ValueError('short native stop-hook handoff write')
+                os.fsync(writer)
+            finally:
+                os.close(writer)
+            current = path.lstat()
+            if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
+                raise ValueError('native lease changed before persistent handoff')
+            os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_DIRECTORY)
+            try: os.fsync(directory)
+            finally: os.close(directory)
+        finally:
+            os.close(fd)
+            # This private metadata scratch file is ours, never source data.
+            if created:
+                temporary.unlink(missing_ok=True)
+    return True
 
 
 def _native_recovery_lock(path):
@@ -324,6 +370,8 @@ class NativeHostGuard:
                 raise NativeHostBusy('legacy service observation unavailable') from exc
             if not ready:
                 raise NativeHostBusy('legacy AR-local service occupies the host')
+            if retained_stop(job['unit']):
+                retain_native_for_stop_hook(job)
             yield
         finally:
             # Do not expose legacy AR-local to surviving host-task children if

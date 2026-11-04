@@ -52,7 +52,10 @@ EXPECTED_GENERATION_ENV = "AR_LOCAL_CDR_RECOVERY_GENERATION"
 
 def recovery_window(now: datetime) -> bool:
     local = now.astimezone(HOBART)
-    return daytime(3, 30) <= local.time() < daytime(22)
+    if daytime(3, 30) <= local.time() < daytime(22):
+        return True
+    from pi_daily_repair_admission import early_daily_allowed
+    return early_daily_allowed(now)
 
 
 def capture_timeout(now: datetime) -> float:
@@ -139,7 +142,7 @@ def assert_recovery_start_safe(repo_root: Path) -> None:
     """Called inside the existing DailyIngestLock, before pausing the dashboard."""
     now = datetime.now(timezone.utc)
     if not recovery_window(now) or capture_timeout(now) < 60:
-        raise RuntimeError("Same-day recovery is allowed only from 03:30 until the 22:00 Hobart cutoff")
+        raise RuntimeError("Same-day recovery requires the daytime window or verified 03:00 daily service")
     reason = recovery_block_reason(repo_root, include_ingest_lock=False)
     if reason:
         raise RuntimeError(f"Same-day recovery deferred: {reason}; the watchdog will recheck")
@@ -428,41 +431,8 @@ def _capture_allowed(history: list[dict], proofs: list[dict], now: datetime) -> 
 
 def _pending_is_only_historical(pending: dict, run_date: str) -> bool:
     """Order known pointer metadata only; the publisher verifies source bytes."""
-    queued = pending.get("queued_pointers", [])
-    if "selection_retry" in pending or not isinstance(queued, list):
-        return False
-    # Do not use retry_candidates: it intentionally filters malformed queued
-    # entries, which cannot be ignored when deciding whether recovery is safe.
-    for pointer in [pending.get("pointer"), *queued]:
-        if not isinstance(pointer, dict) or pointer.get("schema_version") != 2:
-            return False
-        day = pointer.get("observation_date")
-        try:
-            if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day or day >= run_date:
-                return False
-        except ValueError:
-            return False
-        generation = pointer.get("generation_id")
-        digest = pointer.get("ledger_event_digest")
-        if (not isinstance(generation, str) or not re.fullmatch(rf"obs-{day}-[0-9a-f]{{16}}", generation)
-                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
-                or pointer.get("observation_state") not in {"complete", "partial", "failed"}):
-            return False
-        for name in ("marker_path", "export_path"):
-            value = pointer.get(name)
-            if (not isinstance(value, str) or not value or "\\" in value or ":" in value
-                    or PurePosixPath(value).is_absolute() or ".." in PurePosixPath(value).parts):
-                return False
-        parts = PurePosixPath(pointer["export_path"]).parts
-        if parts == ("runs", day, "_exports"):
-            marker = f"{day}.done.json"
-        elif len(parts) == 5 and parts[:3] == ("runs", day, "_revisions") and parts[4] == "_exports":
-            marker = f"{day}.revision.{parts[3]}.json"
-        else:
-            return False
-        if pointer["marker_path"] != marker:
-            return False
-    return pending.get("run_date", pending["pointer"]["observation_date"]) == pending["pointer"]["observation_date"]
+    from cdr_population_pending import only_historical
+    return only_historical(pending, run_date)
 
 
 def _recover_locked(repo_root: Path, state: Path, now: datetime, launch: Callable,

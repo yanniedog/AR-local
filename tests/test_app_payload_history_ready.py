@@ -22,11 +22,11 @@ def test_committed_ready_fixture_reproduces_from_retained_observations():
     assert actual == fixture
 
 
-def test_ready_compiler_matches_reconciled_public_rate_consumer():
+def test_ready_compiler_matches_released_app_1_0_256():
     from app_payload_bank_history_ready_asset import compiler_identity, _invoke
-    # Independent pin from AR-app #402 source 39bab712, including strict LVR maxima.
-    # Publication still requires that consumer to be released and verified.
-    expected = "51e28fd661d3c273ea9b07aefe7c04c2f90c53e16d48111b9a8814d8d9572ae7"
+    # Exact compiler from AR-app app-v1.0.256, commit
+    # 0f217f0a573dd072c019bef93b26f3b71d038d7d. Keep the consumer pin strict.
+    expected = "c6d1ff733a579a5fef1d17105922aee20bf73d96e66adc60aaa637ff2c1cec9b"
     assert compiler_identity()[1] == expected
     ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
     assert ready["compiler_sha256"] == expected

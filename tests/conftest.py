@@ -1,8 +1,22 @@
 """Keep Drive unit-test controls independent of the operator's real host hold."""
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def verified_day_archive_before_cleanup(monkeypatch):
+    """Do not upload to Drive from unit tests. Ordering tests replace this seam."""
+    cdr_daily = sys.modules.get("cdr_daily")
+    if cdr_daily is None:
+        return
+    monkeypatch.setattr(
+        cdr_daily,
+        "_archive_raw_day_before_cleanup",
+        lambda date, **_kwargs: {"date": date, "result": "PASS"},
+    )
 
 
 @pytest.fixture(autouse=True)

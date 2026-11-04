@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from pi_cdr_quality_read_io import dropbehind_required, hash_dropbehind
 
 BLOCK_BYTES = 4 * 1024 * 1024
 
@@ -44,16 +46,25 @@ def _file_state(path: Path, root: Path) -> tuple:
     return _identity(info), ancestors
 
 
-def _hash_stream(stream, size: int, capture: bool) -> tuple[str, bytes | None]:
+def _hash_stream(stream, size: int, capture: bool, *, budget=None) -> tuple[str, bytes | bytearray | None]:
+    if dropbehind_required():
+        return hash_dropbehind(stream.fileno(), size, capture, budget=budget)
     digest, blocks, remaining = hashlib.sha256(), [], size
     while remaining:
-        block = stream.read(min(BLOCK_BYTES, remaining))
+        amount = min(BLOCK_BYTES, remaining)
+        if budget is not None:
+            budget(reserve_bytes=amount)
+        block = stream.read(amount)
+        if budget is not None:
+            budget(size=len(block))
         if not block:
             raise ValueError("evidence size changed during read")
         remaining -= len(block)
         digest.update(block)
         if capture:
             blocks.append(block)
+    if budget is not None:
+        budget()
     if stream.read(1):
         raise ValueError("evidence size changed during read")
     return digest.hexdigest(), b"".join(blocks) if capture else None
@@ -72,7 +83,7 @@ class FileDigest:
 
 
 def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
-                max_bytes: int | None = None) -> tuple[FileDigest, bytes | None]:
+                max_bytes: int | None = None, budget=None) -> tuple[FileDigest, bytes | bytearray | None]:
     """Bind the digest to one no-follow descriptor and unchanged path identity.
 
     O_NONBLOCK prevents a raced FIFO replacement from blocking before fstat.
@@ -80,6 +91,8 @@ def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
     and reject linked/reparse paths on both pathname observations.
     """
     root = root or path.parent
+    if budget is not None:
+        budget(entries=1)
     identity, ancestors = _file_state(path, root)
     size = identity[4]
     if max_bytes is not None and size > max_bytes:
@@ -91,7 +104,8 @@ def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
         if _identity(os.fstat(descriptor)) != identity:
             raise ValueError("evidence descriptor differs from its pathname")
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
-            digest, body = _hash_stream(stream, size, capture)
+            options = {"budget": budget} if budget is not None else {}
+            digest, body = _hash_stream(stream, size, capture, **options)
         if _identity(os.fstat(descriptor)) != identity:
             raise ValueError("evidence changed during descriptor read")
         result = FileDigest(digest, size, identity, ancestors)
@@ -107,10 +121,23 @@ class DigestSnapshot:
         self.root = root
         self.files: dict[Path, FileDigest] = {}
         self.directories: dict[Path, tuple] = {}
+        self._ancestor_chains: dict[tuple, tuple] = {}
+
+    def _retain(self, entry: FileDigest) -> FileDigest:
+        # Share only exactly equal immutable path/identity chains in this snapshot.
+        # Every original descriptor read and ancestor recheck still runs.
+        ancestors = self._ancestor_chains.setdefault(entry.ancestors, entry.ancestors)
+        return entry if ancestors is entry.ancestors else replace(entry, ancestors=ancestors)
+
+    def retain(self, path: Path, entry: FileDigest) -> FileDigest:
+        """Record an already-read entry through this snapshot's sharing boundary."""
+        retained = self._retain(entry)
+        self.files[path] = retained
+        return retained
 
     def digest(self, path: Path, descriptor: dict | None = None) -> str:
         if path not in self.files:
-            self.files[path] = read_digest(path, root=self.root)[0]
+            self.retain(path, read_digest(path, root=self.root)[0])
         entry = self.files[path]
         entry.recheck(path, self.root)
         if descriptor is not None and (entry.sha256 != descriptor["sha256"] or entry.size != descriptor["bytes"]):
@@ -125,7 +152,7 @@ class DigestSnapshot:
         value = json.loads(body)
         if not isinstance(value, dict):
             raise ValueError("evidence must be a JSON object")
-        self.files[path] = entry
+        self.retain(path, entry)
         return value
 
     def directory(self, path: Path) -> None:

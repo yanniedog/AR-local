@@ -47,5 +47,6 @@ def apply_population_coverage(export_root, run_date, providers):
             'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE',
             **({'provider_identity':identity} if identity else {}),
             **({'current_register_membership':'absent'} if not matches else {}),
-            **({'last_nonempty':finding['last_nonempty']} if 'last_nonempty' in finding else {})})
+            **{key:finding[key] for key in ('last_nonempty','historical_baseline','historical_absence')
+               if key in finding}})
     return warnings

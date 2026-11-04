@@ -609,12 +609,16 @@ def write_observation(
 def load_verified_observation(out_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load the one canonical observation only after every stored form agrees."""
 
+    from ar_local_restore_io import checkpoint, read_budget, read_bytes
     out_dir = out_dir.expanduser().resolve()
 
     def read(name: str, label: str) -> tuple[dict[str, Any], bytes]:
         try:
-            raw = (out_dir / name).read_bytes()
+            raw = read_bytes(out_dir / name) if read_budget() is not None else (out_dir / name).read_bytes()
             value = json.loads(raw)
+            checkpoint()
+        except TimeoutError:
+            raise
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise ObservationError(f"{label} is unreadable") from error
         if not isinstance(value, dict) or raw != canonical_json_bytes(value):
@@ -624,6 +628,7 @@ def load_verified_observation(out_dir: Path) -> tuple[dict[str, Any], dict[str, 
     observation, _ = read(OBSERVATION_FILE, "observation")
     accounting, accounting_bytes = read(ACCOUNTING_FILE, "product accounting")
     validate_observation(observation, accounting)
+    checkpoint()
     projections = {group: observation[group] for group in PROJECTION_GROUPS}
     verify_observation_database(
         out_dir / "local-cdr.sqlite",

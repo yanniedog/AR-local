@@ -29,8 +29,9 @@ def _unique(pairs):
 
 
 @contextmanager
-def _retry_lock(path: Path, root: Path):
+def _retry_lock(path: Path, snapshot: DigestSnapshot):
     """Read an existing FileLock without writing, and fence it until snapshot end."""
+    root = snapshot.root
     identity, ancestors = _file_state(path, root)
     if identity[4] != 1:
         raise ValueError("publication retry lock has an unknown format")
@@ -55,6 +56,10 @@ def _retry_lock(path: Path, root: Path):
             raise ValueError("publication retry lock has an unknown format")
         entry = FileDigest(hashlib.sha256(body).hexdigest(), 1, identity, ancestors)
         entry.recheck(path, root)
+        # ExitStack keeps this generator alive. Release its duplicate chain too,
+        # while preserving the descriptor and both post-yield identity fences.
+        entry = snapshot.retain(path, entry)
+        del ancestors
         yield entry
         if _identity(os.fstat(descriptor)) != identity:
             raise ValueError("publication retry lock changed during snapshot")
@@ -92,7 +97,7 @@ def control_state(data: Path) -> dict:
                 result["files"][name] = None
                 continue
             if path.parent == retry and path.suffix == ".lock":
-                entry = locks.enter_context(_retry_lock(path, data))
+                entry = locks.enter_context(_retry_lock(path, snapshot))
                 value = None
             else:
                 entry, body = read_digest(path, root=data, capture=True, max_bytes=MAX_BYTES - total)
@@ -102,7 +107,7 @@ def control_state(data: Path) -> dict:
             total += entry.size
             if total > MAX_BYTES:
                 raise ValueError("publication control inventory exceeds byte bound")
-            snapshot.files[path] = entry
+            snapshot.retain(path, entry)
             result["files"][name] = {"sha256": entry.sha256, "bytes": entry.size}
             if name == PENDING and "queued_pointers" in value:
                 queued = value["queued_pointers"]
