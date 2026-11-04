@@ -27,16 +27,22 @@ on:
         required: true
         type: string
       mode:
-        description: "preflight / discover (read-only) or canary"
+        description: "preflight / discover / inspect (read-only) or canary"
         required: true
         default: "preflight"
         type: choice
         options:
           - "preflight"
           - "discover"
+          - "inspect"
           - "canary"
       confirm:
         description: "Type RUN_GUARDED_CANARY for canary mode"
+        required: false
+        default: ""
+        type: string
+      operation_id:
+        description: "inspect mode: operation id, e.g. gh-41920760761-1"
         required: false
         default: ""
         type: string
@@ -199,6 +205,48 @@ jobs:
           df -h /srv/ar-local | tail -1
           grep -E 'MemAvailable' /proc/meminfo
           ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5 || true
+          REMOTE
+
+      # Read-only diagnosis of one finished canary operation: resource receipt
+      # scalars, the failure sample reason and a redacted service-log tail.
+      # Disposition contents and reasons are never printed.
+      - name: Read-only inspection of a canary operation
+        if: inputs.mode == 'inspect'
+        env:
+          OPERATION_ID: ${{ inputs.operation_id }}
+        run: |
+          set -uo pipefail
+          [[ "$OPERATION_ID" =~ ^gh-[0-9]{1,20}-[0-9]{1,4}$ ]] || { echo "::error::operation_id must look like gh-<run>-<attempt>"; exit 1; }
+          ssh ar-local-pi5 bash -s -- "$OPERATION_ID" <<'REMOTE'
+          set -u
+          OP="/srv/ar-local/quality-operation-$1"
+          [ -d "$OP" ] && [ ! -L "$OP" ] || { echo "operation $OP not found"; exit 1; }
+          echo "== files =="; ls -la "$OP" | sed -n '1,60p'
+          for name in resources.json canary-unit.json canary.json; do
+            [ -f "$OP/$name" ] || continue
+            echo "== $name =="
+            python3 - "$OP/$name" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          def walk(prefix, value, depth=0):
+              if depth > 3:
+                  return
+              if isinstance(value, dict):
+                  for k, v in value.items():
+                      kl = k.lower()
+                      if "disposition" in kl or "reason_text" in kl or k in ("command", "environment"):
+                          continue
+                      walk(f"{prefix}.{k}" if prefix else k, v, depth + 1)
+              elif isinstance(value, (str, int, float, bool)) or value is None:
+                  print(f"{prefix}: {str(value)[:300]}")
+          walk("", r)
+          PY
+          done
+          for name in canary-service.txt; do
+            [ -f "$OP/$name" ] || continue
+            echo "== tail $name (disposition lines redacted) =="
+            tail -n 80 "$OP/$name" | sed -E '/[Dd]isposition/s/.*/[redacted disposition line]/' | cut -c1-400
+          done
           REMOTE
 
       # Read-only discovery of where earlier canaries ran from: candidate
