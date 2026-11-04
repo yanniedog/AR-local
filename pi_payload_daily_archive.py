@@ -209,6 +209,8 @@ def archive_worker(repo_root: Path, day: str, digest: str, *, manual_proof=None)
                 or not verify_completion_marker(marker, state, day)):
             raise ValueError("archive completion, ledger or artifact verification failed")
         from app_payload_archive import build_and_archive_payload
+        if manual_proof:
+            owner.verified_record()
         result = build_and_archive_payload(exports, state_dir=archive_state(repo_root) / "bundles",
             contract_coverage=contract_coverage(contract), source_observation={key: contract[key]
                 for key in ("generation_id", "observation_date", "observation_state", "contract_digest", "source_path")},
@@ -219,6 +221,7 @@ def archive_worker(repo_root: Path, day: str, digest: str, *, manual_proof=None)
                    "manifest_url": result.manifest_url, "manifest_sha256": result.manifest_sha256}
         if manual_proof:
             receipt["manual_terminal_proof_sha256"] = manual_proof.sha256
+            owner.verified_record()
         atomic_write_json(archive_state(repo_root) / "receipts" / (digest + ".json"),
                           receipt, create_once=True)
         return receipt

@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -173,11 +175,13 @@ def test_proof_reserved_and_forwarded_before_child_then_required_in_receipt(tmp_
         assert command[-4:] == ["--manual-proof", str(proof.path), "--manual-proof-sha256", proof.sha256]
         assert kwargs["timeout_seconds"] == 1800
         archive.atomic_write_json(root / "receipts" / (DIGEST + ".json"),
-            {"status": "archived", "selected_for_app": False, "manifest_url": "https://github.com/archive"})
+            {"schema_version": 1, "contract_digest": DIGEST, "status": "archived",
+             "selected_for_app": False, "manifest_url": "https://github.com/archive"})
     monkeypatch.setattr(archive, "run_process_group", child)
     assert archive.run_once(tmp_path, day=continuity.DAY, manual_proof=proof)["status"] == "failed"
     attempt = json.loads((root / "attempts" / (continuity.DAY + ".json")).read_bytes())
     assert attempt["attempts"] == 1 and attempt["status"] == "failed"
+    assert attempt["reason"] == "RuntimeError", "must reach the manual proof receipt mismatch"
 
 
 def test_worker_rechecks_proof_under_its_owned_lease_before_source_and_upload(tmp_path, monkeypatch, cleared, proof):
@@ -198,3 +202,114 @@ def test_worker_rechecks_proof_under_its_owned_lease_before_source_and_upload(tm
     assert len(calls) == 2 and calls[0] is None
     assert not source.called
     assert not (tmp_path / "state/daily-ingest.lock").exists()
+
+
+@pytest.mark.parametrize("loss_at", ["source", "build", None])
+def test_worker_revalidates_owner_before_build_and_before_receipt(tmp_path, monkeypatch, proof, loss_at):
+    import app_payload_archive as builder
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setattr(archive, "data_state_root", lambda _: state)
+    monkeypatch.setattr(archive, "window_reason", lambda _: "")
+    monkeypatch.setattr(archive, "ingest_clearance", lambda *a, **kw: "")
+    monkeypatch.setattr(locks, "_current_boot_id", lambda: continuity.BOOT)
+    contract = {"contract_digest": DIGEST, "generation_id": "control-plane-test",
+                "observation_date": continuity.DAY, "observation_state": "partial",
+                "completion_marker_path": "marker.json", "source_path": "control-plane-test"}
+    marker = {"export_contract_digest": DIGEST, "generation_id": contract["generation_id"],
+              "observation_state": "partial", "export_contract_path": "marker.json"}
+    (state / "marker.json").write_text(json.dumps(marker))
+    monkeypatch.setattr(archive, "selected_source", lambda *a: (contract, tmp_path))
+    monkeypatch.setattr(archive, "load_contract", lambda _: contract)
+    monkeypatch.setattr(archive, "contract_coverage", lambda _: {})
+    monkeypatch.setattr(archive, "publication_allowed", lambda _: (False, "control-plane-test"))
+    def lose_owner():
+        path = state / "daily-ingest.lock"
+        path.write_text(path.read_text().replace("daily-payload-archive", "foreign"))
+    def verify_source(*args):
+        if loss_at == "source":
+            lose_owner()
+        return True
+    def build(*args, **kwargs):
+        if loss_at == "build":
+            lose_owner()
+        return SimpleNamespace(tag="control-plane-test", manifest_url="https://github.com/archive",
+                               manifest_sha256=DIGEST)
+    monkeypatch.setattr(archive, "verify_completion_marker", verify_source)
+    upload = Mock(side_effect=build)
+    monkeypatch.setattr(builder, "build_and_archive_payload", upload)
+    receipt_write = Mock()
+    monkeypatch.setattr(archive, "atomic_write_json", receipt_write)
+    if loss_at:
+        with pytest.raises(RuntimeError, match="ownership changed"):
+            archive.archive_worker(tmp_path, continuity.DAY, DIGEST, manual_proof=proof)
+        assert not (state / archive.STATE_DIRECTORY / "receipts").exists()
+        receipt_write.assert_not_called()
+    else:
+        result = archive.archive_worker(tmp_path, continuity.DAY, DIGEST, manual_proof=proof)
+        assert result["manual_terminal_proof_sha256"] == proof.sha256
+        receipt_write.assert_called_once_with(state / archive.STATE_DIRECTORY / "receipts" / (DIGEST + ".json"),
+                                              result, create_once=True)
+    assert upload.call_count == (0 if loss_at == "source" else 1)
+
+
+@pytest.mark.parametrize("option", ["-O", "-OO"])
+def test_actual_optimized_interpreter_refuses_proof_before_loading_helpers(tmp_path, option):
+    script = """
+from pathlib import Path
+import pi_payload_manual_continuity as manual
+def forbidden(*args):
+    raise RuntimeError('proof input or frozen helper reached')
+manual.checked = forbidden
+for action in (lambda: manual._binding(Path('.')),
+               lambda: manual.ManualArchiveProof(Path('invalid.json'), manual.PREFLIGHT_SHA).verify(manual.DAY)):
+    try:
+        action()
+    except ValueError as error:
+        if str(error) != 'manual proof requires an unoptimized interpreter':
+            raise RuntimeError('wrong refusal') from error
+    else:
+        raise RuntimeError('optimized proof accepted')
+print('optimized proof refused before loading')
+"""
+    result = subprocess.run([sys.executable, option, "-c", script],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=30)
+    if result.returncode != 0 or result.stdout.strip() != "optimized proof refused before loading":
+        pytest.fail(f"optimized subprocess failed: {result.returncode}: {result.stdout} {result.stderr}")
+
+
+@pytest.fixture
+def running_host():
+    unit = "ar-local-manual-archive-test.service"
+    job = {"unit": unit, "pid": 123, "cgroup": "/system.slice/" + unit, "invocation_id": "a" * 32}
+    row = {"Id": unit, "LoadState": "loaded", "ActiveState": "active", "Job": "",
+           "MainPID": "123", "ControlPID": "0", "ControlGroup": job["cgroup"],
+           "InvocationID": job["invocation_id"]}
+    return unit, {"queue_jobs": [job], "units": {unit: row},
+                  "unit_activity": [unit + ":active", unit + ":members"]}
+
+
+@pytest.mark.parametrize("activity", [[], [":active"], [":members"], [":active", ":active"],
+                                     [":active", ":members", ":queued"], None, {}, [1, 2]])
+def test_incomplete_or_malformed_own_activity_refused(running_host, activity):
+    unit, host = running_host
+    host["unit_activity"] = [unit + x if isinstance(x, str) else x for x in activity] if isinstance(activity, list) else activity
+    with pytest.raises(ValueError, match="complete own-unit activity"):
+        continuity._require_activity(host, unit)
+
+
+@pytest.mark.parametrize("field", ["Id", "LoadState", "ActiveState", "Job", "MainPID", "ControlPID",
+                                   "ControlGroup", "InvocationID"])
+def test_incomplete_running_unit_refused(running_host, field):
+    unit, host = running_host
+    del host["units"][unit][field]
+    with pytest.raises((ValueError, KeyError)):
+        continuity._require_activity(host, unit)
+
+
+def test_live_cgroup_is_insufficient_without_active_unit(running_host):
+    unit, host = running_host
+    continuity._require_activity(host, unit)
+    host["units"][unit]["ActiveState"] = "inactive"
+    with pytest.raises(ValueError, match="running unit"):
+        continuity._require_activity(host, unit)

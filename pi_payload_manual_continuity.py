@@ -38,6 +38,7 @@ def checked(path: Path, expected: str, limit=2 * 1024**2) -> bytes:
 
 
 def _binding(directory: Path):
+    _require_interpreter()
     # The frozen binding verifies helper hashes again when loading each helper.
     for name, digest in PINS.items():
         checked(directory / name, digest)
@@ -48,32 +49,67 @@ def _binding(directory: Path):
     return module
 
 
+def _require_interpreter():
+    # Frozen helpers use assertions. Their byte pins must not change, and their
+    # checks must remain executable, including imports performed by the binding.
+    if sys.flags.optimize != 0:
+        raise ValueError("manual proof requires an unoptimized interpreter")
+
+
+def _require_activity(host, unit: str):
+    jobs, activity = host["queue_jobs"], host["unit_activity"]
+    if (not isinstance(jobs, list) or len(jobs) != 1
+            or not isinstance(jobs[0], dict) or jobs[0].get("unit") != unit):
+        raise ValueError("manual proof queue inventory changed")
+    expected = {unit + ":active", unit + ":members"}
+    if (not isinstance(activity, list) or len(activity) != 2
+            or any(not isinstance(item, str) for item in activity) or set(activity) != expected):
+        raise ValueError("manual proof requires complete own-unit activity")
+    job, row = jobs[0], host["units"][unit]
+    # ownership() == live alone also permits a nonempty inactive cgroup. Require
+    # the reader's complete running-unit record, bound to that authenticated job.
+    if (not isinstance(row, dict) or row.get("Id") != unit or row.get("LoadState") != "loaded"
+            or row.get("ActiveState") != "active" or row.get("Job") != ""
+            or row.get("MainPID") != str(job["pid"]) or int(row["MainPID"]) <= 0
+            or not isinstance(row.get("ControlPID"), str) or not row["ControlPID"].isdigit()
+            or row.get("ControlGroup") != "/system.slice/" + unit
+            or row["ControlGroup"] != job["cgroup"]
+            or not row.get("InvocationID") or row["InvocationID"] != job["invocation_id"]):
+        raise ValueError("manual proof running unit is incomplete or changed")
+
+
 def _require_host(binding, host, unit: str, owner: OwnedProductionLock | None):
     """Repeat full host admission without hiding or rewriting the native lease."""
+    _require_activity(host, unit)
     if owner is None:
         binding.require_idle_host(host, unit)
         return
-    assert not host["blockers"] and host["production_head"] == binding.PREVIOUS
-    assert owner.path == Path("/srv/ar-local/data/state/daily-ingest.lock")
-    assert owner.role == "daily-payload-archive"
-    assert host["native_lease"] == owner.verified_record()
-    assert len(host["queue_jobs"]) == 1 and host["queue_jobs"][0]["unit"] == unit
-    assert set(host["unit_activity"]) <= {unit + ":active", unit + ":members"}
+    if host["blockers"] or host["production_head"] != binding.PREVIOUS:
+        raise ValueError("manual proof host admission changed")
+    if (owner.path != Path("/srv/ar-local/data/state/daily-ingest.lock")
+            or owner.role != "daily-payload-archive"
+            or host["native_lease"] != owner.verified_record()):
+        raise ValueError("manual proof native lease differs from live owner")
     for name in ("ar-local-daily.timer", "ar-local-day-archive.timer", "ar-local-runtime-health.timer"):
-        assert host["units"][name]["ActiveState"] == "active"
+        if host["units"][name]["ActiveState"] != "active":
+            raise ValueError("manual proof timer restoration not proven")
 
 
 def _owned_compare(binding, before, fresh, unit: str, owner: OwnedProductionLock):
     """Preserve compare(), replacing only absent lease with this live acquisition."""
     binding.validate_preboot(before)
-    assert fresh["schema"] == 1 and fresh["target"] == binding.TARGET
-    assert fresh["previous"] == binding.PREVIOUS
+    if (fresh["schema"] != 1 or fresh["target"] != binding.TARGET
+            or fresh["previous"] != binding.PREVIOUS):
+        raise ValueError("manual proof capture identity changed")
     result = binding.base.admit(before["continuity"], fresh["continuity"])
-    assert datetime.fromisoformat(fresh["continuity"]["at_hobart"]) > datetime.fromisoformat(before["continuity"]["at_hobart"])
+    if datetime.fromisoformat(fresh["continuity"]["at_hobart"]) <= datetime.fromisoformat(before["continuity"]["at_hobart"]):
+        raise ValueError("manual proof capture is not newer")
     host = fresh["host"]
     _require_host(binding, host, unit, owner)
-    assert host["identity"]["boot_id"] == fresh["continuity"]["boot_id"]
-    assert fresh["installed"] == before["installed"], "installed workers/timers changed"
+    if host["identity"]["boot_id"] != fresh["continuity"]["boot_id"]:
+        raise ValueError("manual proof host boot differs")
+    if fresh["installed"] != before["installed"]:
+        raise ValueError("installed workers/timers changed")
     binding.load("guarded_reboot_v2_frozen.py").same_host(before["host"], host, rebooted=True)
     return result
 
@@ -84,6 +120,7 @@ class ManualArchiveProof:
     sha256: str
 
     def verify(self, day: str, *, owner: OwnedProductionLock | None = None) -> dict:
+        _require_interpreter()
         if date.fromisoformat(day).isoformat() != day or day > DAY or self.sha256 != PREFLIGHT_SHA:
             raise ValueError("manual proof is bound to one original date and capture")
         document = json.loads(checked(self.path, self.sha256))
@@ -99,6 +136,7 @@ class ManualArchiveProof:
         unit = binding.own_queue_unit(fresh["host"])
         if unit is None:
             raise ValueError("manual archive requires authenticated exclusive queue ownership")
+        _require_activity(fresh["host"], unit)
         result = (binding.compare(before, fresh, allowed_unit=unit) if owner is None
                   else _owned_compare(binding, before, fresh, unit, owner))
         final = binding.reader.snapshot()
