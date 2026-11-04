@@ -171,10 +171,12 @@ jobs:
           REMOTE
 
       # Everything that touches the candidate tree runs only after shared-queue
-      # admission, inside the queued command. The submitter is detached with
-      # its PID recorded outside the operation directory, so SSH loss (SIGHUP)
-      # or workflow cancellation can still be converted into the submitter's
-      # own SIGTERM cancellation path, which stops the exact queued unit.
+      # admission, inside a queued script written to a private control file.
+      # The queued script owns the helper's separate canary unit: on SIGTERM
+      # (queue cancel/deadline) it stops and verifies that unit before
+      # exiting, so the ar-local admission is held until the child is gone.
+      # The submitter is detached with its PID recorded, and SSH loss or a
+      # workflow cancel is converted into its own SIGTERM cancellation path.
       - name: Run guarded canary under shared-queue admission
         if: inputs.mode == 'canary'
         env:
@@ -192,11 +194,46 @@ jobs:
           CTL=/srv/ar-local/quality-gh-control
           mkdir -p "$CTL"
           PIDF="$CTL/$OP_ID.submitter.pid"
+          QS="$CTL/$OP_ID.queued.sh"
           test ! -e "$PIDF" || { echo "submitter record $PIDF already exists"; exit 1; }
-          QUEUED='set -euo pipefail
+          test ! -e "$QS" || { echo "queued script $QS already exists"; exit 1; }
+          (umask 077; cat > "$QS") <<'QUEUED'
+          set -euo pipefail
           COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
+          CTL=/srv/ar-local/quality-gh-control
           C=/srv/ar-local/quality-candidate
           OP="/srv/ar-local/quality-operation-$OP_ID"
+          child_unit() {
+            [ -f "$OP/canary-unit.json" ] || return 0
+            python3 - "$OP/canary-unit.json" "$OP" "$COMMIT" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
+                and r.get("source") == "/srv/ar-local/quality-candidate"
+                and r.get("expected_commit") == sys.argv[3]
+                and str(r.get("unit", "")).endswith(".service"))
+          print(r["unit"] if ok else "MISMATCH")
+          PY
+          }
+          stop_child() {
+            U="$(child_unit)"
+            [ -n "$U" ] || return 0
+            [ "$U" != MISMATCH ] || { echo "canary-unit.json identity mismatch"; return 1; }
+            sudo -n systemctl stop --no-block "$U" || true
+            for _ in $(seq 1 18); do
+              case "$(systemctl is-active "$U" 2>/dev/null || true)" in active|activating|deactivating|reloading) sleep 2 ;; *) return 0 ;; esac
+            done
+            sudo -n systemctl kill --kill-whom=all --signal=SIGKILL "$U" || true
+            sleep 2
+            case "$(systemctl is-active "$U" 2>/dev/null || true)" in active|activating|deactivating|reloading) return 1 ;; esac
+          }
+          HELPER=""
+          on_term() {
+            stop_child || echo "child unit not confirmed stopped"
+            [ -n "$HELPER" ] && kill -TERM "$HELPER" 2>/dev/null || true
+            exit 143
+          }
+          trap on_term TERM INT HUP
           NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
           [ "$NOW_HM" -ge 0330 ] && [ "$NOW_HM" -lt 2200 ] || { echo "outside 03:30-22:00 Hobart"; exit 1; }
           D_ACTIVE="$(systemctl show ar-local-daily.service -p ActiveState --value)"
@@ -215,24 +252,32 @@ jobs:
           test "$(git -C "$C" rev-parse FETCH_HEAD)" = "$COMMIT" || { echo "fetched main != $COMMIT"; exit 1; }
           git -C "$C" checkout --quiet --detach "$COMMIT"
           test "$(git -C "$C" rev-parse HEAD)" = "$COMMIT"
-          DCOPY="/srv/ar-local/quality-gh-control/$OP_ID.dispositions.json"
+          DCOPY="$CTL/$OP_ID.dispositions.json"
           test ! -e "$DCOPY" || { echo "dispositions copy already exists"; exit 1; }
           (umask 077; cp --no-preserve=all "$DISP" "$DCOPY")
           chmod 0400 "$DCOPY"
-          test "$(sha256sum "$DCOPY" | cut -d" " -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
+          test "$(sha256sum "$DCOPY" | cut -d' ' -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
           echo "operation: $OP"
           # The helper prints its full result (including dispositions) on
           # stdout; keep it private on the Pi. stderr still streams.
-          HLOG="/srv/ar-local/quality-gh-control/$OP_ID.helper-stdout.json"
+          HLOG="$CTL/$OP_ID.helper-stdout.json"
           (umask 077; : > "$HLOG")
-          exec "$PY" "$C/pi_cdr_quality_activate.py" canary \
+          "$PY" "$C/pi_cdr_quality_activate.py" canary \
             --source "$C" \
             --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
             --operation "$OP" --expected-commit "$COMMIT" --python "$PY" \
-            --dispositions "$DCOPY" --pressure-profile "$PROFILE" > "$HLOG"'
+            --dispositions "$DCOPY" --pressure-profile "$PROFILE" > "$HLOG" &
+          HELPER=$!
+          set +e
+          wait "$HELPER"; RC=$?
+          set -e
+          stop_child || { echo "child unit not confirmed stopped after helper exit"; exit 1; }
+          exit "$RC"
+          QUEUED
+          chmod 0500 "$QS"
           setsid /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
             --cpu-slots 2 --max-runtime 6000 --wait-timeout 1800 -- \
-            /bin/bash -c "$QUEUED" queued-canary "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" &
+            /bin/bash "$QS" "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" &
           SUB=$!
           echo "$SUB $OP_ID" > "$PIDF"
           trap 'kill -TERM "$SUB" 2>/dev/null || true' HUP TERM INT
@@ -272,11 +317,11 @@ jobs:
           exit "$RC"
           REMOTE
 
-      # Always runs for canary mode: first cancel a still-live submitter
-      # (pending or admitted) through its own SIGTERM path, then reap the
-      # helper's separate `sudo systemd-run` unit after matching its
-      # canary-unit.json identity to this exact operation.
-      - name: Stop and verify queued submission and canary unit
+      # Always runs for canary mode. Child first: the helper's canary unit is
+      # stopped and verified while any queue submission still holds the
+      # ar-local admission; only then is the submitter cancelled through its
+      # own SIGTERM path and any queue unit for this operation reaped.
+      - name: Stop and verify canary unit, then queued submission
         if: always() && inputs.mode == 'canary'
         env:
           TARGET_COMMIT: ${{ inputs.target_commit }}
@@ -286,12 +331,34 @@ jobs:
           ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$OP_ID" <<'REMOTE'
           set -euo pipefail
           COMMIT="$1"; OP_ID="$2"
+          OP="/srv/ar-local/quality-operation-$OP_ID"
+          busy() { case "$(systemctl is-active "$1" 2>/dev/null || true)" in active|activating|deactivating|reloading) return 0 ;; *) return 1 ;; esac; }
+          R="$OP/canary-unit.json"
+          if [ -f "$R" ]; then
+            UNIT="$(python3 - "$R" "$OP" "$COMMIT" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
+                and r.get("source") == "/srv/ar-local/quality-candidate"
+                and r.get("expected_commit") == sys.argv[3]
+                and str(r.get("unit", "")).endswith(".service"))
+          print(r["unit"] if ok else "")
+          PY
+          )"
+            test -n "$UNIT" || { echo "canary-unit.json identity mismatch; not stopping anything"; exit 1; }
+            echo "canary unit $UNIT state: $(systemctl is-active "$UNIT" 2>/dev/null || true)"
+            if busy "$UNIT"; then sudo -n systemctl stop "$UNIT"; fi
+            for _ in $(seq 1 30); do busy "$UNIT" || break; sleep 2; done
+            if busy "$UNIT"; then echo "canary unit $UNIT still active"; exit 1; fi
+          else
+            echo "no canary-unit.json; helper never launched its unit"
+          fi
           PIDF="/srv/ar-local/quality-gh-control/$OP_ID.submitter.pid"
           if [ -f "$PIDF" ]; then
             read -r SUB REC_OP < "$PIDF"
             # /usr/local/bin/pi-shared-task execs python3 .../pi_shared_task.py
             if [ "$REC_OP" = "$OP_ID" ] && kill -0 "$SUB" 2>/dev/null \
-               && tr '\0' ' ' < "/proc/$SUB/cmdline" | grep -q "pi_shared_task\.py .*queued-canary .* $OP_ID "; then
+               && tr '\0' ' ' < "/proc/$SUB/cmdline" | grep -q "pi_shared_task\.py .*$OP_ID\.queued\.sh "; then
               echo "cancelling live submitter $SUB"
               kill -TERM "$SUB"
               for _ in $(seq 1 75); do kill -0 "$SUB" 2>/dev/null || break; sleep 2; done
@@ -305,36 +372,7 @@ jobs:
             systemctl show "$Q" -p ExecStart --value 2>/dev/null | grep -q -- " $OP_ID " || continue
             echo "stopping queue unit $Q for $OP_ID"
             sudo -n systemctl stop "$Q" || true
-            for _ in $(seq 1 45); do
-              case "$(systemctl is-active "$Q" 2>/dev/null || true)" in active|activating|deactivating|reloading) sleep 2 ;; *) break ;; esac
-            done
-            case "$(systemctl is-active "$Q" 2>/dev/null || true)" in
-              active|activating|deactivating|reloading) echo "queue unit $Q still active"; exit 1 ;;
-            esac
+            for _ in $(seq 1 45); do busy "$Q" || break; sleep 2; done
+            if busy "$Q"; then echo "queue unit $Q still active"; exit 1; fi
           done
-          OP="/srv/ar-local/quality-operation-$OP_ID"
-          R="$OP/canary-unit.json"
-          if [ ! -f "$R" ]; then echo "no canary-unit.json; helper never launched its unit"; exit 0; fi
-          UNIT="$(python3 - "$R" "$OP" "$COMMIT" <<'PY'
-          import json, sys
-          r = json.load(open(sys.argv[1]))
-          ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
-                and r.get("source") == "/srv/ar-local/quality-candidate"
-                and r.get("expected_commit") == sys.argv[3]
-                and str(r.get("unit", "")).endswith(".service"))
-          print(r["unit"] if ok else "")
-          PY
-          )"
-          test -n "$UNIT" || { echo "canary-unit.json identity mismatch; not stopping anything"; exit 1; }
-          STATE="$(systemctl is-active "$UNIT" 2>/dev/null || true)"
-          echo "unit $UNIT state: $STATE"
-          case "$STATE" in
-            active|activating|deactivating|reloading) sudo -n systemctl stop "$UNIT" ;;
-          esac
-          for _ in $(seq 1 30); do
-            STATE="$(systemctl is-active "$UNIT" 2>/dev/null || true)"
-            case "$STATE" in active|activating|deactivating|reloading) sleep 2 ;; *) break ;; esac
-          done
-          echo "unit $UNIT final state: $STATE"
-          case "$STATE" in active|activating|deactivating|reloading) exit 1 ;; esac
           REMOTE
