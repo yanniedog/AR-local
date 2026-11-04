@@ -110,14 +110,17 @@ def product_index_request_url(url: str) -> str:
     These two providers publish a terminal-slash product-index endpoint. Keep
     the normalized register endpoint (and derived provider UID) unchanged;
     this compatibility rule applies only to the actual index request path.
-    Query parameters and all other hosts/paths, including details, are intact.
+    An unqualified request uses one explicit full-sized page because their
+    default pagination has returned invalid/repeated second pages. Preserve
+    explicit queries and all other hosts/paths, including details.
     """
     parts = urllib.parse.urlsplit(url)
     if (parts.scheme == "https" and not parts.fragment
             and parts.netloc.lower() in {
                 "digital-api.bankofmelbourne.com.au", "digital-api.stgeorge.com.au"}
-            and parts.path == "/cds-au/v1/banking/products"):
-        return urllib.parse.urlunsplit(parts._replace(path=parts.path + "/"))
+            and parts.path in {"/cds-au/v1/banking/products", "/cds-au/v1/banking/products/"}):
+        return urllib.parse.urlunsplit(parts._replace(
+            path=parts.path.rstrip("/") + "/", query=parts.query or "page=1&page-size=1000"))
     return url
 
 
