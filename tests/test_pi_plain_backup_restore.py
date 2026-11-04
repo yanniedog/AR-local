@@ -277,3 +277,16 @@ def test_frame_corruption_detected_even_if_compressed_hash_in_catalog_matches(tm
     with pytest.raises((ValueError, zstandard.ZstdError)):
         run(tmp_path, mirror, catalog_path)
     assert not (tmp_path / 'restored/restore-result.json').exists()
+
+
+@pytest.mark.parametrize('value', ['a/b<c', 'a/b>c', 'a/b"c', 'a/b|c', 'a/b?c', 'a/b*c', 'a/b\x01c',
+    'COM¹', 'dir/LPT².txt', 'CONIN$', 'conout$.log', 'aux.json', 'dir/com3', 'trail. ', 'dir/space '])
+def test_windows_restore_rejects_forbidden_names_and_device_aliases(value):
+    with pytest.raises(ValueError):
+        restore.safe_relative(value, windows=True)
+
+
+@pytest.mark.parametrize('value,windows', [('COM\u00b9', False), ('a/b?c', False),
+    ('data/CONSOLE.json', True), ('com10', True), ('dir/auxiliary.txt', True)])
+def test_valid_names_remain_restorable(value, windows):
+    assert restore.safe_relative(value, windows=windows) == value
