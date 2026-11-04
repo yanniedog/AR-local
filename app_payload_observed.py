@@ -348,6 +348,11 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
                     or after != advance_index(before, index, manifest)):
                 raise RevisionError("reserved local transaction differs")
         else:
+            if current is None and any((other / "receipt.json").exists()
+                                       for other in state.iterdir() if other.name != tag):
+                # Durable state shows earlier published editions; an empty-channel
+                # index would drop them from discovery. Recover the index first.
+                raise RevisionError("observed index missing although earlier editions were published")
             before, after = current, advance_index(current, index, manifest)
             write_once(record, canonical({"manifest_sha256": accepted.manifest_sha256,
                        "predecessor_hex": before.hex() if before is not None else None,
@@ -378,6 +383,10 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
         if current != after:
             if current != before:
                 raise RevisionError("index changed during edition upload")
+            # The inherited replacement stages its predecessor under restore/ via
+            # write_once (default umask); create it private first so an
+            # interrupted replacement can resume.
+            private_directory(transaction / "restore")
             store.replace_index(INDEX_TAG, index_path, before)
         else:
             store.ensure_release(INDEX_TAG)

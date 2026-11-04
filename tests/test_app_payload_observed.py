@@ -148,7 +148,9 @@ def test_accepted_assets_first_index_last_and_retry(candidate, tmp_path):
     store = MemoryStore()
     receipt = publish(candidate, tmp_path, store)
     assert receipt["manifest_sha256"] == acceptance(candidate).manifest_sha256
-    assert receipt["source_observation"]["observation_date"] == DAY
+    accepted_source = json.loads((candidate / "manifest.json").read_bytes())["source_observation"]
+    assert receipt["source_observation"] == accepted_source
+    assert receipt["source_observation"]["observation_state"] == "partial"
     assert not receipt["legacy_selected"] and not receipt["hosted_isolation_verified"]
     events = [x for x in store.events if x[0] != "reserve"]
     assert [x[0] for x in events] == ["asset"] * 3 + ["index"]
@@ -591,3 +593,34 @@ def test_private_directory_non_posix_refused_without_false_acl_claim(tmp_path):
     with pytest.raises(p.RevisionError, match="requires POSIX permission validation"):
         p.private_directory(tmp_path / "state")
     assert not (tmp_path / "state").exists()
+
+
+def test_missing_index_with_published_history_fails_closed(candidate, tmp_path):
+    """A missing remote index after earlier editions must not restart the channel."""
+    store = MemoryStore()
+    earlier = tmp_path / "state" / p.edition(PREVIOUS_DAY, 1)
+    earlier.mkdir(parents=True, mode=0o700)
+    (tmp_path / "state").chmod(0o700)
+    (earlier / "receipt.json").write_text("{}")
+    with pytest.raises(p.RevisionError, match="earlier editions were published"):
+        publish(candidate, tmp_path, store)
+    assert not [x for x in store.events if x[0] in ("asset", "index")]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission control")
+def test_restore_staging_directory_is_private_before_index_replacement(candidate, tmp_path):
+    store = MemoryStore()
+    store.data[p.INDEX_TAG, "dates-index.json"] = prior_index(candidate)
+    seen = []
+    original = store.replace_index
+    def check_private(tag, path, expected):
+        restore = path.parent / "restore"
+        seen.append(oct(restore.lstat().st_mode & 0o777))
+        return original(tag, path, expected)
+    store.replace_index = check_private
+    old = os.umask(0o022)
+    try:
+        publish(candidate, tmp_path, store)
+    finally:
+        os.umask(old)
+    assert seen == ["0o700"]
