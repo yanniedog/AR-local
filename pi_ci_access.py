@@ -208,7 +208,11 @@ def activation_argv(plan_id: str) -> list[str]:
             '--property=Type=notify', '--property=NotifyAccess=main', '--property=CPUQuota=200%',
             '--property=TimeoutStartSec=960', '--property=TimeoutStopSec=900', '--property=SendSIGKILL=yes',
             "--property=ProtectSystem=strict", "--property=ProtectHome=yes",
-            "--property=PrivateTmp=yes", "--property=ProtectControlGroups=yes",
+            "--property=PrivateTmp=yes", "--property=PrivateDevices=yes",
+            "--property=ProtectKernelTunables=yes", "--property=ProtectKernelModules=yes",
+            "--property=ProtectControlGroups=yes",
+            # The root worker runs bwrap, and sudo needs its identity-switch
+            # capabilities: namespaces and the bounding set stay available.
             "--property=RestrictNamespaces=no",
             "--property=KillMode=control-group", "--property=RuntimeMaxSec=1800", '--property=LimitAS=2G',
             '--property=MemoryHigh=768M', '--property=MemoryMax=1G', '--property=MemorySwapMax=0',
