@@ -27,6 +27,7 @@ from cdr_http_policy import DEFAULT_HTTP_POLICY, sanitize_url
 from cdr_ingest_support import (
     append_failure, extract_products, filesystem_product_id_directory, has_cdr_errors,
     next_link, pick_text, sanitize_path_component, summarize_failures,
+    product_index_request_url,
 )
 from cdr_ledger_v2 import verify_reachable_generation
 from cdr_observation_selection import provider_directories, selected_observation
@@ -374,7 +375,7 @@ def _fresh_index(banks: Path, provider: str, diagnostic: dict, journal: RawAttem
         if captured != parsed:
             return None
         url = event["request"]["url"]
-        if url != sanitize_url(endpoint if page == 1 else expected_url or ""):
+        if url != sanitize_url(product_index_request_url(endpoint) if page == 1 else expected_url or ""):
             return None
         expected_url = next_link(parsed, url)
         for product in extract_products(parsed):

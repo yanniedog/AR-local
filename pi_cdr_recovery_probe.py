@@ -16,6 +16,7 @@ from cdr_http_policy import (
 from cdr_ingest_support import (
     DEFAULT_USER_AGENT, REGISTER_URL_SUMMARY, has_cdr_errors,
     allocate_bank_dir, iter_banking_brands_from_payload,
+    product_index_request_url,
 )
 
 PROBE_HTTP_POLICY = replace(
@@ -121,9 +122,9 @@ def current_target_url(request: dict, provider: dict, brands: list[dict]) -> str
     if not original_parts.path.startswith(old_parts.path):
         if base != prior:
             raise ValueError("changed endpoint cannot resolve its old pagination path")
-        return original
+        return product_index_request_url(original)
     suffix = original_parts.path[len(old_parts.path):]
     if suffix and not suffix.startswith("/"):
         raise ValueError("probe path is outside the product-index endpoint")
-    return urlunsplit((new_parts.scheme, new_parts.netloc, new_parts.path + suffix,
-                       original_parts.query, ""))
+    return product_index_request_url(urlunsplit((new_parts.scheme, new_parts.netloc, new_parts.path + suffix,
+                                                original_parts.query, "")))
