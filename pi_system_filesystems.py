@@ -46,9 +46,16 @@ def fat_options(settings):
     return [key + "=" + str(value) for key, value in settings.items() if key != "fstype"]
 
 
-def source_fat(path):
+def source_fat(path, boot_uuid, *, by_uuid=Path("/dev/disk/by-uuid")):
     settings = fat_mount(path, Path("/proc/self/mountinfo").read_text())
     info = os.stat(path)
+    # Bind the mounted volume to this Pi's recorded boot partition: another
+    # structurally valid FAT volume at the same path must not be archived.
+    if not isinstance(boot_uuid, str) or not re.fullmatch(r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}", boot_uuid):
+        raise ValueError("recorded boot volume UUID required")
+    device = os.stat(by_uuid / boot_uuid.upper())
+    if not stat.S_ISBLK(device.st_mode) or device.st_rdev != info.st_dev:
+        raise ValueError("mounted boot volume is not the recorded boot partition")
     if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (int(settings["uid"]), int(settings["gid"]), 0o777 & ~int(settings["dmask"], 8)):
         raise ValueError("source FAT stat metadata differs from its kernel mount options")
     return settings

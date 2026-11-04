@@ -118,6 +118,13 @@ def inventory(root, *, skip=(), sort_path, starts=(".",)):
                 for child in children:
                     queue.execute("INSERT INTO children VALUES (?)", (os.fsencode(child.name),))
             for child, in queue.execute("SELECT name FROM children ORDER BY name"):
+                try:
+                    child.decode("utf-8")
+                except UnicodeDecodeError:
+                    # The inventory, staging tables and manifests key paths as
+                    # UTF-8 text. Refuse during the walk, before any staging,
+                    # rather than silently dropping or mangling the name.
+                    raise ValueError("non-UTF-8 filename is not capturable: " + repr(os.path.join(os.fsencode(name), child))) from None
                 child_name = os.fsdecode(child) if name == "." else name + "/" + os.fsdecode(child)
                 queue.execute("INSERT INTO queue(path) VALUES (?)", (child_name,))
     finally:
@@ -379,8 +386,44 @@ def copy_phase(work, settings, phase):
         copy_batches(work, settings, tree, null_names(directory_list), phase + "-directories")
 
 
-def capacity_preflight(work, phase):
-    """Measure indexed source bytes before copying any payload into staging."""
+def verify_external_unchanged(work, settings):
+    """Re-observe every catalog-matched raw file after the final copy.
+
+    Omitted raw files are restored from the external catalog, so their source
+    must still be the exact inode/ctime/metadata that matched it. The final
+    phase's rows supersede prepared rows for the same path.
+    """
+    database = sqlite3.connect(work / "inventory.sqlite")
+    rows = {}
+    for phase in ("prepared", "final"):
+        for name, serialized in database.execute(
+                "SELECT path,value FROM entries WHERE phase=? AND tree='root'", (phase,)):
+            rows[name] = json.loads(serialized)
+    database.close()
+    root = Path(settings["root"])
+    changed = []
+    for name, value in rows.items():
+        if not value.get("external"):
+            continue
+        try:
+            current = fingerprint((root / name).lstat())
+        except FileNotFoundError:
+            current = None
+        if current != value["source"]:
+            changed.append(name)
+    if changed:
+        raise ValueError("catalog-matched raw files changed after matching: " + ", ".join(sorted(changed)[:20]))
+    return len(rows)
+
+
+def capacity_preflight(work, phase, *, staged=None):
+    """Measure indexed source bytes before copying any payload into staging.
+
+    With ``staged`` (the prepared receipt), the phase rows are an increment on
+    an existing staging copy whose bytes are already off the free count: only
+    the increment is new staging, but the archive and image stages ahead must
+    still hold the whole combined tree.
+    """
     database = sqlite3.connect(work / "inventory.sqlite")
     source_bytes, entries, metadata_bytes, external_entries = 0, 0, 0, 0
     for tree, name, serialized in database.execute("SELECT tree,path,value FROM entries WHERE phase=?", (phase,)):
@@ -394,15 +437,25 @@ def capacity_preflight(work, phase):
         if stat.S_ISREG(info[2]):
             first = database.execute("SELECT MIN(path) FROM links WHERE phase=? AND tree=? AND dev=? AND ino=?", (phase, tree, info[0], info[1])).fetchone()[0] if info[8] > 1 else name
             if name == first:
-                source_bytes += info[3]
+                # Staged and imaged files occupy whole 4 KiB ext4 blocks.
+                source_bytes += -(-info[3] // 4096) * 4096
     database.close()
-    image_bound = source_bytes * 13 // 10 + max(3 * 1024 ** 3, (entries + external_entries) * 1024) + 512 * 1024 ** 2
-    archive_bound = source_bytes + metadata_bytes * 3 + entries * 4096
-    reserve = max(10 * 1024 ** 3, (source_bytes + image_bound) // 20)
+    total_bytes, total_entries, total_metadata = source_bytes, entries + external_entries, metadata_bytes
+    if staged is not None:
+        if staged.get("result") != "PASS" or staged.get("phase") != "prepared":
+            raise ValueError("passing prepared capacity receipt required for an incremental phase")
+        total_bytes += staged["source_private_bytes"]
+        total_entries += staged["total_entries"]
+        total_metadata += staged["metadata_bytes"]
+    image_bound = total_bytes * 13 // 10 + max(3 * 1024 ** 3, total_entries * 1024) + 512 * 1024 ** 2
+    archive_bound = total_bytes + total_metadata * 3 + total_entries * 4096
+    reserve = max(10 * 1024 ** 3, (total_bytes + image_bound) // 20)
     needed = source_bytes + archive_bound + image_bound * 2 + reserve
     available = shutil.disk_usage(work).free
     result = {"result": "PASS" if available >= needed else "INSUFFICIENT_CAPACITY", "phase": phase,
               "source_private_bytes": source_bytes, "entries": entries, "archive_bound": archive_bound,
+              "total_entries": entries + external_entries, "metadata_bytes": metadata_bytes,
+              "incremental": staged is not None,
               "image_bound": image_bound, "reserve": reserve, "required_free_bytes": needed,
               "available_bytes": available, "measured_at": utc(), "external_raw_bytes_not_duplicated": True}
     write(work / (phase + "-capacity.json"), result)
@@ -432,7 +485,7 @@ def baseline(args):
     settings = {"schema": SCHEMA, "workspace": str(work), "root": str(root), "boot": str(boot),
                 "workspace_source_relative": excluded, "started_at": utc(), "layout": json.loads(Path(args.layout).read_text()),
                 "baseline_packages": packages}
-    settings["layout"]["boot_mount"] = source_fat(boot)
+    settings["layout"]["boot_mount"] = source_fat(boot, settings["layout"].get("boot_uuid"))
     database, cloud = raw_index(work, args.catalog, args.catalog_sha256, args.file_index)
     database.close()
     settings["external_recovery"] = cloud
@@ -588,7 +641,10 @@ def finalize(args):
     clear_mutable_entries(work, scopes)
     source_listing(work, settings, "final", starts=scopes)
     remove_obsolete_stage_entries(work, previous="prepared")
+    # Mutable state can grow between prepare and finalize; recheck before copying.
+    capacity_preflight(work, "final", staged=json.loads((work / "prepared-capacity.json").read_text()))
     copy_phase(work, settings, "final")
+    verify_external_unchanged(work, settings)
     restore_runtime_directories(work, packages)
     boot_after = tree_manifest(settings["boot"], work / "boot-source-after.jsonl")
     if boot_before != boot_after:

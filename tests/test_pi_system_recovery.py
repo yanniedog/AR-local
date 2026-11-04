@@ -6,6 +6,7 @@ import os
 import shutil
 import sqlite3
 import stat
+import time
 import struct
 import tarfile
 from pathlib import Path
@@ -440,8 +441,29 @@ def test_capacity_is_measured_before_payload_copy_and_fails_closed(monkeypatch, 
         capture.capacity_preflight(tmp_path, "baseline")
     receipt = json.loads((tmp_path / "baseline-capacity.json").read_text())
     assert receipt["result"] == "INSUFFICIENT_CAPACITY"
-    assert receipt["source_private_bytes"] == 100
+    assert receipt["source_private_bytes"] == 4096  # one whole ext4 block
     assert not (tmp_path / "frozen").exists()
+
+
+def test_final_capacity_counts_increment_against_whole_combined_tree(monkeypatch, tmp_path):
+    database = sqlite3.connect(tmp_path / "inventory.sqlite")
+    database.execute("CREATE TABLE entries(phase TEXT,tree TEXT,path TEXT,value TEXT)")
+    database.execute("INSERT INTO entries VALUES ('final','root','grew',?)", (json.dumps({"source": [1, 3, stat.S_IFREG | 0o600, 8 * 1024 ** 3, 0, 0, 0, 0, 1]}),))
+    database.commit(); database.close()
+    staged = {"result": "PASS", "phase": "prepared", "source_private_bytes": 20 * 1024 ** 3, "total_entries": 10, "metadata_bytes": 1000}
+    free = {"value": 10 ** 15}
+    monkeypatch.setattr(capture.shutil, "disk_usage", lambda path: SimpleNamespace(free=free["value"]))
+    receipt = capture.capacity_preflight(tmp_path, "final", staged=staged)
+    assert receipt["incremental"] and receipt["source_private_bytes"] == 8 * 1024 ** 3
+    # The image and archive still have to hold the combined 28 GiB tree.
+    assert receipt["image_bound"] > 28 * 1024 ** 3 and receipt["archive_bound"] > 28 * 1024 ** 3
+    free["value"] = receipt["required_free_bytes"] - 1
+    (tmp_path / "final-capacity.json").unlink()
+    with pytest.raises(ValueError, match="measured capacity"):
+        capture.capacity_preflight(tmp_path, "final", staged=staged)
+    (tmp_path / "final-capacity.json").unlink()
+    with pytest.raises(ValueError, match="prepared capacity receipt"):
+        capture.capacity_preflight(tmp_path, "final", staged={**staged, "result": "INSUFFICIENT_CAPACITY"})
 
 
 def test_namespace_rejects_arbitrary_phase_or_source_arguments():
@@ -601,3 +623,51 @@ def test_image_size_rounds_retained_small_files_to_ext4_blocks(tmp_path):
     assert entries == count
     # Data blocks alone need count*4 KiB; the image must exceed that with metadata.
     assert size * 1024 ** 2 >= count * 4096 + count * 256
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX byte filenames")
+def test_inventory_refuses_non_utf8_filename_before_staging(tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    try:
+        (root / os.fsdecode(b"bad\xff")).write_text("x")
+    except (OSError, UnicodeEncodeError):
+        pytest.skip("filesystem rejects non-UTF-8 names")
+    with pytest.raises(ValueError, match="non-UTF-8 filename"):
+        list(capture.inventory(root, sort_path=tmp_path / "sort.sqlite"))
+    assert not (tmp_path / "sort.sqlite").exists()
+
+
+def test_source_fat_binds_mount_to_recorded_boot_uuid(tmp_path, monkeypatch):
+    import types
+    import pi_system_filesystems as fs
+    mount = {"fstype": "vfat", "uid": "0", "gid": "0", "fmask": "0022", "dmask": "0022"}
+    monkeypatch.setattr(fs, "fat_mount", lambda path, text: dict(mount))
+    monkeypatch.setattr(fs.Path, "read_text", lambda self, *a, **k: "")
+    boot = types.SimpleNamespace(st_uid=0, st_gid=0, st_mode=stat.S_IFDIR | 0o755, st_dev=0x10301)
+    devices = {"/boot/firmware": boot,
+               str(tmp_path / "ABCD-1234"): types.SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=0x10301),
+               str(tmp_path / "FFFF-0000"): types.SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=0x10302)}
+    monkeypatch.setattr(fs.os, "stat", lambda path: devices[str(path)])
+    assert fs.source_fat("/boot/firmware", "abcd-1234", by_uuid=tmp_path) == mount
+    with pytest.raises(ValueError, match="not the recorded boot partition"):
+        fs.source_fat("/boot/firmware", "FFFF-0000", by_uuid=tmp_path)
+    with pytest.raises(ValueError, match="UUID required"):
+        fs.source_fat("/boot/firmware", None, by_uuid=tmp_path)
+
+
+def test_catalog_matched_raw_file_change_after_match_refuses_finalize(tmp_path):
+    root = tmp_path / "root"; (root / "data").mkdir(parents=True)
+    (root / "data/raw.json").write_bytes(b"old")
+    (root / "data/kept.json").write_bytes(b"old")
+    work = tmp_path / "work"; work.mkdir()
+    database = sqlite3.connect(work / "inventory.sqlite")
+    database.execute("CREATE TABLE entries(phase TEXT,tree TEXT,path TEXT,value TEXT)")
+    for name in ("data/raw.json", "data/kept.json"):
+        database.execute("INSERT INTO entries VALUES ('prepared','root',?,?)",
+                         (name, json.dumps({"source": capture.fingerprint((root / name).lstat()), "external": {"sha256": "x"}})))
+    database.commit(); database.close()
+    assert capture.verify_external_unchanged(work, {"root": str(root)}) == 2
+    time.sleep(0.01)
+    (root / "data/raw.json").write_bytes(b"new")
+    with pytest.raises(ValueError, match="changed after matching: data/raw.json"):
+        capture.verify_external_unchanged(work, {"root": str(root)})
