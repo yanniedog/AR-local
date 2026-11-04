@@ -37,6 +37,7 @@ from cdr_ingest_support import (
     is_record,
     next_link,
     pick_text,
+    product_index_request_url,
     safe_url,
     sanitize_path_component,
     summarize_failures,
@@ -334,7 +335,7 @@ def ingest_brand(
     # ─── Phase 1: collect all pages, build work list ──────────────────────────
 
     pending: List[_BankWork] = []
-    url: Optional[str] = endpoint_url
+    url: Optional[str] = product_index_request_url(endpoint_url)
     visited: Set[str] = set()
     pages = 0
     products_seen = 0
