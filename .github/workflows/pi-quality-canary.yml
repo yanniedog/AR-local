@@ -1,0 +1,467 @@
+# Run the D-027 guarded quality canary for one exact AR-local main commit on
+# the Pi, over the same hosted-runner Tailscale/SSH route as pi-deploy-canary.
+#
+# Manual dispatch only. The canary is private replay acceptance; it never
+# seals, activates, deploys or publishes. Sealing and pi-deploy-canary remain
+# separate controlled steps. `preflight` and `discover` modes are read-only.
+#
+# Operator decision: no environment approval click. Like pi-deploy-watchdog,
+# the job uses the repository-level Pi/Tailscale secrets. Remaining guards:
+# manual dispatch only, main-branch definition only, exact current-main
+# target, typed RUN_GUARDED_CANARY plus a reviewed dispositions hash for
+# canary mode, and the helper's own fail-closed gates.
+#
+# The candidate checkout is per commit, /srv/ar-local/quality-candidate-<sha12>
+# (the layout earlier D-027 canaries used). After queue admission it is cloned
+# from the canonical origin if absent, or reused only when clean, and detached
+# at the exact requested commit. Production, data and timers are
+# untouched by this workflow; the helper enforces its own window, idle-ingest,
+# disk and resource gates and fails closed.
+name: pi-quality-canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: "Exact 40-character AR-local commit; must equal current main"
+        required: true
+        type: string
+      mode:
+        description: "preflight / discover (read-only) or canary"
+        required: true
+        default: "preflight"
+        type: choice
+        options:
+          - "preflight"
+          - "discover"
+          - "canary"
+      confirm:
+        description: "Type RUN_GUARDED_CANARY for canary mode"
+        required: false
+        default: ""
+        type: string
+      python:
+        description: "Absolute path to the prepared Python with runtime+test deps"
+        required: true
+        type: string
+      dispositions:
+        description: "Absolute path to reviewed historical-dispositions JSON"
+        required: true
+        default: "docs/evidence/cdr-quality-20260912/historical-dispositions.json"
+        type: string
+      dispositions_sha256:
+        description: "Reviewed SHA-256 of the dispositions file (required for canary)"
+        required: false
+        default: ""
+        type: string
+      pressure_profile:
+        description: "Helper pressure profile"
+        required: true
+        default: "legacy"
+        type: choice
+        options:
+          - "legacy"
+          - "allocation-v1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  quality-canary:
+    # Production secrets are only granted to the reviewed default-branch
+    # workflow definition, never to a dispatch from another ref.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Validate inputs and exact main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          DISP_SHA: ${{ inputs.dispositions_sha256 }}
+          PY: ${{ inputs.python }}
+          DISP: ${{ inputs.dispositions }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PY" =~ ^/[A-Za-z0-9._/+-]+$ ]]
+          # Absolute Pi path, or a path inside the candidate checkout (reviewed,
+          # committed evidence such as the default).
+          [[ "$DISP" =~ ^/?[A-Za-z0-9._/+-]+$ && "$DISP" != *..* ]]
+          if [ "$MODE" = "canary" ]; then
+            test "$CONFIRM" = "RUN_GUARDED_CANARY"
+            [[ "$DISP_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::canary requires dispositions_sha256"; exit 1; }
+          fi
+          MAIN="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          test "$MAIN" = "$TARGET_COMMIT" || { echo "::error::target $TARGET_COMMIT is not current main $MAIN"; exit 1; }
+
+      - name: Require Pi and Tailscale credentials
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          set -euo pipefail
+          for v in PI_SSH_PRIVATE_KEY PI_SSH_HOST PI_SSH_KNOWN_HOSTS TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET; do
+            test -n "${!v}" || { echo "::error::$v missing"; exit 1; }
+          done
+
+      - name: Join Tailscale tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
+      - name: Configure SSH for Pi
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_deploy_key ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${PI_SSH_USER:-pi}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 60
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Read-only Pi preflight
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          PY: ${{ inputs.python }}
+          DISP: ${{ inputs.dispositions }}
+        run: |
+          set -uo pipefail
+          ssh ar-local-pi5 bash -s -- "$PY" "$DISP" "$TARGET_COMMIT" <<'REMOTE'
+          set -u
+          PY="$1"; DISP="$2"; COMMIT="$3"; C="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
+          echo "candidate path: $C$( [ -e "$C" ] || echo ' (absent; canary will clone it)')"
+          echo "hobart: $(TZ=Australia/Hobart date -Is)"
+          echo "production HEAD: $(git -C /srv/ar-local/AR-local rev-parse HEAD 2>&1)"
+          echo "production dirty: $(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
+          echo "candidate HEAD: $(git -C "$C" rev-parse HEAD 2>&1)"
+          echo "candidate dirty: $(git -C "$C" status --porcelain 2>&1 | wc -l)"
+          ORIGIN="$(git -C "$C" remote get-url origin 2>&1 || true)"
+          case "$ORIGIN" in
+            https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git)
+              echo "candidate origin: $ORIGIN" ;;
+            *) echo "candidate origin: NOT CANONICAL (value withheld)" ;;
+          esac
+          systemctl show ar-local-daily.service -p ActiveState -p Result -p ExecMainExitTimestamp 2>&1 | sed 's/^/daily last run: /'
+          test -x "$PY" && echo "python: $("$PY" --version 2>&1); pytest: $("$PY" -m pytest --version 2>&1 | head -1)" || echo "python: MISSING $PY"
+          case "$DISP" in
+            /*) DREF="$DISP" ;;
+            *) DREF="/srv/ar-local/AR-local/$DISP"; echo "dispositions is candidate-relative; production-checkout copy shown, canary rehashes the candidate copy" ;;
+          esac
+          test -f "$DREF" && echo "dispositions sha256: $(sha256sum "$DREF" | cut -d' ' -f1)" || echo "dispositions: MISSING $DREF"
+          test -x /usr/local/bin/pi-shared-task && echo "pi-shared-task: present" || echo "pi-shared-task: MISSING"
+          systemctl is-active ar-local-daily.service 2>&1 | sed 's/^/daily service: /'
+          systemctl is-enabled ar-local-daily.timer 2>&1 | sed 's/^/daily timer enabled: /'
+          systemctl list-timers ar-local-daily.timer --no-pager 2>&1 | sed -n 2p | sed 's/^/daily timer next: /'
+          sudo -n -l /usr/bin/systemd-run >/dev/null 2>&1 && echo "sudo systemd-run: allowed" || echo "sudo systemd-run: NOT allowed non-interactively"
+          sudo -n -l /usr/bin/systemctl >/dev/null 2>&1 && echo "sudo systemctl: allowed" || echo "sudo systemctl: NOT allowed non-interactively"
+          df -h /srv/ar-local | tail -1
+          grep -E 'MemAvailable' /proc/meminfo
+          ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5 || true
+          REMOTE
+
+      # Read-only discovery of where earlier canaries ran from: candidate
+      # checkouts, dispositions files, prepared Pythons and prior operations.
+      # Prints paths, hashes, counts and scalar identity fields only; never
+      # disposition contents or reasons.
+      - name: Read-only discovery of canary inputs
+        if: inputs.mode == 'discover'
+        run: |
+          set -uo pipefail
+          ssh ar-local-pi5 bash -s <<'REMOTE'
+          set -u
+          ROOTS="/srv/ar-local /var/lib/ar-local /var/lib/ar-local-day-archives /home/pi /opt"
+          canon() { case "$1" in https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git) echo "$1" ;; *) echo "NON-CANONICAL (withheld)" ;; esac; }
+          echo "== candidate checkouts (contain pi_cdr_quality_activate.py) =="
+          for d in $(find $ROOTS -maxdepth 5 -name pi_cdr_quality_activate.py -not -path '*/.git/*' 2>/dev/null | xargs -r -n1 dirname | sort -u); do
+            if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+              echo "$d head=$(git -C "$d" rev-parse HEAD) dirty=$(git -C "$d" status --porcelain | wc -l) origin=$(canon "$(git -C "$d" remote get-url origin 2>/dev/null)") owner=$(stat -c %U "$d")"
+            else
+              echo "$d (not a git checkout) owner=$(stat -c %U "$d")"
+            fi
+          done
+          echo "== dispositions files =="
+          find $ROOTS -maxdepth 6 -type f -iname '*disposition*.json' 2>/dev/null | sort | while read -r f; do
+            n="$(python3 -c 'import json,sys
+          try:
+              d=json.load(open(sys.argv[1])); print(len(d) if isinstance(d,dict) else type(d).__name__)
+          except Exception as e: print("unreadable:"+type(e).__name__)' "$f" 2>/dev/null)"
+            echo "$f sha256=$(sha256sum "$f" | cut -d' ' -f1) bytes=$(stat -c %s "$f") keys=$n mtime=$(stat -c %y "$f" | cut -d. -f1)"
+          done
+          echo "== prepared pythons =="
+          find $ROOTS -maxdepth 5 -path '*/bin/python3' 2>/dev/null | sort | while read -r py; do
+            echo "$py $("$py" --version 2>&1)"
+          done
+          echo "== prior quality operations =="
+          for op in $(ls -1d /srv/ar-local/quality-operation-* 2>/dev/null); do
+            python3 - "$op" <<'PY'
+          import json, os, sys
+          op = sys.argv[1]
+          out = [op]
+          for name in ("canary-unit.json", "canary.json", "seal.json"):
+              p = os.path.join(op, name)
+              if not os.path.isfile(p):
+                  continue
+              try:
+                  r = json.load(open(p))
+              except Exception as e:
+                  out.append(f"{name}=unreadable:{type(e).__name__}")
+                  continue
+              keep = {}
+              for k, v in r.items():
+                  if not isinstance(v, (str, int, float, bool)) and v is not None:
+                      continue
+                  kl = k.lower()
+                  if "reason" in kl:
+                      continue
+                  if ("disposition" in kl and not (kl.endswith("path") or kl.endswith("sha256") or kl.endswith("digest"))):
+                      continue
+                  if kl in ("result", "status", "source", "python", "expected_commit", "operation", "unit", "schema_version", "pressure_profile") \
+                     or kl.endswith("path") or kl.endswith("sha256") or kl.endswith("digest") or kl.endswith("_at"):
+                      keep[k] = v
+              out.append(f"{name}={json.dumps(keep, sort_keys=True)}")
+          print(" | ".join(out))
+          PY
+          done
+          REMOTE
+
+      # Everything that touches the candidate tree runs only after shared-queue
+      # admission, inside a queued script written to a private control file.
+      # The queued script owns the helper's separate canary unit: on SIGTERM
+      # (queue cancel/deadline) it stops and verifies that unit before
+      # exiting, so the ar-local admission is held until the child is gone.
+      # The submitter is detached with its PID recorded, and SSH loss or a
+      # workflow cancel is converted into its own SIGTERM cancellation path.
+      - name: Run guarded canary under shared-queue admission
+        if: inputs.mode == 'canary'
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          PY: ${{ inputs.python }}
+          DISP: ${{ inputs.dispositions }}
+          DISP_SHA: ${{ inputs.dispositions_sha256 }}
+          PROFILE: ${{ inputs.pressure_profile }}
+          OP_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" <<'REMOTE'
+          set -euo pipefail
+          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
+          CTL=/srv/ar-local/quality-gh-control
+          mkdir -p "$CTL"
+          PIDF="$CTL/$OP_ID.submitter.pid"
+          QS="$CTL/$OP_ID.queued.sh"
+          test ! -e "$PIDF" || { echo "submitter record $PIDF already exists"; exit 1; }
+          test ! -e "$QS" || { echo "queued script $QS already exists"; exit 1; }
+          (umask 077; cat > "$QS") <<'QUEUED'
+          set -euo pipefail
+          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
+          CTL=/srv/ar-local/quality-gh-control
+          C="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
+          OP="/srv/ar-local/quality-operation-$OP_ID"
+          child_unit() {
+            [ -f "$OP/canary-unit.json" ] || return 0
+            python3 - "$OP/canary-unit.json" "$OP" "$COMMIT" "$C" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
+                and r.get("source") == sys.argv[4]
+                and r.get("expected_commit") == sys.argv[3]
+                and str(r.get("unit", "")).endswith(".service"))
+          print(r["unit"] if ok else "MISMATCH")
+          PY
+          }
+          stop_child() {
+            U="$(child_unit)"
+            [ -n "$U" ] || return 0
+            [ "$U" != MISMATCH ] || { echo "canary-unit.json identity mismatch"; return 1; }
+            # The queue unit allows 45 s (TimeoutStopSec) before SIGKILL; keep
+            # stop + forced kill + verification well inside that budget.
+            sudo -n systemctl stop --no-block "$U" || true
+            for _ in $(seq 1 12); do
+              case "$(systemctl is-active "$U" 2>/dev/null || true)" in active|activating|deactivating|reloading) sleep 2 ;; *) return 0 ;; esac
+            done
+            sudo -n systemctl kill --kill-whom=all --signal=SIGKILL "$U" || true
+            sleep 2
+            case "$(systemctl is-active "$U" 2>/dev/null || true)" in active|activating|deactivating|reloading) return 1 ;; esac
+          }
+          HELPER=""
+          on_term() {
+            stop_child || echo "child unit not confirmed stopped"
+            [ -n "$HELPER" ] && kill -TERM "$HELPER" 2>/dev/null || true
+            exit 143
+          }
+          trap on_term TERM INT HUP
+          NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
+          [ "$NOW_HM" -ge 0330 ] && [ "$NOW_HM" -lt 2200 ] || { echo "outside 03:30-22:00 Hobart"; exit 1; }
+          D_ACTIVE="$(systemctl show ar-local-daily.service -p ActiveState --value)"
+          D_RESULT="$(systemctl show ar-local-daily.service -p Result --value)"
+          D_EXIT="$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value)"
+          [ "$D_ACTIVE" = inactive ] && [ "$D_RESULT" = success ] || { echo "daily ingest not terminally successful ($D_ACTIVE/$D_RESULT)"; exit 1; }
+          D_DAY="$(TZ=Australia/Hobart date -d "$D_EXIT" +%F 2>/dev/null || echo none)"
+          [ "$D_DAY" = "$(TZ=Australia/Hobart date +%F)" ] || { echo "today natural ingest/validation has not completed (last exit: $D_EXIT)"; exit 1; }
+          if [ ! -e "$C" ]; then
+            git clone --quiet --no-checkout https://github.com/yanniedog/AR-local.git "$C"
+          fi
+          case "$(git -C "$C" remote get-url origin)" in
+            https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git) ;;
+            *) echo "candidate origin is not the canonical AR-local URL"; exit 1 ;;
+          esac
+          if git -C "$C" rev-parse --verify -q HEAD >/dev/null; then
+            test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
+          fi
+          test ! -e "$OP" || { echo "operation $OP already exists"; exit 1; }
+          git -C "$C" fetch --quiet origin main
+          test "$(git -C "$C" rev-parse FETCH_HEAD)" = "$COMMIT" || { echo "fetched main != $COMMIT"; exit 1; }
+          git -C "$C" checkout --quiet --detach "$COMMIT"
+          test "$(git -C "$C" rev-parse HEAD)" = "$COMMIT"
+          DCOPY="$CTL/$OP_ID.dispositions.json"
+          test ! -e "$DCOPY" || { echo "dispositions copy already exists"; exit 1; }
+          case "$DISP" in /*) DSRC="$DISP" ;; *) DSRC="$C/$DISP" ;; esac
+          (umask 077; cp --no-preserve=all "$DSRC" "$DCOPY")
+          chmod 0400 "$DCOPY"
+          test "$(sha256sum "$DCOPY" | cut -d' ' -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
+          echo "operation: $OP"
+          # The helper prints its full result (including dispositions) on
+          # stdout; keep it private on the Pi. stderr still streams.
+          HLOG="$CTL/$OP_ID.helper-stdout.json"
+          (umask 077; : > "$HLOG")
+          "$PY" "$C/pi_cdr_quality_activate.py" canary \
+            --source "$C" \
+            --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
+            --operation "$OP" --expected-commit "$COMMIT" --python "$PY" \
+            --dispositions "$DCOPY" --pressure-profile "$PROFILE" > "$HLOG" &
+          HELPER=$!
+          set +e
+          wait "$HELPER"; RC=$?
+          set -e
+          stop_child || { echo "child unit not confirmed stopped after helper exit"; exit 1; }
+          exit "$RC"
+          QUEUED
+          chmod 0500 "$QS"
+          setsid /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
+            --cpu-slots 2 --max-runtime 6000 --wait-timeout 1800 -- \
+            /bin/bash "$QS" "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" &
+          SUB=$!
+          echo "$SUB $OP_ID" > "$PIDF"
+          trap 'kill -TERM "$SUB" 2>/dev/null || true' HUP TERM INT
+          set +e
+          wait "$SUB"; RC=$?
+          while kill -0 "$SUB" 2>/dev/null; do wait "$SUB"; RC=$?; done
+          set -e
+          rm -f "$PIDF"
+          echo "pi-shared-task exit: $RC"
+          HLOG="$CTL/$OP_ID.helper-stdout.json"
+          if [ -s "$HLOG" ]; then
+            python3 - "$HLOG" <<'PY'
+          import json, sys
+          try:
+              r = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1])
+              print("helper result:", r.get("result"), "|", r.get("error", ""))
+          except Exception as e:
+              print("helper stdout unreadable:", type(e).__name__)
+          PY
+          fi
+          OP="/srv/ar-local/quality-operation-$OP_ID"
+          if [ -f "$OP/canary.json" ]; then
+            echo "canary.json sha256: $(sha256sum "$OP/canary.json" | cut -d' ' -f1)"
+            python3 - "$OP/canary.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          # Full report (including disposition reasons) stays on the Pi.
+          for k, v in r.items():
+              if "disposition" in k.lower():
+                  continue
+              if isinstance(v, (str, int, float, bool)) or v is None:
+                  print(f"{k}: {v}")
+          PY
+          else
+            echo "canary.json not produced"
+          fi
+          exit "$RC"
+          REMOTE
+
+      # Always runs for canary mode. Child first: the helper's canary unit is
+      # stopped and verified while any queue submission still holds the
+      # ar-local admission; only then is the submitter cancelled through its
+      # own SIGTERM path and any queue unit for this operation reaped.
+      - name: Stop and verify canary unit, then queued submission
+        if: always() && inputs.mode == 'canary'
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          OP_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$OP_ID" <<'REMOTE'
+          set -euo pipefail
+          COMMIT="$1"; OP_ID="$2"
+          OP="/srv/ar-local/quality-operation-$OP_ID"
+          busy() { case "$(systemctl is-active "$1" 2>/dev/null || true)" in active|activating|deactivating|reloading) return 0 ;; *) return 1 ;; esac; }
+          R="$OP/canary-unit.json"
+          if [ -f "$R" ]; then
+            UNIT="$(python3 - "$R" "$OP" "$COMMIT" "/srv/ar-local/quality-candidate-${COMMIT:0:12}" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          ok = (r.get("schema_version") == 1 and r.get("operation") == sys.argv[2]
+                and r.get("source") == sys.argv[4]
+                and r.get("expected_commit") == sys.argv[3]
+                and str(r.get("unit", "")).endswith(".service"))
+          print(r["unit"] if ok else "")
+          PY
+          )"
+            test -n "$UNIT" || { echo "canary-unit.json identity mismatch; not stopping anything"; exit 1; }
+            echo "canary unit $UNIT state: $(systemctl is-active "$UNIT" 2>/dev/null || true)"
+            if busy "$UNIT"; then sudo -n systemctl stop "$UNIT"; fi
+            for _ in $(seq 1 30); do busy "$UNIT" || break; sleep 2; done
+            if busy "$UNIT"; then echo "canary unit $UNIT still active"; exit 1; fi
+          else
+            echo "no canary-unit.json; helper never launched its unit"
+          fi
+          PIDF="/srv/ar-local/quality-gh-control/$OP_ID.submitter.pid"
+          if [ -f "$PIDF" ]; then
+            read -r SUB REC_OP < "$PIDF"
+            # /usr/local/bin/pi-shared-task execs python3 .../pi_shared_task.py
+            if [ "$REC_OP" = "$OP_ID" ] && kill -0 "$SUB" 2>/dev/null \
+               && tr '\0' ' ' < "/proc/$SUB/cmdline" | grep -q "pi_shared_task\.py .*$OP_ID\.queued\.sh "; then
+              echo "cancelling live submitter $SUB"
+              kill -TERM "$SUB"
+              for _ in $(seq 1 75); do kill -0 "$SUB" 2>/dev/null || break; sleep 2; done
+              if kill -0 "$SUB" 2>/dev/null; then echo "submitter $SUB did not exit; record retained"; exit 1; fi
+            fi
+            rm -f "$PIDF"
+          fi
+          # Backstop: any queue unit whose command still carries this exact
+          # operation id is stopped and must reach an inactive state.
+          for Q in $(systemctl list-units --all --plain --no-legend 'ar-local-queue-task-*.service' | awk '{print $1}'); do
+            systemctl show "$Q" -p ExecStart --value 2>/dev/null | grep -q -- " $OP_ID " || continue
+            echo "stopping queue unit $Q for $OP_ID"
+            sudo -n systemctl stop "$Q" || true
+            for _ in $(seq 1 45); do busy "$Q" || break; sleep 2; done
+            if busy "$Q"; then echo "queue unit $Q still active"; exit 1; fi
+          done
+          REMOTE
