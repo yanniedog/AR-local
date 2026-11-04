@@ -60,13 +60,30 @@ def protected(path,maximum=64*1024**2):
     finally:os.close(fd)
 
 
-def directory(path,mode=0o755,gid=0):
+def validate_directory_stat(info,mode=None,gid=None):
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022
+            or mode is not None and stat.S_IMODE(info.st_mode)!=mode
+            or gid is not None and info.st_gid!=gid):
+        raise RuntimeError('unprotected fixed installation directory')
+
+
+def directory(path,mode=None,gid=None):
+    created=False
     if not path.exists():
         directory(path.parent)
-        path.mkdir(mode=mode);os.chown(path,0,gid)
-    info=path.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or path.resolve()!=path:
-        raise RuntimeError('unprotected fixed installation directory')
+        path.mkdir(mode=0o755 if mode is None else mode);created=True
+    fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        if created:
+            # Explicit permissions survive serviceUMask0077, on this new inode
+            # only. Existing private parents remain private and are not changed.
+            os.fchown(fd,0,0 if gid is None else gid)
+            os.fchmod(fd,0o755 if mode is None else mode);os.fsync(fd)
+        info=os.fstat(fd);validate_directory_stat(info,mode,gid)
+        current=path.lstat()
+        if path.resolve()!=path or (info.st_dev,info.st_ino)!=(current.st_dev,current.st_ino):
+            raise RuntimeError('installation directory changed')
+    finally:os.close(fd)
 
 
 def publish(path,data,mode=0o644,*,exclusive=False):

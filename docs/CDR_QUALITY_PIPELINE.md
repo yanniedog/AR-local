@@ -135,6 +135,15 @@ data audit, exact deployed commit, live Pi browser inspection and `verify:pi`.
 Require initial/incremental Drive restore with hashes, SQLite integrity and
 foreign-key checks. Natural scheduled execution is separate from commissioning.
 
+The proposed same-Pi phase-02 amendment in [CDR_QUALITY_DEPLOY.md](CDR_QUALITY_DEPLOY.md)
+executes the complete collected producer suite as sequential whole-module pytest
+sessions under one unchanged resource supervisor and one total test deadline.
+It explicitly changes session-fixture/import lifetime; monolithic exact-head CI
+remains complementary and mandatory. Versioned exact-node/terminal-phase proof,
+including collection skips and raw reports, replaces counts-only JUnit acceptance
+for that route. This proposal does not assert deployment or improved Pi resource
+behavior; a new exact-candidate full canary and the remaining gates still apply.
+
 The originally supplied AR-app audit URL returned a missing-file response during
 planning. It is an outstanding input, not claimed reviewed evidence. Current
 live and historical producer/app audit evidence remains independently usable.
@@ -159,6 +168,17 @@ rebuildable; historical databases are never migrated or edited. Retained SQLite
 WAL/rollback journals are applied only to verified private copies. Reports retain
 all provider/product membership changes and failure recurrence; product absence
 is not automatically treated as data loss or retirement.
+
+Protected canary reads require bounded drop-behind I/O for SQLite source copies,
+dashboard/status JSON, contract parsing and final source-export reconciliation.
+Identity, digest and byte/deadline checks remain enforced; unsupported required
+reads fail without fallback. JSON capture checks its budget before allocating a
+single buffer. Portable reads outside this scope are unchanged.
+
+This does not prove lower host cache use or explain all kernel Buffers growth.
+SQLite private-copy writes/reads and later log scanning remain ordinary I/O.
+Require exact-candidate Linux tests and unchanged runtime resource acceptance;
+do not drop global caches or change swap settings or resource limits.
 
 After a code repair is tested, reviewed, merged, canaried and deployed, use
 `python pi_cdr_quality_repair.py --expected-commit <deployed-sha>

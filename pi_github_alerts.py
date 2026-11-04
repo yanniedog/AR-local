@@ -17,6 +17,8 @@ import urllib.parse
 import urllib.request
 
 MAX_BYTES = 2 * 1024 * 1024
+# Bump when body wording/layout changes, even if canonical titles do not.
+BODY_PRESENTATION_VERSION = 1
 
 
 def utc() -> str:
@@ -170,16 +172,42 @@ class AlertStore:
             Path(temporary).unlink(missing_ok=True)
 
     def observe(self, key: str, title: str, category: str, *, healthy: bool,
-                recovery_started_at: datetime | None = None, record_failure: bool = False):
+                recovery_started_at: datetime | None = None, record_failure: bool = False,
+                observation_at: datetime | None = None):
         if not re.fullmatch(r"[a-z0-9:-]{1,100}", key):
             raise ValueError("invalid incident key")
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,80}", category):
             raise ValueError("invalid incident category")
         if len(title) > 160 or any(c in title for c in "\r\n"):
             raise ValueError("invalid incident title")
+        if observation_at is not None and observation_at.tzinfo is None:
+            raise ValueError("observation_at must be timezone-aware")
         with lock(self.root / "state.lock"):
             state = self.read(); rows = state["incidents"]; row = rows.get(key)
+            obs_iso = None
+            if observation_at is not None:
+                obs_iso = observation_at.astimezone(timezone.utc).isoformat()
+                # Reject an older sample under the lock so a late stale miss
+                # cannot reopen after a newer healthy observation committed.
+                try:
+                    prior = datetime.fromisoformat(row["last_observation_at"])
+                    if prior.tzinfo is not None and observation_at <= prior:
+                        return
+                except (KeyError, TypeError, ValueError):
+                    pass
             if row is None and healthy:
+                if observation_at is None:
+                    return
+                # Healthy watermark: fence later stale misses without GitHub delivery.
+                digest = hashlib.sha256((self.repository + ":" + key).encode()).hexdigest()
+                rows[key] = {
+                    "marker": f"<!-- ar-local-pi-incident:{digest} -->",
+                    "first_seen": utc(), "revision": 0, "delivered_revision": 0,
+                    "active": False, "title": title, "category": category,
+                    "changed_at": utc(), "recovered_at": utc(),
+                    "last_observation_at": obs_iso,
+                }
+                self.write(state)
                 return
             if row is not None and healthy and recovery_started_at is not None:
                 # Compare while holding the state lock: an older successful
@@ -197,26 +225,78 @@ class AlertStore:
                                   "first_seen": utc(), "revision": 0, "delivered_revision": 0}
             changed = row.get("active") != (not healthy) or (not healthy and row.get("category") != category)
             if not changed:
+                presentation_changed = row.get("revision", 0) > 0 and row.get("title") != title
+                if presentation_changed:
+                    # Correct wording once on the same issue without inventing
+                    # a failure/recovery transition or discarding its history.
+                    row.update(title=title, revision=row["revision"] + 1,
+                               body_presentation_version=BODY_PRESENTATION_VERSION)
                 if not healthy and record_failure:
                     # A repeated failure advances the chronology fence without
                     # creating a new delivery revision or duplicate issue.
                     row["last_failure_at"] = utc()
+                    if obs_iso is not None:
+                        row["last_observation_at"] = obs_iso
+                if presentation_changed or (not healthy and record_failure):
                     self.write(state)
+                # Healthy re-observe: keep existing last_observation_at fence; no rewrite.
                 return
-            row.update(title=title, active=not healthy, changed_at=utc(), revision=row["revision"] + 1)
+            row.update(title=title, active=not healthy, changed_at=utc(), revision=row["revision"] + 1,
+                       body_presentation_version=BODY_PRESENTATION_VERSION)
             if healthy:
                 row["recovered_at"] = utc()
             else:
                 row.update(category=category, last_failure_at=utc())
+            if obs_iso is not None:
+                row["last_observation_at"] = obs_iso
             # Commit before trying GitHub, including recovery before first delivery.
             self.write(state)
 
+    def refresh_presentations(self, titles: dict[str, str]) -> None:
+        """Queue wording updates for explicit existing incidents, never health observations."""
+        for key, title in titles.items():
+            if (not re.fullmatch(r"[a-z0-9:-]{1,100}", key) or len(title) > 160
+                    or any(c in title for c in "\r\n")):
+                raise ValueError("invalid incident presentation")
+        with lock(self.root / "state.lock"):
+            state = self.read()
+            changed = False
+            for key, title in titles.items():
+                row = state["incidents"].get(key)
+                if row is None or type(row.get("revision")) is not int or row["revision"] <= 0:
+                    continue  # Do not create incidents or publish healthy watermarks.
+                if (row.get("title") == title
+                        and row.get("body_presentation_version") == BODY_PRESENTATION_VERSION):
+                    continue
+                if (row["revision"] == row.get("delivered_revision")
+                        or row.get("presentation_only_revision") == row["revision"]):
+                    # Do not turn a wording refresh into a remote state change.
+                    # An already pending health transition keeps normal delivery.
+                    row["presentation_only_revision"] = row["revision"] + 1
+                row.update(title=title, body_presentation_version=BODY_PRESENTATION_VERSION,
+                           revision=row["revision"] + 1)
+                changed = True
+            if changed:
+                self.write(state)
+
     @staticmethod
     def body(row):
+        scope = {
+            "INGEST_PARTIAL": "Capture finalized with incomplete provider coverage; this is not a missed ingest.",
+            "INGEST_SERVICE_FAILED": "An ingest service failure event was recorded. This does not identify which capture, export or publication stage failed, or establish whether capture finalized.",
+            "INGEST_MISSING": "No verifiable finalized capture was found for the expected date. This does not establish whether capture never started or remained unfinalized; publication is checked separately.",
+            "INGEST_INVALID": "Finalized-capture metadata could not be validated. Capture completeness is unverified; this does not prove capture never ran or identify a publication failure.",
+            "INGEST_MONITOR_FAILED": "The ingest monitor check failed. The capture outcome is unverified; this does not prove capture was missed or failed.",
+            "INGEST_UNVERIFIED_METADATA_LIMIT": "Capture metadata exceeded the check's bounded verification budget. Capture completeness is unverified, not established as missing or failed.",
+            "INGEST_RUNTIME_EXCEEDED": "An observed ingest/check service exceeded the runtime threshold. This does not establish a finalized capture or publication outcome.",
+            "INGEST_WATCHDOG_FAILED": "A watchdog/check service failure was recorded. Its underlying capture and publication results are unverified by this event; it does not by itself prove the ingest failed or never ran.",
+            "SCHEDULED_INGEST_NOT_STARTED": "The scheduled-start detector could not establish a start for this due date; capture completeness and publication are checked separately.",
+        }.get(row["category"], "")
         return "\n".join([
             row["marker"], "", "Automatically reported by the AR-local Pi.", "",
             "State: " + ("**Needs attention**" if row["active"] else "**Recovered**"),
             "Category: `" + row["category"] + "`",
+            *(["Evidence scope: " + scope] if scope else []),
             "First observed (UTC): " + row["first_seen"],
             "Latest failure (UTC): " + row["last_failure_at"],
             "Last transition (UTC): " + row["changed_at"],
@@ -264,6 +344,9 @@ class AlertStore:
     def _publish(self, client, row):
         issue = client.find(row["marker"], row.get("issue_number"))
         value = {"title": row["title"], "body": self.body(row)}
+        presentation_only = row.get("presentation_only_revision") == row["revision"]
+        if presentation_only and issue is None:
+            raise DeliveryError("GITHUB_PRESENTATION_TARGET_MISSING")
         created = issue is None
         if issue is None:
             issue = client.request("POST", "issues", value)
@@ -272,6 +355,7 @@ class AlertStore:
             raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
         if not created or not row["active"]:
             client.request("PATCH", f"issues/{number}",
+                           value if presentation_only else
                            {**value, "state": "open" if row["active"] else "closed"})
         return number
 

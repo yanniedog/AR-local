@@ -101,3 +101,25 @@ def test_preexisting_immutable_collision_never_uploads(upload):
     with pytest.raises(RevisionError, match='immutable release collision'):
         store.archive('revision-test', [asset])
     assert calls == [] and sleeps == [] and len(reads) == 1
+
+
+@pytest.mark.parametrize('missing', [0, 1, 3, 4])
+def test_visibility_diagnostic_is_single_bounded_and_contains_only_count(upload, caplog, missing):
+    store, asset, _, _, _, observed = upload
+    expected = asset.read_bytes() if missing < 4 else None
+    observed([None] * missing + ([expected] if missing < 4 else []))
+    assert store._read_uploaded_archive('private-tag', 'private-name', 100) == expected
+    messages = [row.getMessage() for row in caplog.records if row.name == backend.__name__]
+    assert messages == ([f'archive_visibility_missing_responses={missing}'] if missing else [])
+
+
+def test_visibility_diagnostic_failure_preserves_original_transport_error(upload, monkeypatch):
+    store, _, _, _, _, observed = upload
+    failure = RevisionError('original transport failure')
+    observed([None, failure])
+    def broken_sink(*args):
+        raise OSError('diagnostic sink failed')
+    monkeypatch.setattr(backend.logging.getLogger(backend.__name__), 'warning', broken_sink)
+    with pytest.raises(RevisionError) as caught:
+        store._read_uploaded_archive('private-tag', 'private-name', 100)
+    assert caught.value is failure

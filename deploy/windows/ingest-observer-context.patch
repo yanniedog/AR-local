@@ -1,0 +1,9 @@
+--- a/scripts/ingest_notification_snapshot.py
++++ b/scripts/ingest_notification_snapshot.py
+@@ -183,3 +183,5 @@
+     class Observer:
+-        def observe(self, key, title, category, *, healthy):
++        def observe(self, key, title, category, *, healthy, recovery_started_at=None,
++                    record_failure=False, observation_at=None):
++            # Accept detector context without persisting or exposing it.
+             if re.fullmatch(r"[a-z0-9:-]{1,100}", key) and re.fullmatch(r"[A-Z_]{1,80}", category):

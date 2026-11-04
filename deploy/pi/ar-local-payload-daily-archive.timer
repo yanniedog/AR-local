@@ -1,0 +1,12 @@
+[Unit]
+Description=Retry missing encrypted daily GitHub archives during the publication window
+
+[Timer]
+OnCalendar=*-*-* 03..20:30:00 Australia/Hobart
+OnCalendar=*-*-* 21:00:00 Australia/Hobart
+Persistent=true
+AccuracySec=1min
+Unit=ar-local-payload-daily-archive.service
+
+[Install]
+WantedBy=timers.target

@@ -13,11 +13,21 @@ A root-created one-shot `ar-local-plain-backup-<32hex>.service` runs the shared
 queue as `pi`. The queue MainPID directly spawns the root-owned trusted parent,
 which imports only protected standard-library control code and calls fixed sudo
 verbs. It never imports producer code while privilege gain remains possible.
-`pi_plain_backup_plan.service_plan` returns the exact service and sudo command
-plan, without executing it. PROBE uses runtime120s, CPU100%, IOWeight10, TasksMax64
-and stop45s. RUN_ARCHIVE has the existing six-hour ceiling. Queue waiting and
-execution timers remain separate; admission retains the natural-ingest window.
-The producer also enforces its stricter 00:25-03:30 Hobart cleanup margin.
+`pi_plain_backup_plan.service_plan(nonce, packet=runtime_inputs, mode=mode)`
+returns the exact service and sudo command plan, without executing it. Capture
+and hash-verify the core module before loading the pure plan locally. Both sides
+use the same frozen packet timestamps and `runtime_seconds`: the whole-second
+window (expiry minus creation, capped at120s for PROBE or six hours for
+RUN_ARCHIVE) minus a reserved admission slack of `min(60, window // 4)` seconds.
+`RuntimeMaxSec` and the queue lease count from admission, so acquisition
+requires the remaining window to cover the full runtime; admission later than
+the slack closes the nonce, and an admitted run always ends by `expires_at`. Packet expiry retains the stricter 00:25-03:30 Hobart cleanup margin.
+Native runtime and queue lease must match this chosen duration exactly.
+New manual operations use immediate admission (`--wait-timeout 0`): an occupied
+queue or a delayed dispatch that crosses the ingest boundary closes the nonce
+through ordinary cleanup. A new packet is required for another attempt. CPU100%,
+IOWeight10, TasksMax64 and stop45s remain unchanged; queue admission still adds
+its separate60s stop grace before the00:30 ingest start.
 
 Install reviewed bytes only after independent review, under root-protected
 ancestors (no symlinks or group/other write):
@@ -166,7 +176,12 @@ Successful root completion and full resource acceptance produce coupled-probe.js
 with PROBE_PASS and scope NO_BACKUP_NO_DRIVE_WRITES, never backup PASS.
 
 Use a new nonce for RUN_ARCHIVE only after that actual coupled proof qualifies
-its exact closure. Archive producer acceptance, offsite full restore acceptance,
+its exact closure. New packets and coupled proofs pin the complete root-control
+manifest. RUN also checks the referenced protected PROBE packet's canonical
+runtime and matching manifest; a proof from earlier controls cannot commission
+this runtime policy. Historical terminal packets remain recoverable with their
+original fixed runtime caps, and their coupled proof bytes are preserved. They
+cannot authorize a new RUN. Archive producer acceptance, offsite full restore acceptance,
 filesystem image acceptance, deployment and public payload acceptance remain
 separate claims. This source has only mocked/Windows-focused validation so far;
 Linux CI and actual coupled commissioning remain mandatory before archive use.
@@ -203,10 +218,15 @@ and3328MiB admission reserve. Swappiness stays60 during installation.
 The installation plan additionally stages `plan.py` and `build-packet.py` beside
 the seven broker controls; the packet builder validates their installed hashes
 against root-private installation.json before importing either reviewed control.
-The existing original credential is Pi-owned0600 under root0700 custody. The
-builder checks its canonical path, protected ancestors, UID/GID/mode/link/size,
-stable read-only descriptor and unchanged leaf identity, preserves it exactly,
-and creates only the separate root:pi0440 operation copy.
+The existing original credential is Pi-owned0600. Its fixed legacy custody is
+Pi:Pi0700 `/var/lib/ar-local-drive-backup`, root:root0700 `credentials`, and
+Pi:Pi0700 `dedicated-20260913-ready3`; all earlier ancestors remain root-protected.
+Only these two exact private directories permit Pi ownership. The builder opens
+each directory relative to the preceding held descriptor with O_NOFOLLOW,
+checks its ownership/mode, reads the bounded leaf through that final directory
+FD, then rechecks every directory entry/inode and the complete leaf identity.
+It preserves the original and creates only a separate root:Pi0440 operation copy.
+No credential bytes are parsed as executable code or written to diagnostics.
 
 ```
 /usr/bin/python3 -I -B /usr/local/lib/ar-local-plain-backup/build-packet.py PROBE <fresh32hex>
@@ -220,3 +240,108 @@ when the operator is ready to launch that exact reviewed one-shot service. After
 actual coupled/root-resource/stop-post proof, an explicitly authorized separate
 `RUN_ARCHIVE <fresh32hex> <successfulProbe32hex>` packet may be prepared. Neither
 packet creation nor installer success is backup acceptance.
+
+
+## One-time repair of an uncommissioned initial installation
+
+An initial installation made under UMask0077 could leave newly created public
+control/source directories0700, and its first packet could reject the actual
+legacy credential custody above. A failed packet before nonce creation is not a
+backup attempt. Preserve that failure and qualify this correction before a new
+nonce. The corrected initial installer and packet builder explicitly fchmod and
+fchown **only their newly created directories** through held no-follow FDs.
+Existing directory permission mismatches require review; they are never silently
+relaxed. Private state stays0700; new control/source paths use0755, handoff and
+per-operation workspace custody use root:Pi0750, and the producer's private
+sandbox staysPi:Pi0700.
+
+Do not reapply the initial installer: its retained installation history makes
+that ambiguous. A separately reviewed, hash-bound preparation repair may use
+this exact file/mode plan, inside one sole admitted host/ar-local queue job with
+the installation resource limits, swappiness60 and no active native nonce,
+intent, archive, legacy reclaim journal or occupied competing claim:
+
+1. Verify all incumbent control, queue, producer/runtime and dispatcher bytes
+   against the original installation receipt and qualified bundle. Preserve the
+   original receipt, builder and directory inventory in a new root-private
+   recovery directory before any change; do not overwrite an earlier repair.
+2. Derive the finite directories **only** from the installed manifest's producer
+   relative paths. The allowed mode repair set is
+   `/usr/local/lib/ar-local-plain-backup`, its `source` directory and those
+   manifest-derived package subdirectories. Require root:root, no symlinks and
+   incumbent mode0700 or0755; open/identity-check every path, then set only these
+   specific held directory FDs to0755. No recursive chmod/chown or arbitrary path
+   is allowed. Producer/runtime file bytes and modes stay unchanged.
+3. Stage the exact CI-qualified `pi_plain_backup_packet.py` bytes in root-private
+   custody. Preserve the original fixed `build-packet.py` and atomically replace
+   only `/usr/local/lib/ar-local-plain-backup/build-packet.py` with these reviewed
+   bytes, root:root0644. Keep broker, parent, callbacks, seven-control manifest,
+   wrapper manifest, queue modules and all original credential paths unchanged.
+4. Atomically publish a copy of `installation.json` changing only
+   `plan.control["build-packet.py"]` to the new exact builder SHA. Add an
+   `operational_preparation_patch` audit object recording reviewed source commit,
+   old/new builder SHA, original receipt SHA and exact before/after directory
+   identities/modes. Preserve the historical bundle ID, installer SHA and source
+   commit as original installation provenance, not as a claim that the original
+   bundle contained this repair. The separately preserved receipt retains its
+   exact original bytes. The root seven-control and wrapper manifests remain
+   byte-identical because neither includes the packet builder.
+5. Verify the new builder/receipt binding, all unchanged source hashes, exact
+   modes/read access as Pi, whole-job resources and swappiness60. Record repair
+   success as **PREPARATION_ONLY_NOT_COMMISSIONED**. It does not authorize a unit
+   launch, VM change, backup, Drive write, timer action or deployment. Qualify a
+   new bounded coupled PROBE separately; do not reuse the blocked nonce.
+
+The existing `pi-shared-task` wrapper defaults IOWeight500/TasksMax128 and cannot
+meet the installer's strict IOWeight10/TasksMax64. Preparation/repair uses an
+explicit reviewed root-created manual queue unit with those strict values,
+TypeNotify/UserPi/CPU100%, bounded runtime and control-group kill. No timer or
+manager reload is part of this preparation repair.
+
+
+## Setuid sudo admission and bounded failure evidence
+
+The native sudo monitor retains the invoking Pi real UID while its effective,
+saved and filesystem UIDs are root. The broker records all four kernel UID/GID
+fields and admits only that observed matrix for the exact fixed sudo command:
+Pi/root/root/root UIDs, all-root GIDs, NNPfalse, root-protected sudo executable,
+full argv equality, bounded pidfd/start-tick proof and the same admitted cgroup.
+The root Python broker remains all-root UID/GID; the fixed Pi parent and queue
+owner remain all-Pi UID/GID. A mixed credential process cannot pass as an
+unprivileged producer. Qualified sudo intermediates remain pinned snapshots and
+count toward every whole-cgroup RSS/swap limit. The fixed setpriv transition may
+have all-root UIDs while its GIDs have already atomically changed to Pi; only its
+exact bound executable/argv and ancestry can receive this transient exception.
+
+A failed root call writes at most one root-private0600
+`failure-<acquire|finish|recover>.json` under its existing protected nonce. The
+bounded record contains only schema, nonce, fixed action/stage, exception class
+and timestamp. No exception message, argv, environment, provider body, raw ingest
+or credential bytes are stored. Bootstrap failures remain sanitized stdout
+labels because an unqualified closure must not write nonce state. Telemetry
+failure cannot overwrite an earlier record or mask the primary error. The
+trusted parent preserves acquire's primary failure if its normal finish also
+fails and forwards only bounded structured labels; independent stop-post and
+existing recovery retain their original ownership/terminal gates.
+
+This changes four members of the same seven-file bootstrap closure:
+`broker.py` (`pi_plain_backup_entry.py`), `parent.py`
+(`pi_plain_backup_parent.py`), `pi_plain_backup_linux.py` and
+`pi_plain_drive_resources.py`. Packet, worker attestation and public completion
+schemas are unchanged. Kernel identity snapshots gain internal `uids`/`gids`
+arrays, and failure records use `ar-local-plain-backup-root-failure-v1`.
+Commissioning requires the exact new four source hashes, root-control manifest,
+wrapper-manifest root-control binding and installation receipt control hashes,
+with preserved incumbent bytes and explicit patch provenance. A known terminal
+NOT_ACQUIRED nonce is historical evidence; let normal admitted queue
+reconciliation release its proven claim. Do not manually erase it or reuse the
+nonce. Actual coupled qualification is still required before archive authority.
+
+
+Root broker imports execute the captured, hash-verified source snapshots directly
+in a fixed dependency order. They never use timestamp bytecode caches or add the
+whole control directory to Python's module search path. The Pi parent likewise
+executes only the manifest-bound post-hook snapshot and verifies its own source
+binding before using it. Existing unqualified root module cache entries fail
+closed. This prevents a stale timestamp-valid `.pyc` or an unrelated sibling
+module from substituting for the reviewed source during a control upgrade.

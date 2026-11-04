@@ -6,6 +6,12 @@ const hex = bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padSt
 let active = 0;
 const DOCUMENTS = new Set(['manifest.json', 'manifest-v2.json', 'dates-index.json',
   'revision-delta.json', 'base-manifest.json', 'source-manifest.json']);
+const OBSERVED_PREFIX = '/v1/capabilities/observed-population-v1/release/';
+const OBSERVED_INDEX = 'app-payload-observed-v1-candidate';
+// Observed editions publish only manifest.json plus approved payloads
+// (app_payload_observed.ObservedStore); private revision metadata such as
+// source-manifest/base-manifest/revision-delta is never routable here.
+const OBSERVED_DOCUMENTS = new Set(['manifest.json']);
 export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-rate-history-catalogue|bank-rate-history-catalogue-packed|bank-rate-history-ready|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
 
 function headers() {
@@ -17,8 +23,30 @@ function failure(status) {
   return new Response('Data service temporarily unavailable.', { status,
     headers: { ...headers(), ...(status === 429 || status === 503 ? { 'Retry-After': '2' } : {}) } });
 }
+function observedRoute(url, request) {
+  const match = /^([A-Za-z0-9-]+)\/([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(url.pathname.slice(OBSERVED_PREFIX.length));
+  if (!match || url.href.includes('?') || url.href.includes('#') || url.username || url.password || url.protocol !== 'https:' ||
+      request.headers.has('X-AR-Legacy-SHA256')) throw new Error('Invalid capability route');
+  const [tag, asset] = match.slice(1);
+  if (tag === OBSERVED_INDEX) {
+    if (asset !== 'dates-index.json') throw new Error('Candidate index only');
+  } else {
+    const edition = /^app-payload-observed-v1-([0-9]{4}-[0-9]{2}-[0-9]{2})-r([0-9]{6})$/.exec(tag);
+    if (!edition || edition[1].startsWith('0000-') || Number(edition[2]) === 0 ||
+        !Number.isFinite(Date.parse(`${edition[1]}T00:00:00Z`)) ||
+        new Date(`${edition[1]}T00:00:00Z`).toISOString().slice(0, 10) !== edition[1] ||
+        // ObservedStore publishes plain .json.gz payload names only; inner ARE1
+        // (.json.gz.enc) needs a verified legacy hint this route never accepts.
+        !(OBSERVED_DOCUMENTS.has(asset) || PAYLOAD.test(asset) && !asset.endsWith('.enc'))) throw new Error('Invalid candidate edition');
+  }
+  // The mutable candidate index is selection state: never edge-cached, so an
+  // older in-flight fetch can never overwrite a newer index for a TTL.
+  return { tag, asset, legacySha: null, canonical: url.origin + url.pathname, uncached: tag === OBSERVED_INDEX,
+    upstream: `https://github.com/yanniedog/AR-local/releases/download/${tag}/${asset}` };
+}
 export function releaseRoute(request) {
   const url = new URL(request.url);
+  if (url.pathname.startsWith(OBSERVED_PREFIX)) return observedRoute(url, request);
   const match = /^\/v1\/release\/(app-payload-(?:latest|[0-9]{4}-[0-9]{2}-[0-9]{2}(?:-r\d{6})?))\/([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(url.pathname);
   if (!match || !(DOCUMENTS.has(match[2]) || PAYLOAD.test(match[2]))) throw new Error('Invalid route');
   for (const name of url.searchParams.keys()) if (!['_', 'legacy_sha256'].includes(name)) throw new Error('Invalid query');
@@ -126,8 +154,10 @@ export async function handleRequest(request, env, ctx, fetcher = fetch, cache = 
   try {
     if (!env.RATE_LIMITER || !(await env.RATE_LIMITER.limit({ key: request.headers.get('cf-connecting-ip') || 'unknown' })).success) return failure(429);
     const cacheKey = new URL(route.canonical);
+    // The complete capability path is part of the cache identity, never a header variant.
     cacheKey.searchParams.set('__delivery', '2'); // Do not reuse pre-Vary responses.
-    const cached = await cache?.match(cacheKey.toString());
+    const edge = route.uncached ? null : cache;
+    const cached = await edge?.match(cacheKey.toString());
     if (cached) return cached;
     if (active >= 2) return failure(503);
     active++;
@@ -142,9 +172,9 @@ export async function handleRequest(request, env, ctx, fetcher = fetch, cache = 
       const response = new Response(plain, { headers: { ...headers(),
         'Content-Type': 'application/octet-stream', 'Content-Length': String(plain.length),
         'Vary': 'X-AR-Legacy-SHA256',
-        'ETag': `"${digest}"`, 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=30',
+        'ETag': `"${digest}"`, 'Cache-Control': route.uncached ? 'no-store' : immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=30',
         ...(route.legacySha ? { 'X-AR-Source-SHA256': route.legacySha } : {}) } });
-      if (cache) ctx.waitUntil(cache.put(cacheKey.toString(), response.clone()).catch(() => {}));
+      if (edge) ctx.waitUntil(edge.put(cacheKey.toString(), response.clone()).catch(() => {}));
       return response;
     } finally { clearTimeout(timeout); active--; }
   } catch { return failure(502); }

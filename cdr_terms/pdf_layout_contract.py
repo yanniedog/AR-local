@@ -15,7 +15,7 @@ from .identity import digest, require_sha
 
 MIB = 1024**2
 POLICY = 'pdf-layout-candidates-1'
-PARSER = '6.19.0'
+PARSER = '6.21.2'
 
 
 @dataclass(frozen=True)

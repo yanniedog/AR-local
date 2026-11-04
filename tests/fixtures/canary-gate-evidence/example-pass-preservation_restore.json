@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "gate": "preservation_restore",
+  "result": "PASS",
+  "target_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "completed_at": "2026-10-25T12:00:00+11:00",
+  "evidence": [
+    {
+      "path": "example/receipts/PLACEHOLDER.restore.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "notes": "FIXTURE ONLY — not live canary evidence"
+}

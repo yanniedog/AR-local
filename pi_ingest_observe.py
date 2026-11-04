@@ -22,6 +22,7 @@ def observe(watchdog, now, read_selected, *, publication_check=None):
               "payload_pending": watchdog.payload_publication_pending(watchdog.REPO_ROOT),
               "publication": publication, "publication_check_seconds": publication_seconds,
               "repair_started": False}
+    result["attention_categories"] = attention_categories(result)
     return result
 
 
@@ -39,16 +40,33 @@ def main():
     except Exception as error:
         result = {"observation_only": True, "status": "UNKNOWN",
                   "error_category": type(error).__name__, "repair_started": False}
+    result["attention_categories"] = attention_categories(result)
     print(json.dumps(result, sort_keys=True))
     return int(observation_failed(result))
 
 
 def observation_failed(result):
-    return (result.get("status") == "UNKNOWN"
-            or (result.get("capture_due") and not result.get("service_active")
-                and not result.get("capture_finalized"))
-            or (result.get("publication_due")
-                and result.get("publication", {}).get("publication_current") is not True))
+    return bool(attention_categories(result))
+
+
+def attention_categories(result):
+    """Name the failing check without turning publication failure into lost capture.
+
+    Preserve the existing due/activity/failure predicates. Provider completeness
+    is independently verified and alerted by pi_issue_watchdog; a finalized
+    observation here never certifies complete provider coverage.
+    """
+    categories = []
+    if result.get("status") == "UNKNOWN":
+        categories.append("CHECK_EVIDENCE_UNAVAILABLE")
+    if (result.get("capture_due") and not result.get("service_active")
+            and not result.get("capture_finalized")):
+        categories.append("CAPTURE_NOT_FINALIZED")
+    publication = result.get("publication", {})
+    if result.get("publication_due") and publication.get("publication_current") is not True:
+        categories.append("PUBLICATION_CHECK_UNAVAILABLE" if publication.get("status") == "UNKNOWN"
+                          else "PUBLICATION_NOT_CURRENT")
+    return categories
 
 
 if __name__ == "__main__":
