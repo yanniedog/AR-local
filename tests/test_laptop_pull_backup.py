@@ -985,3 +985,7 @@ def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path:
     assert record["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256
     with pytest.raises(FileExistsError):
         receiver.atomic_create(path, b"replace")
+
+
+# Cloud/UNC target refuse coverage lives in tests/test_laptop_backup_target.py
+# so this module stays under the trusted-installer LOC ceiling.

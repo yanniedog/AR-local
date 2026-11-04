@@ -215,7 +215,8 @@ def test_remote_observer_accepts_real_watchdog_recovery_without_hiding_capture(m
         {"key": "ingest:" + DAY, "category": "INGEST_" + capture_status, "healthy": capture_status == "COMPLETE"},
     ]
     serialized = json.dumps(result)
-    assert "recovery_started_at" not in serialized and "not-returned" not in serialized
+    assert "recovery_started_at" not in serialized and "observation_at" not in serialized
+    assert "not-returned" not in serialized
 
 
 def test_public_timeout_is_not_healthy(monkeypatch):

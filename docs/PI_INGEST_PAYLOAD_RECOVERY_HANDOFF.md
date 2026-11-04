@@ -36942,3 +36942,240 @@ or enabling their timers. See `SHARED_PI_QUEUE.md` for the entry point, limits,
 crash recovery and rollout procedure. Linux tests, harmless live canaries, exact
 merged source hashes and effective service readback must establish installation
 acceptance; future natural ingest remains unverified until observed.
+
+## 2026-10-25 - Drive write hold lift + daily CDR day-archives (operator 1B / ongoing)
+
+The operator authorized lifting the Google Drive write hold entirely and
+starting a dedicated unencrypted per-day CDR archive series under
+`AR-local Pi Backups/daily-cdr-day-archives/`, with sequential backfill from
+`2026-05-13` and ongoing post-ingest enqueue.
+
+Hold lift uses `deploy/pi/lift-drive-write-hold.sh` (inventory hashes, remove
+markers, re-enable Restic timers). Day archives use
+`pi_daily_cdr_day_archive.py` (Zstd level 19, verify-before-unlink local
+`.tar.zst` only). See `docs/DAILY_CDR_DAY_ARCHIVES.md`. Source CDR trees
+remain immutable; permanent gaps `2026-05-14` and `2026-06-26` receive gap
+markers only.
+## 2026-10-25 — post-merge #991 day-archive Pi follow-up (fc40b17)
+
+PR #991 squash-merged as `fc40b17e913a7d4fcc2a19ec29965f3671a0343b`. Operator
+authorized post-merge runtime follow-up outside the 00:30–02:00 Hobart quiet
+window.
+
+### Production deploy (BLOCKED — canary gates not bypassed)
+
+- Production checkout `/srv/ar-local/AR-local` remains
+  `e350bb7b5aca6cb82da07dee8492f8caf7741edd` (71 commits behind `origin/main`).
+- Controlled `npm run pi:deploy -- --expected-commit fc40b17…` refused before
+  checkout mutation:
+  1. `australianrates` checkout behind its `origin/main` (unrelated site
+     mutation guard).
+  2. Trusted backup gate not installed: missing `/usr/local/bin/ar-local-backup-gate`,
+     `/usr/local/lib/ar-local-backup`, `/etc/ar-local/backup.env`, and
+     `/mnt/ar-local-backup`.
+  3. GitHub `pi-deploy-canary` cannot run: `pi-production` env has no
+     `AR_PI_CANARY_APPROVED_COMMIT` / `AR_PI_CANARY_MANIFEST_SHA256` /
+     `AR_PI_CANARY_RELEASE_TAG`, and no immutable `canary-acceptance.json`
+     release for this commit. Fabricating acceptance was refused.
+- Dry-run of the deploy verifier completed; live activation was not performed.
+
+### Interim day-archive runtime (seed)
+
+- Seed checkout `/var/lib/ar-local-day-archives/src/AR-local` detached at
+  `fc40b17e913a7d4fcc2a19ec29965f3671a0343b`.
+- `deploy/pi/install-day-archive.sh` re-run with that root and `--enable`.
+  `ar-local-day-archive.timer` **enabled**; unit `WorkingDirectory` points at
+  the seed until production canary deploy lands day-archive scripts on
+  `/srv/ar-local/AR-local`.
+- Progress ledger migrated to `meta/progress.jsonl` (hardlinked also as
+  legacy `progress.jsonl`); **not wiped**. In-flight root backfill PID 6691
+  (`--backfill --skip-journals`) left running.
+- rclone conf path made readable by `User=pi` (credentials dir `750 root:pi`,
+  verified conf `600 pi:pi`). Timer smoke `--once-pending` → IDLE.
+- Drive write hold remains lifted (no hold markers; Restic timers enabled).
+- CONTROL archive uploaded: `CONTROL.tar.zst` PASS
+  sha256 `7885e3e51f89e1b8d9aa7503005c6fde6d7075debc0e0c0e66180074913966da`
+  at 2026-10-25T16:57:40+11:00.
+- Backfill status at handoff write: pass_count **47** day/gap PASS entries,
+  last_pass **2026-06-28**, plus CONTROL PASS; continuing toward yesterday.
+
+### Next activation requirements
+
+1. Resolve australianrates checkout drift (or keep site HEAD==origin deliberately).
+2. Commission local backup foundation (`backup.env`, mount, gate install) **or**
+   run D-027 `pi_cdr_quality_activate` canary→seal→activate for exact
+   `fc40b17…`, **or** publish immutable canary-acceptance release + set
+   `AR_PI_CANARY_*` and run `pi-deploy-canary` with `DEPLOY_VERIFIED_CANARY`.
+3. After production HEAD=`fc40b17…`, reinstall day-archive units with
+   `ROOT=/srv/ar-local/AR-local --enable` and retire seed WorkingDirectory.
+
+
+## 2026-10-28 - Drive full backfill status and Pi-to-head blocker packet
+
+Operator order 2026-10-28 ~08:29 AEDT: finish Drive full CDR backfill, then
+bring the Pi to GitHub main via the exact-commit canary path. No production
+mutation, timer change or deploy was performed in this entry.
+
+### Drive backfill (unique folder `AR-local-CDR-full-20261026-op094109`)
+
+- 163 of 163 eligible sealed day archives (`.tar.zst`, zstd-19) on Drive, plus
+  five permanent `.GAP.json` markers: 2026-05-14, 06-26, 10-08, 10-09, 10-10.
+  RAM package, live-shm snapshot/inventory and CONTROL archive present.
+- Only 2026-10-28 remains: the day is open and the archiver refuses to seal it
+  before the Hobart date rolls (03:07 one-day chunk returned no results).
+  `complete: false` solely for that reason.
+- Existing authorized waiter (`_drive_full_after_quiet.sh`, PID 571442) resumes
+  at 02:05 Hobart 2026-10-29, packs 10-28, refreshes CONTROL and verifies. No new
+  timer was created. Evidence: `.work/drive-full-backfill-20261026.md`.
+
+### Pi to head (NOT activated)
+
+- `origin/main` = `c77c510c1467f74eca7486e4af761225b9571974` (#1013). Pi
+  production HEAD = `e350bb7b5aca6cb82da07dee8492f8caf7741edd`, clean.
+- Latest canary freeze: `0583e23c7c5ce4318312d9ba1a85ae5cf3950229` 6/8
+  (shadow_ingest PASS; preservation_restore and device_matrix UNKNOWN). Main
+  moved 4 day-archive files since; `c77c510c` has no bound canary evidence and
+  needs a re-freeze before any dry-run. Not performed: both remaining gates
+  depend on hardware, and the tip is likely to move again.
+- Blocker 1: no eligible backup disk. `lsblk`: only `sda` 59.7G (below the ~680
+  GiB floor); NVMe is the production root; `/mnt/ar-local-backup` and
+  `/etc/ar-local/backup.env` absent. Needs a separate-UUID disk >= ~680 GiB.
+- Blocker 2: no physical Android device (`adb devices` empty). Emulator evidence
+  does not authorize device_matrix.
+- Armed next steps once hardware exists: commission backup (queue, see
+  `.work/pi-operator-unblock-20261026.md`), bind preservation_restore from the
+  real `latest-restore.json`, install APK and bind device matrix, re-freeze at
+  then-current `origin/main`, 8/8, `pi-deploy-canary` dry-run, exact-commit
+  activate in daylight, soak, `npm run verify:local -- --base-url=http://100.78.28.10/`.
+
+## 2026-10-28 - Operator-waived Drive backup and Pi activation at fbe481ae (entry OPS-20261028-WAIVER-01)
+
+- Entry ID / time: `OPS-20261028-WAIVER-01`; created 2026-10-28T12:55+11:00 Australia/Hobart (2026-10-28T01:55Z).
+- Author/operator: Cursor agent executing the operator standing order of 2026-10-28 ~08:54 AEDT (user offsite).
+- Result: `PASS` for Part 1 (backup) and Part 2 (activation) as scoped below; runtime acceptance of the first natural ingest on this head remains open.
+- Controlling plan: `ARL-OPS-001` v1.5, plan git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>" `9094a8e115958fcaf2cb36525736bd5e297e6b04`, controlled SHA-256
+  `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`, raw SHA-256
+  `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` (identity as recorded in the installed payload-archive manifest; not re-derived here).
+- Production state: before `e350bb7b5aca6cb82da07dee8492f8caf7741edd`, after `fbe481ae0fc78a5bbcee304cb0f67cf1a166c89c` (= `origin/main`),
+  path `/srv/ar-local/AR-local`, clean; `australianrates` `c2ef8db18f0893beb4f527767610dbc17ebefe43` (= its origin), clean.
+
+### Deviation decision (runbook: append-only decision entry)
+- Reason: operator is offsite and ordered a bounded backup then activation without waiting for hardware (separate >=680 GiB disk, Android phone) or Restic commissioning.
+- Waived gates: backup-foundation disk and `/etc/ar-local/backup.env`/mount, device_matrix, preservation_restore (UNKNOWN), Restic `COMMISSIONING_CLOSED`, prior 6/8 canary scoreboard, `pi-deploy-canary` immutable acceptance. None marked PASS.
+- Risk: no fresh restore drill or boot proof; activation of 71+ unproven commits on the production Pi; first ingest on head not yet observed; backup is crash-consistent (live filesystem), not a snapshot.
+- Compensating controls: independent Drive backup of OS + AR-local taken first (below); exact 40-char commit via the trusted `install_candidate` (production lock, ff-only to fetched `origin/main`); removed pins copied for restore; real `verify:local` and `pi_deploy_verify --verify` plus live dashboard inspection after activation; rollback path below.
+- Revised acceptance: Drive object checksums verified; production HEAD == expected SHA; `verify:local` exit 0; `pi_deploy_verify --verify` exit 0; dashboard renders current-day rows; next natural ingest (2026-10-29 01:00) must be inspected before the head is considered ingest-accepted.
+- Authorisation/time: operator standing order 2026-10-28 ~08:54 AEDT (chat); executed 09:11-12:43 AEDT.
+
+### Part 1 - backup evidence
+- Drive remote (complete): `ar_local_drive_dedicated_20260913:AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412/AR-local-Pi-OS-ARlocal-backup-20261028-n7f3a1`.
+- Size: 8,728,403,871 bytes (8.13 GiB) in 53 objects after the correction below; cap 100 GiB. Every object uploaded with `rclone copy --checksum` then `rclone check --one-way`; `zstd -t` before upload.
+- Pi staging/evidence: `/var/lib/ar-local-os-backup-20261028-n7f3a1/` (`_meta/` has manifest.tsv sha256 `fe1ec599b0eae8cf4e6504beee761fab88539373e43684319d59df5194ad9374`, SHA256SUMS, COMPLETE.json, CHANGELOG.txt, RESTORE.md, per-artifact file lists).
+- Artifacts (zstd-19; evidence tier zstd-9): `os/rootfs-nvme0n1p2.tar.zst` 2,723,077,434 B sha256 `391ae7e4735c35f8fa36225254d4185171593df9ceaf89fdc4f2dda06df8183b` (243,506 entries, tar rc 0);
+  `os/boot-firmware.tar.zst` + `os/nvme0n1p1-boot-firmware.img.zst` + `os/nvme0n1.sfdisk` + first-4MiB; `arlocal/srv-ar-local-code.tar.zst` (AR-local + australianrates, `4db5fd2b...`);
+  `arlocal/var-lib-ar-local-small.tar.zst`; `arlocal/srv-ar-local-data-state.tar.zst` (`62cf94c0...`; tar rc 1, `state` changed while reading); `arlocal/srv-ar-local-data-runs-last7.tar.zst` (runs 2026-10-22..28, `57837865...`); `arlocal/srv-ar-local-evidence-tierB.tar.zst` (`55741246...`).
+  Excluded: full run history (Drive day archives), `canary/`, drive-backup staging, caches. OS image excludes `/srv/ar-local` and `/var/lib/ar-local-*` so no bytes are counted twice.
+- Credentials: an initial `drive-backup-credentials-PRIVATE.tar.zst` was uploaded, then deleted from Drive within the same session because repository policy (`docs/GOOGLE_DRIVE_BACKUP.md`, `docs/PI_BACKUP_FOUNDATION.md`) keeps secrets off Drive. It exists only on the Pi at `.../credentials-pi-only/` (mode 700). The OS tar excludes `/var/lib/ar-local-drive-backup`, so rclone/restic credentials must be restored from operator custody or re-enrolled.
+- Queue: `pi-shared-task --project ar-local --resource ar-local --cpu-slots 2` (no host-only job was queued; queue status empty besides this job). Capture was of a live filesystem; consistency is crash-level, accepted under the waiver.
+
+### Part 2 - activation evidence
+- Scripts: `.work/pi-deploy-exact-waiver-20261028.sh`, `.work/pi-deploy-retire-pins-20261028.sh` (untracked operator evidence); Pi dir `/srv/ar-local/deploy-waiver-20261028/` (`install-candidate.json` sha256 `065f6abe096bc0f024845b10f943c562495e9f62ec19d6d157759faac76b7f23`, `deploy.log`, `retired-dropins/`, unit-file listings before/after).
+- Not used: `pi_deploy_verify --deploy` / `ar-local-backup-gate` (require waived `backup.env`, mount and canary receipts); no deployment-acceptance record was written.
+- Ingest admission: `daily-ingest.lock` held by `install_candidate`; daily timer next fire 01:00, watchdog/boot observers verified idle by `pi_observer_unit_verify --idle-only` before and after; no ingest was running or queued. The interval between checkout (12:31:05) and pin retirement (12:37:45) contained no ingest start; the retired daily pin would otherwise have failed the launcher's HEAD check.
+- Retired drop-ins (copies retained): watchdog `zzz-ingest-observer-58f604fb19a7`, daily `zzz-archive-readback-20261024` (head contains the backported fix via #968/#973), `zz-verifier702` on daily and ingest-now (head units run `{repo}/verify_local.py` natively).
+- Verification at 12:37-12:55 AEDT: `npm run verify:local -- --base-url=http://100.78.28.10/` exit 0; `python pi_deploy_verify.py --verify` (from an `origin/main` worktree) exit 0, run_date 2026-10-28, rates 16418; on-Pi `ar-local-deploy-watchdog` green after the final drop-in change.
+- Live dashboard inspection (Browser, `http://100.78.28.10/`, 2026-10-28 ~12:50 AEDT): first load after the dashboard restart showed "Loading rates" (cold preload); after ~15 s it rendered run 2026-10-28, lowest rate 5.93%, 7,194 rows, 88 providers with logos, chart and current-slice table. Console log was not captured by the tool; no visible error state.
+- Unrelated failed units noted: `ar-local-capacity-monitor` (SMTP auth), `ar-local-drive-backup` (failed 12:30 before activation; write hold), `avalon-monitor-cycle`.
+
+### Next action and stop conditions
+- Inspect the 2026-10-29 01:00 natural ingest on head (`journalctl -u ar-local-daily.service`, `/api/latest` run_date, `pi_deploy_verify --verify`). Stop and roll back if it fails on a head-specific error.
+- Rollback: `ar_local_checkout.rollback_candidate(Path('/srv/ar-local/AR-local'), Path('/srv/ar-local/data'), 'e350bb7b5aca6cb82da07dee8492f8caf7741edd')` from `/usr/local/lib/ar-local-backup`, restore drop-ins from the evidence dir, `deploy/pi/apply-pi-runtime-units.sh`, then verify.
+- Prohibited advancement: do not treat this entry as canary acceptance, device-matrix PASS, restore-drill PASS, or permission to resume Drive writes beyond the lifted state of entry 2026-10-25.
+- Previous entry: `2026-10-28 - Drive full backfill status and Pi-to-head blocker packet`.
+## 2026-10-28 - Drive write-hold drop-ins retired; Restic timers disabled; day-archive is the routine Drive path (entry OPS-20261028-HOLDLIFT-01)
+
+- Entry ID / time: `OPS-20261028-HOLDLIFT-01`; 2026-10-28T18:50+11:00 Australia/Hobart.
+- Author/operator: Cursor agents under the operator order of 2026-10-28 ~18:16 AEDT ("Permanently enable it. Make it do the backup today.").
+- Result: `PASS` for the routine Drive path (day-archive); Restic incremental `RETIRED FROM SCHEDULE` (blocked by a real precondition, not a hold). Evidence: Pi `/srv/ar-local/deploy-hold-lift-20261028/{before,after,retired,restic-timer-retire}`; untracked `.work/drive-write-hold-lift-20261028.md`.
+
+### Root cause of the repeating failures
+- 30-minute `BLOCKED`: the 2026-10-25 lift left drop-in `zzzzz-explicit-write-hold-20260916.conf` replacing `ExecStart` with `dispatch.py` (always BLOCKED, exit 2) plus `ar-local-drive-reclaim.service.d/explicit-write-hold-20260916.conf`. No hold markers existed. Both drop-ins retired (copies + sha256 retained). The effective chain reverted to the last-proven `canary/drive-targets-721-20260914` code.
+- Next failures after the lift: (a) `rclone credentials file must have mode 0600` at 18:21 (read-only `rclone lsd` token refresh resets 0640; restored to 0600); (b) 18:22/18:30 `complete successful Drive resource receipt required` and `transient data path is not empty: /srv/ar-local/data/.daily-export-stage`. (b) is one failure: the supervised workload exits non-zero on the stage precondition, so no PASS resource receipt is written.
+- Stage precondition: routine Restic scope policy v1 (`ar_local_backup_scope.TRANSIENT_EMPTY_DIRS`) requires `.daily-export-stage` empty. 21 legacy day copies (2026-09-19..2026-10-28, ~55 GiB) remain from pre-head ingest; every file exists in `runs/<date>/` with identical path and size (not hardlinks). Head code already removes a day's stage after finalize only when content sha256 inventories match `runs/<date>/_exports` and the completion marker verifies (`cdr_daily_archive_gate._persistent_export_stage_cleanup`). No runbook text authorises deleting the legacy copies, so none were deleted.
+
+### Decision (solution-first; no further operator approval requested)
+- A scope-policy PR cannot reach production today: the routine unit executes frozen canary code under drop-ins (721); changing it needs a new canary dir and drop-in, which is the controlled-deploy path. Cleaning the stage would not hold anyway (stage regrows until head ingest finalize cleanup is observed).
+- Chosen: `systemctl disable --now ar-local-drive-backup.timer ar-local-drive-backup-queue.timer`, `reset-failed ar-local-drive-backup.service`. Units, drop-ins, queue (42 retained requests), credentials, Restic repository and last snapshot (2026-09-16, `8058dfcc...`) preserved. Incident #713 stops receiving failures.
+- Routine Drive path: `ar-local-day-archive.timer` ENABLED (installed from production `/srv/ar-local/AR-local` 4fba25e1; hashes verified against origin/main). Unencrypted per-day `tar.zst` to `daily-cdr-raw-records/` (see `docs/DAILY_CDR_DAY_ARCHIVES.md`). Proof today via the shared queue (job 6cba35ec, 18:27-18:44): `2026-10-27` PASS, wire_raw, 195,668,478 B, sha256 `e84ff3de955ed6085a6f57517c3d298833a7a5354b94aaaef6bd3674db0b7204`, `.tar.zst` + `.sha256` + `.manifest.json` on Drive, ledger row recorded.
+- Same-day archive of 2026-10-28 is refused by design until the Hobart day ends. Unique-folder full backfill waiters (PIDs 571442, 626666) pack 2026-10-28 at 02:05 on 2026-10-29; head ingest at 01:00 writes a continuation request drained by the day-archive timer after 02:00.
+- Also on Drive (earlier waiver): `AR-local-Pi-OS-ARlocal-backup-20261028-n7f3a1` (8.13 GiB, includes runs through 2026-10-28).
+
+### Timer states at close (Pi)
+`ar-local-day-archive.timer` enabled/active (next 19:26:15, then hourly); `ar-local-drive-reclaim-reconcile.timer` enabled/active; `ar-local-drive-backup.timer` and `ar-local-drive-backup-queue.timer` disabled/inactive. Hold markers absent.
+
+### Re-enable condition for Restic (owned, not open-ended)
+Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest shows the new day's stage removed by finalize and the legacy stage dirs are empty via the content-verified cleanup path, and (2) a controlled canary dir/drop-in supplies the receipt chain. Until then day-archive is the routine path. Not marked PASS: Restic commissioning, restore drill, canary acceptance.
+- Previous entry: `2026-10-28 - Operator-waived Drive backup and Pi activation at fbe481ae`.
+
+## 2026-10-29 - Natural ingest verified; automatic repair blocked (OPS-20261029-INGEST-01)
+
+- Operator: Codex for jkoka; checked 08:04 AEDT (2026-10-28T21:04Z).
+  Authority: operator requested Pi accessibility and correct automatic daily
+  ingest including today. Result: BLOCKED for full daily acceptance; no runtime
+  mutation, recapture, publication, timer change or backup action performed.
+- Plan: ARL-OPS-001 v1.5; controlled digest
+  `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`.
+  Previous entry: OPS-20261028-HOLDLIFT-01; its backup decisions are preserved.
+- Production `/srv/ar-local/AR-local` clean at
+  `edc0a28da70803ce0bba7e08ff81941b9152a6fc`. SSH and dashboard reachable;
+  `npm run verify:pi` passed. Natural daily service started 01:00:03, main
+  exited 01:16:08, automatic post-start validation and whole unit completed
+  successfully 01:17:39. Timer enabled/active, next 2026-10-30 01:00 AEDT.
+- Capture/finalization: `obs-2026-10-29-ddf99f5d9aa79826`, partial, 2,869
+  products, 16,410 rates, 13 failure records, all 116 registered providers
+  attempted. SQLite read-only quick_check returned ok; current reachable
+  generation and all 9,710 contracted artifacts verified. Contract digest
+  `c0c5abaa2c06f36e46a12924fa01c0503a4297e443608e71042b1c313bc26c9e`;
+  event `a9a2140b51e8f2868a255ad4600aaa4738d95f0d0d646d5301314fc66cecaf28`.
+- Publication: withheld, public latest/index remain October 28. Bank of
+  Melbourne (prior 20 products/290 rates) and Northern Inland Credit Union
+  (39/107) disappeared. Contract gate returns `unverified_provider_population`.
+  Preserve the source absence and pending pointer; do not force publication.
+- Repair admission incorrectly pins the retired September canary verifier.
+  Actual successful post-start used `/srv/ar-local/AR-local/verify_local.py`,
+  SHA256 `625b5f774985e6763523b8157693aac365dbe07672c90309b5b16eeb31eefaf2`.
+  Read-only comparison: existing `natural_clearance` returns
+  `automatic_validation_failed`; candidate bound to the shipped verifier
+  accepts the exact same live executed-command evidence. All other admission
+  predicates remain intact. Candidate is not installed by this entry.
+- Windows task still dispatches at 20:00, outside Pi admission [03:00,05:00).
+  Its configured Codex executable is absent and its global automation check
+  rejects even an unrelated active payslip automation. No October 29 repair
+  claim exists. Observer watchdog is intentionally read-only. SMTP alert
+  service also fails with `SMTPServerDisconnected`.
+- Local evidence: `C:/Users/jkoka/.codex/audit-evidence/pi-ingest-20261029/`;
+  `admission-reproduction.json` and `admission-tests-pass.xml` (143 passing
+  focused tests). Next: exact-head CI/review for verifier binding, controlled
+  activation; separately qualify a single 03:00 caller and its executable,
+  duplicate-controller detection and process-tree deadlines. Today's repair
+  requires a separately admitted daytime operation, not bypassing the fixed
+  service window or invoking the obsolete watchdog directly. Historical
+  October 7-10 capture gaps remain; no backdated data is authorized.
+
+
+## 2026-11-03 - R15 canary failed before deployment (OPS-20261103-R15-01)
+
+- Candidate `d491e3de5e936308c4a9c47309d77948b42c8996` failed at
+  2026-11-03T09:35:04Z during `source_snapshot` with
+  `pressure_node_counters_changed_during_capture`. This is a failed formal
+  acceptance result, not a benign or accepted run.
+- The terminal receipt recorded 154 samples, peak workload RSS 100,057,088 bytes,
+  zero workload swap, clean workload group and restored timers. Production
+  remained clean at `8590e238d00f093e7f6d20fccfc2377c7abf1aec`.
+  No activation or publication occurred.
+- Evidence: `evidence/d027-ci-d491e3de-validation-r15-20261103/checkpoint-final.json`
+  in the retained operator workspace. Preserve this result and all prior receipts.
+- Next source correction prepares coherent closing-read telemetry without a
+  quiescence requirement, while retaining reset, allocation, minimum-headroom,
+  low/refault, service and resource gates. It requires independent review,
+  exact-head CI and a fresh full guarded canary; preparation is not deployment.

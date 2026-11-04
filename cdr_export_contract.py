@@ -73,12 +73,18 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _read_identity(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns)
+
+
 def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = None):
     """Cooperative checks bound work between reads, not an OS-blocked read."""
     budget(entries=1)
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    if path.is_symlink():
-        raise ValueError("bounded verification requires a regular unlinked file")
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        kind = "regular unlinked file" if stat.S_ISLNK(before.st_mode) else "regular file"
+        raise ValueError(f"bounded verification requires a {kind}")
     descriptor = os.open(path, flags)
     try:
         source = os.fstat(descriptor)
@@ -86,25 +92,36 @@ def _budgeted_chunks(path: Path, budget: ReadBudget, *, max_bytes: int | None = 
             raise ValueError("bounded verification requires a regular file")
         if max_bytes is not None and source.st_size > max_bytes:
             raise ValueError("verification JSON exceeds bounded read limit")
+        if _read_identity(source) != _read_identity(before):
+            raise ValueError("artifact identity changed before bounded verification")
         stream = os.fdopen(descriptor, "rb")
     except BaseException:
         os.close(descriptor)
         raise
     expected_size = remaining = source.st_size
     with stream:
-        while remaining:
-            amount = min(1024 * 1024, remaining)
-            budget(reserve_bytes=amount)
-            chunk = stream.read(amount)
-            budget(size=len(chunk))
-            if not chunk:
-                raise ValueError("artifact changed during bounded verification")
-            remaining -= len(chunk)
-            yield chunk
+        from pi_cdr_quality_read_io import chunks_dropbehind, dropbehind_required
+        if dropbehind_required():
+            yield from chunks_dropbehind(stream.fileno(), expected_size, budget=budget)
+        else:
+            while remaining:
+                amount = min(1024 * 1024, remaining)
+                budget(reserve_bytes=amount)
+                chunk = stream.read(amount)
+                budget(size=len(chunk))
+                if not chunk:
+                    raise ValueError("artifact changed during bounded verification")
+                remaining -= len(chunk)
+                yield chunk
         budget()
         after = path.lstat()
-        if (not stat.S_ISREG(after.st_mode) or after.st_size != expected_size
-                or (after.st_dev,after.st_ino) != (source.st_dev,source.st_ino)):
+        opened_after = os.fstat(stream.fileno())
+        # Windows pathname and descriptor ctimes differ; compare each to its
+        # own baseline, while binding the portable fields across both APIs.
+        if (_read_identity(after) != _read_identity(before)
+                or after.st_ctime_ns != before.st_ctime_ns
+                or _read_identity(opened_after) != _read_identity(source)
+                or opened_after.st_ctime_ns != source.st_ctime_ns):
             raise ValueError("artifact size changed during bounded verification")
 
 

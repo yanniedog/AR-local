@@ -93,7 +93,7 @@
               "const": "pdf-layout-candidates-1"
             },
             "parser_version_required": {
-              "const": "6.19.0"
+              "const": "6.21.2"
             },
             "limits": {
               "type": "object",

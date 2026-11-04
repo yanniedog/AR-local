@@ -633,7 +633,9 @@ def test_real_form_callbacks_preserve_duplicates_and_unverified_alignment(tmp_pa
     PdfReader(io.BytesIO(body)).pages[0].extract_text(visitor_text=lambda text,*args:original_runs.append(text))
     _,pages=build(tmp_path,body)
     assert [run['text'] for run in pages[0]['runs']]==original_runs
-    assert sum('form text' in text for text in original_runs)>2
+    # Two /F0 Do operators must retain duplicate form text; pypdf 6.21+ no longer
+    # double-visits form XObject streams, so expect >=2 rather than the old >2.
+    assert sum('form text' in text for text in original_runs)>=2
     assert 'Do' in pages[0]['unsupported_operators']
     assert all(run['source_text_span'] is None for run in pages[0]['runs'])
 

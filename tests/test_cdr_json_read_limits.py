@@ -161,3 +161,16 @@ def test_no_budget_real_fifo_cannot_block_waiting_for_writer(tmp_path):
         cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
     assert child.returncode == 0, child.stderr
     assert 'regular file' in child.stdout
+
+
+@pytest.mark.parametrize('mode,message', [(stat.S_IFIFO, 'regular file'),
+    (stat.S_IFDIR, 'regular file'), (stat.S_IFLNK, 'regular unlinked file')])
+def test_nonregular_path_rejected_before_open_with_stable_diagnostic(tmp_path, monkeypatch, mode, message):
+    path = tmp_path / 'control.json'
+    path.write_bytes(b'{}')
+    values = list(path.lstat())
+    values[0] = mode | 0o600
+    monkeypatch.setattr(Path, 'lstat', lambda _: os.stat_result(values))
+    monkeypatch.setattr(os, 'open', lambda *_args, **_kw: pytest.fail('nonregular path opened'))
+    with pytest.raises(ValueError, match=message):
+        read_json(path)

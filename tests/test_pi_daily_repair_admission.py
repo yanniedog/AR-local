@@ -242,6 +242,22 @@ def test_unknown_unit_cannot_supply_validation(monkeypatch):
     run.assert_not_called()
 
 
+def test_default_verifier_binding_matches_shipped_runtime_units():
+    """A retired canary pin must not strand successful production runs."""
+    import hashlib
+    repo = Path(__file__).resolve().parents[1]
+    assert admission.VALIDATOR == repo / "verify_local.py"
+    # Git's Linux checkout has LF bytes even when local Windows uses CRLF.
+    source = (repo / "verify_local.py").read_bytes().replace(b"\r\n", b"\n")
+    assert hashlib.sha256(source).hexdigest() == admission.VALIDATOR_SHA256
+    for name in admission.INGEST_UNITS:
+        unit = repo / "deploy/pi" / name
+        line = next(row for row in unit.read_text().splitlines()
+                    if row.startswith("ExecStartPost=/bin/sh"))
+        assert "{{AR_LOCAL_REPO}}/verify_local.py" in line
+        assert "/canary/" not in line
+
+
 @pytest.mark.parametrize("verified,reason", [(True, ""), (False, "manual_automatic_validation_failed")])
 def test_clearance_queries_later_manual_units_own_executed_verifier(tmp_path, monkeypatch, verified, reason):
     units = terminal_units()

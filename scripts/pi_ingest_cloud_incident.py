@@ -20,9 +20,11 @@ from pi_github_alerts import DeliveryError, GitHub
 
 REPOSITORY = "yanniedog/AR-local"
 OWNER = "yanniedog"
-LABEL = "ingest-missed"
+LABEL = "app-publication-unverified"
+LEGACY_LABEL = "ingest-missed"
 GRACE = timedelta(minutes=90)
 MAX_CHECK_BYTES = 65536
+PUBLICATION_TITLE = "Pi app publication needs attention: "
 
 
 def unique_object(pairs):
@@ -110,11 +112,12 @@ def collect_check(*, unavailable=False, run=subprocess.run, clock=None) -> dict:
 
 def find_incidents(client, expected):
     """Bounded enumeration also retains distinct, already-reported Pi failures."""
-    title = "Pi ingest missed: " + expected
+    titles = {"Pi ingest missed: " + expected, PUBLICATION_TITLE + expected}
     pi_titles = {"Pi ingest needs attention: " + expected: "ingest:",
                  "Pi scheduled ingest missed: " + expected: "ingest-schedule:",
-                 "Pi ingest watchdog failed: " + expected: "ingest-watchdog:"}
-    matches, reported = [], []
+                 "Pi ingest watchdog failed: " + expected: "ingest-watchdog:",
+                 "Pi ingest/publication check needs attention: " + expected: "ingest-watchdog:"}
+    matches, reported, reported_keys = [], [], set()
     for page in range(1, 21):
         rows = client.request("GET", f"issues?state=all&per_page=100&page={page}")
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
@@ -122,11 +125,11 @@ def find_incidents(client, expected):
         for row in rows:
             if "pull_request" in row:
                 continue
-            if row.get("title") == title:
+            if row.get("title") in titles:
                 creator = row.get("user")
                 labels = row.get("labels", [])
                 legacy = isinstance(labels, list) and any(
-                    isinstance(label, dict) and label.get("name") == LABEL for label in labels)
+                    isinstance(label, dict) and label.get("name") == LEGACY_LABEL for label in labels)
                 marker = "<!-- ar-local-cloud-publication:" + expected + " -->"
                 if (not isinstance(creator, dict) or creator.get("login") != "github-actions[bot]"
                         or not (legacy or marker in str(row.get("body", "")))):
@@ -139,6 +142,9 @@ def find_incidents(client, expected):
                 if (not isinstance(creator, dict) or creator.get("login") != OWNER
                         or "<!-- ar-local-pi-incident:" + digest + " -->" not in str(row.get("body", ""))):
                     raise DeliveryError("GITHUB_PI_INCIDENT_IDENTITY_CHANGED")
+                if key in reported_keys:
+                    raise DeliveryError("GITHUB_AMBIGUOUS_PI_INCIDENT")
+                reported_keys.add(key)
                 reported.append((key, row))
         if len(rows) < 100:
             if len(matches) > 1:
@@ -186,6 +192,24 @@ def issue_identity(issue):
     return number, [row["login"] for row in assignees]
 
 
+def publication_labels(issue):
+    labels = issue.get("labels")
+    if (not isinstance(labels, list) or any(not isinstance(row, dict)
+            or not isinstance(row.get("name"), str) or not row["name"] for row in labels)):
+        raise DeliveryError("GITHUB_INVALID_INCIDENT_LABELS")
+    return {row["name"] for row in labels}
+
+
+def migrate_publication_labels(client, number, names):
+    """Change only our labels, preserving unrelated labels and issue history."""
+    if LABEL not in names:
+        ensure_label(client)
+        client.request("POST", f"issues/{number}/labels", {"labels": [LABEL]})
+    if LEGACY_LABEL in names:
+        client.request("DELETE", f"issues/{number}/labels/{LEGACY_LABEL}")
+    return LABEL not in names or LEGACY_LABEL in names
+
+
 def reconcile(client, report):
     issue, reported = find_incidents(client, report["expected_run_date"])
     report["reported_ingest_incidents"] = [
@@ -207,14 +231,18 @@ def reconcile(client, report):
     body = issue_body(report)
     if issue is None:
         ensure_label(client)
-        title = "Pi ingest missed: " + report["expected_run_date"]
+        title = PUBLICATION_TITLE + report["expected_run_date"]
         created = client.request("POST", "issues", {"title": title, "body": body,
                                   "labels": [LABEL], "assignees": [OWNER]})
         if not isinstance(created, dict) or type(created.get("number")) is not int or created["number"] <= 0:
             raise DeliveryError("GITHUB_INVALID_CREATED_ISSUE")
         return {"status": "CREATED", "issue": created["number"], **evidence, "new_attention": True}
     number, assigned = issue_identity(issue)
+    labels = publication_labels(issue)
     changes = {}
+    title = PUBLICATION_TITLE + report["expected_run_date"]
+    if issue.get("title") != title:
+        changes["title"] = title
     stored_body = issue.get("body")
     # GitHub may return CRLF for the LF body we submitted. Preserve all other
     # whitespace/content distinctions so real changes still trigger an update.
@@ -226,8 +254,12 @@ def reconcile(client, report):
         changes["assignees"] = [*assigned, OWNER]
     if changes:
         client.request("PATCH", f"issues/{number}", changes)
-    return {"status": "UPDATED" if changes else "UNCHANGED", "issue": number, **evidence,
-            "new_attention": bool(assigned_now) or (state == "open" and bool(changes))}
+    # Establish the durable publication marker before removing the legacy
+    # identity label. Interrupted migrations remain recognizable on retry.
+    labels_changed = migrate_publication_labels(client, number, labels)
+    changed = bool(changes) or labels_changed
+    return {"status": "UPDATED" if changed else "UNCHANGED", "issue": number, **evidence,
+            "new_attention": bool(assigned_now) or (state == "open" and changed)}
 
 
 def write_report(path, report):

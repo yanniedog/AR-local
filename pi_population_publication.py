@@ -4,27 +4,25 @@ import hashlib
 from app_payload_observation_gate import publication_allowed
 from cdr_atomic import atomic_write_json,canonical_json_bytes
 from cdr_observation_selection import load_pointer_observation,selected_observation
+from cdr_population_pending import population_queue
 
 
 def _verified_replacement(state,previous,pointer):
     if (not isinstance(pointer,dict) or not pointer or previous.get('pointer')==pointer
             or 'selection_retry' in previous):
         return None
-    queued=previous.get('queued_pointers',[])
-    if not isinstance(queued,list) or any(row!=pointer for row in queued):
+    queue=population_queue(previous,pointer.get('observation_date'),successor=pointer)
+    if queue is None:
         return None
-    old_pointer=previous.get('pointer')
-    if (not isinstance(old_pointer,dict) or old_pointer.get('observation_date')!=pointer.get('observation_date')
-            or previous.get('run_date')!=pointer.get('observation_date')):
-        return None
+    old_pointer,entries=queue
     try:
-        old=load_pointer_observation(state,previous['pointer'])
+        old=load_pointer_observation(state,old_pointer)
         new=load_pointer_observation(state,pointer)
         day=old['contract']['observation_date']
         selected=selected_observation(state,day)
         reuse=(new['status'].get('same_day_reuse') or {})
         source=reuse.get('baseline') or {}
-        if (previous.get('run_date')!=day or new['contract']['observation_date']!=day
+        if (new['contract']['observation_date']!=day
                 or not selected or selected['pointer']!=pointer
                 or publication_allowed(old['contract'])!=(False,'unverified_provider_population')
                 or new['contract']['observation_state'] not in {'complete','partial'}
@@ -38,7 +36,7 @@ def _verified_replacement(state,previous,pointer):
         admission=publication_allowed(new['contract'])
         if not admission[0] and admission[1]!='unverified_provider_population':
             return None
-        return old,new
+        return old,new,entries
     except (OSError,ValueError,KeyError,TypeError,AttributeError):
         return None  # Unproven sources retain the ordinary pending queue.
 
@@ -52,18 +50,24 @@ def supersede_population_pending(state,previous,pointer,replacement):
     sources=_verified_replacement(state,previous,pointer)
     if sources is None:
         return None
-    old,new=sources
+    old,new,entries=sources
     receipt={'schema_version':1,'reason':'selected_same_day_population_recovery',
         'previous_pending':previous,'replacement_pointer':pointer,'publication_confirmed':False,
         'previous_contract_digest':old['contract']['contract_digest'],
         'replacement_contract_digest':new['contract']['contract_digest']}
     raw=canonical_json_bytes(receipt)
     if len(raw)>65536:
-        raise ValueError('population supersession receipt exceeds metadata budget')
+        return None  # Retain ordinary pending work when its audit exceeds the bound.
     name=hashlib.sha256(raw).hexdigest()+'.json'
     relative='population-publication-supersessions-v1/'+name
     atomic_write_json(state/relative,receipt,create_once=True)
-    return {**replacement,'policy_supersession_receipt':relative}
+    pointers=[pointer if row==old['pointer'] else row for row in entries]
+    base=replacement if previous['pointer']==old['pointer'] else previous
+    result={**base,'pointer':pointers[0],'run_date':pointers[0]['observation_date'],
+            'policy_supersession_receipt':relative}
+    if len(pointers)>1 or 'queued_pointers' in previous:
+        result['queued_pointers']=pointers[1:]
+    return result
 
 
 def reconcile_selected_population_pending(repo_root,run_date):
