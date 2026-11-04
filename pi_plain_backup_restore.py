@@ -479,8 +479,21 @@ def private_workspace(path):
     return 'POSIX_0700'
 
 
+# Production roots this offline restore must never write beneath.
+PRODUCTION_ROOTS = (Path('/srv/ar-local'), Path('/var/lib/ar-local-drive-backup'),
+                    Path('/var/lib/ar-local-plain-backup-control'), Path('/etc/ar-local'))
+
+
+def outside_production(work, roots=PRODUCTION_ROOTS):
+    for root in roots:
+        resolved = root.resolve() if root.exists() else root
+        if work == resolved or resolved in work.parents or work == root or root in work.parents:
+            raise ValueError('recovery workspace must be outside production roots')
+
+
 def restore(mirror, catalog, catalog_sha256, workspace, *, guard, apply_metadata=False):
     mirror, catalog, work = Path(mirror), Path(catalog), Path(workspace)
+    outside_production(work)
     if not mirror.is_dir() or mirror.resolve() != mirror:
         raise ValueError('canonical downloaded object mirror required')
     if work.resolve() != work or work.exists() or work.is_symlink() or mirror == work or mirror in work.parents or work in mirror.parents:

@@ -290,3 +290,17 @@ def test_windows_restore_rejects_forbidden_names_and_device_aliases(value):
     ('data/CONSOLE.json', True), ('com10', True), ('dir/auxiliary.txt', True)])
 def test_valid_names_remain_restorable(value, windows):
     assert restore.safe_relative(value, windows=windows) == value
+
+
+@pytest.mark.parametrize('workspace', ['/srv/ar-local/restore-work', '/srv/ar-local', '/etc/ar-local/x',
+                                       '/var/lib/ar-local-drive-backup/w'])
+def test_restore_workspace_under_production_root_is_refused_before_any_write(tmp_path, workspace):
+    with pytest.raises(ValueError, match='outside production roots'):
+        restore.restore(tmp_path, tmp_path / 'catalog.json', 'a' * 64, workspace,
+                        guard=lambda: pytest.fail('must refuse before any work'))
+
+
+def test_restore_workspace_outside_production_roots_is_allowed(tmp_path):
+    restore.outside_production(tmp_path / 'work', roots=(tmp_path / 'prod',))
+    with pytest.raises(ValueError):
+        restore.outside_production(tmp_path / 'prod' / 'work', roots=(tmp_path / 'prod',))
