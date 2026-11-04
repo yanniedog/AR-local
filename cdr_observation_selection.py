@@ -196,9 +196,15 @@ def _verified_withdrawal_index(observation: Mapping, provider: str, proof: dict)
         url = event["request"]["url"]
         # Retained proofs may predate request-route compatibility. Accept only
         # the exact registered legacy endpoint or the current initial request;
+        # Melbourne's earlier 1000-page-size proofs remain valid unchanged.
         # every later page must still match its preceding response's next link.
         legacy_first = number == 1 and sanitize_url(url) == sanitize_url(endpoint)
-        if sanitize_url(url) != sanitize_url(expected_url) and not legacy_first:
+        prior_melbourne_first = (
+            number == 1
+            and expected_url == "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products/?page=1&page-size=100"
+            and url == expected_url + "0"
+        )
+        if sanitize_url(url) != sanitize_url(expected_url) and not (legacy_first or prior_melbourne_first):
             raise ValueError("withdrawal index pagination is discontinuous")
         expected_url = next_link(parsed, url)
         for product in extract_products(parsed):

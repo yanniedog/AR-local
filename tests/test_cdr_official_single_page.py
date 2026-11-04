@@ -15,7 +15,18 @@ from pi_cdr_recovery_probe import current_target_url
 
 FIXTURES = Path(__file__).parent / 'fixtures/cdr-official-single-page-2026-11-04'
 HOLDERS = [('bom', 'Bank of Melbourne', 40), ('stgeorge', 'St.George Bank', 42)]
-QUERY = '?page=1&page-size=1000'
+def query_for(fixture):
+    return '?page=1&page-size=' + ('100' if fixture == 'bom' else '1000')
+
+
+def current_body(fixture):
+    if fixture != 'bom':
+        return retained(fixture)[0]
+    directory = FIXTURES.parent / 'cdr-bom-page100-2026-11-04'
+    raw = (directory / 'bom.json').read_bytes()
+    provenance = json.loads((directory / 'provenance.json').read_bytes())
+    assert hashlib.sha256(raw).hexdigest() == provenance['files']['bom']['body_sha256']
+    return raw
 
 
 def retained(fixture):
@@ -37,7 +48,7 @@ def test_fresh_register_recovery_route_preserves_explicit_queries(fixture, provi
     state = dict(brand, provider_dir=provider)
     before = copy.deepcopy(state)
     request = {'phase': 'products_index', 'url': endpoint + suffix}
-    query = '?' + suffix.split('?', 1)[1] if '?' in suffix else QUERY
+    query = '?' + suffix.split('?', 1)[1] if '?' in suffix else query_for(fixture)
     assert current_target_url(request, state, brands) == endpoint + '/' + query
     assert support.product_index_request_url(endpoint + suffix) == endpoint + '/' + query
     assert state == before and '?' not in state['endpoint_url']
@@ -49,6 +60,8 @@ def test_real_single_page_ingest_and_bound_reuse_selection(fixture, provider, to
     raw, brands = retained(fixture)
     brand = next(row for row in brands if row['brand_name'] == provider)
     endpoint = brand['endpoint_url']
+    raw = current_body(fixture)
+    query = query_for(fixture)
     payload = json.loads(raw)
     ids = {row['productId'] for row in payload['data']['products']}
     assert len(ids) == len(payload['data']['products']) == total
@@ -59,7 +72,7 @@ def test_real_single_page_ingest_and_bound_reuse_selection(fixture, provider, to
     events, calls = [], []
     def fetch(url, **kwargs):
         calls.append(url)
-        assert url == endpoint + '/' + QUERY
+        assert url == endpoint + '/' + query
         assert kwargs['versions'] == [6, 5, 4, 3, 2, 1]
         events.append(journal.record('page-1', request_url=url, status=200, outcome='success', body=raw,
             started_at='2026-11-04T01:39:20Z', completed_at='2026-11-04T01:39:21Z',
@@ -73,7 +86,7 @@ def test_real_single_page_ingest_and_bound_reuse_selection(fixture, provider, to
     lib.ingest_brand(brand, date_root=banks, resume=True, sleep_ms=0, timeout=1,
         max_retries=0, max_pages=None, max_products=None, fetch_unknown_detail=False,
         bank_dir_name=provider, detail_workers=1, log=lambda *a: None, attempt_journal=journal)
-    assert calls == [endpoint + '/' + QUERY]
+    assert calls == [endpoint + '/' + query]
     index = banks / '_holders' / provider / '_products-index'
     diagnostic = json.loads((index / 'diagnostics.json').read_bytes())
     assert diagnostic['pagination_complete'] is True
@@ -98,19 +111,22 @@ def test_real_single_page_ingest_and_bound_reuse_selection(fixture, provider, to
     assert state['endpoint_url'] == endpoint and '?' not in endpoint
     # Changing only the recorded request must fail both proof layers.
     for bad in (endpoint + '/?page=1&page-size=25', endpoint + '/?brand=other',
-                'https://other.test/cds-au/v1/banking/products/' + QUERY):
+                'https://other.test/cds-au/v1/banking/products/' + query):
         altered = copy.deepcopy(events)
         altered[0]['request']['url'] = bad
         assert reuse._fresh_index(banks, provider, diagnostic, journal, altered, endpoint) is None
 
 
 @pytest.mark.parametrize('fixture,provider,total', HOLDERS)
-@pytest.mark.parametrize('suffix,accepted', [('', True), ('/?page=1&page-size=1000', True),
+@pytest.mark.parametrize('suffix,accepted', [('', True), ('/?page=1&page-size=1000', True), ('/CURRENT', True),
                                            ('/?brand=other', False), ('/?page=1&page-size=25', False)])
 def test_selection_current_and_retained_legacy_first_request(fixture, provider, total, suffix, accepted, tmp_path):
     raw, brands = retained(fixture)
     brand = next(row for row in brands if row['brand_name'] == provider)
     endpoint = brand['endpoint_url']
+    if suffix == '/CURRENT':
+        suffix = '/' + query_for(fixture)
+        raw = current_body(fixture)
     journal = RawAttemptJournal(tmp_path / 'attempt-evidence/raw-attempt-journals-v1', 'proof')
     event = journal.record('page-1', request_url=endpoint + suffix, status=200, outcome='success', body=raw,
         started_at='2026-11-04T01:39:20Z', completed_at='2026-11-04T01:39:21Z',

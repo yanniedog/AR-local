@@ -23,8 +23,9 @@ def test_register_identity_stays_stable_and_request_uses_documented_route(fixtur
     base = f'https://{host}/cds-au/v1/banking/products'
     assert support.normalize_banking_products_url(f'https://{host}') == base
     assert support.normalize_banking_products_url(base + '/') == base
-    assert support.product_index_request_url(base) == base + '/?page=1&page-size=1000'
-    assert support.product_index_request_url(base + '/') == base + '/?page=1&page-size=1000'
+    query = '?page=1&page-size=' + ('100' if fixture == 'bom' else '1000')
+    assert support.product_index_request_url(base) == base + '/' + query
+    assert support.product_index_request_url(base + '/') == base + '/' + query
     assert support.product_index_request_url(base + '?page=2&page-size=25') == base + '/?page=2&page-size=25'
     material = '\x1f'.join((base, provider.lower(), provider.lower()))
     uid = 'legacy-prd:' + hashlib.sha256(material.encode()).hexdigest()
@@ -108,7 +109,8 @@ def test_seeded_ingest_uses_official_route_reuses_details_and_retains_incomplete
     lib.ingest_brand({'endpoint_url': base}, date_root=tmp_path, resume=True, sleep_ms=0,
                      timeout=1, max_retries=0, max_pages=None, max_products=None,
                      fetch_unknown_detail=False, bank_dir_name=provider, detail_workers=1, log=lambda *a: None)
-    assert seen == [(base + '/?page=1&page-size=1000', [6, 5, 4, 3, 2, 1]),
+    query = '?page=1&page-size=' + ('100' if fixture == 'bom' else '1000')
+    assert seen == [(base + '/' + query, [6, 5, 4, 3, 2, 1]),
                     (base + '/?page=2&page-size=25', [5, 6, 4, 3, 2, 1])]
     diagnostics = json.loads((tmp_path / '_holders' / provider / '_products-index' / 'diagnostics.json').read_bytes())
     assert diagnostics['pagination_complete'] is False
@@ -124,7 +126,7 @@ def test_fresh_reuse_index_binds_official_first_page_without_identity_change(tmp
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(payload))
     event = {'context': {'phase': 'products_index', 'provider': provider, 'page': 1},
-             'request': {'url': endpoint + '/?page=1&page-size=1000'}, 'response': {'body_sha256': 'a' * 64},
+             'request': {'url': endpoint + '/?page=1&page-size=100'}, 'response': {'body_sha256': 'a' * 64},
              'event_digest': 'b' * 64, 'sequence': 1}
     monkeypatch.setattr(reuse, '_successful_body', lambda *a: (b'', payload))
     diagnostics = dict(pagination_complete=True, conflicting_duplicate_records=0,

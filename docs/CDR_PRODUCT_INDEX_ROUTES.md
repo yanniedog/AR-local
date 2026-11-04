@@ -11,7 +11,8 @@ produce the existing endpoint identity, preserving derived provider UIDs and
 population-hold bindings. `product_index_request_url` applies the documented
 slash only to HTTPS requests for the exact `/cds-au/v1/banking/products` path
 (with or without its terminal slash) on those two hosts. When no query is
-present, it adds `page=1&page-size=1000`. Explicit query parameters, including
+present, it adds `page=1&page-size=100` for Melbourne and
+`page=1&page-size=1000` for St.George. Explicit query parameters, including
 pagination and filters, are preserved. Other hosts, detail paths,
 credentials/ports and general URL normalization are unchanged.
 
@@ -19,7 +20,8 @@ Initial ingest and same-day recovery use this request route. Subsequent ingest
 pages follow the provider's validated next link. Reuse verification binds the
 first journaled request to the same route and explicit default query. The
 same-day selection verifier uses that binding too, while retaining acceptance
-of the exact registered endpoint for legacy captured proofs. Both continue to
+of the exact registered endpoint for legacy captured proofs and Melbourne
+proofs captured with the former `page=1&page-size=1000` default. Both continue to
 require the exact subsequent pagination chain. This does not relax holder identity,
 pagination, detail-body, source-integrity or publication gates.
 
@@ -55,3 +57,17 @@ explicit-query preservation, seeded-detail reuse, complete single-page counts,
 incomplete-page failure and real journal-to-contract selection binding. Deployment,
 complete live capture, successor selection and publication require their own
 verified runtime results.
+
+At 02:30 UTC, a later Melbourne request with the same page-size 1000 and x-v5
+returned HTTP 422 `InvalidPage`; its subsequent x-v4 response was HTTP 406.
+At 03:00 UTC, a separate page-size 100, x-v5 probe returned 40 unique products,
+40 declared records, one page and no next link. Its IDs match the earlier
+1000 response. These separately timed observations do not establish page size
+as the sole cause. The default now uses the observed 100 for Melbourne only;
+St.George retains 1000. No automatic size fallback or extra request budget is
+introduced. Explicit 1000 requests and all failure evidence remain unchanged.
+
+The added `cdr-bom-page100-2026-11-04` fixtures preserve the successful 100 body
+and both later 1000 error bodies with their original journal events and byte
+hashes. Offline replays test membership, retained failure classification and
+attempt limits; they are not a new live capture or publication acceptance.
