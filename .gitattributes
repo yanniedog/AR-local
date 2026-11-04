@@ -69,4 +69,5 @@ tests/fixtures/history-ready-real.json -text
 
 # Retained observer source and its exact compatibility patch are byte-bound.
 tests/fixtures/observer-compat-20261102/** -text
+tests/fixtures/pressure-r11-v1-failed.json -text
 deploy/windows/ingest-observer-context.patch -text
