@@ -572,3 +572,5 @@ def test_shared_check_cannot_donate_a_different_adapter_interpretation(tmp_path)
         state = public.source_freshness(binding, ingest_id="retained-public-fixture", as_of=WHEN)
         assert state["state"] == "deferred"
         assert "source_extraction_pending" in state["reasonCodes"]
+        # The prior adapter version's validated extraction cannot donate freshness.
+        assert "lastSuccessAt" not in state

@@ -1,6 +1,7 @@
 """No-network finalization hook: preserve full raw responses before RAM cleanup."""
 from __future__ import annotations
 
+import logging
 import json
 import os
 import time
@@ -61,13 +62,19 @@ def _capture_public_pricing(store: EvidenceStore, run_root: Path, receipt: dict)
     # This derived lane cannot change the accepted original capture or queue an
     # interpretation job. Its own failure remains visible in a separate receipt.
     target = store.root / "public-rate-capture-receipts" / (digest(receipt["generation_id"]) + ".json")
-    target.parent.mkdir(exist_ok=True)
     try:
-        result = capture_public_rates(store, run_root, receipt)
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        result = {"schemaVersion": 1, "generationId": receipt["generation_id"], "status": "capture_failed",
-                  "reasonCode": str(error), "networkCalled": False, "modelCalled": False, "publication": "disabled"}
-    atomic_write_json(target, result)
+        target.parent.mkdir(exist_ok=True)
+        try:
+            result = capture_public_rates(store, run_root, receipt)
+        except Exception as error:  # Any derived-lane failure is recorded, never fatal.
+            result = {"schemaVersion": 1, "generationId": receipt["generation_id"], "status": "capture_failed",
+                      "reasonCode": f"{type(error).__name__}: {error}"[:500], "networkCalled": False,
+                      "modelCalled": False, "publication": "disabled"}
+        atomic_write_json(target, result)
+    except Exception as error:
+        # The receipt itself could not be written (read-only root, immutable
+        # collision). The accepted original capture still stands.
+        logging.getLogger(__name__).warning("public-rate derived receipt not recorded: %s", type(error).__name__)
 
 
 def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, *,

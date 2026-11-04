@@ -283,12 +283,14 @@ class PublicRateStore:
             "JOIN public_rate_extractions x ON x.binding_id=p.binding_id AND x.document_version_id=c.document_version_id "
             "JOIN acquisition_events done ON done.request_id=p.request_id AND done.check_id=c.check_id "
             "JOIN acquisition_events lease ON lease.request_id=done.request_id AND lease.lease_id=done.lease_id "
-            "WHERE s.source_id=? AND s.document_id=? AND s.adapter_id=? AND x.status='validated' "
+            "WHERE s.source_id=? AND s.document_id=? AND s.adapter_id=? "
+            "AND s.adapter_version=? AND s.context_json=? AND x.adapter_version=? AND x.status='validated' "
             "AND c.status IN ('fetched','unchanged') AND done.status IN ('complete','retry_wait','blocked') "
             "AND lease.status='running' AND lease.sequence<done.sequence AND c.checked_at>=lease.observed_at "
             "AND c.checked_at<=done.observed_at AND done.observed_at<lease.lease_expires_at "
             "AND julianday(done.observed_at)<=julianday(?) ORDER BY done.observed_at DESC,done.sequence DESC LIMIT 1",
-            (binding["source_id"], binding["document_id"], binding["adapter_id"], as_of)).fetchone()
+            (binding["source_id"], binding["document_id"], binding["adapter_id"], binding["adapter_version"],
+             binding["context_json"], binding["adapter_version"], as_of)).fetchone()
         state, reasons = "deferred", ["source_check_deferred"]
         if check:
             if check["status"] in {"failed", "deferred"}:

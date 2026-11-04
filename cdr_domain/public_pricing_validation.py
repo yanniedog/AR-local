@@ -33,7 +33,12 @@ def _formula_budget(formula: Any, depth: int = 0, counter: list | None = None) -
         if isinstance(formula.get(field), Mapping):
             _formula_budget(formula[field], depth + 1, counter)
     for field in ("operands", "choices", "tiers"):
-        for child in formula.get(field, []):
+        children = formula.get(field, [])
+        if not isinstance(children, list):
+            raise ValueError("formula_budget_exceeded")
+        for child in children:
+            if field != "operands" and not isinstance(child, Mapping):
+                raise ValueError("formula_budget_exceeded")
             _formula_budget(child.get("formula") if field != "operands" else child, depth + 1, counter)
 
 
@@ -42,8 +47,11 @@ def validate_programme(programme: Mapping[str, Any]) -> None:
         raise ValueError("programme_byte_budget_exceeded")
     if programme.get("formula") is not None:
         _formula_budget(programme["formula"])
-    for phase in programme.get("phases", []):
-        _formula_budget(phase["formula"])
+    phases_raw = programme.get("phases", [])
+    if not isinstance(phases_raw, list) or not all(isinstance(phase, Mapping) for phase in phases_raw):
+        raise ValueError("formula_budget_exceeded")
+    for phase in phases_raw:
+        _formula_budget(phase.get("formula"))
     validate_wire(programme, "Programme")
     identities = [item["componentId"] for item in programme["components"]]
     if len(identities) != len(set(identities)):

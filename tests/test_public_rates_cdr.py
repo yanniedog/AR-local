@@ -434,3 +434,15 @@ def test_nested_oversized_source_values_fail_before_semantic_offer_grouping():
     result = compile_fixture('nab-tailored-cdr-20261013.json', 'NAB', 'Mortgage', raw)
     assert result['product']['reasonCodes'] == ['public_pricing_record_budget_exceeded']
     assert not result['programmes']
+
+
+@pytest.mark.parametrize('bad', [
+    {'op': 'choose', 'choices': ['not-an-object']},
+    {'op': 'tiered', 'tiers': [17]},
+    {'op': 'choose', 'choices': 'not-a-list'},
+])
+def test_malformed_formula_children_fail_closed_with_validation_error(bad):
+    with pytest.raises(ValueError, match='formula_budget_exceeded'):
+        validate_programme({'formula': bad, 'components': [], 'conditions': []})
+    with pytest.raises(ValueError, match='formula_budget_exceeded'):
+        validate_programme({'phases': ['not-an-object'], 'components': [], 'conditions': []})
