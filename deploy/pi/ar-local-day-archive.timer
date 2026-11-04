@@ -1,0 +1,12 @@
+[Unit]
+Description=Drain AR-local per-day CDR Drive archives
+Documentation=file:///srv/ar-local/AR-local/docs/DAILY_CDR_DAY_ARCHIVES.md
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+Unit=ar-local-day-archive.service
+
+[Install]
+WantedBy=timers.target

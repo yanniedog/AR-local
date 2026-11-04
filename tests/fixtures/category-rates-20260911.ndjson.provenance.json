@@ -1,0 +1,25 @@
+{
+  "schema": "retained-category-rates-provenance-v1",
+  "source": "docs/evidence/backup-observation-20260911/publication/v1-core.json.gz",
+  "source_sha256": "5f76873341f48d9296b6bad652f677fdbd530900cecb5f2d5946fe7a55e439f4",
+  "projection": "tests/fixtures/category-rates-20260911.ndjson.gz",
+  "projection_sha256": "534c5373259d5700a8361ba4679b9bfd59e4bc59f03a41d14b05e36b588e3637",
+  "decoded_sha256": "0337408460ecea84b68ad939bfcdfa95214d5be0e0a5a8a39c0306ec88aeeb3f",
+  "run_date": "2026-09-11",
+  "sections": [
+    [
+      "Mortgage",
+      8028
+    ],
+    [
+      "Savings",
+      2096
+    ],
+    [
+      "TD",
+      6354
+    ]
+  ],
+  "equivalence": "Every original rate row, field, value and order preserved; only unused top-level/section collections omitted.",
+  "regenerate": "python -B scripts/regenerate-category-rate-fixture.py --write"
+}

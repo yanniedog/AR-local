@@ -194,6 +194,20 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
+      # Production mutations go through pi-shared-task (ar-local resource) inside
+      # pi_deploy_verify.py. Fail closed if the Pi lacks the queue entry point.
+      - name: Require shared Pi queue on target
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=60 ar-local-pi5 \
+            'test -x /usr/local/bin/pi-shared-task && /usr/local/bin/pi-shared-task --dry-run --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 90 -- /bin/true'
+
       - name: Deploy exact approved commit and verify
         if: >-
           steps.secrets.outputs.configured == 'true' &&

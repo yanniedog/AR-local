@@ -1,0 +1,420 @@
+{
+  "source_observation_sha256": "e27229790b14ce028b7d39e2510059eab2b6365e307ac0b0dbc1d651de1447a2",
+  "resources_result": "FAIL",
+  "resources_reason": "RuntimeError: pressure_evidence: ValueError: host_zone_low_with_reclaim_or_refault",
+  "host_receipt": {
+    "baseline_monotonic_ns": 22717491682892,
+    "baseline_sha256": "471396a687dbd9c8b0a38a4cddfdb0a94ec10632236bdca95d5f41c7f10fbabf",
+    "boot_id": "cf36b73c-7655-4bbc-8445-e917f3a85012",
+    "cache_max_bytes": {
+      "Active(anon)": 517013504,
+      "Active(file)": 436486144,
+      "Buffers": 3616473088,
+      "Cached": 3472523264,
+      "Dirty": 819200,
+      "Inactive(anon)": 68321280,
+      "Inactive(file)": 6601342976,
+      "MemAvailable": 7460601856,
+      "MemFree": 275939328,
+      "MemTotal": 8453947392,
+      "SReclaimable": 373243904,
+      "Shmem": 51757056,
+      "SwapCached": 0,
+      "SwapFree": 2145665024,
+      "Writeback": 0
+    },
+    "cache_min_bytes": {
+      "Active(anon)": 479412224,
+      "Active(file)": 436404224,
+      "Buffers": 3616473088,
+      "Cached": 3454091264,
+      "Dirty": 753664,
+      "Inactive(anon)": 68321280,
+      "Inactive(file)": 6582910976,
+      "MemAvailable": 7428292608,
+      "MemFree": 252919808,
+      "MemTotal": 8453947392,
+      "SReclaimable": 373243904,
+      "Shmem": 51757056,
+      "SwapCached": 0,
+      "SwapFree": 2145665024,
+      "Writeback": 0
+    },
+    "cumulative": {
+      "allocstall_dma": 0,
+      "allocstall_dma32": 0,
+      "allocstall_movable": 0,
+      "allocstall_normal": 0,
+      "compact_stall": 0,
+      "kswapd_high_wmark_hit_quickly": 0,
+      "kswapd_low_wmark_hit_quickly": 0,
+      "nr_vmscan_write": 0,
+      "oom_kill": 0,
+      "pgmajfault": 0,
+      "pgscan_anon": 0,
+      "pgscan_direct": 0,
+      "pgscan_file": 1152,
+      "pgscan_kswapd": 1152,
+      "pgsteal_anon": 0,
+      "pgsteal_direct": 0,
+      "pgsteal_file": 1152,
+      "pgsteal_kswapd": 1152,
+      "workingset_activate_anon": 0,
+      "workingset_activate_file": 0,
+      "workingset_refault_anon": 0,
+      "workingset_refault_file": 0,
+      "workingset_restore_anon": 0,
+      "workingset_restore_file": 0
+    },
+    "failure": "host_zone_low_with_reclaim_or_refault",
+    "last_monotonic_ns": 22718021860993,
+    "last_sha256": "c2dc7896e2d9beaaacc7f5508f5d3e57b96b396968179b842e3dae68e764df46",
+    "low_with_activity_samples": 1,
+    "maximum_gap_ns": 205731528,
+    "maximum_interval": {
+      "allocstall_dma": 0,
+      "allocstall_dma32": 0,
+      "allocstall_movable": 0,
+      "allocstall_normal": 0,
+      "compact_stall": 0,
+      "kswapd_high_wmark_hit_quickly": 0,
+      "kswapd_low_wmark_hit_quickly": 0,
+      "nr_vmscan_write": 0,
+      "oom_kill": 0,
+      "pgmajfault": 0,
+      "pgscan_anon": 0,
+      "pgscan_direct": 0,
+      "pgscan_file": 1152,
+      "pgscan_kswapd": 1152,
+      "pgsteal_anon": 0,
+      "pgsteal_direct": 0,
+      "pgsteal_file": 1152,
+      "pgsteal_kswapd": 1152,
+      "workingset_activate_anon": 0,
+      "workingset_activate_file": 0,
+      "workingset_refault_anon": 0,
+      "workingset_refault_file": 0,
+      "workingset_restore_anon": 0,
+      "workingset_restore_file": 0
+    },
+    "minimum_zone_margins": {
+      "0:DMA": {
+        "high": 2032,
+        "low": 2095,
+        "min": 2158
+      },
+      "1:DMA": {
+        "high": 1394,
+        "low": 1459,
+        "min": 1524
+      },
+      "2:DMA": {
+        "high": 1765,
+        "low": 1830,
+        "min": 1895
+      },
+      "3:DMA": {
+        "high": 1272,
+        "low": 1333,
+        "min": 1394
+      },
+      "4:Normal": {
+        "high": 1256,
+        "low": 1321,
+        "min": 1386
+      },
+      "5:Normal": {
+        "high": -97,
+        "low": -32,
+        "min": 33
+      },
+      "6:Normal": {
+        "high": -92,
+        "low": -27,
+        "min": 38
+      },
+      "7:Normal": {
+        "high": 1316,
+        "low": 1380,
+        "min": 1444
+      }
+    },
+    "observations": 6,
+    "page_size_bytes": 16384,
+    "profile": "ar-local-host-pressure-v1",
+    "result": "FAIL",
+    "service_validation": "external_required"
+  },
+  "baseline_host": {
+    "pressure": {
+      "boot_id": "cf36b73c-7655-4bbc-8445-e917f3a85012",
+      "cache_bytes": {
+        "Active(anon)": 479412224,
+        "Active(file)": 436404224,
+        "Buffers": 3616473088,
+        "Cached": 3472474112,
+        "Dirty": 753664,
+        "Inactive(anon)": 68321280,
+        "Inactive(file)": 6601326592,
+        "MemAvailable": 7460601856,
+        "MemFree": 275939328,
+        "MemTotal": 8453947392,
+        "SReclaimable": 373243904,
+        "Shmem": 51757056,
+        "SwapCached": 0,
+        "SwapFree": 2145665024,
+        "Writeback": 0
+      },
+      "counters": {
+        "allocstall_dma": 0,
+        "allocstall_dma32": 0,
+        "allocstall_movable": 4,
+        "allocstall_normal": 1,
+        "compact_stall": 0,
+        "kswapd_high_wmark_hit_quickly": 285,
+        "kswapd_low_wmark_hit_quickly": 1676,
+        "nr_vmscan_write": 162,
+        "oom_kill": 0,
+        "pgmajfault": 6423,
+        "pgscan_anon": 192,
+        "pgscan_direct": 542,
+        "pgscan_file": 1774828,
+        "pgscan_kswapd": 1774478,
+        "pgsteal_anon": 162,
+        "pgsteal_direct": 542,
+        "pgsteal_file": 1774576,
+        "pgsteal_kswapd": 1774196,
+        "workingset_activate_anon": 18,
+        "workingset_activate_file": 9,
+        "workingset_refault_anon": 18,
+        "workingset_refault_file": 17593,
+        "workingset_restore_anon": 0,
+        "workingset_restore_file": 214
+      },
+      "monotonic_ns": 22717491682892,
+      "page_size_bytes": 16384,
+      "profile": "ar-local-host-pressure-v1",
+      "read_elapsed_ns": 1909253,
+      "zones": [
+        {
+          "boost": 0,
+          "high": 251,
+          "low": 188,
+          "managed": 63461,
+          "min": 125,
+          "node": 0,
+          "pages free": 2403,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 259,
+          "low": 194,
+          "managed": 65279,
+          "min": 129,
+          "node": 1,
+          "pages free": 1883,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 259,
+          "low": 194,
+          "managed": 65279,
+          "min": 129,
+          "node": 2,
+          "pages free": 2279,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 243,
+          "low": 182,
+          "managed": 61183,
+          "min": 121,
+          "node": 3,
+          "pages free": 1705,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 259,
+          "low": 194,
+          "managed": 65279,
+          "min": 129,
+          "node": 4,
+          "pages free": 1680,
+          "zone": "Normal"
+        },
+        {
+          "boost": 2048,
+          "high": 2307,
+          "low": 2242,
+          "managed": 65279,
+          "min": 2177,
+          "node": 5,
+          "pages free": 2220,
+          "zone": "Normal"
+        },
+        {
+          "boost": 2048,
+          "high": 2307,
+          "low": 2242,
+          "managed": 65279,
+          "min": 2177,
+          "node": 6,
+          "pages free": 2225,
+          "zone": "Normal"
+        },
+        {
+          "boost": 0,
+          "high": 256,
+          "low": 192,
+          "managed": 64949,
+          "min": 128,
+          "node": 7,
+          "pages free": 2422,
+          "zone": "Normal"
+        }
+      ]
+    },
+    "page_size_bytes": 16384,
+    "available_bytes": 7460601856
+  },
+  "last_host": {
+    "pressure": {
+      "boot_id": "cf36b73c-7655-4bbc-8445-e917f3a85012",
+      "cache_bytes": {
+        "Active(anon)": 517013504,
+        "Active(file)": 436486144,
+        "Buffers": 3616473088,
+        "Cached": 3454091264,
+        "Dirty": 819200,
+        "Inactive(anon)": 68321280,
+        "Inactive(file)": 6582910976,
+        "MemAvailable": 7428292608,
+        "MemFree": 261963776,
+        "MemTotal": 8453947392,
+        "SReclaimable": 373243904,
+        "Shmem": 51757056,
+        "SwapCached": 0,
+        "SwapFree": 2145665024,
+        "Writeback": 0
+      },
+      "counters": {
+        "allocstall_dma": 0,
+        "allocstall_dma32": 0,
+        "allocstall_movable": 4,
+        "allocstall_normal": 1,
+        "compact_stall": 0,
+        "kswapd_high_wmark_hit_quickly": 285,
+        "kswapd_low_wmark_hit_quickly": 1676,
+        "nr_vmscan_write": 162,
+        "oom_kill": 0,
+        "pgmajfault": 6423,
+        "pgscan_anon": 192,
+        "pgscan_direct": 542,
+        "pgscan_file": 1775980,
+        "pgscan_kswapd": 1775630,
+        "pgsteal_anon": 162,
+        "pgsteal_direct": 542,
+        "pgsteal_file": 1775728,
+        "pgsteal_kswapd": 1775348,
+        "workingset_activate_anon": 18,
+        "workingset_activate_file": 9,
+        "workingset_refault_anon": 18,
+        "workingset_refault_file": 17593,
+        "workingset_restore_anon": 0,
+        "workingset_restore_file": 214
+      },
+      "monotonic_ns": 22718021860993,
+      "page_size_bytes": 16384,
+      "profile": "ar-local-host-pressure-v1",
+      "read_elapsed_ns": 2061678,
+      "zones": [
+        {
+          "boost": 0,
+          "high": 251,
+          "low": 188,
+          "managed": 63461,
+          "min": 125,
+          "node": 0,
+          "pages free": 2375,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 259,
+          "low": 194,
+          "managed": 65279,
+          "min": 129,
+          "node": 1,
+          "pages free": 1653,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 259,
+          "low": 194,
+          "managed": 65279,
+          "min": 129,
+          "node": 2,
+          "pages free": 2024,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 243,
+          "low": 182,
+          "managed": 61183,
+          "min": 121,
+          "node": 3,
+          "pages free": 1515,
+          "zone": "DMA"
+        },
+        {
+          "boost": 0,
+          "high": 259,
+          "low": 194,
+          "managed": 65279,
+          "min": 129,
+          "node": 4,
+          "pages free": 2425,
+          "zone": "Normal"
+        },
+        {
+          "boost": 2048,
+          "high": 2307,
+          "low": 2242,
+          "managed": 65279,
+          "min": 2177,
+          "node": 5,
+          "pages free": 2210,
+          "zone": "Normal"
+        },
+        {
+          "boost": 2048,
+          "high": 2307,
+          "low": 2242,
+          "managed": 65279,
+          "min": 2177,
+          "node": 6,
+          "pages free": 2215,
+          "zone": "Normal"
+        },
+        {
+          "boost": 0,
+          "high": 256,
+          "low": 192,
+          "managed": 64949,
+          "min": 128,
+          "node": 7,
+          "pages free": 1572,
+          "zone": "Normal"
+        }
+      ]
+    },
+    "page_size_bytes": 16384,
+    "available_bytes": 7428292608
+  }
+}

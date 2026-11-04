@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -18,10 +19,11 @@ from zoneinfo import ZoneInfo
 from ar_local_operation_lock import production_lock
 from ar_local_backup_policy import atomic_create_json
 from pi_cdr_quality_activate_evidence import (
-    CANARY_SCHEMA, SCHEMA, app_binding, checked, ci_binding, junit_result, read,
+    CANARY_SCHEMA, SCHEMA, app_binding, canary_test_result, checked, ci_binding, read,
     record, relative, sha, source_acceptance, validate_manifest,
 )
 from pi_cdr_quality_runtime_state import control_state, require_controls, require_predecessor, rollback_contract
+from pi_cdr_quality_read_io import require_dropbehind_reads
 
 TIMERS = ("ar-local-daily-watchdog.timer", "ar-local-runtime-health.timer")
 TZ = ZoneInfo("Australia/Hobart")
@@ -186,12 +188,14 @@ def verified_cache_options(args) -> dict:
     return {"verified_cache": path, "verified_cache_sha256": digest}
 
 
+@require_dropbehind_reads()
 def canary_worker(args) -> dict:
     from app_payload_build import build_payload
     from app_payload_revisions_state import validate_manifest as validate_payload
     from app_payload_details import build_details
     from cdr_quality_accounting import SECTIONS, canonical_digest, rate_rows_digest, reconcile_public_core
     from cdr_quality_audit import audit
+    from cdr_quality_sources import read_source_bytes
     source, data, operation = args.source, args.data_root, args.operation
     layout(source, args.production, data, operation)
     if os.name != "posix" or any(os.access(p, os.W_OK) for p in (source, args.production, data)):
@@ -206,12 +210,10 @@ def canary_worker(args) -> dict:
     predecessor = rollback_contract(source, args.production)
     require_controls(data, controls, predecessor)
     run_date, generation, exports = current_state(data)
-    tests = operation / "pytest.xml"
     canary_phase(operation, "02-pytest")
-    run([args.python, "-u", "-B", "-m", "pytest", "tests", "-v", "-p", "no:cacheprovider",
-         "--basetemp", operation / "pytest-temp", f"--junitxml={tests}"], cwd=source,
-        timeout=3600, output=operation / "pytest.txt")
-    test_result = junit_result(tests)
+    from pi_cdr_pytest_runner import run_suite
+    run_suite(source, operation, args.python, target, files)
+    test_result = canary_test_result(operation, source, target, files)
     canary_phase(operation, "03-source-audit")
     report = audit(data, run_date, scrub=True, public=False, audit_root=operation / "source-audit", **cache_options)
     if report["capture"]["status"] != "PASS":
@@ -234,7 +236,8 @@ def canary_worker(args) -> dict:
         if rate_rows_digest(rows) != current["published_rate_digests"][section]:
             raise ValueError("candidate payload rate content differs from verified source")
     details = json.loads(gzip.decompress((output / manifest["files"]["details"]["name"]).read_bytes()))
-    exported = json.loads((exports / "dashboard-cache" / run_date / "banks.json").read_bytes())
+    exported = json.loads(read_source_bytes(
+        exports / "dashboard-cache" / run_date / "banks.json", 512 * 1024**2))
     if canonical_digest(details["products"]) != canonical_digest(build_details(exported["products"])):
         raise ValueError("candidate payload product details differ from verified source")
     canary_phase(operation, "06-final-inventory")
@@ -253,6 +256,19 @@ def canary_worker(args) -> dict:
             "completed_at": datetime.now(timezone.utc).isoformat()}
 
 
+def pressure_launch_budget(command, closing) -> int:
+    # Retain the original 45-second unit-stop/controller margin and reserve
+    # the companion's additional bounded 31-second exit. Startup has elapsed.
+    runtime = min(5400, int((closing - datetime.now(TZ)).total_seconds()) - 76)
+    if runtime < 300:
+        raise ValueError("insufficient time after service readiness for canary and cleanup")
+    for index, item in enumerate(command):
+        if isinstance(item, str) and item.startswith("--property=RuntimeMaxSec="):
+            command[index] = f"--property=RuntimeMaxSec={runtime}s"
+    command[command.index("--runtime-seconds") + 1] = str(runtime - 15)
+    return runtime
+
+
 def canary(args) -> dict:
     layout(args.source, args.production, args.data_root, args.operation)
     guard(args.data_root, args.production)
@@ -267,10 +283,14 @@ def canary(args) -> dict:
     (args.operation / "tmp").mkdir()
     (args.operation / "home").mkdir()
     unit = f"ar-local-quality-canary-{uuid.uuid4().hex[:12]}.service"
+    pressure_profile = getattr(args, "pressure_profile", "legacy")
+    if pressure_profile not in {"legacy", "allocation-v1"}:
+        raise ValueError("unsupported pressure policy profile")
     command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect", f"--unit={unit}"]
     current = datetime.now(TZ)
     closing = current.replace(hour=22, minute=0, second=0, microsecond=0)
-    runtime = min(5400, int((closing - current).total_seconds()) - 45)
+    margin = 108 if pressure_profile == "allocation-v1" else 45
+    runtime = min(5400, int((closing - current).total_seconds()) - margin)
     if runtime < 300:
         raise ValueError("insufficient time for canary before recovery cutoff")
     properties = [f"User={getpass.getuser()}", f"WorkingDirectory={args.source}", "ProtectSystem=strict",
@@ -293,6 +313,10 @@ def canary(args) -> dict:
         properties += ["MemoryHigh=2500M", "MemoryMax=3G", "MemorySwapMax=0"]
     if cache_options:
         properties.append(f"ReadOnlyPaths={args.verified_cache.parent}")
+    if pressure_profile == "allocation-v1":
+        # The host parent writes these observations. Private-network workers
+        # can only read the directory and cannot forge service-health samples.
+        properties.append(f"ReadOnlyPaths={args.operation / 'pressure'}")
     command += [f"--property={p}" for p in properties]
     command += [args.python, "-B", args.source / "pi_cdr_quality_resources.py",
                 "--output", args.operation / "resources.json", "--runtime-seconds", str(runtime - 15), "--",
@@ -309,15 +333,34 @@ def canary(args) -> dict:
         "schema_version": 1, "unit": unit, "source": str(args.source),
         "operation": str(args.operation), "expected_commit": args.expected_commit,
     })
-    run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
+    companion = nullcontext()
+    if pressure_profile == "allocation-v1":
+        from pi_cdr_quality_service import ServiceCompanion
+        companion = ServiceCompanion(args.operation / "pressure", {
+            "schema": "ar-local-service-companion-v1",
+            "source_sha256": sha(args.source / "pi_cdr_quality_service.py"),
+            "source_commit": args.expected_commit, "operation": str(args.operation), "unit": unit,
+            "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            "nonce": uuid.uuid4().hex + uuid.uuid4().hex,
+        })
+    with companion as service:
+        if service is not None:
+            position = command.index("--")
+            command[position:position] = ["--pressure-binding-sha256", service.binding_sha256]
+            runtime = pressure_launch_budget(command, closing)
+        run(command, timeout=runtime + 60, output=args.operation / "canary-service.txt")
     from pi_cdr_quality_resources import require_receipt
-    require_receipt(read(args.operation / "resources.json"))
+    require_receipt(read(args.operation / "resources.json"),
+                    expected_operation=args.operation, expected_commit=args.expected_commit,
+                    expected_profile=pressure_profile)
     result = read(args.operation / "canary-worker.json")
+    result["pressure_profile"] = pressure_profile
     result["resources"] = record(args.operation / "resources.json")
     write(args.operation / "canary.json", result)
     return result
 
 
+@require_dropbehind_reads()
 def seal(args) -> dict:
     layout(args.source, args.production, args.data_root, args.operation)
     target = clean_commit(args.source)
@@ -326,9 +369,17 @@ def seal(args) -> dict:
     canary_path = args.operation / "canary.json"
     canary_result = read(canary_path)
     from pi_cdr_quality_resources import require_receipt
-    require_receipt(read(checked(canary_result["resources"])))
+    recorded_profile = canary_result.get("pressure_profile", "legacy")
+    if recorded_profile is None:
+        raise ValueError("recorded pressure profile must not be null")
+    require_receipt(read(checked(canary_result["resources"])),
+                    expected_operation=args.operation, expected_commit=target,
+                    expected_profile=recorded_profile)
     ci_binding(read(args.ci_binding), target)
     app_binding(read(args.app_acceptance), target, canary_result)
+    if canary_test_result(args.operation, args.source, target, canary_result["source_files"],
+                          resources=read(checked(canary_result["resources"]))) != canary_result["tests"]:
+        raise ValueError("canary lacks exact complete sequential suite proof")
     if canary_result.get("result") != "PASS" or canary_result.get("target_commit") != target:
         raise ValueError("candidate canary missing or failed")
     guard(args.data_root, args.production)
@@ -380,8 +431,11 @@ def smoke(source: Path, *, operation: Path, phase: str, commit: str, files: dict
 
     def bound_check(output, check):
         def verify_source():
-            if clean_commit(source) != commit or source_files(source) != files:
-                raise ValueError("smoke source differs from sealed commit or complete source inventory")
+            # Rollback retains its existing reader; a new cache capability
+            # requirement must not obstruct restoration after a forward failure.
+            with nullcontext() if phase == "rollback" else require_dropbehind_reads():
+                if clean_commit(source) != commit or source_files(source) != files:
+                    raise ValueError("smoke source differs from sealed commit or complete source inventory")
         verify_source()
         check(output)
         # A successful command cannot hide source changes during its execution.
@@ -407,10 +461,11 @@ def smoke(source: Path, *, operation: Path, phase: str, commit: str, files: dict
 
 def verify_runtime(production: Path, target: str, files: dict, data: Path, protected: dict, *, operation: Path,
                    verifier_source: Path) -> None:
-    if clean_commit(production) != target or source_files(production) != files:
-        raise ValueError("deployed code does not match sealed candidate")
-    if protected_files(data) != protected:
-        raise ValueError("protected observation changed during activation")
+    with require_dropbehind_reads():
+        if clean_commit(production) != target or source_files(production) != files:
+            raise ValueError("deployed code does not match sealed candidate")
+        if protected_files(data) != protected:
+            raise ValueError("protected observation changed during activation")
     if active("ar-local-daily.timer") != "active" or active("ar-local-dashboard.service") != "active":
         raise RuntimeError("required production units are not active")
     smoke(verifier_source, operation=operation, phase="post-switch", commit=target, files=files)
@@ -425,10 +480,12 @@ def activation_admission(manifest: dict, *, current: datetime | None = None) -> 
 
 
 def activate(args) -> dict:
-    manifest = validate_manifest(args.manifest, args.manifest_sha256)
+    with require_dropbehind_reads():
+        manifest = validate_manifest(args.manifest, args.manifest_sha256)
     from pi_cdr_quality_resources import require_receipt
     canary = read(checked(manifest["evidence"]["canary"]))
-    require_receipt(read(checked(canary["resources"])))
+    require_receipt(read(checked(canary["resources"])),
+                    expected_operation=manifest["operation_root"], expected_commit=manifest["target_commit"])
     source, production, data, operation = (Path(manifest[key]) for key in
                                          ("source_root", "production_root", "data_root", "operation_root"))
     layout(source, production, data, operation)
@@ -443,8 +500,9 @@ def activate(args) -> dict:
     require_predecessor(production, predecessor)
     require_controls(data, controls, predecessor)
     if args.dry_run:
-        if protected_files(data) != manifest["protected_files"]:
-            raise ValueError("protected observation changed since sealing")
+        with require_dropbehind_reads():
+            if protected_files(data) != manifest["protected_files"]:
+                raise ValueError("protected observation changed since sealing")
         return {"result": "READY", "target_commit": manifest["target_commit"], "mutated": False}
     transaction = operation / ("activation-" + uuid.uuid4().hex)
     transaction.mkdir()
@@ -464,11 +522,14 @@ def activate(args) -> dict:
         with production_lock(data / "state/daily-ingest.lock", "quality-activation"):
             guard(data, production)
             current_state(data)
-            validate_manifest(args.manifest, args.manifest_sha256)
-            require_receipt(read(checked(canary["resources"])))
-            if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
-                    or protected_files(data) != manifest["protected_files"]):
-                raise ValueError("production or protected data changed before activation lock")
+            with require_dropbehind_reads():
+                validate_manifest(args.manifest, args.manifest_sha256)
+            require_receipt(read(checked(canary["resources"])),
+                            expected_operation=operation, expected_commit=manifest["target_commit"])
+            with require_dropbehind_reads():
+                if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
+                        or protected_files(data) != manifest["protected_files"]):
+                    raise ValueError("production or protected data changed before activation lock")
             require_predecessor(production, predecessor)
             require_controls(data, controls, predecessor)
             smoke(source, operation=transaction, phase="pre-switch", commit=manifest["target_commit"], files=manifest["source_files"])
@@ -551,6 +612,7 @@ def main(argv=None) -> int:
     parser.add_argument("--dispositions", type=Path)
     parser.add_argument("--verified-cache", type=Path)
     parser.add_argument("--verified-cache-sha256")
+    parser.add_argument("--pressure-profile", choices=("legacy", "allocation-v1"), default="legacy")
     parser.add_argument("--ci-binding", type=Path)
     parser.add_argument("--app-acceptance", type=Path)
     parser.add_argument("--manifest", type=Path)
@@ -558,6 +620,8 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.command != "canary" and args.pressure_profile != "legacy":
+            raise ValueError("pressure profile is selected only by the canary parent")
         if args.command == "activate" and (not args.manifest or not args.manifest_sha256):
             raise ValueError("activate requires --manifest and --manifest-sha256")
         if args.command != "activate" and (not args.source or not args.operation):
