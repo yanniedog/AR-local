@@ -3,7 +3,13 @@
 #
 # Manual dispatch only. The canary is private replay acceptance; it never
 # seals, activates, deploys or publishes. Sealing and pi-deploy-canary remain
-# separate controlled steps. `preflight` mode is read-only.
+# separate controlled steps. `preflight` and `discover` modes are read-only.
+#
+# Operator decision: no environment approval click. Like pi-deploy-watchdog,
+# the job uses the repository-level Pi/Tailscale secrets. Remaining guards:
+# manual dispatch only, main-branch definition only, exact current-main
+# target, typed RUN_GUARDED_CANARY plus a reviewed dispositions hash for
+# canary mode, and the helper's own fail-closed gates.
 #
 # The candidate checkout (/srv/ar-local/quality-candidate) is moved only to the
 # exact requested commit and only when clean. Production, data and timers are
@@ -19,12 +25,13 @@ on:
         required: true
         type: string
       mode:
-        description: "preflight (read-only) or canary"
+        description: "preflight / discover (read-only) or canary"
         required: true
         default: "preflight"
         type: choice
         options:
           - "preflight"
+          - "discover"
           - "canary"
       confirm:
         description: "Type RUN_GUARDED_CANARY for canary mode"
@@ -67,7 +74,6 @@ jobs:
     # workflow definition, never to a dispatch from another ref.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: pi-production
     timeout-minutes: 150
     steps:
       - name: Validate inputs and exact main commit
@@ -168,6 +174,71 @@ jobs:
           df -h /srv/ar-local | tail -1
           grep -E 'MemAvailable' /proc/meminfo
           ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5 || true
+          REMOTE
+
+      # Read-only discovery of where earlier canaries ran from: candidate
+      # checkouts, dispositions files, prepared Pythons and prior operations.
+      # Prints paths, hashes, counts and scalar identity fields only; never
+      # disposition contents or reasons.
+      - name: Read-only discovery of canary inputs
+        if: inputs.mode == 'discover'
+        run: |
+          set -uo pipefail
+          ssh ar-local-pi5 bash -s <<'REMOTE'
+          set -u
+          ROOTS="/srv/ar-local /var/lib/ar-local /var/lib/ar-local-day-archives /home/pi /opt"
+          canon() { case "$1" in https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git) echo "$1" ;; *) echo "NON-CANONICAL (withheld)" ;; esac; }
+          echo "== candidate checkouts (contain pi_cdr_quality_activate.py) =="
+          for d in $(find $ROOTS -maxdepth 5 -name pi_cdr_quality_activate.py -not -path '*/.git/*' 2>/dev/null | xargs -r -n1 dirname | sort -u); do
+            if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+              echo "$d head=$(git -C "$d" rev-parse HEAD) dirty=$(git -C "$d" status --porcelain | wc -l) origin=$(canon "$(git -C "$d" remote get-url origin 2>/dev/null)") owner=$(stat -c %U "$d")"
+            else
+              echo "$d (not a git checkout) owner=$(stat -c %U "$d")"
+            fi
+          done
+          echo "== dispositions files =="
+          find $ROOTS -maxdepth 6 -type f -iname '*disposition*.json' 2>/dev/null | sort | while read -r f; do
+            n="$(python3 -c 'import json,sys
+          try:
+              d=json.load(open(sys.argv[1])); print(len(d) if isinstance(d,dict) else type(d).__name__)
+          except Exception as e: print("unreadable:"+type(e).__name__)' "$f" 2>/dev/null)"
+            echo "$f sha256=$(sha256sum "$f" | cut -d' ' -f1) bytes=$(stat -c %s "$f") keys=$n mtime=$(stat -c %y "$f" | cut -d. -f1)"
+          done
+          echo "== prepared pythons =="
+          find $ROOTS -maxdepth 5 -path '*/bin/python3' 2>/dev/null | sort | while read -r py; do
+            echo "$py $("$py" --version 2>&1)"
+          done
+          echo "== prior quality operations =="
+          for op in $(ls -1d /srv/ar-local/quality-operation-* 2>/dev/null); do
+            python3 - "$op" <<'PY'
+          import json, os, sys
+          op = sys.argv[1]
+          out = [op]
+          for name in ("canary-unit.json", "canary.json", "seal.json"):
+              p = os.path.join(op, name)
+              if not os.path.isfile(p):
+                  continue
+              try:
+                  r = json.load(open(p))
+              except Exception as e:
+                  out.append(f"{name}=unreadable:{type(e).__name__}")
+                  continue
+              keep = {}
+              for k, v in r.items():
+                  if not isinstance(v, (str, int, float, bool)) and v is not None:
+                      continue
+                  kl = k.lower()
+                  if "reason" in kl:
+                      continue
+                  if ("disposition" in kl and not (kl.endswith("path") or kl.endswith("sha256") or kl.endswith("digest"))):
+                      continue
+                  if kl in ("result", "status", "source", "python", "expected_commit", "operation", "unit", "schema_version", "pressure_profile") \
+                     or kl.endswith("path") or kl.endswith("sha256") or kl.endswith("digest") or kl.endswith("_at"):
+                      keep[k] = v
+              out.append(f"{name}={json.dumps(keep, sort_keys=True)}")
+          print(" | ".join(out))
+          PY
+          done
           REMOTE
 
       # Everything that touches the candidate tree runs only after shared-queue
