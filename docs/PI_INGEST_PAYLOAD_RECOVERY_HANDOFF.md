@@ -37217,3 +37217,20 @@ allocation-v1 low/refault rule. Relaxing that rule is an operator policy
 decision; do not rerun with a weaker profile to obtain a PASS. Deployment also
 still requires the eight `CANARY_GATE_EVIDENCE.md` gates, including Android
 emulator/device matrices.
+
+### Execution record
+
+| Field | Value |
+|-------|-------|
+| Document ID / version | `ARL-OPS-001` / `1.5` |
+| Document-containing commit | `7131493b028e56395eb65fffb1b41037741bfac3` |
+| Controlled plan SHA-256 | `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada` |
+| Raw runbook file SHA-256 | `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Operator | Claude Code agent session acting for the repository owner (operator instruction 2026-11-04 19:14 AEDT) |
+| Candidate code SHAs | `94fd62eedc388bd8643233cdbb717b97fc463914` (legacy), `1f383a50e9d8d33edb3a3cee78ddde0f58d8e7c6` (allocation-v1) |
+| Timestamps (UTC) | Preflight 41920504378 21:55; canary 41920760761 worker 21:57:13-21:57:15; canary 41921753319 worker 22:03:44-22:04:01; inspect runs 41921605125 and the following inspect dispatch |
+| Exact commands | `pi-quality-canary` `workflow_dispatch` on `main`: `mode=canary`, `confirm=RUN_GUARDED_CANARY`, `python=/srv/ar-local/quality-python-aca980106-20260917/bin/python3`, default dispositions, `pressure_profile=legacy` then `allocation-v1`; queued command `pi_cdr_quality_activate.py canary --source <candidate> --production /srv/ar-local/AR-local --data-root /srv/ar-local/data --operation /srv/ar-local/quality-operation-gh-<run>-1 --expected-commit <sha> --python <python> --dispositions <private copy> --pressure-profile <profile>` |
+| Evidence | Workflow logs for runs 41920760761, 41921753319, 41921605125; Pi files `resources.json`, `canary-unit.json`, `canary-service.txt` under each operation directory above |
+| Results | Both canary runs `FAIL`; seal/deploy/republish `NOT_STARTED` |
+| Deviations | Pi-side evidence file SHA-256 values were not captured in workflow logs (inspect prints scalar fields only); record them from the operation directories before relying on these files. Canary route was the hosted workflow rather than an operator SSH session. |
+| Current phase / gates | Guarded canary gate: FAIL (blocking). Deployment gates in `CANARY_GATE_EVIDENCE.md`: not started. Payload republication 2026-10-29..2026-11-04: not started. |
