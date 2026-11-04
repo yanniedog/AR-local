@@ -206,14 +206,15 @@ def advance_index(before, candidate, manifest):
     return output
 
 
-def durable_history_dates(state, tag):
-    """Dates that durable local records prove were, or may have been, published.
+def durable_history_heads(state, tag):
+    """Highest revision per date that durable local records prove were, or may
+    have been, published.
 
     A receipted edition proves its committed target index. A pending transaction
     may have committed its target before crashing, and its predecessor was the
     live index, so both establish history the next index must keep.
     """
-    dates = set()
+    heads = {}
     for other in sorted(state.iterdir()):
         if other.name == tag:
             continue
@@ -227,21 +228,29 @@ def durable_history_dates(state, tag):
         if not receipt.exists() and saved["predecessor_hex"] is not None:
             held.append(saved["predecessor_hex"])
         for raw in held:
-            dates.update(validate_index(bytes.fromhex(raw))["revision_heads"])
-    return dates
+            for day, head in validate_index(bytes.fromhex(raw))["revision_heads"].items():
+                heads[day] = max(heads.get(day, 0), head["revision"])
+    return heads
+
+
+def lost_history(state, tag, index):
+    """Durable dates the index omits or holds at an older revision."""
+    present = validate_index(index)["revision_heads"]
+    return sorted(day for day, revision in durable_history_heads(state, tag).items()
+                  if day not in present or present[day]["revision"] < revision)
 
 
 def require_durable_history(state, tag, current):
-    """Refuse an index that would drop dates durable local state proves exist."""
+    """Refuse an index that would drop or roll back durably published history."""
     if current is None:
         if any((other / name).exists() for other in state.iterdir() if other.name != tag
                for name in ("receipt.json", "transaction.json")):
             # An empty-channel index would drop earlier editions from discovery.
             raise RevisionError("observed index missing although earlier editions were published")
         return
-    missing = durable_history_dates(state, tag) - set(validate_index(current)["revision_heads"])
+    missing = lost_history(state, tag, current)
     if missing:
-        raise RevisionError("observed index omits durable published dates: " + ", ".join(sorted(missing)))
+        raise RevisionError("observed index omits durable published dates: " + ", ".join(missing))
 
 
 class ObservedBackend(ABC):
@@ -387,10 +396,10 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
                 raise RevisionError("reserved local transaction differs")
             # A resumed target may be restored over a lost index; it must still
             # carry every date other durable transactions established since.
-            stale = durable_history_dates(state, tag) - set(validate_index(after)["revision_heads"])
+            stale = lost_history(state, tag, after)
             if stale:
                 raise RevisionError("stale recovery target omits durable published dates: "
-                                    + ", ".join(sorted(stale)))
+                                    + ", ".join(stale))
         else:
             require_durable_history(state, tag, current)
             before, after = current, advance_index(current, index, manifest)
