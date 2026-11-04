@@ -11,17 +11,22 @@ const pr = { number: 42, state: 'closed', merged: true, merged_at: '2026-11-02T0
   head: { sha: head, ref: 'feature', repo: { full_name: repository } },
   base: { sha: merge, ref: 'main', repo: { full_name: repository } } };
 const options = { repository, expectedHeadSha: head, expectedMergeSha: merge, reporterSha: reporter, runId: 10, runAttempt: 2 };
-const event = { repository: { full_name: repository }, inputs: { pr_number: '42',
+const event = { repository: { full_name: repository, default_branch: 'main' }, inputs: { pr_number: '42',
   merged_revalidation: 'true', expected_head: head, expected_merge: merge } };
-assert.deepEqual(mergedDispatch(event, 'workflow_dispatch', repository, 42),
+const mainRef = 'refs/heads/main';
+assert.deepEqual(mergedDispatch(event, 'workflow_dispatch', repository, 42, mainRef),
   { expectedHeadSha: head, expectedMergeSha: merge });
+for (const ref of ['refs/heads/feature', 'refs/tags/main', undefined, '']) {
+  assert.throws(() => mergedDispatch(event, 'workflow_dispatch', repository, 42, ref), /default-branch workflow/,
+    'caller-selected workflow refs can never write a merged pass');
+}
 assert.equal(mergedDispatch(event, 'pull_request_target', repository, 42), null);
 assert.equal(mergedDispatch({ inputs: { pr_number: '42' } }, 'workflow_dispatch', repository, 42), null);
 for (const inputs of [{ expected_head: 'bad' }, { expected_merge: head.slice(1) }, { pr_number: '43' },
   { retired_head: head }, { merged_revalidation: 'false' }, { merged_revalidation: 'yes' }]) {
-  assert.throws(() => mergedDispatch({ ...event, inputs: { ...event.inputs, ...inputs } }, 'workflow_dispatch', repository, 42));
+  assert.throws(() => mergedDispatch({ ...event, inputs: { ...event.inputs, ...inputs } }, 'workflow_dispatch', repository, 42, mainRef));
 }
-assert.throws(() => mergedDispatch({ ...event, repository: { full_name: 'other/repo' } }, 'workflow_dispatch', repository, 42));
+assert.throws(() => mergedDispatch({ ...event, repository: { full_name: 'other/repo', default_branch: 'main' } }, 'workflow_dispatch', repository, 42, mainRef));
 
 function fixture(overrides = {}) {
   const writes = [], calls = [];
@@ -37,6 +42,7 @@ function fixture(overrides = {}) {
     if (endpoint.endsWith('/branches/main')) return { name: 'main', commit: { sha: merge } };
     if (endpoint.includes('/compare/')) return { status: 'identical', base_commit: { sha: merge }, merge_base_commit: { sha: merge } };
     if (endpoint.includes('/files?')) return [];
+    if (endpoint === `repos/${repository}/commits/${head}/pulls?per_page=100`) return overrides.sharing || [{ number: 42, state: 'closed', head: { sha: head } }];
     if (endpoint.includes('/check-runs?')) return { total_count: overrides.history?.length || 0, check_runs: overrides.history || [] };
     throw new Error(`Unexpected request ${endpoint}`);
   };
@@ -117,6 +123,18 @@ for (const final of [[resolved, unresolved([comment])], [{ ...resolved, isResolv
   assert.equal(changed.result.conclusion, 'failure', 'added/reopened/deleted/edited/malformed feedback cannot reuse stale success');
   assert.equal(changed.writes.at(-1).body.conclusion, 'failure');
 }
+// Another open PR sharing the merged head must never receive this check.
+assert.throws(() => publish({ sharing: [{ number: 42, state: 'closed', head: { sha: head } },
+  { number: 77, state: 'open', head: { sha: head } }] }), /shares the merged head/);
+assert.equal(publish({ sharing: [{ number: 77, state: 'closed', head: { sha: head } }] }).result.conclusion, 'success');
+// A CI rerun that starts after the first product read is caught by the final read.
+let productReads = 0;
+const realProduct = publish().result;
+const changing = publish({ productReader: () => ({ ok: true, pending: false, failed: false,
+  workflowRuns: [{ runAttempt: ++productReads }], summary: 'ci' }) });
+assert.equal(changing.result.conclusion, 'failure');
+assert.match(changing.writes[1].body.output.summary, /Applicable CI changed/);
+assert.equal(realProduct.conclusion, 'success');
 let feedbackReads = 0;
 assert.equal(publish({ threadReader: () => {
   if (++feedbackReads === 1) return [resolved];
@@ -144,17 +162,29 @@ const feedbackPage = (threads) => ({ repository: { nameWithOwner: repository, pu
   number: 42, state: 'MERGED', merged: true, mergedAt: pr.merged_at, headRefOid: head,
   baseRefName: 'main', mergeCommit: { oid: merge }, reviewThreads: threads } } });
 const thread = (id) => ({ id, isResolved: true, comments: connection([comment]) });
-assert.equal(readMergedFeedback(repository, 42, identity, { query: () => feedbackPage(connection([thread('T1')])) }).length, 1);
+// Answers the final per-thread resolution recheck from the states already served.
+const tracking = (fn, flip = new Set()) => {
+  const states = new Map();
+  return (query, vars) => {
+    if (vars.ids) return { nodes: vars.ids.map((id) => ({ id, isResolved: flip.has(id) ? !states.get(id) : states.get(id) })) };
+    const result = fn(query, vars);
+    for (const node of result?.repository?.pullRequest?.reviewThreads?.nodes || []) states.set(node.id, node.isResolved);
+    return result;
+  };
+};
+assert.equal(readMergedFeedback(repository, 42, identity, { query: tracking(() => feedbackPage(connection([thread('T1')]))) }).length, 1);
+assert.throws(() => readMergedFeedback(repository, 42, identity, { query: tracking(() => feedbackPage(connection([thread('T1')])), new Set(['T1'])) }),
+  /resolution changed/, 'a thread reopened during comment pagination blocks publication');
 const deletedAuthor = { ...thread('T-deleted'), isResolved: false, comments: connection([{ ...comment, author: null }]) };
-const deletedSnapshot = readMergedFeedback(repository, 42, identity, { query: () => feedbackPage(connection([deletedAuthor])) });
+const deletedSnapshot = readMergedFeedback(repository, 42, identity, { query: tracking(() => feedbackPage(connection([deletedAuthor]))) });
 assert.equal(mergedFeedbackViolations(deletedSnapshot).length, 1, 'complete GraphQL null-author snapshot blocks publication');
 const manyThreads = Array.from({ length: 101 }, (_, i) => thread(`T${i}`));
-assert.equal(readMergedFeedback(repository, 42, identity, { query: (_, vars) => feedbackPage(vars.after ?
-  connection(manyThreads.slice(100), 101) : connection(manyThreads.slice(0, 100), 101, true, 'next')) }).length, 101);
+assert.equal(readMergedFeedback(repository, 42, identity, { query: tracking((_, vars) => feedbackPage(vars.after ?
+  connection(manyThreads.slice(100), 101) : connection(manyThreads.slice(0, 100), 101, true, 'next'))) }).length, 101);
 const manyComments = Array.from({ length: 101 }, (_, i) => ({ ...comment, id: `C${i}` }));
-const commentPages = readMergedFeedback(repository, 42, identity, { query: (_, vars) => vars.id ?
+const commentPages = readMergedFeedback(repository, 42, identity, { query: tracking((_, vars) => vars.id ?
   { node: { id: 'T1', comments: connection(manyComments.slice(100), 101) } } :
-  feedbackPage(connection([{ ...thread('T1'), comments: connection(manyComments.slice(0, 100), 101, true, 'comments-next') }])) });
+  feedbackPage(connection([{ ...thread('T1'), comments: connection(manyComments.slice(0, 100), 101, true, 'comments-next') }]))) });
 assert.equal(commentPages[0].comments.nodes.length, 101);
 for (const bad of [{ nodes: [] }, connection([], 1), connection([thread('T1'), thread('T1')]),
   connection([thread('T1')], 2, true, null), connection([{ ...thread('T1'), isResolved: undefined }]),
@@ -172,8 +202,9 @@ for (const closed of [{ state: 'CLOSED', merged: false }, { state: 'CLOSED', mer
 
 const yaml = fs.readFileSync(new URL('../.github/workflows/pr-bot-feedback-check.yml', import.meta.url), 'utf8');
 assert.match(yaml, /merged_revalidation:[\s\S]*?type: boolean/);
-assert.match(yaml, /format\('required-merged-pr-gate-\{0\}', matrix.pr\) \|\| format\('required-pr-gate-\{0\}', matrix.pr\)/,
-  'old automatic jobs cannot replace pending merged recovery; each writer mode remains serialized per PR');
+assert.match(yaml, /group: \$\{\{ format\('required-pr-gate-\{0\}', matrix.pr\) \}\}/,
+  'ordinary and merged writers serialize in one per-PR group');
+assert.doesNotMatch(yaml, /required-merged-pr-gate/);
 assert.match(yaml, /github.event_name == 'workflow_dispatch' && github.sha \|\| github.event.repository.default_branch/);
 assert.doesNotMatch(yaml, /administration:|contents: write|pull-requests: write|download-artifact|pull_request.head.sha/);
 const source = fs.readFileSync(new URL('lib/pr-merged-gate.mjs', import.meta.url), 'utf8');

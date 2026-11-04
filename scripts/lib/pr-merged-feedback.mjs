@@ -34,7 +34,8 @@ const COMMENT_QUERY = `query($id:ID!,$after:String!) {
 export function graphQuery(query, variables) {
   const args = ['api', 'graphql', '-f', `query=${query}`];
   for (const [key, value] of Object.entries(variables)) {
-    if (value !== null) args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`);
+    if (Array.isArray(value)) for (const item of value) args.push('-f', `${key}[]=${item}`);
+    else if (value !== null) args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`);
   }
   const result = ghJson(args);
   if (result.errors?.length) throw new Error('Feedback GraphQL errors');
@@ -78,6 +79,22 @@ function completeComments(thread, query) {
   throw new Error('Feedback comments pagination limit exceeded');
 }
 
+const RESOLUTION_QUERY = `query($ids:[ID!]!) { nodes(ids:$ids) { ... on PullRequestReviewThread { id isResolved } } }`;
+
+/** Comment pagination is not atomic with resolution; re-read every thread's state last. */
+function confirmResolution(threads, query) {
+  for (let start = 0; start < threads.length; start += 100) {
+    const batch = threads.slice(start, start + 100);
+    const nodes = query(RESOLUTION_QUERY, { ids: batch.map((thread) => thread.id) })?.nodes;
+    if (!Array.isArray(nodes) || nodes.length !== batch.length) throw new Error('Incomplete feedback resolution recheck');
+    nodes.forEach((node, index) => {
+      if (node?.id !== batch[index].id || typeof node.isResolved !== 'boolean' ||
+          node.isResolved !== batch[index].isResolved) throw new Error('Review thread resolution changed during read');
+    });
+  }
+  return threads;
+}
+
 export function readMergedFeedback(repository, number, identity, { query = graphQuery } = {}) {
   const [owner, name] = repository.split('/');
   const seen = new Set(), cursors = new Set(), threads = [];
@@ -96,7 +113,7 @@ export function readMergedFeedback(repository, number, identity, { query = graph
       if (typeof thread.isResolved !== 'boolean') throw new Error('Missing feedback resolution state');
       threads.push({ id: thread.id, isResolved: thread.isResolved, comments: completeComments(thread, query) });
     }
-    if (!after) return threads;
+    if (!after) return confirmResolution(threads, query);
   }
   throw new Error('Feedback threads pagination limit exceeded');
 }

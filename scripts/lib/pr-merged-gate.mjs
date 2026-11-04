@@ -6,7 +6,7 @@ import { mergedFeedbackViolations, readMergedFeedback } from './pr-merged-feedba
 const SHA = /^[0-9a-f]{40}$/;
 
 /** Only explicit dispatch inputs can select recovery; event text never becomes shell code. */
-export function mergedDispatch(event, eventName, repository, prNumber) {
+export function mergedDispatch(event, eventName, repository, prNumber, ref = process.env.GITHUB_REF) {
   const inputs = event.inputs || {};
   if (eventName !== 'workflow_dispatch') return null;
   const enabled = inputs.merged_revalidation === true || inputs.merged_revalidation === 'true';
@@ -18,6 +18,12 @@ export function mergedDispatch(event, eventName, repository, prNumber) {
   if (event.repository?.full_name !== repository || validPrNumber(inputs.pr_number) !== prNumber ||
       inputs.retired_head || !SHA.test(inputs.expected_head || '') || !SHA.test(inputs.expected_merge || '')) {
     throw new Error('Invalid merged revalidation dispatch');
+  }
+  // A merged pass is trusted by deployment validation, so only the reviewed
+  // default-branch reporter may write it; never caller-selected workflow refs.
+  const defaultBranch = event.repository?.default_branch;
+  if (typeof defaultBranch !== 'string' || !defaultBranch || ref !== `refs/heads/${defaultBranch}`) {
+    throw new Error('Merged revalidation requires the default-branch workflow definition');
   }
   return { expectedHeadSha: inputs.expected_head, expectedMergeSha: inputs.expected_merge };
 }
@@ -34,6 +40,13 @@ function snapshot(api, repository, number, expectedHeadSha, expectedMergeSha) {
   const comparison = api(`${prefix}/compare/${expectedMergeSha}...${branch.commit.sha}`);
   if (!['ahead', 'identical'].includes(comparison.status) || comparison.merge_base_commit?.sha !== expectedMergeSha ||
       comparison.base_commit?.sha !== expectedMergeSha) throw new Error('Merged commit is not proven in default branch ancestry');
+  // Check runs attach to the commit, not the PR: refuse while any other open PR
+  // shares this head, so a merged result can never satisfy or block its gate.
+  const sharing = api(`${prefix}/commits/${expectedHeadSha}/pulls?per_page=100`);
+  if (!Array.isArray(sharing) || sharing.length >= 100 || sharing.some((other) => other?.number !== number &&
+      other?.state === 'open' && other?.head?.sha === expectedHeadSha)) {
+    throw new Error('Another open PR shares the merged head');
+  }
   return { ...identity, defaultBranch: repo.default_branch, defaultHead: branch.commit.sha };
 }
 
@@ -74,10 +87,14 @@ export function publishMergedGate(prNumber, {
     if (outcome.conclusion === 'success') {
       // Feedback can be added, reopened, edited or deleted during CI/identity reads.
       // Make a complete second snapshot the final evidence read before publication.
+      // A CI rerun can start after the first product read; re-read it, then
+      // take the complete feedback snapshot as the very last read before PATCH.
+      const finalProduct = productReader(prNumber, { repository, api, expectedHeadSha, expectedMergeSha });
+      if (JSON.stringify(finalProduct) !== JSON.stringify(product)) throw new Error('Applicable CI changed during revalidation');
       const finalThreads = threadReader(repository, prNumber, current);
       const finalViolations = mergedFeedbackViolations(finalThreads);
       if (JSON.stringify(finalThreads) !== feedbackSnapshot) throw new Error('Review feedback changed during revalidation');
-      outcome = combineRequiredGate(product, finalViolations);
+      outcome = combineRequiredGate(finalProduct, finalViolations);
     }
   } catch (error) {
     outcome = { status: 'completed', conclusion: 'failure', title: 'Merged gate verification unavailable', summary: error.message };

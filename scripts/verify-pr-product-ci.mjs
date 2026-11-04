@@ -175,14 +175,20 @@ const mergeSha = 'c'.repeat(40);
 const mergedPr = { ...pr, state: 'closed', merged: true, merged_at: '2026-11-02T01:00:00Z', merge_commit_sha: mergeSha };
 const readMerged = (overrides = {}) => readProductCi(42, { repository,
   ...fixture({ pr: mergedPr, ...overrides }), expectedHeadSha: head, expectedMergeSha: mergeSha });
-assert.equal(readMerged().failed, false);
-assert.equal(readMerged().workflowRuns[0].runAttempt, 1);
+{
+  const merged = readMerged();
+  assert.deepEqual([merged.ok, merged.pending, merged.failed], [true, false, false], 'merged success is exclusive');
+  assert.equal(merged.workflowRuns[0].runAttempt, 1);
+}
 for (const changes of [{ merged: false }, { merged_at: null }, { state: 'open' },
   { merge_commit_sha: head }, { head: { ...pr.head, sha: base } }]) {
   assert.equal(readMerged({ pr: { ...mergedPr, ...changes } }).ok, false);
 }
 assert.equal(readMerged({ pr: { ...mergedPr, changed_files: 2 } }).ok, false);
-assert.equal(readMerged({ refreshedRun: { ...run, run_attempt: 2, status: 'queued', conclusion: null } }).pending, true);
+{
+  const rerun = readMerged({ refreshedRun: { ...run, run_attempt: 2, status: 'queued', conclusion: null } });
+  assert.deepEqual([rerun.pending, rerun.failed], [true, false], 'queued merged rerun is pending, not failed');
+}
 assert.equal(readMerged({ runs: [{ ...run, run_attempt: 2, conclusion: 'failure' }],
   refreshedRun: { ...run, run_attempt: 2, conclusion: 'failure' } }).failed, true);
 assert.equal(readMerged({ runs: [{ ...run, workflow_id: 999 }] }).pending, true);

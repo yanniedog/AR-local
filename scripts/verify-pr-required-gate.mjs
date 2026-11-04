@@ -218,8 +218,8 @@ assert.doesNotMatch(discoveryJob, /checks: write|--publish|--retire-event/,
 assert.match(discoveryJob, /node scripts\/pr-required-gate\.mjs --discover/);
 const evaluationJob = workflow.split('\n  evaluate-gates:')[1];
 assert.match(evaluationJob,
-  /group: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.merged_revalidation && format\('required-merged-pr-gate-\{0\}', matrix.pr\) \|\| format\('required-pr-gate-\{0\}', matrix.pr\) \}\}/,
-  'ordinary reports retain their group; explicit merged writers have separate per-PR serialization during bootstrap');
+  /group: \$\{\{ format\('required-pr-gate-\{0\}', matrix.pr\) \}\}/,
+  'ordinary and explicit merged writers serialize in one per-PR group');
 assert.match(evaluationJob, /cancel-in-progress: false/);
 assert.match(evaluationJob, /queue: max/,
   'multiple explicit recoveries queue instead of replacing a pending recovery');

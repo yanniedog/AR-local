@@ -60,14 +60,14 @@ The reporter never manufactures a pass: the same current-head CI and thread
 requirements apply to bootstrap runs.
 
 If a merge races an in-progress gate and leaves the newest head check cancelled,
-an explicitly requested merged revalidation can recompute that gate. Use the
-trusted default-branch reporter, or an independently reviewed workflow ref whose
-exact head has passed applicable CI and feedback review under the bootstrap rule
-above. Pin both the original PR head and its merge commit; do not substitute a
+an explicitly requested merged revalidation can recompute that gate. Only the
+default-branch workflow definition may run it: the reporter refuses merged mode
+for any other workflow ref, because deployment validation trusts its result.
+Pin both the original PR head and its merge commit; do not substitute a
 main-branch CI run or select an older successful gate:
 
 ```sh
-gh workflow run pr-bot-feedback-check.yml --ref <reviewed-workflow-ref> \
+gh workflow run pr-bot-feedback-check.yml --ref main \
   -f pr_number=<number> -f merged_revalidation=true \
   -f expected_head=<40-character-pr-head> -f expected_merge=<40-character-merge>
 ```
@@ -83,14 +83,16 @@ This mode requires a merged closed PR in the repository default-branch ancestry.
 It re-reads the merged identity, complete feedback and exact-head applicable CI
 with latest-attempt verification. Before success, a final complete feedback read
 must match the initial snapshot; unresolved threads with absent authors or no
-comments block. Explicit discovery has its own run/attempt namespace. Merged
-evaluations use a separate per-PR group, with `queue: max`, so old default-branch
-automatic jobs cannot replace a queued recovery during reviewed-ref bootstrap.
-Merged writers remain serialized; closed-PR admission and separate check ownership
-keep their writes disjoint from ordinary reporters. GitHub's queue limit still
-applies; a cancelled or unreported dispatch is never acceptance evidence.
-There is no cross-kind serialization: reconcile any active legacy reporter before
-dispatch. A stale pre-merge writer can still create a newer cancelled check.
+comments block. Applicable CI is re-read after the initial evidence and must be
+unchanged, and the complete feedback snapshot (with a final per-thread resolution
+recheck) is the last read before publication. Recovery is refused while another
+open PR shares the merged head, because check runs attach to commits. Explicit
+discovery has its own run/attempt namespace. Ordinary and merged evaluations share
+one per-PR group with `queue: max`, so a delayed ordinary evaluation cannot publish
+after, and supersede, a merged recovery. Closed-PR admission and separate check
+ownership keep their writes disjoint. GitHub's queue limit still applies; a
+cancelled or unreported dispatch is never acceptance evidence. A stale pre-merge
+writer outside this workflow can still create a newer cancelled check.
 After dispatch, fetch fresh exact-head check IDs and apply unchanged D027 latest
 selection; never accept the recovered success if a newer blocking check exists.
 It creates a new pending evaluation with a
