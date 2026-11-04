@@ -8,6 +8,10 @@ const DOCUMENTS = new Set(['manifest.json', 'manifest-v2.json', 'dates-index.jso
   'revision-delta.json', 'base-manifest.json', 'source-manifest.json']);
 const OBSERVED_PREFIX = '/v1/capabilities/observed-population-v1/release/';
 const OBSERVED_INDEX = 'app-payload-observed-v1-candidate';
+// Observed editions publish only manifest.json plus approved payloads
+// (app_payload_observed.ObservedStore); private revision metadata such as
+// source-manifest/base-manifest/revision-delta is never routable here.
+const OBSERVED_DOCUMENTS = new Set(['manifest.json']);
 export const PAYLOAD = /^(?:core|details|search-index|history-banks|bank-history|bank-rate-history-catalogue|bank-rate-history-catalogue-packed|bank-rate-history-ready|bank-spread-history|rba-calendar|v2-product-history|v2-economic-outlook|terms-index|terms_shard_[0-9]{3}|executable-index|executable_shard_[0-9]{3}|executable_v2_(?:index|shard_[0-9]{3})|monetary_v[34]_[a-z_]+_(?:index|shard_[0-9]{3}))-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\.json\.gz(?:\.enc)?$/;
 
 function headers() {
@@ -31,9 +35,11 @@ function observedRoute(url, request) {
     if (!edition || edition[1].startsWith('0000-') || Number(edition[2]) === 0 ||
         !Number.isFinite(Date.parse(`${edition[1]}T00:00:00Z`)) ||
         new Date(`${edition[1]}T00:00:00Z`).toISOString().slice(0, 10) !== edition[1] ||
-        !(DOCUMENTS.has(asset) || PAYLOAD.test(asset))) throw new Error('Invalid candidate edition');
+        !(OBSERVED_DOCUMENTS.has(asset) || PAYLOAD.test(asset))) throw new Error('Invalid candidate edition');
   }
-  return { tag, asset, legacySha: null, canonical: url.origin + url.pathname,
+  // The mutable candidate index is selection state: never edge-cached, so an
+  // older in-flight fetch can never overwrite a newer index for a TTL.
+  return { tag, asset, legacySha: null, canonical: url.origin + url.pathname, uncached: tag === OBSERVED_INDEX,
     upstream: `https://github.com/yanniedog/AR-local/releases/download/${tag}/${asset}` };
 }
 export function releaseRoute(request) {
@@ -148,7 +154,8 @@ export async function handleRequest(request, env, ctx, fetcher = fetch, cache = 
     const cacheKey = new URL(route.canonical);
     // The complete capability path is part of the cache identity, never a header variant.
     cacheKey.searchParams.set('__delivery', '2'); // Do not reuse pre-Vary responses.
-    const cached = await cache?.match(cacheKey.toString());
+    const edge = route.uncached ? null : cache;
+    const cached = await edge?.match(cacheKey.toString());
     if (cached) return cached;
     if (active >= 2) return failure(503);
     active++;
@@ -163,9 +170,9 @@ export async function handleRequest(request, env, ctx, fetcher = fetch, cache = 
       const response = new Response(plain, { headers: { ...headers(),
         'Content-Type': 'application/octet-stream', 'Content-Length': String(plain.length),
         'Vary': 'X-AR-Legacy-SHA256',
-        'ETag': `"${digest}"`, 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=30',
+        'ETag': `"${digest}"`, 'Cache-Control': route.uncached ? 'no-store' : immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=30',
         ...(route.legacySha ? { 'X-AR-Source-SHA256': route.legacySha } : {}) } });
-      if (cache) ctx.waitUntil(cache.put(cacheKey.toString(), response.clone()).catch(() => {}));
+      if (edge) ctx.waitUntil(edge.put(cacheKey.toString(), response.clone()).catch(() => {}));
       return response;
     } finally { clearTimeout(timeout); active--; }
   } catch { return failure(502); }

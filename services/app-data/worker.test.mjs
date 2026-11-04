@@ -218,8 +218,7 @@ const observedManifest = `${observedPrefix}${observedTag}/manifest.json`;
 
 test('explicit capability admits only its index and immutable approved assets', () => {
   assert.equal(releaseRoute(request(observedIndex)).tag, 'app-payload-observed-v1-candidate');
-  for (const asset of ['manifest.json', 'manifest-v2.json', 'dates-index.json', 'revision-delta.json',
-    'base-manifest.json', 'source-manifest.json', 'core-2026-11-02-123456789abc.json.gz',
+  for (const asset of ['manifest.json', 'core-2026-11-02-123456789abc.json.gz',
     'details-2026-11-02-123456789abc.json.gz.enc', 'bank-history-2026-11-02-123456789abc.json.gz']) {
     const target = `${observedPrefix}${observedTag}/${asset}`;
     const route = releaseRoute(request(target));
@@ -255,6 +254,8 @@ const invalidObserved = [
   observedManifest.replace('2026-11-02', '2026-02-30'),
   observedManifest.replace('2026-11-02', '2026-13-02'),
   observedManifest.replace('-r000001', ''),
+  ...['manifest-v2.json', 'dates-index.json', 'revision-delta.json', 'base-manifest.json', 'source-manifest.json']
+    .map(name => observedManifest.replace('manifest.json', name)),
   observedManifest.replace('manifest.json', 'key.json'),
   observedManifest.replace('manifest.json', 'publication-provenance.json'),
   observedManifest.replace('manifest.json', 'preservation.json'),
@@ -311,19 +312,32 @@ for (const reverse of [false, true]) test(`legacy/capability cold and warm cache
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), domain.get(target));
     assert.equal(response.headers.get('etag'), `"${hex(await crypto.subtle.digest('SHA-256', domain.get(target)))}"`);
     assert.equal(response.headers.get('content-encoding'), null);
-    assert.equal(response.headers.get('cache-control'), target.includes('r000001') ? 'public, max-age=31536000, immutable' : 'public, max-age=30');
+    assert.equal(response.headers.get('cache-control'), target.includes('r000001') ? 'public, max-age=31536000, immutable'
+      : target.includes('candidate') ? 'no-store' : 'public, max-age=30');
     await Promise.all(pending);
   }
-  assert.equal(calls.length, 4);
-  assert.equal(entries.size, 4);
-  assert.deepEqual(new Set([...entries.keys()].map(k => new URL(k).pathname)), new Set(targets.map(k => new URL(k).pathname)));
+  // The mutable observed index is fetched on every pass and never stored.
+  assert.equal(calls.length, 5);
+  assert.equal(entries.size, 3);
+  assert.deepEqual(new Set([...entries.keys()].map(k => new URL(k).pathname)),
+    new Set(targets.filter(k => !k.includes('candidate')).map(k => new URL(k).pathname)));
   for (const target of calls) assert.equal(new URL(target).searchParams.has('_'), target.includes('latest') || target.includes('candidate'));
   for (const bad of [observedManifest.replace('/capabilities/observed-population-v1', ''),
     observedManifest.replace(observedTag, 'app-payload-2026-11-02-r000001'),
     observedManifest.replace('observed-population-v1', 'unknown')]) {
     assert.equal((await handleRequest(request(bad), env, context, origin, cache)).status, 400);
   }
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
+});
+
+test('older candidate index fetch can never overwrite a newer one', async () => {
+  const puts = [];
+  const cache = { match: async () => { throw new Error('candidate index must not be read from cache'); },
+    put: async key => { puts.push(key); } };
+  const response = await handleRequest(request(observedIndex), env, context, fetcher, cache);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(puts, []);
 });
 
 test('capability retains encrypted, redirect, rate, size and secret boundaries', async () => {
@@ -334,6 +348,7 @@ test('capability retains encrypted, redirect, rate, size and secret boundaries',
       assert.equal(target, releaseRoute(request(observedManifest)).upstream);
       return new Response(null, { status: 302, headers: { location: 'https://release-assets.githubusercontent.com/controlled' } });
     }
+    assert.equal(target, 'https://release-assets.githubusercontent.com/controlled');
     return new Response(wire);
   }, null);
   assert.equal(redirected.status, 200); assert.equal(calls, 2);
@@ -348,5 +363,11 @@ test('capability retains encrypted, redirect, rate, size and secret boundaries',
     assert.equal((await handleRequest(request(observedManifest), env, context, upstream, null)).status, 502);
   }
   assert.equal((await handleRequest(request(observedManifest), { RELEASE_KEYS: secret }, context, fetcher, null)).status, 429);
+  let denied = 0;
+  const deniedEnv = { ...env, RATE_LIMITER: { limit: async () => ({ success: false }) } };
+  const neverOrigin = async () => { denied++; throw new Error('denied request must not fetch'); };
+  const neverCache = { match: async () => { denied++; throw new Error('denied request must not read cache'); }, put: neverOrigin };
+  assert.equal((await handleRequest(request(observedManifest), deniedEnv, context, neverOrigin, neverCache)).status, 429);
+  assert.equal(denied, 0);
   assert.equal((await handleRequest(request(observedManifest), { ...env, RELEASE_KEYS: '{}' }, context, fetcher, null)).status, 502);
 });
