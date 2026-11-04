@@ -414,7 +414,8 @@ def test_failed_loop_attach_detaches_only_kernel_proved_owned_inode(monkeypatch,
 
 
 def test_fat_source_masks_are_explicit_and_independent_of_service_umask():
-    source = "24 23 259:1 / /source/boot ro,relatime,uid=0,gid=0,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8 - vfat /dev/nvme0n1p1 rw,errors=remount-ro"
+    # Actual kernel layout: per-mount flags, optional fields, then superblock options.
+    source = "24 23 259:1 / /source/boot ro,relatime shared:12 - vfat /dev/nvme0n1p1 ro,uid=0,gid=0,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro"
     settings = filesystems.fat_mount("/source/boot", source)
     flags = filesystems.fat_options(settings)
     assert {"uid=0", "gid=0", "fmask=0022", "dmask=0022", "utf8=1", "shortname=mixed"} <= set(flags)
@@ -423,6 +424,9 @@ def test_fat_source_masks_are_explicit_and_independent_of_service_umask():
         filesystems.fat_options({**settings, "iocharset": "ascii,bind"})
     with pytest.raises(ValueError, match="showexec"):
         filesystems.fat_mount("/source/boot", source.replace("shortname=mixed,utf8", "shortname=mixed,showexec,utf8"))
+    # Masks present only in per-mount flags are not the filesystem's options.
+    with pytest.raises(KeyError):
+        filesystems.fat_mount("/source/boot", "24 23 259:1 / /source/boot ro,fmask=0022,dmask=0022 - vfat /dev/x rw,errors=remount-ro")
 
 
 def test_capacity_is_measured_before_payload_copy_and_fails_closed(monkeypatch, tmp_path):

@@ -13,7 +13,11 @@ def fat_mount(path, mountinfo):
         if fields[4] == str(path):
             if filesystem[0] != "vfat":
                 raise ValueError("boot source must be the inventoried FAT filesystem")
-            found.append(fields[5].split(","))
+            # Filesystem-specific options (uid/gid/fmask/dmask/...) are the
+            # superblock options after " - "; fields[5] holds per-mount flags.
+            if len(filesystem) < 3:
+                raise ValueError("incomplete mountinfo superblock options")
+            found.append(filesystem[2].split(","))
     if len(found) != 1:
         raise ValueError("exact boot source mount must be independently visible")
     values = {key: value for option in found[0] if "=" in option for key, value in [option.split("=", 1)]}
