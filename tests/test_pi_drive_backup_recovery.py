@@ -23,7 +23,7 @@ def put(path, value):
 
 
 @pytest.fixture
-def original(tmp_path, monkeypatch):
+def original(tmp_path, monkeypatch, captured_stdout):
     spool = (tmp_path / "spool").resolve(); spool.mkdir()
     config = backup.Config(tmp_path / "untouched-source", spool, "unused-transport", spool / "password", spool / "config", [])
     monkeypatch.setattr(backup, "guard_window", lambda: None)
@@ -52,13 +52,13 @@ def original(tmp_path, monkeypatch):
         "request_sha256":spec["hashes"]["request"],"supervisor_pid":100,"worker_pid":200,"restic_pid":300,
         "helper_sha256":spec["capture_helper_sha256"]}
     raw = spool/spec["capture_directory"]/"stdout.private.jsonl"; raw.parent.mkdir()
-    summary = {"message_type":"summary","snapshot_id":spec["snapshot_id"],"data_added_packed":123}
-    with raw.open("xb") as stream:
-        record = json.dumps({"message_type":"status","current_files":["fixture"*1000]}).encode()+b"\n"
-        for _ in range(2500): stream.write(record)
-        stream.write(json.dumps(summary).encode()+b"\n")
+    # Each spool has a real regular capture at its expected path. Share its inode
+    # rather than writing the same >16 MiB progress stream for every metadata case.
+    # Do not silently fall back to copies: that recreates the repeated-I/O problem.
+    raw.hardlink_to(captured_stdout.path)
+    summary = captured_stdout.summary
     rows.update(capture_started=capture,capture_terminal={**capture,"result":"CAPTURE_COMPLETE","command_exit_code":0,
-        "acceptance_verified":False,"captured_bytes":raw.stat().st_size,"stdout_sha256":backup.digest(raw),"summaries":[summary]})
+        "acceptance_verified":False,"captured_bytes":captured_stdout.size,"stdout_sha256":captured_stdout.sha256,"summaries":[summary]})
     database=tmp_path/"archived.sqlite"
     with sqlite3.connect(database) as db:
         db.execute("CREATE TABLE transport_control(id INTEGER PRIMARY KEY)")
@@ -74,7 +74,25 @@ def original(tmp_path, monkeypatch):
     descriptor=tmp_path/"recovery.json"; sha=put(descriptor,spec)
     bound=recovery.descriptor(descriptor,sha)
     return SimpleNamespace(config=config,spec=spec,paths=paths,rows=rows,descriptor=descriptor,sha=sha,bound=bound,
-                           raw=raw,database=database,archive_path=archive_path,manifest=manifest,began=began)
+                           raw=raw,database=database,archive_path=archive_path,manifest=manifest,began=began,
+                           captured_stdout=captured_stdout)
+
+
+@pytest.fixture(scope="module")
+def captured_stdout(tmp_path_factory):
+    """Real >16 MiB protocol bytes, written once; all production reads stay real."""
+    path = tmp_path_factory.mktemp("recovery-capture") / "stdout.private.jsonl"
+    summary = {"message_type":"summary","snapshot_id":"d"*64,"data_added_packed":123}
+    with path.open("xb") as stream:
+        record = json.dumps({"message_type":"status","current_files":["fixture"*1000]}).encode()+b"\n"
+        for _ in range(2500): stream.write(record)
+        stream.write(json.dumps(summary).encode()+b"\n")
+    size, sha256 = path.stat().st_size, backup.digest(path)
+    assert 16 * 1024**2 < size <= 256 * 1024**2
+    yield SimpleNamespace(path=path, size=size, sha256=sha256, summary=summary)
+    # A corruption test must detach its own link before writing. Detect leakage
+    # across cases without adding a new full hash pass for every parameter.
+    assert path.stat().st_size == size and backup.digest(path) == sha256
 
 
 def change(state, key, patch):
@@ -101,12 +119,44 @@ def test_candidate_need_not_have_run_fields_when_shipping_worker_only_emitted_er
     assert set(original.rows["candidate"])=={"result","error"}
     spec,paths,rows,began,summary=recovery.verified_source(original.config,original.bound)
     assert summary["snapshot_id"]==original.spec["snapshot_id"] and began==original.began
+    assert original.raw.samefile(original.captured_stdout.path)
+    assert original.raw.stat().st_size > 16 * 1024**2
 
 
-@pytest.mark.parametrize("kind",["raw","manifest","descriptor","old_live","other_repository"])
+@pytest.mark.parametrize("size", [16 * 1024**2 - 1, 16 * 1024**2, 256 * 1024**2 + 1])
+def test_original_capture_size_eligibility_bounds_remain_enforced(original, size):
+    change(original, "capture_terminal", {"captured_bytes": size})
+    with pytest.raises(ValueError, match="stdout capture is incomplete"):
+        recovery.verified_source(original.config, original.bound)
+
+
+def test_eligible_declared_size_still_requires_matching_actual_bytes(original):
+    change(original, "capture_terminal", {"captured_bytes": 16 * 1024**2 + 1})
+    with pytest.raises(ValueError, match="captured stdout bytes differ"):
+        recovery.verified_source(original.config, original.bound)
+
+
+@pytest.mark.parametrize("kind",["raw","raw_same_size","manifest","descriptor","old_live","other_repository"])
 def test_source_or_snapshot_binding_drift_is_rejected(original,monkeypatch,kind):
-    if kind=="raw":
-        with original.raw.open("ab") as stream:stream.write(b"changed")
+    if kind in {"raw", "raw_same_size"}:
+        # Replace this test's link with an independent copy before corrupting it;
+        # opening the shared inode for append would poison every subsequent case.
+        private = original.raw.with_name("stdout.corruption-copy.jsonl")
+        shutil.copyfile(original.raw, private)
+        private.replace(original.raw)
+        assert not original.raw.samefile(original.captured_stdout.path)
+        assert backup.digest(original.raw) == original.captured_stdout.sha256
+        if kind == "raw":
+            with original.raw.open("ab") as stream:stream.write(b"changed")
+        else:
+            with original.raw.open("r+b") as stream:
+                previous = stream.read(1)
+                stream.seek(0)
+                stream.write(bytes([previous[0] ^ 1]))
+            assert original.raw.stat().st_size == original.captured_stdout.size
+            with pytest.raises(ValueError, match="captured stdout bytes differ"):
+                recovery.verified_source(original.config, original.bound)
+            return
     elif kind=="manifest":original.paths["manifest"].write_text("{}")
     elif kind=="descriptor":
         with pytest.raises(ValueError):recovery.descriptor(original.descriptor,"0"*64)

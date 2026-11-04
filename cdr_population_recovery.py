@@ -105,11 +105,13 @@ def population_pending_recovery_allowed(pending, observation):
     This grants no extra claim or budget and settles no outstanding upload.
     """
     from app_payload_observation_gate import publication_allowed
+    from cdr_population_pending import population_queue
+    if not isinstance(observation, dict) or not isinstance(observation.get('contract'), dict):
+        return False
     pointer = observation.get('pointer')
-    return (isinstance(pointer, dict) and bool(pointer)
-        and pending.get('pointer') == pointer
-        and pending.get('run_date') == observation['contract']['observation_date']
-        and pending.get('queued_pointers', []) == [] and 'selection_retry' not in pending
+    queue = population_queue(pending, observation['contract'].get('observation_date'))
+    return (isinstance(pointer, dict) and bool(pointer) and queue is not None
+        and queue[0] == pointer
         and publication_allowed(observation['contract']) == (False, 'unverified_provider_population'))
 
 

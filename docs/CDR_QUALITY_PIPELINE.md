@@ -169,6 +169,17 @@ WAL/rollback journals are applied only to verified private copies. Reports retai
 all provider/product membership changes and failure recurrence; product absence
 is not automatically treated as data loss or retirement.
 
+Protected canary reads require bounded drop-behind I/O for SQLite source copies,
+dashboard/status JSON, contract parsing and final source-export reconciliation.
+Identity, digest and byte/deadline checks remain enforced; unsupported required
+reads fail without fallback. JSON capture checks its budget before allocating a
+single buffer. Portable reads outside this scope are unchanged.
+
+This does not prove lower host cache use or explain all kernel Buffers growth.
+SQLite private-copy writes/reads and later log scanning remain ordinary I/O.
+Require exact-candidate Linux tests and unchanged runtime resource acceptance;
+do not drop global caches or change swap settings or resource limits.
+
 After a code repair is tested, reviewed, merged, canaried and deployed, use
 `python pi_cdr_quality_repair.py --expected-commit <deployed-sha>
 --expected-generation <selected-generation> --reason <repaired-issue>` on the Pi.

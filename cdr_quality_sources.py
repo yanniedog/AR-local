@@ -13,6 +13,7 @@ from typing import Any
 from cdr_export_contract import hash_file as portable_hash_file, load_contract
 from cdr_ledger_v2 import verify_event
 from cdr_quality_accounting import audit_rows, canonical_digest, rate_rows_digest, product_rows_digest
+from cdr_quality_discovery import export_candidates
 from cdr_quality_sqlite import database_files, database_view
 from pi_cdr_quality_digest import read_digest
 from pi_cdr_quality_read_io import dropbehind_required
@@ -34,10 +35,17 @@ def hash_file(path: Path, *, budget=None) -> str:
 def read_object(path: Path) -> dict:
     if path.stat().st_size > 32 * 1024 * 1024:
         raise ValueError(f"metadata exceeds 32 MiB: {path.name}")
-    result = json.loads(path.read_text(encoding="utf-8"))
+    result = (json.loads(read_source_bytes(path, 32 * 1024**2).decode("utf-8")) if dropbehind_required()
+              else json.loads(path.read_text(encoding="utf-8")))
     if not isinstance(result, dict):
         raise ValueError(f"object required: {path.name}")
     return result
+
+
+def read_source_bytes(path: Path, maximum: int) -> bytes | bytearray:
+    if dropbehind_required():
+        return read_digest(path, capture=True, max_bytes=maximum)[1]
+    return path.read_bytes()
 
 
 def contained(root: Path, relative: str) -> Path:
@@ -145,14 +153,14 @@ def inventory(data_root: Path) -> tuple[list[dict], list[dict]]:
           f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     started = time.monotonic()
     print("[cdr-audit] inventory discovery start tree=runs", flush=True)
-    candidates = set((data_root / "runs").rglob("_exports"))
+    candidates = set(export_candidates(data_root / "runs"))
     print(f"[cdr-audit] inventory discovery complete tree=runs candidates={len(candidates)} "
           f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     archive = data_root / "runs-archive"
     if archive.is_dir():
         started = time.monotonic()
         print("[cdr-audit] inventory discovery start tree=runs-archive", flush=True)
-        candidates.update(archive.rglob("_exports"))
+        candidates.update(export_candidates(archive))
         print(f"[cdr-audit] inventory discovery complete tree=runs-archive candidates={len(candidates)} "
               f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
     for root in sorted(candidates):
@@ -270,7 +278,7 @@ def audit_source(data_root: Path, source: dict) -> dict:
     if json_path.is_file():
         if json_path.stat().st_size > 512 * 1024 * 1024:
             raise ValueError("JSON export exceeds 512 MiB audit budget")
-        exported = json.loads(json_path.read_bytes())
+        exported = json.loads(read_source_bytes(json_path, 512 * 1024**2))
         exported_products, exported_rates = exported.get("products") or [], exported.get("rates") or []
         if (len(exported_products) != len(products) or len(exported_rates) != len(rates)
                 or sorted(p.get("product_key") or "" for p in products) != sorted(p.get("product_key") or "" for p in exported_products)
