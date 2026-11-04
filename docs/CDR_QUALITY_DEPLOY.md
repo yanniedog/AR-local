@@ -12,7 +12,9 @@ capture, public publication, app installation, Drive restore, or natural timer r
 
 ## Prerequisites
 
-Canary paging diagnostics do not waive the no-host-swap guard. Resource receipts
+Canary paging diagnostics do not waive the selected resource policy. The default
+legacy profile still rejects any host swap-out; the explicit `allocation-v1`
+profile below requires additional host and service evidence. Resource receipts
 retain allowlisted memory/reclaim counters from the same reads used by the
 supervisor, plus the previous and triggering samples, elapsed time and UTC when
 a sampled resource limit fires. Missing or malformed optional telemetry is explicitly unavailable;
@@ -21,9 +23,9 @@ and, on failure, only after workload cleanup. The latter describes post-cleanup
 state and cannot prove the exact zone watermark at the instant of failure.
 
 Private `phase-*.json` files identify source snapshot, pytest, audit, payload and
-reconciliation boundaries. `pytest.txt` uses verbose, unbuffered native pytest
-output so the active test is visible before it completes; there is no extra
-pytest plugin or host process scan. Read only a bounded tail when investigating
+reconciliation boundaries. The proposed sequential-suite amendment below retains
+verbose, unbuffered pytest output per module under `pytest-suite/`; earlier
+monolithic runs retain `pytest.txt`. Read only a bounded tail when investigating
 a stopped test. Progress files and partial pytest output are diagnostic evidence,
 not complete canary receipts. Preserve all original failed receipts, and require
 a fresh complete canary under the unchanged guards before activation.
@@ -87,7 +89,7 @@ at two cores, process count at 256, I/O weight remains 10 and runtime is at most
 03:30–22:00 window, idle ingest and at least 8 GiB free disk. A resource or
 dependency failure stays BLOCKED.
 
-The Pi kernel may lack both the memory cgroup controller and memory PSI. The
+The following legacy policy remains the default. The Pi kernel may lack both the memory cgroup controller and memory PSI. The
 helper does not claim an ineffective `MemoryMax` protects the workload. It always
 runs `pi_cdr_quality_resources.py` inside the same undelegated systemd cgroup as
 the worker. On kernels supporting memory cgroups, it additionally retains the
@@ -149,6 +151,62 @@ full current-data canary. Drive resource enforcement remains separate: Go-based
 Restic/rclone virtual-address requirements need their own measured budget before
 reusing an address-space limit; no backup commissioning is inferred here.
 
+### Proposed phase-02 sequential-suite amendment
+
+This is a reviewable execution-policy amendment, not evidence of a deployed
+policy or a successful Pi canary. The full monolithic exact-head GitHub test job
+remains required complementary coverage. No resource threshold, host-swap rule,
+source-audit requirement, publication gate or rollback guard changes.
+
+The candidate worker first collects the complete `tests` inventory using the
+same prepared Python, source, configuration and reporting plugin. It then runs
+every whole module in deterministic path order, each in a fresh pytest process.
+There is no concurrent batch, retry, partial-success resume or omitted module.
+Collection skips are retained and must repeat exactly in their module run;
+an all-skipped module may return pytest's code 5 only with this exact proof.
+An empty or entirely skipped whole suite cannot pass. Filtering/deselection,
+duplicate/unexpected nodes, failed/interrupted collection, missing phase reports,
+failed setup/call/teardown, inconsistent exits or report tampering fail closed.
+Expected skips and xfails retain their original pytest outcomes; strict XPASS
+failures remain failures. Aggregate JUnit is derived from, then revalidated
+against, exact node identities and raw terminal setup/call/teardown reports.
+
+One 3,600-second monotonic budget includes full collection and every child;
+starting another module does not renew it. All children inherit the **same**
+existing protected systemd cgroup and the uninterrupted outer resource
+supervisor, baseline and overall deadline (at most 5,400 seconds). Before and
+after each child, the coordinator compares cgroup member PID/start identities
+with the original worker/supervisor owners. Survivors or ambiguous accounting
+prevent another module starting. It does not kill unknown processes; the
+original supervisor remains responsible for owned failure cleanup.
+
+Each child has a unique operation-local temporary/report directory. Raw
+collection, terminal reports, logs, commands and owner observations are retained.
+The raw per-module receipts are JSON phase reports, not native per-module JUnit;
+the single aggregate JUnit is derived from those complete reports.
+New `pytest-suite.json` receipts use `ar-local-sequential-pytest-v2` and bind the
+native exhaustive module discovery and partitioned collection described in
+[PYTEST_COLLECTION_PROOF.md](PYTEST_COLLECTION_PROOF.md), the full source inventory,
+runner/hook/validator hashes, interpreter, configuration, plugin versions,
+source/cgroup context and every raw report/log. Canary sealing, activation and
+audit-cache provenance require this proof; a standalone JUnit success no longer
+establishes current suite acceptance. Previously sealed
+`ar-local-sequential-pytest-v1` receipts remain verifiable through their original
+validation path; they are not relabelled as v2. Cache format v2 retains the complete proof
+and raw evidence. Existing v1 caches remain preserved but are incompatible.
+
+Session semantics change intentionally: session fixtures, imported globals,
+plugin sessions and pytest temporary factories now have module-session lifetime.
+Module/class/function lifetimes remain within one uninterrupted module run.
+The repository audit at this amendment found one module-local session fixture
+(`tests/test_cdr_historical_fee_lower_bound.py::retained`, decoded hash-bound
+retained JSON), three function-scoped autouse fixtures in `tests/conftest.py`,
+and no repository collection/session hooks. Imported-module interaction and
+session-wide contamination coverage still comes from monolithic CI. External
+plugin context is recorded and must agree across all batches. Additional startup
+cost and actual Pi memory/swap behavior remain to be measured by a fresh complete
+guarded canary; smaller sessions are not a claimed no-swap fix.
+
 The first full canary on 2026-09-12 stopped under the original zero-swap-in rule
 after three host read-in pages (49,152 bytes), with no swap-out, approximately
 304 MiB peak workload RSS and more than 6 GiB host MemAvailable. Its original FAIL
@@ -200,7 +258,7 @@ identity before stopping a child. An empty or truncated transcript cannot prove
 that no child exists, and this receipt alone never proves terminal cleanup or a
 passing canary.
 
-Retain `canary-unit.json`, `canary.json`, `pytest.xml`, `pytest.txt`, `source-audit/`, `payload/` and
+Retain `canary-unit.json`, `canary.json`, `pytest.xml`, `pytest-suite.json`, `pytest-suite/`, `source-audit/`, `payload/` and
 the systemd transcript. `canary-worker` is an internal stage and rejects writable
 source/production/data mounts; invoke the parent `canary` stage.
 
@@ -345,3 +403,273 @@ gated current-day repair when needed, verifies the new immutable release and
 selected public/app revision, and checks the independent Drive snapshot/restore
 receipt. Activation always labels Drive status UNVERIFIED; it cannot invent or
 replace that proof. Retain both commissioning and later natural scheduled results.
+
+### Required drop-behind snapshot reads
+
+The supervised canary worker (including source-audit hashes) and sealing require Linux `preadv2` with
+`RWF_DONTCACHE` (UAPI flag `0x80`) for identity-bound digest reads. Forward
+activation's two manifest-validation passes, protected snapshots, deployed inventory verification, and the
+pre/post-switch smoke inventory checks require the same reader. Reads use a
+reusable buffer of at most 1 MiB, explicit offsets, and a final growth probe,
+including for empty files. All original file/ancestor identity, no-follow,
+hardlink, mutation and final inventory checks remain in force.
+Source-audit contract hashing retains its cooperative entry, reserved-byte,
+actual-byte and deadline budget checks. Changing this audit reader changes the
+verified-cache semantic import closure: older sealed caches must be rejected,
+not relabelled or resealed as evidence from this candidate. Plan for a full audit
+or independently qualified evidence from the compatible code.
+
+Missing APIs, unsupported filesystems and I/O errors fail the operation; there
+is no ordinary-read retry or configuration escape inside these scopes. Python
+3.11 need not export the flag constant, but the Linux kernel and actual backing
+filesystem must implement it. Standalone helpers and fresh child Python
+processes retain the portable reader and make no cache-qualification claim.
+Rollback keeps its existing reader so a new forward-read capability failure
+cannot prevent restoration. No resource threshold or rollback check is relaxed.
+
+This advice is best effort, not a hard cache bound, and does not cover every
+subprocess or independent payload/audit read. On 1 November 2026 a bounded
+scratch-only probe on the Pi's ext4/NVMe filesystem (Linux 6.18.50, aarch64,
+16 KiB pages) compared two 8 MiB fixtures. Matched initial residency masks
+showed ordinary versus flagged reads ending at 512 versus 0 resident pages
+from cold, 512 versus 512 from warm, and 512 versus 128 from a 128-page mixed
+state. All paired SHA-256 values agreed; append, truncation, overwrite,
+replacement, hardlink and symlink controls rejected changes. Host swap-out
+remained unchanged. A separate tmpfs probe returned `EOPNOTSUPP` as expected.
+These observations establish post-read residency on that filesystem, not peak
+cache use, continuous residency, production-scale behavior or canary success.
+Portable regression tests emulate the syscall seam without claiming kernel
+cache evidence. Normal exact-candidate CI, full guarded Pi canary, acceptance
+and rollback gates remain mandatory before activation.
+
+## Explicit allocation-pressure profile
+
+`canary --pressure-profile allocation-v1` selects resource receipt schema v6.
+Omitting the option preserves the legacy v2 policy, including zero host swap-out.
+This selection is a source-reviewed policy amendment, not a runtime acceptance
+claim. It changes no kernel, swap, credential, network or production settings.
+
+The zero-host-swap rule originated with PR674 and was deliberately retained when
+PR676 allowed bounded cold swap-in. It is a repository safety proxy for a host
+without effective memory-cgroup/PSI protection, not a Linux kernel requirement.
+
+Global `pswpout` measures host paging, not workload ownership or service harm.
+The enhanced profile permits background swap-out only with complete additional
+evidence. It does not add a megabyte allowance. All existing workload swap, RSS,
+host reserve, reaction margin, cold swap-in, sample-gap, deadline, pidfd cleanup,
+ownership, source integrity and publication-window checks still apply.
+
+The enhanced host profile requires the four suffixed `allocstall` counters,
+direct scan/steal, compaction stalls, OOM kills, background scan/steal, cache and
+refault counters, and every managed memory zone. Missing, malformed, reset or
+incoherent telemetry fails closed; the fixed counter profile is an explicit
+capability requirement, not a claim that every Linux build exposes these fields.
+Missing PSI remains `null`, never an invented zero. If present, PSI availability
+must remain stable and the existing 10% limit applies to its retained peak.
+
+Any allocation stall, direct reclaim, compaction stall or OOM increment since
+the first admission sample causes a latched failure, with or without swap.
+These are conservative indicators of allocation pressure; they do not establish
+which process caused it or quantify user-visible disruption. A sampled zone at
+or below its printed minimum also fails. Low-zone headroom with concurrent
+refault activity fails under the versioned attribution rule below. Plain background scan/steal remains recorded context:
+Linux normally wakes asynchronous kswapd below low and reclaims toward high
+([kernel reclaim documentation](https://docs.kernel.org/admin-guide/mm/concepts.html#reclaim)).
+It is not, by itself, evidence of allocation stalls or service harm. The printed watermarks already include boost;
+the separate boost field is not added again. Cache growth or a refault by itself
+does not establish thrashing. Zone inventory, minimum margins, cache extrema,
+cumulative counters and maximum sampling gaps are retained through completion.
+
+The internal host evidence profile is now `ar-local-host-pressure-v5` and
+resource receipt schema is v6. The CLI selector remains `allocation-v1`; its
+exact reviewed source commit selects this implementation. Old v1/v2/v3/v4 host
+proofs and v3/v4/v5 resource receipts cannot be relabelled or reinterpreted. R17 and
+all earlier failed receipts remain immutable; fresh full acceptance is required.
+
+Each sample requires a fixed online node inventory exactly matching the managed
+zone nodes, a recognized `/sys/kernel/mm/lru_gen/enabled` mask, and per-node
+anonymous/file refault counters. Bit 0 enables MGLRU; bits 1 and 2 are optional
+page-table optimizations, so `0x0003` qualifies. Unknown bits, unavailable sysfs
+(including on classic-LRU systems), missing/malformed counters, mode changes,
+node changes or resets fail closed. One bounded capture checks boot, mode and
+online inventory on both sides of the read. Within the measured window its fixed
+read order is global counters G0, zones, node counters A, node counters B, then
+global counters G1. All four raw counter sets are retained. The caller's earlier
+vmstat still guards against resets or newly observed allocation pressure before
+G0; it is not silently replaced. Canonical nodes are B and canonical global
+counters are G1. For each refault type, require the ordered published-counter
+bracket `G0 <= sum(A) <= sum(B) <= G1`; outside-bracket captures fail closed.
+Global and node values are independent reads, not an atomic equality contract.
+Upstream Linux v6.18 independently updates the node and global atomics in
+[node_page_state_add](https://github.com/torvalds/linux/blob/v6.18/include/linux/vmstat.h#L156-L160);
+[global vmstat](https://github.com/torvalds/linux/blob/v6.18/mm/vmstat.c#L1775-L1800)
+and [node vmstat](https://github.com/torvalds/linux/blob/v6.18/drivers/base/node.c#L554-L579)
+read their corresponding published counters separately. These upstream sources
+are not a verified build-source identity for the installed downstream kernel.
+The retained R17 sample has file counts 183983/183983/183988/184005: a supported
+ordered bracket with a 17-base-page published-counter residual of unknown node
+attribution, not 17 additional events beyond the measured global delta or proof
+that every refault was harmless. R17 remains failed; only a new versioned full
+canary can qualify.
+Each component must be monotone within a capture and across captures: B >= A,
+G1 >= G0, current A >= previous B, and current G0 >= previous G1. Allocation
+pressure counters must stay unchanged. A node reset cannot be cancelled by
+another node's growth or hidden by a recovered closing read. No tolerance,
+rescaling, discarded residual or capture retry is introduced.
+
+Initial capture movement is checked before adopting the closing baseline.
+Known B-A refaults use the existing MGLRU same-node/classic-global low-zone rule.
+Define nonnegative prefix `P=sum(A)-G0` and tail `T=G1-sum(B)`, separately
+for anonymous/file refaults. Any initial P or T represents unknown attribution:
+any low zone fails initial admission, even when B-A is zero. Later intervals
+retain both measured global delta and measured per-node B deltas. Their exact
+identity is `delta(G1)=sum(delta(B))+Tcurrent-Tprevious`; global totals and peaks
+must not be replaced by node totals or peaks. A previous tail settling into a
+node may yield positive node activity with zero global delta and is not dropped.
+Either endpoint tail makes attribution uncertain for that interval, so any low
+zone fails regardless of MGLRU node attribution. Residuals are uncertainty
+bounds, not extra exact event counts. No sampling tail is discarded. Live checks
+reject overlapping
+capture windows for every observation; independent replay checks the retained
+capture windows. `cumulative` and `node_cumulative` remain
+closing-baseline-to-closing-terminal totals; initial movement is retained in
+`baseline.capture` and checked separately, not included in those totals.
+Baseline, terminal, positive-node and endpoint-residual raw snapshots are
+replayed. Successful
+quiet intermediate captures contribute aggregate counts, extrema and the live
+failure latch; their individual raw counter/clock checks cannot be reconstructed
+from the receipt. Full independent replay of every quiet capture would require
+a separately designed bounded evidence format and is not claimed here. Old
+proofs cannot supply the new fields by relabelling. Completed captures rejected
+during admission are retained as `failed_pressure_capture` diagnostics; workload
+monitor failures retain the triggering `failure_sample.host`. Neither failure
+path is acceptance evidence. Earlier read/identity errors may occur before a
+complete diagnostic snapshot exists. Bounded evidence and the existing 2-second
+sample/read/observation limits remain in force. Equality of sampled published
+counters does not establish atomic reads or absence of unreported kernel activity.
+
+
+With stable MGLRU enabled, a low zone and positive refault delta must concern
+the same node to trigger the low-plus-refault failure when both endpoint tails
+are zero. On classic LRU the
+previous conservative **any-low-zone plus global-refault** rule remains.
+This distinction follows the [Raspberry Pi 6.18 workingset implementation](https://github.com/raspberrypi/linux/blob/rpi-6.18.y/mm/workingset.c):
+MGLRU increments refault counters only when the eviction and replacement lruvec
+match, whereas classic LRU can count on the replacement node. These are sampled,
+batched counters: node correlation does not establish an individual event's
+exact time, a process owner, thrashing or user-visible disruption. The reviewed
+vendor branch is not proof of the exact installed kernel binary's build source.
+Quiet capability samples are not active-load qualification or attribution of R14.
+All global allocation stalls/direct reclaim/compaction/OOM gates and every-zone
+minimum, service, PSI, RSS, workload-swap and cleanup requirements remain intact.
+
+`low_with_activity_samples` records low-plus-background activity, including
+measured node increments and endpoint uncertainty even when global delta is zero.
+`low_with_refault_samples` records the applicable mode-specific failure
+conjunction and must be zero for PASS. Each positive **node/interval** retains a
+seven-integer row: interval sequence, monotonic timestamp, node ID, that node's
+minimum low margin, anonymous delta, file delta and global minimum low margin.
+Counters remain base-page counts. Rows sharing an interval have the same time
+and global margin and strictly increasing node IDs. Independent validation
+reconciles every node's sums, peaks and endpoint counters. Global totals and
+peaks come from the separately measured global deltas, reconciled by endpoint
+tails rather than forced to equal the node sums. It
+also checks ordered time/sequence coverage, terminal margins, corresponding
+node extrema and fingerprints. Omitted, duplicate, reordered, node-swapped or
+inconsistent rows fail. Zero-refault node/intervals need no row.
+
+Every positive-node or endpoint-residual interval also retains one complete
+captured pressure snapshot, its sequence and fingerprint, plus a nine-integer
+interval row: sequence, timestamp, global low margin, measured anonymous/file
+global deltas, previous anonymous/file tails, current anonymous/file tails.
+Tail-only intervals retain a snapshot and interval row even with no node event.
+After a positive-tail snapshot, the next source must be the immediately following
+sequence: the ordered bracket forces that tail to settle into observed nodes.
+Zero-tail quiet gaps cannot change the refault carry. Independent replay derives
+all interval fields from the raw source and previous retained endpoint, including
+uncertainty, actual zone margins and measured global deltas. It derives every
+event field
+from that snapshot's raw zones and node counters, requiring exact equality,
+not just a lower bound from aggregate zone minima. It verifies monotone raw
+counters, unchanged allocation-pressure counters, positive zone minima, cache
+extrema, stable boot/mode/inventory and exact terminal bindings. A failed
+intermediate low/refault interval cannot become PASS merely by raising its
+asserted event margin after the terminal zone has recovered. Missing, extra,
+reordered or altered source snapshots fail; returned receipts are deep copies.
+These internal fingerprints bind retained evidence together, but are not an
+independent authenticity authority if an attacker rewrites both data and hash.
+The trust anchor is the existing sealed resources SHA in the canary artifact,
+which is itself bound by the externally expected activation-manifest hash.
+
+Each row has a conservative 384-byte bound and an absolute 87,381-row cap.
+The **combined** retained snapshots, node-event and interval rows must fit within
+32 MiB
+of the existing 64 MiB receipt budget. Accounting uses each bounded item's
+actual `indent=2` encoding plus eight spaces per line for its final nesting,
+comma/newline overhead and a fixed envelope reserve. The observer increments
+the byte total once per new batch; it does not reserialize the full ledger on
+each sample. Independent validation recomputes the same bound. One interval
+can contain a 64-node/64-zone snapshot and up to 64 node-event rows plus one
+interval row, so the budget
+is not a guarantee that every full-duration activity pattern fits. Exhaustion latches
+FAIL before appending any partial interval; it never truncates evidence or
+turns incomplete evidence into PASS. No new production helper module is added;
+existing source inventories bind the amended pressure, resource and activation
+validators. There is no new memory/reclaim allowance, service mutation, kernel
+setting, or privilege change. Activation accepts only explicit v6 enhanced or
+v2 legacy resource schemas and fully validates either; a legacy label cannot
+bypass validation of an old v3/v4/v5, unknown, missing or disguised enhanced receipt.
+
+A read-only host-side companion thread checks the existing nginx and direct
+dashboard `/api/latest` endpoints. The quality service retains `PrivateNetwork`.
+Its parent creates `operation/pressure` and binds it read-only into the quality
+service; the worker cannot modify the companion observations. Each binding pins
+the operation, exact service unit, candidate commit, helper hash, boot and nonce.
+The supervisor additionally receives the binding SHA-256 in its command.
+
+Each HTTP pair is bracketed by authenticated dashboard listener observations.
+The fixed `ar-local-dashboard.service` must be active/running with the same
+InvocationID, MainPID, process start ticks, systemd start timestamp and cgroup.
+Bounded reads of only that MainPID's file descriptors must prove ownership of
+the unique IPv4 loopback/wildcard port 8808 listening socket. Unit and process
+identity are reread around inspection. Ambiguous/unsupported listeners,
+unreadable ownership, service restarts and socket replacement fail closed.
+Before/after identities are retained in each snapshot and validated throughout
+the final receipt; HTTP content alone cannot establish dashboard availability.
+Each identity observation is limited to two seconds within the existing
+30-second pair budget, with two seconds reserved for the final identity check.
+No host-wide process scan, service action or privileged read is performed.
+
+Probes use numeric loopback addresses, no proxy, redirects or retries, bounded
+headers/body, the existing 15-second endpoint timeout and a 30-second pair
+deadline. They require HTTP 200 and a dated manifest with banking rates. The
+companion waits five seconds between rounds. The maximum snapshot age is 37
+seconds: two endpoint budgets, that cadence and the existing two-second
+observation margin. A failed round remains failed in every later snapshot;
+stale, changed, replayed or mismatched observations fail closed. This is an
+availability deadline, not a newly claimed response-time SLO. The thread is
+stopped and joined after the owned workload; failed companion cleanup prevents
+the parent from accepting the canary.
+
+Before starting the companion, admission reserves its 32-second startup budget,
+31-second exit budget and the original 45-second unit/controller margin. After
+the initial healthy round, the parent recomputes the remaining workload time
+against 22:00 Hobart and refuses if fewer than 300 workload seconds remain.
+The 5,400-second maximum is unchanged; slow readiness never extends the window.
+
+The supervisor samples pressure and service evidence during both admission
+samples and every workload iteration. The resource validator independently checks the
+same cumulative limits, extrema, sampling coverage and service proof. It requires
+an externally supplied exact operation and candidate commit. Seal/activation also
+bind the helper hash and selected profile to the candidate's source inventory.
+Legacy or failed receipts cannot be relabelled as successful enhanced evidence; an
+earlier breach cannot be erased by a healthy final sample.
+
+The retained November 3 R10 run remains failed: it had four allocation stalls and
+432 directly reclaimed pages before the 656 KiB swap-out trigger. This profile
+would reject those allocation-pressure observations too. Idle capability probes
+show field availability only, not harmlessness or acceptance under load. Any
+future policy tolerating positive allocation stalls needs separately justified
+duration/impact criteria. No such tolerance is introduced here. A fresh full
+exact-candidate canary, app acceptance, rollback and publication checks remain
+necessary before deployment or data-success claims.

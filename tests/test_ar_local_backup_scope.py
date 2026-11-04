@@ -88,6 +88,51 @@ def test_scope_rejects_nonempty_transient_stage(tmp_path: Path) -> None:
         build_data_scope(root.resolve())
 
 
+def test_manual_scope_preserves_retained_export_stage_without_changing_legacy_default(tmp_path):
+    root = data_root(tmp_path).resolve()
+    retained = root / ".daily-export-stage/2026-09-19/_exports/retained.bin"
+    retained.parent.mkdir(parents=True)
+    retained.write_bytes(b"retained original export bytes")
+    scope = build_data_scope(root, include_retained_export_stage=True)
+    assert scope.manifest()["policy_version"] == 2
+    assert scope.manifest()["retained_export_stage_policy"] == "include-if-present"
+    assert ".daily-export-stage" in scope.manifest()["included"]
+    assert all(row["path"] != ".daily-export-stage" for row in scope.excluded)
+    destination = tmp_path / "manual-preservation"
+    copy_scoped_data(scope, destination, exclude=set())
+    assert (destination / retained.relative_to(root)).read_bytes() == retained.read_bytes()
+    with pytest.raises(ValueError, match="transient data path is not empty"):
+        build_data_scope(root)
+
+
+@pytest.mark.parametrize("value", [1, 0, None, "true", []])
+def test_retained_stage_requires_explicit_boolean(tmp_path, value):
+    with pytest.raises(ValueError, match="explicit boolean"):
+        build_data_scope(data_root(tmp_path).resolve(), include_retained_export_stage=value)
+
+
+def test_manual_scope_still_rejects_unknown_roots(tmp_path):
+    root = data_root(tmp_path).resolve()
+    (root / "unclassified").mkdir()
+    with pytest.raises(ValueError, match="unclassified"):
+        build_data_scope(root, include_retained_export_stage=True)
+
+
+def test_manual_scope_rejects_stage_file_and_symlink(tmp_path):
+    root = data_root(tmp_path).resolve()
+    stage = root / ".daily-export-stage"
+    stage.write_bytes(b"not a directory")
+    with pytest.raises(ValueError, match="not a real directory"):
+        build_data_scope(root, include_retained_export_stage=True)
+    stage.unlink()
+    try:
+        stage.symlink_to(root / "runs", target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlink unavailable")
+    with pytest.raises(ValueError, match="symlink"):
+        build_data_scope(root, include_retained_export_stage=True)
+
+
 @pytest.mark.parametrize("missing", ("runs", "state"))
 def test_scope_requires_cdr_history_and_state(tmp_path: Path, missing: str) -> None:
     root = data_root(tmp_path)

@@ -32,7 +32,7 @@ def monitor(monkeypatch,violation=None):
     def memory(pid):
         state['samples']+=1
         return {'rss':640*r.MIB if violation=='rss' else 1,'swap':1 if violation=='swap' else 0,
-            'uid':1000,'nnp':1,'capabilities':1 if violation=='caps' else 0}
+            'uid':1000,'uids':[1000]*4,'gids':[1000]*4,'nnp':1,'capabilities':1 if violation=='caps' else 0}
     monkeypatch.setattr(r,'process_memory',memory)
     monkeypatch.setattr(r,'snapshot_member',lambda host,pid,group,**kw:(host.process_identity(pid),r.process_memory(pid)))
     def kill(pid,sig,**kwargs):
@@ -72,7 +72,7 @@ def test_trusted_wrapper_memory_and_swap_are_included_in_same_budget(monkeypatch
     h,p,o,state=monitor(monkeypatch)
     def memory(pid):
         return {'rss':640*r.MIB if pid==111 and not swap else 1,'swap':swap if pid==111 else 0,
-            'uid':1000,'nnp':0 if pid==111 else 1,'capabilities':7 if pid==111 else 0}
+            'uid':1000,'uids':[1000]*4,'gids':[1000]*4,'nnp':0 if pid==111 else 1,'capabilities':7 if pid==111 else 0}
     monkeypatch.setattr(r,'process_memory',memory)
     result=r.supervise(h,p,o)
     assert result['result']=='FAIL' and reason in result['reason']
@@ -108,3 +108,27 @@ def test_snapshot_live_identity_io_error_still_fails_closed(monkeypatch):
     monkeypatch.setattr(r.select,'POLLIN',1,raising=False)
     monkeypatch.setattr(r.os,'close',lambda fd:None)
     with pytest.raises(PermissionError):r.snapshot_member(Host(),444,'/owned')
+
+
+def test_trusted_setuid_sudo_is_still_inside_whole_cgroup_rss_budget(monkeypatch):
+    h,p,o,state=monitor(monkeypatch);old_controller=h._controller;old_identity=h.process_identity;old_members=h._members
+    h._controller=lambda packet:(old_controller(packet)[0],[{'pid':555,'ticks':5}])
+    h.process_identity=lambda pid:({'pid':555,'ticks':5,'cgroup':o['cgroup']} if pid==555 else old_identity(pid))
+    h._members=lambda group:old_members(group)+[555]
+    old_memory=r.process_memory
+    r.process_memory=lambda pid:({'rss':640*r.MIB,'swap':0,'uid':1000,'uids':[1000,0,0,0],
+        'gids':[0]*4,'nnp':0,'capabilities':1} if pid==555 else old_memory(pid))
+    result=r.supervise(h,p,o)
+    assert result['result']=='FAIL' and result['reason'].endswith('aggregate_rss_early_stop')
+    assert result['peak_rss_bytes']>=640*r.MIB
+
+
+def test_untrusted_mixed_uid_process_cannot_pass_as_nnp_pi_producer(monkeypatch):
+    h,p,o,state=monitor(monkeypatch);old_memory=r.process_memory
+    def memory(pid):
+        value=old_memory(pid)
+        if pid==444:value['uids']=[1000,0,0,0]
+        return value
+    r.process_memory=memory
+    result=r.supervise(h,p,o)
+    assert result['result']=='FAIL' and result['reason'].endswith('producer privilege fences differ')

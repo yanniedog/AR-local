@@ -48,7 +48,9 @@ def identity(pid):
         group = (root / "cgroup").read_text().strip()
         if not group.startswith("0::/") or "\n" in group: raise Blocked("unified cgroup required")
         value = {"pid": pid, "ticks": int(fields[19]), "ppid": int(fields[1]),
-                 "uid": int(status["Uid"].split()[0]), "nnp": int(status["NoNewPrivs"].strip()),
+                 "uid": int(status["Uid"].split()[0]),
+                 "uids": [int(item) for item in status["Uid"].split()],
+                 "gids": [int(item) for item in status["Gid"].split()], "nnp": int(status["NoNewPrivs"].strip()),
                  "exe": str((root / "exe").resolve()), "cgroup": group[3:],
                  "argv": [x.decode() for x in (root / "cmdline").read_bytes().split(b"\0") if x]}
         if poll.poll(0) or int((root/"stat").read_text().rsplit(")",1)[1].split()[19]) != value["ticks"]:
@@ -83,11 +85,13 @@ class Host:
         self.public = HANDOFF / nonce
         self.resource_baseline = None
         self.stop_post_verified = False
+        self.stage = "host_ready"
 
     def now(self): return datetime.now(timezone.utc)
     def boot(self): return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     def value(self): return int(Path("/proc/sys/vm/swappiness").read_text())
     def set_value(self, value):
+        self.stage="apply_zero" if value==0 else "restore_sixty"
         if value not in (0,60): raise Blocked("only measured60/temporary0 exists")
         Path("/proc/sys/vm/swappiness").write_text(str(value)+"\n")
     def packet(self, nonce):
@@ -97,6 +101,7 @@ class Host:
         path = self.private / "intent.json"
         return root_json(path) if path.exists() else None
     def save_intent(self, nonce, value, create=False):
+        self.stage="intent_write"
         if nonce != self.nonce: raise Blocked("intent nonce differs")
         atomic(self.private / "intent.json", value, replace=not create)
 
@@ -136,15 +141,29 @@ class Host:
     def _controller(self, packet):
         current, intermediates = os.getppid(), []
         expected = ["/usr/bin/python3","-I","-B",str(ROOT/"parent.py"),self.nonce]
+        own=identity(os.getpid())
+        if (own.get("uids")!=[0]*4 or own.get("gids")!=[0]*4 or own["nnp"]!=0
+                or own["exe"]!=str(Path("/usr/bin/python3").resolve())
+                or own["argv"] not in [["/usr/bin/python3","-I","-B",str(ROOT/"broker.py"),action,self.nonce]
+                    for action in ("acquire","finish")]):
+            raise Blocked("fixed root broker credentials/command differ")
+        # sudo's setuid monitor retains the invoking Pi real UID. Its effective,
+        # saved and filesystem IDs are root; requiring realUID0 rejects native
+        # sudo even though the root Python child has all four UID/GID fields0.
+        sudo=["/usr/bin/sudo","-n",*own["argv"]]
+        digest(Path("/usr/bin/sudo").resolve())  # root-protected executable only
         for _ in range(4):
             item = identity(current)
+            if item["cgroup"]!=own["cgroup"]:
+                raise Blocked("privileged caller left the admitted cgroup")
             if item["argv"] == expected:
-                if item["uid"] != packet["uid"] or item["nnp"] != 0 or digest(ROOT/"parent.py") != packet["parent_sha256"]:
+                if (item.get("uids")!=[packet["uid"]]*4 or item.get("gids")!=[packet["gid"]]*4
+                        or item["nnp"]!=0 or item["exe"]!=str(Path("/usr/bin/python3").resolve())
+                        or digest(ROOT/"parent.py")!=packet["parent_sha256"]):
                     raise Blocked("trusted parent identity differs")
                 return item, intermediates
-            sudo = ["/usr/bin/sudo","-n","/usr/bin/python3","-I","-B",str(ROOT/"broker.py")]
-            if (item["uid"] != 0 or item["exe"] != str(Path("/usr/bin/sudo").resolve())
-                    or item["argv"][:6] != sudo or item["argv"][-1] != self.nonce):
+            if (item.get("uids")!=[packet["uid"],0,0,0] or item.get("gids")!=[0]*4 or item["nnp"]!=0
+                    or item["exe"]!=str(Path("/usr/bin/sudo").resolve()) or item["argv"]!=sudo):
                 raise Blocked("unexpected privileged caller ancestry")
             intermediates.append(item); current=item["ppid"]
         raise Blocked("trusted parent not found in bounded ancestry")
@@ -186,11 +205,15 @@ class Host:
         finally: os.close(fd)
 
     def _controls(self, packet):
+        self.stage="controls_authority"
         authority=approval(packet["unit"],current=True)
         if authority["source_closure_sha256"] != packet["source_closure_sha256"]:
             raise Blocked("root approval/packet source binding differs")
+        self.stage="controls_native"
         verify_plain_service(packet["unit"])
+        self.stage="controls_closure"
         self._closure(packet)
+        self.stage="controls_queue"
         modules={"pi_shared_queue.py","pi_shared_queue_store.py","pi_shared_queue_policy.py",
             "pi_shared_queue_native.py","pi_shared_queue_post_hooks.py"}
         queue_closure=packet.get("queue_closure",{})
@@ -199,26 +222,32 @@ class Host:
                 or any(digest(Path("/usr/local/lib/shared-pi-queue")/name)!=expected
                     for name,expected in queue_closure.items())):
             raise Blocked("exact reviewed installed queue bridge differs")
+        self.stage="controls_sources"
         for name,key in (("broker.py","broker_sha256"),("parent.py","parent_sha256"),
                          ("pi_plain_drive_resources.py","resources_sha256")):
             if digest(ROOT/name)!=packet[key] or authority[key]!=packet[key]:
                 raise Blocked("approved root control source differs")
+        self.stage="controls_uid"
         pi=pwd.getpwnam("pi")
         if (packet["uid"],packet["gid"])!=(pi.pw_uid,pi.pw_gid) or pi.pw_uid==0:
             raise Blocked("approved Pi account UID/GID changed")
+        self.stage="controls_runtime"
         for path,key in (("/usr/bin/bwrap","bwrap_sha256"),("/usr/bin/setpriv","setpriv_sha256")):
             if digest(Path(path).resolve())!=packet[key]:
                 raise Blocked("fixed sandbox runtime differs")
         # Do not expose an alternate host-proc mount through the recursive root
         # bind. Private /proc alone is insufficient when another alias exists.
+        self.stage="controls_proc"
         for row in Path("/proc/self/mountinfo").read_text().splitlines():
             left,right=row.split(" - ",1)
             if right.split()[0]=="proc" and left.split()[4]!="/proc":
                 raise Blocked("host proc alias would escape the private PID view")
+        self.stage="controls_hold"
         if digest(Path("/etc/ar-local/drive-write-hold.json"))!=packet["global_hold_sha256"]:
             raise Blocked("global legacy hold changed; no bypass permitted")
         if Path("/var/lib/ar-local-drive-reclaim/current.json").exists():
             raise Blocked("another root reclaim owner exists")
+        self.stage="controls_reconciler"
         timer=subprocess.run(["/usr/bin/systemctl","show","ar-local-drive-reclaim-reconcile.timer",
             "--property=LoadState,ActiveState,UnitFileState","--no-pager"],capture_output=True,text=True,timeout=10,check=True,env=ENV)
         values=pairs(line.split("=",1) for line in timer.stdout.splitlines())
@@ -243,6 +272,7 @@ class Host:
             "--property=User,NoNewPrivileges","--no-pager"],capture_output=True,text=True,timeout=10,check=True,env=ENV)
         if pairs(line.split("=",1) for line in rootservice.stdout.splitlines())!={"User":"root","NoNewPrivileges":"yes"}:
             raise Blocked("existing root reconciliation privilege boundary differs")
+        self.stage="controls_workspace"
         work=Path("/var/lib/ar-local-plain-backup-work")/self.nonce
         for directory in (work,work.parent):
             info=directory.lstat()
@@ -252,6 +282,7 @@ class Host:
         if (not stat.S_ISDIR(info.st_mode) or sandbox.resolve()!=sandbox or info.st_uid!=packet["uid"]
                 or stat.S_IMODE(info.st_mode)!=0o700 or list(sandbox.iterdir())):
             raise Blocked("new private writable sandbox must be empty and Pi-owned0700")
+        self.stage="controls_probe"
         probe=root_json(self.private/"sandbox-probe.json")
         if (probe.get("schema")!="ar-local-plain-backup-sandbox-probe-v1" or probe.get("result")!="PASS"
                 or probe.get("boot_id")!=self.boot() or probe.get("bwrap_sha256")!=packet["bwrap_sha256"]
@@ -260,6 +291,7 @@ class Host:
                 or probe.get("source_readonly") is not True or probe.get("no_host_proc_alias") is not True
                 or probe.get("nnp_all_caps_dropped") is not True or probe.get("sealed_context_verified") is not True):
             raise Blocked("actual fixed-namespace kernel probe absent")
+        self.stage="controls_coupled"
         if packet["mode"]=="RUN_ARCHIVE":
             previous=packet.get("coupled_probe_nonce","")
             if not re.fullmatch("[0-9a-f]{32}",previous) or previous==self.nonce:
@@ -277,6 +309,7 @@ class Host:
                     or any(coupled.get(key)!=packet[key] for key in
                         ("bwrap_sha256","setpriv_sha256","parent_sha256","resources_sha256","broker_sha256","queue_closure_sha256"))):
                 raise Blocked("actual successful coupled probe of this closure required")
+        self.stage="controls_credential"
         conf=self.public/"credentials-copy.conf"
         info=conf.lstat()
         if (info.st_uid!=0 or info.st_gid!=packet["gid"] or info.st_nlink!=1
@@ -286,8 +319,14 @@ class Host:
 
     def admission(self, packet):
         self._controls(packet)
-        job,service=self._job(packet); parent,_=self._controller(packet); owner=identity(job["pid"])
-        if (parent["ppid"]!=job["pid"] or owner["ticks"]!=job["start_ticks"] or owner["uid"]!=packet["uid"]
+        self.stage="admission_job"
+        job,service=self._job(packet)
+        self.stage="admission_controller"
+        parent,_=self._controller(packet)
+        self.stage="admission_owner"
+        owner=identity(job["pid"])
+        self.stage="admission_profile"
+        if (parent["ppid"]!=job["pid"] or owner["ticks"]!=job["start_ticks"] or owner.get("uids")!=[packet["uid"]]*4 or owner.get("gids")!=[packet["gid"]]*4
                 or parent["cgroup"]!=job["cgroup"] or owner["cgroup"]!=job["cgroup"]
                 or service["User"]!="pi" or service["NoNewPrivileges"]!="no" or service["Type"]!="notify"
                 or service["KillMode"]!="control-group"
@@ -295,9 +334,11 @@ class Host:
                 or service["CPUQuotaPerSecUSec"]!="1s" or service["TasksMax"]!="64" or service["IOWeight"]!="10"
                 or job["boot_id"]!=self.boot()):
             raise Blocked("trusted controller/queue relationship differs")
+        self.stage="admission_native_fd"
         info=self._lease(job); inherited=os.stat(f"/proc/{parent['pid']}/fd/3")
         if (info.st_dev,info.st_ino)!=(inherited.st_dev,inherited.st_ino):
             raise Blocked("trusted parent FD3 is not the inherited native lease")
+        self.stage="admission_resources"
         from pi_plain_drive_resources import sample_host,host_violation
         current=sample_host()
         if self.resource_baseline is None: self.resource_baseline=current
@@ -312,6 +353,7 @@ class Host:
         if self.admission(packet)!=expected: raise Blocked("admission changed before zero")
 
     def write_handoff(self, packet, value):
+        self.stage="handoff_write"
         atomic(self.public/"lease.json",value,mode=0o640)
         os.chown(self.public/"lease.json",0,packet["gid"])
 
@@ -324,25 +366,25 @@ class Host:
         fixed_setpriv="/usr/bin/setpriv"
         from pi_plain_drive_resources import sandbox_argv
         full=sandbox_argv(packet)
-        if item["uid"]!=0 or item["cgroup"]!="/system.slice/"+packet["unit"]:
+        if item.get("uids")!=[0]*4 or item["cgroup"]!="/system.slice/"+packet["unit"]:
             return False
         current=item
         for _ in range(4):
             if current["pid"]==child:
                 break
             current=identity(current["ppid"])
-            if current["uid"]!=0 or current["cgroup"]!=item["cgroup"]:
+            if current.get("uids")!=[0]*4 or current.get("gids")!=[0]*4 or current["cgroup"]!=item["cgroup"]:
                 return False
         else: return False
         if item["exe"]==str(Path(fixed_bwrap).resolve()):
             # bwrap's private PID init retains the original fixed command line.
-            return item["argv"]==full
+            return item.get("gids")==[0]*4 and item["argv"]==full
         if item["exe"]==str(Path(fixed_setpriv).resolve()):
             offset=full.index(fixed_setpriv)
-            return item["argv"]==full[offset:]
+            return item.get("gids") in ([0]*4,[packet["gid"]]*4) and item["argv"]==full[offset:]
         # The direct fork can be observed before its first exec. It must still
         # be our exact root broker image/argv; arbitrary root Python is rejected.
-        return (item["pid"]==child and item["exe"]==str(Path("/usr/bin/python3").resolve())
+        return (item.get("gids")==[0]*4 and item["pid"]==child and item["exe"]==str(Path("/usr/bin/python3").resolve())
             and item["argv"]==identity(os.getpid())["argv"])
 
     def run_worker(self,packet,expected):
@@ -360,6 +402,7 @@ class Host:
             "job_id":job["id"],"unit":job["unit"],"invocation":job["invocation_id"],"cgroup":job["cgroup"]}
 
     def prove_terminal(self, packet, expected, *, recovery):
+        self.stage="finish_terminal"
         info=self._show(packet["unit"]); members=self._members(expected["cgroup"])
         if info["LoadState"]!="not-found" and info["InvocationID"]!=expected["invocation"]:
             raise Blocked("unit reused; no cleanup authorized")
@@ -391,6 +434,7 @@ class Host:
                 raise Blocked("native lease changed during worker lifetime")
 
     def observe_terminal(self,packet,expected,stage):
+        self.stage="finish_resources"
         from pi_plain_drive_resources import sample_host,host_violation
         sample=sample_host(); baseline=expected.get("resource_baseline")
         reason=host_violation(sample,baseline,baseline) if baseline is not None else "no_owned_workload_baseline"
@@ -402,6 +446,7 @@ class Host:
         atomic(target,previous,replace=target.exists())
 
     def quarantine_credential(self, packet):
+        self.stage="credential_quarantine"
         source=self.public/"credentials-copy.conf"; target=self.private/"credentials-quarantine.conf"
         if not source.exists():
             if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()==packet["credential_sha256"]:
@@ -425,6 +470,7 @@ class Host:
             finally: os.close(descriptor)
 
     def complete(self, packet, expected, *, result, readback):
+        self.stage="finish_completion"
         if readback!=60 or self.value()!=60: raise Blocked("terminal60 readback missing")
         resources=root_json(self.private/"resources.json") if (self.private/"resources.json").exists() else {}
         terminal=root_json(self.private/"terminal-resources.json") if (self.private/"terminal-resources.json").exists() else {}

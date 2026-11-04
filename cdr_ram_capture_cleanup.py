@@ -184,6 +184,10 @@ def _layout(finalized, ram_root: Path, state_dir: Path, runs_root: Path, run_dat
     return root, day
 
 
+def seal_receipt_path(state_dir: Path, generation_id: str) -> Path:
+    return _seal_path(state_dir, generation_id)
+
+
 def _seal_path(state_dir: Path, generation: str) -> Path:
     parent = _absolute(state_dir) / "ram-capture-cleanup"
     if parent.exists() or parent.is_symlink():

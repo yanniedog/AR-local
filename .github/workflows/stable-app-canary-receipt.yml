@@ -1,0 +1,149 @@
+name: stable-app canary receipt
+
+# Fail-closed: emits a stable_app_compatibility *source* receipt artifact only when
+# AR-app mobile `npm run ci` exits 0 with positive Jest suite/test counts.
+# Does not fabricate PASS, does not bind canary gates, does not activate Pi.
+#
+# AR-local candidate trees have no mobile/ (removed in #483). CI runs against
+# yanniedog/AR-app; the receipt's target_commit is the AR-local freeze SHA.
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: "AR-local canary freeze SHA (40 lowercase hex)"
+        required: true
+        type: string
+      ar_app_ref:
+        description: "AR-app git ref to test (sha / branch / tag)"
+        required: true
+        default: "main"
+        type: string
+      candidate_generation:
+        description: "Canary candidate_generation for canonicalize→bind"
+        required: true
+        type: string
+      preservation_snapshot_sha256:
+        description: "preservation_snapshot_sha256 (64 lowercase hex)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-app-canary-receipt-${{ github.event.inputs.target_commit }}
+  cancel-in-progress: false
+
+jobs:
+  mobile-ci-receipt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Validate bind inputs
+        shell: bash
+        env:
+          TARGET_COMMIT: ${{ github.event.inputs.target_commit }}
+          CANDIDATE_GENERATION: ${{ github.event.inputs.candidate_generation }}
+          PRESERVATION_SNAPSHOT_SHA256: ${{ github.event.inputs.preservation_snapshot_sha256 }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "target_commit must be 40 lowercase hex, got: $TARGET_COMMIT" >&2
+            exit 2
+          fi
+          if [[ ! "$CANDIDATE_GENERATION" =~ ^[A-Za-z0-9._:-]{1,128}$ ]]; then
+            echo "candidate_generation charset/length invalid: $CANDIDATE_GENERATION" >&2
+            exit 2
+          fi
+          if [[ ! "$PRESERVATION_SNAPSHOT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "preservation_snapshot_sha256 must be 64 lowercase hex" >&2
+            exit 2
+          fi
+
+      - name: Checkout AR-local (emit script)
+        uses: actions/checkout@v4
+        with:
+          path: ar-local
+          persist-credentials: false
+
+      - name: Checkout AR-app
+        uses: actions/checkout@v4
+        with:
+          repository: yanniedog/AR-app
+          ref: ${{ github.event.inputs.ar_app_ref }}
+          path: ar-app
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+
+      - name: Record AR-app HEAD
+        id: app
+        shell: bash
+        working-directory: ar-app
+        run: |
+          set -euo pipefail
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "AR-app HEAD=$(git rev-parse HEAD)"
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ar-app/mobile/package-lock.json
+
+      - name: npm ci
+        working-directory: ar-app/mobile
+        run: npm ci
+
+      - name: npm run ci (capture log)
+        id: ci
+        working-directory: ar-app/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/receipt-out"
+          set +e
+          npm run ci 2>&1 | tee "$GITHUB_WORKSPACE/receipt-out/mobile-npm-run-ci.log"
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Emit source receipt
+        if: always() && steps.ci.outputs.exit_code != ''
+        shell: bash
+        env:
+          TARGET_COMMIT: ${{ github.event.inputs.target_commit }}
+          AR_APP_HEAD: ${{ steps.app.outputs.head }}
+          CI_EXIT_CODE: ${{ steps.ci.outputs.exit_code }}
+          CANDIDATE_GENERATION: ${{ github.event.inputs.candidate_generation }}
+          PRESERVATION_SNAPSHOT_SHA256: ${{ github.event.inputs.preservation_snapshot_sha256 }}
+        run: |
+          set -euo pipefail
+          python3 ar-local/scripts/emit_stable_app_ci_receipt.py \
+            --target-commit "$TARGET_COMMIT" \
+            --ar-app-head "$AR_APP_HEAD" \
+            --ci-log "$GITHUB_WORKSPACE/receipt-out/mobile-npm-run-ci.log" \
+            --ci-exit-code "$CI_EXIT_CODE" \
+            --candidate-generation "$CANDIDATE_GENERATION" \
+            --preservation-snapshot-sha256 "$PRESERVATION_SNAPSHOT_SHA256" \
+            --output "$GITHUB_WORKSPACE/receipt-out/stable_app-live-receipt.json" \
+            --worktree "ar-app/mobile@$AR_APP_HEAD"
+          # Fail-closed: emitter non-zero fails this step. Artifact upload uses always().
+
+      - name: Upload receipt artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-app-receipt-${{ github.event.inputs.target_commit }}
+          path: |
+            receipt-out/stable_app-live-receipt.json
+            receipt-out/mobile-npm-run-ci.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail job if mobile CI non-zero
+        if: steps.ci.outputs.exit_code != '0'
+        run: |
+          echo "mobile npm run ci exited ${{ steps.ci.outputs.exit_code }}" >&2
+          exit 1

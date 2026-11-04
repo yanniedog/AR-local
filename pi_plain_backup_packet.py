@@ -43,11 +43,27 @@ def protected(path,maximum=64*1024**2):
     finally:os.close(fd)
 
 
+def validate_directory_stat(info,mode,gid):
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_gid!=gid
+            or stat.S_IMODE(info.st_mode)!=mode):
+        raise RuntimeError('root packet directory custody differs')
+
+
 def directory(path,mode,gid=0):
-    if not path.exists():path.mkdir(mode=mode);os.chown(path,0,gid)
-    info=path.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or path.resolve()!=path:
-        raise RuntimeError('root packet directory differs')
+    created=False
+    try:path.mkdir(mode=mode);created=True
+    except FileExistsError:pass
+    fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        if created:
+            # mkdir is filtered by the service's required0077 umask. Set only
+            # the newly created inode, never relax an incumbent directory.
+            os.fchown(fd,0,gid);os.fchmod(fd,mode);os.fsync(fd)
+        info=os.fstat(fd);validate_directory_stat(info,mode,gid)
+        actual=path.lstat()
+        if path.resolve()!=path or (info.st_dev,info.st_ino)!=(actual.st_dev,actual.st_ino):
+            raise RuntimeError('root packet directory changed')
+    finally:os.close(fd)
 
 
 def publish(path,raw,mode=0o600,gid=0):
@@ -71,26 +87,62 @@ def validate_credential_stat(info,uid,gid):
         raise RuntimeError('canonical original credential leaf differs')
 
 
+def validate_credential_directory(info,path,uid,gid):
+    # These two pre-existing Pi-owned0700 directories are the only exceptions
+    # to root custody. Pin the exact legacy layout without changing it.
+    pi_owned={CONFIG.parent,CONFIG.parent.parent.parent}
+    if not stat.S_ISDIR(info.st_mode):
+        raise RuntimeError('credential parent is not a directory')
+    if path in pi_owned:
+        valid=(info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))==(uid,gid,0o700)
+    elif path==CONFIG.parent.parent:
+        valid=(info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))==(0,0,0o700)
+    else:
+        valid=info.st_uid==0 and not info.st_mode&0o022
+    if not valid:raise RuntimeError('credential parent custody differs')
+
+
+def _directory_identity(info):
+    return info.st_dev,info.st_ino,info.st_uid,info.st_gid,info.st_mode
+
+
+def _credential_identity(info):
+    return (info.st_dev,info.st_ino,info.st_uid,info.st_gid,info.st_mode,
+            info.st_nlink,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+
+
 def credential_original(uid,gid):
-    # The existing canonical leaf is Pi-owned0600 below root-owned0700 custody.
-    # Only the operation COPY is root-owned0440; never chmod/chown the original.
-    if CONFIG.resolve(strict=True)!=CONFIG:raise RuntimeError('credential source is not canonical')
-    for parent in CONFIG.parents:
-        info=parent.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:
-            raise RuntimeError('credential parent custody differs')
-    if stat.S_IMODE(CONFIG.parent.lstat().st_mode)!=0o700:
-        raise RuntimeError("canonical credential custody parent must stay root0700")
-    fd=os.open(CONFIG,os.O_RDONLY|os.O_NOFOLLOW)
+    # Fixed-path, descriptor-relative read: Pi-owned parents may be renamed, so
+    # never reopen the leaf or follow a pathname after checking another inode.
+    # No config parsing/import/execution and no chmod/chown of the original.
+    flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
+    descriptors=[];opened=[];leaf_fd=None
     try:
-        before=os.fstat(fd);validate_credential_stat(before,uid,gid)
-        raw=os.read(fd,65537);after=os.fstat(fd);leaf=CONFIG.lstat()
-        stable=lambda item:(item.st_dev,item.st_ino,item.st_size,item.st_mtime_ns,item.st_ctime_ns)
-        if len(raw)!=before.st_size or stable(before)!=stable(after) or stable(after)!=stable(leaf):
+        path=Path(CONFIG.anchor);fd=os.open(path,flags);opened.append(fd)
+        info=os.fstat(fd);descriptors.append((fd,path,None,None,info))
+        validate_credential_directory(info,path,uid,gid)
+        for part in CONFIG.parts[1:-1]:
+            parent=fd;path=path/part;fd=os.open(part,flags,dir_fd=parent);opened.append(fd)
+            info=os.fstat(fd);descriptors.append((fd,path,parent,part,info))
+            validate_credential_directory(info,path,uid,gid)
+        leaf_fd=os.open(CONFIG.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_NOATIME,dir_fd=fd)
+        before=os.fstat(leaf_fd);validate_credential_stat(before,uid,gid)
+        raw=os.read(leaf_fd,65537);after=os.fstat(leaf_fd)
+        leaf=os.stat(CONFIG.name,dir_fd=fd,follow_symlinks=False)
+        if (len(raw)!=before.st_size or _credential_identity(before)!=_credential_identity(after)
+                or _credential_identity(after)!=_credential_identity(leaf)):
             raise RuntimeError('credential source changed during private read')
         validate_credential_stat(after,uid,gid)
+        for held,path,parent,part,before in descriptors:
+            after=os.fstat(held)
+            entry=os.stat(part,dir_fd=parent,follow_symlinks=False) if parent is not None else path.lstat()
+            validate_credential_directory(after,path,uid,gid)
+            if _directory_identity(before)!=_directory_identity(after) or _directory_identity(after)!=_directory_identity(entry):
+                raise RuntimeError('credential directory changed during private read')
         return raw
-    finally:os.close(fd)
+    finally:
+        if leaf_fd is not None:os.close(leaf_fd)
+        for fd in reversed(opened):os.close(fd)
 
 
 def normalized_kernel(evidence,boot,bwrap,setpriv):
