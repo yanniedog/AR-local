@@ -37179,3 +37179,41 @@ Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest 
   quiescence requirement, while retaining reset, allocation, minimum-headroom,
   low/refault, service and resource gates. It requires independent review,
   exact-head CI and a fresh full guarded canary; preparation is not deployment.
+
+## 2026-11-05 - Hosted guarded canaries fail resource gates (OPS-20261105-HC-01)
+
+Operator authorized running the guarded canary on current main, then deploy and
+payload republication if it passed. Neither canary passed; nothing was sealed,
+activated, deployed or published. Production remains
+`8590e238d00f093e7f6d20fccfc2377c7abf1aec`, clean.
+
+Route: new manual `pi-quality-canary` workflow (#1074, #1078-#1081) over the
+hosted Tailscale/SSH route, per-commit candidate
+`/srv/ar-local/quality-candidate-<sha12>`, committed reviewed dispositions
+`docs/evidence/cdr-quality-20260912/historical-dispositions.json`
+(SHA-256 `2992159f9e656a37a05c40c14a52a8e9b745c9f9841ccf289ef4a1c7986d46e9`),
+Python `/srv/ar-local/quality-python-aca980106-20260917/bin/python3`, admitted
+through `pi-shared-task`. Preflight: natural ingest 2026-11-05 Result=success at
+01:17 AEDT; sudo, disk 41%, MemAvailable about 7.4 GB.
+
+- Run 41920760761, `94fd62eedc388bd8643233cdbb717b97fc463914`, legacy profile
+  (resources v2): FAIL after 1.4 s, `host_swap_out_activity` (host swap-out
+  114858 to 114860 pages; workload RSS 71 MB; available 7.50 GB). Expected under
+  the legacy zero-host-swap rule.
+- Run 41921753319, `1f383a50e9d8d33edb3a3cee78ddde0f58d8e7c6`, `allocation-v1`
+  (resources v6, host pressure v5): FAIL after 16.4 s (sample 152),
+  `host_zone_low_with_refault`; low-with-activity samples 54, low-with-refault 1,
+  refault evidence 470701 bytes (`mglru_same_node`); PSI unavailable; available
+  7.62 GB. Same failure family as R15.
+
+Both workloads were terminated with clean cgroups; canary units verified
+inactive. Operation evidence remains under
+`/srv/ar-local/quality-operation-gh-41920760761-1` and
+`/srv/ar-local/quality-operation-gh-41921753319-1` (inspect mode prints them).
+
+Next: identify which zone is persistently below its low watermark (admission and
+post-cleanup zone snapshots) before proposing any change to the reviewed
+allocation-v1 low/refault rule. Relaxing that rule is an operator policy
+decision; do not rerun with a weaker profile to obtain a PASS. Deployment also
+still requires the eight `CANARY_GATE_EVIDENCE.md` gates, including Android
+emulator/device matrices.
