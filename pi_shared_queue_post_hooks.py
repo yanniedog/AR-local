@@ -265,12 +265,23 @@ def _commands(unit, value, expected, run, *, expected_start=None):
             raise ValueError("unexpected maintenance service hook")
 
 
-def _typed_property(unit, name, kind, expected, run):
+def _native_property(unit, name, run):
     encoded = ''.join(char if char.isalnum() else f'_{ord(char):02x}' for char in unit)
     response = run(['/usr/bin/busctl', '--system', '--json=short', '--timeout=10', 'get-property',
         'org.freedesktop.systemd1', '/org/freedesktop/systemd1/unit/' + encoded,
         'org.freedesktop.systemd1.Service', name], text=True, capture_output=True, timeout=10, check=True)
-    value = json.loads(response.stdout, object_pairs_hook=pairs)
+    return json.loads(response.stdout, object_pairs_hook=pairs)
+
+
+def _native_value(unit, name, kind, run):
+    value = _native_property(unit, name, run)
+    if value.get('type') != kind:
+        raise ValueError('fixed CI service profile differs: ' + name)
+    return value.get('data')
+
+
+def _typed_property(unit, name, kind, expected, run):
+    value = _native_property(unit, name, run)
     actual=value.get('data')
     if kind=='as' and isinstance(actual,list) and all(isinstance(item,str) for item in actual):
         matches=len(actual)==len(expected) and set(actual)==set(expected)
@@ -302,11 +313,28 @@ def _ci_service(unit, value, run):
     _typed_property(unit, 'Environment', 'as',
         ['HOME=/nonexistent', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin'], run)
     _typed_property(unit, 'EnvironmentFiles', 'a(sb)', [], run)
-    # systemd exposes these as uint64 masks (D-Bus 't'): RestrictNamespaces=yes
-    # permits no namespace types (0), and empty capability sets are 0.
-    _typed_property(unit, 'RestrictNamespaces', 't', 0, run)
-    _typed_property(unit, 'CapabilityBoundingSet', 't', 0, run)
+    # The unit launches its root worker through sudo, which then runs the
+    # candidate verifier in bwrap. An empty bounding set makes sudo fail
+    # ("unable to change to root gid") and RestrictNamespaces=yes blocks bwrap,
+    # so require that the mechanisms the reviewed launch needs stay available,
+    # while no ambient capability is granted to the unprivileged service user.
+    _required_bits(unit, 'RestrictNamespaces', CI_NAMESPACES, run)
+    _required_bits(unit, 'CapabilityBoundingSet', CI_CAPABILITIES, run)
     _typed_property(unit, 'AmbientCapabilities', 't', 0, run)
+
+
+# CLONE_NEWNS|NEWCGROUP|NEWUTS|NEWIPC|NEWUSER|NEWPID|NEWNET: bwrap --unshare-*
+# plus --disable-userns.
+CI_NAMESPACES = 0x00020000 | 0x02000000 | 0x04000000 | 0x08000000 | 0x10000000 | 0x20000000 | 0x40000000
+# CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETGID, SETUID, SETPCAP, SYS_ADMIN: sudo's
+# identity switch, the root worker's file custody and setpriv/bwrap.
+CI_CAPABILITIES = sum(1 << bit for bit in (0, 1, 3, 5, 6, 7, 8, 21))
+
+
+def _required_bits(unit, name, required, run):
+    value = _native_value(unit, name, 't', run)
+    if type(value) is not int or value & required != required:
+        raise ValueError("CI service " + name + " removes a capability the reviewed launch requires")
 
 
 def verify_plain_service(unit, run=subprocess.run):

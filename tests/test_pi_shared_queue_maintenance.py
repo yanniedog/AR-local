@@ -99,8 +99,10 @@ def service_fixture():
     values['Environment']=('as',['HOME=/nonexistent','PATH=/usr/sbin:/usr/bin:/sbin:/bin'])
     values['EnvironmentFiles']=('a(sb)',[])
     # Actual systemd D-Bus types: uint64 masks.
-    values['RestrictNamespaces']=('t',0)
-    values['CapabilityBoundingSet']=('t',0)
+    # systemd's readback for RestrictNamespaces=no (all types, incl. NEWTIME) and
+    # the default bounding set less CAP_MKNOD/CAP_SYS_RAWIO from PrivateDevices.
+    values['RestrictNamespaces']=('t',hooks.CI_NAMESPACES|0x80)
+    values['CapabilityBoundingSet']=('t',((1<<41)-1)&~((1<<27)|(1<<17)))
     values['AmbientCapabilities']=('t',0)
     return values
 
@@ -155,8 +157,8 @@ def test_ci_native_fixed_execution_hooks_and_loaded_profile_are_qualified(monkey
     ('RuntimeMaxUSec',('t',2700000000)),('TimeoutStopUSec',('t',901000000)),
     ('MemorySwapMax',('t',1)),('PrivateTmp',('s','yes')),('PrivateDevices',('b',False)),
     ('ProtectKernelTunables',('b',False)),('ProtectKernelModules',('b',False)),
-    ('RestrictNamespaces',('t',1<<17)),('RestrictNamespaces',('b',True)),
-    ('CapabilityBoundingSet',('t',1<<21)),('CapabilityBoundingSet',('as',[])),
+    ('RestrictNamespaces',('t',1<<17)),('RestrictNamespaces',('b',True)),('RestrictNamespaces',('t',0)),
+    ('CapabilityBoundingSet',('t',1<<21)),('CapabilityBoundingSet',('as',[])),('CapabilityBoundingSet',('t',0)),
     ('AmbientCapabilities',('t',1<<21)),('AmbientCapabilities',('as',[])),
     ('EnvironmentFiles',('a(sb)',[['/tmp/foreign',False]])),
     ('ReadWritePaths',('as',['/srv/ar-local','/var/lib/ar-local-ci','/var/lib/shared-pi-queue','/etc']))])
