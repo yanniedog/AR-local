@@ -222,10 +222,11 @@ def build(mode,nonce,coupled_nonce=None):
         'setpriv_sha256':plan['setpriv_sha256'],'reconcile_wrapper_sha256':plan['wrapper_sha256'],
         'reconcile_original_sha256':plan['expected_reclaim_sha256'],'reconcile_callback_sha256':plan['control']['reconcile.py'],
         'root_control_manifest_sha256':receipt['root_control_manifest_sha256']}
-    packet['runtime_seconds']=int((expires-now).total_seconds())
     # These imported controls were hash-verified by bootstrap before this point.
     sys.path.insert(0,str(ROOT))
-    from pi_plain_backup_core import validate_packet, validate_commissioning_packet
+    from pi_plain_backup_core import validate_packet, validate_commissioning_packet, chosen_runtime
+    # Chosen runtime reserves admission slack so the run ends by expires_at.
+    packet['runtime_seconds']=chosen_runtime(int((expires-now).total_seconds()))
     from plan import service_plan
     if mode=='RUN_ARCHIVE':
         if not coupled_nonce or not re.fullmatch('[a-f0-9]{32}',coupled_nonce) or coupled_nonce==nonce:

@@ -35,9 +35,20 @@ def packet_runtime_seconds(packet, *, allow_legacy=False):
             return cap
         raise Blocked("new acquisition requires explicit packet runtime")
     value = packet["runtime_seconds"]
-    if type(value) is not int or not 15 <= value <= cap or value != int((expiry-created).total_seconds()):
+    if type(value) is not int or not 1 <= value <= cap or value != chosen_runtime(int((expiry-created).total_seconds())):
         raise Blocked("chosen runtime differs from the immutable packet validity window")
     return value
+
+
+def admission_slack(window):
+    """Reserved admission latency: the run (from service start) must end by expiry."""
+    return min(60, window // 4)
+
+
+def chosen_runtime(window):
+    """RuntimeMaxSec and the queue lease are measured from admission, not creation,
+    so the chosen runtime leaves explicit slack inside the packet window."""
+    return window - admission_slack(window)
 
 
 def parse_runtime_microseconds(value):
@@ -84,8 +95,11 @@ def validate_packet(packet, nonce, now):
     if (expiry.utcoffset() != timezone.utc.utcoffset(expiry) or created.utcoffset() != timezone.utc.utcoffset(created)
             or not 0 < (expiry-created).total_seconds() <= 21600 or not created <= now < expiry):
         raise Blocked("backup authority expired, not yet active, or exceeds six hours")
-    packet_runtime_seconds(packet)
-    if (expiry-now).total_seconds() < 15:
+    runtime = packet_runtime_seconds(packet)
+    # Service start and queue admission both precede this check, so requiring the
+    # remaining window to cover the full runtime bounds RuntimeMaxSec and the lease
+    # by expires_at. Admission later than the reserved slack closes the nonce.
+    if (expiry-now).total_seconds() < runtime:
         raise Blocked("insufficient remaining packet window for immediate acquisition")
     for key in ("queue_closure_sha256", "source_closure_sha256", "parent_sha256", "resources_sha256", "bwrap_sha256",
                 "credential_sha256", "global_hold_sha256", "broker_sha256", "setpriv_sha256", "reconcile_wrapper_sha256", "reconcile_original_sha256", "reconcile_callback_sha256", "root_control_manifest_sha256"):

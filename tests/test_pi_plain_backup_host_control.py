@@ -26,7 +26,7 @@ def packet():
         'data_root':'/srv/ar-local/data',
         'credential_source':'/var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf',
         'created_at':NOW.isoformat(),'expires_at':(NOW+timedelta(hours=2)).isoformat(),
-        'runtime_seconds':7200,
+        'runtime_seconds':7200-60,
         'mode':'RUN_ARCHIVE','uid':1000,'gid':1000,'remote':'approved:plaintext-recovery','drive_root_folder_id':'approved-folder-012345'}
     for key in ('queue_closure_sha256','source_closure_sha256','parent_sha256','resources_sha256','bwrap_sha256',
         'credential_sha256','global_hold_sha256','broker_sha256','setpriv_sha256','reconcile_wrapper_sha256','reconcile_original_sha256','reconcile_callback_sha256','root_control_manifest_sha256'):

@@ -1,0 +1,23 @@
+{
+  "scope": "Retained public responses at separate times; no causal, detail, publication or runtime acceptance claim.",
+  "files": {
+    "bom": {
+      "body_sha256": "2cca240426942e43c72cff50053692089f04c597feecf21f7302fc533ff525d7",
+      "event_sha256": "76c5a5c26d1ce6f41ee92a280091269ded3d73d35b5ea65afd0f3037a861a0a5",
+      "source": "nov4-tick09-retained-public-raw/raw-public-requests",
+      "source_event": "00000002-2e57ee83275d986e.json"
+    },
+    "bom-1000-v5-error": {
+      "body_sha256": "8b285ef354d75a58ca06908774850daf21c9bc3e5b1d038e047f72cbc8ec4a5e",
+      "event_sha256": "b3874a24f6cf5045526ac9f0605ac4a9829be800d2c86bce03bcf9032ecf8969",
+      "source": "nov4-r3-retained-public-raw/raw-full-provider-requests",
+      "source_event": "00000001-f1224da982e0d5f2.json"
+    },
+    "bom-1000-v4-error": {
+      "body_sha256": "025e0a9863f0170c6279c5706f88ff2c975640a659ee4c904cafd2fdb278af62",
+      "event_sha256": "748bc2acda2be822aa1e57f644786179954eb12268bd928a97631b6c23c07394",
+      "source": "nov4-r3-retained-public-raw/raw-full-provider-requests",
+      "source_event": "00000002-8dcb6cbc43eeefaf.json"
+    }
+  }
+}
