@@ -16,7 +16,6 @@ import subprocess
 PLAIN = re.compile(r"ar-local-plain-backup-([0-9a-f]{32})\.service\Z")
 ROOT = Path("/usr/local/lib/ar-local-plain-backup")
 HANDOFF = Path("/var/lib/ar-local-plain-backup-handoff")
-PLAIN_STATE = Path("/var/lib/ar-local-plain-backup-control")
 BROKER = str(ROOT / "broker.py")
 IMAGE_ROOT = Path("/usr/local/lib/ar-local-system-recovery")
 IMAGE_HANDOFF = Path("/var/lib/ar-local-system-recovery-handoff")
@@ -84,7 +83,7 @@ def _plain_approval(unit, *, current=False, now=None):
             or any(not re.fullmatch("[0-9a-f]{64}", str(value.get(key, ""))) for key in
                    ("source_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256", "queue_argv_sha256"))):
         raise ValueError("plaintext backup approval differs")
-    if value["queue_argv_sha256"] not in {_argv_sha(start) for start in _plain_starts(match[1])}:
+    if value["queue_argv_sha256"] not in {_argv_sha(start) for start in _plain_starts(match[1], value)}:
         raise ValueError("plaintext queue command differs")
     if current and expiry <= (now or datetime.now(timezone.utc)):
         raise ValueError("plaintext backup authority expired")
@@ -160,34 +159,28 @@ def _queue_start(parent, nonce, mode, *, isolated=False, runtime=None, wait=None
         "/usr/bin/python3", *python_flags, parent, nonce]
 
 
-def _plain_starts(nonce):
+def _plain_starts(nonce, value=None):
     parent = str(ROOT / "parent.py")
     starts = [_queue_start(parent, nonce, mode) for mode in ("PROBE", "RUN_ARCHIVE")]
-    bound = _plain_packet_start(nonce, parent)
+    bound = _plain_packet_start(nonce, parent, value) if value is not None else None
     return starts + ([bound] if bound else [])
 
 
-def _plain_packet_start(nonce, parent):
+def _plain_packet_start(nonce, parent, value):
     """The packet-bound command pi_plain_backup_plan.service_plan() generates.
 
-    Its runtime is the packet's chosen runtime and its wait is 0, so neither is a
-    fixed pair. Both are read from the root-private frozen packet, never from the
-    unit, and the reconstructed argv must equal the root-written plan exactly.
+    Its runtime is the packet's chosen runtime and its wait is 0. The queue
+    runs as the unprivileged service user, so the binding comes from the
+    root-published, Pi-readable approval (mode + runtime_seconds), never from
+    the root-private packet directory.
     """
-    private = PLAIN_STATE / nonce
-    if not (_present(private / "packet.json") and _present(private / "service-plan.json")):
+    if "runtime_seconds" not in value and "mode" not in value:
         return None
-    packet = root_json(private / "packet.json")
-    plan = root_json(private / "service-plan.json")
-    mode, runtime = packet.get("mode"), packet.get("runtime_seconds")
+    mode, runtime = value.get("mode"), value.get("runtime_seconds")
     cap = {"PROBE": 120, "RUN_ARCHIVE": 21600}.get(mode)
-    if (cap is None or packet.get("nonce") != nonce or type(runtime) is not int
-            or not 1 <= runtime <= cap):
-        raise ValueError("plaintext packet runtime binding differs")
-    start = _queue_start(parent, nonce, mode, runtime=runtime, wait=0)
-    if plan.get("argv") != start or plan.get("queue_argv_sha256") != _argv_sha(start):
-        raise ValueError("plaintext service plan differs from its packet")
-    return start
+    if cap is None or type(runtime) is not int or not 1 <= runtime <= cap:
+        raise ValueError("plaintext approval runtime binding differs")
+    return _queue_start(parent, nonce, mode, runtime=runtime, wait=0)
 
 
 def image_start(nonce, mode):
@@ -327,7 +320,7 @@ def verify_plain_service(unit, run=subprocess.run):
             expected_start=image_start(value['nonce'], value['mode']))
     else:
         _commands(unit, value, ['/usr/bin/python3', '-I', '-B', BROKER, 'recover', value['nonce']], run,
-            expected_start=_plain_starts(value['nonce']))
+            expected_start=_plain_starts(value['nonce'], value))
     return value
 
 

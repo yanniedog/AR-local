@@ -210,7 +210,7 @@ def test_plain_authority_accepts_only_fixed_queue_command_profiles(monkeypatch):
     with pytest.raises(ValueError):hooks.approval(unit)
 
 
-@pytest.mark.parametrize('mutation', [None, 'runtime', 'plan', 'nonce'])
+@pytest.mark.parametrize('mutation', [None, 'runtime', 'mode', 'missing-runtime', 'over-cap'])
 def test_plain_authority_accepts_packet_bound_planner_command(monkeypatch, mutation):
     import pi_plain_backup_plan as plan
     plain_unit='ar-local-plain-backup-'+NONCE+'.service'
@@ -219,17 +219,18 @@ def test_plain_authority_accepts_packet_bound_planner_command(monkeypatch, mutat
     monkeypatch.setattr(plan,'packet_runtime_seconds',lambda value:value['runtime_seconds'])
     service=plan.service_plan(NONCE,packet=packet)
     assert service['argv'][service['argv'].index('--wait-timeout')+1]=='0'
+    # Exactly the Pi-readable authority pi_plain_backup_packet publishes.
     authority={'schema':'ar-local-plain-backup-authority-v1','nonce':NONCE,'unit':plain_unit,
         'manual_plaintext_drive_write':True,'data_root':'/srv/ar-local/data',
         'expires_at':'2099-01-01T00:00:00+00:00','source_closure_sha256':'d'*64,
         'parent_sha256':'e'*64,'resources_sha256':'f'*64,'broker_sha256':'a'*64,
-        'queue_argv_sha256':service['queue_argv_sha256']}
-    if mutation=='runtime': packet['runtime_seconds']=21600
-    if mutation=='plan': service['argv']=service['argv'][:-1]+['f'*32]
-    if mutation=='nonce': packet['nonce']='f'*32
-    private=hooks.PLAIN_STATE/NONCE
-    rows={hooks.HANDOFF/NONCE/'approval.json':canonical(authority),private/'packet.json':canonical(packet),
-          private/'service-plan.json':canonical(service)}
+        'queue_argv_sha256':service['queue_argv_sha256'],'mode':'RUN_ARCHIVE','runtime_seconds':21540}
+    if mutation=='runtime': authority['runtime_seconds']=21600
+    if mutation=='mode': authority['mode']='PROBE'
+    if mutation=='missing-runtime': del authority['runtime_seconds']
+    if mutation=='over-cap': authority['runtime_seconds']=21601
+    rows={hooks.HANDOFF/NONCE/'approval.json':canonical(authority)}
+    # Only the handoff approval is readable; the private packet is never consulted.
     monkeypatch.setattr(hooks,'_present',lambda path:Path(path) in rows)
     monkeypatch.setattr(hooks,'root_bytes',lambda path,maximum=1048576:rows[Path(path)])
     if mutation is None:
