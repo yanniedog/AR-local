@@ -7,6 +7,7 @@ import stat
 import time
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
@@ -157,8 +158,41 @@ def _open_after_network_recovery(path: Path, role: str) -> int:
             time.sleep(0.25)
 
 
+@dataclass(frozen=True)
+class OwnedProductionLock:
+    """Evidence usable only while the acquiring context retains its descriptor."""
+
+    path: Path
+    descriptor: int
+    role: str
+    acquisition_id: str
+    identity: tuple[int, int]
+    pid: int
+    boot_id: str
+    _active: bool = True
+
+    def _revoke(self) -> None:
+        object.__setattr__(self, "_active", False)
+
+    def verified_record(self) -> dict[str, str]:
+        if not self._active or os.getpid() != self.pid:
+            raise RuntimeError("production lock acquisition is no longer active")
+        owned = os.fstat(self.descriptor)
+        current = self.path.lstat()
+        expected = {"pid": str(self.pid), "role": self.role, "boot_id": self.boot_id}
+        if (not _canonical_boot_id(expected["boot_id"])
+                or _current_boot_id() != self.boot_id
+                or not stat.S_ISREG(current.st_mode)
+                or owned.st_nlink != 1 or current.st_nlink != 1
+                or (owned.st_dev, owned.st_ino) != self.identity
+                or (current.st_dev, current.st_ino) != self.identity
+                or _lock_values(self.path) != expected):
+            raise RuntimeError("production lock ownership changed")
+        return expected
+
+
 @contextmanager
-def production_lock(lock_path: Path, role: str) -> Iterator[None]:
+def production_lock(lock_path: Path, role: str) -> Iterator[OwnedProductionLock]:
     """Hold an O_EXCL lock and recover only a provably stale predecessor."""
 
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,9 +213,15 @@ def production_lock(lock_path: Path, role: str) -> Iterator[None]:
                 descriptor = _open_exclusive(lock_path, role)
             except FileExistsError as retry_exc:
                 raise RuntimeError(f"production lock was acquired concurrently: {lock_path}") from retry_exc
+    ownership = None
     try:
-        yield
+        acquired = os.fstat(descriptor)
+        ownership = OwnedProductionLock(lock_path, descriptor, role, uuid.uuid4().hex,
+                                       (acquired.st_dev, acquired.st_ino), os.getpid(), _current_boot_id())
+        yield ownership
     finally:
+        if ownership is not None:
+            ownership._revoke()
         owned_path = False
         try:
             owned = os.fstat(descriptor)
