@@ -21,7 +21,7 @@ def timed_packet(start, mode='RUN_ARCHIVE'):
     value=packet()
     end=builder.expiry_for(mode,start)
     value.update(mode=mode,created_at=start.isoformat(),expires_at=end.isoformat(),
-        runtime_seconds=int((end-start).total_seconds()))
+        runtime_seconds=core.chosen_runtime(int((end-start).total_seconds())))
     return value
 
 
@@ -30,7 +30,7 @@ def test_actual_queue_admits_1845_clipped_packet_and_rejects_six_hour_reservatio
     value=timed_packet(start)
     result=plan.service_plan(NONCE,packet=value)
     runtime=core.packet_runtime_seconds(value)
-    assert runtime==20399
+    assert runtime==20399-60  # 60 s admission slack inside the 20,399 s window
     assert result['argv'][result['argv'].index('--max-runtime')+1]==str(runtime)
     assert result['properties']['RuntimeMaxSec']==str(runtime)
     assert result['argv'][result['argv'].index('--wait-timeout')+1]=='0'
@@ -42,8 +42,9 @@ def test_actual_queue_admits_1845_clipped_packet_and_rejects_six_hour_reservatio
     assert admission(old,[old],start)==(False,'would-cross-ingest-start')
     quiet=datetime(2026,10,25,0,30,tzinfo=ZoneInfo('Australia/Hobart')).astimezone(timezone.utc)
     assert start+timedelta(seconds=runtime+STOP_GRACE_SECONDS)<quiet
-    # A delayed dispatch never gains a window by shortening or bypassing admission.
-    assert admission(job,[job],start+timedelta(minutes=5))==(False,'would-cross-ingest-start')
+    # A delayed dispatch never gains a window by shortening or bypassing admission
+    # (and validate_packet closes any admission later than the reserved slack).
+    assert admission(job,[job],start+timedelta(minutes=7))==(False,'would-cross-ingest-start')
     assert plan.service_plan(NONCE,packet=result['runtime_inputs'])==result
 
 
@@ -56,7 +57,7 @@ def test_packet_window_is_derived_in_utc_across_hobart_dates_and_dst(date):
     local_end=end.astimezone(ZoneInfo('Australia/Hobart'))
     assert local_end.date()==(start.astimezone(local_end.tzinfo)+timedelta(days=1)).date()
     assert (local_end.hour,local_end.minute,local_end.second)==(0,24,59)
-    assert 15<=runtime<=21600 and runtime<=(end-start).total_seconds()<runtime+1
+    assert 1<=runtime<=21600 and runtime+core.admission_slack(int((end-start).total_seconds()))<=(end-start).total_seconds()<runtime+61
     core.validate_packet(value,NONCE,start)
 
 
@@ -64,10 +65,10 @@ def test_packet_window_is_derived_in_utc_across_hobart_dates_and_dst(date):
 def test_probe_runtime_is_unchanged_or_exactly_clipped(seconds):
     start=datetime(2026,10,24,7,tzinfo=timezone.utc)
     value=timed_packet(start,'PROBE')
-    value.update(expires_at=(start+timedelta(seconds=seconds)).isoformat(),runtime_seconds=seconds)
+    value.update(expires_at=(start+timedelta(seconds=seconds)).isoformat(),runtime_seconds=core.chosen_runtime(seconds))
     core.validate_packet(value,NONCE,start)
     result=plan.service_plan(NONCE,packet=value,mode='PROBE')
-    assert result['properties']['RuntimeMaxSec']==str(seconds)
+    assert result['properties']['RuntimeMaxSec']==str(seconds-min(60,seconds//4))
     assert result['argv'][result['argv'].index('--wait-timeout')+1]=='0'
 
 
@@ -123,10 +124,10 @@ def job_fixture(monkeypatch,value,runtime):
 def test_root_job_requires_the_same_canonical_runtime_and_only_recovers_legacy(monkeypatch):
     value=packet()
     with monkeypatch.context() as scoped:
-        host,job=job_fixture(scoped,value,7200)
+        host,job=job_fixture(scoped,value,7140)
         assert host._job(value)[0]==job
     with monkeypatch.context() as scoped:
-        host,_job=job_fixture(scoped,value,7199)
+        host,_job=job_fixture(scoped,value,7200)
         with pytest.raises(core.Blocked,match='invocation differs'):host._job(value)
     del value['runtime_seconds']
     with monkeypatch.context() as scoped:
@@ -135,11 +136,11 @@ def test_root_job_requires_the_same_canonical_runtime_and_only_recovers_legacy(m
         with pytest.raises(core.Blocked,match='explicit packet runtime'):host._job(value)
 
 
-@pytest.mark.parametrize('native,accepted',[('2h',True),('120min',True),('7200s',True),('6h',False),('2h1h',False)])
+@pytest.mark.parametrize('native,accepted',[('1h 59min',True),('119min',True),('7140s',True),('2h',False),('6h',False),('2h1h',False)])
 def test_root_actual_unit_admission_compares_native_runtime_to_chosen_packet(monkeypatch,native,accepted):
     value=packet();host=linux.Host(NONCE)
     group='/system.slice/'+value['unit']
-    job=record(unit=value['unit'],cgroup=group,resources=['ar-local','host'],state='running',max_duration_seconds=7200)
+    job=record(unit=value['unit'],cgroup=group,resources=['ar-local','host'],state='running',max_duration_seconds=7140)
     service={'User':'pi','NoNewPrivileges':'no','Type':'notify','KillMode':'control-group',
         'RuntimeMaxUSec':native,'CPUQuotaPerSecUSec':'1s','TasksMax':'64','IOWeight':'10'}
     parent={'pid':20,'ppid':job['pid'],'ticks':30,'cgroup':group}
@@ -162,7 +163,7 @@ def test_root_actual_unit_admission_compares_native_runtime_to_chosen_packet(mon
 
 @pytest.mark.parametrize('changed',['runtime_seconds','root_control_manifest_sha256','source_closure_sha256','nonce'])
 def test_old_or_different_commissioning_packet_never_qualifies_new_controls(changed):
-    current=packet();probe=dict(current,mode='PROBE',runtime_seconds=120,
+    current=packet();probe=dict(current,mode='PROBE',runtime_seconds=90,
         expires_at=(datetime.fromisoformat(current['created_at'])+timedelta(seconds=120)).isoformat())
     core.validate_commissioning_packet(probe,NONCE,current)
     if changed=='runtime_seconds':del probe[changed]
@@ -181,7 +182,7 @@ def test_new_acquisition_binds_the_actual_root_manifest_before_other_controls(mo
 
 @pytest.mark.parametrize('legacy',[True,False])
 def test_terminal_probe_recovery_preserves_legacy_proof_and_new_proof_binds_manifest(tmp_path,monkeypatch,legacy):
-    value=packet();value.update(mode='PROBE',runtime_seconds=120,
+    value=packet();value.update(mode='PROBE',runtime_seconds=90,
         expires_at=(datetime.fromisoformat(value['created_at'])+timedelta(seconds=120)).isoformat())
     if legacy:
         del value['runtime_seconds'];del value['root_control_manifest_sha256']
@@ -215,3 +216,23 @@ def test_terminal_probe_recovery_preserves_legacy_proof_and_new_proof_binds_mani
     else:
         assert len(writes)==1 and writes[0][0]==proof
         assert writes[0][1]['root_control_manifest_sha256']==value['root_control_manifest_sha256']
+
+
+def test_runtime_from_admission_cannot_outlive_packet_expiry():
+    """RuntimeMaxSec/queue lease count from admission; late admission closes the nonce."""
+    start=datetime(2026,10,24,18,45,tzinfo=ZoneInfo('Australia/Hobart')).astimezone(timezone.utc)
+    value=timed_packet(start)
+    runtime=core.packet_runtime_seconds(value)
+    expiry=datetime.fromisoformat(value['expires_at'])
+    slack=core.admission_slack(int((expiry-start).total_seconds()))
+    for delay in (0,1,slack):
+        admitted=start+timedelta(seconds=delay)
+        core.validate_packet(value,NONCE,admitted)
+        assert admitted+timedelta(seconds=runtime)<=expiry
+    with pytest.raises(core.Blocked,match='insufficient remaining'):
+        core.validate_packet(value,NONCE,start+timedelta(seconds=slack+1))
+    with pytest.raises(core.Blocked,match='insufficient remaining'):
+        core.validate_packet(value,NONCE,start+timedelta(minutes=5))
+    # A runtime equal to the whole window is no longer a valid packet.
+    with pytest.raises(core.Blocked,match='chosen runtime differs'):
+        core.packet_runtime_seconds(dict(value,runtime_seconds=int((expiry-start).total_seconds())))

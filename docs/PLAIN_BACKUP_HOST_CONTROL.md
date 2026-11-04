@@ -17,8 +17,11 @@ verbs. It never imports producer code while privilege gain remains possible.
 returns the exact service and sudo command plan, without executing it. Capture
 and hash-verify the core module before loading the pure plan locally. Both sides
 use the same frozen packet timestamps and `runtime_seconds`: the whole-second
-floor of expiry minus creation, capped at120s for PROBE or six hours for
-RUN_ARCHIVE. Packet expiry retains the stricter 00:25-03:30 Hobart cleanup margin.
+window (expiry minus creation, capped at120s for PROBE or six hours for
+RUN_ARCHIVE) minus a reserved admission slack of `min(60, window // 4)` seconds.
+`RuntimeMaxSec` and the queue lease count from admission, so acquisition
+requires the remaining window to cover the full runtime; admission later than
+the slack closes the nonce, and an admitted run always ends by `expires_at`. Packet expiry retains the stricter 00:25-03:30 Hobart cleanup margin.
 Native runtime and queue lease must match this chosen duration exactly.
 New manual operations use immediate admission (`--wait-timeout 0`): an occupied
 queue or a delayed dispatch that crosses the ingest boundary closes the nonce
