@@ -379,7 +379,7 @@ class Native:
             'cgroup': self.binding['cgroup']})
         os.chmod(namespace, 0o444)
         argv = ['/usr/bin/bwrap', '--die-with-parent', '--new-session', '--unshare-pid',
-                '--unshare-ipc', '--unshare-uts', '--disable-userns', '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev',
+                '--unshare-ipc', '--unshare-uts', '--unshare-net', '--disable-userns', '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev',
                 '--tmpfs', '/run', '--tmpfs', '/tmp', '--tmpfs', '/home', '--tmpfs', '/root',
                 '--ro-bind', str(self.context['stage']), '/candidate',
                 '--ro-bind', str(self.context['stage']), str(original_source),
@@ -433,6 +433,10 @@ def transaction(context, backend):
     restoration_safe = True
     try:
         backend.guard(); check_profile(context['profile'])
+        if backend.state('ar-local-daily.service') == 'failed':
+            # A failed natural ingest is not idle: deploying would replace the code
+            # before its production validation is proven or the failure triaged.
+            raise RuntimeError('latest natural ingest failed; deployment needs a successful run')
         release.protected(PRODUCTION.parent, directory=True)
         release.verify_tree(context['stage'], context['release'], backend.guard)
         for unit, state in timers.items():
@@ -444,7 +448,10 @@ def transaction(context, backend):
         backend.worker('pre')
         new = release.materialize(context['stage'], context['exchanged'], context['release'], backend.guard)
         release.write(work / 'exchange-intent.json', {'previous_identity': old, 'target_identity': new})
-        backend.action('stop', 'ar-local-dashboard.service'); dashboard_stopped = True
+        # Record intent first: if the stop succeeds but its trailing readback
+        # raises, restoration must still restart the dashboard.
+        dashboard_stopped = True
+        backend.action('stop', 'ar-local-dashboard.service')
         backend.guard()
         switch_intended = True
         restoration_safe = False

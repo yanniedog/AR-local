@@ -992,6 +992,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from pi_ci_client import execute
         try:
             expected = args.expected_commit or origin_main_sha_local()
+            if not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{40}', expected):
+                print('restricted CI verification: expected commit unavailable', file=sys.stderr)
+                return EXIT_VERIFY_FAIL
             result = execute(args, host=ssh_host(), expected_commit=expected,
                              canary_sha256=os.environ.get('AR_PI_CANARY_MANIFEST_SHA256', ''),
                              canary_tag=os.environ.get('AR_PI_CANARY_RELEASE_TAG', ''))

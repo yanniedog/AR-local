@@ -206,7 +206,7 @@ def test_snapshot_queries_real_native_definitions_and_no_missing_field_fallback(
         assert "/org/freedesktop/systemd1/unit/ar_2dlocal_2d" + encoded + "_2eservice" in script
         for field in ("EXEC_JSON", "STOP_POST_JSON", "USER_JSON", "TYPE", "RESTART", "SEND_SIGKILL", "STOP_TIMEOUT"):
             assert prefix + "_" + field in script
-    assert "ExecStopPostEx" in script and 'ThreadPoolExecutor(max_workers=4)' in script
+    assert "ExecStopPostEx" in script and 'ThreadPoolExecutor(max_workers=5)' in script
     actual = snapshot(queued=True)
     actual.pop("MANUAL_EXEC_JSON")
     actual.update(AR_HEAD="a", AR_ORIGIN="a", SITE_HEAD="b", SITE_ORIGIN="b", DASHBOARD="active")

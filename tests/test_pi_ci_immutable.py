@@ -94,6 +94,17 @@ def test_success_retains_whole_previous_tree_and_only_restores_original_timers(t
     assert all(action in ('stop', 'start') for action, unit in backend.actions)
 
 
+def test_failed_natural_ingest_refuses_before_any_action(transaction):
+    context, backend, old, ids = transaction
+    before = release.identity(old)
+    backend.states['ar-local-daily.service'] = 'failed'
+    result = activate.transaction(context, backend)
+    assert result['result'] == 'FAILED_BEFORE_SWITCH'
+    assert not any(action == 'stop' for action, unit in backend.actions)
+    assert backend.phases == []
+    assert release.identity(old) == before
+
+
 @pytest.mark.parametrize('phase,expected', [('pre', 'FAILED_BEFORE_SWITCH'), ('post', 'ROLLED_BACK')])
 def test_verifier_failure_restores_previous_identity_and_untracked_bytes(transaction, phase, expected):
     context, backend, old, ids = transaction; backend.fail = {phase}
@@ -306,7 +317,7 @@ def test_legacy_native_reads_are_parallel_bounded_and_keep_ex_flags(monkeypatch)
         return SimpleNamespace(returncode=0, stdout=json.dumps({'type': 'a(sasasttttuii)', 'data': [['flags-retained']]}))
     monkeypatch.setattr('subprocess.run', run)
     namespace = {}; exec(compile(code, 'actual-remote-native-read-program', 'exec'), namespace)
-    assert len(calls) == 12 and all(options['timeout'] == 4 and options['shell'] is False for _, options in calls)
+    assert len(calls) == 13 and all(options['timeout'] == 4 and options['shell'] is False for _, options in calls)
     native = [command for command, _ in calls if command[0] == 'busctl']
     assert len(native) == 8 and all('--timeout=3' in command for command in native)
     assert any(command[-1] == 'ExecStopPostEx' for command in native)

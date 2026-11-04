@@ -41,7 +41,7 @@ def parse_command(command: str) -> dict:
     match = re.fullmatch(r"check ([0-9a-f]{64})", command)
     if match:
         return {"action": "check", "plan": match[1]}
-    raise ValueError("only status or activate <approved-plan-sha256> is permitted")
+    raise ValueError("only status, check <approved-plan-sha256> or activate <approved-plan-sha256> is permitted")
 
 
 def request_from_json(body: str) -> dict:

@@ -32,7 +32,8 @@ def _ingest_definition_script(prefix, unit):
     encoded = "".join(char if char.isalnum() else f"_{ord(char):02x}" for char in unit)
     jobs = []
     for field, prop in (("TYPE", "Type"), ("RESTART", "Restart"),
-                        ("SEND_SIGKILL", "SendSIGKILL"), ("STOP_TIMEOUT", "TimeoutStopUSec")):
+                        ("SEND_SIGKILL", "SendSIGKILL"), ("STOP_TIMEOUT", "TimeoutStopUSec"),
+                        ("WORKING_DIRECTORY", "WorkingDirectory")):
         jobs.append((prefix + '_' + field, ['systemctl', 'show', unit, '-p', prop, '--value']))
     for field, prop in (("EXEC_JSON", "ExecStartEx"), ("STOP_POST_JSON", "ExecStopPostEx"),
                         ("USER_JSON", "User"), ("AMBIENT_CAPS_JSON", "AmbientCapabilities"),
@@ -41,7 +42,7 @@ def _ingest_definition_script(prefix, unit):
         jobs.append((prefix + '_' + field, ['busctl', '--system', '--json=short', '--timeout=3',
                      'get-property', 'org.freedesktop.systemd1',
                      '/org/freedesktop/systemd1/unit/' + encoded, 'org.freedesktop.systemd1.Service', prop]))
-    # Four bounded read-only subprocesses at once: <=12 seconds per unit even
+    # Five bounded read-only subprocesses at once (13 reads, three waves): <=12 seconds per unit even
     # when every DBus read stalls. Preserve native Ex flags, never parse the
     # lossy human-readable systemctl ExecStart representation.
     code = '''import concurrent.futures,json,subprocess
@@ -54,7 +55,7 @@ def read(job):
     except (OSError,subprocess.SubprocessError):
         value=''
     return key+'='+value
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
     for line in pool.map(read,jobs): print(line)
 ''' % json.dumps(jobs)
     return '/usr/bin/python3 -I -c ' + shlex.quote(code) + '; '
@@ -81,6 +82,7 @@ def _dry_ingest_definition(prefix, repo):
             ["/usr/bin/systemctl", ["/usr/bin/systemctl", "try-restart", "ar-local-dashboard.service"],
              ["privileged"], 0, 0, 0, 0, 0, 0, 0],
             ["/bin/sh", ["/bin/sh", "-c", _post_start_shell(repo)], [], 0, 0, 0, 0, 0, 0, 0]]}),
+        prefix + "_WORKING_DIRECTORY": repo,
         prefix + "_TYPE": "oneshot", prefix + "_RESTART": "no", prefix + "_SEND_SIGKILL": "yes",
         prefix + "_STOP_TIMEOUT": "45s", prefix + "_USER_JSON": json.dumps({"type": "s", "data": "ar-local"}),
         prefix + "_EXEC_JSON": json.dumps({"type": COMMAND_TYPE, "data": [[
@@ -111,7 +113,19 @@ def _additional_hooks_ok(snap, prefix, repo):
     return (isinstance(post, list) and len(post) == 2
             and _base_stop_matches(post[:1], ["/usr/bin/systemctl", "try-restart", "ar-local-dashboard.service"])
             and any(command_matches(post[1:], ["/bin/sh", "-c", _post_start_shell(repo, working_directory=wd)])
-                    for wd in (False, True)))
+                    for wd in _verifier_forms(snap, prefix, repo)))
+
+
+def _verifier_forms(snap, prefix, repo):
+    """The $PWD verifier form is trusted only when this unit's own native
+    WorkingDirectory is the canonical repository."""
+    forms = [False]
+    try:
+        if canonical_remote_repo(snap.get(prefix + "_WORKING_DIRECTORY")) == repo:
+            forms.append(True)
+    except ValueError:
+        pass
+    return forms
 
 
 def ingest_definition_ok(snap, prefix):

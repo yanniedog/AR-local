@@ -758,3 +758,10 @@ def test_ssh_invocation_carries_keepalives():
     assert "ServerAliveInterval=15" in pi_deploy_verify.SSH_OPTIONS
     assert "ServerAliveCountMax=3" in pi_deploy_verify.SSH_OPTIONS
     assert "BatchMode=yes" in pi_deploy_verify.SSH_OPTIONS
+
+
+@pytest.mark.parametrize("prefix", ["DAILY", "MANUAL"])
+@pytest.mark.parametrize("wd", ["/home/pi/AR-local", "", "/srv/ar-local/AR-local/../x"])
+def test_pwd_verifier_form_requires_unit_working_directory_proof(prefix, wd):
+    snap = _service_snapshot(**{prefix + "_WORKING_DIRECTORY": wd})
+    assert not pi_deploy_verify.pi_ingest_service_fences_ok(snap)
