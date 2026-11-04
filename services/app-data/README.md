@@ -28,6 +28,15 @@ HTTP delivery unchanged. Mutable aliases cache for30seconds, revision tags for1y
 Historical ARE1 decoding additionally requires the exact frozen ciphertext SHA256;
 the client first verifies its original size/hash before requesting that decode.
 
+The isolated observed-population capability is
+`/v1/capabilities/observed-population-v1/release/<tag>/<asset>`. The mutable
+candidate index is `app-payload-observed-v1-candidate/dates-index.json` only and is
+never edge-cached (`no-store`). Immutable editions use
+`app-payload-observed-v1-YYYY-MM-DD-rNNNNNN` and serve only `manifest.json` and
+approved `.json.gz` payloads (no private revision metadata, no `.json.gz.enc`).
+The capability takes no query string, version header or legacy digest hint, and
+legacy and capability routes reject each other's tags.
+
 After local and hosted checks, deploy the compatible service, set secret storage,
 and read back authentic current and historical manifests/core/details. Missing keys,
 modified ciphertext, unknown paths and unsafe redirects must fail without data.
