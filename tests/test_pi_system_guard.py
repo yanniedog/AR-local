@@ -467,10 +467,22 @@ def test_offline_rejoin_launcher_exposes_only_new_image_and_readonly_inputs():
 @pytest.mark.skipif(os.name != "posix", reason="actual POSIX umask and root ownership proof")
 def test_directory_exact_mode_survives_service_umask_0077(tmp_path, monkeypatch):
     if os.geteuid() != 0: pytest.skip("native root custody test")
-    from pi_system_guard_files import directory
+    import shutil, tempfile
+    from pi_system_guard_files import directory, root_parents
+    # pytest's tmp_path sits under world-writable /tmp, which root_parents()
+    # rightly rejects; use a private directory beneath a root-controlled parent.
+    base = None
+    for candidate in ("/run", "/var/lib", "/root"):
+        try:
+            root_parents(Path(candidate) / "probe")
+        except (OSError, RuntimeError):
+            continue
+        base = Path(tempfile.mkdtemp(prefix="pytest-root-custody-", dir=candidate))
+        break
+    if base is None: pytest.skip("no exclusively root-controlled scratch parent")
     old = os.umask(0o077)
     try:
-        path = tmp_path / "new-handoff"
+        path = base / "new-handoff"
         directory(path, 0o750)
         assert path.stat().st_mode & 0o777 == 0o750
         path.chmod(0o700)
@@ -479,3 +491,4 @@ def test_directory_exact_mode_survives_service_umask_0077(tmp_path, monkeypatch)
         assert path.stat().st_mode & 0o777 == 0o700
     finally:
         os.umask(old)
+        shutil.rmtree(base)

@@ -570,3 +570,34 @@ def test_readonly_filesystem_checks_reprove_each_loop_partition(monkeypatch, tmp
     assert image.check_unmounted_filesystems("/dev/loop9", tmp_path / "new-image", 10)["result"] == "PASS"
     assert checked == [1, 2]
     assert commands == [["/usr/sbin/fsck.vfat", "-n", Path("/dev/loop9p1")], ["/usr/sbin/e2fsck", "-f", "-n", Path("/dev/loop9p2")]]
+
+
+@pytest.mark.parametrize("history", ["none", "same", "changed"])
+def test_file_new_since_baseline_is_recopied_unless_last_copy_matches(tmp_path, monkeypatch, history):
+    source = tmp_path / "source"; source.mkdir(); (source / "new").write_bytes(b"BBBB")
+    work = tmp_path / "work"; (work / "frozen" / "root").mkdir(parents=True)
+    (work / "frozen" / "root" / "new").write_bytes(b"AAAA")
+    signature = capture.fingerprint((source / "new").lstat())
+    database = sqlite3.connect(work / "inventory.sqlite")
+    database.execute("CREATE TABLE entries(phase TEXT,tree TEXT,path TEXT,value TEXT,PRIMARY KEY(phase,tree,path))")
+    database.execute("INSERT INTO entries VALUES ('final','root','new',?)", (json.dumps({"source": signature}),))
+    if history != "none":
+        copied = signature if history == "same" else [*signature[:5], signature[5] - 1, *signature[6:]]
+        database.execute("INSERT INTO entries VALUES ('prepared','root','new',?)",
+                         (json.dumps({"source": copied, "copy_source_after": copied}),))
+    database.commit(); database.close()
+    monkeypatch.setattr(capture, "run", lambda argv, **kwargs: None)
+    capture.copy_batch(work, {"root": str(source)}, "root", [b"new"], "final-1")
+    assert (work / "frozen" / "root" / "new").exists() == (history == "same")
+
+
+def test_image_size_rounds_retained_small_files_to_ext4_blocks(tmp_path):
+    file = tmp_path / "manifest"
+    count = 2_000_000
+    with file.open("w") as stream:
+        for index in range(count):
+            stream.write('{"path":"f%d","size":1}\n' % index)
+    size, entries = image.image_size(file)
+    assert entries == count
+    # Data blocks alone need count*4 KiB; the image must exceed that with metadata.
+    assert size * 1024 ** 2 >= count * 4096 + count * 256

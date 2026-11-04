@@ -266,6 +266,20 @@ def copy_batches(work, settings, tree, names, label):
         copy_batch(work, settings, tree, batch, label + str(number + 1))
 
 
+def last_copy(database, phases, tree, name):
+    """Source fingerprint of the most recent successful copy, or None."""
+    for phase in reversed(phases):
+        row = database.execute("SELECT value FROM entries WHERE phase=? AND tree=? AND path=?",
+                               (phase, tree, name)).fetchone()
+        if row:
+            value = json.loads(row[0])
+            if "copy_source_after" in value:
+                return value["copy_source_after"]
+            if phase == "baseline":
+                return value["source"]
+    return None
+
+
 def copy_batch(work, settings, tree, names, label, attempt=0):
     path = work / (label + "-" + tree + ".batch")
     with path.open("xb") as stream:
@@ -274,12 +288,15 @@ def copy_batch(work, settings, tree, names, label, attempt=0):
     before = {os.fsdecode(name): fingerprint((Path(settings[tree]) / os.fsdecode(name)).lstat()) for name in names}
     database = sqlite3.connect(work / "inventory.sqlite")
     phase = next(name for name in ("baseline", "prepared", "final") if label.startswith(name))
+    earlier = ("baseline", "prepared", "final")[:("baseline", "prepared", "final").index(phase)]
     for name, signature in before.items():
-        baseline = database.execute("SELECT value FROM entries WHERE phase='baseline' AND tree=? AND path=?", (tree, name)).fetchone()
+        copied = last_copy(database, earlier, tree, name)
         target = work / "frozen" / tree / name
         # Changed inode/ctime must not be skipped merely because its size and
-        # mtime were restored to the old values. Force recopy in private staging.
-        if (attempt or (phase != "baseline" and baseline and json.loads(baseline[0])["source"] != signature)) and stat.S_ISREG(signature[2]):
+        # mtime were restored to the old values. Compare with the fingerprint
+        # of the most recent successful copy; with none on record (a file new
+        # since baseline), never trust rsync's size+mtime quick check.
+        if (attempt or (phase != "baseline" and copied != signature)) and stat.S_ISREG(signature[2]):
             if target.is_file() or target.is_symlink():
                 target.unlink()
     # -H is intentionally absent: its process-global inode table would scale

@@ -301,7 +301,9 @@ def image_size(manifest):
             row = json.loads(line)
             entries += 1
             if "size" in row and "hardlink_to" not in row:
-                size += row["size"]
+                # Every retained regular file occupies whole 4 KiB ext4 blocks.
+                size += -(-row["size"] // 4096) * 4096
+    # entries*1024 covers each inode (256 B) plus directory-entry overhead.
     return max(4096, (size * 13 // 10 + max(3 * 1024 ** 3, entries * 1024) + 1024 ** 2 - 1) // (1024 ** 2)), entries
 
 
