@@ -33,6 +33,7 @@ from cdr_finalization import verify_completion_marker
 from cdr_observation_selection import safe_child
 from pi_payload_retry_policy import CLEANUP_SECONDS, PAYLOAD_TIMEOUT_SECONDS
 from pi_process_group import run_process_group
+from pi_payload_manual_continuity import ManualArchiveProof
 
 REPO_ROOT = Path(__file__).resolve().parent
 HOBART = ZoneInfo("Australia/Hobart")
@@ -81,7 +82,8 @@ def window_reason(now: datetime) -> str:
 
 
 def ingest_clearance(repo_root: Path, now: datetime, *, include_lock=True,
-                     cgroup_root=Path("/sys/fs/cgroup")) -> str:
+                     cgroup_root=Path("/sys/fs/cgroup"), manual_proof=None,
+                     archive_day=None, owner=None) -> str:
     """Unknown systemd state and surviving control/cgroup processes fail closed."""
     if include_lock and os.path.lexists(data_state_root(repo_root) / "daily-ingest.lock"):
         return "natural_ingest_lease_present"
@@ -109,8 +111,14 @@ def ingest_clearance(repo_root: Path, now: datetime, *, include_lock=True,
                 source_day = (now - timedelta(seconds=monotonic - started)).astimezone(HOBART).date()
                 if (not 0 < started <= ended <= terminal <= monotonic
                         or source_day != now.astimezone(HOBART).date()):
-                    return "current_natural_ingest_terminal_unverified"
-    except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
+                    if manual_proof is None:
+                        return "current_natural_ingest_terminal_unverified"
+        if manual_proof is not None:
+            if not isinstance(manual_proof, ManualArchiveProof) or (not include_lock and owner is None):
+                return "invalid_manual_archive_proof_context"
+            manual_proof.verify(archive_day, owner=owner)
+    except (OSError, ValueError, TypeError, KeyError, AssertionError, RuntimeError,
+            OverflowError, subprocess.SubprocessError):
         return "ingest_terminal_state_unavailable"
     return ""
 
@@ -177,14 +185,17 @@ def _reserve(root: Path, day: str, digest: str, now: datetime, *, dry_run=False)
     return record
 
 
-def archive_worker(repo_root: Path, day: str, digest: str) -> dict:
+def archive_worker(repo_root: Path, day: str, digest: str, *, manual_proof=None) -> dict:
     """No ingest, promotion, Drive, repair claim, or operational receipt writes."""
     now = datetime.now(timezone.utc)
-    if reason := window_reason(now) or ingest_clearance(repo_root, now):
+    proof_args = {"manual_proof": manual_proof, "archive_day": day} if manual_proof else {}
+    if reason := window_reason(now) or ingest_clearance(repo_root, now, **proof_args):
         raise RuntimeError(reason)
-    with production_lock(data_state_root(repo_root) / "daily-ingest.lock", "daily-payload-archive"):
+    with production_lock(data_state_root(repo_root) / "daily-ingest.lock", "daily-payload-archive") as owner:
         now = datetime.now(timezone.utc)
-        if reason := window_reason(now) or ingest_clearance(repo_root, now, include_lock=False):
+        if manual_proof:
+            proof_args["owner"] = owner
+        if reason := window_reason(now) or ingest_clearance(repo_root, now, include_lock=False, **proof_args):
             raise RuntimeError(reason)
         contract, exports = selected_source(repo_root, day)
         if contract["contract_digest"] != digest:
@@ -206,19 +217,24 @@ def archive_worker(repo_root: Path, day: str, digest: str) -> dict:
                    "day": day, "contract_digest": digest, "generation_id": contract["generation_id"],
                    "observation_state": contract["observation_state"], "tag": result.tag,
                    "manifest_url": result.manifest_url, "manifest_sha256": result.manifest_sha256}
+        if manual_proof:
+            receipt["manual_terminal_proof_sha256"] = manual_proof.sha256
         atomic_write_json(archive_state(repo_root) / "receipts" / (digest + ".json"),
                           receipt, create_once=True)
         return receipt
 
 
 def run_once(repo_root: Path, *, day: str | None = None, since: str | None = None,
-             dry_run=False) -> dict:
+             dry_run=False, manual_proof=None) -> dict:
+    if manual_proof is not None and (day is None or not isinstance(manual_proof, ManualArchiveProof)):
+        raise ValueError("manual proof requires one explicit archive date")
     if day is not None and since is not None:
         raise ValueError("--since applies only to --once")
     if since is not None and date.fromisoformat(since).isoformat() != since:
         raise ValueError("archive start date must be YYYY-MM-DD")
     now = datetime.now(timezone.utc)
-    if reason := window_reason(now) or ingest_clearance(repo_root, now):
+    proof_args = {"manual_proof": manual_proof, "archive_day": day} if manual_proof else {}
+    if reason := window_reason(now) or ingest_clearance(repo_root, now, **proof_args):
         return {"status": "deferred", "reason": reason}
     today = now.astimezone(HOBART).date().isoformat()
     if day and (date.fromisoformat(day).isoformat() != day or day > today):
@@ -248,6 +264,9 @@ def run_once(repo_root: Path, *, day: str | None = None, since: str | None = Non
             else:
                 with FileLock(root / "admission.lock"):
                     reservation = _reserve(root, candidate, digest, now)
+                    if manual_proof and reservation["status"] != "deferred":
+                        reservation["manual_terminal_proof_sha256"] = manual_proof.sha256
+                        atomic_write_json(_attempt_path(root, candidate), reservation)
             if reservation["status"] == "deferred":
                 deferred.append(reservation)
                 continue
@@ -258,12 +277,16 @@ def run_once(repo_root: Path, *, day: str | None = None, since: str | None = Non
             return {"status": "dry_run", "day": candidate, "contract_digest": digest}
         status, error_name = "failed", ""
         try:
+            proof_cli = (["--manual-proof", str(manual_proof.path), "--manual-proof-sha256", manual_proof.sha256]
+                         if manual_proof else [])
             run_process_group([sys.executable, str(Path(__file__).resolve()), "--worker-date", candidate,
-                               "--expected-contract", digest], cwd=repo_root,
+                               "--expected-contract", digest, *proof_cli], cwd=repo_root,
                               timeout_seconds=PAYLOAD_TIMEOUT_SECONDS)
             receipt = _receipt(root, digest)
             if not receipt:
                 raise RuntimeError("archive worker did not produce verified receipt")
+            if manual_proof and receipt.get("manual_terminal_proof_sha256") != manual_proof.sha256:
+                raise RuntimeError("archive worker receipt differs from manual proof")
             status = "archived"
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             error_name = type(error).__name__
@@ -287,16 +310,21 @@ def main(argv=None) -> int:
     parser.add_argument("--expected-contract", help=argparse.SUPPRESS)
     parser.add_argument("--since", help="With --once, consider only dates on or after YYYY-MM-DD.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--manual-proof", type=Path, help="Pinned Nov4 preboot document; explicit date only.")
+    parser.add_argument("--manual-proof-sha256")
     args = parser.parse_args(argv)
     if args.since is not None and not args.once:
         parser.error("--since requires --once")
     if bool(args.worker_date) != bool(args.expected_contract) or (args.worker_date and args.dry_run):
         parser.error("internal worker requires its exact contract and cannot be dry-run")
+    if bool(args.manual_proof) != bool(args.manual_proof_sha256) or (args.manual_proof and args.once):
+        parser.error("manual proof requires its digest and one explicit date")
+    proof = ManualArchiveProof(args.manual_proof.absolute(), args.manual_proof_sha256) if args.manual_proof else None
     try:
         with archive_signals():
-            result = (archive_worker(REPO_ROOT, args.worker_date, args.expected_contract)
+            result = (archive_worker(REPO_ROOT, args.worker_date, args.expected_contract, manual_proof=proof)
                       if args.worker_date else run_once(REPO_ROOT, day=args.date, since=args.since,
-                                                       dry_run=args.dry_run))
+                                                       dry_run=args.dry_run, manual_proof=proof))
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
         result = {"status": "blocked", "reason": type(error).__name__}
     print(json.dumps(result, sort_keys=True))
