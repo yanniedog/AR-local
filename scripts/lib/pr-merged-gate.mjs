@@ -28,6 +28,17 @@ export function mergedDispatch(event, eventName, repository, prNumber, ref = pro
   return { expectedHeadSha: inputs.expected_head, expectedMergeSha: inputs.expected_merge };
 }
 
+/** Check runs attach to the commit, not the PR: refuse while any other PR (open,
+ * or closed and able to reopen) shares this head, so a merged result can never
+ * become the newest gate for a PR it did not evaluate. */
+function assertUnshared(api, prefix, number, headSha) {
+  const sharing = api(`${prefix}/commits/${headSha}/pulls?per_page=100`);
+  if (!Array.isArray(sharing) || sharing.length >= 100 ||
+      sharing.some((other) => other?.number !== number && other?.head?.sha === headSha)) {
+    throw new Error('Another PR shares the merged head');
+  }
+}
+
 function snapshot(api, repository, number, expectedHeadSha, expectedMergeSha) {
   const prefix = `repos/${repository}`, repo = api(prefix);
   if (repo.full_name !== repository || typeof repo.default_branch !== 'string' || !repo.default_branch) {
@@ -40,13 +51,7 @@ function snapshot(api, repository, number, expectedHeadSha, expectedMergeSha) {
   const comparison = api(`${prefix}/compare/${expectedMergeSha}...${branch.commit.sha}`);
   if (!['ahead', 'identical'].includes(comparison.status) || comparison.merge_base_commit?.sha !== expectedMergeSha ||
       comparison.base_commit?.sha !== expectedMergeSha) throw new Error('Merged commit is not proven in default branch ancestry');
-  // Check runs attach to the commit, not the PR: refuse while any other open PR
-  // shares this head, so a merged result can never satisfy or block its gate.
-  const sharing = api(`${prefix}/commits/${expectedHeadSha}/pulls?per_page=100`);
-  if (!Array.isArray(sharing) || sharing.length >= 100 || sharing.some((other) => other?.number !== number &&
-      other?.state === 'open' && other?.head?.sha === expectedHeadSha)) {
-    throw new Error('Another open PR shares the merged head');
-  }
+  assertUnshared(api, prefix, number, expectedHeadSha);
   return { ...identity, defaultBranch: repo.default_branch, defaultHead: branch.commit.sha };
 }
 
@@ -94,7 +99,12 @@ export function publishMergedGate(prNumber, {
       const finalThreads = threadReader(repository, prNumber, current);
       const finalViolations = mergedFeedbackViolations(finalThreads);
       if (JSON.stringify(finalThreads) !== feedbackSnapshot) throw new Error('Review feedback changed during revalidation');
-      outcome = combineRequiredGate(finalProduct, finalViolations);
+      // Bracket the feedback snapshot with CI reads, then recheck head sharing
+      // immediately before publication.
+      const closingProduct = productReader(prNumber, { repository, api, expectedHeadSha, expectedMergeSha });
+      if (JSON.stringify(closingProduct) !== JSON.stringify(product)) throw new Error('Applicable CI changed during revalidation');
+      assertUnshared(api, `repos/${repository}`, prNumber, expectedHeadSha);
+      outcome = combineRequiredGate(closingProduct, finalViolations);
     }
   } catch (error) {
     outcome = { status: 'completed', conclusion: 'failure', title: 'Merged gate verification unavailable', summary: error.message };

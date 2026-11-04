@@ -114,7 +114,11 @@ const stable = publishMergedGate(42, { ...options, ...stableFixture,
   write: (...args) => { observed.push('write'); return stableFixture.write(...args); } });
 assert.equal(stable.conclusion, 'success');
 assert.equal(observed.filter((value) => value === 'feedback').length, 2);
-assert.deepEqual(observed.slice(-2), ['feedback', 'write']);
+// The final feedback snapshot is followed only by the closing CI and head-sharing
+// reads (all API), then the publication write.
+const lastFeedback = observed.lastIndexOf('feedback');
+assert.deepEqual([...new Set(observed.slice(lastFeedback + 1, -1))], ['api']);
+assert.equal(observed.at(-1), 'write');
 for (const final of [[resolved, unresolved([comment])], [{ ...resolved, isResolved: false }], [],
   [{ ...resolved, comments: { nodes: [{ ...comment, body: 'Edited review' }] } }],
   [{ ...resolved, isResolved: undefined }], null]) {
@@ -126,7 +130,15 @@ for (const final of [[resolved, unresolved([comment])], [{ ...resolved, isResolv
 // Another open PR sharing the merged head must never receive this check.
 assert.throws(() => publish({ sharing: [{ number: 42, state: 'closed', head: { sha: head } },
   { number: 77, state: 'open', head: { sha: head } }] }), /shares the merged head/);
-assert.equal(publish({ sharing: [{ number: 77, state: 'closed', head: { sha: head } }] }).result.conclusion, 'success');
+assert.throws(() => publish({ sharing: [{ number: 77, state: 'closed', head: { sha: head } }] }), /shares the merged head/,
+  'a closed PR on the same head could reopen and inherit the check');
+// A PR that opens on the head during revalidation blocks publication.
+let sharingReads = 0;
+const lateShare = publish({ api: (endpoint) => endpoint.endsWith('/pulls?per_page=100') ?
+  (++sharingReads > 2 ? [{ number: 42, state: 'closed', head: { sha: head } }, { number: 78, state: 'open', head: { sha: head } }]
+    : [{ number: 42, state: 'closed', head: { sha: head } }]) : undefined });
+assert.equal(lateShare.result.conclusion, 'failure');
+assert.match(lateShare.writes[1].body.output.summary, /shares the merged head/);
 // A CI rerun that starts after the first product read is caught by the final read.
 let productReads = 0;
 const realProduct = publish().result;
@@ -205,7 +217,11 @@ assert.match(yaml, /merged_revalidation:[\s\S]*?type: boolean/);
 assert.match(yaml, /group: \$\{\{ format\('required-pr-gate-\{0\}', matrix.pr\) \}\}/,
   'ordinary and merged writers serialize in one per-PR group');
 assert.doesNotMatch(yaml, /required-merged-pr-gate/);
-assert.match(yaml, /github.event_name == 'workflow_dispatch' && github.sha \|\| github.event.repository.default_branch/);
+const evaluateJob = yaml.split('\n  evaluate-gates:')[1];
+assert.ok(evaluateJob, 'evaluate-gates job present');
+assert.match(evaluateJob.split('\n      - name: Publish')[0],
+  /uses: actions\/checkout@v4\s+with:\s+ref: \$\{\{ github.event_name == 'workflow_dispatch' && github.sha \|\| github.event.repository.default_branch \}\}/,
+  'the gate-writing checkout itself uses the immutable dispatch SHA or the default branch');
 assert.doesNotMatch(yaml, /administration:|contents: write|pull-requests: write|download-artifact|pull_request.head.sha/);
 const source = fs.readFileSync(new URL('lib/pr-merged-gate.mjs', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /mergedAudit:\s*true|retirePendingEvaluations|\/protection/);

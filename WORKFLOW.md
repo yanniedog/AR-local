@@ -86,7 +86,7 @@ must match the initial snapshot; unresolved threads with absent authors or no
 comments block. Applicable CI is re-read after the initial evidence and must be
 unchanged, and the complete feedback snapshot (with a final per-thread resolution
 recheck) is the last read before publication. Recovery is refused while another
-open PR shares the merged head, because check runs attach to commits. Explicit
+PR (open or closed) shares the merged head, because check runs attach to commits; sharing is rechecked immediately before publication, and applicable CI is re-read after the final feedback snapshot. Explicit
 discovery has its own run/attempt namespace. Ordinary and merged evaluations share
 one per-PR group with `queue: max`, so a delayed ordinary evaluation cannot publish
 after, and supersede, a merged recovery. Closed-PR admission and separate check
