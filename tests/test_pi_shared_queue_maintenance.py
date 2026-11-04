@@ -91,15 +91,17 @@ def service_fixture():
         'KillMode':'control-group','ProtectSystem':'strict','ProtectHome':'yes','WorkingDirectory':'/'}.items()}
     values.update({name:('b',value) for name,value in {'NoNewPrivileges':False,'SendSIGKILL':True,
         'PrivateTmp':True,'PrivateDevices':True,'ProtectControlGroups':True,
-        'ProtectKernelTunables':True,'ProtectKernelModules':True,'RestrictNamespaces':True}.items()})
+        'ProtectKernelTunables':True,'ProtectKernelModules':True}.items()})
     values.update({name:('t',value) for name,value in {'RuntimeMaxUSec':1800000000,'TimeoutStartUSec':960000000,
         'TimeoutStopUSec':900000000,'CPUQuotaPerSecUSec':2000000,'LimitAS':2147483648,
         'MemoryHigh':805306368,'MemoryMax':1073741824,'MemorySwapMax':0}.items()})
     values['ReadWritePaths']=('as',['/srv/ar-local','/var/lib/ar-local-ci','/var/lib/shared-pi-queue'])
     values['Environment']=('as',['HOME=/nonexistent','PATH=/usr/sbin:/usr/bin:/sbin:/bin'])
     values['EnvironmentFiles']=('a(sb)',[])
-    values['CapabilityBoundingSet']=('as',[])
-    values['AmbientCapabilities']=('as',[])
+    # Actual systemd D-Bus types: uint64 masks.
+    values['RestrictNamespaces']=('t',0)
+    values['CapabilityBoundingSet']=('t',0)
+    values['AmbientCapabilities']=('t',0)
     return values
 
 
@@ -153,8 +155,9 @@ def test_ci_native_fixed_execution_hooks_and_loaded_profile_are_qualified(monkey
     ('RuntimeMaxUSec',('t',2700000000)),('TimeoutStopUSec',('t',901000000)),
     ('MemorySwapMax',('t',1)),('PrivateTmp',('s','yes')),('PrivateDevices',('b',False)),
     ('ProtectKernelTunables',('b',False)),('ProtectKernelModules',('b',False)),
-    ('RestrictNamespaces',('b',False)),('CapabilityBoundingSet',('as',['CAP_SYS_ADMIN'])),
-    ('AmbientCapabilities',('as',['CAP_SYS_ADMIN'])),
+    ('RestrictNamespaces',('t',1<<17)),('RestrictNamespaces',('b',True)),
+    ('CapabilityBoundingSet',('t',1<<21)),('CapabilityBoundingSet',('as',[])),
+    ('AmbientCapabilities',('t',1<<21)),('AmbientCapabilities',('as',[])),
     ('EnvironmentFiles',('a(sb)',[['/tmp/foreign',False]])),
     ('ReadWritePaths',('as',['/srv/ar-local','/var/lib/ar-local-ci','/var/lib/shared-pi-queue','/etc']))])
 def test_ci_native_profile_mutation_cannot_get_privileged_retention(monkeypatch,key,value):
@@ -387,3 +390,24 @@ def test_ci_native_stop_privilege_and_executable_identity_are_not_inferred_from_
     elif change=='extra_flag':rows['ExecStopPostEx'][0][2]=['privileged','ignore-failure']
     else:rows['ExecStartEx'][0][0]='/bin/false'
     with pytest.raises(ValueError):hooks.verify_plain_service(CI_UNIT,native_run(rows,service_fixture()))
+
+
+def test_ci_unit_registers_and_admits_through_real_policy():
+    from zoneinfo import ZoneInfo
+    from datetime import timedelta
+    from pi_shared_queue_policy import admission
+    from tests.shared_pi_queue_fixtures import record
+    assert len(CI_UNIT) > 64
+    early = datetime(2026, 10, 24, 22, 0, tzinfo=ZoneInfo('Australia/Hobart')).astimezone(timezone.utc)
+    job = record(unit=CI_UNIT, cgroup='/system.slice/' + CI_UNIT, resources=['ar-local', 'host'],
+                 max_duration_seconds=1800, ready_since=early.isoformat())
+    assert admission(job, [job], early) == (True, 'admitted')
+    # 23:58 + 1100 s + 60 s fits a plain reservation before 00:30, but the
+    # qualified CI restoration allowance (900 s) must also finish before it.
+    late = datetime(2026, 10, 24, 23, 58, tzinfo=ZoneInfo('Australia/Hobart')).astimezone(timezone.utc)
+    short = dict(job, max_duration_seconds=1100)
+    assert admission(short, [short], late) == (False, 'would-cross-ingest-start')
+    plain = dict(short, unit='ar-local-payload-test.service', cgroup='/system.slice/ar-local-payload-test.service')
+    assert admission(plain, [plain], late) == (True, 'admitted')
+    oversized = dict(job, unit='x' * 130 + '.service')
+    assert admission(oversized, [oversized], early) == (False, 'invalid-state')

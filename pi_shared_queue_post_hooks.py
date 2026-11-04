@@ -266,7 +266,7 @@ def _ci_service(unit, value, run):
         'KillMode': 'control-group', 'ProtectSystem': 'strict', 'ProtectHome': 'yes', 'WorkingDirectory': '/'}
     booleans = {'NoNewPrivileges': False, 'SendSIGKILL': True,
         'PrivateTmp': True, 'PrivateDevices': True, 'ProtectControlGroups': True,
-        'ProtectKernelTunables': True, 'ProtectKernelModules': True, 'RestrictNamespaces': True}
+        'ProtectKernelTunables': True, 'ProtectKernelModules': True}
     integers = {'RuntimeMaxUSec': 1800_000_000, 'TimeoutStartUSec': 960_000_000,
         'TimeoutStopUSec': 900_000_000, 'CPUQuotaPerSecUSec': 2_000_000,
         'LimitAS': 2 * 1024**3, 'MemoryHigh': 768 * 1024**2,
@@ -282,8 +282,11 @@ def _ci_service(unit, value, run):
     _typed_property(unit, 'Environment', 'as',
         ['HOME=/nonexistent', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin'], run)
     _typed_property(unit, 'EnvironmentFiles', 'a(sb)', [], run)
-    _typed_property(unit, 'CapabilityBoundingSet', 'as', [], run)
-    _typed_property(unit, 'AmbientCapabilities', 'as', [], run)
+    # systemd exposes these as uint64 masks (D-Bus 't'): RestrictNamespaces=yes
+    # permits no namespace types (0), and empty capability sets are 0.
+    _typed_property(unit, 'RestrictNamespaces', 't', 0, run)
+    _typed_property(unit, 'CapabilityBoundingSet', 't', 0, run)
+    _typed_property(unit, 'AmbientCapabilities', 't', 0, run)
 
 
 def verify_plain_service(unit, run=subprocess.run):

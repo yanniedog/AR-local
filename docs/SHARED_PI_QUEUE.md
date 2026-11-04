@@ -190,7 +190,13 @@ TypeNotify/MainPID ownership, CPU200%,1800 seconds execution after READY,
 960 seconds startup for900 seconds queue wait, memory/swap limits and exact
 sandbox/environment/writable-path settings. Only this fully qualified CI route
 may use a900-second stop grace for its independent root restoration; arbitrary
-units and ordinary queue jobs retain their previous limits.
+units and ordinary queue jobs retain their previous limits. Queue admission
+reserves that same 900 seconds (instead of the 60-second stop grace) for any
+`ar-local-ci-activate-<64 hex>.service` unit, so restoration also finishes before
+the 00:30 ingest boundary. Units are validated as `*.service` names of up to 127
+characters, separately from the 64-character resource/project name rule. The
+native profile checks `RestrictNamespaces`, `CapabilityBoundingSet` and
+`AmbientCapabilities` as systemd's uint64 masks (all 0).
 
 Before spawning, the existing native guard rotates only its own manual lease
 to a durable successor inode under the recovery lock, so the original lock
