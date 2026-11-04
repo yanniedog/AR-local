@@ -15,7 +15,8 @@ import select
 import stat
 import subprocess
 
-from pi_plain_backup_core import Blocked
+from pi_plain_backup_core import (Blocked, packet_runtime_seconds, parse_runtime_microseconds,
+                                 validate_commissioning_packet)
 from pi_shared_queue_post_hooks import ROOT, HANDOFF, approval, root_json, pairs, verify_plain_service
 
 STATE = Path("/var/lib/ar-local-plain-backup-control")
@@ -183,7 +184,9 @@ class Host:
         if len(jobs)!=1: raise Blocked("unique retained queue claim missing")
         job=jobs[0]; info=self._show(packet["unit"])
         if (job.get("state") not in (("waiting","running") if allow_terminal else ("running",))
-                or job.get("max_duration_seconds")!=(120 if packet["mode"]=="PROBE" else 21600) or job.get("project")!="ar-local" or job.get("mode")!="exclusive"
+                or type(job.get("max_duration_seconds")) is not int
+                or job["max_duration_seconds"]!=packet_runtime_seconds(packet,allow_legacy=allow_terminal)
+                or job.get("project")!="ar-local" or job.get("mode")!="exclusive"
                 or not {"ar-local","host"} <= set(job.get("resources",[]))
                 or not (info["InvocationID"]==job.get("invocation_id") or allow_terminal and info["LoadState"]=="not-found"
                     and info["MainPID"]=="0" and info["ControlPID"]=="0" and info["InvocationID"]=="")
@@ -206,6 +209,8 @@ class Host:
 
     def _controls(self, packet):
         self.stage="controls_authority"
+        if packet.get("root_control_manifest_sha256")!=digest(ROOT/"root-control-manifest.json"):
+            raise Blocked("packet does not bind the installed root control manifest")
         authority=approval(packet["unit"],current=True)
         if authority["source_closure_sha256"] != packet["source_closure_sha256"]:
             raise Blocked("root approval/packet source binding differs")
@@ -296,6 +301,7 @@ class Host:
             previous=packet.get("coupled_probe_nonce","")
             if not re.fullmatch("[0-9a-f]{32}",previous) or previous==self.nonce:
                 raise Blocked("distinct actual commissioning nonce required")
+            validate_commissioning_packet(root_json(STATE/previous/"packet.json"),previous,packet)
             prior_completion=root_json(HANDOFF/previous/"completion.json")
             if (prior_completion.get("operation_mode")!="PROBE" or prior_completion.get("resource_acceptance")!="PASS"
                     or prior_completion.get("readback")!=60 or prior_completion.get("result")!="RESTORED"
@@ -307,7 +313,7 @@ class Host:
                     or coupled.get("boot_id")!=self.boot() or coupled.get("root_completion_verified") is not True
                     or coupled.get("source_closure_sha256")!=packet["source_closure_sha256"]
                     or any(coupled.get(key)!=packet[key] for key in
-                        ("bwrap_sha256","setpriv_sha256","parent_sha256","resources_sha256","broker_sha256","queue_closure_sha256"))):
+                        ("bwrap_sha256","setpriv_sha256","parent_sha256","resources_sha256","broker_sha256","queue_closure_sha256","root_control_manifest_sha256"))):
                 raise Blocked("actual successful coupled probe of this closure required")
         self.stage="controls_credential"
         conf=self.public/"credentials-copy.conf"
@@ -330,7 +336,7 @@ class Host:
                 or parent["cgroup"]!=job["cgroup"] or owner["cgroup"]!=job["cgroup"]
                 or service["User"]!="pi" or service["NoNewPrivileges"]!="no" or service["Type"]!="notify"
                 or service["KillMode"]!="control-group"
-                or service["RuntimeMaxUSec"]!=("2min" if packet["mode"]=="PROBE" else "6h")
+                or parse_runtime_microseconds(service["RuntimeMaxUSec"])!=packet_runtime_seconds(packet)*1000000
                 or service["CPUQuotaPerSecUSec"]!="1s" or service["TasksMax"]!="64" or service["IOWeight"]!="10"
                 or job["boot_id"]!=self.boot()):
             raise Blocked("trusted controller/queue relationship differs")
@@ -495,10 +501,12 @@ class Host:
         else:
             atomic(target,value,mode=0o640); os.chown(target,0,packet["gid"])
         if packet["mode"]=="PROBE" and accepted and self.stop_post_verified:
+            if "runtime_seconds" not in packet or "root_control_manifest_sha256" not in packet:
+                return  # Recovery preserves legacy proofs; it never upgrades commissioning authority.
             proof={"schema":"ar-local-plain-backup-coupled-probe-v1","result":"PROBE_PASS",
                 "scope":"NO_BACKUP_NO_DRIVE_WRITES","nonce":self.nonce,"boot_id":self.boot(),
                 "root_completion_verified":True,**{key:packet[key] for key in
-                    ("source_closure_sha256","bwrap_sha256","setpriv_sha256","parent_sha256","resources_sha256","broker_sha256","queue_closure_sha256")}}
+                    ("source_closure_sha256","bwrap_sha256","setpriv_sha256","parent_sha256","resources_sha256","broker_sha256","queue_closure_sha256","root_control_manifest_sha256")}}
             probe_target=self.public/"coupled-probe.json"
             if probe_target.exists():
                 if root_json(probe_target)!=proof: raise Blocked("existing coupled commissioning proof differs")
