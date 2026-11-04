@@ -220,16 +220,25 @@ canary is still required after this reviewed policy correction.
 
 ## Private canary and historical dispositions
 
-Use a fresh operation name and the actual reviewed 40-character commit:
+Preferred route: the manual `pi-quality-canary` workflow (`preflight`,
+`discover` and `canary` modes). It uses a per-commit candidate checkout,
+`/srv/ar-local/quality-candidate-<first 12 hex of the commit>`, cloned from the
+canonical origin after shared-queue admission, and the committed reviewed
+evidence `docs/evidence/cdr-quality-20260912/historical-dispositions.json`
+inside that exact checkout, pinned by SHA-256 in the workflow.
+
+Manual equivalent, with a fresh operation name and the actual reviewed
+40-character commit:
 
 ```sh
-python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py canary \
-  --source /srv/ar-local/quality-candidate \
+C=/srv/ar-local/quality-candidate-EXACT12HEX
+python3 "$C/pi_cdr_quality_activate.py" canary \
+  --source "$C" \
   --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
   --operation /srv/ar-local/quality-operation-UNIQUE \
   --expected-commit EXACT_MERGED_COMMIT \
   --python /path/to/prepared/python \
-  --dispositions /srv/ar-local/quality-evidence/historical-dispositions.json
+  --dispositions "$C/docs/evidence/cdr-quality-20260912/historical-dispositions.json"
 ```
 
 The dispositions file is an object mapping `canonical_digest(issue)` (from
