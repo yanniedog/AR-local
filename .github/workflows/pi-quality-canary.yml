@@ -221,11 +221,15 @@ jobs:
           chmod 0400 "$DCOPY"
           test "$(sha256sum "$DCOPY" | cut -d" " -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
           echo "operation: $OP"
+          # The helper prints its full result (including dispositions) on
+          # stdout; keep it private on the Pi. stderr still streams.
+          HLOG="/srv/ar-local/quality-gh-control/$OP_ID.helper-stdout.json"
+          (umask 077; : > "$HLOG")
           exec "$PY" "$C/pi_cdr_quality_activate.py" canary \
             --source "$C" \
             --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
             --operation "$OP" --expected-commit "$COMMIT" --python "$PY" \
-            --dispositions "$DCOPY" --pressure-profile "$PROFILE"'
+            --dispositions "$DCOPY" --pressure-profile "$PROFILE" > "$HLOG"'
           setsid /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
             --cpu-slots 2 --max-runtime 6000 --wait-timeout 1800 -- \
             /bin/bash -c "$QUEUED" queued-canary "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" &
@@ -238,6 +242,17 @@ jobs:
           set -e
           rm -f "$PIDF"
           echo "pi-shared-task exit: $RC"
+          HLOG="$CTL/$OP_ID.helper-stdout.json"
+          if [ -s "$HLOG" ]; then
+            python3 - "$HLOG" <<'PY'
+          import json, sys
+          try:
+              r = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1])
+              print("helper result:", r.get("result"), "|", r.get("error", ""))
+          except Exception as e:
+              print("helper stdout unreadable:", type(e).__name__)
+          PY
+          fi
           OP="/srv/ar-local/quality-operation-$OP_ID"
           if [ -f "$OP/canary.json" ]; then
             echo "canary.json sha256: $(sha256sum "$OP/canary.json" | cut -d' ' -f1)"
@@ -274,15 +289,29 @@ jobs:
           PIDF="/srv/ar-local/quality-gh-control/$OP_ID.submitter.pid"
           if [ -f "$PIDF" ]; then
             read -r SUB REC_OP < "$PIDF"
+            # /usr/local/bin/pi-shared-task execs python3 .../pi_shared_task.py
             if [ "$REC_OP" = "$OP_ID" ] && kill -0 "$SUB" 2>/dev/null \
-               && tr '\0' ' ' < "/proc/$SUB/cmdline" | grep -q "pi-shared-task.*queued-canary.* $OP_ID "; then
+               && tr '\0' ' ' < "/proc/$SUB/cmdline" | grep -q "pi_shared_task\.py .*queued-canary .* $OP_ID "; then
               echo "cancelling live submitter $SUB"
               kill -TERM "$SUB"
               for _ in $(seq 1 75); do kill -0 "$SUB" 2>/dev/null || break; sleep 2; done
-              if kill -0 "$SUB" 2>/dev/null; then echo "submitter $SUB did not exit"; exit 1; fi
+              if kill -0 "$SUB" 2>/dev/null; then echo "submitter $SUB did not exit; record retained"; exit 1; fi
             fi
             rm -f "$PIDF"
           fi
+          # Backstop: any queue unit whose command still carries this exact
+          # operation id is stopped and must reach an inactive state.
+          for Q in $(systemctl list-units --all --plain --no-legend 'ar-local-queue-task-*.service' | awk '{print $1}'); do
+            systemctl show "$Q" -p ExecStart --value 2>/dev/null | grep -q -- " $OP_ID " || continue
+            echo "stopping queue unit $Q for $OP_ID"
+            sudo -n systemctl stop "$Q" || true
+            for _ in $(seq 1 45); do
+              case "$(systemctl is-active "$Q" 2>/dev/null || true)" in active|activating|deactivating|reloading) sleep 2 ;; *) break ;; esac
+            done
+            case "$(systemctl is-active "$Q" 2>/dev/null || true)" in
+              active|activating|deactivating|reloading) echo "queue unit $Q still active"; exit 1 ;;
+            esac
+          done
           OP="/srv/ar-local/quality-operation-$OP_ID"
           R="$OP/canary-unit.json"
           if [ ! -f "$R" ]; then echo "no canary-unit.json; helper never launched its unit"; exit 0; fi
