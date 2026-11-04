@@ -167,7 +167,9 @@ def _verified_withdrawal_index(observation: Mapping, provider: str, proof: dict)
     if proof.get("fresh_index_sha256") != expected_digest:
         raise ValueError("withdrawal index digest mismatch")
     observed: set[str] = set()
-    expected_url = provider_directories(status)[provider]["endpoint_url"]
+    from cdr_ingest_support import product_index_request_url
+    endpoint = provider_directories(status)[provider]["endpoint_url"]
+    expected_url = product_index_request_url(endpoint)
     for number, row in enumerate(pages, start=1):
         prefix = f"{journal_path}/events/{int(row['event_seq']):08d}-"
         matches = [entry["path"] for entry in contract["artifacts"] if entry["path"].startswith(prefix)]
@@ -192,7 +194,17 @@ def _verified_withdrawal_index(observation: Mapping, provider: str, proof: dict)
         if has_cdr_errors(parsed) or response_shape_error(parsed, phase="products_index"):
             raise ValueError("withdrawal index body is invalid")
         url = event["request"]["url"]
-        if sanitize_url(url) != sanitize_url(expected_url):
+        # Retained proofs may predate request-route compatibility. Accept only
+        # the exact registered legacy endpoint or the current initial request;
+        # Melbourne's earlier 1000-page-size proofs remain valid unchanged.
+        # every later page must still match its preceding response's next link.
+        legacy_first = number == 1 and sanitize_url(url) == sanitize_url(endpoint)
+        prior_melbourne_first = (
+            number == 1
+            and expected_url == "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products/?page=1&page-size=100"
+            and url == expected_url + "0"
+        )
+        if sanitize_url(url) != sanitize_url(expected_url) and not (legacy_first or prior_melbourne_first):
             raise ValueError("withdrawal index pagination is discontinuous")
         expected_url = next_link(parsed, url)
         for product in extract_products(parsed):
