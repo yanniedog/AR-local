@@ -486,10 +486,12 @@ def remove_obsolete_stage_entries(work, previous="baseline", current="final"):
                 break
             if parent.is_symlink():
                 raise ValueError("staging cleanup ancestor became a symlink")
-        if path.is_symlink() or path.is_file():
-            path.unlink()
-        elif path.exists():
+        # Directories are removed as directories; every other node type that
+        # the inventory supports (file, symlink, FIFO, device) is unlinked.
+        if path.is_dir() and not path.is_symlink():
             path.rmdir()
+        elif os.path.lexists(path):
+            path.unlink()
     database.close()
 
 

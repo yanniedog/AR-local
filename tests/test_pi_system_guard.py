@@ -25,7 +25,7 @@ def packet(phase="PROBE"):
     value = {"schema": "ar-local-system-recovery-packet-v1", "manual_system_recovery": True, "phase": phase,
              "mode": "PROBE" if phase == "PROBE" else "RUN_ARCHIVE", "nonce": NONCE, "workspace_id": "b" * 32,
              "unit": "ar-local-plain-backup-" + NONCE + ".service", "uid": 1000, "gid": 1000,
-             "created_at": NOW.isoformat(), "expires_at": (NOW + timedelta(seconds=120)).isoformat(), "runtime_seconds": 120}
+             "created_at": NOW.isoformat(), "expires_at": (NOW + timedelta(seconds=120)).isoformat(), "runtime_seconds": 90}
     for key in ("source_closure_sha256", "queue_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256", "bwrap_sha256",
                 "setpriv_sha256", "backend_approval_sha256", "queue_argv_sha256", "reconcile_registry_sha256", "reconcile_wrapper_sha256", "global_hold_sha256", "sudo_sha256", "root_control_manifest_sha256"):
         value[key] = "c" * 64
@@ -34,11 +34,11 @@ def packet(phase="PROBE"):
 
 def test_image_service_fixed_root_helper_and_plain_whitelist_unchanged():
     body = packet("build")
-    body.update(expires_at=(NOW + timedelta(hours=6)).isoformat(), runtime_seconds=21600)
+    body.update(expires_at=(NOW + timedelta(hours=6)).isoformat(), runtime_seconds=21540)
     plan = service.service_plan(NONCE, "build", packet=body)
     assert plan["argv"][-7:] == ["--", "/usr/bin/python3", "-I", "-S", "-B", service.ROOT + "/parent.py", NONCE]
     assert plan["properties"]["ExecStopPost"] == "+/usr/bin/python3 -I -S -B " + service.ROOT + "/broker.py recover " + NONCE
-    assert plan["properties"]["RuntimeMaxSec"] == "21600"
+    assert plan["properties"]["RuntimeMaxSec"] == "21540"
     assert all(item.split()[-2] != "recover" for item in plan["sudoers_exact_commands"])
     import pi_plain_backup_core as plain
     with pytest.raises(plain.Blocked):
@@ -56,7 +56,7 @@ def test_image_packet_rejects_scope_or_binding_change(field, value):
 def test_quiet_window_cannot_be_crossed_with_both_endpoints_outside():
     body = packet("baseline")
     start = datetime(2026, 10, 24, 13, 0, tzinfo=timezone.utc)  # Hobart00:00.
-    body.update(created_at=start.isoformat(), expires_at=(start + timedelta(hours=4)).isoformat(), runtime_seconds=14400)
+    body.update(created_at=start.isoformat(), expires_at=(start + timedelta(hours=4)).isoformat(), runtime_seconds=14340)
     with pytest.raises(policy.Blocked, match="quiet"):
         policy.validate(body, NONCE, start)
 

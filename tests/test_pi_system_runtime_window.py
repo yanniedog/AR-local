@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from pi_plain_backup_core import Blocked
+import pi_plain_backup_core as core
 import pi_system_guard_host as host
 import pi_system_guard_packet as builder
 import pi_system_guard_plan as service
@@ -20,14 +21,14 @@ def test_actual_late_evening_image_reservation_uses_clipped_budget_and_wait_zero
     body = packet("archive")
     start = datetime(2026, 10, 24, 18, 45, tzinfo=ZoneInfo("Australia/Hobart")).astimezone(timezone.utc)
     end = builder.expiry_for("archive", start)
-    body.update(created_at=start.isoformat(), expires_at=end.isoformat(), runtime_seconds=int((end-start).total_seconds()))
+    body.update(created_at=start.isoformat(), expires_at=end.isoformat(), runtime_seconds=core.chosen_runtime(int((end-start).total_seconds())))
     policy.validate(body, NONCE, start)
     plan = service.service_plan(NONCE, "archive", packet=body)
-    assert body["runtime_seconds"] == 20399
-    assert plan["properties"]["RuntimeMaxSec"] == "20399"
+    assert body["runtime_seconds"] == 20399 - 60
+    assert plan["properties"]["RuntimeMaxSec"] == "20339"
     assert plan["properties"]["TimeoutStartSec"] == "60"
     assert plan["argv"][plan["argv"].index("--wait-timeout") + 1] == "0"
-    job = record(unit=body["unit"], resources=["ar-local", "host"], max_duration_seconds=20399, ready_since=start.isoformat())
+    job = record(unit=body["unit"], resources=["ar-local", "host"], max_duration_seconds=20339, ready_since=start.isoformat())
     assert admission(job, [job], start) == (True, "admitted")
     assert admission({**job, "max_duration_seconds": 21600}, [], start) == (False, "would-cross-ingest-start")
     assert service.service_plan(NONCE, "archive", packet=plan["runtime_inputs"]) == plan
@@ -42,7 +43,7 @@ def test_every_image_phase_binds_the_same_frozen_runtime_and_immediate_admission
     assert plan["argv"][plan["argv"].index("--wait-timeout") + 1] == "0"
 
 
-@pytest.mark.parametrize("runtime", [None, True, 14, 119, 121, 21601, "120", 120.0])
+@pytest.mark.parametrize("runtime", [None, True, 14, 89, 91, 120, 21601, "90", 90.0])
 def test_image_cannot_accept_missing_or_independently_shortened_runtime(runtime):
     body = packet()
     if runtime is None: body.pop("runtime_seconds")

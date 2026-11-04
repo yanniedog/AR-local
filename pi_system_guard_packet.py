@@ -7,6 +7,7 @@ import re
 
 from pi_system_guard_files import directory, encoded, protected, publish, sha
 from pi_system_guard_host import HANDOFF, ROOT, STATE, WORK
+from pi_plain_backup_core import chosen_runtime
 from pi_system_guard_plan import service_plan
 from pi_system_guard_policy import PHASES, validate, validate_commissioning
 
@@ -40,7 +41,9 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None)
     expiry = expiry_for(phase, now)
     budget = {"nonce": nonce, "unit": "ar-local-plain-backup-" + nonce + ".service",
               "mode": "PROBE" if phase == "PROBE" else "RUN_ARCHIVE", "created_at": now.isoformat(),
-              "expires_at": expiry.isoformat(), "runtime_seconds": int((expiry-now).total_seconds())}
+              "expires_at": expiry.isoformat(),
+              # Shared plain-backup rule: reserve admission slack inside the window.
+              "runtime_seconds": chosen_runtime(int((expiry-now).total_seconds()))}
     service = service_plan(nonce, phase, packet=budget)
     queue = Path("/usr/local/lib/shared-pi-queue")
     names = {"pi_shared_queue.py", "pi_shared_queue_store.py", "pi_shared_queue_policy.py", "pi_shared_queue_native.py", "pi_shared_queue_post_hooks.py"}

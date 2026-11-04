@@ -325,7 +325,9 @@ def build(args):
     if capture["raw_restore_required"]:
         raw_bytes, raw_entries = 0, 0
         for _, row in external_files(work / "external-restore-map.jsonl"):
-            raw_bytes += row["size"]
+            # Reserve restored ext4 allocation, not logical size: every nonempty
+            # file occupies whole 4 KiB data blocks.
+            raw_bytes += -(-row["size"] // 4096) * 4096
             raw_entries += 1
         root_mib += (raw_bytes * 13 // 10 + raw_entries * 1024 + 1024 ** 2 - 1) // (1024 ** 2)
         entry_count += raw_entries
