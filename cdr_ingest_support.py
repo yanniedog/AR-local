@@ -104,6 +104,28 @@ def normalize_banking_products_url(endpoint_raw: str) -> str:
     return safe_url(raw) + "/cds-au/v1/banking/products"
 
 
+def product_index_request_url(url: str) -> str:
+    """Use the documented index route without changing registered identity.
+
+    These two providers publish a terminal-slash product-index endpoint. Keep
+    the normalized register endpoint (and derived provider UID) unchanged;
+    this compatibility rule applies only to the actual index request path.
+    An unqualified request uses an explicit first page because their default
+    pagination has returned invalid/repeated second pages. Melbourne uses 100
+    after a later 1000 request failed; St.George retains its observed 1000. Preserve
+    explicit queries and all other hosts/paths, including details.
+    """
+    parts = urllib.parse.urlsplit(url)
+    if (parts.scheme == "https" and not parts.fragment
+            and parts.netloc.lower() in {
+                "digital-api.bankofmelbourne.com.au", "digital-api.stgeorge.com.au"}
+            and parts.path in {"/cds-au/v1/banking/products", "/cds-au/v1/banking/products/"}):
+        page_size = 100 if parts.netloc.lower() == "digital-api.bankofmelbourne.com.au" else 1000
+        return urllib.parse.urlunsplit(parts._replace(
+            path=parts.path.rstrip("/") + "/", query=parts.query or f"page=1&page-size={page_size}"))
+    return url
+
+
 def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
     """Yield banking PRD brand rows from one register payload."""
     if is_record(payload):

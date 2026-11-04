@@ -1,0 +1,16 @@
+{
+  "scope": "Retained public register and single-page index bodies; no detail/rate/publication acceptance",
+  "operation": "coverage-20261104-tick05",
+  "captured_at_utc": "2026-11-04T01:39:20Z",
+  "request_version": 5,
+  "query": "page=1&page-size=1000",
+  "requests": {
+    "bom.json": "https://digital-api.bankofmelbourne.com.au/cds-au/v1/banking/products/?page=1&page-size=1000",
+    "stgeorge.json": "https://digital-api.stgeorge.com.au/cds-au/v1/banking/products/?page=1&page-size=1000"
+  },
+  "files": {
+    "bom.json": "67fbc65a69cfaca7621b5af48efd7e6db6d66367750df8cbc5543222e7c99fa4",
+    "stgeorge.json": "727ba28901b5b2100670b5938db65f8a1115024de2d10c6e5b04e2a0109e385c",
+    "register.json": "cb5bc2badb5264b646aa152eac5d6f28d612ce2b12d4fd4f2a019b82fe05051e"
+  }
+}

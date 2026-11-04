@@ -71,3 +71,7 @@ tests/fixtures/history-ready-real.json -text
 tests/fixtures/observer-compat-20261102/** -text
 tests/fixtures/pressure-r11-v1-failed.json -text
 deploy/windows/ingest-observer-context.patch -text
+
+# Retained bank/register response bytes include original CRLF in the register.
+tests/fixtures/cdr-official-single-page-2026-11-04/*.json -text whitespace=cr-at-eol
+tests/fixtures/cdr-bom-page100-2026-11-04/*.json -text whitespace=cr-at-eol
