@@ -37179,3 +37179,58 @@ Re-enable the two Restic timers only after (1) the 2026-10-29 01:00 head ingest 
   quiescence requirement, while retaining reset, allocation, minimum-headroom,
   low/refault, service and resource gates. It requires independent review,
   exact-head CI and a fresh full guarded canary; preparation is not deployment.
+
+## 2026-11-05 - Hosted guarded canaries fail resource gates (OPS-20261105-HC-01)
+
+Operator authorized running the guarded canary on current main, then deploy and
+payload republication if it passed. Neither canary passed; nothing was sealed,
+activated, deployed or published. Production remains
+`8590e238d00f093e7f6d20fccfc2377c7abf1aec`, clean.
+
+Route: new manual `pi-quality-canary` workflow (#1074, #1078-#1081) over the
+hosted Tailscale/SSH route, per-commit candidate
+`/srv/ar-local/quality-candidate-<sha12>`, committed reviewed dispositions
+`docs/evidence/cdr-quality-20260912/historical-dispositions.json`
+(SHA-256 `2992159f9e656a37a05c40c14a52a8e9b745c9f9841ccf289ef4a1c7986d46e9`),
+Python `/srv/ar-local/quality-python-aca980106-20260917/bin/python3`, admitted
+through `pi-shared-task`. Preflight: natural ingest 2026-11-05 Result=success at
+01:17 AEDT; sudo, disk 41%, MemAvailable about 7.4 GB.
+
+- Run 41920760761, `94fd62eedc388bd8643233cdbb717b97fc463914`, legacy profile
+  (resources v2): FAIL after 1.4 s, `host_swap_out_activity` (host swap-out
+  114858 to 114860 pages; workload RSS 71 MB; available 7.50 GB). Expected under
+  the legacy zero-host-swap rule.
+- Run 41921753319, `1f383a50e9d8d33edb3a3cee78ddde0f58d8e7c6`, `allocation-v1`
+  (resources v6, host pressure v5): FAIL after 16.4 s (sample 152),
+  `host_zone_low_with_refault`; low-with-activity samples 54, low-with-refault 1,
+  refault evidence 470701 bytes (`mglru_same_node`); PSI unavailable; available
+  7.62 GB. Same failure family as R15.
+
+Both workloads were terminated with clean cgroups; canary units verified
+inactive. Operation evidence remains under
+`/srv/ar-local/quality-operation-gh-41920760761-1` and
+`/srv/ar-local/quality-operation-gh-41921753319-1` (inspect mode prints them).
+
+Next: identify which zone is persistently below its low watermark (admission and
+post-cleanup zone snapshots) before proposing any change to the reviewed
+allocation-v1 low/refault rule. Relaxing that rule is an operator policy
+decision; do not rerun with a weaker profile to obtain a PASS. Deployment also
+still requires the eight `CANARY_GATE_EVIDENCE.md` gates, including Android
+emulator/device matrices.
+
+### Execution record
+
+| Field | Value |
+|-------|-------|
+| Document ID / version | `ARL-OPS-001` / `1.5` |
+| Document-containing commit | `7131493b028e56395eb65fffb1b41037741bfac3` |
+| Controlled plan SHA-256 | `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada` |
+| Raw runbook file SHA-256 | `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Operator | Claude Code agent session acting for the repository owner (operator instruction 2026-11-04 19:14 AEDT) |
+| Candidate code SHAs | `94fd62eedc388bd8643233cdbb717b97fc463914` (legacy), `1f383a50e9d8d33edb3a3cee78ddde0f58d8e7c6` (allocation-v1) |
+| Timestamps (UTC) | Preflight 41920504378 21:55; canary 41920760761 worker 21:57:13-21:57:15; canary 41921753319 worker 22:03:44-22:04:01; inspect runs 41921605125 and the following inspect dispatch |
+| Exact commands | `pi-quality-canary` `workflow_dispatch` on `main`: `mode=canary`, `confirm=RUN_GUARDED_CANARY`, `python=/srv/ar-local/quality-python-aca980106-20260917/bin/python3`, default dispositions, `pressure_profile=legacy` then `allocation-v1`; queued command `pi_cdr_quality_activate.py canary --source <candidate> --production /srv/ar-local/AR-local --data-root /srv/ar-local/data --operation /srv/ar-local/quality-operation-gh-<run>-1 --expected-commit <sha> --python <python> --dispositions <private copy> --pressure-profile <profile>` |
+| Evidence | Workflow logs for runs 41920760761, 41921753319, 41921605125; Pi files `resources.json`, `canary-unit.json`, `canary-service.txt` under each operation directory above |
+| Results | Both canary runs `FAIL`; seal/deploy/republish `NOT_STARTED` |
+| Deviations | Pi-side evidence file SHA-256 values were not captured in workflow logs (inspect prints scalar fields only); record them from the operation directories before relying on these files. Canary route was the hosted workflow rather than an operator SSH session. |
+| Current phase / gates | Guarded canary gate: FAIL (blocking). Deployment gates in `CANARY_GATE_EVIDENCE.md`: not started. Payload republication 2026-10-29..2026-11-04: not started. |
