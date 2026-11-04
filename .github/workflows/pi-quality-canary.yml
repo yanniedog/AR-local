@@ -1,0 +1,198 @@
+# Run the D-027 guarded quality canary for one exact AR-local main commit on
+# the Pi, over the same hosted-runner Tailscale/SSH route as pi-deploy-canary.
+#
+# Manual dispatch only. The canary is private replay acceptance; it never
+# seals, activates, deploys or publishes. Sealing and pi-deploy-canary remain
+# separate controlled steps. `preflight` mode is read-only.
+#
+# The candidate checkout (/srv/ar-local/quality-candidate) is moved only to the
+# exact requested commit and only when clean. Production, data and timers are
+# untouched by this workflow; the helper enforces its own window, idle-ingest,
+# disk and resource gates and fails closed.
+name: pi-quality-canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: "Exact 40-character AR-local commit; must equal current main"
+        required: true
+        type: string
+      mode:
+        description: "preflight (read-only) or canary"
+        required: true
+        default: "preflight"
+        type: choice
+        options:
+          - "preflight"
+          - "canary"
+      confirm:
+        description: "Type RUN_GUARDED_CANARY for canary mode"
+        required: false
+        default: ""
+        type: string
+      python:
+        description: "Absolute path to the prepared Python with runtime+test deps"
+        required: true
+        type: string
+      dispositions:
+        description: "Absolute path to reviewed historical-dispositions JSON"
+        required: true
+        default: "/srv/ar-local/quality-evidence/historical-dispositions.json"
+        type: string
+      pressure_profile:
+        description: "Helper pressure profile"
+        required: true
+        default: "legacy"
+        type: choice
+        options:
+          - "legacy"
+          - "allocation-v1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  quality-canary:
+    runs-on: ubuntu-latest
+    environment: pi-production
+    timeout-minutes: 120
+    steps:
+      - name: Validate inputs and exact main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          PY: ${{ inputs.python }}
+          DISP: ${{ inputs.dispositions }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PY" =~ ^/[A-Za-z0-9._/+-]+$ ]]
+          [[ "$DISP" =~ ^/[A-Za-z0-9._/+-]+$ ]]
+          if [ "$MODE" = "canary" ]; then test "$CONFIRM" = "RUN_GUARDED_CANARY"; fi
+          MAIN="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          test "$MAIN" = "$TARGET_COMMIT" || { echo "::error::target $TARGET_COMMIT is not current main $MAIN"; exit 1; }
+
+      - name: Require Pi and Tailscale credentials
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          set -euo pipefail
+          for v in PI_SSH_PRIVATE_KEY PI_SSH_HOST PI_SSH_KNOWN_HOSTS TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET; do
+            test -n "${!v}" || { echo "::error::$v missing"; exit 1; }
+          done
+
+      - name: Join Tailscale tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
+      - name: Configure SSH for Pi
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_deploy_key ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${PI_SSH_USER:-pi}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 60
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Read-only Pi preflight
+        env:
+          PY: ${{ inputs.python }}
+          DISP: ${{ inputs.dispositions }}
+        run: |
+          set -uo pipefail
+          ssh ar-local-pi5 bash -s -- "$PY" "$DISP" <<'REMOTE'
+          set -u
+          PY="$1"; DISP="$2"; C=/srv/ar-local/quality-candidate
+          echo "hobart: $(TZ=Australia/Hobart date -Is)"
+          echo "production HEAD: $(git -C /srv/ar-local/AR-local rev-parse HEAD 2>&1)"
+          echo "production dirty: $(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
+          echo "candidate HEAD: $(git -C "$C" rev-parse HEAD 2>&1)"
+          echo "candidate dirty: $(git -C "$C" status --porcelain 2>&1 | wc -l)"
+          echo "candidate origin: $(git -C "$C" remote get-url origin 2>&1)"
+          test -x "$PY" && echo "python: $("$PY" --version 2>&1)" || echo "python: MISSING $PY"
+          test -f "$DISP" && echo "dispositions sha256: $(sha256sum "$DISP" | cut -d' ' -f1)" || echo "dispositions: MISSING $DISP"
+          test -x /usr/local/bin/pi-shared-task && echo "pi-shared-task: present" || echo "pi-shared-task: MISSING"
+          systemctl is-active ar-local-daily.service 2>&1 | sed 's/^/daily service: /'
+          df -h /srv/ar-local | tail -1
+          grep -E 'MemAvailable' /proc/meminfo
+          ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5
+          REMOTE
+
+      - name: Prepare candidate and run guarded canary
+        if: inputs.mode == 'canary'
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          PY: ${{ inputs.python }}
+          DISP: ${{ inputs.dispositions }}
+          PROFILE: ${{ inputs.pressure_profile }}
+          OP_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" <<'REMOTE'
+          set -euo pipefail
+          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"
+          C=/srv/ar-local/quality-candidate
+          OP="/srv/ar-local/quality-operation-$OP_ID"
+          case "$(git -C "$C" remote get-url origin)" in
+            *yanniedog/AR-local*|*yanniedog/ar-local*) ;;
+            *) echo "candidate origin is not yanniedog/AR-local"; exit 1 ;;
+          esac
+          test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
+          test ! -e "$OP" || { echo "operation $OP already exists"; exit 1; }
+          git -C "$C" fetch --quiet origin main
+          test "$(git -C "$C" rev-parse FETCH_HEAD)" = "$COMMIT" || { echo "fetched main != $COMMIT"; exit 1; }
+          git -C "$C" checkout --quiet --detach "$COMMIT"
+          test "$(git -C "$C" rev-parse HEAD)" = "$COMMIT"
+          echo "operation: $OP"
+          set +e
+          /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
+            --cpu-slots 2 --max-runtime 6000 -- \
+            "$PY" "$C/pi_cdr_quality_activate.py" canary \
+              --source "$C" \
+              --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
+              --operation "$OP" \
+              --expected-commit "$COMMIT" \
+              --python "$PY" \
+              --dispositions "$DISP" \
+              --pressure-profile "$PROFILE"
+          RC=$?
+          set -e
+          echo "canary exit: $RC"
+          if [ -f "$OP/canary.json" ]; then
+            echo "canary.json sha256: $(sha256sum "$OP/canary.json" | cut -d' ' -f1)"
+            head -c 20000 "$OP/canary.json"; echo
+          else
+            echo "canary.json not produced"
+          fi
+          exit "$RC"
+          REMOTE
