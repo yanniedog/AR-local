@@ -165,7 +165,13 @@ jobs:
           ssh ar-local-pi5 bash -s -- "$PY" "$DISP" "$TARGET_COMMIT" <<'REMOTE'
           set -u
           PY="$1"; DISP="$2"; COMMIT="$3"; C="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
-          echo "candidate path: $C$( [ -e "$C" ] || echo ' (absent; canary will clone it)')"
+          echo "candidate path: $C$( [ -e "$C" ] || [ -L "$C" ] || echo ' (absent; canary will clone it)')"
+          # Never run Git through a symlink or aliased parent, even read-only.
+          CANON=1
+          for P in /srv /srv/ar-local "$C"; do
+            if [ -L "$P" ] || { [ -e "$P" ] && [ "$(readlink -f "$P")" != "$P" ]; }; then CANON=0; fi
+          done
+          [ "$CANON" = 1 ] || { echo "candidate path or parent is not canonical; candidate metadata withheld"; C=/nonexistent-candidate; }
           echo "hobart: $(TZ=Australia/Hobart date -Is)"
           echo "production HEAD: $(git -C /srv/ar-local/AR-local rev-parse HEAD 2>&1)"
           echo "production dirty: $(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
@@ -334,6 +340,12 @@ jobs:
           [ "$D_ACTIVE" = inactive ] && [ "$D_RESULT" = success ] || { echo "daily ingest not terminally successful ($D_ACTIVE/$D_RESULT)"; exit 1; }
           D_DAY="$(TZ=Australia/Hobart date -d "$D_EXIT" +%F 2>/dev/null || echo none)"
           [ "$D_DAY" = "$(TZ=Australia/Hobart date +%F)" ] || { echo "today natural ingest/validation has not completed (last exit: $D_EXIT)"; exit 1; }
+          # Parents must be canonical, symlink-free real directories before any
+          # clone can write through them.
+          for P in /srv /srv/ar-local; do
+            [ -d "$P" ] && [ ! -L "$P" ] && [ "$(readlink -f "$P")" = "$P" ] \
+              || { echo "candidate parent $P is not canonical; refusing"; exit 1; }
+          done
           CREATED=0
           if [ ! -e "$C" ] && [ ! -L "$C" ]; then
             git clone --quiet --no-checkout https://github.com/yanniedog/AR-local.git "$C"
@@ -346,9 +358,10 @@ jobs:
             https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git) ;;
             *) echo "candidate origin is not the canonical AR-local URL"; exit 1 ;;
           esac
-          # A fresh --no-checkout clone has no worktree yet; only reused
-          # checkouts are checked here, and every checkout is checked below.
-          if [ "$CREATED" = 0 ]; then
+          # A --no-checkout clone (fresh, or left by an interrupted earlier run)
+          # has no worktree files yet; only populated checkouts are checked here,
+          # and every checkout is checked clean after the exact checkout below.
+          if [ "$CREATED" = 0 ] && [ -n "$(find "$C" -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]; then
             test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
           fi
           test ! -e "$OP" || { echo "operation $OP already exists"; exit 1; }

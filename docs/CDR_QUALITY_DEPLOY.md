@@ -232,14 +232,20 @@ Manual equivalent, with a fresh operation name and the actual reviewed
 
 ```sh
 C=/srv/ar-local/quality-candidate-EXACT12HEX
+D="$C/docs/evidence/cdr-quality-20260912/historical-dispositions.json"
+# Use only the reviewed evidence the workflow pins (REVIEWED_DISPOSITIONS_SHA256).
+echo "2992159f9e656a37a05c40c14a52a8e9b745c9f9841ccf289ef4a1c7986d46e9  $D" | sha256sum -c - || exit 1
 python3 "$C/pi_cdr_quality_activate.py" canary \
   --source "$C" \
   --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
   --operation /srv/ar-local/quality-operation-UNIQUE \
   --expected-commit EXACT_MERGED_COMMIT \
   --python /path/to/prepared/python \
-  --dispositions "$C/docs/evidence/cdr-quality-20260912/historical-dispositions.json"
+  --dispositions "$D"
 ```
+
+If the reviewed evidence changes, update the workflow's pinned digest and this
+check together in one reviewed PR.
 
 The dispositions file is an object mapping `canonical_digest(issue)` (from
 `cdr_quality_accounting`) to a specific reasoned disposition for that exact
@@ -342,8 +348,9 @@ subsequent public audit remain independent commissioning requirements.
 ## Seal and activate
 
 ```sh
-python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py seal \
-  --source /srv/ar-local/quality-candidate \
+C=/srv/ar-local/quality-candidate-EXACT12HEX   # the same checkout the canary used
+python3 "$C/pi_cdr_quality_activate.py" seal \
+  --source "$C" \
   --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
   --operation /srv/ar-local/quality-operation-UNIQUE \
   --expected-commit EXACT_MERGED_COMMIT \
@@ -359,11 +366,11 @@ It expires after six hours or at 22:00 Hobart, whichever comes first. Capture th
 returned manifest hash; never substitute a recomputed hash after editing evidence.
 
 ```sh
-python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py activate \
+python3 "$C/pi_cdr_quality_activate.py" activate \
   --manifest /srv/ar-local/quality-operation-UNIQUE/activation.json \
   --manifest-sha256 RETURNED_MANIFEST_SHA256 --dry-run
 
-python3 /srv/ar-local/quality-candidate/pi_cdr_quality_activate.py activate \
+python3 "$C/pi_cdr_quality_activate.py" activate \
   --manifest /srv/ar-local/quality-operation-UNIQUE/activation.json \
   --manifest-sha256 RETURNED_MANIFEST_SHA256
 ```
