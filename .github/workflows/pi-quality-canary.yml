@@ -63,6 +63,9 @@ concurrency:
 
 jobs:
   quality-canary:
+    # Production secrets are only granted to the reviewed default-branch
+    # workflow definition, never to a dispatch from another ref.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: pi-production
     timeout-minutes: 150
@@ -147,7 +150,13 @@ jobs:
           echo "production dirty: $(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
           echo "candidate HEAD: $(git -C "$C" rev-parse HEAD 2>&1)"
           echo "candidate dirty: $(git -C "$C" status --porcelain 2>&1 | wc -l)"
-          echo "candidate origin: $(git -C "$C" remote get-url origin 2>&1)"
+          ORIGIN="$(git -C "$C" remote get-url origin 2>&1 || true)"
+          case "$ORIGIN" in
+            https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git)
+              echo "candidate origin: $ORIGIN" ;;
+            *) echo "candidate origin: NOT CANONICAL (value withheld)" ;;
+          esac
+          systemctl show ar-local-daily.service -p ActiveState -p Result -p ExecMainExitTimestamp 2>&1 | sed 's/^/daily last run: /'
           test -x "$PY" && echo "python: $("$PY" --version 2>&1)" || echo "python: MISSING $PY"
           test -f "$DISP" && echo "dispositions sha256: $(sha256sum "$DISP" | cut -d' ' -f1)" || echo "dispositions: MISSING $DISP"
           test -x /usr/local/bin/pi-shared-task && echo "pi-shared-task: present" || echo "pi-shared-task: MISSING"
@@ -188,9 +197,17 @@ jobs:
           COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
           C=/srv/ar-local/quality-candidate
           OP="/srv/ar-local/quality-operation-$OP_ID"
+          NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
+          [ "$NOW_HM" -ge 0330 ] && [ "$NOW_HM" -lt 2200 ] || { echo "outside 03:30-22:00 Hobart"; exit 1; }
+          D_ACTIVE="$(systemctl show ar-local-daily.service -p ActiveState --value)"
+          D_RESULT="$(systemctl show ar-local-daily.service -p Result --value)"
+          D_EXIT="$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value)"
+          [ "$D_ACTIVE" = inactive ] && [ "$D_RESULT" = success ] || { echo "daily ingest not terminally successful ($D_ACTIVE/$D_RESULT)"; exit 1; }
+          D_DAY="$(TZ=Australia/Hobart date -d "$D_EXIT" +%F 2>/dev/null || echo none)"
+          [ "$D_DAY" = "$(TZ=Australia/Hobart date +%F)" ] || { echo "today natural ingest/validation has not completed (last exit: $D_EXIT)"; exit 1; }
           case "$(git -C "$C" remote get-url origin)" in
-            *yanniedog/AR-local*|*yanniedog/ar-local*) ;;
-            *) echo "candidate origin is not yanniedog/AR-local"; exit 1 ;;
+            https://github.com/yanniedog/AR-local.git|https://github.com/yanniedog/AR-local|git@github.com:yanniedog/AR-local.git) ;;
+            *) echo "candidate origin is not the canonical AR-local URL"; exit 1 ;;
           esac
           test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
           test ! -e "$OP" || { echo "operation $OP already exists"; exit 1; }
@@ -198,13 +215,17 @@ jobs:
           test "$(git -C "$C" rev-parse FETCH_HEAD)" = "$COMMIT" || { echo "fetched main != $COMMIT"; exit 1; }
           git -C "$C" checkout --quiet --detach "$COMMIT"
           test "$(git -C "$C" rev-parse HEAD)" = "$COMMIT"
-          test "$(sha256sum "$DISP" | cut -d" " -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
+          DCOPY="/srv/ar-local/quality-gh-control/$OP_ID.dispositions.json"
+          test ! -e "$DCOPY" || { echo "dispositions copy already exists"; exit 1; }
+          (umask 077; cp --no-preserve=all "$DISP" "$DCOPY")
+          chmod 0400 "$DCOPY"
+          test "$(sha256sum "$DCOPY" | cut -d" " -f1)" = "$DISP_SHA" || { echo "dispositions SHA-256 differs from reviewed value; refusing"; exit 1; }
           echo "operation: $OP"
           exec "$PY" "$C/pi_cdr_quality_activate.py" canary \
             --source "$C" \
             --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
             --operation "$OP" --expected-commit "$COMMIT" --python "$PY" \
-            --dispositions "$DISP" --pressure-profile "$PROFILE"'
+            --dispositions "$DCOPY" --pressure-profile "$PROFILE"'
           setsid /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
             --cpu-slots 2 --max-runtime 6000 --wait-timeout 1800 -- \
             /bin/bash -c "$QUEUED" queued-canary "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" &
@@ -220,7 +241,16 @@ jobs:
           OP="/srv/ar-local/quality-operation-$OP_ID"
           if [ -f "$OP/canary.json" ]; then
             echo "canary.json sha256: $(sha256sum "$OP/canary.json" | cut -d' ' -f1)"
-            head -c 20000 "$OP/canary.json"; echo
+            python3 - "$OP/canary.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          # Full report (including disposition reasons) stays on the Pi.
+          for k, v in r.items():
+              if "disposition" in k.lower():
+                  continue
+              if isinstance(v, (str, int, float, bool)) or v is None:
+                  print(f"{k}: {v}")
+          PY
           else
             echo "canary.json not produced"
           fi
