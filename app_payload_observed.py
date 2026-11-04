@@ -385,6 +385,12 @@ def publish_candidate(directory, state, accepted, *, production_lock_path, store
             if (saved["manifest_sha256"] != accepted.manifest_sha256
                     or after != advance_index(before, index, manifest)):
                 raise RevisionError("reserved local transaction differs")
+            # A resumed target may be restored over a lost index; it must still
+            # carry every date other durable transactions established since.
+            stale = durable_history_dates(state, tag) - set(validate_index(after)["revision_heads"])
+            if stale:
+                raise RevisionError("stale recovery target omits durable published dates: "
+                                    + ", ".join(sorted(stale)))
         else:
             require_durable_history(state, tag, current)
             before, after = current, advance_index(current, index, manifest)

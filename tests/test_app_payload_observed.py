@@ -651,6 +651,20 @@ def test_valid_index_omitting_durable_dates_fails_closed(candidate, tmp_path, re
     assert not [x for x in store.events if x[0] in ("asset", "index")]
 
 
+def test_resumed_transaction_refuses_stale_target_over_lost_index(candidate, tmp_path):
+    """Retrying an older edition must not restore a target that drops later history."""
+    store = MemoryStore()
+    store.fail_at = "manifest.json"
+    with pytest.raises(p.RevisionError):
+        publish(candidate, tmp_path, store)
+    store.fail_at = None
+    _durable(tmp_path, p.edition(PREVIOUS_DAY, 1), _with_previous_day(candidate), receipt=True)
+    store.data.pop((p.INDEX_TAG, "dates-index.json"), None)
+    with pytest.raises(p.RevisionError, match="stale recovery target omits durable published dates: " + PREVIOUS_DAY):
+        publish(candidate, tmp_path, store)
+    assert not [x for x in store.events if x[0] == "index"]
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission control")
 def test_restore_staging_directory_is_private_before_index_replacement(candidate, tmp_path):
     store = MemoryStore()
