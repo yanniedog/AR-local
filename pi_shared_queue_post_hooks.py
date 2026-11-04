@@ -16,6 +16,7 @@ import subprocess
 PLAIN = re.compile(r"ar-local-plain-backup-([0-9a-f]{32})\.service\Z")
 ROOT = Path("/usr/local/lib/ar-local-plain-backup")
 HANDOFF = Path("/var/lib/ar-local-plain-backup-handoff")
+PLAIN_STATE = Path("/var/lib/ar-local-plain-backup-control")
 BROKER = str(ROOT / "broker.py")
 IMAGE_ROOT = Path("/usr/local/lib/ar-local-system-recovery")
 IMAGE_HANDOFF = Path("/var/lib/ar-local-system-recovery-handoff")
@@ -149,8 +150,9 @@ def ci_start(plan):
         '/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', str(CI_CONTROL), '--worker', plan]
 
 
-def _queue_start(parent, nonce, mode, *, isolated=False):
-    runtime, wait = (120, 30) if mode == "PROBE" else (21600, 7200)
+def _queue_start(parent, nonce, mode, *, isolated=False, runtime=None, wait=None):
+    if runtime is None:
+        runtime, wait = (120, 30) if mode == "PROBE" else (21600, 7200)
     python_flags = ["-I", "-S", "-B"] if isolated else ["-I", "-B"]
     return ["/usr/bin/python3", "-B", QUEUE_SCRIPT, "run", "--project", "ar-local",
         "--resource", "ar-local", "--resource", "host", "--mode", "exclusive", "--cpu-slots", "1",
@@ -160,7 +162,32 @@ def _queue_start(parent, nonce, mode, *, isolated=False):
 
 def _plain_starts(nonce):
     parent = str(ROOT / "parent.py")
-    return [_queue_start(parent, nonce, mode) for mode in ("PROBE", "RUN_ARCHIVE")]
+    starts = [_queue_start(parent, nonce, mode) for mode in ("PROBE", "RUN_ARCHIVE")]
+    bound = _plain_packet_start(nonce, parent)
+    return starts + ([bound] if bound else [])
+
+
+def _plain_packet_start(nonce, parent):
+    """The packet-bound command pi_plain_backup_plan.service_plan() generates.
+
+    Its runtime is the packet's chosen runtime and its wait is 0, so neither is a
+    fixed pair. Both are read from the root-private frozen packet, never from the
+    unit, and the reconstructed argv must equal the root-written plan exactly.
+    """
+    private = PLAIN_STATE / nonce
+    if not (_present(private / "packet.json") and _present(private / "service-plan.json")):
+        return None
+    packet = root_json(private / "packet.json")
+    plan = root_json(private / "service-plan.json")
+    mode, runtime = packet.get("mode"), packet.get("runtime_seconds")
+    cap = {"PROBE": 120, "RUN_ARCHIVE": 21600}.get(mode)
+    if (cap is None or packet.get("nonce") != nonce or type(runtime) is not int
+            or not 1 <= runtime <= cap):
+        raise ValueError("plaintext packet runtime binding differs")
+    start = _queue_start(parent, nonce, mode, runtime=runtime, wait=0)
+    if plan.get("argv") != start or plan.get("queue_argv_sha256") != _argv_sha(start):
+        raise ValueError("plaintext service plan differs from its packet")
+    return start
 
 
 def image_start(nonce, mode):
