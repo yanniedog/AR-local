@@ -15,7 +15,7 @@
       "adapterVersion": "1",
       "fixture": "cba-rates-20261014.pdf",
       "sha256": "44c4b9c0d1602db185004ffc58ec4cc1a073704f508597535f0fdf1188290fd5",
-      "semanticSha256": "2f9c00e52cc82ecee0ec8070b1d238aa510b9d7794b68a1fd4366d89b0b708f7",
+      "semanticSha256": "3159fd7e40a6a74edf584efce3bdd94c9198c1adbfed0fa034ae84ec2cc1fb95",
       "referenceRows": 32
     },
     "westpac-reference": {
