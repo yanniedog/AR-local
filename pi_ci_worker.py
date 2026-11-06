@@ -37,6 +37,15 @@ def verify(phase, manifest, manifest_sha256, previous, work):
     # This import path is fixed by the root launcher, never by CI request text.
     boundary('/srv/ar-local/data', '/candidate')
     sys.path.insert(0, '/candidate')
+    from contextlib import nullcontext
+    from pi_cdr_quality_read_io import require_dropbehind_reads
+    # Forward verification keeps the D-027 "required drop-behind snapshot
+    # reads" contract (as the activation path does); rollback stays portable.
+    with nullcontext() if phase.startswith('rollback') else require_dropbehind_reads():
+        return _verify(phase, manifest, manifest_sha256, previous, work)
+
+
+def _verify(phase, manifest, manifest_sha256, previous, work):
     from pi_cdr_quality_activate_evidence import read, sha, validate_manifest
     from pi_cdr_quality_activate import protected_files, source_files, git, smoke
     from pi_cdr_quality_runtime_state import require_controls, require_predecessor

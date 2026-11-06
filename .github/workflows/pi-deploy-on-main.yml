@@ -214,7 +214,10 @@ jobs:
           # ar-local-ci is a forced-command account: only status/check/activate
           # are accepted. `status` loads the commissioned runtime profile, which
           # requires the installed shared-queue files, and fails closed otherwise.
-          ssh -o BatchMode=yes -o ConnectTimeout=60 ar-local-pi5 status >/dev/null
+          # OBSERVED (an accepted release) or COMMISSIONED_NOT_ACCEPTED (first
+          # deployment) both prove the commissioned runtime and queue closure.
+          out="$(ssh -o BatchMode=yes -o ConnectTimeout=60 ar-local-pi5 status)"
+          printf '%s' "$out" | python3 -c 'import json,sys; r=json.load(sys.stdin).get("result"); sys.exit(0 if r in ("OBSERVED","COMMISSIONED_NOT_ACCEPTED") else 1)'
 
       - name: Deploy exact approved commit and verify
         if: >-

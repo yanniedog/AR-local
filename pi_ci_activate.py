@@ -7,6 +7,7 @@ and empty-cgroup checks succeed. Failed/ambiguous work is never replayed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime, timezone
 import json
 import os
@@ -401,7 +402,7 @@ class Native:
         argv += ['--setenv', 'TMPDIR', '/work', '--setenv', 'SQLITE_TMPDIR', '/work', '--', '/usr/bin/setpriv',
                  '--reuid=' + str(self.pi.pw_uid), '--regid=' + str(self.pi.pw_gid), '--clear-groups',
                  '--no-new-privs', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--',
-                 '/usr/bin/python3', '-I', '-B', '/worker.py', phase,
+                 approved_interpreter(self.context['sealed']), '-I', '-B', '/worker.py', phase,
                  '--sealed-sha256', self.context['plan']['sealed_manifest_sha256'], '--work', '/work']
         # Match the qualified root-bwrap→setpriv kernel boundary. Root launcher
         # preserves identity capabilities until setpriv drops identity/caps/NNP.
@@ -417,6 +418,26 @@ class Native:
         # are named after their own worker directory, never shared.
         release.write(self.context['work'] / (work.name + '-verified.json'), result)
         return result
+
+
+def approved_interpreter(sealed):
+    """The exact interpreter the sealed canary suite ran under.
+
+    The verifier re-checks canary evidence against sys.executable, so it must
+    run under the recorded path, and that binary must still hash to the
+    recorded digest; a prepared environment is supported, a swap is not.
+    """
+    proof = json.loads((Path(sealed['operation_root']) / 'pytest-suite.json').read_bytes(),
+                       object_pairs_hook=release.unique)
+    python = proof.get('python') or {}
+    path, digest = python.get('path'), python.get('sha256')
+    if (not isinstance(path, str) or not path.startswith('/') or '..' in Path(path).parts
+            or not isinstance(digest, str) or not release.HEX.fullmatch(digest)):
+        raise ValueError('sealed suite interpreter is not recorded')
+    resolved = Path(path).resolve(strict=True)
+    if hashlib.sha256(resolved.read_bytes()).hexdigest() != digest:
+        raise ValueError('sealed suite interpreter changed since the canary')
+    return path
 
 
 def transaction(context, backend):

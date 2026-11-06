@@ -271,7 +271,8 @@ def test_real_worker_launcher_has_private_pid_ro_sources_and_fixed_privilege_dro
     work = tmp_path / 'transaction'; work.mkdir()
     source = tmp_path / 'sealed-source'; source.mkdir()
     context = {'id': 'a' * 64, 'work': work, 'stage': tmp_path / 'stage',
-               'sealed': {'source_root': str(source)}, 'plan': {'sealed_manifest_sha256': 'b' * 64}}
+               'sealed': {'source_root': str(source), 'operation_root': str(tmp_path)}, 'plan': {'sealed_manifest_sha256': 'b' * 64}}
+    monkeypatch.setattr(activate, 'approved_interpreter', lambda sealed: '/usr/bin/python3')
     native = activate.Native.__new__(activate.Native)
     native.context = context; native.binding = {'cgroup': '/system.slice/fixed-ci.service'}
     native.pi = SimpleNamespace(pw_uid=1000, pw_gid=1000); native.finalizing = False
@@ -403,3 +404,47 @@ def test_materialized_nested_release_is_traversable_with_umask_0077(tmp_path, mo
     finally: os.umask(previous)
     for directory, _, _ in os.walk(destination): assert stat.S_IMODE(Path(directory).stat().st_mode) == 0o755
     assert (destination / 'package/nested/module.py').read_bytes() == b'VALUE = 42\n'
+
+
+def test_commissioned_runtime_before_first_acceptance_is_reported_but_never_accepted(tmp_path, monkeypatch):
+    (tmp_path / 'accepted').mkdir()
+    monkeypatch.setattr(snapshot, 'STATE', tmp_path)
+    monkeypatch.setattr(snapshot.release, 'read', lambda path, *a: {'schema': 'runtime'})
+    checked = []
+    monkeypatch.setattr(snapshot, 'check_profile', lambda profile: checked.append(profile))
+    value = snapshot.snapshot()
+    assert checked and value['result'] == 'COMMISSIONED_NOT_ACCEPTED'
+    with pytest.raises(ValueError):
+        snapshot.check_snapshot(value, 'a' * 40)
+
+
+def test_verifier_runs_under_the_sealed_suite_interpreter(tmp_path):
+    import hashlib, sys
+    binary = Path(sys.executable).resolve()
+    proof = {'python': {'path': str(Path(sys.executable).absolute()),
+                        'sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}}
+    (tmp_path / 'pytest-suite.json').write_text(json.dumps(proof))
+    sealed = {'operation_root': str(tmp_path)}
+    assert activate.approved_interpreter(sealed) == proof['python']['path']
+    proof['python']['sha256'] = '0' * 64
+    (tmp_path / 'pytest-suite.json').write_text(json.dumps(proof))
+    with pytest.raises(ValueError, match='changed since the canary'):
+        activate.approved_interpreter(sealed)
+    (tmp_path / 'pytest-suite.json').write_text(json.dumps({'python': {'path': 'python3', 'sha256': 'a' * 64}}))
+    with pytest.raises(ValueError, match='not recorded'):
+        activate.approved_interpreter(sealed)
+
+
+@pytest.mark.parametrize('phase,required', [('pre', True), ('post', True), ('rollback-check', False), ('rollback', False)])
+def test_forward_verification_requires_dropbehind_reads(monkeypatch, phase, required):
+    import contextlib, sys, types
+    import pi_ci_worker as worker
+    entered = []
+    @contextlib.contextmanager
+    def require():
+        entered.append(True); yield
+    monkeypatch.setitem(sys.modules, 'pi_cdr_quality_read_io', types.SimpleNamespace(require_dropbehind_reads=require))
+    monkeypatch.setattr(worker, 'boundary', lambda *a: None)
+    monkeypatch.setattr(worker, '_verify', lambda *a: {'result': 'PASS'})
+    assert worker.verify(phase, None, None, None, None) == {'result': 'PASS'}
+    assert bool(entered) is required

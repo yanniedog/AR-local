@@ -17,6 +17,14 @@ def snapshot():
             raise RuntimeError('read-only snapshot deadline reached')
     profile = release.read(RUNTIME)
     check_profile(profile)
+    try:
+        (STATE / 'accepted/current.json').lstat()
+    except FileNotFoundError:
+        # Commissioned runtime (profile and queue closure verified) before the
+        # first accepted activation. Distinct from OBSERVED, so check_snapshot()
+        # never treats it as an accepted deployment.
+        return dict(schema='ar-local-ci-snapshot-v1', result='COMMISSIONED_NOT_ACCEPTED',
+                    effective_profile_verified=True, acceptance='NONE')
     current = release.read(STATE / 'accepted/current.json')
     if (current.get('schema') != 'ar-local-ci-accepted-v1'
             or not release.COMMIT.fullmatch(str(current.get('commit', '')))
