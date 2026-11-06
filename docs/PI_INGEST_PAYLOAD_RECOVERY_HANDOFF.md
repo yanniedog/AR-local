@@ -37234,3 +37234,26 @@ emulator/device matrices.
 | Results | Both canary runs `FAIL`; seal/deploy/republish `NOT_STARTED` |
 | Deviations | Pi-side evidence file SHA-256 values were not captured in workflow logs (inspect prints scalar fields only); record them from the operation directories before relying on these files. Canary route was the hosted workflow rather than an operator SSH session. |
 | Current phase / gates | Guarded canary gate: FAIL (blocking). Deployment gates in `CANARY_GATE_EVIDENCE.md`: not started. Payload republication 2026-10-29..2026-11-04: not started. |
+
+## 2026-11-07 - Operator-waived population gate publishes five withheld dates (OPS-20261107-PW-01)
+
+Operator decision (repository owner, 2026-11-06): observations withheld solely by
+`unverified_provider_population` may be published; every other gate stays in force.
+Route: `pi-payload-backfill` (#1086) over the hosted Tailscale/SSH path, admitted through
+`pi-shared-task`, running `scripts/pi_population_waiver_publish.py` against the clean
+production checkout `8590e238d00f093e7f6d20fccfc2377c7abf1aec` (production code itself
+unchanged; deployment remains blocked by OPS-20261105-HC-01). The runner drives
+`pi_daily_sync.maybe_publish_app_payload` for each pending-marker pointer under the
+daily-ingest lock and retry window, waiving only the population verdict for the
+contract digest pinned by the preceding report.
+
+| Field | Value |
+| --- | --- |
+| Report run | [42253972897](https://github.com/yanniedog/AR-local/actions/runs/42253972897) (read-only, 2026-11-06T16:36Z) |
+| Publish run | [42254153770](https://github.com/yanniedog/AR-local/actions/runs/42254153770) (2026-11-06T16:38Z-18:43Z, `success`) |
+| Published (waived) | 2026-10-30 (`bounded_partial_with_nonblocking_authentication`, contract `f490fc24...`), 2026-11-02 (`reconciled_partial`, `da7cd276...`), 2026-11-03 (`reconciled_partial`, `a314f091...`), 2026-11-06 (`reconciled_partial`, `1e34b411...`), 2026-11-07 (`reconciled_partial`, `d20d8345...`) |
+| Releases created | per date: `app-payload-<date>`, `-r000001`, `-legacy-<sha>` (where emitted) and `app-payload-v2-<date>-<sha>`; dates index updated by the daily path |
+| Refused (not published) | 2026-10-29, 2026-11-01, 2026-11-04, 2026-11-05: `unverified_provider_population+outside_bounded_v1_policy` (2-3 unverified providers and outside both bounded and reconciled partial policy) |
+| Waiver receipts | `state/population-waiver-publications-v1/<contract_digest>.json` on the Pi, one per waived date |
+| Already present | 2026-10-31 (published before this operation) |
+| Current phase / gates | Payload gap closed for the five waivable dates. The four refused dates need either a policy decision beyond the population waiver or recovered source data. Guarded canary gate still FAIL; production deployment not started. |
