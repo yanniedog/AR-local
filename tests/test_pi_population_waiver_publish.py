@@ -35,10 +35,19 @@ FAKE = {
                 return True, 'reconciled_partial'
             return False, 'outside_bounded_v1_policy'
     """,
+    "app_payload_source_verification.py": """
+        from pathlib import Path
+        def _within(root, relative): return Path(root) / relative
+        def reconciled_failure_statuses(exports, contract):
+            return not contract.get('unclassified_statuses')
+        def verify_reconciled_source(state, exports, run_date, contract):
+            return contract.get('binding_ok', True) and reconciled_failure_statuses(exports, contract)
+    """,
     "pi_daily_sync.py": """
         import json
         from pathlib import Path
         import app_payload_observation_gate as gate
+        import app_payload_source_verification as source
         PUBLISH_PUBLISHED = 'published'
         PUBLISH_WITHHELD = 'withheld'
         def _state(repo): return Path(repo) / 'state'
@@ -52,6 +61,8 @@ FAKE = {
         def maybe_publish_app_payload(repo, pointer):
             contract = json.loads((_state(repo) / 'contracts' / (pointer['observation_date'] + '.json')).read_text())
             ok = gate.publication_allowed(contract)[0]
+            if ok and contract.get('observation_state') == 'partial':
+                ok = source.verify_reconciled_source(_state(repo), _state(repo) / 'exports', pointer['observation_date'], contract)
             with open(_state(repo) / 'published.log', 'a') as log:
                 log.write(pointer['observation_date'] + (' ok' if ok else ' withheld') + '\\n')
             return PUBLISH_PUBLISHED if ok else PUBLISH_WITHHELD
@@ -257,3 +268,37 @@ def test_pending_since_with_nothing_withheld_is_a_clean_no_op(repo):
     (repo / "state/pending.json").write_text("{}")
     code, rows = run(repo, "--report", "--pending-since", "2026-10-29")
     assert code == 0 and rows == [{"selected": []}]
+
+
+def sealed(day, **extra):
+    import hashlib
+    body = dict(contract(day, bounded=False), **extra)
+    body.pop("contract_digest")
+    body["contract_digest"] = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    return body
+
+
+def test_all_policy_waives_raw_status_classification_but_not_its_seal_or_binding(repo):
+    import hashlib
+    raw = b'{"by_status": {"weird": 1}, "total": 1}'
+    (repo / "state/exports").mkdir()
+    (repo / "state/exports/ingest-status.json").write_bytes(raw)
+    good = sealed("2026-10-29", unclassified_statuses=True,
+                  artifacts=[{"path": "ingest-status.json", "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}])
+    tampered = sealed("2026-11-01", unclassified_statuses=True,
+                      artifacts=[{"path": "ingest-status.json", "bytes": len(raw), "sha256": "0" * 64}])
+    unbound = sealed("2026-11-04", unclassified_statuses=True, binding_ok=False)
+    seed(repo, [good, tampered, unbound])
+    args = ["--publish", "--policy", "all"]
+    for item in (good, tampered, unbound):
+        args += ["--date", item["observation_date"], "--allow-digest", item["observation_date"] + "=" + item["contract_digest"]]
+    code, rows = run(repo, *args)
+    assert code == 1
+    assert published(repo) == ["2026-10-29 ok", "2026-11-01 withheld", "2026-11-04 withheld"]
+
+
+def test_population_policy_does_not_waive_raw_status_classification(repo):
+    seed(repo, [sealed("2026-10-29", unclassified_statuses=True, reconciled=True)])
+    item = json.loads((repo / "state/contracts/2026-10-29.json").read_text())
+    code, rows = run(repo, "--publish", "--date", "2026-10-29", "--allow-digest", "2026-10-29=" + item["contract_digest"])
+    assert code == 1 and published(repo) == ["2026-10-29 withheld"]

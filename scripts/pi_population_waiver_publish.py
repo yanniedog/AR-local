@@ -80,6 +80,27 @@ def classify(gate, contract, policy="population"):
     return ("waivable", inner) if inner_allowed else ("refused", WAIVED + "+" + inner)
 
 
+def sealed_status_intact(source, exports, contract):
+    """Integrity half of ``reconciled_failure_statuses``: bytes match the seal."""
+    import hashlib
+    descriptors = [a for a in contract.get("artifacts") or []
+                   if isinstance(a, dict) and a.get("path") == "ingest-status.json"]
+    if not descriptors:
+        return True
+    if len(descriptors) != 1:
+        return False
+    descriptor = descriptors[0]
+    try:
+        size = descriptor["bytes"]
+        if type(size) is not int or not 0 < size <= 8 * 1024 * 1024:
+            return False
+        with source._within(exports, "ingest-status.json").open("rb") as stream:
+            raw = stream.read(size + 1)
+        return len(raw) == size and hashlib.sha256(raw).hexdigest() == descriptor["sha256"]
+    except (KeyError, OSError, ValueError, TypeError):
+        return False
+
+
 def candidates_by_date(daily, retry, repo, dates):
     pending = daily.read_payload_publication_pending(repo)
     found = {}
@@ -228,7 +249,25 @@ def main(argv=None):
             inner_allowed, inner = policy_without_population(gate, contract)
             return (True, "operator_waived_population:" + inner) if inner_allowed else (allowed, reason)
 
+        # pi_daily_sync re-checks a partial capture's raw failure statuses inside
+        # verify_reconciled_source. Under ``--policy all`` that classification is
+        # a policy verdict too, so it is waived for the pinned digests only. The
+        # marker/contract binding in verify_reconciled_source still runs, and the
+        # contract-bound ingest-status.json must still match its sealed digest.
+        import app_payload_source_verification as source
+        original_statuses = source.reconciled_failure_statuses
+
+        def scoped_statuses(exports, contract):
+            if original_statuses(exports, contract):
+                return True
+            if args.policy != "all" or not isinstance(contract, dict):
+                return False
+            if authorised.get(contract.get("observation_date")) != contract.get("contract_digest"):
+                return False
+            return sealed_status_intact(source, exports, contract)
+
         gate.publication_allowed = scoped
+        source.reconciled_failure_statuses = scoped_statuses
         try:
             for day, pointer, digest, decision, detail in plan:
                 if decision == "waivable" and authorised.get(day) != digest:
@@ -254,6 +293,7 @@ def main(argv=None):
                                       receipt, create_once=True)
         finally:
             gate.publication_allowed = original
+            source.reconciled_failure_statuses = original_statuses
     return 1 if failures else 0
 
 

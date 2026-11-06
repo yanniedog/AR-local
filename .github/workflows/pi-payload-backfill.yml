@@ -282,11 +282,18 @@ jobs:
           end="$(TZ=Australia/Hobart date -d yesterday +%F)"
           d="$AUTHORISED_FROM"; missing=""
           while [[ ! "$d" > "$end" ]]; do
-            gh api "repos/$GITHUB_REPOSITORY/releases/tags/app-payload-$d" --jq .tag_name >/dev/null 2>&1 || missing="$missing $d"
+            # The release is created before its assets upload, so a tag alone is not a
+            # payload: require an uploaded manifest.json and core shard, and no asset
+            # left in any other state (the same bar as _published_history_dates).
+            ok="$(D="$d" gh api "repos/$GITHUB_REPOSITORY/releases/tags/app-payload-$d" --jq \
+              '[.assets[]] as $a | ($a|map(select(.name=="manifest.json" and .state=="uploaded" and .size>0))|length==1)
+               and ($a|map(select((.name|startswith("core-"+env.D+"-")) and .state=="uploaded" and .size>0))|length>=1)
+               and ($a|all(.state=="uploaded"))' 2>/dev/null || echo false)"
+            [ "$ok" = true ] || missing="$missing $d"
             d="$(date -d "$d + 1 day" +%F)"
           done
           if [ -n "$missing" ]; then
-            echo "::error::no dated GitHub payload release for:$missing"
-            echo "Missing dated payload releases:$missing" >> "$GITHUB_STEP_SUMMARY"; exit 1
+            echo "::error::no complete dated GitHub payload release for:$missing"
+            echo "Missing or incomplete dated payload releases:$missing" >> "$GITHUB_STEP_SUMMARY"; exit 1
           fi
-          echo "Every date $AUTHORISED_FROM..$end has a dated payload release." >> "$GITHUB_STEP_SUMMARY"
+          echo "Every date $AUTHORISED_FROM..$end has a complete dated payload release." >> "$GITHUB_STEP_SUMMARY"
