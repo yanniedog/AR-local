@@ -111,6 +111,8 @@ def plan_context(plan_id, *, now=None, allow_expired=False):
         raise ValueError('root-approved predecessor source inventory required')
     if release.sha(release.protected(LIB / 'pi_ci_activate.py')) != plan['adapter_sha256']:
         raise ValueError('root coordinator differs from approved source')
+    # Resolve the verifier interpreter before any plan state is consumed.
+    approved_interpreter(sealed)
     return dict(id=plan_id, plan=plan, sealed=sealed, profile=profile, release=descriptor, previous=previous,
                 stage=STATE / 'staging' / plan_id / 'tree', work=STATE / 'transactions' / plan_id,
                 exchanged=STATE / 'releases' / plan_id)
@@ -449,6 +451,11 @@ def approved_interpreter(sealed):
             or not isinstance(digest, str) or not release.HEX.fullmatch(digest)):
         raise ValueError('sealed suite interpreter is not recorded')
     resolved = Path(path).resolve(strict=True)
+    # ProtectHome=yes and the worker's tmpfs mounts hide these trees: an
+    # interpreter (or its venv target) there could never launch the verifier.
+    masked = [Path(p) for p in ('/home', '/root', '/run', '/tmp')]
+    if any(root == candidate or root in candidate.parents for root in masked for candidate in (Path(path), resolved)):
+        raise ValueError('sealed suite interpreter is inside a tree hidden from the verifier')
     if hashlib.sha256(resolved.read_bytes()).hexdigest() != digest:
         raise ValueError('sealed suite interpreter changed since the canary')
     return path

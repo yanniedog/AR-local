@@ -480,3 +480,12 @@ def test_deployment_window_opens_at_0330(monkeypatch, hour, minute, allowed):
     else:
         with pytest.raises(RuntimeError, match='daytime operating window'):
             native.guard()
+
+
+@pytest.mark.parametrize('location', ['/home/pi/venv/bin/python3', '/root/py/bin/python3', '/run/py/python3', '/tmp/py/python3'])
+def test_interpreter_hidden_from_the_verifier_is_refused_before_consumption(tmp_path, monkeypatch, location):
+    import hashlib
+    (tmp_path / 'pytest-suite.json').write_text(json.dumps({'python': {'path': location, 'sha256': 'a' * 64}}))
+    monkeypatch.setattr(activate.Path, 'resolve', lambda self, strict=False: self)
+    with pytest.raises(ValueError, match='hidden from the verifier'):
+        activate.approved_interpreter({'operation_root': str(tmp_path)})
