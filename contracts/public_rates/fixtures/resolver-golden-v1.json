@@ -1,0 +1,828 @@
+{
+  "cases": [
+    {
+      "asOf": "2026-10-14T12:10:01.747389Z",
+      "expected": {
+        "maximumRate": "0.0724",
+        "minimumRate": "0.0684",
+        "status": "range"
+      },
+      "name": "NAB Tailored Home Loan",
+      "programme": {
+        "components": [
+          {
+            "componentId": "component:public-v1:f98bc89ac02eec84ed1d0c2329587a8db064f8d4a99e2fc480b7edf129352e92",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:f2498c0ec34e4216041d15f93a7f52e4777d7738a6f6b06355c1d5948c9a5aca"
+            ],
+            "role": "payable",
+            "scopeId": "offer:public-v1:317169a4e4ab6309ef6d99c4b6d29713f9e32d7067c5d65a8046fbe9005be85a",
+            "source": {
+              "pointer": "/data/lendingRates/6",
+              "rawType": "VARIABLE",
+              "rawValue": "0.0684"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0684"
+          },
+          {
+            "componentId": "component:public-v1:5d20e94a6c1193c7a29a37509b5d52cb124a6bcb1bf2a090c0cbed11cd5bdf0a",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:f2498c0ec34e4216041d15f93a7f52e4777d7738a6f6b06355c1d5948c9a5aca"
+            ],
+            "role": "comparison",
+            "scopeId": "offer:public-v1:317169a4e4ab6309ef6d99c4b6d29713f9e32d7067c5d65a8046fbe9005be85a",
+            "source": {
+              "pointer": "/data/lendingRates/6/comparisonRate",
+              "rawType": "VARIABLE",
+              "rawValue": "0.0697"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0697"
+          },
+          {
+            "componentId": "component:public-v1:9da794c1aa2b0b2c015da5dfb2e0ad334a0d2d8e71f2c05a24032595203e60d5",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:9e69836d53bb8a8fd7b607295dff7bf3f0f43dac3b8bded415ba04aa626568be"
+            ],
+            "role": "payable",
+            "scopeId": "offer:public-v1:317169a4e4ab6309ef6d99c4b6d29713f9e32d7067c5d65a8046fbe9005be85a",
+            "source": {
+              "pointer": "/data/lendingRates/7",
+              "rawType": "VARIABLE",
+              "rawValue": "0.0724"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0724"
+          },
+          {
+            "componentId": "component:public-v1:a25e9bb4379e94c4528398e1ee271cd6f3d539335ae4009e4948bc652950cd8f",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:9e69836d53bb8a8fd7b607295dff7bf3f0f43dac3b8bded415ba04aa626568be"
+            ],
+            "role": "comparison",
+            "scopeId": "offer:public-v1:317169a4e4ab6309ef6d99c4b6d29713f9e32d7067c5d65a8046fbe9005be85a",
+            "source": {
+              "pointer": "/data/lendingRates/7/comparisonRate",
+              "rawType": "VARIABLE",
+              "rawValue": "0.0736"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0736"
+          }
+        ],
+        "conditions": [
+          {
+            "conditionId": "condition:public-v1:6df678adb3565ed9b2f3a75822d830f3ff726b5eaa65f70ba3005c4b2f35822e",
+            "evidenceIds": [
+              "evidence:public-v1:9f5ef298d4a588f7c243895a893cb79a7d1be67fa065bbf48ee7e44a3df7669a"
+            ],
+            "field": "amount",
+            "minimum": "20000",
+            "operator": "bounds"
+          },
+          {
+            "conditionId": "condition:public-v1:7eabb8a2c61fe5da23ef069dcc99651085094b1bec09f7ac89bad144da5abcc4",
+            "evidenceIds": [
+              "evidence:public-v1:9f5ef298d4a588f7c243895a893cb79a7d1be67fa065bbf48ee7e44a3df7669a"
+            ],
+            "field": "lvr",
+            "maximum": "0.95",
+            "operator": "bounds"
+          },
+          {
+            "conditionId": "condition:public-v1:25882e07a2644372ff8940273aeaed8e02b76e1be240a3b64a67e5c3e3dbfa1d",
+            "evidenceIds": [
+              "evidence:public-v1:9e69836d53bb8a8fd7b607295dff7bf3f0f43dac3b8bded415ba04aa626568be"
+            ],
+            "field": "purpose",
+            "operator": "eq",
+            "value": "OWNER_OCCUPIED"
+          },
+          {
+            "conditionId": "condition:public-v1:b48962106c293b7437d9ecd7d61d66ad864cd51c3011a0dc84030c613cb063ef",
+            "evidenceIds": [
+              "evidence:public-v1:9e69836d53bb8a8fd7b607295dff7bf3f0f43dac3b8bded415ba04aa626568be"
+            ],
+            "field": "repayment",
+            "operator": "eq",
+            "value": "PRINCIPAL_AND_INTEREST"
+          },
+          {
+            "conditionId": "condition:public-v1:0bf9b4162ebfc3ce21eb183b665302e3c3c0ba04dba7fbfa272268ca1ea3a3ad",
+            "description": "Public range subject to lender assessment",
+            "evidenceIds": [
+              "evidence:public-v1:9e69836d53bb8a8fd7b607295dff7bf3f0f43dac3b8bded415ba04aa626568be"
+            ],
+            "field": "customerCategory",
+            "operator": "known"
+          }
+        ],
+        "evidenceIds": [
+          "evidence:public-v1:9f5ef298d4a588f7c243895a893cb79a7d1be67fa065bbf48ee7e44a3df7669a",
+          "evidence:public-v1:f2498c0ec34e4216041d15f93a7f52e4777d7738a6f6b06355c1d5948c9a5aca",
+          "evidence:public-v1:9e69836d53bb8a8fd7b607295dff7bf3f0f43dac3b8bded415ba04aa626568be"
+        ],
+        "feeCoverage": {
+          "evidenceIds": [
+            "evidence:public-v1:c0ffc63314cb0bb5565209a2c5ec3d0f70019346953f1a849283335a24e21fb5",
+            "evidence:public-v1:ac75ea354a8e67c91a9d9da38503935994f27d96256d1592a1c2def73f013d2e",
+            "evidence:public-v1:c03caa8217ef7c37954d432df7777c80a258dec062b1ed9af06d39d63b30c411",
+            "evidence:public-v1:75d46700c77882609d2b2e6cc3e0c3ea8abb50eb6e362673051adaf20208b163",
+            "evidence:public-v1:56cede0d9582349640f47580c2290209e2025d9ccde9eabccd1179a5a77866c9",
+            "evidence:public-v1:55f84327a851eeb2d2735f16222a57c305b93995d0beefdc194f17aff7e3cbba",
+            "evidence:public-v1:9d94c22505311f2e26285398942174e75b07d4dcab8df68343c82899a1855171"
+          ],
+          "reasonCodes": [
+            "fee_amount_or_method_unknown",
+            "fee_event_applicability_required"
+          ],
+          "status": "partial"
+        },
+        "fees": [
+          {
+            "amount": "0",
+            "conditions": [],
+            "currency": "AUD",
+            "evidenceIds": [
+              "evidence:public-v1:c0ffc63314cb0bb5565209a2c5ec3d0f70019346953f1a849283335a24e21fb5"
+            ],
+            "feeId": "fee:public-v1:7d13fce6780b4bbd2a3678a819e20c08c5d1ac71e78ac2ac050df1a3414a4ad0",
+            "name": "Application fee",
+            "role": "upfront",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/0",
+              "rawType": "UPFRONT",
+              "rawValue": "0.00"
+            }
+          },
+          {
+            "amount": "12",
+            "conditions": [],
+            "currency": "AUD",
+            "evidenceIds": [
+              "evidence:public-v1:ac75ea354a8e67c91a9d9da38503935994f27d96256d1592a1c2def73f013d2e"
+            ],
+            "feeId": "fee:public-v1:61280540669c506b4cdb0036929c080757fc445159d49291694d3aa196cab7b8",
+            "frequencyMonths": 1,
+            "name": "Monthly service fee",
+            "role": "recurring",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/1",
+              "rawType": "PERIODIC",
+              "rawValue": "12.00"
+            }
+          },
+          {
+            "amount": "350",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Mortgage Discharge Fee",
+            "evidenceIds": [
+              "evidence:public-v1:c03caa8217ef7c37954d432df7777c80a258dec062b1ed9af06d39d63b30c411"
+            ],
+            "feeId": "fee:public-v1:4f90e10c150090a43c089b36e8a707b76dcbe7487da720f3bb52f897575056cd",
+            "name": "Mortgage Discharge Fee",
+            "role": "switching",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/2",
+              "rawType": "EVENT",
+              "rawValue": "350.00"
+            }
+          },
+          {
+            "amount": "150",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Production of documents",
+            "evidenceIds": [
+              "evidence:public-v1:75d46700c77882609d2b2e6cc3e0c3ea8abb50eb6e362673051adaf20208b163"
+            ],
+            "feeId": "fee:public-v1:4b4ea21456e9cfe60a4b64554ce91c1dc5e9e383af8f70fa36e55fbc853edbe8",
+            "name": "Production of documents",
+            "role": "event",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/3",
+              "rawType": "EVENT",
+              "rawValue": "150.00"
+            }
+          },
+          {
+            "amount": "40",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Company name search",
+            "evidenceIds": [
+              "evidence:public-v1:56cede0d9582349640f47580c2290209e2025d9ccde9eabccd1179a5a77866c9"
+            ],
+            "feeId": "fee:public-v1:cc1c49b3f41b9e8d07cacee3289fa2bd5c6bc31e166b6619b3a156837c032f1d",
+            "name": "Company name search",
+            "role": "event",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/4",
+              "rawType": "EVENT",
+              "rawValue": "40.00"
+            }
+          },
+          {
+            "amount": "40",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Business name search",
+            "evidenceIds": [
+              "evidence:public-v1:55f84327a851eeb2d2735f16222a57c305b93995d0beefdc194f17aff7e3cbba"
+            ],
+            "feeId": "fee:public-v1:b5ccc3d17b68a0dbad7a30f3e0e3eb28ddda7fef43ba90f0dd622b29fd5eca18",
+            "name": "Business name search",
+            "role": "event",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/5",
+              "rawType": "EVENT",
+              "rawValue": "40.00"
+            }
+          },
+          {
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Rate Lock Fee (for fixed rate home loans)",
+            "evidenceIds": [
+              "evidence:public-v1:9d94c22505311f2e26285398942174e75b07d4dcab8df68343c82899a1855171"
+            ],
+            "feeId": "fee:public-v1:a513ec367ccf457b3aca877b2fcfdcd789034ed95e94a159307081b68f4a9e3f",
+            "name": "Rate Lock Fee (for fixed rate home loans)",
+            "role": "event",
+            "scopeId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+            "source": {
+              "pointer": "/data/fees/6",
+              "rawType": "EVENT"
+            }
+          }
+        ],
+        "formula": {
+          "maximum": {
+            "field": "lvr",
+            "method": "whole_balance",
+            "op": "tiered",
+            "tiers": [
+              {
+                "formula": {
+                  "componentId": "component:public-v1:9da794c1aa2b0b2c015da5dfb2e0ad334a0d2d8e71f2c05a24032595203e60d5",
+                  "op": "component"
+                },
+                "minimum": "0.8001"
+              }
+            ]
+          },
+          "minimum": {
+            "field": "lvr",
+            "method": "whole_balance",
+            "op": "tiered",
+            "tiers": [
+              {
+                "formula": {
+                  "componentId": "component:public-v1:f98bc89ac02eec84ed1d0c2329587a8db064f8d4a99e2fc480b7edf129352e92",
+                  "op": "component"
+                },
+                "minimum": "0.8001"
+              }
+            ]
+          },
+          "op": "range"
+        },
+        "freshness": {
+          "checkedAt": "2026-10-13T11:38:04.058532+00:00",
+          "lastSuccessAt": "2026-10-13T11:38:04.058532+00:00",
+          "reasonCodes": [],
+          "state": "current"
+        },
+        "metadata": {
+          "interestPayment": {
+            "frequency": "P1D",
+            "type": "periodic"
+          },
+          "rateStructure": "variable",
+          "tierApplication": "whole_balance"
+        },
+        "offerId": "offer:public-v1:317169a4e4ab6309ef6d99c4b6d29713f9e32d7067c5d65a8046fbe9005be85a",
+        "productId": "product:v1:7efd9eb1717b94236c4b5c0e56f83661c86defeaaee2f664b30fc0c8b7b0deef",
+        "programmeId": "programme:public-v1:bebb7fdd0b301cdec0ae4b109557d1b5fe8951d7968cd1bb29d15f76fd46028f",
+        "reasonCodes": [
+          "lender_assessment_required"
+        ],
+        "schemaVersion": 1,
+        "section": "Mortgage",
+        "sourceBindings": [
+          {
+            "pointer": "/data/lendingRates/6",
+            "rateIndex": 7
+          },
+          {
+            "pointer": "/data/lendingRates/7",
+            "rateIndex": 8
+          }
+        ]
+      },
+      "publicSource": {
+        "fixture": "nab-tailored-cdr-20261013.json",
+        "pointer": "/data/lendingRates/6",
+        "sha256": "21bcc6e377cbb129ae169965dd91a6fb504d0ba571315f59aa3a86a846a1b655",
+        "url": "https://openbank.api.nab.com.au/cds-au/v1/banking/products/65bcb7bd-e50c-4b65-b7d7-9d5abc089a5a"
+      },
+      "scenario": {
+        "amount": "500000",
+        "lvr": "0.94",
+        "purpose": "OWNER_OCCUPIED",
+        "repayment": "PRINCIPAL_AND_INTEREST"
+      }
+    },
+    {
+      "asOf": "2026-10-14T12:10:01.747389Z",
+      "expected": {
+        "payableRate": "0.04",
+        "status": "exact"
+      },
+      "name": "ANZ Progress Saver",
+      "programme": {
+        "components": [
+          {
+            "componentId": "component:public-v1:9b5129b178f9ec6d8e7dec227eefea39d29d1aa5d1afb7814a71e6125e1064a1",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:48f313e2a221e115ea345c60340b6e6c0a8511fa7001bc37239ea574a287390e"
+            ],
+            "role": "reference",
+            "scopeId": "offer:public-v1:05ee70558c4a9646df8d76e18fa4171e9ecab17679d1ca42ff75d6f9527bf789",
+            "source": {
+              "pointer": "/data/depositRates/0",
+              "rawType": "VARIABLE",
+              "rawValue": "0.0001"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0001"
+          },
+          {
+            "componentId": "component:public-v1:98c47dfc80afe497c16f71f9530766103a9b16e01390b7eabf8a09ad4b6a49f0",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:af9da7806b1ddcd59a9887d0831c9bbd139d2f6cca0e3c2a3a8271000b8f7256"
+            ],
+            "role": "bonus",
+            "scopeId": "offer:public-v1:05ee70558c4a9646df8d76e18fa4171e9ecab17679d1ca42ff75d6f9527bf789",
+            "source": {
+              "pointer": "/data/depositRates/1",
+              "rawType": "BONUS",
+              "rawValue": "0.0399"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0399"
+          }
+        ],
+        "conditions": [
+          {
+            "conditionId": "condition:public-v1:62ff2a6adf51dd76ba918a5cde709119b2835b15cfe8195e32c2d5576a6f3225",
+            "evidenceIds": [
+              "evidence:public-v1:af9da7806b1ddcd59a9887d0831c9bbd139d2f6cca0e3c2a3a8271000b8f7256"
+            ],
+            "field": "monthlyDeposit",
+            "minimum": "10",
+            "operator": "bounds"
+          },
+          {
+            "conditionId": "condition:public-v1:d799863becc12dd5ec0e236d22ebc209b2259ffa86568de9f8d4cb2df6d3e955",
+            "evidenceIds": [
+              "evidence:public-v1:af9da7806b1ddcd59a9887d0831c9bbd139d2f6cca0e3c2a3a8271000b8f7256"
+            ],
+            "field": "withdrawals",
+            "maximum": "0",
+            "operator": "bounds"
+          },
+          {
+            "conditionId": "condition:public-v1:99fae0c3f36f87e50f4a6a01c662ac4ad5af6497176eb231c57f92cb1c642ff4",
+            "description": "No fees or charges are processed in the public bonus qualification period",
+            "evidenceIds": [
+              "evidence:public-v1:af9da7806b1ddcd59a9887d0831c9bbd139d2f6cca0e3c2a3a8271000b8f7256"
+            ],
+            "field": "qualification",
+            "operator": "known",
+            "value": "noFeesOrCharges"
+          },
+          {
+            "conditionId": "condition:public-v1:365ecc7cf384a039eee115b8e884614f20dda8f29ab883bf7c3dda15f8315c30",
+            "description": "Deposits and withdrawals satisfy the lender's stated business-day qualification period",
+            "evidenceIds": [
+              "evidence:public-v1:af9da7806b1ddcd59a9887d0831c9bbd139d2f6cca0e3c2a3a8271000b8f7256"
+            ],
+            "field": "qualification",
+            "operator": "known",
+            "value": "qualificationPeriodSatisfied"
+          }
+        ],
+        "evidenceIds": [
+          "evidence:public-v1:092db41085c09d30b82d11247d37978a8fa0cf184239f6290efcd97601a43a99",
+          "evidence:public-v1:48f313e2a221e115ea345c60340b6e6c0a8511fa7001bc37239ea574a287390e",
+          "evidence:public-v1:af9da7806b1ddcd59a9887d0831c9bbd139d2f6cca0e3c2a3a8271000b8f7256"
+        ],
+        "feeCoverage": {
+          "evidenceIds": [
+            "evidence:public-v1:fcec0ac0145531b73f9104a60e5e6050f5c6b7dd2b9962f8967b33edee1680f8",
+            "evidence:public-v1:af7058c822727e14c964f702f42f200446c4602b76a36b672820cf3c0aabd075",
+            "evidence:public-v1:38821363bf8660102d2c32df14ef3d8c823125d923688be0e1057b527c6ffc6d",
+            "evidence:public-v1:cf1acfdae6e4e75be232ea383e42f7ed36268908dd46550fdae05f69a02dfde8",
+            "evidence:public-v1:d0ee52d1cd83483cd0790638ea068278408c41284a23f049e3322a8c836eccdd",
+            "evidence:public-v1:505adb1136f8f5b7102245585b53732c848e6a5d5d138f7d33ebb2309166f288",
+            "evidence:public-v1:138ff272d52c83f50977f6ecbbd07a291404f267d37d448d89e1605d2df57834",
+            "evidence:public-v1:374f26ebc9502155426fdf8cf0dea85496da23fe486d596be8d5be4115e7fe1e",
+            "evidence:public-v1:6bdf29fad43e2ccda89890e2137ff9985a80cfe31fbb1ad2e6c8bf02fb7aa453"
+          ],
+          "reasonCodes": [
+            "fee_amount_or_method_unknown",
+            "fee_condition_requires_assumption",
+            "fee_currency_unknown",
+            "fee_event_applicability_required"
+          ],
+          "status": "partial"
+        },
+        "fees": [
+          {
+            "amount": "2.5",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Staff Assisted Transaction",
+            "evidenceIds": [
+              "evidence:public-v1:fcec0ac0145531b73f9104a60e5e6050f5c6b7dd2b9962f8967b33edee1680f8"
+            ],
+            "feeId": "fee:public-v1:1b0346738d71e8a30850750341435ad84c6a17397ec4b671d581f10d5c82db63",
+            "name": "Staff Assisted Transaction",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/0",
+              "rawType": "TRANSACTION",
+              "rawValue": "2.50"
+            }
+          },
+          {
+            "amount": "1",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Electronic Transaction",
+            "evidenceIds": [
+              "evidence:public-v1:af7058c822727e14c964f702f42f200446c4602b76a36b672820cf3c0aabd075"
+            ],
+            "feeId": "fee:public-v1:8a5381e7dc77eae539429d39eb8ffd2981bbbc28acfff9f5661e3344285a6869",
+            "name": "Electronic Transaction",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/1",
+              "rawType": "TRANSACTION",
+              "rawValue": "1.00"
+            }
+          },
+          {
+            "amount": "5",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Overseas ATM Transaction Fee",
+            "evidenceIds": [
+              "evidence:public-v1:38821363bf8660102d2c32df14ef3d8c823125d923688be0e1057b527c6ffc6d"
+            ],
+            "feeId": "fee:public-v1:d2506f1cd4345411c9ecea15a8a81916b8f719b31cd695477b0b35749cf480d6",
+            "name": "Overseas ATM Transaction Fee",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/2",
+              "rawType": "TRANSACTION",
+              "rawValue": "5.00"
+            }
+          },
+          {
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Overseas Transaction Fee",
+            "evidenceIds": [
+              "evidence:public-v1:cf1acfdae6e4e75be232ea383e42f7ed36268908dd46550fdae05f69a02dfde8"
+            ],
+            "feeId": "fee:public-v1:34f5bc9e4748eb8507ab4aa22d03248f811ab3b9a368fbce3820d7874831be10",
+            "name": "Overseas Transaction Fee",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/3",
+              "rawType": "TRANSACTION"
+            }
+          },
+          {
+            "amount": "6",
+            "conditions": [
+              {
+                "conditionId": "condition:public-v1:5ff8ceb6ec61d0a36c33ff0ba19b928b46e08ab6a54871f4bd8a3f6d5c92bd75",
+                "description": "Debited to your account on the day of the dishonour for determining whether to process a debit to your account using the Informal Overdraft facility, where that debit is declined. A Dishonour Fee is only debited when the payment from your account that is declined was attempted via cheque or direct debit",
+                "evidenceIds": [
+                  "evidence:public-v1:d0ee52d1cd83483cd0790638ea068278408c41284a23f049e3322a8c836eccdd"
+                ],
+                "field": "qualification",
+                "operator": "known",
+                "value": "fee-qualification:public-v1:2d9b35f4eb33dd05d2a1cfa2fb508645f7163d332c27264cc0b14ce8536eaaee"
+              }
+            ],
+            "currency": "AUD",
+            "event": "Dishonour Fee",
+            "evidenceIds": [
+              "evidence:public-v1:d0ee52d1cd83483cd0790638ea068278408c41284a23f049e3322a8c836eccdd"
+            ],
+            "feeId": "fee:public-v1:2d9b35f4eb33dd05d2a1cfa2fb508645f7163d332c27264cc0b14ce8536eaaee",
+            "name": "Dishonour Fee",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/4",
+              "rawType": "DISHONOUR",
+              "rawValue": "6.00"
+            }
+          },
+          {
+            "amount": "32.5",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Replacement for lost or stolen bank cheque",
+            "evidenceIds": [
+              "evidence:public-v1:505adb1136f8f5b7102245585b53732c848e6a5d5d138f7d33ebb2309166f288"
+            ],
+            "feeId": "fee:public-v1:46817d8ef59d55f8c9aca6b439f35b2fda0f565d8e0631d868b7132207bb0a0f",
+            "name": "Replacement for lost or stolen bank cheque",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/5",
+              "rawType": "EVENT",
+              "rawValue": "32.50"
+            }
+          },
+          {
+            "amount": "25",
+            "conditions": [],
+            "event": "Bank Cheque Repurchase Fee",
+            "evidenceIds": [
+              "evidence:public-v1:138ff272d52c83f50977f6ecbbd07a291404f267d37d448d89e1605d2df57834"
+            ],
+            "feeId": "fee:public-v1:12f6feac94a322103d0152adfec1256c6af7d7128acde7e22d08467dc575bd8b",
+            "name": "Bank Cheque Repurchase Fee",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/6",
+              "rawType": "EVENT",
+              "rawValue": "25.00"
+            }
+          },
+          {
+            "amount": "28",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Telegraphic transfer within Australia from your ANZ account to another account",
+            "evidenceIds": [
+              "evidence:public-v1:374f26ebc9502155426fdf8cf0dea85496da23fe486d596be8d5be4115e7fe1e"
+            ],
+            "feeId": "fee:public-v1:c029baa64a328577d57240d0649c0d58d283eb5534f4080b2400be54d323036f",
+            "name": "Telegraphic transfer within Australia from your ANZ account to another account",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/7",
+              "rawType": "EVENT",
+              "rawValue": "28.00"
+            }
+          },
+          {
+            "amount": "10",
+            "conditions": [
+              {
+                "conditionId": "condition:public-v1:a87191e51edd2e789cd2e62703915a864821d2d1d75798672a64ebb219029d22",
+                "description": "Providing bank cheques (Australian dollars only) This is a charge for issuing a bank cheque to an ANZ account holder.",
+                "evidenceIds": [
+                  "evidence:public-v1:6bdf29fad43e2ccda89890e2137ff9985a80cfe31fbb1ad2e6c8bf02fb7aa453"
+                ],
+                "field": "qualification",
+                "operator": "known",
+                "value": "fee-qualification:public-v1:f0259d3d330591d67e1dbba83bfefb51125385ca2c54f5a480409078d992fb61"
+              }
+            ],
+            "currency": "AUD",
+            "event": "Bank Cheque Request at ANZ Branch",
+            "evidenceIds": [
+              "evidence:public-v1:6bdf29fad43e2ccda89890e2137ff9985a80cfe31fbb1ad2e6c8bf02fb7aa453"
+            ],
+            "feeId": "fee:public-v1:f0259d3d330591d67e1dbba83bfefb51125385ca2c54f5a480409078d992fb61",
+            "name": "Bank Cheque Request at ANZ Branch",
+            "role": "event",
+            "scopeId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+            "source": {
+              "pointer": "/data/fees/8",
+              "rawType": "EVENT",
+              "rawValue": "10.00"
+            }
+          }
+        ],
+        "formula": {
+          "op": "add",
+          "operands": [
+            {
+              "componentId": "component:public-v1:9b5129b178f9ec6d8e7dec227eefea39d29d1aa5d1afb7814a71e6125e1064a1",
+              "op": "component"
+            },
+            {
+              "componentId": "component:public-v1:98c47dfc80afe497c16f71f9530766103a9b16e01390b7eabf8a09ad4b6a49f0",
+              "op": "component"
+            }
+          ]
+        },
+        "freshness": {
+          "checkedAt": "2026-10-14T12:07:01.875111+00:00",
+          "lastSuccessAt": "2026-10-14T12:07:01.875111+00:00",
+          "reasonCodes": [],
+          "state": "current"
+        },
+        "metadata": {
+          "interestPayment": {
+            "frequency": "P1M",
+            "type": "periodic"
+          },
+          "rateStructure": "conditional"
+        },
+        "offerId": "offer:public-v1:05ee70558c4a9646df8d76e18fa4171e9ecab17679d1ca42ff75d6f9527bf789",
+        "productId": "product:v1:496a3d7b9ea6641af8ab0238a94ee8f80d725c7d9b289cd987de543ea65ea764",
+        "programmeId": "programme:public-v1:dbd54e744f7b037b3015e48d633bbe75da4aa0f2cbdaa026382ebad98a290cef",
+        "reasonCodes": [],
+        "schemaVersion": 1,
+        "section": "Savings",
+        "sourceBindings": [
+          {
+            "pointer": "/data/depositRates/1",
+            "rateIndex": 2
+          }
+        ]
+      },
+      "publicSource": {
+        "fixture": "anz-progress-saver-cdr-20261014.json",
+        "pointer": "/data/depositRates/1",
+        "sha256": "476b787148a92aa1c0116e0fa0cdfc647f957fed9d572cab982ff59863e55d9c",
+        "url": "https://api.anz/cds-au/v1/banking/products/e9a3b4fe-240c-388e-2282-42db8f570e63"
+      },
+      "scenario": {
+        "balance": "10000",
+        "monthlyDeposit": "10",
+        "noFeesOrCharges": true,
+        "qualificationPeriodSatisfied": true,
+        "withdrawals": "0"
+      }
+    },
+    {
+      "asOf": "2026-10-14T12:10:01.747389Z",
+      "expected": {
+        "payableRate": "0.0005",
+        "status": "exact"
+      },
+      "name": "ANZ Term Deposit",
+      "programme": {
+        "components": [
+          {
+            "componentId": "component:public-v1:07c60489f8a9909b89c2dc80fef6cf77860f8e77a8c863b68afeda2fdc415335",
+            "conditions": [],
+            "evidenceIds": [
+              "evidence:public-v1:2e4e1acb01b6661c222d0d97a1ee77c7012a473362198b2c2aa8076702e0b162"
+            ],
+            "role": "payable",
+            "scopeId": "offer:public-v1:95f0060ec83aa04af06828fce1c69ce23cce5b97070903e920b7d850bd70bfd4",
+            "source": {
+              "pointer": "/data/depositRates/1",
+              "rawType": "FIXED",
+              "rawValue": "0.0005"
+            },
+            "unit": "fraction_per_annum",
+            "value": "0.0005"
+          }
+        ],
+        "conditions": [
+          {
+            "conditionId": "condition:public-v1:c5f260bdf067a0993045b4d020709717aa4446ce71da4f04a07db74eedebbf7f",
+            "evidenceIds": [
+              "evidence:public-v1:1e3dab53211c089c001a6086e2f159ab7094b984c5715eb2be6babe741654429"
+            ],
+            "field": "balance",
+            "minimum": "5000",
+            "operator": "bounds"
+          },
+          {
+            "conditionId": "condition:public-v1:ef99270d245ce7e0bd1d09d9db9dbfd5fbe0df3e304fa2a7f86f7aa10334becd",
+            "evidenceIds": [
+              "evidence:public-v1:2e4e1acb01b6661c222d0d97a1ee77c7012a473362198b2c2aa8076702e0b162"
+            ],
+            "field": "termMonths",
+            "operator": "eq",
+            "value": "1"
+          },
+          {
+            "conditionId": "condition:public-v1:3df680314b5cdf3413f06f01f6e68aecbbc91df99d48f5281d678b1621b453e1",
+            "evidenceIds": [
+              "evidence:public-v1:2e4e1acb01b6661c222d0d97a1ee77c7012a473362198b2c2aa8076702e0b162"
+            ],
+            "field": "termMonths",
+            "maximum": "2",
+            "minimum": "1",
+            "operator": "bounds"
+          }
+        ],
+        "evidenceIds": [
+          "evidence:public-v1:1e3dab53211c089c001a6086e2f159ab7094b984c5715eb2be6babe741654429",
+          "evidence:public-v1:2e4e1acb01b6661c222d0d97a1ee77c7012a473362198b2c2aa8076702e0b162"
+        ],
+        "feeCoverage": {
+          "evidenceIds": [
+            "evidence:public-v1:e43cd198c8c9c15c34a77f751f2500466c6c394db90b21644ebd4fd63663fbb7"
+          ],
+          "reasonCodes": [
+            "fee_event_applicability_required"
+          ],
+          "status": "partial"
+        },
+        "fees": [
+          {
+            "amount": "30",
+            "conditions": [],
+            "currency": "AUD",
+            "event": "Early Withdrawal",
+            "evidenceIds": [
+              "evidence:public-v1:e43cd198c8c9c15c34a77f751f2500466c6c394db90b21644ebd4fd63663fbb7"
+            ],
+            "feeId": "fee:public-v1:c82b1051061b7e39bc0403c756ebcd60062ae1e21adcf7c0c454771bea8b1fd6",
+            "name": "Early Withdrawal",
+            "role": "event",
+            "scopeId": "product:v1:a8406cf6c91162cc76516623ec5ef88c79c337d6fcda9ce85cc19941f0bc05b3",
+            "source": {
+              "pointer": "/data/fees/0",
+              "rawType": "WITHDRAWAL",
+              "rawValue": "30.00"
+            }
+          }
+        ],
+        "formula": {
+          "componentId": "component:public-v1:07c60489f8a9909b89c2dc80fef6cf77860f8e77a8c863b68afeda2fdc415335",
+          "op": "component"
+        },
+        "freshness": {
+          "checkedAt": "2026-10-14T12:09:01.747389+00:00",
+          "lastSuccessAt": "2026-10-14T12:09:01.747389+00:00",
+          "reasonCodes": [],
+          "state": "current"
+        },
+        "metadata": {
+          "interestPayment": {
+            "type": "maturity"
+          },
+          "quotedTerm": {
+            "unit": "month",
+            "value": "1"
+          },
+          "rateStructure": "fixed",
+          "tierApplication": "whole_balance"
+        },
+        "offerId": "offer:public-v1:95f0060ec83aa04af06828fce1c69ce23cce5b97070903e920b7d850bd70bfd4",
+        "productId": "product:v1:a8406cf6c91162cc76516623ec5ef88c79c337d6fcda9ce85cc19941f0bc05b3",
+        "programmeId": "programme:public-v1:858c6024584ed917c2b7940f2b39ac2a22db44f0c075eff6e17142c8009bbced",
+        "reasonCodes": [],
+        "schemaVersion": 1,
+        "section": "TD",
+        "sourceBindings": [
+          {
+            "pointer": "/data/depositRates/1",
+            "rateIndex": 2
+          }
+        ]
+      },
+      "publicSource": {
+        "fixture": "anz-term-deposit-cdr-20261014.json",
+        "pointer": "/data/depositRates/1",
+        "sha256": "ad3e99f2bcf6ed230fdd2159ed8b969f61154eefbfd2f6de50c1a4ff040e7bd5",
+        "url": "https://api.anz/cds-au/v1/banking/products/4438b7ed-e889-1ff0-4599-4524d5f55ae3"
+      },
+      "scenario": {
+        "balance": "10000",
+        "termMonths": "1"
+      }
+    }
+  ],
+  "note": "Only retained public lender captures; scenarios are explicit local numerical assumptions. Expected rates independently calculated with Decimal from the captured source fields.",
+  "schemaVersion": 1
+}

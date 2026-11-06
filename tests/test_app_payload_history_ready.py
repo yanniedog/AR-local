@@ -31,10 +31,31 @@ def test_ready_compiler_matches_released_app_1_0_256():
     ready = json.loads((Path(__file__).parent / "fixtures/history-ready-real.json").read_bytes())
     assert ready["compiler_sha256"] == expected
     assert _invoke(ready, validate=True) == expected
-    # The formerly published compiler is no longer this consumer's authority.
-    ready["compiler_sha256"] = "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7"
-    with pytest.raises(ValueError, match="compilation/validation failed"):
-        _invoke(ready, validate=True)
+    for previous in (
+        "7d717bdf3a86289876a1c5dee238df1d0e79df0634feaa0a499b2199246ab5d7",
+        "5f27f0b70b89efe7adf76d0d93a97b2c779e1953ff870efd018c14961fa17a6e",
+        "fbd65b58c421e99518ccbfd375f42b16c40c7b45d29a07dad09c084c42b762f3",
+    ):
+        ready["compiler_sha256"] = previous
+        with pytest.raises(ValueError, match="compilation/validation failed"):
+            _invoke(ready, validate=True)
+
+
+@pytest.mark.parametrize("tier, accepted", [
+    ("lvr_>=80.01-<95%", True), ("lvr_>=80.01-<=95%", True),
+    ("lvr_>=95-<95%", False), ("lvr_>=95-<=95%", True),
+    ("lvr_>95-<=95%", False),
+])
+def test_ready_compiler_preserves_explicit_upper_bound_protocol(tier, accepted):
+    from tests.test_app_payload_bank_catalogue import FIXTURE, packed
+    from app_payload_bank_history_ready_asset import compile_ready
+    catalogue = packed(json.loads(FIXTURE.read_bytes())["observations"])
+    # Bound-protocol control only; retained rates and source receipts stay intact.
+    catalogue["sections"]["Mortgage"][0]["row"]["lvr_tier"] = tier
+    actual = compile_ready(catalogue)
+    cohort = next(item for item in actual["sections"]["Mortgage"] if item[1][3] == tier)
+    # Unusable bounds remain visible but cannot count as broadly available.
+    assert cohort[3] is accepted
 
 
 @pytest.mark.parametrize("encrypted", [False, True])

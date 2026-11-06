@@ -356,6 +356,8 @@ def append_bank_details(
                 "term": text(item.get("additionalValue")),
                 "details_json": "{}",
             }
+            from cdr_public_rates_legacy import legacy_disposition
+            rate_row['public_rate_disposition'] = legacy_disposition(item, family, rate_row['rate'])
             ribbons = ribbon_columns_for_bank_rate_row(
                 base.get("dataset") or "",
                 family,
@@ -414,6 +416,8 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         rec = inner_record(json.loads(source))
         base = bank_base_row(path, banks_root, rec)
         product = {**base, "details_json": detail_json(rec)}
+        from cdr_public_rates_source_capture import pricing_capture_for_path
+        product['public_pricing_source_json'] = pricing_capture_for_path(source, path, banks_root, base)
         conditions = extract_rate_conditions(source, base.get('dataset', ''))
         if conditions:
             # A separate producer-owned field cannot be supplied by a CDR key.

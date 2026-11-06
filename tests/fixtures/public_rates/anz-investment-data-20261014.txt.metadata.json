@@ -1,0 +1,9 @@
+{
+  "sourceUrl": "https://www.anz.com.au/productdata/productdata.asp?output=json&callback=callbackFunction&country=AU&section=PRL&subsection=",
+  "finalUrl": "https://www.anz.com.au/productdata/productdata.asp?output=json&callback=callbackFunction&country=AU&section=PRL&subsection=",
+  "sha256": "eae6c68ce5a50887757a7ab5ec44e0c80718ff0c1f8e960fa799bc30b7263b4c",
+  "bytes": 106996,
+  "observedAt": "2026-10-14T11:55:03.702902+00:00",
+  "captureClockBasis": "retained_public_capture_file_mtime",
+  "status": 200
+}

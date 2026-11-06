@@ -149,3 +149,19 @@ def test_acquisition_lease_recovers_crash_and_rejects_stale_owner(source_tree):
         store.record_check(document_id=first["document_id"], check_id="retried-transport", checked_at="2026-09-14T01:05:03Z",
                            status="failed", error_code="transport_error")
         queue.finish(recovered, "retried-transport", now="2026-09-14T01:05:04Z")
+
+
+def test_public_pricing_lane_failures_never_fail_the_original_capture(tmp_path, monkeypatch):
+    import sys, types
+    from cdr_terms import ingest as ingest_module
+    fake = types.SimpleNamespace(configured=lambda: True,
+        capture_public_rates=lambda *a: (_ for _ in ()).throw(RuntimeError("sqlite exploded")))
+    monkeypatch.setitem(sys.modules, 'cdr_public_rates_collector', fake)
+    store = types.SimpleNamespace(root=tmp_path)
+    receipt = {"generation_id": "gen-1"}
+    ingest_module._capture_public_pricing(store, tmp_path, receipt)
+    written = list((tmp_path / "public-rate-capture-receipts").glob("*.json"))
+    assert len(written) == 1 and json.loads(written[0].read_text())["status"] == "capture_failed"
+    # An unwritable receipt location is also non-fatal.
+    (tmp_path / "ro").write_text("file, not a directory")
+    ingest_module._capture_public_pricing(types.SimpleNamespace(root=tmp_path / "ro"), tmp_path, receipt)

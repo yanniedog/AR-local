@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from dataclasses import replace
 from typing import Any, Callable, Mapping
@@ -19,6 +21,10 @@ def _after(now: str, seconds: int) -> str:
 
 
 DEFERRAL_EVENT = "operational_deferral_v1"
+
+
+class _PublicSnapshotFenceRequired(RuntimeError):
+    pass
 
 
 def _valid_deferral(request_id, lease_id, document_id, check_id, status, error, metadata) -> bool:
@@ -78,7 +84,9 @@ class AcquisitionQueue:
                               "(event_id,request_id,status,observed_at,retry_after,lease_id,lease_expires_at,check_id,error_code) "
                               "VALUES (?,?,?,?,?,?,?,?,?)", (digest(values), *values))
 
-    def next_due(self, now: str | None = None, *, fair: bool = False) -> dict[str, Any] | None:
+    def next_due(self, now: str | None = None, *, fair: bool = False,
+                 include_public: bool = True) -> dict[str, Any] | None:
+        from cdr_public_rates_budget import available_sql
         ordering = "r.priority,r.created_at,r.request_id"
         if fair:
             # Only accepted attempts move a document's place; an orphan check,
@@ -94,10 +102,15 @@ class AcquisitionQueue:
             "e.sequence=(SELECT MAX(sequence) FROM acquisition_events WHERE request_id=r.request_id) "
             "WHERE (e.status='queued' OR (e.status='retry_wait' AND e.retry_after<=?)) "
             "AND EXISTS (SELECT 1 FROM ingest_captures c WHERE c.ingest_id=r.ingest_id) "
+            + ("AND NOT EXISTS (SELECT 1 FROM public_rate_request_bindings b WHERE b.request_id=r.request_id) " if not include_public else "") +
+            "AND (NOT EXISTS (SELECT 1 FROM public_rate_request_bindings b WHERE b.request_id=r.request_id) OR "
+            + available_sql("r", bytes_required=True) + ") "
             "ORDER BY " + ordering + " LIMIT 1", (timestamp(now or utc_now()),)).fetchone()
         return dict(row) if row else None
 
-    def claim(self, now: str | None = None, *, lease_seconds: int = 180, fair: bool = False) -> dict[str, Any] | None:
+    def claim(self, now: str | None = None, *, lease_seconds: int = 180, fair: bool = False,
+              admit: Callable[[dict, str], Any] | None = None,
+              include_public: bool = True) -> dict[str, Any] | None:
         if not 1 <= lease_seconds <= 900:
             raise ValueError("Acquisition lease must be between one second and 15 minutes")
         observed = timestamp(now or utc_now())
@@ -105,26 +118,124 @@ class AcquisitionQueue:
             self.store.db.execute("BEGIN IMMEDIATE")
             expired = self.store.db.execute(
                 "SELECT e.* FROM acquisition_events e WHERE e.sequence=(SELECT MAX(sequence) FROM acquisition_events WHERE request_id=e.request_id) "
-                "AND e.status='running' AND e.lease_expires_at<=?", (observed,)).fetchall()
+                "AND e.status='running' AND e.lease_expires_at<=? "
+                + ("AND NOT EXISTS (SELECT 1 FROM public_rate_request_bindings b WHERE b.request_id=e.request_id)" if not include_public else ""),
+                (observed,)).fetchall()
             for row in expired:
                 attempts = self.charged_attempts(row["request_id"])
                 self._event(row["request_id"], "blocked" if attempts >= 4 else "retry_wait", observed,
                             retry_after=None if attempts >= 4 else _after(observed, min(3600, 300 * 2 ** max(0, attempts - 1))),
                             lease_id=row["lease_id"], error_code="acquisition_lease_expired")
-            request = self.next_due(observed, fair=fair)
+            request = self.next_due(observed, fair=fair, include_public=include_public)
             if request is None:
                 return None
             lease_id = secrets.token_hex(32)
             expiry = _after(observed, lease_seconds)
+            admission = admit(request, lease_id) if admit else None
+            if admit and admission is False:
+                return None
             self._event(request["request_id"], "running", observed, lease_id=lease_id, expiry=expiry)
-            return {**request, "status": "running", "lease_id": lease_id, "lease_expires_at": expiry}
+            claimed = {**request, "status": "running", "lease_id": lease_id, "lease_expires_at": expiry}
+            if admission is not None:
+                claimed["public_rate_admission"] = admission
+            return claimed
 
     def finish(self, request: Mapping[str, Any], check_id: str, *, now: str | None = None,
                processing_error: str | None = None, terminal: bool = False,
                defer_processing: bool = False) -> None:
+        if self.store.db.in_transaction:
+            raise ValueError("Acquisition completion cannot acquire a snapshot fence inside a DB transaction")
+        while True:
+            registered = self._registered_document(request["request_id"])
+            from cdr_public_rates_runtime import public_snapshot_fence
+            try:
+                with public_snapshot_fence(self.store.root) if registered else nullcontext():
+                    authority, pointer = self._active_public_pointer() if registered else (None, None)
+                    self._finish_admitted(request, check_id, now=now, processing_error=processing_error, terminal=terminal,
+                                          defer_processing=defer_processing, fenced=registered,
+                                          authority=authority, pointer=pointer)
+                if registered:
+                    from cdr_public_rates_runtime import queue_source_warning
+                    try:
+                        queue_source_warning(self.store.root)
+                    except Exception:
+                        # The accepted dirty event is durable. Publication can
+                        # reconcile it later without invalidating this check.
+                        logging.getLogger(__name__).warning("Public rate source warning publication deferred")
+                return
+            except _PublicSnapshotFenceRequired:
+                # A binding may have been registered after the initial read.
+                # Roll back before taking the fence; immutable bindings mean
+                # this path can require at most one retry.
+                continue
+
+    def _registered_document(self, request_id: str) -> bool:
+        return bool(self.store.db.execute("SELECT 1 FROM acquisition_requests r JOIN public_rate_sources s "
+            "USING(document_id) WHERE r.request_id=? LIMIT 1", (request_id,)).fetchone())
+
+    def _active_public_pointer(self) -> tuple[str | None, str | None]:
+        """Read routing under the source fence, before opening a transaction."""
+        from cdr_public_rates_runtime import selected_public_generation
+        from cdr_public_rates_candidate import read_candidate
+        try:
+            selected = selected_public_generation(self.store.root)
+        except (OSError, ValueError, KeyError, TypeError):
+            # A publication configuration error cannot discard an accepted
+            # source check. Retained active collection state remains dirty.
+            logging.getLogger(__name__).warning("Public rate publication authority unavailable")
+            selected = None
+        if selected:
+            return selected, None
+        pointer = self.store.root / "public-rate-catalogue-candidate.json"
+        if pointer.exists():
+            try:
+                return None, read_candidate(pointer)["generationId"]
+            except (OSError, ValueError, KeyError, TypeError):
+                logging.getLogger(__name__).warning("Public rate candidate routing unavailable")
+        return None, None
+
+    def _dirty_public_subscribers(self, request_id: str, document_id: str, check_id: str,
+                                  observed: str, authority: str | None, pointer: str | None,
+                                  *, phase: str = "dirty", completion_id: str | None = None) -> None:
+        if phase not in {"dirty", "interpretation_complete"} or (phase == "interpretation_complete" and not completion_id):
+            raise ValueError("invalid_public_source_invalidation_phase")
+        active = {authority} if authority else {pointer} - {None}
+        if not authority:
+            latest = self.store.db.execute("SELECT a.ingest_id FROM ingest_capture_attempts a JOIN ingest_captures c "
+                "USING(ingest_id) WHERE julianday(a.source_observed_at)<=julianday(?) "
+                "ORDER BY julianday(a.source_observed_at) DESC,julianday(a.captured_at) DESC,"
+                "julianday(c.completed_at) DESC,a.rowid DESC LIMIT 1", (observed,)).fetchone()
+            if latest:
+                active.add(latest["ingest_id"])
+        # Origin and active subscriptions only. Old retained generations remain
+        # immutable history and cannot flood the candidate replay lane.
+        clauses = ["r.request_id=?"]
+        parameters = [document_id, request_id]
+        if active:
+            clauses.append("r.ingest_id IN (" + ",".join("?" for _ in active) + ")")
+            parameters.extend(sorted(active))
+        affected = self.store.db.execute("SELECT DISTINCT s.register_id,r.ingest_id FROM public_rate_request_bindings b "
+            "JOIN public_rate_sources s USING(binding_id) JOIN acquisition_requests r USING(request_id) "
+            "WHERE r.document_id=? AND s.document_id=r.document_id AND (" + " OR ".join(clauses) + ")", parameters).fetchall()
+        for binding in affected:
+            identity = [binding["ingest_id"], binding["register_id"], check_id, phase]
+            if completion_id:
+                identity.append(completion_id)
+            self.store.db.execute("INSERT OR IGNORE INTO public_rate_candidate_events "
+                "(event_id,ingest_id,register_id,status,observed_at) VALUES (?,?,?,?,?)",
+                (digest(identity),
+                 binding["ingest_id"], binding["register_id"], "dirty", observed))
+
+    def _finish_admitted(self, request, check_id, *, now, processing_error, terminal, defer_processing, fenced,
+                         authority, pointer):
         observed = timestamp(now or utc_now())
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
+            if not fenced and self._registered_document(request["request_id"]):
+                raise _PublicSnapshotFenceRequired()
+            actual = self.store.db.execute("SELECT * FROM acquisition_requests WHERE request_id=?", (request["request_id"],)).fetchone()
+            if not actual or actual["document_id"] != request["document_id"]:
+                raise ValueError("Acquisition result does not bind this document")
             latest = self.store.db.execute("SELECT * FROM acquisition_events WHERE request_id=? ORDER BY sequence DESC LIMIT 1",
                                            (request["request_id"],)).fetchone()
             if (not latest or latest["status"] != "running" or latest["lease_id"] != request["lease_id"]
@@ -145,6 +256,12 @@ class AcquisitionQueue:
             self._event(request["request_id"], status, observed, lease_id=request["lease_id"], check_id=check_id,
                         retry_after=_after(observed, 300 if deferred else min(3600, 300 * 2 ** max(0, attempts - 1))) if status == "retry_wait" else None,
                         error_code=DEFERRAL_EVENT if deferred else processing_error or check["error_code"])
+            # Invalidate pricing in the accepted completion transaction. A
+            # later crash/deadline before deterministic parsing cannot leave a
+            # candidate advertising the previous source as verified current.
+            if fenced:
+                self._dirty_public_subscribers(request["request_id"], check["document_id"], check_id,
+                                               observed, authority, pointer)
             if successful and defer_processing:
                 from .acquisition_processing import ProcessingQueue
                 from .graph import DocumentGraph, current_observations

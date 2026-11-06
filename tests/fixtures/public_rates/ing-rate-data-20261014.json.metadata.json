@@ -1,0 +1,9 @@
+{
+  "sourceUrl": "https://www.ing.com.au/ReverseProxy/ProductService/V1/productservice.svc/json/interestrates/currenteffective",
+  "finalUrl": "https://www.ing.com.au/ReverseProxy/ProductService/V1/productservice.svc/json/interestrates/currenteffective",
+  "sha256": "e2f9e9495ededf289e43fa43996581dac7192a79f24019091790a339da8d7ed8",
+  "bytes": 176353,
+  "observedAt": "2026-10-14T11:54:07.144994+00:00",
+  "captureClockBasis": "retained_public_capture_file_mtime",
+  "status": 200
+}
