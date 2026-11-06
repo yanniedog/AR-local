@@ -30,7 +30,7 @@ def capture(key):
 def test_retained_public_capture_and_evidence_binding(key):
     body, context = capture(key)
     result = extract_reference(body, context)
-    assert result["status"] == "validated"
+    assert result["status"] == "validated", (result.get("reasonCode"), result.get("semanticSha256"))
     assert len(result["referenceRates"]) == PROFILES["sources"][key]["referenceRows"]
     for evidence in result["evidence"]:
         validate_wire(evidence, "Evidence")
