@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""Publish withheld daily payloads over an operator-waived population gate.
+"""Publish withheld daily payloads over an operator-waived policy gate.
 
-Operator decision (2026-11-06, repository owner): observations withheld *only*
-by ``unverified_provider_population`` may be published. Everything else stays
-in force. This runner reuses the production checkout's own daily publication
-path (``pi_daily_sync.maybe_publish_app_payload``), so payload format, revision
-coordination, encryption, the dates index and the pending-marker queue behave
-exactly as on a natural daily retry. The one change is a scoped wrapper around
-``app_payload_observation_gate.publication_allowed``: a contract whose sole
-blocker is the population flag, and which passes every other policy check with
-that flag removed, is admitted as ``operator_waived_population:<policy>``. The
-wrapper applies only to the authorised dates and the exact contract digests
-reported by the preceding gate report.
+Operator decisions (repository owner):
+- 2026-11-06: observations withheld *only* by ``unverified_provider_population``
+  may be published (``--policy population``).
+- 2026-11-07: a GitHub payload must exist for every observed date. The CDR source
+  data for past dates no longer exists upstream; the Pi's retained capture is the
+  only copy. Any policy verdict may be waived (``--policy all``) so the best
+  retained capture is published with its coverage disclosed in the payload.
 
-Run inside a bounded systemd unit (the workflow does this) as the daily service
-user, with the daily service environment. ``--report`` writes nothing.
+Integrity is never waived. This runner reuses the production checkout's own daily
+publication path (``pi_daily_sync.maybe_publish_app_payload``), so the sealed
+contract/ledger/marker binding, payload format, revision coordination,
+encryption, the dates index and the pending-marker queue behave exactly as on a
+natural daily retry. The one change is a scoped wrapper around
+``app_payload_observation_gate.publication_allowed`` that admits a refused
+verdict only for the authorised dates and the exact contract digests pinned by
+the preceding report, and records a receipt for each waived publication.
+
+``--inventory`` lists every finalized ledger generation for a date with its
+coverage so the most complete retained capture can be confirmed. ``--report``
+and ``--inventory`` write nothing. Run inside a bounded systemd unit as the daily
+service user with the daily service environment (the workflow does this).
 """
 from __future__ import annotations
 
@@ -28,6 +35,10 @@ from pathlib import Path
 WAIVED = "unverified_provider_population"
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
+AUTHORITY = {
+    "population": "repository owner, 2026-11-06 (population verdict only)",
+    "all": "repository owner, 2026-11-07 (payload for every observed date)",
+}
 
 
 def emit(**row):
@@ -56,11 +67,13 @@ def policy_without_population(gate, contract):
     return False, f"observation_state={state}"
 
 
-def classify(gate, contract):
+def classify(gate, contract, policy="population"):
     """(decision, detail) for one contract under the operator waiver."""
     allowed, reason = gate.publication_allowed(contract)
     if allowed:
         return "admitted", reason
+    if policy == "all":
+        return "waivable", "operator_waived_all:" + reason
     if reason != WAIVED:
         return "refused", reason
     inner_allowed, inner = policy_without_population(gate, contract)
@@ -77,23 +90,64 @@ def candidates_by_date(daily, retry, repo, dates):
     return found
 
 
+def coverage_summary(contract):
+    coverage = contract.get("coverage") or {}
+    states = {}
+    for provider in contract.get("provider_states") or []:
+        states[str(provider.get("state"))] = states.get(str(provider.get("state")), 0) + 1
+    keys = ("providers_attempted", "products_discovered", "eligible_rate_rows", "failure_records")
+    return dict({key: coverage.get(key) for key in keys},
+                provider_states=states,
+                unverified_providers=len(coverage.get("provider_population_unverified") or []))
+
+
+def inventory(state, gate, day, pending_ids, load_contract, verify_event):
+    """Every finalized generation for ``day`` with its coverage (read-only).
+
+    Each event passes the ledger's own verification (stored-event identity and
+    contract binding) before its contract is summarised.
+    """
+    rows = []
+    for path in sorted((state / "ledger-v2" / "events" / day).glob("*.json")):
+        event = json.loads(path.read_bytes())
+        try:
+            event = verify_event(state, event)
+            contract = load_contract((state.resolve() / event["contract_path"]).resolve())
+            allowed, reason = gate.publication_allowed(contract)
+            rows.append(dict(date=day, inventory=event.get("generation_id"),
+                             event_type=event.get("event_type"),
+                             observation_state=contract.get("observation_state"),
+                             pending=event.get("generation_id") in pending_ids,
+                             gate=reason, admitted=allowed, **coverage_summary(contract)))
+        except (OSError, ValueError, KeyError) as error:
+            rows.append(dict(date=day, inventory=event.get("generation_id"), error=str(error)[:200]))
+    return rows
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True)
-    parser.add_argument("--date", action="append", required=True)
+    parser.add_argument("--date", action="append", default=[])
+    parser.add_argument("--pending-since", metavar="DATE",
+                        help="also select every date on or after DATE that has a withheld pending pointer")
+    parser.add_argument("--policy", choices=sorted(AUTHORITY), default="population")
     parser.add_argument("--allow-digest", action="append", default=[],
                         help="publish mode: date=contract_digest admitted by the gate report")
     mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--inventory", action="store_true")
     mode.add_argument("--report", action="store_true")
     mode.add_argument("--publish", action="store_true")
     args = parser.parse_args(argv)
     dates = sorted(set(args.date))
-    if not all(DATE.fullmatch(d) for d in dates):
+    if not all(DATE.fullmatch(d) for d in dates + [args.pending_since or "0000-00-00"]):
         parser.error("dates must be YYYY-MM-DD")
+    if not dates and not args.pending_since:
+        parser.error("give --date and/or --pending-since")
     allowed_digests = {}
     for item in args.allow_digest:
         day, _, digest = item.partition("=")
-        if not DATE.fullmatch(day) or not DIGEST.fullmatch(digest) or day not in dates:
+        if not DATE.fullmatch(day) or not DIGEST.fullmatch(digest) or (
+                day not in dates and not (args.pending_since and day >= args.pending_since)):
             parser.error("--allow-digest must be DATE=SHA256 for a requested date")
         allowed_digests[day] = digest
     repo = args.repo.resolve()
@@ -107,6 +161,26 @@ def main(argv=None):
     from cdr_observation_selection import load_pointer_observation
 
     state = data_state_root(repo)
+    if args.pending_since:
+        pending = daily.read_payload_publication_pending(repo)
+        for candidate in retry.publication_retry_candidates(pending):
+            pointer = candidate.get("pointer")
+            day = pointer.get("observation_date") if isinstance(pointer, dict) else None
+            if isinstance(day, str) and DATE.fullmatch(day) and day >= args.pending_since:
+                dates.append(day)
+        dates = sorted(set(dates))
+        emit(selected=dates)
+        if not dates:
+            return 0
+    if args.inventory:
+        from cdr_export_contract import load_contract
+        from cdr_ledger_v2 import verify_event
+        found = candidates_by_date(daily, retry, repo, set(dates))
+        for day in dates:
+            pending_ids = {p.get("generation_id") for p in found.get(day) or []}
+            for row in inventory(state, gate, day, pending_ids, load_contract, verify_event):
+                emit(**row)
+        return 0
     if (window := retry.payload_retry_window_reason()):
         emit(result="DEFERRED", reason=window)
         return 3
@@ -124,7 +198,7 @@ def main(argv=None):
                 continue
             pointer = pointers[0]
             contract = load_pointer_observation(state, pointer)["contract"]
-            decision, detail = classify(gate, contract)
+            decision, detail = classify(gate, contract, args.policy)
             digest = str(contract.get("contract_digest") or "")
             emit(date=day, decision=decision, detail=detail, contract_digest=digest,
                  generation_id=contract.get("generation_id"),
@@ -142,10 +216,14 @@ def main(argv=None):
 
         def scoped(contract):
             allowed, reason = original(contract)
-            if allowed or reason != WAIVED or not isinstance(contract, dict):
+            if allowed or not isinstance(contract, dict):
                 return allowed, reason
             day = contract.get("observation_date")
             if authorised.get(day) != contract.get("contract_digest"):
+                return allowed, reason
+            if args.policy == "all":
+                return True, "operator_waived_all:" + reason
+            if reason != WAIVED:
                 return allowed, reason
             inner_allowed, inner = policy_without_population(gate, contract)
             return (True, "operator_waived_population:" + inner) if inner_allowed else (allowed, reason)
@@ -165,11 +243,11 @@ def main(argv=None):
                 daily.clear_payload_publication_pending(repo, pointer)
                 if decision == "waivable":
                     receipt = {
-                        "schema_version": 1, "reason": "operator_waived_population",
-                        "authority": "repository owner, 2026-11-06",
+                        "schema_version": 1, "reason": "operator_waived_" + args.policy,
+                        "authority": AUTHORITY[args.policy],
                         "observation_date": day, "contract_digest": digest,
                         "generation_id": pointer.get("generation_id"),
-                        "policy_without_population": detail, "pointer": pointer,
+                        "waived_verdict": detail, "pointer": pointer,
                         "published_at": datetime.now(timezone.utc).isoformat(),
                     }
                     atomic_write_json(state / "population-waiver-publications-v1" / f"{digest}.json",

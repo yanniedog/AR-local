@@ -66,6 +66,20 @@ FAKE = {
             if not pending: return []
             return [pending] + [{'pointer': p} for p in pending.get('queued_pointers') or []]
     """,
+    "cdr_export_contract.py": """
+        import json
+        def load_contract(path):
+            return json.loads(path.read_text())
+    """,
+    "cdr_ledger_v2.py": """
+        import json
+        def verify_event(state, event):
+            stored = json.loads((state / 'ledger-v2/events' / event['observation_date'] / (event['generation_id'] + '.json')).read_text())
+            contract = json.loads((state / stored['contract_path']).read_text())
+            if contract['contract_digest'] != stored['contract_digest']:
+                raise ValueError('ledger event contract binding mismatch')
+            return stored
+    """,
     "ar_local_pi_runtime.py": """
         from pathlib import Path
         def data_state_root(repo): return Path(repo) / 'state'
@@ -150,7 +164,7 @@ def test_publish_waives_only_the_pinned_digest_and_records_a_receipt(repo):
     assert code == 1 and published(repo) == ["2026-10-29 ok"]
     assert (repo / "state/cleared.log").read_text() == "2026-10-29\n"
     receipt = json.loads((repo / "state/population-waiver-publications-v1" / (first["contract_digest"] + ".json")).read_text())
-    assert receipt["observation_date"] == "2026-10-29" and receipt["policy_without_population"] == "bounded_partial"
+    assert receipt["observation_date"] == "2026-10-29" and receipt["waived_verdict"] == "bounded_partial"
 
 
 def test_changed_contract_after_report_is_not_waived(repo):
@@ -176,3 +190,70 @@ def test_reconciled_partial_is_evaluated_on_the_sealed_original(repo):
     assert code == 0 and rows[0]["decision"] == "waivable" and rows[0]["detail"] == "reconciled_partial"
     code, rows = run(repo, "--publish", "--date", "2026-10-31", "--allow-digest", "2026-10-31=" + sealed["contract_digest"])
     assert code == 0 and published(repo) == ["2026-10-31 ok"]
+
+
+def ledger(repo, item, *, tamper=False):
+    day, generation = item["observation_date"], item["generation_id"]
+    (repo / "state/ledger-v2/events" / day).mkdir(parents=True, exist_ok=True)
+    (repo / "state/contracts" / (generation + ".json")).write_text(json.dumps(item))
+    event = {"observation_date": day, "generation_id": generation, "event_type": "observation_finalized",
+             "contract_path": "contracts/" + generation + ".json",
+             "contract_digest": "f" * 64 if tamper else item["contract_digest"]}
+    (repo / "state/ledger-v2/events" / day / (generation + ".json")).write_text(json.dumps(event))
+
+
+def test_inventory_lists_every_verified_generation_without_writing(repo):
+    selected = contract("2026-11-04", bounded=False)
+    seed(repo, [selected])
+    better = dict(contract("2026-11-04", bounded=False), generation_id="obs-2026-11-04-bbbbbbbbbbbbbbbb")
+    for item in (selected, better):
+        ledger(repo, item)
+    broken = dict(contract("2026-11-04"), generation_id="obs-2026-11-04-cccccccccccccccc")
+    ledger(repo, broken, tamper=True)
+    code, rows = run(repo, "--inventory", "--date", "2026-11-04")
+    by_id = {row["inventory"]: row for row in rows}
+    assert code == 0 and len(rows) == 3
+    assert by_id[selected["generation_id"]]["pending"] is True and by_id[better["generation_id"]]["pending"] is False
+    assert by_id[selected["generation_id"]]["gate"] == "unverified_provider_population"
+    assert "error" in by_id[broken["generation_id"]]
+    assert published(repo) == []
+
+
+def test_all_policy_waives_any_verdict_but_only_for_the_pinned_digest(repo):
+    outside = contract("2026-11-05", bounded=False)
+    seed(repo, [outside])
+    code, rows = run(repo, "--report", "--policy", "all", "--date", "2026-11-05")
+    assert code == 0 and rows[0]["decision"] == "waivable"
+    assert rows[0]["detail"] == "operator_waived_all:unverified_provider_population"
+    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-11-05", "--allow-digest", "2026-11-05=" + "e" * 64)
+    assert code == 1 and published(repo) == []
+    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-11-05",
+                     "--allow-digest", "2026-11-05=" + outside["contract_digest"])
+    assert code == 0 and published(repo) == ["2026-11-05 ok"]
+    receipt = json.loads((repo / "state/population-waiver-publications-v1" / (outside["contract_digest"] + ".json")).read_text())
+    assert receipt["reason"] == "operator_waived_all" and receipt["authority"].startswith("repository owner, 2026-11-07")
+
+
+def test_population_policy_still_refuses_other_verdicts(repo):
+    seed(repo, [contract("2026-11-05", bounded=False)])
+    code, rows = run(repo, "--report", "--date", "2026-11-05")
+    assert code == 1 and rows[0]["decision"] == "refused"
+
+
+def test_pending_since_selects_every_withheld_date_from_the_cutoff(repo):
+    old, first, second = contract("2026-10-20"), contract("2026-10-29"), contract("2026-11-04", bounded=False)
+    seed(repo, [old, first, second])
+    code, rows = run(repo, "--report", "--policy", "all", "--pending-since", "2026-10-29")
+    assert rows[0] == {"selected": ["2026-10-29", "2026-11-04"]}
+    assert {r["date"]: r["decision"] for r in rows[1:]} == {"2026-10-29": "waivable", "2026-11-04": "waivable"}
+    assert code == 0 and published(repo) == []
+    code, rows = run(repo, "--publish", "--policy", "all", "--pending-since", "2026-10-29",
+                     "--allow-digest", "2026-10-29=" + first["contract_digest"],
+                     "--allow-digest", "2026-11-04=" + second["contract_digest"])
+    assert code == 0 and published(repo) == ["2026-10-29 ok", "2026-11-04 ok"]
+
+
+def test_pending_since_with_nothing_withheld_is_a_clean_no_op(repo):
+    (repo / "state/pending.json").write_text("{}")
+    code, rows = run(repo, "--report", "--pending-since", "2026-10-29")
+    assert code == 0 and rows == [{"selected": []}]
