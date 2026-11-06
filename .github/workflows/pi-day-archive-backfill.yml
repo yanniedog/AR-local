@@ -1,0 +1,222 @@
+# Upload the raw CDR record of every day to Google Drive (daily-cdr-raw-records),
+# over the hosted-runner Tailscale/SSH route used by pi-quality-canary.
+#
+# Operator instruction (repository owner, 2026-11-07): the Pi holds the only copy
+# of past CDR data; every date must have its raw record on Drive. The installed
+# day-archive timer only drains queued requests, so historical backfill stalled.
+# This workflow runs the installed worker (`pi_daily_cdr_day_archive.py`, the
+# checkout and identity of `ar-local-day-archive.service`) with `--backfill`:
+# create-only uploads, re-download sha256 verification, journals always on, and
+# source trees never deleted. Days that already PASS are skipped by the worker.
+#
+# Schedule: daily around midday Hobart (well clear of the worker's 00:30-02:00
+# quiet window and the overnight daily ingest), a bounded number of days per run,
+# so the series keeps itself complete. `status` is read-only and lists every non-PASS day.
+name: pi-day-archive-backfill
+
+on:
+  schedule:
+    - cron: "20 1 * * *"   # 12:20 AEDT / 11:20 AEST
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "status (read-only), backfill, or dates"
+        required: true
+        default: "status"
+        type: choice
+        options:
+          - "status"
+          - "backfill"
+          - "dates"
+      max_days:
+        description: "backfill: maximum days this run (1-40)"
+        required: false
+        default: "8"
+        type: string
+      dates:
+        description: "dates mode: space-separated YYYY-MM-DD"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  day-archive:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Validate inputs
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          MODE: ${{ inputs.mode }}
+          MAX_DAYS: ${{ inputs.max_days }}
+          DATES: ${{ inputs.dates }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "schedule" ]; then MODE=backfill; MAX_DAYS=6; DATES=""; fi
+          case "$MODE" in status|backfill|dates) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
+          [[ "$MAX_DAYS" =~ ^[0-9]+$ ]] && [ "$MAX_DAYS" -ge 1 ] && [ "$MAX_DAYS" -le 40 ] || { echo "::error::max_days must be 1-40"; exit 1; }
+          sel=""
+          for d in $DATES; do
+            [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -d "$d" +%F >/dev/null || { echo "::error::invalid date $d"; exit 1; }
+            sel="$sel $d"
+          done
+          [ "$MODE" != "dates" ] || [ -n "${sel// /}" ] || { echo "::error::dates mode needs dates"; exit 1; }
+          { echo "mode=$MODE"; echo "max_days=$MAX_DAYS"; echo "dates=$sel"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require Pi and Tailscale credentials
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          set -euo pipefail
+          for v in PI_SSH_PRIVATE_KEY PI_SSH_HOST PI_SSH_KNOWN_HOSTS TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET; do
+            test -n "${!v}" || { echo "::error::$v missing"; exit 1; }
+          done
+
+      - name: Join Tailscale tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
+      - name: Configure SSH for Pi
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_deploy_key ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${PI_SSH_USER:-pi}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 60
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Run the installed day-archive worker through the shared queue
+        env:
+          MODE: ${{ steps.select.outputs.mode }}
+          MAX_DAYS: ${{ steps.select.outputs.max_days }}
+          DATES: ${{ steps.select.outputs.dates }}
+        run: |
+          set -euo pipefail
+          ssh ar-local-pi5 bash -s -- "$MODE" "$MAX_DAYS" "$GITHUB_RUN_ID" $DATES <<'REMOTE'
+          set -euo pipefail
+          MODE="$1"; MAX="$2"; RUN="$3"; shift 3
+          SVC=ar-local-day-archive.service
+          for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
+            [ ! -e "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
+          done
+          WD="$(systemctl show -p WorkingDirectory --value "$SVC")"
+          test -n "$WD" && test -f "$WD/pi_daily_cdr_day_archive.py" || { echo "day-archive worker not installed"; exit 1; }
+          echo "worker checkout: $WD @ $(git -C "$WD" rev-parse HEAD 2>/dev/null || echo unknown)"
+          test -x /usr/local/bin/pi-shared-task || { echo "pi-shared-task missing; refusing"; exit 1; }
+          CTL=/srv/ar-local/payload-waiver-control
+          install -d -m 0755 "$CTL"
+          QS="$CTL/day-archive-$RUN.sh"
+          cat > "$QS" <<'QUEUED'
+          set -euo pipefail
+          MODE="$1"; MAX="$2"; RUN="$3"; WD="$4"; shift 4
+          SVC=ar-local-day-archive.service
+          U="$(systemctl show -p User --value "$SVC")"; G="$(systemctl show -p Group --value "$SVC")"
+          test -n "$U" || { echo "day-archive service user unknown"; exit 1; }
+          props=(-p "User=$U" -p "WorkingDirectory=$WD" -p Type=exec -p KillMode=control-group
+                 -p SendSIGKILL=yes -p Restart=no -p TimeoutStopSec=60 -p Nice=10
+                 -p IOSchedulingClass=best-effort -p IOSchedulingPriority=7 -p CPUQuota=200%
+                 -p "Environment=PYTHONPATH=$WD"
+                 -p EnvironmentFile=-/etc/ar-local/drive-backup.env -p EnvironmentFile=-/etc/ar-local/day-archive.env)
+          [ -n "$G" ] && props+=(-p "Group=$G")
+          QUNIT="$(sed -n 's#^0::.*/\([^/]*\.service\)$#\1#p' /proc/self/cgroup)"
+          [[ "$QUNIT" =~ ^[A-Za-z0-9@_.:-]+\.service$ ]] || { echo "queue unit unknown; refusing"; exit 1; }
+          props+=(-p "BindsTo=$QUNIT" -p "After=$QUNIT")
+          CHILD=""
+          stop_child() {
+            [ -n "$CHILD" ] || return 0
+            sudo systemctl stop "$CHILD" 2>/dev/null || true
+            for _ in $(seq 1 30); do
+              state="$(systemctl show -p ActiveState --value "$CHILD" 2>/dev/null || true)"
+              case "$state" in ""|inactive|failed) CHILD=""; return 0 ;; esac
+              sleep 2
+            done
+            echo "child $CHILD did not stop"; return 1
+          }
+          trap 'stop_child; exit 143' TERM INT HUP
+          seq=0
+          unit() {
+            seq=$((seq + 1)); CHILD="ar-local-day-archive-run-$RUN-$seq.service"
+            sudo systemd-run --quiet --wait --pipe --collect --unit="$CHILD" "${props[@]}" \
+              -p RuntimeMaxSec="$1" "${@:2}" &
+            local pid=$! rc=0
+            wait "$pid" || rc=$?
+            CHILD=""
+            return "$rc"
+          }
+          status() {
+            unit 300 /usr/bin/python3 -c 'import datetime, json, pathlib, zoneinfo
+          gaps = {"2026-05-14", "2026-06-26", "2026-10-08", "2026-10-09", "2026-10-10"}
+          latest = {}
+          path = pathlib.Path("/var/lib/ar-local-day-archives/meta/raw-progress.jsonl")
+          for line in path.read_text().splitlines() if path.is_file() else []:
+              if line.strip():
+                  row = json.loads(line)
+                  if isinstance(row.get("date"), str):
+                      latest[row["date"]] = row
+          day = datetime.date(2026, 5, 13)
+          end = datetime.datetime.now(zoneinfo.ZoneInfo("Australia/Hobart")).date() - datetime.timedelta(days=1)
+          missing = []
+          while day <= end:
+              key = day.isoformat()
+              if key not in gaps and (latest.get(key) or {}).get("result") != "PASS":
+                  missing.append([key, (latest.get(key) or {}).get("result"), str((latest.get(key) or {}).get("error") or "")[:160]])
+              day += datetime.timedelta(days=1)
+          print("DAY_ARCHIVE_STATUS " + json.dumps({"through": end.isoformat(), "pass": sum(r.get("result") == "PASS" for r in latest.values()), "missing": missing}))'
+          }
+          status
+          rc=0
+          case "$MODE" in
+            backfill) unit 19800 /usr/bin/python3 "$WD/pi_daily_cdr_day_archive.py" --backfill --max-days "$MAX" || rc=$? ;;
+            dates) for d in "$@"; do unit 7200 /usr/bin/python3 "$WD/pi_daily_cdr_day_archive.py" --date "$d" || { rc=$?; echo "day $d failed (rc=$rc)"; }; done ;;
+          esac
+          [ "$MODE" = "status" ] || status
+          exit "$rc"
+          QUEUED
+          chmod 0500 "$QS"
+          set +e
+          /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
+            --cpu-slots 2 --max-runtime 20400 --wait-timeout 1800 -- \
+            /bin/bash "$QS" "$MODE" "$MAX" "$RUN" "$WD" "$@"
+          RC=$?
+          set -e
+          rm -f "$QS"
+          echo "pi-shared-task exit: $RC"
+          exit "$RC"
+          REMOTE
