@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 
-from pi_shared_queue_store import validate_job
+from pi_shared_queue_store import Supervisor, validate_job
 from pi_shared_queue_post_hooks import retained_stop, approval, native_completion_proved
 
 NATIVE_LOCK = Path('/srv/ar-local/data/state/daily-ingest.lock')
@@ -218,7 +218,7 @@ def _native_recovery_lock(path):
     return lock_type(recovery_path(path))
 
 
-def clear_native_manual(job, path=NATIVE_LOCK, recovery_lock_factory=None):
+def clear_native_manual(job, path=NATIVE_LOCK, recovery_lock_factory=None, supervisor=None):
     """After cgroup termination proof, serialize with legacy stale reclamation.
 
     The wrapper can die after lease acquisition but before its manual marker.
@@ -228,12 +228,12 @@ def clear_native_manual(job, path=NATIVE_LOCK, recovery_lock_factory=None):
         validate_job(job)
         factory = recovery_lock_factory or _native_recovery_lock
         with factory(path):
-            return _clear_native_owned_file(job, path)
+            return _clear_native_owned_file(job, path, supervisor)
     except (OSError, UnicodeError, ValueError, ImportError, subprocess.SubprocessError):
         return False
 
 
-def _clear_native_owned_file(job, path):
+def _clear_native_owned_file(job, path, supervisor=None):
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     except FileNotFoundError:
@@ -247,6 +247,11 @@ def _clear_native_owned_file(job, path):
         if values != expected and values != dict(expected, recovery='manual'):
             return False
         current = path.lstat()
+        if retained_stop(job['unit']):
+            observer = supervisor or Supervisor()
+            observer._snapshot = None
+            if observer.ownership(job) != 'gone':
+                return False
         if ((info.st_dev, info.st_ino) != (current.st_dev, current.st_ino)
                 or not native_completion_proved(job, (info.st_dev, info.st_ino))):
             return False

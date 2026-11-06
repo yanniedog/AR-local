@@ -254,7 +254,10 @@ def build(mode,nonce,coupled_nonce=None):
     publish(private/'service-plan.json',canonical(service))
     authority={key:packet[key] for key in ('nonce','unit','manual_plaintext_drive_write','data_root',
         'expires_at','source_closure_sha256','parent_sha256','resources_sha256','broker_sha256')}
-    authority.update(schema='ar-local-plain-backup-authority-v1',queue_argv_sha256=service['queue_argv_sha256'])
+    # mode + runtime_seconds let the unprivileged queue rebuild the exact
+    # packet-bound command; they are nonsecret and already bound by the hash.
+    authority.update(schema='ar-local-plain-backup-authority-v1',queue_argv_sha256=service['queue_argv_sha256'],
+        mode=packet['mode'],runtime_seconds=packet['runtime_seconds'])
     publish(public/'credentials-copy.conf',config,0o440,pi.pw_gid)
     publish(public/'worker.json',canonical({'schema':'ar-local-plain-backup-worker-v1','nonce':nonce}),0o640,pi.pw_gid)
     # Authority is published last; no recognizable unit can register before the

@@ -25,6 +25,7 @@ CI_STATE = Path("/var/lib/ar-local-ci")
 CI_CONTROL = Path("/usr/local/sbin/ar-local-ci-control")
 CI_RUNTIME = Path("/etc/ar-local/ci-runtime.json")
 QUEUE_ROOT = Path("/usr/local/lib/shared-pi-queue")
+QUEUE_SCRIPT = str(QUEUE_ROOT / "pi_shared_queue.py")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 IMAGE_PHASES = frozenset({"PROBE", "baseline", "prepare", "finalize", "archive", "build", "compress", "upload", "fetch", "restore", "rejoin"})
 
@@ -82,6 +83,8 @@ def _plain_approval(unit, *, current=False, now=None):
             or any(not re.fullmatch("[0-9a-f]{64}", str(value.get(key, ""))) for key in
                    ("source_closure_sha256", "parent_sha256", "resources_sha256", "broker_sha256", "queue_argv_sha256"))):
         raise ValueError("plaintext backup approval differs")
+    if value["queue_argv_sha256"] not in {_argv_sha(start) for start in _plain_starts(match[1], value)}:
+        raise ValueError("plaintext queue command differs")
     if current and expiry <= (now or datetime.now(timezone.utc)):
         raise ValueError("plaintext backup authority expired")
     return value
@@ -132,6 +135,8 @@ def _image_approval(unit, nonce, *, current=False, now=None):
                                   "broker_sha256", "queue_argv_sha256"))):
         raise ValueError("image recovery approval differs")
     _expiry(value, current, now)
+    if value["queue_argv_sha256"] != _argv_sha(image_start(nonce, value["mode"])):
+        raise ValueError("image recovery queue command differs")
     for name,key in (('parent.py','parent_sha256'),('broker.py','broker_sha256'),
                      ('pi_system_guard_resources.py','resources_sha256')):
         if _sha(root_bytes(IMAGE_ROOT/name))!=value[key]:
@@ -144,6 +149,44 @@ def ci_start(plan):
         '--project', 'ar-local', '--resource', 'ar-local', '--resource', 'host', '--mode', 'exclusive',
         '--cpu-slots', '2', '--wait-timeout', '900', '--max-runtime', '1800', '--',
         '/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', str(CI_CONTROL), '--worker', plan]
+
+
+def _queue_start(parent, nonce, mode, *, isolated=False, runtime=None, wait=None):
+    if runtime is None:
+        runtime, wait = (120, 30) if mode == "PROBE" else (21600, 7200)
+    python_flags = ["-I", "-S", "-B"] if isolated else ["-I", "-B"]
+    return ["/usr/bin/python3", "-B", QUEUE_SCRIPT, "run", "--project", "ar-local",
+        "--resource", "ar-local", "--resource", "host", "--mode", "exclusive", "--cpu-slots", "1",
+        "--max-runtime", str(runtime), "--wait-timeout", str(wait), "--",
+        "/usr/bin/python3", *python_flags, parent, nonce]
+
+
+def _plain_starts(nonce, value=None):
+    parent = str(ROOT / "parent.py")
+    starts = [_queue_start(parent, nonce, mode) for mode in ("PROBE", "RUN_ARCHIVE")]
+    bound = _plain_packet_start(nonce, parent, value) if value is not None else None
+    return starts + ([bound] if bound else [])
+
+
+def _plain_packet_start(nonce, parent, value):
+    """The packet-bound command pi_plain_backup_plan.service_plan() generates.
+
+    Its runtime is the packet's chosen runtime and its wait is 0. The queue
+    runs as the unprivileged service user, so the binding comes from the
+    root-published, Pi-readable approval (mode + runtime_seconds), never from
+    the root-private packet directory.
+    """
+    if "runtime_seconds" not in value and "mode" not in value:
+        return None
+    mode, runtime = value.get("mode"), value.get("runtime_seconds")
+    cap = {"PROBE": 120, "RUN_ARCHIVE": 21600}.get(mode)
+    if cap is None or type(runtime) is not int or not 1 <= runtime <= cap:
+        raise ValueError("plaintext approval runtime binding differs")
+    return _queue_start(parent, nonce, mode, runtime=runtime, wait=0)
+
+
+def image_start(nonce, mode):
+    return _queue_start(str(IMAGE_ROOT / "parent.py"), nonce, mode, isolated=True)
 
 
 def _sha(raw):
@@ -210,11 +253,13 @@ def approval(unit, *, current=False, now=None):
 
 def _commands(unit, value, expected, run, *, expected_start=None):
     start, stop = _native(unit, "ExecStartEx", run), _native(unit, "ExecStopPostEx", run)
+    expected_starts = ([expected_start] if expected_start and isinstance(expected_start[0], str)
+                       else expected_start)
     if (len(start) != 1 or len(start[0]) != 10 or start[0][2] != []
             or not isinstance(start[0][1],list) or not start[0][1]
             or not all(isinstance(item,str) for item in start[0][1]) or start[0][0]!=start[0][1][0]
             or _argv_sha(start[0][1]) != value["queue_argv_sha256"]
-            or expected_start is not None and start[0][1] != expected_start
+            or expected_starts is not None and start[0][1] not in expected_starts
             or len(stop) != 1 or len(stop[0]) != 10 or stop[0][:3] != [expected[0], expected, ["privileged"]]):
         raise ValueError("root-created fixed maintenance commands differ")
     for prop in ("ExecConditionEx", "ExecStartPreEx", "ExecStartPostEx", "ExecStopEx"):
@@ -222,12 +267,23 @@ def _commands(unit, value, expected, run, *, expected_start=None):
             raise ValueError("unexpected maintenance service hook")
 
 
-def _typed_property(unit, name, kind, expected, run):
+def _native_property(unit, name, run):
     encoded = ''.join(char if char.isalnum() else f'_{ord(char):02x}' for char in unit)
     response = run(['/usr/bin/busctl', '--system', '--json=short', '--timeout=10', 'get-property',
         'org.freedesktop.systemd1', '/org/freedesktop/systemd1/unit/' + encoded,
         'org.freedesktop.systemd1.Service', name], text=True, capture_output=True, timeout=10, check=True)
-    value = json.loads(response.stdout, object_pairs_hook=pairs)
+    return json.loads(response.stdout, object_pairs_hook=pairs)
+
+
+def _native_value(unit, name, kind, run):
+    value = _native_property(unit, name, run)
+    if value.get('type') != kind:
+        raise ValueError('fixed CI service profile differs: ' + name)
+    return value.get('data')
+
+
+def _typed_property(unit, name, kind, expected, run):
+    value = _native_property(unit, name, run)
     actual=value.get('data')
     if kind=='as' and isinstance(actual,list) and all(isinstance(item,str) for item in actual):
         matches=len(actual)==len(expected) and set(actual)==set(expected)
@@ -242,7 +298,8 @@ def _ci_service(unit, value, run):
     strings = {'User': 'pi', 'Group': 'pi', 'Type': 'notify', 'NotifyAccess': 'main',
         'KillMode': 'control-group', 'ProtectSystem': 'strict', 'ProtectHome': 'yes', 'WorkingDirectory': '/'}
     booleans = {'NoNewPrivileges': False, 'SendSIGKILL': True,
-        'PrivateTmp': True, 'ProtectControlGroups': True}
+        'PrivateTmp': True, 'PrivateDevices': True, 'ProtectControlGroups': True,
+        'ProtectKernelTunables': True, 'ProtectKernelModules': True}
     integers = {'RuntimeMaxUSec': 1800_000_000, 'TimeoutStartUSec': 960_000_000,
         'TimeoutStopUSec': 900_000_000, 'CPUQuotaPerSecUSec': 2_000_000,
         'LimitAS': 2 * 1024**3, 'MemoryHigh': 768 * 1024**2,
@@ -258,6 +315,28 @@ def _ci_service(unit, value, run):
     _typed_property(unit, 'Environment', 'as',
         ['HOME=/nonexistent', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin'], run)
     _typed_property(unit, 'EnvironmentFiles', 'a(sb)', [], run)
+    # The unit launches its root worker through sudo, which then runs the
+    # candidate verifier in bwrap. An empty bounding set makes sudo fail
+    # ("unable to change to root gid") and RestrictNamespaces=yes blocks bwrap,
+    # so require that the mechanisms the reviewed launch needs stay available,
+    # while no ambient capability is granted to the unprivileged service user.
+    _required_bits(unit, 'RestrictNamespaces', CI_NAMESPACES, run)
+    _required_bits(unit, 'CapabilityBoundingSet', CI_CAPABILITIES, run)
+    _typed_property(unit, 'AmbientCapabilities', 't', 0, run)
+
+
+# CLONE_NEWNS|NEWCGROUP|NEWUTS|NEWIPC|NEWUSER|NEWPID|NEWNET: bwrap --unshare-*
+# plus --disable-userns.
+CI_NAMESPACES = 0x00020000 | 0x02000000 | 0x04000000 | 0x08000000 | 0x10000000 | 0x20000000 | 0x40000000
+# CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETGID, SETUID, SETPCAP, SYS_ADMIN: sudo's
+# identity switch, the root worker's file custody and setpriv/bwrap.
+CI_CAPABILITIES = sum(1 << bit for bit in (0, 1, 3, 5, 6, 7, 8, 21))
+
+
+def _required_bits(unit, name, required, run):
+    value = _native_value(unit, name, 't', run)
+    if type(value) is not int or value & required != required:
+        raise ValueError("CI service " + name + " removes a capability the reviewed launch requires")
 
 
 def verify_plain_service(unit, run=subprocess.run):
@@ -267,9 +346,11 @@ def verify_plain_service(unit, run=subprocess.run):
         _ci_service(unit, value, run)
     elif value['schema'] == 'ar-local-system-recovery-authority-v1':
         _commands(unit, value, ['/usr/bin/python3', '-I', '-S', '-B',
-            str(IMAGE_ROOT / 'broker.py'), 'recover', value['nonce']], run)
+            str(IMAGE_ROOT / 'broker.py'), 'recover', value['nonce']], run,
+            expected_start=image_start(value['nonce'], value['mode']))
     else:
-        _commands(unit, value, ['/usr/bin/python3', '-I', '-B', BROKER, 'recover', value['nonce']], run)
+        _commands(unit, value, ['/usr/bin/python3', '-I', '-B', BROKER, 'recover', value['nonce']], run,
+            expected_start=_plain_starts(value['nonce'], value))
     return value
 
 
@@ -322,7 +403,7 @@ def completion_proved(job, *, native_identity=None):
                 and value.get('phase') == authority['phase']
                 and value.get('source_closure_sha256') == authority['source_closure_sha256']
                 and value.get('credential_custody') == ('QUARANTINED' if authority['phase'] in ('upload','fetch') else 'NOT_EXPOSED')
-                and type(value.get('stop_post_verified')) is bool
+                and value.get('stop_post_verified') is True
                 and value.get('owned_loop_terminal') is True and value.get('writers_restored') is True)
         return (value.get('schema') == 'ar-local-plain-backup-root-completion-v1'
             and value.get('credential_quarantined') is True)
