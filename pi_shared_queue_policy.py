@@ -45,6 +45,23 @@ def _aware(value: object) -> datetime:
     return value
 
 
+_UNIT = re.compile(r"[a-z0-9][a-z0-9_.-]{0,118}\.service\Z")
+# Qualified immutable CI activation units hold host/native claims through up to
+# 900 s of restoration; reserve that before the ingest boundary.
+_CI_UNIT = re.compile(r"ar-local-ci-activate-[0-9a-f]{64}\.service\Z")
+CI_STOP_GRACE_SECONDS = 900
+
+
+def _unit(value: object) -> str:
+    if not isinstance(value, str) or not _UNIT.fullmatch(value):
+        raise ValueError("invalid unit name")
+    return value
+
+
+def _stop_grace(job) -> int:
+    return CI_STOP_GRACE_SECONDS if job.unit and _CI_UNIT.fullmatch(job.unit) else STOP_GRACE_SECONDS
+
+
 def _name(value: object) -> str:
     if not isinstance(value, str) or not _NAME.fullmatch(value):
         raise ValueError("invalid job, project or resource name")
@@ -77,7 +94,7 @@ def _parse(record: Mapping, now: datetime) -> _Job:
                         MAX_DURATION_SECONDS if project == AR_PROJECT else MAX_OTHER_DURATION_SECONDS)
     cpu_slots = _integer(record.get("cpu_slots", 1), 1,
                          CPU_SLOT_BUDGET if project == AR_PROJECT else 1)
-    unit = _name(record["unit"]) if "unit" in record else None
+    unit = _unit(record["unit"]) if "unit" in record else None
     return _Job(
         _name(record["id"]), project, names, mode, ready,
         _integer(record["sequence"], 0, 2**63 - 1),
@@ -170,7 +187,7 @@ def admission(job: Mapping, jobs: Sequence[Mapping], now: datetime) -> tuple[boo
             # and leave the subsequent three-core ingest blocked for its lease.
             if critical:
                 return False, "protected-ingest-window"
-            if now + timedelta(seconds=candidate.max_duration_seconds + STOP_GRACE_SECONDS) >= next_start:
+            if now + timedelta(seconds=candidate.max_duration_seconds + _stop_grace(candidate)) >= next_start:
                 return False, "would-cross-ingest-start"
         promoted = _priority(candidate, now, critical)
         promoted_waiters = []
