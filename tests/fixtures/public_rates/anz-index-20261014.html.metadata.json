@@ -1,0 +1,11 @@
+{
+  "sha256": "f0b787d540ccc2148ba4b6a6f3cf3e717dc56ba4a5a58dd7db6e8e8ed182e70c",
+  "finalUrl": "https://www.anz.com.au/personal/home-loans/interest-rates/",
+  "contentType": [
+    "text/html; charset=utf-8"
+  ],
+  "observedAt": "2026-10-14T11:50:16.8590241Z",
+  "sourceUrl": "https://www.anz.com.au/personal/home-loans/interest-rates/",
+  "status": 200,
+  "bytes": 457933
+}

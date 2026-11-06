@@ -1,0 +1,9 @@
+{
+  "sourceUrl": "https://www.anz.com.au/productdata/productdata.asp?output=json&callback=callbackFunction&country=AU&section=PHL&subsection=",
+  "finalUrl": "https://www.anz.com.au/productdata/productdata.asp?output=json&callback=callbackFunction&country=AU&section=PHL&subsection=",
+  "sha256": "5be663ae59d7f135dd963274f9c5aee8f540ae6dfbbca6359fc5dc717db85024",
+  "bytes": 82713,
+  "observedAt": "2026-10-14T11:54:23.629415+00:00",
+  "captureClockBasis": "retained_public_capture_file_mtime",
+  "status": 200
+}

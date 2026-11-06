@@ -148,10 +148,14 @@ def load_candidate(directory, accepted):
     m, ix = decode_document(raw), validate_index(ix_raw)
     if len(raw) > 4 * 1024 * 1024 or canonical(m) != raw:
         raise RevisionError("accepted manifest must retain canonical producer bytes")
-    validate_manifest(m)
     allowed = {"schema_version", "consumer_contract", "counts", "files", "generated_at",
                "payload_revision", "repo", "run_date", "schedule", "source_observation",
                "tag", "app_min_version"}
+    # Additional capabilities (such as the public-rate catalogue) are unsupported
+    # here: refuse their keys before any capability-specific validation runs.
+    if not isinstance(m, dict) or set(m) != allowed:
+        raise RevisionError("unsupported observed edition or source binding")
+    validate_manifest(m)
     if (set(m) != allowed or m["consumer_contract"] != CHANNEL or m["repo"] != REPO
             or set(m["files"]) != {"core", "details"}
             or m["source_observation"] != accepted.source_observation

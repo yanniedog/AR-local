@@ -1,4 +1,5 @@
 """Publication-control regression tests; all values here are control metadata."""
+import ast
 import json
 import os
 import shutil
@@ -101,6 +102,44 @@ def test_matching_helper_bodies_do_not_waive_other_module_changes(roots):
     assert contract["queue_compatible"] is False
     with pytest.raises(ValueError, match="predecessor cannot preserve"):
         state.require_controls(data, state.control_state(data), contract)
+
+
+@pytest.mark.parametrize('helper', ['_mark_payload_publication_pending', '_clear_payload_publication_pending'])
+def test_delegated_pending_implementation_is_bound_by_normalized_helper_fingerprint(roots, helper):
+    _, source, old = roots
+    shutil.copyfile(source / 'pi_daily_sync.py', old / 'pi_daily_sync.py')
+    original = state.rollback_contract(source, old)
+    assert original['queue_compatible'] is True
+    tree = ast.parse((old / 'pi_daily_sync.py').read_text(encoding='utf-8-sig'))
+    implementation = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == helper)
+    implementation.body.append(ast.Pass())  # Control-only implementation drift.
+    (old / 'pi_daily_sync.py').write_text(ast.unparse(tree), encoding='utf-8')
+    changed = state.rollback_contract(source, old)
+    assert changed['candidate_helpers_sha256'] != changed['previous_helpers_sha256']
+    assert changed['queue_compatible'] is False
+    with pytest.raises(ValueError, match='predecessor publication helper changed'):
+        state.require_predecessor(old, original)
+
+
+@pytest.mark.parametrize('helper', ['_mark_payload_publication_pending', '_clear_payload_publication_pending'])
+def test_missing_checked_delegate_is_rejected_without_guessing_an_implementation(roots, helper):
+    _, source, _ = roots
+    path = source / 'pi_daily_sync.py'
+    tree = ast.parse(path.read_text(encoding='utf-8-sig'))
+    tree.body = [node for node in tree.body if not isinstance(node, ast.FunctionDef) or node.name != helper]
+    path.write_text(ast.unparse(tree), encoding='utf-8')
+    with pytest.raises(ValueError, match='publication helpers are unavailable'):
+        state._pending_helpers(source)
+
+
+def test_unused_private_bodies_do_not_make_an_old_predecessor_queue_compatible(roots):
+    _, _, old = roots
+    path = old / 'pi_daily_sync.py'
+    path.write_text(path.read_text() +
+        "\ndef _mark_payload_publication_pending(root, reason, pointer=None):\n    queued_pointers = []\n"
+        "\ndef _clear_payload_publication_pending(root, pointer=None):\n    queued_pointers = []\n")
+    assert state._pending_helpers(old)[2] is False
+    assert state.rollback_contract(old, old)['queue_compatible'] is False
 
 
 def test_retry_directory_cannot_hide_nested_or_nonfile_controls(roots):
