@@ -1,43 +1,65 @@
-# Publish daily payloads withheld only by the provider-population gate, over the
-# hosted-runner Tailscale/SSH route used by pi-quality-canary.
+# Guarantee a GitHub app payload for every observed date, over the hosted-runner
+# Tailscale/SSH route used by pi-quality-canary.
 #
-# Operator decision (2026-11-06, repository owner): observations withheld solely
-# by `unverified_provider_population` may be published. Every other gate stays.
+# Operator decisions (repository owner):
+# - 2026-11-06: observations withheld solely by `unverified_provider_population`
+#   may be published (`policy: population`).
+# - 2026-11-07: a GitHub payload must ALWAYS exist for every date. Upstream CDR
+#   data for past dates is gone; the Pi's retained capture is the only copy, so
+#   any withheld observation is published with its coverage disclosed
+#   (`policy: all`). Integrity (sealed contract/ledger/marker binding) is never
+#   waived.
 # scripts/pi_population_waiver_publish.py drives the production checkout's own
 # daily publication path (pi_daily_sync.maybe_publish_app_payload), so payload
 # format, revision coordination, encryption, dates index and the pending-marker
-# queue behave exactly as on a natural daily retry. Only that one verdict is
-# waived, and only for the requested dates' exact contract digests.
+# queue behave exactly as on a natural daily retry. A waiver applies only to the
+# exact contract digests the preceding report saw.
+#
+# Schedule: twice daily inside the 03:30-22:00 Hobart retry window, publish every
+# withheld date since AUTHORISED_FROM with `policy: all`, then fail the run (and
+# so notify) if any date from AUTHORISED_FROM to yesterday still has no dated
+# release.
 #
 # Guards:
-# - manual dispatch only, main-branch definition only; typed confirmation for
-#   publish mode; dates limited to 2026-10-29 through today (Hobart);
+# - main-branch definition only; typed confirmation for manual publish;
+#   dates limited to AUTHORISED_FROM through today (Hobart);
 # - admitted through the shared Pi queue (`pi-shared-task`), then run in bounded
 #   transient units as the daily service user with its environment, under the
-#   production daily-ingest lock and the daily retry window (03:30-22:00);
+#   production daily-ingest lock and the daily retry window;
 # - the production checkout must be clean and is imported unmodified;
-# - `report` (default) writes nothing; `publish` first reports, then pins each
-#   waivable date to the contract digest that report saw; any other reason,
-#   ambiguity, missing pending pointer or failed upload fails the run.
+# - `inventory` and `report` write nothing.
 name: pi-payload-backfill
 
 on:
+  schedule:
+    - cron: "45 18 * * *"   # 05:45 AEDT / 04:45 AEST
+    - cron: "15 8 * * *"    # 19:15 AEDT / 18:15 AEST
   workflow_dispatch:
     inputs:
       mode:
-        description: "report (read-only) or publish"
+        description: "inventory / report (read-only) or publish"
         required: true
         default: "report"
         type: choice
         options:
+          - "inventory"
           - "report"
           - "publish"
-      dates:
-        description: "Space-separated YYYY-MM-DD dates (2026-10-29 onward)"
+      policy:
+        description: "all (any verdict; payload for every date) or population"
         required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "population"
+      dates:
+        description: "Space-separated YYYY-MM-DD dates; empty = every withheld date since AUTHORISED_FROM"
+        required: false
+        default: ""
         type: string
       confirm:
-        description: "Type PUBLISH_OVER_POPULATION_GATE for publish mode"
+        description: "publish: PUBLISH_OVER_ALL_POLICY (policy all) or PUBLISH_OVER_POPULATION_GATE"
         required: false
         default: ""
         type: string
@@ -61,13 +83,19 @@ jobs:
       - name: Validate inputs
         id: select
         env:
+          EVENT: ${{ github.event_name }}
           MODE: ${{ inputs.mode }}
+          POLICY: ${{ inputs.policy }}
           CONFIRM: ${{ inputs.confirm }}
           DATES: ${{ inputs.dates }}
         run: |
           set -euo pipefail
-          if [ "$MODE" = "publish" ]; then
-            test "$CONFIRM" = "PUBLISH_OVER_POPULATION_GATE" || { echo "::error::publish mode needs the typed confirmation"; exit 1; }
+          if [ "$EVENT" = "schedule" ]; then MODE=publish; POLICY=all; DATES=""; fi
+          case "$POLICY" in all) want=PUBLISH_OVER_ALL_POLICY ;; population) want=PUBLISH_OVER_POPULATION_GATE ;;
+            *) echo "::error::unknown policy"; exit 1 ;; esac
+          case "$MODE" in inventory|report|publish) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
+          if [ "$MODE" = "publish" ] && [ "$EVENT" != "schedule" ]; then
+            test "$CONFIRM" = "$want" || { echo "::error::publish with policy $POLICY needs confirm=$want"; exit 1; }
           fi
           today="$(TZ=Australia/Hobart date +%F)"
           selected=""
@@ -80,10 +108,14 @@ jobs:
             selected="$selected $d"
           done
           selected="$(echo $selected | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-          test -n "${selected// /}" || { echo "::error::no dates"; exit 1; }
-          echo "dates=$selected" >> "$GITHUB_OUTPUT"
+          since=""
+          if [ -z "${selected// /}" ]; then
+            [ "$MODE" != "inventory" ] || { echo "::error::inventory needs explicit dates"; exit 1; }
+            since="$AUTHORISED_FROM"
+          fi
+          { echo "mode=$MODE"; echo "policy=$POLICY"; echo "dates=$selected"; echo "since=$since"; } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -102,7 +134,7 @@ jobs:
           done
 
       - name: Join Tailscale tailnet
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c  # v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -142,17 +174,19 @@ jobs:
           test "$(ssh ar-local-pi5 sha256sum /srv/ar-local/payload-waiver-control/runner-$SHA.py | cut -d' ' -f1)" = "$SHA"
           echo "RUNNER_SHA=$SHA" >> "$GITHUB_ENV"
 
-      - name: Report and publish through the shared queue
+      - name: Inventory, report and publish through the shared queue
         env:
-          MODE: ${{ inputs.mode }}
+          MODE: ${{ steps.select.outputs.mode }}
+          POLICY: ${{ steps.select.outputs.policy }}
+          SINCE: ${{ steps.select.outputs.since }}
           DATES: ${{ steps.select.outputs.dates }}
         run: |
           set -euo pipefail
           # Inputs travel as positional arguments, never interpolated into the
           # remote script text.
-          ssh ar-local-pi5 bash -s -- "$MODE" "$RUNNER_SHA" "$GITHUB_RUN_ID" $DATES <<'REMOTE'
+          ssh ar-local-pi5 bash -s -- "$MODE" "$POLICY" "${SINCE:--}" "$RUNNER_SHA" "$GITHUB_RUN_ID" $DATES <<'REMOTE'
           set -euo pipefail
-          MODE="$1"; RSHA="$2"; RUN="$3"; shift 3
+          MODE="$1"; POLICY="$2"; SINCE="$3"; RSHA="$4"; RUN="$5"; shift 5
           REPO=/srv/ar-local/AR-local
           CTL=/srv/ar-local/payload-waiver-control
           RUNNER="$CTL/runner-$RSHA.py"
@@ -164,7 +198,7 @@ jobs:
           QS="$CTL/queued-$RUN.sh"
           cat > "$QS" <<'QUEUED'
           set -euo pipefail
-          MODE="$1"; RUNNER="$2"; RUN="$3"; shift 3
+          MODE="$1"; POLICY="$2"; SINCE="$3"; RUNNER="$4"; RUN="$5"; shift 5
           REPO=/srv/ar-local/AR-local
           U="$(systemctl show -p User --value ar-local-daily.service)"
           G="$(systemctl show -p Group --value ar-local-daily.service)"
@@ -199,39 +233,69 @@ jobs:
             seq=$((seq + 1)); CHILD="ar-local-payload-waiver-$RUN-$seq.service"
             sudo systemd-run --quiet --wait --pipe --collect \
               --unit="$CHILD" "${props[@]}" -p RuntimeMaxSec="$1" \
-              /usr/bin/python3 -I "$RUNNER" --repo "$REPO" "${@:2}" &
+              /usr/bin/python3 -I "$RUNNER" --repo "$REPO" --policy "$POLICY" "${@:2}" &
             local pid=$! rc=0
             wait "$pid" || rc=$?
             CHILD=""
             return "$rc"
           }
-          dargs=(); for d in "$@"; do dargs+=(--date "$d"); done
+          # Report and per-date publication use the same capture selection, so a
+          # date the report recovered from the ledger is publishable too.
+          sel=(--ledger-fallback); for d in "$@"; do sel+=(--date "$d"); done
+          [ "$SINCE" = "-" ] || sel+=(--pending-since "$SINCE")
+          if [ "$MODE" = "inventory" ]; then unit 900 --inventory "${sel[@]}"; exit $?; fi
           set +e
           OUT="$(mktemp)"
-          unit 900 --report "${dargs[@]}" >"$OUT" 2>&1; rrc=$?
+          unit 900 --report "${sel[@]}" >"$OUT" 2>&1; rrc=$?
           set -e
           report="$(cat "$OUT")"; rm -f "$OUT"
           echo "$report"
-          if [ "$MODE" != "publish" ]; then exit "$rrc"; fi
-          [ "$rrc" -eq 0 ] || { echo "report refused at least one date; nothing published"; exit "$rrc"; }
-          rc=0
-          for d in "$@"; do
-            row="$(grep "^WAIVER " <<<"$report" | sed 's/^WAIVER //' | python3 -c 'import json,sys; d=sys.argv[1]; [print(r["decision"], r["contract_digest"]) for r in map(json.loads, sys.stdin) if r.get("date")==d and "decision" in r]' "$d")"
-            read -r decision digest <<<"$row"
+          if [ "$MODE" != "publish" ] || [ "$rrc" -eq 3 ]; then exit "$rrc"; fi
+          # Publish every date the report admitted or found waivable, each pinned
+          # to the digest the report saw; refused dates keep the run failing.
+          rc="$rrc"
+          while read -r d decision digest; do
             allow=(); [ "$decision" = "waivable" ] && allow=(--allow-digest "$d=$digest")
             # One date per unit, oldest first; each checks the retry window itself.
-            unit 2100 --publish --date "$d" "${allow[@]}" || { rc=$?; echo "publication for $d failed (rc=$rc); stopping"; break; }
-          done
+            unit 2100 --publish --ledger-fallback --date "$d" "${allow[@]}" || { rc=$?; echo "publication for $d failed (rc=$rc)"; }
+          done < <(grep "^WAIVER " <<<"$report" | sed 's/^WAIVER //' | python3 -c 'import json,sys
+          for r in map(json.loads, sys.stdin):
+              if r.get("decision") in ("admitted", "waivable"): print(r["date"], r["decision"], r["contract_digest"])')
           exit "$rc"
           QUEUED
           chmod 0500 "$QS"
           set +e
           /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
             --cpu-slots 2 --max-runtime 14400 --wait-timeout 1800 -- \
-            /bin/bash "$QS" "$MODE" "$RUNNER" "$RUN" "$@"
+            /bin/bash "$QS" "$MODE" "$POLICY" "$SINCE" "$RUNNER" "$RUN" "$@"
           RC=$?
           set -e
           rm -f "$QS"
           echo "pi-shared-task exit: $RC"
           exit "$RC"
           REMOTE
+
+      - name: Require a dated payload release for every date
+        if: always() && steps.select.outputs.mode == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          end="$(TZ=Australia/Hobart date -d yesterday +%F)"
+          d="$AUTHORISED_FROM"; missing=""
+          while [[ ! "$d" > "$end" ]]; do
+            # The release is created before its assets upload, so a tag alone is not a
+            # payload: require an uploaded manifest.json and core shard, and no asset
+            # left in any other state (the same bar as _published_history_dates).
+            ok="$(D="$d" gh api "repos/$GITHUB_REPOSITORY/releases/tags/app-payload-$d" --jq \
+              '[.assets[]] as $a | ($a|map(select(.name=="manifest.json" and .state=="uploaded" and .size>0))|length==1)
+               and ($a|map(select((.name|startswith("core-"+env.D+"-")) and .state=="uploaded" and .size>0))|length>=1)
+               and ($a|all(.state=="uploaded"))' 2>/dev/null || echo false)"
+            [ "$ok" = true ] || missing="$missing $d"
+            d="$(date -d "$d + 1 day" +%F)"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::no complete dated GitHub payload release for:$missing"
+            echo "Missing or incomplete dated payload releases:$missing" >> "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
+          echo "Every date $AUTHORISED_FROM..$end has a complete dated payload release." >> "$GITHUB_STEP_SUMMARY"
