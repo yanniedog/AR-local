@@ -294,7 +294,8 @@ def check_priority(guard: Callable[[], str | None] | None, receipt: dict) -> Non
 
 
 def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dict, receipt: dict,
-            priority_guard: Callable[[], str | None] | None = None, pressure_context=None) -> None:
+            priority_guard: Callable[[], str | None] | None = None, pressure_context=None,
+            *, record_host_swap_out: bool = False) -> None:
     started = previous = time.monotonic()
     previous_host = baseline.get("admission_sample", baseline)
     while True:
@@ -320,7 +321,7 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
         if reason is None:
             reason = host_violation(host, baseline, limits, previous=previous_host,
                                     _pressure_verified=pressure_context is not None,
-                                    record_host_swap_out=True)
+                                    record_host_swap_out=record_host_swap_out)
         if sample["rss_bytes"] >= limits.workload_bytes - limits.margin_bytes:
             reason = "aggregate_rss_early_stop"
         elif sample["swap_bytes"]:
@@ -351,7 +352,8 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
 
 def supervise(command: list[str], output: Path, limits: Limits, *,
               priority_guard: Callable[[], str | None] | None = None,
-              pressure_binding_sha256: str | None = None) -> dict:
+              pressure_binding_sha256: str | None = None,
+              record_host_swap_out: bool = False) -> dict:
     limits.validate()
     if not command or not output.is_absolute() or output.resolve() != output or output.exists():
         raise ValueError("command and a new canonical absolute resource receipt path required")
@@ -374,9 +376,10 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
             pressure_context = PressureContext(output.parent / "pressure", pressure_binding_sha256,
                                                 unit=cgroup.name, operation=output.parent)
         receipt["admission_zones"] = zone_snapshot(stage="before_resource_preflight")
-        baseline = (preflight(limits, admission=True, record_host_swap_out=True) if pressure_context is None else
+        baseline = (preflight(limits, admission=True, record_host_swap_out=record_host_swap_out)
+                    if pressure_context is None else
                     preflight(limits, admission=True, pressure_context=pressure_context,
-                              record_host_swap_out=True))
+                              record_host_swap_out=record_host_swap_out))
         receipt.update(cgroup=str(cgroup), baseline=baseline,
             minimum_available_bytes=min(baseline["available_bytes"], baseline["admission_sample"]["available_bytes"]),
             page_size_bytes=baseline["page_size_bytes"],
@@ -391,11 +394,13 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
             preexec_fn=lambda: restrict_address_space(limits.address_space_bytes))
         receipt['workload_started'] = True
         if pressure_context is not None:
-            monitor(child, cgroup, limits, baseline, receipt, priority_guard, pressure_context)
+            monitor(child, cgroup, limits, baseline, receipt, priority_guard, pressure_context,
+                    record_host_swap_out=record_host_swap_out)
         elif priority_guard is None:
-            monitor(child, cgroup, limits, baseline, receipt)
+            monitor(child, cgroup, limits, baseline, receipt, record_host_swap_out=record_host_swap_out)
         else:
-            monitor(child, cgroup, limits, baseline, receipt, priority_guard)
+            monitor(child, cgroup, limits, baseline, receipt, priority_guard,
+                    record_host_swap_out=record_host_swap_out)
         receipt["result"] = "PASS"
     except Exception as error:
         receipt.update(result="FAIL" if child else "BLOCKED", reason=f"{type(error).__name__}: {error}")
@@ -438,7 +443,7 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
 
 
 def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=None,
-                    expected_profile=None) -> None:
+                    expected_profile=None, record_host_swap_out: bool = False) -> None:
     if expected_profile is not None:
         if expected_profile not in ("legacy", "allocation-v1"):
             raise ValueError("unsupported expected pressure profile")
@@ -472,7 +477,8 @@ def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=N
             or receipt.get("cold_swap_in_bytes") != progress["swap_in_bytes"]
             or receipt.get("peak_workload_swap_bytes") != 0
             or host_violation(receipt["last_host_sample"], receipt["baseline"], limits,
-                              _pressure_verified=pressure_verified, record_host_swap_out=True)):
+                              _pressure_verified=pressure_verified,
+                              record_host_swap_out=record_host_swap_out)):
         raise ValueError("complete successful bounded-resource receipt required")
 
 
@@ -489,7 +495,9 @@ def main(argv=None) -> int:
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     result = supervise(command, args.output, Limits(workload_bytes=args.workload_mib * 1024**2,
         margin_bytes=args.margin_mib * 1024**2, address_space_bytes=args.address_space_mib * 1024**2,
-        runtime_seconds=args.runtime_seconds), pressure_binding_sha256=args.pressure_binding_sha256)
+        runtime_seconds=args.runtime_seconds), pressure_binding_sha256=args.pressure_binding_sha256,
+        # This CLI is the quality-canary supervisor (pi_cdr_quality_activate).
+        record_host_swap_out=True)
     print(json.dumps({"result": result["result"], "resource_receipt": str(args.output)}), flush=True)
     return 0 if result["result"] == "PASS" else 2
 

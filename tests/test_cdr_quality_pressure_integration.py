@@ -105,8 +105,10 @@ def test_background_swap_needs_complete_bound_pressure_and_service_proof(scenari
     with pytest.raises(ValueError, match='relabelled'):
         resources.require_receipt(legacy)
     del legacy['pressure_evidence']
-    # Host swap-out alone no longer fails the legacy receipt (owner decision 2026-11-07).
-    resources.require_receipt(legacy)
+    # The quality canary records host swap-out (owner decision 2026-11-07);
+    # other supervised workloads keep the strict default.
+    resources.require_receipt(legacy, record_host_swap_out=True)
+    with pytest.raises(ValueError): resources.require_receipt(legacy)
 
 
 def low_background_samples(scenario):

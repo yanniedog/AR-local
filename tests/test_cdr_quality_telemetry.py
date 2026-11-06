@@ -81,7 +81,7 @@ def test_failure_keeps_exact_triggering_sample_and_reason(monkeypatch):
     value.update(samples=0, peak_processes=0)
     with pytest.raises(RuntimeError, match="^host_memory_pressure$"):
         resources.monitor(SimpleNamespace(poll=lambda: pytest.fail("failure must precede child poll")),
-                          Path("unused"), resources.Limits(), initial, value)
+                          Path("unused"), resources.Limits(), initial, value, record_host_swap_out=True)
     captured = value["failure_sample"]
     assert captured["host"] == failure and captured["previous_host"] == previous
     assert captured["sample_number"] == 1 and captured["elapsed_seconds"] == pytest.approx(0.1)
@@ -103,7 +103,7 @@ def test_optional_zone_reads_follow_cleanup_and_cannot_turn_failure_into_pass(tm
     monkeypatch.setattr(resources.signal, "signal", lambda *_: 0)
     monkeypatch.setattr(resources, "preflight", lambda *_a, **_kw: events.append("preflight") or {**host(), "admission_sample": host()})
     monkeypatch.setattr(resources.subprocess, "Popen", lambda *_a, **_kw: events.append("start") or object())
-    def monitor(*_):
+    def monitor(*_, **__):
         events.append("monitor")
         raise RuntimeError("host_swap_out_activity")
     monkeypatch.setattr(resources, "monitor", monitor)
