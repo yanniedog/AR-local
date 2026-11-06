@@ -61,14 +61,16 @@ def test_native_host_sample_reuses_existing_reads_for_optional_reclaim_context(t
     assert resources.host_violation(result, result, resources.Limits()) is None
 
 
-def sample(swap_out, reclaimed):
-    value = host(swap_out=swap_out)
+def sample(swap_out, reclaimed, **extra):
+    value = host(swap_out=swap_out, **extra)
     value["diagnostics"] = {"vmstat": {"values": {"pgscan_kswapd": reclaimed, "pgscan_direct": 0}}}
     return value
 
 
-def test_failure_keeps_exact_triggering_sample_and_original_strict_swap_reason(monkeypatch):
-    initial, previous, failure = sample(100, 1000), sample(100, 1010), sample(102, 1020)
+def test_failure_keeps_exact_triggering_sample_and_reason(monkeypatch):
+    # Host swap-out alone is recorded, not a stop (owner decision 2026-11-07);
+    # the triggering sample here also carries PSI at the 10% limit.
+    initial, previous, failure = sample(100, 1000), sample(100, 1010), sample(102, 1020, psi=10)
     initial["admission_sample"] = previous
     monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 530 * 1024**2, "swap_bytes": 0, "processes": 5})
     monkeypatch.setattr(resources, "host_sample", lambda: failure)
@@ -77,9 +79,9 @@ def test_failure_keeps_exact_triggering_sample_and_original_strict_swap_reason(m
     monkeypatch.setattr(resources.time, "monotonic", lambda: next(clock))
     value = receipt()
     value.update(samples=0, peak_processes=0)
-    with pytest.raises(RuntimeError, match="^host_swap_out_activity$"):
+    with pytest.raises(RuntimeError, match="^host_memory_pressure$"):
         resources.monitor(SimpleNamespace(poll=lambda: pytest.fail("failure must precede child poll")),
-                          Path("unused"), resources.Limits(), initial, value)
+                          Path("unused"), resources.Limits(), initial, value, record_host_swap_out=True)
     captured = value["failure_sample"]
     assert captured["host"] == failure and captured["previous_host"] == previous
     assert captured["sample_number"] == 1 and captured["elapsed_seconds"] == pytest.approx(0.1)
@@ -101,7 +103,7 @@ def test_optional_zone_reads_follow_cleanup_and_cannot_turn_failure_into_pass(tm
     monkeypatch.setattr(resources.signal, "signal", lambda *_: 0)
     monkeypatch.setattr(resources, "preflight", lambda *_a, **_kw: events.append("preflight") or {**host(), "admission_sample": host()})
     monkeypatch.setattr(resources.subprocess, "Popen", lambda *_a, **_kw: events.append("start") or object())
-    def monitor(*_):
+    def monitor(*_, **__):
         events.append("monitor")
         raise RuntimeError("host_swap_out_activity")
     monkeypatch.setattr(resources, "monitor", monitor)

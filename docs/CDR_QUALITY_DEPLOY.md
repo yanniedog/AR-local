@@ -12,9 +12,11 @@ capture, public publication, app installation, Drive restore, or natural timer r
 
 ## Prerequisites
 
-Canary paging diagnostics do not waive the selected resource policy. The default
-legacy profile still rejects any host swap-out; the explicit `allocation-v1`
-profile below requires additional host and service evidence. Resource receipts
+Canary paging diagnostics do not waive the selected resource policy. Host-wide
+swap-out and a zone below its low watermark with concurrent refaults are
+recorded context, not stops (repository owner, 2026-11-07, see "Memory stop
+policy" below); the explicit `allocation-v1` profile below requires additional
+host and service evidence. Resource receipts
 retain allowlisted memory/reclaim counters from the same reads used by the
 supervisor, plus the previous and triggering samples, elapsed time and UTC when
 a sampled resource limit fires. Missing or malformed optional telemetry is explicitly unavailable;
@@ -112,7 +114,7 @@ rebooting. The supervisor:
   process, conservatively overestimating workload RSS. It stops at 2.5 GiB summed
   RSS or below 2.5 GiB host availability, with a 512 MiB reaction margin relative
   to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, any workload swap,
-  any host swap-out, host swap-in beyond the 16 MiB total, PSI avg10 at least 10%
+  host swap-in beyond the 16 MiB total, PSI avg10 at least 10%
   when available, or a sample gap
   beyond two seconds all fail closed.
 - Applies a hard inherited 3 GiB **per-process virtual address-space** limit,
@@ -566,7 +568,7 @@ counters does not establish atomic reads or absence of unreported kernel activit
 
 
 With stable MGLRU enabled, a low zone and positive refault delta must concern
-the same node to trigger the low-plus-refault failure when both endpoint tails
+the same node to count as a low-plus-refault sample when both endpoint tails
 are zero. On classic LRU the
 previous conservative **any-low-zone plus global-refault** rule remains.
 This distinction follows the [Raspberry Pi 6.18 workingset implementation](https://github.com/raspberrypi/linux/blob/rpi-6.18.y/mm/workingset.c):
@@ -581,8 +583,10 @@ minimum, service, PSI, RSS, workload-swap and cleanup requirements remain intact
 
 `low_with_activity_samples` records low-plus-background activity, including
 measured node increments and endpoint uncertainty even when global delta is zero.
-`low_with_refault_samples` records the applicable mode-specific failure
-conjunction and must be zero for PASS. Each positive **node/interval** retains a
+`low_with_refault_samples` counts the applicable mode-specific low-plus-refault
+conjunction, and `initial_low_with_refault` records it for the admission
+capture. Both are recorded context and do not fail PASS; validation recomputes
+them from the retained evidence, so neither can be hidden. Each positive **node/interval** retains a
 seven-integer row: interval sequence, monotonic timestamp, node ID, that node's
 minimum low margin, anonymous delta, file delta and global minimum low margin.
 Counters remain base-page counts. Rows sharing an interval have the same time
@@ -689,3 +693,24 @@ future policy tolerating positive allocation stalls needs separately justified
 duration/impact criteria. No such tolerance is introduced here. A fresh full
 exact-candidate canary, app acceptance, rollback and publication checks remain
 necessary before deployment or data-success claims.
+
+
+## Memory stop policy (repository owner, 2026-11-07)
+
+Two failed canaries stopped on signals that do not indicate memory harm:
+`host_swap_out_activity` (any host page swapped out) and
+`host_zone_low_with_refault` (one sample with a zone below its low watermark and
+about 470 KB of refaults, with 7.6 GB available and zero allocation stalls,
+direct reclaim, compaction stalls and OOM kills). Below low is the kernel's
+normal kswapd wakeup point, and Linux swaps idle anonymous pages out with ample
+free memory.
+
+These are now **recorded, not stops**: host swap-out bytes, initial and running
+low-plus-refault samples (`low_with_refault_samples`) and all refault evidence
+stay in the receipt, and receipt validation still rejects a forged count.
+
+Hard stops are unchanged: allocation stalls, direct reclaim/scan/steal,
+compaction stalls, OOM kills, any zone at or below its minimum watermark, PSI
+avg10 at or above 10%, host availability below the reserve plus margin, any
+workload swap, cold swap-in beyond 16 MiB, RSS and address-space budgets,
+sample gaps and cleanup.

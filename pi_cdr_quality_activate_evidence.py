@@ -213,7 +213,8 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
     resources = read(checked(canary["resources"]))
     if resources.get("schema") == "ar-local-quality-resources-v6":
         from pi_cdr_quality_resources import require_receipt
-        require_receipt(resources, expected_operation=operation, expected_commit=value["target_commit"])
+        require_receipt(resources, expected_operation=operation, expected_commit=value["target_commit"],
+                        record_host_swap_out=True)
         service_binding = resources["pressure_evidence"]["service"]["binding"]
         if (canary.get("pressure_profile") != "allocation-v1"
                 or service_binding["source_sha256"] != value["source_files"].get("pi_cdr_quality_service.py")):
@@ -224,7 +225,7 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
         raise ValueError("only known v2 legacy or v6 enhanced resource receipts are accepted")
     else:
         from pi_cdr_quality_resources import require_receipt
-        require_receipt(resources)
+        require_receipt(resources, record_host_swap_out=True)
     if canary_test_result(operation, root, value["target_commit"], value["source_files"],
                           resources=resources) != canary["tests"]:
         raise ValueError("canary tests do not bind the complete sequential suite")

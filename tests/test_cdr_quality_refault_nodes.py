@@ -42,18 +42,20 @@ def test_classic_lru_keeps_global_conservative_conjunction(mask):
     last['pressure']['zones'][0]['pages free'] = 250
     delta(last, 1, file=1)
     tracker = p.PressureTracker(first)
-    with pytest.raises(ValueError, match='low_with_refault'): tracker.observe(last)
+    tracker.observe(last)
     assert tracker.receipt()['refault_scope'] == 'classic_global'
+    assert tracker.receipt()['low_with_refault_samples'] == 1
 
 
 @pytest.mark.parametrize('node,anon,file', [(0,1,0), (0,0,64), (1,16,32)])
-def test_same_node_low_refault_always_fails(node, anon, file):
+def test_same_node_low_refault_is_counted_and_unforgeable(node, anon, file):
     first = two_nodes(); last = next_host(first)
     last['pressure']['zones'][node]['pages free'] = 300
     delta(last, node, anon, file)
     tracker = p.PressureTracker(first)
-    with pytest.raises(ValueError, match='low_with_refault'): tracker.observe(last)
-    forged = tracker.receipt(); forged.update(result='PASS', failure=None, low_with_refault_samples=0)
+    tracker.observe(last)
+    assert tracker.receipt()['low_with_refault_samples'] == 1
+    forged = tracker.receipt(); forged.update(low_with_refault_samples=0)
     with pytest.raises(ValueError): p.require_pressure_receipt(forged, first, last)
 
 

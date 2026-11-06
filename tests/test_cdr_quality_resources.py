@@ -38,6 +38,8 @@ def test_admission_reserves_entire_budget_and_runtime_stops_above_host_floor():
     limits = resources.Limits()
     assert resources.host_violation(host(5 * resources.GIB), host(), limits, admission=True) == "host_reserve_headroom"
     assert resources.host_violation(host(2 * resources.GIB), host(), limits) == "host_reserve_headroom"
+    # Canary records host swap-out; other callers keep the strict default.
+    assert resources.host_violation(host(swap_out=1), host(), limits, record_host_swap_out=True) is None
     assert resources.host_violation(host(swap_out=1), host(), limits) == "host_swap_out_activity"
     assert resources.host_violation(host(psi=10), host(), limits) == "host_memory_pressure"
     assert resources.host_violation(host(), host(), limits) is None
@@ -69,6 +71,7 @@ def test_aggregate_counts_every_cgroup_process_including_detached_descendants(tm
 
 @pytest.mark.parametrize("change", [{"group_clean": False}, {"samples": 0}, {"result": "FAIL"},
     {"workload_exit_code": 1}, {"peak_rss_bytes": 3 * resources.GIB}, {"maximum_sample_gap_seconds": 3},
+    # Default (non-canary) validation keeps the strict host swap-out stop.
     {"minimum_available_bytes": resources.GIB}, {"last_host_sample": host(swap_out=1)},
     {"peak_workload_swap_bytes": 16384}, {"page_size_bytes": 4096}, {"cold_swap_in_bytes": 1}])
 def test_failed_or_incomplete_supervision_receipt_cannot_pass(change):

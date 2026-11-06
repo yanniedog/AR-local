@@ -162,7 +162,7 @@ def guard(data: Path, production: Path) -> None:
         raise ValueError("canonical production paths required")
     if run(["systemctl", "show", "ar-local-daily.timer", "-p", "ActiveState", "--value"]) != "active":
         raise RuntimeError("mandatory natural ingest timer is not active")
-    preflight()
+    preflight(record_host_swap_out=True)
 
 
 def current_state(data: Path) -> tuple[str, str, Path]:
@@ -352,7 +352,7 @@ def canary(args) -> dict:
     from pi_cdr_quality_resources import require_receipt
     require_receipt(read(args.operation / "resources.json"),
                     expected_operation=args.operation, expected_commit=args.expected_commit,
-                    expected_profile=pressure_profile)
+                    expected_profile=pressure_profile, record_host_swap_out=True)
     result = read(args.operation / "canary-worker.json")
     result["pressure_profile"] = pressure_profile
     result["resources"] = record(args.operation / "resources.json")
@@ -374,7 +374,7 @@ def seal(args) -> dict:
         raise ValueError("recorded pressure profile must not be null")
     require_receipt(read(checked(canary_result["resources"])),
                     expected_operation=args.operation, expected_commit=target,
-                    expected_profile=recorded_profile)
+                    expected_profile=recorded_profile, record_host_swap_out=True)
     ci_binding(read(args.ci_binding), target)
     app_binding(read(args.app_acceptance), target, canary_result)
     if canary_test_result(args.operation, args.source, target, canary_result["source_files"],
@@ -485,7 +485,7 @@ def activate(args) -> dict:
     from pi_cdr_quality_resources import require_receipt
     canary = read(checked(manifest["evidence"]["canary"]))
     require_receipt(read(checked(canary["resources"])),
-                    expected_operation=manifest["operation_root"], expected_commit=manifest["target_commit"])
+                    expected_operation=manifest["operation_root"], expected_commit=manifest["target_commit"], record_host_swap_out=True)
     source, production, data, operation = (Path(manifest[key]) for key in
                                          ("source_root", "production_root", "data_root", "operation_root"))
     layout(source, production, data, operation)
@@ -525,7 +525,7 @@ def activate(args) -> dict:
             with require_dropbehind_reads():
                 validate_manifest(args.manifest, args.manifest_sha256)
             require_receipt(read(checked(canary["resources"])),
-                            expected_operation=operation, expected_commit=manifest["target_commit"])
+                            expected_operation=operation, expected_commit=manifest["target_commit"], record_host_swap_out=True)
             with require_dropbehind_reads():
                 if (main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]
                         or protected_files(data) != manifest["protected_files"]):

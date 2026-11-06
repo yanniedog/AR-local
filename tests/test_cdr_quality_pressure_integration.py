@@ -105,6 +105,9 @@ def test_background_swap_needs_complete_bound_pressure_and_service_proof(scenari
     with pytest.raises(ValueError, match='relabelled'):
         resources.require_receipt(legacy)
     del legacy['pressure_evidence']
+    # The quality canary records host swap-out (owner decision 2026-11-07);
+    # other supervised workloads keep the strict default.
+    resources.require_receipt(legacy, record_host_swap_out=True)
     with pytest.raises(ValueError): resources.require_receipt(legacy)
 
 
@@ -162,7 +165,7 @@ def test_mglru_does_not_waive_any_allocation_counter(scenario, counter):
     with pytest.raises(ValueError, match='allocation_pressure'): context.observe(values[1])
 
 
-@pytest.mark.parametrize('fault', ['refault', 'minimum', 'allocation', 'psi'])
+@pytest.mark.parametrize('fault', ['minimum', 'allocation', 'psi'])
 def test_low_background_activity_does_not_excuse_pressure(scenario, fault):
     low_background_samples(scenario)
     _, _, context, clock, values = scenario
