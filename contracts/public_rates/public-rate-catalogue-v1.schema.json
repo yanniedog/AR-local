@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yanniedog/AR-local/contracts/public_rates/public-rate-catalogue-v1.schema.json",
+  "title": "Public evidence rate catalogue v1",
+  "oneOf": [{"$ref":"#/$defs/Capability"},{"$ref":"#/$defs/Index"},{"$ref":"#/$defs/Shard"}],
+  "$defs": {
+    "Id": {"type":"string","minLength":1,"maxLength":240},
+    "Decimal": {"type":"string","pattern":"^-?(?:0|[1-9][0-9]{0,39})(?:\\.[0-9]{1,24})?$"},
+    "Ids": {"type":"array","items":{"$ref":"#/$defs/Id"},"maxItems":4096,"uniqueItems":true},
+    "Reasons": {"type":"array","items":{"type":"string","pattern":"^[a-z][a-z0-9_]{0,127}$"},"maxItems":128,"uniqueItems":true},
+    "Date": {"type":"string","anyOf":[{"format":"date"},{"format":"date-time"}]},
+    "Hash": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "Unit": {"enum":["fraction_per_annum","percentage_points","basis_points"]},
+    "Condition": {
+      "type":"object","additionalProperties":false,
+      "required":["conditionId","field","operator","evidenceIds"],
+      "properties": {
+        "conditionId":{"$ref":"#/$defs/Id"},
+        "field":{"enum":["purpose","repayment","amount","balance","lvr","termMonths","termDays","channel","package","customerCategory","qualification","effectiveDate","custom","monthlyDeposit","withdrawals","balanceGrowth","cardTransactions"]},
+        "operator":{"enum":["eq","in","bounds","known"]},
+        "value":{"type":["string","boolean"],"maxLength":240},
+        "values":{"type":"array","items":{"type":["string","boolean"],"maxLength":240},"minItems":1,"maxItems":32},
+        "minimum":{"$ref":"#/$defs/Decimal"},"maximum":{"$ref":"#/$defs/Decimal"},
+        "minimumInclusive":{"type":"boolean"},"maximumInclusive":{"type":"boolean"},
+        "description":{"type":"string","maxLength":4096},"evidenceIds":{"$ref":"#/$defs/Ids"}
+      },
+      "allOf":[
+        {"if":{"properties":{"operator":{"const":"eq"}}},"then":{"required":["value"]}},
+        {"if":{"properties":{"operator":{"const":"in"}}},"then":{"required":["values"]}},
+        {"if":{"properties":{"operator":{"const":"bounds"}}},"then":{"anyOf":[{"required":["minimum"]},{"required":["maximum"]}]}},
+        {"if":{"properties":{"field":{"enum":["qualification","custom"]}}},"then":{"required":["value"]}}
+      ]
+    },
+    "Conditions":{"type":"array","items":{"$ref":"#/$defs/Condition"},"maxItems":256},
+    "Source": {
+      "type":"object","additionalProperties":false,"required":["rawType","pointer"],
+      "properties":{"rawType":{"type":"string","maxLength":128},"rawValue":{"type":"string","maxLength":128},"pointer":{"type":"string","maxLength":4096}}
+    },
+    "Component": {
+      "type":"object","additionalProperties":false,
+      "required":["componentId","role","unit","scopeId","conditions","evidenceIds","source"],
+      "properties": {
+        "componentId":{"$ref":"#/$defs/Id"},"role":{"enum":["payable","reference","discount","margin","bonus","comparison","reversion"]},
+        "value":{"$ref":"#/$defs/Decimal"},"unit":{"$ref":"#/$defs/Unit"},"scopeId":{"$ref":"#/$defs/Id"},
+        "conditions":{"$ref":"#/$defs/Conditions"},"evidenceIds":{"$ref":"#/$defs/Ids"},"source":{"$ref":"#/$defs/Source"},
+        "includedInPayable":{"type":"boolean"},"referenceId":{"$ref":"#/$defs/Id"}
+      }
+    },
+    "Formula": {
+      "oneOf": [
+        {"type":"object","additionalProperties":false,"required":["op","componentId"],"properties":{"op":{"const":"component"},"componentId":{"$ref":"#/$defs/Id"}}},
+        {"type":"object","additionalProperties":false,"required":["op","operands"],"properties":{"op":{"enum":["add","subtract"]},"operands":{"type":"array","items":{"$ref":"#/$defs/Formula"},"minItems":2,"maxItems":32}}},
+        {"type":"object","additionalProperties":false,"required":["op","choices"],"properties":{"op":{"const":"alternatives"},"choices":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["conditions","formula"],"properties":{"conditions":{"$ref":"#/$defs/Conditions"},"formula":{"$ref":"#/$defs/Formula"}}},"minItems":1,"maxItems":32}}},
+        {"type":"object","additionalProperties":false,"required":["op","field","method","tiers"],"properties":{"op":{"const":"tiered"},"field":{"enum":["amount","balance","lvr"]},"method":{"enum":["whole_balance","per_tier"]},"tiers":{"type":"array","items":{"$ref":"#/$defs/Tier"},"minItems":1,"maxItems":128}}},
+        {"type":"object","additionalProperties":false,"required":["op","value","formula"],"properties":{"op":{"const":"cap"},"value":{"$ref":"#/$defs/Decimal"},"formula":{"$ref":"#/$defs/Formula"}}},
+        {"type":"object","additionalProperties":false,"required":["op","formula"],"properties":{"op":{"const":"from"},"formula":{"$ref":"#/$defs/Formula"}}},
+        {"type":"object","additionalProperties":false,"required":["op","minimum","maximum"],"properties":{"op":{"const":"range"},"minimum":{"$ref":"#/$defs/Formula"},"maximum":{"$ref":"#/$defs/Formula"}}}
+      ]
+    },
+    "Tier": {
+      "type":"object","additionalProperties":false,"required":["formula"],
+      "properties":{"minimum":{"$ref":"#/$defs/Decimal"},"maximum":{"$ref":"#/$defs/Decimal"},"minimumInclusive":{"type":"boolean"},"maximumInclusive":{"type":"boolean"},"formula":{"$ref":"#/$defs/Formula"}}
+    },
+    "Phase": {
+      "type":"object","additionalProperties":false,"required":["phaseId","startMonth","formula","conditions","evidenceIds"],
+      "properties":{"phaseId":{"$ref":"#/$defs/Id"},"startMonth":{"type":"integer","minimum":0,"maximum":1200},"endMonth":{"type":"integer","minimum":1,"maximum":1200},"formula":{"$ref":"#/$defs/Formula"},"conditions":{"$ref":"#/$defs/Conditions"},"evidenceIds":{"$ref":"#/$defs/Ids"}}
+    },
+    "Freshness": {
+      "type":"object","additionalProperties":false,"required":["state","reasonCodes"],
+      "properties":{"state":{"enum":["current","failed","stale","deferred","unknown"]},"checkedAt":{"type":"string","format":"date-time"},"lastSuccessAt":{"type":"string","format":"date-time"},"reasonCodes":{"$ref":"#/$defs/Reasons"}}
+    },
+    "Programme": {
+      "type":"object","additionalProperties":false,
+      "allOf":[{"if":{"required":["feeSetId"]},"then":{"not":{"anyOf":[{"required":["fees"]},{"required":["feeCoverage"]}]}}}],
+      "required":["schemaVersion","programmeId","productId","section","offerId","conditions","components","evidenceIds","freshness","reasonCodes","sourceBindings"],
+      "properties": {
+        "schemaVersion":{"const":1},"programmeId":{"$ref":"#/$defs/Id"},"productId":{"$ref":"#/$defs/Id"},"section":{"enum":["Mortgage","Savings","TD"]},"offerId":{"$ref":"#/$defs/Id"},
+        "conditions":{"$ref":"#/$defs/Conditions"},"components":{"type":"array","items":{"$ref":"#/$defs/Component"},"maxItems":256},
+        "formula":{"$ref":"#/$defs/Formula"},"phases":{"type":"array","items":{"$ref":"#/$defs/Phase"},"maxItems":128},"evidenceIds":{"$ref":"#/$defs/Ids"},
+        "effectiveFrom":{"$ref":"#/$defs/Date"},"effectiveTo":{"$ref":"#/$defs/Date"},"freshness":{"$ref":"#/$defs/Freshness"},"reasonCodes":{"$ref":"#/$defs/Reasons"},
+        "fees":{"type":"array","items":{"$ref":"#/$defs/Fee"},"maxItems":256},"feeCoverage":{"$ref":"#/$defs/FeeCoverage"},
+        "feeSetId":{"$ref":"#/$defs/Id"},
+        "metadata":{"$ref":"#/$defs/Metadata"},
+        "materialFootnotes":{"type":"array","items":{"type":"string","minLength":1,"maxLength":16384},"maxItems":64,"uniqueItems":true},
+        "sourceBindings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["pointer","rateIndex"],"properties":{"pointer":{"type":"string","maxLength":4096},"rateIndex":{"type":"integer","minimum":1,"maximum":100000}}},"maxItems":256}
+      }
+    },
+    "Fee": {
+      "type":"object","additionalProperties":false,"required":["feeId","scopeId","name","role","conditions","evidenceIds","source"],
+      "properties":{"feeId":{"$ref":"#/$defs/Id"},"scopeId":{"$ref":"#/$defs/Id"},"name":{"type":"string","maxLength":1024},"role":{"enum":["upfront","recurring","package","switching","cashback","event"]},"currency":{"type":"string","pattern":"^[A-Z]{3}$"},"amount":{"$ref":"#/$defs/Decimal"},"minimumAmount":{"$ref":"#/$defs/Decimal"},"maximumAmount":{"$ref":"#/$defs/Decimal"},"frequencyMonths":{"type":"integer","minimum":1,"maximum":1200},"event":{"type":"string","maxLength":1024},"conditions":{"$ref":"#/$defs/Conditions"},"evidenceIds":{"$ref":"#/$defs/Ids"},"source":{"$ref":"#/$defs/Source"}}
+    },
+    "FeeCoverage": {
+      "type":"object","additionalProperties":false,"required":["status","reasonCodes","evidenceIds"],
+      "properties":{"status":{"enum":["complete","partial","unknown"]},"reasonCodes":{"$ref":"#/$defs/Reasons"},"evidenceIds":{"$ref":"#/$defs/Ids"}}
+    },
+    "FeeSet": {
+      "type":"object","additionalProperties":false,"required":["feeSetId","productId","fees","feeCoverage"],
+      "properties":{"feeSetId":{"$ref":"#/$defs/Id"},"productId":{"$ref":"#/$defs/Id"},"fees":{"type":"array","items":{"$ref":"#/$defs/Fee"},"maxItems":256},"feeCoverage":{"$ref":"#/$defs/FeeCoverage"}}
+    },
+    "Metadata": {
+      "type":"object","additionalProperties":false,"required":["rateStructure"],
+      "properties":{"rateStructure":{"enum":["fixed","variable","conditional","introductory"]},"quotedTerm":{"type":"object","additionalProperties":false,"required":["value","unit"],"properties":{"value":{"$ref":"#/$defs/Decimal"},"unit":{"enum":["month","day"]}}},"interestPayment":{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"enum":["maturity","periodic"]},"frequency":{"type":"string","pattern":"^P[0-9]+[DMY]$"}}},"tierApplication":{"enum":["whole_balance","per_tier"]}}
+    },
+    "Product": {
+      "type":"object","additionalProperties":false,"required":["productId","productKey","providerId","providerName","name","section","aliases","status","programmeIds","referenceIds","reasonCodes"],
+      "properties":{"productId":{"$ref":"#/$defs/Id"},"productKey":{"type":"string","maxLength":4096},"providerId":{"$ref":"#/$defs/Id"},"providerName":{"type":"string","maxLength":1024},"name":{"type":"string","maxLength":1024},"section":{"enum":["Mortgage","Savings","TD"]},"status":{"enum":["current","legacy","unknown"]},"programmeIds":{"$ref":"#/$defs/Ids"},"referenceIds":{"$ref":"#/$defs/Ids"},"reasonCodes":{"$ref":"#/$defs/Reasons"},"suppressedProgrammeCount":{"type":"integer","minimum":0,"maximum":100000},"freshness":{"$ref":"#/$defs/Freshness"},"sourceEvidence":{"$ref":"#/$defs/Evidence"},"aliases":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["name"],"properties":{"name":{"type":"string","maxLength":1024},"effectiveFrom":{"$ref":"#/$defs/Date"},"effectiveTo":{"$ref":"#/$defs/Date"},"firstObservedAt":{"$ref":"#/$defs/Date"},"lastObservedAt":{"$ref":"#/$defs/Date"}}},"maxItems":64}}
+    },
+    "Reference": {
+      "type":"object","required":["referenceId","providerId","name","unit","freshness","evidenceIds"],
+      "properties":{"referenceId":{"$ref":"#/$defs/Id"},"providerId":{"$ref":"#/$defs/Id"},"name":{"type":"string","maxLength":1024},"value":{"$ref":"#/$defs/Decimal"},"unit":{"$ref":"#/$defs/Unit"},"effectiveFrom":{"$ref":"#/$defs/Date"},"effectiveTo":{"$ref":"#/$defs/Date"},"freshness":{"$ref":"#/$defs/Freshness"},"evidenceIds":{"$ref":"#/$defs/Ids"},"componentId":{"$ref":"#/$defs/Id"},"role":{"const":"reference"},"scopeId":{"$ref":"#/$defs/Id"},"conditions":{"$ref":"#/$defs/Conditions"},"source":{"$ref":"#/$defs/Source"}}
+    },
+    "Evidence": {
+      "type":"object","additionalProperties":false,"required":["evidenceId","url","sha256","locator"],
+      "properties":{"evidenceId":{"$ref":"#/$defs/Id"},"url":{"type":"string","pattern":"^https://","maxLength":4096},"sha256":{"$ref":"#/$defs/Hash"},"locator":{"type":"string","maxLength":4096},"checkedAt":{"type":"string","format":"date-time"},"effectiveFrom":{"$ref":"#/$defs/Date"},"effectiveTo":{"$ref":"#/$defs/Date"},"extractionVersion":{"type":"string","maxLength":128}}
+    },
+    "Coverage": {
+      "type":"object","required":["providerId","providerName","section","sourceStatus","resolutionStatus","publicationStatus","reasonCodes"],
+      "properties":{"providerId":{"$ref":"#/$defs/Id"},"providerName":{"type":"string","maxLength":1024},"section":{"enum":["Mortgage","Savings","TD"]},"sourceStatus":{"type":"string","maxLength":128},"resolutionStatus":{"type":"string","maxLength":128},"publicationStatus":{"type":"string","maxLength":128},"reasonCodes":{"$ref":"#/$defs/Reasons"}}
+    },
+    "Asset": {
+      "type":"object","additionalProperties":false,"required":["name","url","sha256","bytes","decodedBytes","encoding"],
+      "properties":{"name":{"type":"string","pattern":"^public-rate-(?:index|shard-[0-9]{4})-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12}\\.json\\.gz$"},"url":{"type":"string","pattern":"^https://","maxLength":4096},"sha256":{"$ref":"#/$defs/Hash"},"bytes":{"type":"integer","minimum":1,"maximum":1048576},"decodedBytes":{"type":"integer","minimum":1,"maximum":4194304},"encoding":{"const":"gzip"}}
+    },
+    "ShardRoute": {
+      "type":"object","additionalProperties":false,"required":["name","sha256","bytes","decodedBytes","encoding","productIds"],
+      "properties":{"name":{"type":"string","pattern":"^public-rate-shard-[0-9]{4}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12}\\.json\\.gz$"},"sha256":{"$ref":"#/$defs/Hash"},"bytes":{"type":"integer","minimum":1,"maximum":1048576},"decodedBytes":{"type":"integer","minimum":1,"maximum":4194304},"encoding":{"const":"gzip"},"productIds":{"$ref":"#/$defs/Ids"}}
+    },
+    "IndexRoute": {
+      "type":"object","additionalProperties":false,"required":["name","kind","providerIds","sections"],
+      "properties":{"name":{"type":"string","pattern":"^public-rate-shard-[0-9]{4}-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12}\\.json\\.gz$"},"kind":{"enum":["discovery","pricing"]},"providerIds":{"$ref":"#/$defs/Ids"},"sections":{"type":"array","items":{"enum":["Mortgage","Savings","TD"]},"minItems":1,"maxItems":3,"uniqueItems":true}}
+    },
+    "Binding": {
+      "type":"object","required":["schemaVersion","generationId","runDate","coreSha256","detailsSha256"],
+      "properties":{"schemaVersion":{"const":1},"generationId":{"$ref":"#/$defs/Id"},"runDate":{"type":"string","format":"date"},"coreSha256":{"$ref":"#/$defs/Hash"},"detailsSha256":{"$ref":"#/$defs/Hash"}}
+    },
+    "Capability": {
+      "allOf":[{"$ref":"#/$defs/Binding"}],"type":"object","required":["index","shards"],"unevaluatedProperties":false,
+      "properties":{"index":{"$ref":"#/$defs/Asset"},"shards":{"type":"array","items":{"$ref":"#/$defs/Asset"},"maxItems":128}}
+    },
+    "Index": {
+      "allOf":[{"$ref":"#/$defs/Binding"}],"type":"object","required":["products","coverage","shards"],"unevaluatedProperties":false,
+      "properties":{"products":{"type":"array","items":{"$ref":"#/$defs/Product"},"maxItems":20000},"coverage":{"type":"array","items":{"$ref":"#/$defs/Coverage"},"maxItems":4096},"shards":{"type":"array","items":{"$ref":"#/$defs/ShardRoute"},"maxItems":128},"routes":{"type":"array","items":{"$ref":"#/$defs/IndexRoute"},"maxItems":128}}
+    },
+    "Shard": {
+      "allOf":[{"$ref":"#/$defs/Binding"}],"type":"object","required":["programmes","referenceRates","evidence"],"unevaluatedProperties":false,
+      "properties":{"products":{"type":"array","items":{"$ref":"#/$defs/Product"},"maxItems":20000},"programmes":{"type":"array","items":{"$ref":"#/$defs/Programme"},"maxItems":10000},"referenceRates":{"type":"array","items":{"$ref":"#/$defs/Reference"},"maxItems":4096},"evidence":{"type":"array","items":{"$ref":"#/$defs/Evidence"},"maxItems":20000},"feeSets":{"type":"array","items":{"$ref":"#/$defs/FeeSet"},"maxItems":20000}}
+    }
+  }
+}

@@ -81,7 +81,7 @@ def compact(row: Dict[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in row.items() if not _is_blank(value)}
 
 
-def section_filter(dataset: str, row: Dict[str, Any]) -> bool:
+def section_filter(dataset: str, row: Dict[str, Any], *, require_absolute: bool = False) -> bool:
     """Mirror cdr_dashboard_server.bank_section_rate_filter."""
     from cdr_product_classification import category_excludes_section
 
@@ -91,6 +91,9 @@ def section_filter(dataset: str, row: Dict[str, Any]) -> bool:
     if _is_blank(rate):
         return False
     family = row.get("rate_family")
+    from cdr_public_rates_legacy import legacy_row_is_absolute
+    if require_absolute and not legacy_row_is_absolute(row):
+        return False
     if dataset == "Mortgage":
         return family == "lending" and (row.get("rate_type") or "") != "DISCOUNT"
     return family == "deposit"

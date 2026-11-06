@@ -164,3 +164,5 @@ def retag_namespace(manifest, *, url):
         namespace = manifest[NAMESPACE]
         entry = namespace["file"]
         manifest[NAMESPACE] = {**namespace, "file": {**entry, "url": url(entry["name"])}}
+    from app_payload_public_rates import retag
+    retag(manifest, url=url)

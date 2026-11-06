@@ -111,6 +111,9 @@ def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> Non
     if root is not None and "bank_rate_history_ready" in manifest:
         from app_payload_bank_history_ready_asset import validate_local_asset as validate_ready
         validate_ready(manifest, root)
+    if root is not None and "public_rate_catalogue" in manifest:
+        from app_payload_public_rates import validate_local_catalogue
+        validate_local_catalogue(manifest, root)
 
 
 def bundle_sha256(manifest: dict[str, Any]) -> str:
@@ -123,6 +126,9 @@ def bundle_sha256(manifest: dict[str, Any]) -> str:
         namespace = value[NAMESPACE]
         value[NAMESPACE] = {**namespace, "file": {
             key: val for key, val in namespace["file"].items() if key != "url"}}
+    if "public_rate_catalogue" in value:
+        from app_payload_public_rates import identity_namespace
+        value["public_rate_catalogue"] = identity_namespace(value["public_rate_catalogue"])
     return digest(canonical(value))
 
 
