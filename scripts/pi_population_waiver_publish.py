@@ -101,30 +101,18 @@ def sealed_status_intact(source, exports, contract):
         return False
 
 
-DATED_COMPLETE = ('[.assets[]] as $a'
-                  ' | ($a|map(select(.name=="manifest.json" and .state=="uploaded" and .size>0))|length==1)'
-                  ' and ($a|map(select((.name|startswith("core-"+env.D+"-")) and .state=="uploaded"'
-                  ' and .size>0))|length>=1) and ($a|all(.state=="uploaded"))')
-
-
 def dated_release_complete(day):
-    """True only when ``app-payload-<day>`` has an uploaded manifest and core shard.
+    """True only when ``app-payload-<day>`` serves a live manifest for ``day``.
 
     ``maybe_publish_app_payload`` can report success once the rolling manifest is
     confirmed even if the dated alias upload failed; the pending pointer must stay
-    queued until the dated release itself is usable.
+    queued until the dated release itself is usable. This is the publisher's own
+    check (``_published_history_dates`` uses it): the public manifest URL is
+    fetched, decoded and its ``run_date`` compared.
     """
-    import os
-    import subprocess
-    from app_payload_common import DEFAULT_REPO
-    from app_payload_publish import _gh_available
-    gh = _gh_available()
-    if not gh:
-        return False
-    result = subprocess.run([gh, "api", f"repos/{DEFAULT_REPO}/releases/tags/app-payload-{day}",
-                             "--jq", DATED_COMPLETE], capture_output=True, text=True, timeout=120,
-                            env={**os.environ, "D": day})
-    return result.returncode == 0 and result.stdout.strip() == "true"
+    from app_payload import DEFAULT_REPO, _live_manifest_status, dated_tag
+    status, live = _live_manifest_status(DEFAULT_REPO, dated_tag(day))
+    return status == "present" and isinstance(live, dict) and str(live.get("run_date") or "") == day
 
 
 def candidates_by_date(daily, retry, repo, dates):

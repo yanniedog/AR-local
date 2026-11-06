@@ -91,18 +91,16 @@ FAKE = {
                 raise ValueError('ledger event contract binding mismatch')
             return stored
     """,
-    "app_payload_common.py": """
+    "app_payload.py": """
+        import os
         DEFAULT_REPO = 'owner/repo'
+        def dated_tag(day): return 'app-payload-' + day
+        def _live_manifest_status(repo, tag):
+            day = tag[len('app-payload-'):]
+            if day in os.environ.get('FAKE_DATED_MISSING', '').split():
+                return 'missing', None
+            return 'present', {'run_date': day}
     """,
-    "app_payload_publish.py": """
-        import os, sys
-        from pathlib import Path
-        def _gh_available(): return str(Path(__file__).with_name('fake_gh.py'))
-    """,
-    "fake_gh.py": """#!/usr/bin/env python3
-import os
-print('false' if os.environ['D'] in os.environ.get('FAKE_DATED_MISSING', '').split() else 'true')
-""",
     "ar_local_pi_runtime.py": """
         from pathlib import Path
         def data_state_root(repo): return Path(repo) / 'state'
@@ -136,7 +134,6 @@ def contract(day, *, population=True, state="partial", bounded=True, reconciled=
 def repo(tmp_path):
     for name, source in FAKE.items():
         (tmp_path / name).write_text(textwrap.dedent(source))
-    (tmp_path / "fake_gh.py").chmod(0o755)
     (tmp_path / "state" / "contracts").mkdir(parents=True)
     return tmp_path
 
