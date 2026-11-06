@@ -345,7 +345,9 @@ class Native:
             raise RuntimeError('approved deployment expired')
         from zoneinfo import ZoneInfo
         local = now.astimezone(ZoneInfo('Australia/Hobart'))
-        if not 3 <= local.hour < 22:
+        # Opens at 03:30 like the recovery window; the queue's own protected
+        # window ends earlier and does not cover 03:00-03:30.
+        if not (3, 30) <= (local.hour, local.minute) < (22, 0):
             raise RuntimeError('deployment is outside the approved daytime operating window')
         self.lease()
 
@@ -379,6 +381,18 @@ class Native:
             'namespaces': {name: Path('/proc/self/ns/' + name).stat().st_ino for name in ('user', 'pid', 'mnt')},
             'cgroup': self.binding['cgroup']})
         os.chmod(namespace, 0o444)
+        # The approved manifests may be root-only (0400); after setpriv the worker
+        # is pi with no capabilities. Publish hash-verified world-readable copies
+        # in this private work tree (the worker re-checks the sealed digest).
+        readable = {}
+        for key, suffix, digest in (('sealed', '.activation.json', self.context['plan']['sealed_manifest_sha256']),
+                                    ('previous', '.previous.json', self.context['plan']['predecessor_manifest_sha256'])):
+            body = release.protected(PLANS / (self.context['id'] + suffix)).read_bytes()
+            if hashlib.sha256(body).hexdigest() != digest:
+                raise ValueError('approved manifest digest differs')
+            copy = self.context['work'] / (work.name + '-' + key + '.json')
+            copy.write_bytes(body); os.chmod(copy, 0o444)
+            readable[key] = copy
         argv = ['/usr/bin/bwrap', '--die-with-parent', '--new-session', '--unshare-pid',
                 # Host network stays: the smoke checks must reach the dashboard.
                 # --disable-userns needs --unshare-user, which would break the
@@ -387,8 +401,8 @@ class Native:
                 '--tmpfs', '/run', '--tmpfs', '/tmp', '--tmpfs', '/home', '--tmpfs', '/root',
                 '--ro-bind', str(self.context['stage']), '/candidate',
                 '--ro-bind', str(self.context['stage']), str(original_source),
-                '--ro-bind', str(PLANS / (self.context['id'] + '.activation.json')), '/sealed.json',
-                '--ro-bind', str(PLANS / (self.context['id'] + '.previous.json')), '/previous.json',
+                '--ro-bind', str(readable['sealed']), '/sealed.json',
+                '--ro-bind', str(readable['previous']), '/previous.json',
                 '--ro-bind', str(LIB / 'pi_ci_worker.py'), '/worker.py', '--bind', str(work), '/work',
                 '--ro-bind', str(namespace), '/namespace.json',
                 '--tmpfs', '/etc/ar-local', '--tmpfs', '/var/lib/ar-local-drive-backup/credentials',

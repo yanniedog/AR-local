@@ -271,7 +271,16 @@ def test_real_worker_launcher_has_private_pid_ro_sources_and_fixed_privilege_dro
     work = tmp_path / 'transaction'; work.mkdir()
     source = tmp_path / 'sealed-source'; source.mkdir()
     context = {'id': 'a' * 64, 'work': work, 'stage': tmp_path / 'stage',
-               'sealed': {'source_root': str(source), 'operation_root': str(tmp_path)}, 'plan': {'sealed_manifest_sha256': 'b' * 64}}
+               'sealed': {'source_root': str(source), 'operation_root': str(tmp_path)}}
+    import hashlib
+    plans = tmp_path / 'plans'; plans.mkdir()
+    bodies = {'.activation.json': b'{"sealed":1}', '.previous.json': b'{"previous":1}'}
+    for suffix, body in bodies.items():
+        (plans / ('a' * 64 + suffix)).write_bytes(body); (plans / ('a' * 64 + suffix)).chmod(0o400)
+    context['plan'] = {'sealed_manifest_sha256': hashlib.sha256(bodies['.activation.json']).hexdigest(),
+                       'predecessor_manifest_sha256': hashlib.sha256(bodies['.previous.json']).hexdigest()}
+    monkeypatch.setattr(activate, 'PLANS', plans)
+    monkeypatch.setattr(activate.release, 'protected', lambda path, **kw: Path(path))
     monkeypatch.setattr(activate, 'approved_interpreter', lambda sealed: '/usr/bin/python3')
     native = activate.Native.__new__(activate.Native)
     native.context = context; native.binding = {'cgroup': '/system.slice/fixed-ci.service'}
@@ -293,6 +302,10 @@ def test_real_worker_launcher_has_private_pid_ro_sources_and_fixed_privilege_dro
     assert all(option in argv for option in ('--no-new-privs', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--clear-groups'))
     assert argv[argv.index('/usr/bin/python3') + 1:][:3] == ['-I', '-B', '/worker.py']
     assert '/namespace.json' in argv and 'GIT_CONFIG_VALUE_0' in argv
+    # Root-only 0400 manifests reach the unprivileged worker as verified 0444 copies.
+    for target, body in (('/sealed.json', bodies['.activation.json']), ('/previous.json', bodies['.previous.json'])):
+        copy = Path(argv[argv.index(target) - 1])
+        assert copy.parent == work and copy.read_bytes() == body and copy.stat().st_mode & 0o777 == 0o444
     assert not any('PYTHONPATH' in token or 'LD_PRELOAD' in token for token in argv)
 
 
@@ -448,3 +461,22 @@ def test_forward_verification_requires_dropbehind_reads(monkeypatch, phase, requ
     monkeypatch.setattr(worker, '_verify', lambda *a: {'result': 'PASS'})
     assert worker.verify(phase, None, None, None, None) == {'result': 'PASS'}
     assert bool(entered) is required
+
+
+@pytest.mark.parametrize('hour,minute,allowed', [(3, 0, False), (3, 29, False), (3, 30, True), (21, 59, True), (22, 0, False)])
+def test_deployment_window_opens_at_0330(monkeypatch, hour, minute, allowed):
+    from datetime import datetime as real, timezone, timedelta
+    from zoneinfo import ZoneInfo
+    local = real(2026, 11, 7, hour, minute, tzinfo=ZoneInfo('Australia/Hobart'))
+    class Clock(real):
+        @classmethod
+        def now(cls, tz=None): return local.astimezone(tz)
+    monkeypatch.setattr(activate, 'datetime', Clock)
+    native = activate.Native.__new__(activate.Native)
+    native.deadline = float('inf'); native.lease = lambda: None
+    native.context = {'plan': {'expires_at': (local + timedelta(hours=1)).astimezone(timezone.utc).isoformat()}}
+    if allowed:
+        native.guard()
+    else:
+        with pytest.raises(RuntimeError, match='daytime operating window'):
+            native.guard()
