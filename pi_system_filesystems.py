@@ -1,0 +1,72 @@
+"""Capture and replay the kernel's supported FAT mount metadata semantics."""
+import os
+import re
+import stat
+from pathlib import Path
+
+
+def fat_mount(path, mountinfo):
+    found = []
+    for line in mountinfo.splitlines():
+        left, right = line.split(" - ", 1)
+        fields, filesystem = left.split(), right.split()
+        if fields[4] == str(path):
+            if filesystem[0] != "vfat":
+                raise ValueError("boot source must be the inventoried FAT filesystem")
+            # Filesystem-specific options (uid/gid/fmask/dmask/...) are the
+            # superblock options after " - "; fields[5] holds per-mount flags.
+            if len(filesystem) < 3:
+                raise ValueError("incomplete mountinfo superblock options")
+            found.append(filesystem[2].split(","))
+    if len(found) != 1:
+        raise ValueError("exact boot source mount must be independently visible")
+    values = {key: value for option in found[0] if "=" in option for key, value in [option.split("=", 1)]}
+    result = {"fstype": "vfat", "uid": values.get("uid", "0"), "gid": values.get("gid", "0"),
+              "fmask": values["fmask"], "dmask": values["dmask"]}
+    for key in ("shortname", "codepage", "iocharset", "utf8", "time_offset", "tz"):
+        if key in values:
+            result[key] = values[key]
+    if "utf8" in found[0]:
+        result["utf8"] = "1"
+    if "showexec" in found[0]:
+        raise ValueError("showexec boot mount requires separately reviewed filename-specific metadata support")
+    fat_options(result)
+    return result
+
+
+def fat_options(settings):
+    if settings.get("fstype") != "vfat" or set(settings) - {"fstype", "uid", "gid", "fmask", "dmask", "shortname", "codepage", "iocharset", "utf8", "time_offset", "tz"}:
+        raise ValueError("unsupported boot mount options")
+    if any(not re.fullmatch(r"[0-9]+", str(settings[name])) for name in ("uid", "gid")):
+        raise ValueError("invalid FAT ownership")
+    if any(not re.fullmatch(r"[0-7]{4}", settings[name]) for name in ("fmask", "dmask")):
+        raise ValueError("explicit source FAT masks required")
+    if any(not re.fullmatch(r"[A-Za-z0-9_.+-]+", str(value)) for key, value in settings.items() if key != "fstype"):
+        raise ValueError("invalid FAT option value")
+    return [key + "=" + str(value) for key, value in settings.items() if key != "fstype"]
+
+
+def boot_device(boot_uuid, path="/boot/firmware", *, by_uuid=Path("/dev/disk/by-uuid")):
+    """Host-side proof that the mount at ``path`` is the recorded boot partition.
+
+    Runs in the trusted launcher: the capture sandbox has a fresh /dev without
+    host device nodes, so it receives only the proved device number.
+    """
+    if not isinstance(boot_uuid, str) or not re.fullmatch(r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}", boot_uuid):
+        raise ValueError("recorded boot volume UUID required")
+    device = os.stat(by_uuid / boot_uuid.upper())
+    mounted = os.stat(path).st_dev
+    if not stat.S_ISBLK(device.st_mode) or device.st_rdev != mounted:
+        raise ValueError("mounted boot volume is not the recorded boot partition")
+    return mounted
+
+
+def source_fat(path, proved_device):
+    settings = fat_mount(path, Path("/proc/self/mountinfo").read_text())
+    info = os.stat(path)
+    # A bind of the host mount keeps its superblock device number.
+    if type(proved_device) is not int or info.st_dev != proved_device:
+        raise ValueError("mounted boot volume is not the host-proved boot partition")
+    if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (int(settings["uid"]), int(settings["gid"]), 0o777 & ~int(settings["dmask"], 8)):
+        raise ValueError("source FAT stat metadata differs from its kernel mount options")
+    return settings

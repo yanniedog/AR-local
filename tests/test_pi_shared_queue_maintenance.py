@@ -189,6 +189,24 @@ def test_image_authority_has_distinct_scope_phase_and_upload_permission(monkeypa
     with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
 
 
+def test_image_cold_fetch_requires_explicit_read_and_quarantined_credential(monkeypatch):
+    authority,rows=image_fixture(monkeypatch)
+    authority.update(phase='fetch',manual_image_drive_read=True)
+    publish_authority(authority,rows)
+    assert hooks.approval(IMAGE_UNIT)==authority
+    j=job(IMAGE_UNIT);terminal=image_terminal(j,authority)
+    rows[hooks.IMAGE_HANDOFF/NONCE/'completion.json']=canonical(terminal)
+    assert not hooks.completion_proved(j)
+    terminal['credential_custody']='QUARANTINED'
+    rows[hooks.IMAGE_HANDOFF/NONCE/'completion.json']=canonical(terminal)
+    assert hooks.completion_proved(j)
+    authority['manual_image_drive_write']=True;publish_authority(authority,rows)
+    with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
+    authority.pop('manual_image_drive_write');authority['manual_image_drive_read']=False
+    publish_authority(authority,rows)
+    with pytest.raises(ValueError):hooks.approval(IMAGE_UNIT)
+
+
 def test_image_stop_hook_uses_distinct_fixed_no_site_root_broker(monkeypatch):
     authority,rows=image_fixture(monkeypatch);start=hooks.image_start(NONCE,'RUN_ARCHIVE')
     stop=['/usr/bin/python3','-I','-S','-B',str(hooks.IMAGE_ROOT/'broker.py'),'recover',NONCE]
@@ -376,11 +394,15 @@ def test_absent_image_registry_preserves_existing_callback_behavior(monkeypatch)
 
 def registry_fixture(monkeypatch):
     source=b'root image callback';wrapper=b'root loaded wrapper'
+    closure={str(reclaim.IMAGE/'reconcile.py'):sha(source)}
+    manifest=json.dumps(closure,sort_keys=True,separators=(',',':')).encode()
+    # Exactly the document pi_system_guard_install publishes.
     registry={'schema':'ar-local-system-recovery-reconcile-v1','callback':str(reclaim.IMAGE/'reconcile.py'),
-        'callback_sha256':sha(source),'wrapper_sha256':sha(wrapper)}
+        'callback_sha256':sha(source),'source_closure_sha256':sha(manifest),'wrapper_sha256':sha(wrapper)}
     monkeypatch.setattr(Path,'lstat',lambda path:SimpleNamespace())
     monkeypatch.setattr(hooks,'root_json',lambda path:registry)
-    monkeypatch.setattr(reclaim,'protected',lambda path:source if path==reclaim.IMAGE/'reconcile.py' else wrapper)
+    files={reclaim.IMAGE/'reconcile.py':source,reclaim.IMAGE/'root-control-manifest.json':manifest}
+    monkeypatch.setattr(reclaim,'protected',lambda path:files.get(path,wrapper))
     return registry
 
 
@@ -394,9 +416,11 @@ def test_image_registry_selects_only_fixed_hash_bound_callback_with_five_second_
     with pytest.raises(RuntimeError):reclaim.reconcile_image(run)
 
 
-def test_image_registry_rejects_unverified_source_closure_claim(monkeypatch):
+@pytest.mark.parametrize('change',['wrong','missing'])
+def test_image_registry_rejects_unverified_source_closure_claim(monkeypatch,change):
     registry=registry_fixture(monkeypatch)
-    registry['source_closure_sha256']='f'*64
+    if change=='wrong': registry['source_closure_sha256']='f'*64
+    else: del registry['source_closure_sha256']
     with pytest.raises(RuntimeError):reclaim.reconcile_image(lambda *a,**kw:pytest.fail('unqualified callback executed'))
 
 

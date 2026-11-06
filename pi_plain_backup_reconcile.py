@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import time
+import types
 
 ROOT=Path('/usr/local/lib/ar-local-plain-backup')
 STATE=Path('/var/lib/ar-local-plain-backup-control')
@@ -31,14 +32,30 @@ def protected(path):
     return path.read_bytes()
 
 
+def load_hook_bytes(raw):
+    """Import the captured verified hook without directory or pyc searches."""
+    name='pi_shared_queue_post_hooks'
+    if name in sys.modules:
+        raise RuntimeError('unqualified root callback module cache exists')
+    path=str(ROOT/(name+'.py'));module=types.ModuleType(name)
+    module.__file__=path;module.__package__='';sys.modules[name]=module
+    try:exec(compile(raw,path,'exec'),module.__dict__)
+    except BaseException:
+        sys.modules.pop(name,None)
+        raise
+
+
 def bootstrap():
     if sys.platform!='linux' or os.geteuid()!=0 or Path(__file__).resolve()!=ROOT/'reconcile.py':
         raise RuntimeError('fixed installed Linux root callback required')
     manifest=json.loads(protected(ROOT/'root-control-manifest.json'))
+    bodies={}
     for name in ('reconcile.py','broker.py','pi_shared_queue_post_hooks.py'):
-        if hashlib.sha256(protected(ROOT/name)).hexdigest()!=manifest.get(name):
+        raw=protected(ROOT/name)
+        if hashlib.sha256(raw).hexdigest()!=manifest.get(name):
             raise RuntimeError('root reconciliation source binding differs')
-    sys.path.insert(0,str(ROOT))
+        bodies[name]=raw
+    load_hook_bytes(bodies['pi_shared_queue_post_hooks.py'])
 
 
 def inactive(unit,run):
@@ -92,6 +109,15 @@ def reconcile_owned(run=subprocess.run,clock=time.monotonic):
     return 2 if failed else 0
 
 
+def installed_closure_sha256():
+    """Digest of the installed root-control manifest, as the installer computes
+    the registry's source_closure_sha256; an unverified claim never matches."""
+    closure=json.loads(protected(IMAGE/'root-control-manifest.json'))
+    if not isinstance(closure,dict):
+        raise RuntimeError('fixed image root closure differs')
+    return hashlib.sha256(json.dumps(closure,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
 def reconcile_image(run=subprocess.run):
     """Only the optional fixed root registry can add this bounded callback."""
     try:
@@ -100,8 +126,9 @@ def reconcile_image(run=subprocess.run):
         return 0
     from pi_shared_queue_post_hooks import root_json
     registry=root_json(IMAGE_REGISTRY)
-    if (set(registry)!={'schema','callback','callback_sha256','wrapper_sha256'}
+    if (set(registry)!={'schema','callback','callback_sha256','source_closure_sha256','wrapper_sha256'}
             or registry.get('schema')!='ar-local-system-recovery-reconcile-v1'
+            or registry.get('source_closure_sha256')!=installed_closure_sha256()
             or registry.get('callback')!=str(IMAGE/'reconcile.py')
             or not all(re.fullmatch('[0-9a-f]{64}',str(registry.get(key,''))) for key in
                 ('callback_sha256','wrapper_sha256'))
