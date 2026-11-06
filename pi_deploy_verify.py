@@ -392,14 +392,16 @@ def run_ssh(
 
 
 def origin_main_sha_local() -> Optional[str]:
-    fetch = run_local(["git", "fetch", "origin", "main"])
-    if fetch.returncode != 0:
-        print(f"pi_deploy_verify: git fetch failed: {fetch.stderr.strip()}", file=sys.stderr)
+    # Read-only remote query: the immutable, root-owned production checkout has
+    # no writable FETCH_HEAD or refs for the unprivileged watchdog.
+    query = run_local(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"])
+    if query.returncode != 0:
+        print(f"pi_deploy_verify: git ls-remote failed: {query.stderr.strip()}", file=sys.stderr)
         return None
-    rev = run_local(["git", "rev-parse", "origin/main"])
-    if rev.returncode != 0:
+    fields = query.stdout.split()
+    if len(fields) != 2 or fields[1] != "refs/heads/main" or not re.fullmatch(r"[0-9a-f]{40}", fields[0]):
         return None
-    return rev.stdout.strip()
+    return fields[0]
 
 
 def _parse_kv_lines(text: str) -> dict[str, str]:

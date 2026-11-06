@@ -1032,3 +1032,17 @@ def test_pwd_verifier_form_requires_unit_working_directory_proof(prefix, wd):
     snap = _service_snapshot(**{prefix + "_START_POST_JSON": json.dumps(post),
                                 prefix + "_WORKING_DIRECTORY": repo if wd is None else wd})
     assert pi_deploy_verify.pi_ingest_service_fences_ok(snap) is (wd is None)
+
+
+def test_origin_main_is_queried_read_only_without_fetch(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    def run_local(argv):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="a" * 40 + "\trefs/heads/main\n", stderr="")
+    monkeypatch.setattr(pi_deploy_verify, "run_local", run_local)
+    assert pi_deploy_verify.origin_main_sha_local() == "a" * 40
+    assert calls == [["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]]
+    assert not any("fetch" in argv for argv in calls)
+    monkeypatch.setattr(pi_deploy_verify, "run_local", lambda argv: SimpleNamespace(returncode=2, stdout="", stderr="no ref"))
+    assert pi_deploy_verify.origin_main_sha_local() is None

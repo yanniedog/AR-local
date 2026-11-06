@@ -80,17 +80,19 @@ Installation takes a root-controlled operator recovery approval and its exact
 SHA-256, plus an independently reviewed staging approval and its exact SHA-256.
 It refuses symlinked/writable ancestors, non-root ownership and existing CI
 account/installations. It never silently replaces an existing access policy.
-The approval's schema is:
+Evidence must live outside `/home`, `/root` and `/run/user`: the activation
+unit runs with `ProtectHome=yes`, so `check` refuses such paths before a plan
+can be consumed. The approval's schema is:
 
 ```json
 {
   "schema_version": 1,
   "result": "PASS",
   "evidence": {
-    "raw_archive": {"path": "/root/recovery/raw-archive-receipt.json", "sha256": "ACTUAL_SHA256"},
-    "system_image": {"path": "/root/recovery/image-receipt.json", "sha256": "ACTUAL_SHA256"},
-    "restore_proof": {"path": "/root/recovery/restore-receipt.json", "sha256": "ACTUAL_SHA256"},
-    "boot_structure_proof": {"path": "/root/recovery/boot-structure-receipt.json", "sha256": "ACTUAL_SHA256"}
+    "raw_archive": {"path": "/var/lib/ar-local-ci/recovery/raw-archive-receipt.json", "sha256": "ACTUAL_SHA256"},
+    "system_image": {"path": "/var/lib/ar-local-ci/recovery/image-receipt.json", "sha256": "ACTUAL_SHA256"},
+    "restore_proof": {"path": "/var/lib/ar-local-ci/recovery/restore-receipt.json", "sha256": "ACTUAL_SHA256"},
+    "boot_structure_proof": {"path": "/var/lib/ar-local-ci/recovery/boot-structure-receipt.json", "sha256": "ACTUAL_SHA256"}
   }
 }
 ```
@@ -142,8 +144,8 @@ with a clean environment and bash privileged mode (ignoring user startup files):
 ```sh
 sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -p \
   /usr/local/lib/ar-local-ci-stage-EXACT_COMMIT/install-ci-access.sh \
-  --install /root/recovery/approval.json ACTUAL_APPROVAL_SHA256 \
-  /root/recovery/ci-staging-approval.json ACTUAL_STAGING_APPROVAL_SHA256
+  --install /var/lib/ar-local-ci/recovery/approval.json ACTUAL_APPROVAL_SHA256 \
+  /var/lib/ar-local-ci/recovery/ci-staging-approval.json ACTUAL_STAGING_APPROVAL_SHA256
 ```
 
 Keep the current owner SSH session open. Inspect `sudo -l -U ar-local-ci`, the

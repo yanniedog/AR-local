@@ -61,6 +61,15 @@ def properties(unit, fields):
     return value
 
 
+HIDDEN_FROM_ACTIVATION = tuple(Path(p) for p in ('/home', '/root', '/run/user'))
+
+
+def hidden_from_activation(path):
+    """True when ProtectHome=yes makes ``path`` (or its resolved target) invisible."""
+    candidates = {Path(os.path.abspath(path)), Path(path).resolve()}
+    return any(root == c or root in c.parents for root in HIDDEN_FROM_ACTIVATION for c in candidates)
+
+
 def plan_context(plan_id, *, now=None, allow_expired=False):
     if not release.HEX.fullmatch(plan_id):
         raise ValueError('invalid plan ID')
@@ -93,6 +102,11 @@ def plan_context(plan_id, *, now=None, allow_expired=False):
             or approval.get('result') != 'PASS' or set(approval.get('evidence', {})) != expected_evidence):
         raise ValueError('accepted offsite recovery approval is required')
     for evidence in approval['evidence'].values():
+        # The activation unit runs with ProtectHome=yes: /home, /root and
+        # /run/user are empty there. Refuse such evidence here, where `check`
+        # also runs, so it never fails after the one-shot plan is consumed.
+        if hidden_from_activation(Path(evidence['path'])):
+            raise ValueError('recovery evidence must be outside /home, /root and /run/user')
         release.read(Path(evidence['path']), evidence['sha256'])
     canary = release.read(PLANS / (plan_id + '.canary-acceptance.json'), plan['canary_manifest_sha256'])
     gates = {'preservation_restore', 'historical_integrity', 'shadow_ingest', 'producer_contracts',

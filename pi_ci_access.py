@@ -105,6 +105,12 @@ def validate_recovery(body: bytes) -> dict:
     for reference in evidence.values():
         if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
             raise ValueError("invalid recovery evidence reference")
+        # The activation unit runs with ProtectHome=yes; evidence there would be
+        # unreadable at activation. Refuse it at installation and at check.
+        if not isinstance(reference["path"], str) or any(
+                reference["path"] == root or reference["path"].startswith(root + "/")
+                for root in ("/home", "/root", "/run/user")):
+            raise ValueError("recovery evidence must be outside /home, /root and /run/user")
         body = trusted_bytes(Path(reference["path"]))
         require_digest(body, reference["sha256"])
     return value

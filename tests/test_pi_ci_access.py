@@ -25,7 +25,7 @@ def approved_plan(monkeypatch):
     proofs = {name: encoded({"retained_receipt": name}) for name in
               ("raw_archive", "system_image", "restore_proof", "boot_structure_proof")}
     recovery = encoded({"schema_version": 1, "result": "PASS", "evidence": {
-        name: {"path": "/root/recovery/" + name + ".json", "sha256": digest(body)}
+        name: {"path": "/var/lib/ar-local-ci/recovery/" + name + ".json", "sha256": digest(body)}
         for name, body in proofs.items()}})
     manifest = encoded({"schema": "actual-sealed-manifest-validated-by-adapter"})
     adapter = b"# independently reviewed privilege-separated adapter\n"
@@ -33,7 +33,7 @@ def approved_plan(monkeypatch):
             "previous_commit": "b" * 40, "expires_at": (now + timedelta(hours=2)).isoformat(),
             "sealed_manifest_sha256": digest(manifest), "recovery_approval_sha256": digest(recovery),
             "adapter_sha256": digest(adapter)}
-    files = {ci.ADAPTER: adapter, **{Path("/root/recovery/" + name + ".json"): body
+    files = {ci.ADAPTER: adapter, **{Path("/var/lib/ar-local-ci/recovery/" + name + ".json"): body
                                     for name, body in proofs.items()}}
 
     def install(value):
@@ -103,7 +103,7 @@ def test_changed_plan_or_evidence_is_rejected(monkeypatch, suffix):
 def test_recovery_requires_all_evidence_and_checks_each_hash(monkeypatch):
     plan, now, files, install = approved_plan(monkeypatch)
     plan_id = install(plan)
-    files[Path("/root/recovery/boot_structure_proof.json")] = b"changed proof"
+    files[Path("/var/lib/ar-local-ci/recovery/boot_structure_proof.json")] = b"changed proof"
     with pytest.raises(ValueError, match="digest differs"):
         ci.validate_plan(plan_id, now=now)
     with pytest.raises(ValueError, match="complete offsite"):
@@ -327,3 +327,13 @@ def test_approval_itself_is_bound_to_external_operator_hash(staging_validator):
     validate, installer, payload, approval, overrides = staging_validator
     with pytest.raises(ValueError, match="approval hash differs"):
         validate(str(installer), str(approval), "0" * 64)
+
+
+@pytest.mark.parametrize("path", ["/root/recovery/raw.json", "/home/pi/raw.json", "/run/user/1000/raw.json"])
+def test_recovery_evidence_hidden_from_activation_is_refused(path):
+    approval = {"schema_version": 1, "result": "PASS", "evidence": {
+        name: {"path": "/var/lib/ar-local-ci/recovery/" + name + ".json", "sha256": "a" * 64}
+        for name in ("raw_archive", "system_image", "restore_proof", "boot_structure_proof")}}
+    approval["evidence"]["raw_archive"]["path"] = path
+    with pytest.raises(ValueError, match="outside /home"):
+        ci.validate_recovery(json.dumps(approval).encode())
