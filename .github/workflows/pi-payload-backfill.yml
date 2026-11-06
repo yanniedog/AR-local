@@ -239,7 +239,9 @@ jobs:
             CHILD=""
             return "$rc"
           }
-          sel=(); for d in "$@"; do sel+=(--date "$d"); done
+          # Report and per-date publication use the same capture selection, so a
+          # date the report recovered from the ledger is publishable too.
+          sel=(--ledger-fallback); for d in "$@"; do sel+=(--date "$d"); done
           [ "$SINCE" = "-" ] || sel+=(--pending-since "$SINCE")
           if [ "$MODE" = "inventory" ]; then unit 900 --inventory "${sel[@]}"; exit $?; fi
           set +e
@@ -255,7 +257,7 @@ jobs:
           while read -r d decision digest; do
             allow=(); [ "$decision" = "waivable" ] && allow=(--allow-digest "$d=$digest")
             # One date per unit, oldest first; each checks the retry window itself.
-            unit 2100 --publish --date "$d" "${allow[@]}" || { rc=$?; echo "publication for $d failed (rc=$rc)"; }
+            unit 2100 --publish --ledger-fallback --date "$d" "${allow[@]}" || { rc=$?; echo "publication for $d failed (rc=$rc)"; }
           done < <(grep "^WAIVER " <<<"$report" | sed 's/^WAIVER //' | python3 -c 'import json,sys
           for r in map(json.loads, sys.stdin):
               if r.get("decision") in ("admitted", "waivable"): print(r["date"], r["decision"], r["contract_digest"])')

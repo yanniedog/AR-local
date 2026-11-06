@@ -202,6 +202,9 @@ def main(argv=None):
     parser.add_argument("--pending-since", metavar="DATE",
                         help="also select every date on or after DATE that has a withheld pending pointer")
     parser.add_argument("--policy", choices=sorted(AUTHORITY), default="population")
+    parser.add_argument("--ledger-fallback", action="store_true",
+                        help="serve a date with no pending pointer from its best verified ledger generation"
+                             " (implied by --pending-since)")
     parser.add_argument("--allow-digest", action="append", default=[],
                         help="publish mode: date=contract_digest admitted by the gate report")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -280,7 +283,7 @@ def main(argv=None):
                 except (OSError, ValueError, KeyError, TypeError) as error:
                     emit(date=day, pending_pointer_invalid=pointer.get("generation_id"), error=str(error)[:200])
             source_kind, options = "pending", pending
-            if not options and args.pending_since:
+            if not options and (args.ledger_fallback or args.pending_since):
                 source_kind = "ledger"
                 options = ledger_candidates(state, day, load_contract, load_pointer_observation)
             if not options:

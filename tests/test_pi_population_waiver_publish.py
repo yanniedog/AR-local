@@ -380,11 +380,18 @@ def test_lost_pending_pointer_is_recovered_from_the_verified_ledger(repo):
     assert rows[0] == {"selected": ["2026-10-30"]}
     row = rows[1]
     assert row["source"] == "ledger" and row["decision"] == "waivable" and code == 0
-    # Publish run: the fake release becomes live once published.
-    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-10-30", "--pending-since", "2026-10-30",
+    # Per-date publication, as the workflow invokes it after the report.
+    code, rows = run(repo, "--publish", "--policy", "all", "--ledger-fallback", "--date", "2026-10-30",
                      "--allow-digest", "2026-10-30=" + first["contract_digest"])
     assert code == 0
     assert published(repo) == ["2026-10-30 ok"]
     assert not (repo / "state/cleared.log").exists()  # never queued, nothing to clear
     receipt = json.loads((repo / "state/population-waiver-publications-v1" / (first["contract_digest"] + ".json")).read_text())
     assert receipt["source"] == "ledger"
+
+
+def test_explicit_date_without_ledger_fallback_still_needs_a_pending_pointer(repo):
+    (repo / "state/pending.json").write_text("{}")
+    ledger(repo, contract("2026-10-30", generation="obs-2026-10-30-x"))
+    code, rows = run(repo, "--report", "--policy", "all", "--date", "2026-10-30")
+    assert code == 1 and rows == [{"date": "2026-10-30", "decision": "refused", "detail": "no_verified_capture"}]
