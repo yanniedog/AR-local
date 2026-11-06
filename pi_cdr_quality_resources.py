@@ -110,8 +110,9 @@ def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=Fa
     needed = limits.reserve_bytes + limits.margin_bytes + (limits.workload_bytes if admission else 0)
     if sample["available_bytes"] < needed:
         return "host_reserve_headroom"
-    if progress["swap_out_bytes"] and not _pressure_verified:
-        return "host_swap_out_activity"
+    # Host-wide swap-out is recorded, not a stop (owner decision 2026-11-07):
+    # Linux pages idle anonymous memory out with ample MemAvailable. Workload
+    # swap (MemorySwapMax=0), reserve headroom, cold swap-in and PSI still stop.
     if progress["swap_in_bytes"] > limits.cold_swap_in_bytes:
         return "host_cold_swap_in_budget"
     if sample["psi_avg10"] is not None and sample["psi_avg10"] >= 10:

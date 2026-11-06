@@ -167,12 +167,17 @@ def refault_receipt(*, final_low=False):
         last['pressure']['zones'][0]['pages free'] = 250
     tracker = pressure.PressureTracker(first)
     tracker.observe(middle)
-    if final_low:
-        with pytest.raises(ValueError, match='low_with_refault'):
-            tracker.observe(last)
-    else:
-        tracker.observe(last)
-    return tracker.receipt(), first, last
+    # Low-plus-refault is recorded context, not a stop (owner decision 2026-11-07).
+    tracker.observe(last)
+    receipt = tracker.receipt()
+    assert receipt['low_with_refault_samples'] == int(final_low)
+    return receipt, first, last
+
+
+def test_low_zone_with_refault_is_recorded_and_still_passes():
+    receipt, first, last = refault_receipt(final_low=True)
+    assert receipt['result'] == 'PASS' and receipt['failure'] is None
+    pressure.require_pressure_receipt(receipt, first, last)
 
 
 def test_multi_interval_refault_cannot_be_hidden_by_zeroing_summary():

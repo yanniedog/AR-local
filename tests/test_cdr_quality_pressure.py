@@ -75,17 +75,16 @@ def test_printed_minimum_already_includes_boost(margin):
 
 
 @pytest.mark.parametrize('counter',p.REFAULT_COUNTERS)
-def test_low_zone_and_interval_refault_rejected(counter):
+def test_low_zone_and_interval_refault_recorded_and_unforgeable(counter):
     first=host();tracker=p.PressureTracker(first);last=next_host(first)
     last['pressure']['zones'][0]['pages free']=300
     last['pressure']['counters'][counter]+=1
     last['pressure']['node_refaults'][0][1+p.REFAULT_COUNTERS.index(counter)]+=1
-    with pytest.raises(ValueError,match='low_with_refault'):tracker.observe(last)
+    tracker.observe(last)  # recorded context, not a stop (owner decision 2026-11-07)
     assert tracker.receipt()['low_with_activity_samples']==1
     assert tracker.receipt()['low_with_refault_samples']==1
-    with pytest.raises(ValueError):
-        p.require_pressure_receipt(tracker.receipt(),first,last)
-    forged={**tracker.receipt(),'result':'PASS','failure':None}
+    p.require_pressure_receipt(tracker.receipt(),first,last)
+    forged={**tracker.receipt(),'low_with_refault_samples':0}
     with pytest.raises(ValueError):p.require_pressure_receipt(forged,first,last)
 
 

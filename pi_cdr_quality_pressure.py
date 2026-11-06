@@ -300,10 +300,11 @@ def require_initial_capture(value):
                   for i, key in enumerate(REFAULT_COUNTERS)) or any(refault_tail(value))
     active = any(global_changes) or any(any(row) for row in changes)
     low = any(number <= 0 for number in lows.values())
-    if ((unknown or not value['lru_gen_enabled'] & 1 and active) and low
-            or value['lru_gen_enabled'] & 1 and any(lows[node[0]] <= 0 and any(change)
-                for node, change in zip(raw['nodes_after'], changes))):
-        raise ValueError('host_zone_low_with_initial_refault')
+    # Recorded context only (owner decision 2026-11-07): a zone below its low
+    # watermark with concurrent refaults is normal kswapd reclaim, not harm.
+    return bool((unknown or not value['lru_gen_enabled'] & 1 and active) and low
+                or value['lru_gen_enabled'] & 1 and any(lows[node[0]] <= 0 and any(change)
+                    for node, change in zip(raw['nodes_after'], changes)))
 
 
 def fingerprint(value):
@@ -451,10 +452,10 @@ class PressureTracker:
                 raise ValueError('host_allocation_pressure_observed')
             if any(z['min'] <= 0 for z in current_margins.values()):
                 raise ValueError('host_zone_minimum_headroom')
-            # Below low is the normal kswapd wakeup condition. Scan/steal alone
-            # is context; retain the conservative low-plus-refault stop.
-            if low_refault:
-                raise ValueError('host_zone_low_with_refault')
+            # Below low is the normal kswapd wakeup condition. Scan/steal and
+            # low-plus-refault are recorded context (owner decision 2026-11-07);
+            # allocation stalls, direct reclaim, compaction, OOM and any zone at
+            # its minimum remain hard stops above.
         except (ValueError, TypeError, KeyError, OverflowError) as error:
             self.failure = str(error)
             if value is not None:
@@ -569,8 +570,6 @@ def require_low_activity_counts(summary, last_zones, count):
                             if summary['refault_scope'] == 'mglru_same_node' else low and refault_support > 0)
         if activity != int(low and (total > 0 or refault_support > 0)) or refault != int(expected_refault):
             raise ValueError('pressure_receipt_low_activity_context')
-    if refault:
-        raise ValueError('pressure_receipt_low_refault')
 
 
 def _summary_terminal_lows(zones):
@@ -733,5 +732,5 @@ def require_refault_events(summary, baseline, last, count, gap):
     for row in summary['refault_intervals']:
         if row[2] <= 0 and (any(row[INTERVAL_TAILS]) or not baseline['lru_gen_enabled'] & 1):
             low_sequences.add(row[0])
-    if len(low_sequences) != summary['low_with_refault_samples'] or low_sequences:
+    if len(low_sequences) != summary['low_with_refault_samples']:
         raise ValueError('pressure_refault_event_low_conjunction')

@@ -45,9 +45,10 @@ def test_actual_r17_bytes_remain_failed_old_profile_new_bracket_is_local_only():
     assert [capture['global_before'][key], sum(row[2] for row in capture['nodes_before']),
             sum(row[2] for row in capture['nodes_after']), capture['global_after'][key]] == [183983,183983,183988,184005]
     assert p.refault_tail(value) == [0,17]
-    p.require_initial_capture(value)
+    assert p.require_initial_capture(value) is False
     value['zones'][0]['pages free'] = value['zones'][0]['low']
-    with pytest.raises(ValueError, match='initial_refault'): p.require_initial_capture(value)
+    # Low zone with initial refault is recorded context now, not a stop.
+    assert p.require_initial_capture(value) is True
     assert original['profile'] == 'ar-local-host-pressure-v4'
 
 
@@ -69,23 +70,23 @@ def test_tail_only_then_settlement_keeps_distinct_global_and_node_totals(tail):
 
 @pytest.mark.parametrize('mask',[0,1,2,3,4,5,6,7])
 @pytest.mark.parametrize('phase',['initial_prefix','initial_tail','tail_only','settlement'])
-def test_unknown_attribution_fails_any_low_zone_even_with_zero_global_delta(mask, phase):
+def test_unknown_attribution_low_zone_is_recorded_not_fatal(mask, phase):
     first = raw_capture(two_nodes(mask)); tail = (0,17)
     if phase.startswith('initial'):
         value = step(first, prefix=tail if phase=='initial_prefix' else (0,0),
                      tail=tail if phase=='initial_tail' else (0,0))
         value['pressure']['zones'][0]['pages free'] = 300
-        with pytest.raises(p.PressureCaptureError,match='initial_refault') as error:
-            p.PressureTracker(value)
+        assert p.require_initial_capture(value['pressure']) is True
+        p.PressureTracker(value)
     else:
         if phase=='settlement': first = step(first,tail=tail)
         value = step(first,tail=tail if phase=='tail_only' else (0,0))
         value['pressure']['zones'][0]['pages free'] = 300
         tracker = p.PressureTracker(first)
-        with pytest.raises(p.PressureCaptureError,match='low_with_refault') as error: tracker.observe(value)
+        tracker.observe(value)
+        assert tracker.receipt()['result'] == 'PASS'
         assert tracker.receipt()['low_with_activity_samples'] == 1
         assert tracker.receipt()['low_with_refault_samples'] == 1
-    assert error.value.capture == value['pressure']
 
 
 @pytest.mark.parametrize('fault',['before_above_A','after_below_B','node_reset_offset','global_reset',
