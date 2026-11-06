@@ -104,7 +104,8 @@ def test_initial_low_movement_is_recorded_not_fatal(kind):
         initial['pressure']['capture']['nodes_before'] = copy.deepcopy(initial['pressure']['node_refaults'])
     p.validate_snapshot(initial['pressure'])
     assert p.require_initial_capture(initial['pressure']) is True
-    p.PressureTracker(initial)
+    tracker = p.PressureTracker(initial)
+    assert tracker.receipt()['initial_low_with_refault'] is True
 
 
 def test_initial_healthy_motion_and_terminal_only_motion_are_replayed():
@@ -118,6 +119,10 @@ def test_initial_healthy_motion_and_terminal_only_motion_are_replayed():
     initial['pressure']['capture']['nodes_before'] = copy.deepcopy(initial['pressure']['node_refaults'])
     receipt['baseline_sha256'] = p.fingerprint(initial['pressure'])
     assert p.require_initial_capture(initial['pressure']) is True
+    # The recorded initial flag is recomputed from the bound baseline.
+    assert receipt['initial_low_with_refault'] is False
+    with pytest.raises(ValueError, match='initial_low_refault'):
+        p.require_pressure_receipt(receipt, initial, last)
 
 
 @pytest.mark.parametrize('fault', ['opening_node', 'opening_global', 'closing_node', 'closing_global', 'omit', 'reorder'])

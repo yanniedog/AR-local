@@ -368,11 +368,12 @@ class PressureTracker:
         self.refault_intervals = []
         self.refault_evidence_bytes = REFAULT_EVIDENCE_OVERHEAD
         self.node_max_interval = {str(row[0]): [0, 0] for row in self.baseline['node_refaults']}
+        self.initial_low_refault = False
         self._check_initial()
 
     def _check_initial(self):
         try:
-            require_initial_capture(self.baseline)
+            self.initial_low_refault = require_initial_capture(self.baseline)
             if any(row['min'] <= 0 for row in self.minimum_margins.values()):
                 raise ValueError('host_zone_minimum_headroom')
         except ValueError as error:
@@ -475,6 +476,7 @@ class PressureTracker:
                 'cache_min_bytes': dict(self.cache_min), 'cache_max_bytes': dict(self.cache_max),
                 'low_with_activity_samples': self.low_activity_samples,
                 'low_with_refault_samples': self.low_refault_samples,
+                'initial_low_with_refault': self.initial_low_refault,
                 'refault_scope': refault_scope(self.baseline['lru_gen_enabled']),
                 'node_cumulative': {str(b[0]): [e[i] - b[i] for i in (1, 2)]
                                     for b, e in zip(self.baseline['node_refaults'], self.last['node_refaults'])},
@@ -508,6 +510,9 @@ def require_pressure_receipt(summary, baseline_host, last_host):
         raise ValueError('pressure_receipt_lru_identity')
     if summary['baseline_sha256'] != fingerprint(baseline) or summary['last_sha256'] != fingerprint(last):
         raise ValueError('pressure_receipt_snapshot_binding')
+    # Recorded context, recomputed from the bound baseline so it cannot be hidden.
+    if summary['initial_low_with_refault'] is not require_initial_capture(baseline):
+        raise ValueError('pressure_receipt_initial_low_refault')
     if (integer(summary['baseline_monotonic_ns'], minimum=1) != baseline['monotonic_ns']
             or integer(summary['last_monotonic_ns'], minimum=1) != last['monotonic_ns']):
         raise ValueError('pressure_receipt_clock_binding')

@@ -583,8 +583,10 @@ minimum, service, PSI, RSS, workload-swap and cleanup requirements remain intact
 
 `low_with_activity_samples` records low-plus-background activity, including
 measured node increments and endpoint uncertainty even when global delta is zero.
-`low_with_refault_samples` records the applicable mode-specific failure
-conjunction and must be zero for PASS. Each positive **node/interval** retains a
+`low_with_refault_samples` counts the applicable mode-specific low-plus-refault
+conjunction, and `initial_low_with_refault` records it for the admission
+capture. Both are recorded context and do not fail PASS; validation recomputes
+them from the retained evidence, so neither can be hidden. Each positive **node/interval** retains a
 seven-integer row: interval sequence, monotonic timestamp, node ID, that node's
 minimum low margin, anonymous delta, file delta and global minimum low margin.
 Counters remain base-page counts. Rows sharing an interval have the same time
