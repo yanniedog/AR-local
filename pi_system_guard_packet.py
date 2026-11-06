@@ -64,7 +64,9 @@ def prepare(phase, nonce, workspace_id, coupled_probe=None, previous_phase=None)
             raise RuntimeError("same-closure native coupled commissioning proof required")
         packet["coupled_probe_nonce"] = coupled_probe
         previous = json.loads(protected(STATE / coupled_probe / "packet.json"))
-        proof = json.loads(protected(HANDOFF / coupled_probe / "coupled-probe.json"))
+        # ImageHost.complete() publishes this root-owned receipt 0640 for the
+        # service group: root may still write it, nobody else can.
+        proof = json.loads(protected(HANDOFF / coupled_probe / "coupled-probe.json", readonly=False))
         validate_commissioning(packet, coupled_probe, previous, proof, Path("/proc/sys/kernel/random/boot_id").read_text().strip())
         if phase in {"fetch", "restore", "rejoin"}:
             from pi_system_guard_cold import vendors, predecessor, result_path

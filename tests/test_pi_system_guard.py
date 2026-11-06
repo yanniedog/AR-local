@@ -492,3 +492,22 @@ def test_directory_exact_mode_survives_service_umask_0077(tmp_path, monkeypatch)
     finally:
         os.umask(old)
         shutil.rmtree(base)
+
+
+def test_coupled_probe_publication_mode_is_readable_by_packet_preparation():
+    if os.geteuid() != 0: pytest.skip("native root custody test")
+    import shutil, tempfile
+    from pi_system_guard_files import protected
+    base = Path(tempfile.mkdtemp(prefix="pytest-coupled-probe-", dir="/run"))
+    try:
+        proof = base / "coupled-probe.json"
+        proof.write_text('{"result":"IMAGE_PROBE_PASS"}')
+        os.chmod(proof, 0o640)  # exactly how ImageHost.complete() publishes it
+        with pytest.raises(RuntimeError):
+            protected(proof)
+        assert protected(proof, readonly=False) == b'{"result":"IMAGE_PROBE_PASS"}'
+        os.chmod(proof, 0o660)
+        with pytest.raises(RuntimeError):
+            protected(proof, readonly=False)
+    finally:
+        shutil.rmtree(base)
