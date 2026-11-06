@@ -1,0 +1,237 @@
+# Publish daily payloads withheld only by the provider-population gate, over the
+# hosted-runner Tailscale/SSH route used by pi-quality-canary.
+#
+# Operator decision (2026-11-06, repository owner): observations withheld solely
+# by `unverified_provider_population` may be published. Every other gate stays.
+# scripts/pi_population_waiver_publish.py drives the production checkout's own
+# daily publication path (pi_daily_sync.maybe_publish_app_payload), so payload
+# format, revision coordination, encryption, dates index and the pending-marker
+# queue behave exactly as on a natural daily retry. Only that one verdict is
+# waived, and only for the requested dates' exact contract digests.
+#
+# Guards:
+# - manual dispatch only, main-branch definition only; typed confirmation for
+#   publish mode; dates limited to 2026-10-29 through today (Hobart);
+# - admitted through the shared Pi queue (`pi-shared-task`), then run in bounded
+#   transient units as the daily service user with its environment, under the
+#   production daily-ingest lock and the daily retry window (03:30-22:00);
+# - the production checkout must be clean and is imported unmodified;
+# - `report` (default) writes nothing; `publish` first reports, then pins each
+#   waivable date to the contract digest that report saw; any other reason,
+#   ambiguity, missing pending pointer or failed upload fails the run.
+name: pi-payload-backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "report (read-only) or publish"
+        required: true
+        default: "report"
+        type: choice
+        options:
+          - "report"
+          - "publish"
+      dates:
+        description: "Space-separated YYYY-MM-DD dates (2026-10-29 onward)"
+        required: true
+        type: string
+      confirm:
+        description: "Type PUBLISH_OVER_POPULATION_GATE for publish mode"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AUTHORISED_FROM: "2026-10-29"
+
+concurrency:
+  group: pi-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  payload-backfill:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Validate inputs
+        id: select
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          DATES: ${{ inputs.dates }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = "publish" ]; then
+            test "$CONFIRM" = "PUBLISH_OVER_POPULATION_GATE" || { echo "::error::publish mode needs the typed confirmation"; exit 1; }
+          fi
+          today="$(TZ=Australia/Hobart date +%F)"
+          selected=""
+          for d in $DATES; do
+            [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "::error::invalid date $d"; exit 1; }
+            date -d "$d" +%F >/dev/null
+            if [[ "$d" < "$AUTHORISED_FROM" || "$d" > "$today" ]]; then
+              echo "::error::$d is outside the authorised range $AUTHORISED_FROM..$today"; exit 1
+            fi
+            selected="$selected $d"
+          done
+          selected="$(echo $selected | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+          test -n "${selected// /}" || { echo "::error::no dates"; exit 1; }
+          echo "dates=$selected" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require Pi and Tailscale credentials
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          set -euo pipefail
+          for v in PI_SSH_PRIVATE_KEY PI_SSH_HOST PI_SSH_KNOWN_HOSTS TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET; do
+            test -n "${!v}" || { echo "::error::$v missing"; exit 1; }
+          done
+
+      - name: Join Tailscale tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
+      - name: Configure SSH for Pi
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_deploy_key ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${PI_SSH_USER:-pi}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 60
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Stage the reviewed runner on the Pi
+        run: |
+          set -euo pipefail
+          SHA="$(sha256sum scripts/pi_population_waiver_publish.py | cut -d' ' -f1)"
+          echo "runner sha256: $SHA"
+          ssh ar-local-pi5 "install -d -m 0755 /srv/ar-local/payload-waiver-control && cat > /srv/ar-local/payload-waiver-control/runner-$SHA.py.tmp && chmod 0444 /srv/ar-local/payload-waiver-control/runner-$SHA.py.tmp && mv -f /srv/ar-local/payload-waiver-control/runner-$SHA.py.tmp /srv/ar-local/payload-waiver-control/runner-$SHA.py" < scripts/pi_population_waiver_publish.py
+          test "$(ssh ar-local-pi5 sha256sum /srv/ar-local/payload-waiver-control/runner-$SHA.py | cut -d' ' -f1)" = "$SHA"
+          echo "RUNNER_SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Report and publish through the shared queue
+        env:
+          MODE: ${{ inputs.mode }}
+          DATES: ${{ steps.select.outputs.dates }}
+        run: |
+          set -euo pipefail
+          # Inputs travel as positional arguments, never interpolated into the
+          # remote script text.
+          ssh ar-local-pi5 bash -s -- "$MODE" "$RUNNER_SHA" "$GITHUB_RUN_ID" $DATES <<'REMOTE'
+          set -euo pipefail
+          MODE="$1"; RSHA="$2"; RUN="$3"; shift 3
+          REPO=/srv/ar-local/AR-local
+          CTL=/srv/ar-local/payload-waiver-control
+          RUNNER="$CTL/runner-$RSHA.py"
+          test "$(sha256sum "$RUNNER" | cut -d' ' -f1)" = "$RSHA"
+          cd "$REPO"
+          echo "production HEAD: $(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)" || { echo "production checkout is dirty; refusing"; exit 1; }
+          test -x /usr/local/bin/pi-shared-task || { echo "pi-shared-task missing; refusing"; exit 1; }
+          QS="$CTL/queued-$RUN.sh"
+          cat > "$QS" <<'QUEUED'
+          set -euo pipefail
+          MODE="$1"; RUNNER="$2"; RUN="$3"; shift 3
+          REPO=/srv/ar-local/AR-local
+          U="$(systemctl show -p User --value ar-local-daily.service)"
+          G="$(systemctl show -p Group --value ar-local-daily.service)"
+          test -n "$U" || { echo "daily service user unknown"; exit 1; }
+          props=(-p "User=$U" -p "WorkingDirectory=$REPO" -p Type=exec -p KillMode=control-group
+                 -p SendSIGKILL=yes -p Restart=no -p TimeoutStopSec=45 -p CPUQuota=200%)
+          [ -n "$G" ] && props+=(-p "Group=$G")
+          # Mirror the daily service environment (values contain no spaces).
+          for kv in $(systemctl show -p Environment --value ar-local-daily.service); do props+=(-p "Environment=$kv"); done
+          for f in /etc/ar-local/app-payload.env /etc/ar-local/drive-backup.env /etc/ar-local/day-archive.env; do
+            props+=(-p "EnvironmentFile=-$f")
+          done
+          # Couple every child unit to this queue job: BindsTo stops it when the
+          # queue's own unit stops (budget expiry or cancellation), and the trap
+          # stops and verifies it before the claim is released.
+          QUNIT="$(sed -n 's#^0::.*/\([^/]*\.service\)$#\1#p' /proc/self/cgroup)"
+          [[ "$QUNIT" =~ ^[A-Za-z0-9@_.:-]+\.service$ ]] || { echo "queue unit unknown; refusing"; exit 1; }
+          props+=(-p "BindsTo=$QUNIT" -p "After=$QUNIT")
+          seq=0; CHILD=""
+          stop_child() {
+            [ -n "$CHILD" ] || return 0
+            sudo systemctl stop "$CHILD" 2>/dev/null || true
+            for _ in $(seq 1 30); do
+              state="$(systemctl show -p ActiveState --value "$CHILD" 2>/dev/null || true)"
+              case "$state" in ""|inactive|failed) CHILD=""; return 0 ;; esac
+              sleep 2
+            done
+            echo "child $CHILD did not stop"; return 1
+          }
+          trap 'stop_child; exit 143' TERM INT HUP
+          unit() {
+            seq=$((seq + 1)); CHILD="ar-local-payload-waiver-$RUN-$seq.service"
+            sudo systemd-run --quiet --wait --pipe --collect \
+              --unit="$CHILD" "${props[@]}" -p RuntimeMaxSec="$1" \
+              /usr/bin/python3 -I "$RUNNER" --repo "$REPO" "${@:2}" &
+            local pid=$! rc=0
+            wait "$pid" || rc=$?
+            CHILD=""
+            return "$rc"
+          }
+          dargs=(); for d in "$@"; do dargs+=(--date "$d"); done
+          set +e
+          OUT="$(mktemp)"
+          unit 900 --report "${dargs[@]}" >"$OUT" 2>&1; rrc=$?
+          set -e
+          report="$(cat "$OUT")"; rm -f "$OUT"
+          echo "$report"
+          if [ "$MODE" != "publish" ]; then exit "$rrc"; fi
+          [ "$rrc" -eq 0 ] || { echo "report refused at least one date; nothing published"; exit "$rrc"; }
+          rc=0
+          for d in "$@"; do
+            row="$(grep "^WAIVER " <<<"$report" | sed 's/^WAIVER //' | python3 -c 'import json,sys; d=sys.argv[1]; [print(r["decision"], r["contract_digest"]) for r in map(json.loads, sys.stdin) if r.get("date")==d and "decision" in r]' "$d")"
+            read -r decision digest <<<"$row"
+            allow=(); [ "$decision" = "waivable" ] && allow=(--allow-digest "$d=$digest")
+            # One date per unit, oldest first; each checks the retry window itself.
+            unit 2100 --publish --date "$d" "${allow[@]}" || { rc=$?; echo "publication for $d failed (rc=$rc); stopping"; break; }
+          done
+          exit "$rc"
+          QUEUED
+          chmod 0500 "$QS"
+          set +e
+          /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
+            --cpu-slots 2 --max-runtime 14400 --wait-timeout 1800 -- \
+            /bin/bash "$QS" "$MODE" "$RUNNER" "$RUN" "$@"
+          RC=$?
+          set -e
+          rm -f "$QS"
+          echo "pi-shared-task exit: $RC"
+          exit "$RC"
+          REMOTE
