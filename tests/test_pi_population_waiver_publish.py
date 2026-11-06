@@ -58,8 +58,12 @@ FAKE = {
         def read_payload_publication_pending(repo):
             p = _state(repo) / 'pending.json'
             return json.loads(p.read_text()) if p.exists() else {}
+        def _contract(repo, pointer):
+            by_generation = _state(repo) / 'contracts' / (str(pointer.get('generation_id')) + '.json')
+            path = by_generation if by_generation.exists() else _state(repo) / 'contracts' / (pointer['observation_date'] + '.json')
+            return json.loads(path.read_text())
         def maybe_publish_app_payload(repo, pointer):
-            contract = json.loads((_state(repo) / 'contracts' / (pointer['observation_date'] + '.json')).read_text())
+            contract = _contract(repo, pointer)
             ok = gate.publication_allowed(contract)[0]
             if ok and contract.get('observation_state') == 'partial':
                 ok = source.verify_reconciled_source(_state(repo), _state(repo) / 'exports', pointer['observation_date'], contract)
@@ -69,6 +73,8 @@ FAKE = {
         def clear_payload_publication_pending(repo, pointer):
             with open(_state(repo) / 'cleared.log', 'a') as log:
                 log.write(pointer['observation_date'] + '\\n')
+            with open(_state(repo) / 'cleared-generations.log', 'a') as log:
+                log.write(str(pointer.get('generation_id')) + '\\n')
     """,
     "pi_payload_retry_policy.py": """
         import os
@@ -116,7 +122,12 @@ FAKE = {
     "cdr_observation_selection.py": """
         import json
         def load_pointer_observation(state, pointer):
-            return {'contract': json.loads((state / 'contracts' / (pointer['observation_date'] + '.json')).read_text())}
+            by_generation = state / 'contracts' / (str(pointer.get('generation_id')) + '.json')
+            path = by_generation if by_generation.exists() else state / 'contracts' / (pointer['observation_date'] + '.json')
+            contract = json.loads(path.read_text())
+            if contract['generation_id'] != pointer.get('generation_id'):
+                raise ValueError('observation pointer identity mismatch')
+            return {'contract': contract}
     """,
 }
 
@@ -197,7 +208,7 @@ def test_changed_contract_after_report_is_not_waived(repo):
 def test_missing_pending_pointer_and_window_fail_closed(repo):
     seed(repo, [contract("2026-10-29")])
     code, rows = run(repo, "--report", "--date", "2026-11-03")
-    assert code == 1 and rows == [{"date": "2026-11-03", "decision": "refused", "detail": "no_pending_pointer"}]
+    assert code == 1 and rows == [{"date": "2026-11-03", "decision": "refused", "detail": "no_verified_capture"}]
     import os
     code, rows = run(repo, "--report", "--date", "2026-10-29", env={**os.environ, "FAKE_WINDOW": "insufficient_publication_window"})
     assert code == 3 and rows == [{"result": "DEFERRED", "reason": "insufficient_publication_window"}]
@@ -336,3 +347,44 @@ def test_malformed_ledger_event_is_reported_not_fatal(repo):
     seed(repo, [contract("2026-10-29")])
     code, rows = run(repo, "--inventory", "--date", "2026-10-29")
     assert code == 0 and rows[0]["inventory"] == "obs-bad" and "error" in rows[0]
+
+
+def test_several_pending_captures_publish_the_most_complete_and_clear_all(repo):
+    thin = contract("2026-11-01", generation="obs-a")
+    thin["coverage"]["eligible_rate_rows"] = 10
+    rich = contract("2026-11-01", generation="obs-b")
+    rich["coverage"]["eligible_rate_rows"] = 900
+    for item in (thin, rich):
+        item.pop("contract_digest")
+        import hashlib
+        item["contract_digest"] = hashlib.sha256(json.dumps(item, sort_keys=True).encode()).hexdigest()
+        (repo / "state/contracts" / (item["generation_id"] + ".json")).write_text(json.dumps(item))
+    pointers = [{"observation_date": "2026-11-01", "generation_id": g} for g in ("obs-a", "obs-b")]
+    (repo / "state/pending.json").write_text(json.dumps({"pointer": pointers[0], "queued_pointers": pointers[1:]}))
+    code, rows = run(repo, "--report", "--policy", "all", "--date", "2026-11-01")
+    row = [r for r in rows if "decision" in r][0]
+    assert row["generation_id"] == "obs-b" and row["alternatives"] == 1 and row["contract_digest"] == rich["contract_digest"]
+    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-11-01",
+                     "--allow-digest", "2026-11-01=" + rich["contract_digest"])
+    assert code == 0 and published(repo) == ["2026-11-01 ok"]
+    assert sorted((repo / "state/cleared-generations.log").read_text().split()) == ["obs-a", "obs-b"]
+
+
+def test_lost_pending_pointer_is_recovered_from_the_verified_ledger(repo):
+    import os
+    (repo / "state/pending.json").write_text("{}")
+    first = contract("2026-10-30", generation="obs-2026-10-30-x")
+    ledger(repo, first)
+    env = {**os.environ, "FAKE_DATED_MISSING": "2026-10-30"}
+    code, rows = run(repo, "--report", "--policy", "all", "--pending-since", "2026-10-30", env=env)
+    assert rows[0] == {"selected": ["2026-10-30"]}
+    row = rows[1]
+    assert row["source"] == "ledger" and row["decision"] == "waivable" and code == 0
+    # Publish run: the fake release becomes live once published.
+    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-10-30", "--pending-since", "2026-10-30",
+                     "--allow-digest", "2026-10-30=" + first["contract_digest"])
+    assert code == 0
+    assert published(repo) == ["2026-10-30 ok"]
+    assert not (repo / "state/cleared.log").exists()  # never queued, nothing to clear
+    receipt = json.loads((repo / "state/population-waiver-publications-v1" / (first["contract_digest"] + ".json")).read_text())
+    assert receipt["source"] == "ledger"

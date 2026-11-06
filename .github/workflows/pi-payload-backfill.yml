@@ -115,7 +115,7 @@ jobs:
           fi
           { echo "mode=$MODE"; echo "policy=$POLICY"; echo "dates=$selected"; echo "since=$since"; } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -134,7 +134,7 @@ jobs:
           done
 
       - name: Join Tailscale tailnet
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c  # v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}

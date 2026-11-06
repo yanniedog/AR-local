@@ -115,6 +115,39 @@ def dated_release_complete(day):
     return status == "present" and isinstance(live, dict) and str(live.get("run_date") or "") == day
 
 
+def completeness(contract):
+    """Sort key: most complete retained capture first (higher is better)."""
+    coverage = contract.get("coverage") or {}
+    number = lambda key: coverage.get(key) if type(coverage.get(key)) is int else 0  # noqa: E731
+    return (contract.get("observation_state") == "complete", number("eligible_rate_rows"),
+            number("products_discovered"), -number("failure_records"),
+            -len(coverage.get("provider_population_unverified") or []),
+            str(contract.get("generation_id") or ""))
+
+
+def ledger_candidates(state, day, load_contract, load_pointer_observation):
+    """Verified (pointer, contract) pairs for every finalized ledger generation.
+
+    The pointer is built exactly as pi_cdr_selection_recovery builds one and is
+    then verified by load_pointer_observation (marker, event, contract binding).
+    """
+    found = []
+    for path in sorted((state / "ledger-v2" / "events" / day).glob("*.json")):
+        try:
+            event = json.loads(path.read_bytes())
+            contract = load_contract((state.resolve() / event["contract_path"]).resolve())
+            pointer = {"schema_version": 2, "observation_date": day,
+                       "generation_id": contract["generation_id"],
+                       "observation_state": contract["observation_state"],
+                       "ledger_event_digest": event.get("event_digest"),
+                       "marker_path": contract.get("completion_marker_path"),
+                       "export_path": contract.get("source_path")}
+            found.append((pointer, load_pointer_observation(state, pointer)["contract"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return found
+
+
 def candidates_by_date(daily, retry, repo, dates):
     pending = daily.read_payload_publication_pending(repo)
     found = {}
@@ -206,6 +239,17 @@ def main(argv=None):
             day = pointer.get("observation_date") if isinstance(pointer, dict) else None
             if isinstance(day, str) and DATE.fullmatch(day) and day >= args.pending_since:
                 dates.append(day)
+        # A finalized capture whose pending pointer was lost must not be stranded:
+        # every date up to yesterday without a usable dated release is selected
+        # too, and served from its best verified ledger generation.
+        from datetime import date, timedelta
+        from zoneinfo import ZoneInfo
+        day = date.fromisoformat(args.pending_since)
+        yesterday = datetime.now(ZoneInfo("Australia/Hobart")).date() - timedelta(days=1)
+        while day <= yesterday:
+            if day.isoformat() not in dates and not dated_release_complete(day.isoformat()):
+                dates.append(day.isoformat())
+            day += timedelta(days=1)
         dates = sorted(set(dates))
         emit(selected=dates)
         if not dates:
@@ -226,26 +270,37 @@ def main(argv=None):
     failures = 0
     with lock:
         found = candidates_by_date(daily, retry, repo, set(dates))
+        from cdr_export_contract import load_contract
         plan = []
         for day in dates:
-            pointers = found.get(day) or []
-            if len(pointers) != 1:
-                emit(date=day, decision="refused",
-                     detail="no_pending_pointer" if not pointers else "ambiguous_pending_pointers")
+            pending = []
+            for pointer in found.get(day) or []:
+                try:
+                    pending.append((pointer, load_pointer_observation(state, pointer)["contract"]))
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    emit(date=day, pending_pointer_invalid=pointer.get("generation_id"), error=str(error)[:200])
+            source_kind, options = "pending", pending
+            if not options and args.pending_since:
+                source_kind = "ledger"
+                options = ledger_candidates(state, day, load_contract, load_pointer_observation)
+            if not options:
+                emit(date=day, decision="refused", detail="no_verified_capture")
                 failures += 1
                 continue
-            pointer = pointers[0]
-            contract = load_pointer_observation(state, pointer)["contract"]
+            # Several captures for one date: publish the most complete one.
+            pointer, contract = max(options, key=lambda item: completeness(item[1]))
+            others = [p for p, _ in pending if p is not pointer]
             decision, detail = classify(gate, contract, args.policy)
             digest = str(contract.get("contract_digest") or "")
             emit(date=day, decision=decision, detail=detail, contract_digest=digest,
-                 generation_id=contract.get("generation_id"),
+                 generation_id=contract.get("generation_id"), source=source_kind,
+                 alternatives=len(options) - 1,
                  observation_state=contract.get("observation_state"),
                  unverified_providers=len((contract.get("coverage") or {}).get("provider_population_unverified") or []))
             if decision == "refused":
                 failures += 1
             else:
-                plan.append((day, pointer, digest, decision, detail))
+                plan.append((day, pointer, digest, decision, detail, source_kind, others))
         if args.report:
             return 1 if failures else 0
 
@@ -286,7 +341,7 @@ def main(argv=None):
         gate.publication_allowed = scoped
         source.reconciled_failure_statuses = scoped_statuses
         try:
-            for day, pointer, digest, decision, detail in plan:
+            for day, pointer, digest, decision, detail, source_kind, others in plan:
                 if decision == "waivable" and authorised.get(day) != digest:
                     emit(date=day, result="SKIPPED", reason="digest_not_authorised")
                     failures += 1
@@ -300,19 +355,24 @@ def main(argv=None):
                     emit(date=day, result="DATED_RELEASE_INCOMPLETE", detail="pointer kept pending")
                     failures += 1
                     continue
-                daily.clear_payload_publication_pending(repo, pointer)
                 if decision == "waivable":
+                    # Receipt first: if the run stops before the pointer clears,
+                    # the date is retried and the audit record already exists.
                     receipt = {
                         "schema_version": 1, "reason": "operator_waived_" + args.policy,
                         "authority": AUTHORITY[args.policy],
                         "observation_date": day, "contract_digest": digest,
                         "generation_id": pointer.get("generation_id"),
-                        "waived_verdict": detail, "pointer": pointer,
+                        "waived_verdict": detail, "pointer": pointer, "source": source_kind,
                         "published_at": datetime.now(timezone.utc).isoformat(),
                     }
                     receipt_path = state / "population-waiver-publications-v1" / f"{digest}.json"
                     if not receipt_path.exists():
                         atomic_write_json(receipt_path, receipt, create_once=True)
+                # The published capture and any less complete alternatives for the
+                # same date leave the queue; a ledger-recovered capture was never in it.
+                for queued in ([pointer] if source_kind == "pending" else []) + others:
+                    daily.clear_payload_publication_pending(repo, queued)
         finally:
             gate.publication_allowed = original
             source.reconciled_failure_statuses = original_statuses
