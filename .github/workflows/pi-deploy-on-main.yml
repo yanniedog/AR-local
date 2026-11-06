@@ -211,8 +211,10 @@ jobs:
           )
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -o ConnectTimeout=60 ar-local-pi5 \
-            'test -x /usr/local/bin/pi-shared-task && /usr/local/bin/pi-shared-task --dry-run --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 90 -- /bin/true'
+          # ar-local-ci is a forced-command account: only status/check/activate
+          # are accepted. `status` loads the commissioned runtime profile, which
+          # requires the installed shared-queue files, and fails closed otherwise.
+          ssh -o BatchMode=yes -o ConnectTimeout=60 ar-local-pi5 status >/dev/null
 
       - name: Deploy exact approved commit and verify
         if: >-

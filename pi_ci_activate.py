@@ -379,7 +379,10 @@ class Native:
             'cgroup': self.binding['cgroup']})
         os.chmod(namespace, 0o444)
         argv = ['/usr/bin/bwrap', '--die-with-parent', '--new-session', '--unshare-pid',
-                '--unshare-ipc', '--unshare-uts', '--unshare-net', '--disable-userns', '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev',
+                # Host network stays: the smoke checks must reach the dashboard.
+                # --disable-userns needs --unshare-user, which would break the
+                # setpriv identity switch; the worker runs as pi with no caps/NNP.
+                '--unshare-ipc', '--unshare-uts', '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev',
                 '--tmpfs', '/run', '--tmpfs', '/tmp', '--tmpfs', '/home', '--tmpfs', '/root',
                 '--ro-bind', str(self.context['stage']), '/candidate',
                 '--ro-bind', str(self.context['stage']), str(original_source),
@@ -410,7 +413,9 @@ class Native:
         if result.get('result') != 'PASS' or result.get('phase') != phase:
             raise ValueError('runtime verification phase did not pass')
         guard()
-        release.write(self.context['work'] / (phase + '-verified.json'), result)
+        # The independent finalizer may repeat a phase (rollback-check): receipts
+        # are named after their own worker directory, never shared.
+        release.write(self.context['work'] / (work.name + '-verified.json'), result)
         return result
 
 
