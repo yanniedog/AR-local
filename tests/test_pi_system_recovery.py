@@ -644,33 +644,51 @@ def test_source_fat_binds_mount_to_recorded_boot_uuid(tmp_path, monkeypatch):
     monkeypatch.setattr(fs, "fat_mount", lambda path, text: dict(mount))
     monkeypatch.setattr(fs.Path, "read_text", lambda self, *a, **k: "")
     boot = types.SimpleNamespace(st_uid=0, st_gid=0, st_mode=stat.S_IFDIR | 0o755, st_dev=0x10301)
-    devices = {"/boot/firmware": boot,
+    devices = {"/boot/firmware": boot, "/source/boot": boot,
                str(tmp_path / "ABCD-1234"): types.SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=0x10301),
                str(tmp_path / "FFFF-0000"): types.SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=0x10302)}
-    monkeypatch.setattr(fs.os, "stat", lambda path: devices[str(path)])
-    assert fs.source_fat("/boot/firmware", "abcd-1234", by_uuid=tmp_path) == mount
+    real_stat = os.stat
+    monkeypatch.setattr(fs.os, "stat", lambda path, *a, **k: devices[str(path)] if str(path) in devices else real_stat(path, *a, **k))
+    # Host launcher: the UUID's block device must back the live boot mount.
+    proved = fs.boot_device("abcd-1234", by_uuid=tmp_path)
+    assert proved == 0x10301
     with pytest.raises(ValueError, match="not the recorded boot partition"):
-        fs.source_fat("/boot/firmware", "FFFF-0000", by_uuid=tmp_path)
+        fs.boot_device("FFFF-0000", by_uuid=tmp_path)
     with pytest.raises(ValueError, match="UUID required"):
-        fs.source_fat("/boot/firmware", None, by_uuid=tmp_path)
+        fs.boot_device(None, by_uuid=tmp_path)
+    # Sandbox: only the proved device number, no host device nodes needed.
+    assert fs.source_fat("/source/boot", proved) == mount
+    with pytest.raises(ValueError, match="host-proved boot partition"):
+        fs.source_fat("/source/boot", 0x10302)
+    with pytest.raises(ValueError, match="host-proved boot partition"):
+        fs.source_fat("/source/boot", None)
 
 
 def test_catalog_matched_raw_file_change_after_match_refuses_finalize(tmp_path):
-    root = tmp_path / "root"; (root / "data").mkdir(parents=True)
-    (root / "data/raw.json").write_bytes(b"old")
-    (root / "data/kept.json").write_bytes(b"old")
+    root = tmp_path / "root"; (root / "data").mkdir(parents=True); (root / "opt").mkdir()
+    for name in ("data/raw.json", "data/deleted.json", "opt/online.json"):
+        (root / name).write_bytes(b"old")
     work = tmp_path / "work"; work.mkdir()
     database = sqlite3.connect(work / "inventory.sqlite")
     database.execute("CREATE TABLE entries(phase TEXT,tree TEXT,path TEXT,value TEXT)")
-    for name in ("data/raw.json", "data/kept.json"):
-        database.execute("INSERT INTO entries VALUES ('prepared','root',?,?)",
-                         (name, json.dumps({"source": capture.fingerprint((root / name).lstat()), "external": {"sha256": "x"}})))
+    row = lambda name, external=True: json.dumps({"source": capture.fingerprint((root / name).lstat()), "external": {"sha256": "x"} if external else None})
+    for name in ("data/raw.json", "data/deleted.json", "opt/online.json"):
+        database.execute("INSERT INTO entries VALUES ('prepared','root',?,?)", (name, row(name)))
+    database.execute("INSERT INTO entries VALUES ('final','root','data/raw.json',?)", (row("data/raw.json"),))
+    for index in range(1000):  # non-external rows are never decoded
+        database.execute("INSERT INTO entries VALUES ('prepared','root',?,?)", ("opt/plain%d" % index, json.dumps({"source": [0], "external": None})))
     database.commit(); database.close()
-    assert capture.verify_external_unchanged(work, {"root": str(root)}) == 2
+    # data/deleted.json vanished before the final walk: absent, not "changed".
+    (root / "data/deleted.json").unlink()
+    assert capture.verify_external_unchanged(work, {"root": str(root)}, ["data"]) == 2
     time.sleep(0.01)
     (root / "data/raw.json").write_bytes(b"new")
     with pytest.raises(ValueError, match="changed after matching: data/raw.json"):
-        capture.verify_external_unchanged(work, {"root": str(root)})
+        capture.verify_external_unchanged(work, {"root": str(root)}, ["data"])
+    (root / "data/raw.json").write_bytes(b"old")
+    (root / "opt/online.json").write_bytes(b"newer")
+    with pytest.raises(ValueError, match="opt/online.json"):
+        capture.verify_external_unchanged(work, {"root": str(root)}, ["data"])
 
 
 def test_hardlink_created_after_prepare_across_scopes_refuses_finalize(tmp_path):

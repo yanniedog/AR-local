@@ -129,6 +129,17 @@ def package_lockset(plan):
             os.close(descriptor)
 
 
+def host_boot_device(additional):
+    """Prove the boot UUID from the reviewed layout against the host device nodes."""
+    from pi_system_filesystems import boot_device
+    values = dict(zip(additional[::2], additional[1::2]))
+    layout = values["--layout"]
+    if not layout.startswith("/source/root/"):
+        raise ValueError("baseline layout must be a canonical source path")
+    host = Path(layout[len("/source/root"):])
+    return boot_device(json.loads(host.read_text())["boot_uuid"])
+
+
 def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=None, package_receipt=None, probe=False):
     arguments = ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts",
                  "--tmpfs", "/", "--dir", "/source", "--dir", "/scratch", "--dir", "/code"]
@@ -169,6 +180,8 @@ def argv_for(bundle, work, phase, additional, child_receipt=None, restored_raw=N
         arguments += ["/usr/bin/python3", "-E", "-s", "-S", "-B", "/code/pi_system_capture.py", phase, *additional, "--workspace", "/scratch"]
         if phase == "baseline":
             arguments += ["--root", "/source/root", "--boot", "/source/boot", "--workspace-source-relative", work.relative_to("/").as_posix()]
+            if additional:
+                arguments += ["--boot-device", str(host_boot_device(additional))]
         if phase == "finalize":
             arguments += ["--quiescence", "/quiescence.json"]
         if phase in {"baseline", "prepare", "finalize"}:

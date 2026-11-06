@@ -386,34 +386,38 @@ def copy_phase(work, settings, phase):
         copy_batches(work, settings, tree, null_names(directory_list), phase + "-directories")
 
 
-def verify_external_unchanged(work, settings):
+def verify_external_unchanged(work, settings, scopes):
     """Re-observe every catalog-matched raw file after the final copy.
 
     Omitted raw files are restored from the external catalog, so their source
-    must still be the exact inode/ctime/metadata that matched it. The final
-    phase's rows supersede prepared rows for the same path.
+    must still be the exact inode/ctime/metadata that matched it. Inside the
+    mutable scopes the final inventory is authoritative (a file deleted before
+    it is simply absent); outside them the prepared inventory is. Rows stream
+    from SQLite and only external rows are decoded, keeping memory bounded.
     """
     database = sqlite3.connect(work / "inventory.sqlite")
-    rows = {}
-    for phase in ("prepared", "final"):
-        for name, serialized in database.execute(
-                "SELECT path,value FROM entries WHERE phase=? AND tree='root'", (phase,)):
-            rows[name] = json.loads(serialized)
-    database.close()
     root = Path(settings["root"])
-    changed = []
-    for name, value in rows.items():
-        if not value.get("external"):
+    in_scope = lambda name: any(name == scope or name.startswith(scope + "/") for scope in scopes)
+    changed, checked = [], 0
+    query = ("SELECT phase,path,value FROM entries WHERE tree='root' AND phase IN ('prepared','final') "
+             "AND json_extract(value,'$.external') IS NOT NULL")
+    for phase, name, serialized in database.execute(query):
+        if (phase == "final") != in_scope(name):
             continue
+        checked += 1
         try:
             current = fingerprint((root / name).lstat())
         except FileNotFoundError:
             current = None
-        if current != value["source"]:
-            changed.append(name)
+        if current != json.loads(serialized)["source"]:
+            if len(changed) < 20:
+                changed.append(name)
+            else:
+                break
+    database.close()
     if changed:
-        raise ValueError("catalog-matched raw files changed after matching: " + ", ".join(sorted(changed)[:20]))
-    return len(rows)
+        raise ValueError("catalog-matched raw files changed after matching: " + ", ".join(sorted(changed)))
+    return checked
 
 
 def capacity_preflight(work, phase, *, staged=None):
@@ -485,7 +489,9 @@ def baseline(args):
     settings = {"schema": SCHEMA, "workspace": str(work), "root": str(root), "boot": str(boot),
                 "workspace_source_relative": excluded, "started_at": utc(), "layout": json.loads(Path(args.layout).read_text()),
                 "baseline_packages": packages}
-    settings["layout"]["boot_mount"] = source_fat(boot, settings["layout"].get("boot_uuid"))
+    if not args.boot_device or not args.boot_device.isdigit():
+        raise ValueError("host-proved boot device binding required")
+    settings["layout"]["boot_mount"] = source_fat(boot, int(args.boot_device))
     database, cloud = raw_index(work, args.catalog, args.catalog_sha256, args.file_index)
     database.close()
     settings["external_recovery"] = cloud
@@ -670,7 +676,7 @@ def finalize(args):
     # Mutable state can grow between prepare and finalize; recheck before copying.
     capacity_preflight(work, "final", staged=json.loads((work / "prepared-capacity.json").read_text()))
     copy_phase(work, settings, "final")
-    verify_external_unchanged(work, settings)
+    verify_external_unchanged(work, settings, scopes)
     restore_runtime_directories(work, packages)
     boot_after = tree_manifest(settings["boot"], work / "boot-source-after.jsonl")
     if boot_before != boot_after:
@@ -910,7 +916,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("baseline", "prepare", "finalize", "archive"))
     parser.add_argument("--workspace", type=Path, required=True)
-    for name in ("root", "boot", "layout", "catalog", "file-index", "catalog-sha256", "workspace-source-relative", "quiescence", "package-proof"):
+    for name in ("root", "boot", "layout", "catalog", "file-index", "catalog-sha256", "workspace-source-relative", "quiescence", "package-proof", "boot-device"):
         parser.add_argument("--" + name)
     args = parser.parse_args(argv)
     try:

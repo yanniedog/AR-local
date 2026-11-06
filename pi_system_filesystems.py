@@ -46,16 +46,27 @@ def fat_options(settings):
     return [key + "=" + str(value) for key, value in settings.items() if key != "fstype"]
 
 
-def source_fat(path, boot_uuid, *, by_uuid=Path("/dev/disk/by-uuid")):
-    settings = fat_mount(path, Path("/proc/self/mountinfo").read_text())
-    info = os.stat(path)
-    # Bind the mounted volume to this Pi's recorded boot partition: another
-    # structurally valid FAT volume at the same path must not be archived.
+def boot_device(boot_uuid, path="/boot/firmware", *, by_uuid=Path("/dev/disk/by-uuid")):
+    """Host-side proof that the mount at ``path`` is the recorded boot partition.
+
+    Runs in the trusted launcher: the capture sandbox has a fresh /dev without
+    host device nodes, so it receives only the proved device number.
+    """
     if not isinstance(boot_uuid, str) or not re.fullmatch(r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}", boot_uuid):
         raise ValueError("recorded boot volume UUID required")
     device = os.stat(by_uuid / boot_uuid.upper())
-    if not stat.S_ISBLK(device.st_mode) or device.st_rdev != info.st_dev:
+    mounted = os.stat(path).st_dev
+    if not stat.S_ISBLK(device.st_mode) or device.st_rdev != mounted:
         raise ValueError("mounted boot volume is not the recorded boot partition")
+    return mounted
+
+
+def source_fat(path, proved_device):
+    settings = fat_mount(path, Path("/proc/self/mountinfo").read_text())
+    info = os.stat(path)
+    # A bind of the host mount keeps its superblock device number.
+    if type(proved_device) is not int or info.st_dev != proved_device:
+        raise ValueError("mounted boot volume is not the host-proved boot partition")
     if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (int(settings["uid"]), int(settings["gid"]), 0o777 & ~int(settings["dmask"], 8)):
         raise ValueError("source FAT stat metadata differs from its kernel mount options")
     return settings
