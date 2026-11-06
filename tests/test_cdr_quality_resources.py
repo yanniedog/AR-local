@@ -38,7 +38,9 @@ def test_admission_reserves_entire_budget_and_runtime_stops_above_host_floor():
     limits = resources.Limits()
     assert resources.host_violation(host(5 * resources.GIB), host(), limits, admission=True) == "host_reserve_headroom"
     assert resources.host_violation(host(2 * resources.GIB), host(), limits) == "host_reserve_headroom"
-    assert resources.host_violation(host(swap_out=1), host(), limits) is None  # recorded, not a stop
+    # Canary records host swap-out; other callers keep the strict default.
+    assert resources.host_violation(host(swap_out=1), host(), limits, record_host_swap_out=True) is None
+    assert resources.host_violation(host(swap_out=1), host(), limits) == "host_swap_out_activity"
     assert resources.host_violation(host(psi=10), host(), limits) == "host_memory_pressure"
     assert resources.host_violation(host(), host(), limits) is None
 

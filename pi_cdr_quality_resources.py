@@ -105,14 +105,18 @@ def swap_progress(sample: dict, baseline: dict, previous: dict | None = None) ->
 
 
 def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=False, previous=None,
-                   _pressure_verified=False) -> str | None:
+                   _pressure_verified=False, record_host_swap_out=False) -> str | None:
     progress = swap_progress(sample, baseline, previous)
     needed = limits.reserve_bytes + limits.margin_bytes + (limits.workload_bytes if admission else 0)
     if sample["available_bytes"] < needed:
         return "host_reserve_headroom"
-    # Host-wide swap-out is recorded, not a stop (owner decision 2026-11-07):
-    # Linux pages idle anonymous memory out with ample MemAvailable. Workload
-    # swap (MemorySwapMax=0), reserve headroom, cold swap-in and PSI still stop.
+    # Quality canary (record_host_swap_out=True): host-wide swap-out is recorded,
+    # not a stop (owner decision 2026-11-07). Linux pages idle anonymous memory
+    # out with ample MemAvailable; workload swap (MemorySwapMax=0), reserve
+    # headroom, cold swap-in and PSI still stop. Other callers (Drive backup,
+    # terms acquisition) keep their own stricter policy.
+    if progress["swap_out_bytes"] and not (_pressure_verified or record_host_swap_out):
+        return "host_swap_out_activity"
     if progress["swap_in_bytes"] > limits.cold_swap_in_bytes:
         return "host_cold_swap_in_budget"
     if sample["psi_avg10"] is not None and sample["psi_avg10"] >= 10:
@@ -120,7 +124,8 @@ def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=Fa
     return None
 
 
-def preflight(limits: Limits = Limits(), *, admission=False, pressure_context=None) -> dict:
+def preflight(limits: Limits = Limits(), *, admission=False, pressure_context=None,
+              record_host_swap_out=False) -> dict:
     limits.validate()
     if sys.platform != "linux" or not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
         raise RuntimeError("Linux pidfd supervision is required")
@@ -132,7 +137,8 @@ def preflight(limits: Limits = Limits(), *, admission=False, pressure_context=No
     if pressure_context is not None:
         pressure_context.observe(second)
     reason = host_violation(second, first, limits, admission=admission,
-                            _pressure_verified=pressure_context is not None)
+                            _pressure_verified=pressure_context is not None,
+                            record_host_swap_out=record_host_swap_out)
     if reason:
         raise RuntimeError(f"resource preflight blocked: {reason}")
     # Keep the first counters so admission readback counts toward the same
@@ -313,7 +319,8 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
                 reason = f"pressure_evidence: {type(error).__name__}: {error}"
         if reason is None:
             reason = host_violation(host, baseline, limits, previous=previous_host,
-                                    _pressure_verified=pressure_context is not None)
+                                    _pressure_verified=pressure_context is not None,
+                                    record_host_swap_out=True)
         if sample["rss_bytes"] >= limits.workload_bytes - limits.margin_bytes:
             reason = "aggregate_rss_early_stop"
         elif sample["swap_bytes"]:
@@ -367,8 +374,9 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
             pressure_context = PressureContext(output.parent / "pressure", pressure_binding_sha256,
                                                 unit=cgroup.name, operation=output.parent)
         receipt["admission_zones"] = zone_snapshot(stage="before_resource_preflight")
-        baseline = (preflight(limits, admission=True) if pressure_context is None else
-                    preflight(limits, admission=True, pressure_context=pressure_context))
+        baseline = (preflight(limits, admission=True, record_host_swap_out=True) if pressure_context is None else
+                    preflight(limits, admission=True, pressure_context=pressure_context,
+                              record_host_swap_out=True))
         receipt.update(cgroup=str(cgroup), baseline=baseline,
             minimum_available_bytes=min(baseline["available_bytes"], baseline["admission_sample"]["available_bytes"]),
             page_size_bytes=baseline["page_size_bytes"],
@@ -464,7 +472,7 @@ def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=N
             or receipt.get("cold_swap_in_bytes") != progress["swap_in_bytes"]
             or receipt.get("peak_workload_swap_bytes") != 0
             or host_violation(receipt["last_host_sample"], receipt["baseline"], limits,
-                              _pressure_verified=pressure_verified)):
+                              _pressure_verified=pressure_verified, record_host_swap_out=True)):
         raise ValueError("complete successful bounded-resource receipt required")
 
 
