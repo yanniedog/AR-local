@@ -43,6 +43,15 @@ HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
         "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
         "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
+    "9": {
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_product_changes": "ec8fd2a618bd34c04e84e8e28401ed9f3c848e00bb27e3e5b20f03f225062049",
+        "bank_product_facts": "2b4ab300506dc67339d0982de038042c8cde0cd3cc8dc9b8d51ec0b1a4c2f788",
+        "bank_products": "f549986e40e4db7fa9fca63b44b7bd6d417e4073962cf46e85b8effea0ffcfc4",
+        "bank_rates": "9daac7b6d9062a0e6469dd2b0500b007e98665a22b6dc035f17639569bd1305b",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
+    },
 }
 _LEGACY_CORE_POPULATIONS = frozenset(
     {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"}
@@ -54,6 +63,12 @@ HISTORICAL_EXPORT_POPULATIONS = {
         _LEGACY_CORE_POPULATIONS | {"holder_attempts"},
     ),
     "8": (
+        _LEGACY_CORE_POPULATIONS
+        | {"product_facts", "product_changes", "holder_attempts"},
+    ),
+    # Version 9 adds bank_products.public_pricing_source_json and
+    # bank_rates.public_rate_disposition; the exported populations are unchanged.
+    "9": (
         _LEGACY_CORE_POPULATIONS
         | {"product_facts", "product_changes", "holder_attempts"},
     ),

@@ -17,7 +17,7 @@ from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
-SCHEMA_VERSION = "8"
+SCHEMA_VERSION = "9"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json"],
