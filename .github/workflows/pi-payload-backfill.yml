@@ -1,0 +1,206 @@
+# Publish missing dated app payloads from the Pi's saved exports with the
+# production checkout's own reviewed backfill tool, over the same hosted-runner
+# Tailscale/SSH route as pi-quality-canary.
+#
+# Operator decision (2026-11-06, repository owner): dates withheld only by
+# `unverified_provider_population` may be published with
+# `backfill_app_payload.py --force`, which waives that policy verdict alone and
+# records it as `forced_over_unverified_provider_population`. Source selection,
+# reconciliation and raw-artifact checks still apply (force cannot waive them),
+# and any other withholding reason is refused here.
+#
+# Guards:
+# - manual dispatch only, main-branch definition only;
+# - dates limited to the authorised gap (2026-10-29 onward, not after today);
+# - dates that already have an app-payload-<date> release are never re-published;
+# - every invocation runs the production checkout's unmodified tool inside a
+#   bounded transient systemd unit, so the tool's own 03:30-22:00 window,
+#   containment check and production lock apply;
+# - `dry-run` (default) reports each date's exact gate reason and writes nothing.
+name: pi-payload-backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (read-only gate report) or publish"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - "dry-run"
+          - "publish"
+      dates:
+        description: "Space-separated YYYY-MM-DD dates (2026-10-29 onward)"
+        required: true
+        type: string
+      confirm:
+        description: "Type PUBLISH_OVER_POPULATION_GATE for publish mode"
+        required: false
+        default: ""
+        type: string
+      refresh_latest:
+        description: "Also advance app-payload-latest when its newest date is admitted"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  AUTHORISED_FROM: "2026-10-29"
+  WAIVABLE_REASON: unverified_provider_population
+
+concurrency:
+  group: pi-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  payload-backfill:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Validate inputs and select missing dates
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          DATES: ${{ inputs.dates }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = "publish" ]; then
+            test "$CONFIRM" = "PUBLISH_OVER_POPULATION_GATE" || { echo "::error::publish mode needs the typed confirmation"; exit 1; }
+          fi
+          today="$(TZ=Australia/Hobart date +%F)"
+          missing=""
+          for d in $DATES; do
+            [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "::error::invalid date $d"; exit 1; }
+            date -d "$d" +%F >/dev/null
+            if [[ "$d" < "$AUTHORISED_FROM" || "$d" > "$today" ]]; then
+              echo "::error::$d is outside the authorised range $AUTHORISED_FROM..$today"; exit 1
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/app-payload-$d" --jq .tag_name >/dev/null 2>&1; then
+              echo "$d: app-payload-$d already exists; not touched"
+            else
+              missing="$missing $d"
+            fi
+          done
+          missing="$(echo $missing | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+          echo "dates=$missing" >> "$GITHUB_OUTPUT"
+          echo "Selected (missing on GitHub): ${missing:-none}"
+
+      - name: Require Pi and Tailscale credentials
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          set -euo pipefail
+          for v in PI_SSH_PRIVATE_KEY PI_SSH_HOST PI_SSH_KNOWN_HOSTS TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET; do
+            test -n "${!v}" || { echo "::error::$v missing"; exit 1; }
+          done
+
+      - name: Join Tailscale tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
+      - name: Configure SSH for Pi
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_deploy_key ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${PI_SSH_USER:-pi}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 60
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Gate report and publication on the Pi
+        env:
+          MODE: ${{ inputs.mode }}
+          DATES: ${{ steps.select.outputs.dates }}
+          REFRESH_LATEST: ${{ inputs.refresh_latest }}
+        run: |
+          set -euo pipefail
+          # Inputs travel as positional arguments, never interpolated into the
+          # remote script text.
+          ssh ar-local-pi5 bash -s -- "$MODE" "$WAIVABLE_REASON" "$GITHUB_RUN_ID" "$REFRESH_LATEST" $DATES <<'REMOTE'
+          set -euo pipefail
+          MODE="$1"; WAIVABLE="$2"; RUN="$3"; LATEST="$4"; shift 4
+          REPO=/srv/ar-local/AR-local
+          cd "$REPO"
+          echo "production HEAD: $(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)" || { echo "production checkout is dirty; refusing"; exit 1; }
+          seq=0
+          tool() {
+            seq=$((seq + 1))
+            # Bounded, non-restarting, whole-tree-killed unit: the containment the
+            # tool's own require_backfill_window() demands before it takes the lock.
+            sudo systemd-run --quiet --wait --pipe --collect \
+              --unit="ar-local-payload-backfill-$RUN-$seq" \
+              -p Type=exec -p KillMode=control-group -p SendSIGKILL=yes \
+              -p FinalKillSignal=9 -p TimeoutStopFailureMode=kill -p Restart=no \
+              -p RuntimeMaxSec=1800 -p TimeoutStopSec=20 \
+              /usr/bin/bash "$REPO/scripts/backfill-app-payload.sh" "$@"
+          }
+          published=() refused=() noexport=()
+          for d in "$@"; do
+            out="$(tool --from-date "$d" --to-date "$d" --skip-latest --dry-run 2>&1)" || { echo "$out"; echo "dry run failed for $d"; exit 1; }
+            echo "$out"
+            reason=""; force=""
+            if grep -q "run_date=$d tag=[^ ]* skipped=withheld reason=" <<<"$out"; then
+              reason="$(grep -o "run_date=$d tag=[^ ]* skipped=withheld reason=[^ ]*" <<<"$out" | sed 's/.*reason=//')"
+              if [ "$reason" = "$WAIVABLE" ]; then force="--force"; fi
+            elif grep -q "dry-run run_date=$d " <<<"$out"; then
+              reason="admitted"
+            else
+              noexport+=("$d"); echo "== $d: no valid export on the Pi"; continue
+            fi
+            echo "== $d: gate=$reason"
+            if [ "$MODE" != "publish" ]; then continue; fi
+            if [ "$reason" != "admitted" ] && [ -z "$force" ]; then
+              refused+=("$d:$reason"); echo "== $d: refused, reason $reason is not operator-waived"; continue
+            fi
+            tool --from-date "$d" --to-date "$d" --skip-latest $force
+            published+=("$d")
+          done
+          if [ "$MODE" = "publish" ] && [ "$LATEST" = "true" ] && [ "${#published[@]}" -gt 0 ]; then
+            out="$(tool --latest-only --dry-run 2>&1)" || true
+            echo "$out"
+            latest="$(grep -o 'rolling latest refresh run_date=[0-9-]*' <<<"$out" | sed 's/.*=//' | head -1)"
+            gate="$(grep -o 'rolling latest refresh run_date=[^ ]* .* gate=[^ ]*' <<<"$out" | sed 's/.*gate=//' | head -1)"
+            in_scope=no
+            for d in "${published[@]}"; do [ "$d" = "$latest" ] && in_scope=yes; done
+            if grep -q "rolling latest withheld run_date=$latest reason=$WAIVABLE" <<<"$out" && [ "$in_scope" = yes ]; then
+              tool --latest-only --force
+            elif [ -n "$latest" ] && ! grep -q "rolling latest withheld" <<<"$out"; then
+              tool --latest-only
+            else
+              echo "== latest left unchanged (newest $latest, gate $gate)"
+            fi
+          fi
+          echo "SUMMARY mode=$MODE published=${published[*]:-none} refused=${refused[*]:-none} no_export=${noexport[*]:-none}"
+          [ "${#refused[@]}" -eq 0 ]
+          REMOTE
