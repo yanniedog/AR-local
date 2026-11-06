@@ -1,34 +1,36 @@
-# Publish missing dated app payloads from the Pi's saved exports with the
-# production checkout's own reviewed backfill tool, over the same hosted-runner
-# Tailscale/SSH route as pi-quality-canary.
+# Publish daily payloads withheld only by the provider-population gate, over the
+# hosted-runner Tailscale/SSH route used by pi-quality-canary.
 #
-# Operator decision (2026-11-06, repository owner): dates withheld only by
-# `unverified_provider_population` may be published with
-# `backfill_app_payload.py --force`, which waives that policy verdict alone and
-# records it as `forced_over_unverified_provider_population`. Source selection,
-# reconciliation and raw-artifact checks still apply (force cannot waive them),
-# and any other withholding reason is refused here.
+# Operator decision (2026-11-06, repository owner): observations withheld solely
+# by `unverified_provider_population` may be published. Every other gate stays.
+# scripts/pi_population_waiver_publish.py drives the production checkout's own
+# daily publication path (pi_daily_sync.maybe_publish_app_payload), so payload
+# format, revision coordination, encryption, dates index and the pending-marker
+# queue behave exactly as on a natural daily retry. Only that one verdict is
+# waived, and only for the requested dates' exact contract digests.
 #
 # Guards:
-# - manual dispatch only, main-branch definition only;
-# - dates limited to the authorised gap (2026-10-29 onward, not after today);
-# - dates that already have an app-payload-<date> release are never re-published;
-# - every invocation runs the production checkout's unmodified tool inside a
-#   bounded transient systemd unit, so the tool's own 03:30-22:00 window,
-#   containment check and production lock apply;
-# - `dry-run` (default) reports each date's exact gate reason and writes nothing.
+# - manual dispatch only, main-branch definition only; typed confirmation for
+#   publish mode; dates limited to 2026-10-29 through today (Hobart);
+# - admitted through the shared Pi queue (`pi-shared-task`), then run in bounded
+#   transient units as the daily service user with its environment, under the
+#   production daily-ingest lock and the daily retry window (03:30-22:00);
+# - the production checkout must be clean and is imported unmodified;
+# - `report` (default) writes nothing; `publish` first reports, then pins each
+#   waivable date to the contract digest that report saw; any other reason,
+#   ambiguity, missing pending pointer or failed upload fails the run.
 name: pi-payload-backfill
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "dry-run (read-only gate report) or publish"
+        description: "report (read-only) or publish"
         required: true
-        default: "dry-run"
+        default: "report"
         type: choice
         options:
-          - "dry-run"
+          - "report"
           - "publish"
       dates:
         description: "Space-separated YYYY-MM-DD dates (2026-10-29 onward)"
@@ -39,18 +41,12 @@ on:
         required: false
         default: ""
         type: string
-      refresh_latest:
-        description: "Also advance app-payload-latest when its newest date is admitted"
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: read
 
 env:
   AUTHORISED_FROM: "2026-10-29"
-  WAIVABLE_REASON: unverified_provider_population
 
 concurrency:
   group: pi-production-deploy
@@ -60,12 +56,11 @@ jobs:
   payload-backfill:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
-      - name: Validate inputs and select missing dates
+      - name: Validate inputs
         id: select
         env:
-          GH_TOKEN: ${{ github.token }}
           MODE: ${{ inputs.mode }}
           CONFIRM: ${{ inputs.confirm }}
           DATES: ${{ inputs.dates }}
@@ -75,22 +70,23 @@ jobs:
             test "$CONFIRM" = "PUBLISH_OVER_POPULATION_GATE" || { echo "::error::publish mode needs the typed confirmation"; exit 1; }
           fi
           today="$(TZ=Australia/Hobart date +%F)"
-          missing=""
+          selected=""
           for d in $DATES; do
             [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "::error::invalid date $d"; exit 1; }
             date -d "$d" +%F >/dev/null
             if [[ "$d" < "$AUTHORISED_FROM" || "$d" > "$today" ]]; then
               echo "::error::$d is outside the authorised range $AUTHORISED_FROM..$today"; exit 1
             fi
-            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/app-payload-$d" --jq .tag_name >/dev/null 2>&1; then
-              echo "$d: app-payload-$d already exists; not touched"
-            else
-              missing="$missing $d"
-            fi
+            selected="$selected $d"
           done
-          missing="$(echo $missing | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-          echo "dates=$missing" >> "$GITHUB_OUTPUT"
-          echo "Selected (missing on GitHub): ${missing:-none}"
+          selected="$(echo $selected | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+          test -n "${selected// /}" || { echo "::error::no dates"; exit 1; }
+          echo "dates=$selected" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Require Pi and Tailscale credentials
         env:
@@ -137,70 +133,82 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
-      - name: Gate report and publication on the Pi
+      - name: Stage the reviewed runner on the Pi
+        run: |
+          set -euo pipefail
+          SHA="$(sha256sum scripts/pi_population_waiver_publish.py | cut -d' ' -f1)"
+          echo "runner sha256: $SHA"
+          ssh ar-local-pi5 "install -d -m 0755 /srv/ar-local/payload-waiver-control && cat > /srv/ar-local/payload-waiver-control/runner-$SHA.py.tmp && chmod 0444 /srv/ar-local/payload-waiver-control/runner-$SHA.py.tmp && mv -f /srv/ar-local/payload-waiver-control/runner-$SHA.py.tmp /srv/ar-local/payload-waiver-control/runner-$SHA.py" < scripts/pi_population_waiver_publish.py
+          test "$(ssh ar-local-pi5 sha256sum /srv/ar-local/payload-waiver-control/runner-$SHA.py | cut -d' ' -f1)" = "$SHA"
+          echo "RUNNER_SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Report and publish through the shared queue
         env:
           MODE: ${{ inputs.mode }}
           DATES: ${{ steps.select.outputs.dates }}
-          REFRESH_LATEST: ${{ inputs.refresh_latest }}
         run: |
           set -euo pipefail
           # Inputs travel as positional arguments, never interpolated into the
           # remote script text.
-          ssh ar-local-pi5 bash -s -- "$MODE" "$WAIVABLE_REASON" "$GITHUB_RUN_ID" "$REFRESH_LATEST" $DATES <<'REMOTE'
+          ssh ar-local-pi5 bash -s -- "$MODE" "$RUNNER_SHA" "$GITHUB_RUN_ID" $DATES <<'REMOTE'
           set -euo pipefail
-          MODE="$1"; WAIVABLE="$2"; RUN="$3"; LATEST="$4"; shift 4
+          MODE="$1"; RSHA="$2"; RUN="$3"; shift 3
           REPO=/srv/ar-local/AR-local
+          CTL=/srv/ar-local/payload-waiver-control
+          RUNNER="$CTL/runner-$RSHA.py"
+          test "$(sha256sum "$RUNNER" | cut -d' ' -f1)" = "$RSHA"
           cd "$REPO"
           echo "production HEAD: $(git rev-parse HEAD)"
           test -z "$(git status --porcelain)" || { echo "production checkout is dirty; refusing"; exit 1; }
-          seq=0
-          tool() {
-            seq=$((seq + 1))
-            # Bounded, non-restarting, whole-tree-killed unit: the containment the
-            # tool's own require_backfill_window() demands before it takes the lock.
-            sudo systemd-run --quiet --wait --pipe --collect \
-              --unit="ar-local-payload-backfill-$RUN-$seq" \
-              -p Type=exec -p KillMode=control-group -p SendSIGKILL=yes \
-              -p FinalKillSignal=9 -p TimeoutStopFailureMode=kill -p Restart=no \
-              -p RuntimeMaxSec=1800 -p TimeoutStopSec=20 \
-              /usr/bin/bash "$REPO/scripts/backfill-app-payload.sh" "$@"
-          }
-          published=() refused=() noexport=()
-          for d in "$@"; do
-            out="$(tool --from-date "$d" --to-date "$d" --skip-latest --dry-run 2>&1)" || { echo "$out"; echo "dry run failed for $d"; exit 1; }
-            echo "$out"
-            reason=""; force=""
-            if grep -q "run_date=$d tag=[^ ]* skipped=withheld reason=" <<<"$out"; then
-              reason="$(grep -o "run_date=$d tag=[^ ]* skipped=withheld reason=[^ ]*" <<<"$out" | sed 's/.*reason=//')"
-              if [ "$reason" = "$WAIVABLE" ]; then force="--force"; fi
-            elif grep -q "dry-run run_date=$d " <<<"$out"; then
-              reason="admitted"
-            else
-              noexport+=("$d"); echo "== $d: no valid export on the Pi"; continue
-            fi
-            echo "== $d: gate=$reason"
-            if [ "$MODE" != "publish" ]; then continue; fi
-            if [ "$reason" != "admitted" ] && [ -z "$force" ]; then
-              refused+=("$d:$reason"); echo "== $d: refused, reason $reason is not operator-waived"; continue
-            fi
-            tool --from-date "$d" --to-date "$d" --skip-latest $force
-            published+=("$d")
+          test -x /usr/local/bin/pi-shared-task || { echo "pi-shared-task missing; refusing"; exit 1; }
+          QS="$CTL/queued-$RUN.sh"
+          cat > "$QS" <<'QUEUED'
+          set -euo pipefail
+          MODE="$1"; RUNNER="$2"; RUN="$3"; shift 3
+          REPO=/srv/ar-local/AR-local
+          U="$(systemctl show -p User --value ar-local-daily.service)"
+          G="$(systemctl show -p Group --value ar-local-daily.service)"
+          test -n "$U" || { echo "daily service user unknown"; exit 1; }
+          props=(-p "User=$U" -p "WorkingDirectory=$REPO" -p Type=exec -p KillMode=control-group
+                 -p SendSIGKILL=yes -p Restart=no -p TimeoutStopSec=45 -p CPUQuota=200%)
+          [ -n "$G" ] && props+=(-p "Group=$G")
+          # Mirror the daily service environment (values contain no spaces).
+          for kv in $(systemctl show -p Environment --value ar-local-daily.service); do props+=(-p "Environment=$kv"); done
+          for f in /etc/ar-local/app-payload.env /etc/ar-local/drive-backup.env /etc/ar-local/day-archive.env; do
+            props+=(-p "EnvironmentFile=-$f")
           done
-          if [ "$MODE" = "publish" ] && [ "$LATEST" = "true" ] && [ "${#published[@]}" -gt 0 ]; then
-            out="$(tool --latest-only --dry-run 2>&1)" || true
-            echo "$out"
-            latest="$(grep -o 'rolling latest refresh run_date=[0-9-]*' <<<"$out" | sed 's/.*=//' | head -1)"
-            gate="$(grep -o 'rolling latest refresh run_date=[^ ]* .* gate=[^ ]*' <<<"$out" | sed 's/.*gate=//' | head -1)"
-            in_scope=no
-            for d in "${published[@]}"; do [ "$d" = "$latest" ] && in_scope=yes; done
-            if grep -q "rolling latest withheld run_date=$latest reason=$WAIVABLE" <<<"$out" && [ "$in_scope" = yes ]; then
-              tool --latest-only --force
-            elif [ -n "$latest" ] && ! grep -q "rolling latest withheld" <<<"$out"; then
-              tool --latest-only
-            else
-              echo "== latest left unchanged (newest $latest, gate $gate)"
-            fi
-          fi
-          echo "SUMMARY mode=$MODE published=${published[*]:-none} refused=${refused[*]:-none} no_export=${noexport[*]:-none}"
-          [ "${#refused[@]}" -eq 0 ]
+          seq=0
+          unit() {
+            seq=$((seq + 1))
+            sudo systemd-run --quiet --wait --pipe --collect \
+              --unit="ar-local-payload-waiver-$RUN-$seq" "${props[@]}" -p RuntimeMaxSec="$1" \
+              /usr/bin/python3 -I "$RUNNER" --repo "$REPO" "${@:2}"
+          }
+          dargs=(); for d in "$@"; do dargs+=(--date "$d"); done
+          set +e
+          report="$(unit 900 --report "${dargs[@]}" 2>&1)"; rrc=$?
+          set -e
+          echo "$report"
+          if [ "$MODE" != "publish" ]; then exit "$rrc"; fi
+          [ "$rrc" -eq 0 ] || { echo "report refused at least one date; nothing published"; exit "$rrc"; }
+          rc=0
+          for d in "$@"; do
+            row="$(grep "^WAIVER " <<<"$report" | sed 's/^WAIVER //' | python3 -c 'import json,sys; d=sys.argv[1]; [print(r["decision"], r["contract_digest"]) for r in map(json.loads, sys.stdin) if r.get("date")==d and "decision" in r]' "$d")"
+            read -r decision digest <<<"$row"
+            allow=(); [ "$decision" = "waivable" ] && allow=(--allow-digest "$d=$digest")
+            # One date per unit, oldest first; each checks the retry window itself.
+            unit 2100 --publish --date "$d" "${allow[@]}" || { rc=$?; echo "publication for $d failed (rc=$rc); stopping"; break; }
+          done
+          exit "$rc"
+          QUEUED
+          chmod 0500 "$QS"
+          set +e
+          /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
+            --cpu-slots 2 --max-runtime 14400 --wait-timeout 1800 -- \
+            /bin/bash "$QS" "$MODE" "$RUNNER" "$RUN" "$@"
+          RC=$?
+          set -e
+          rm -f "$QS"
+          echo "pi-shared-task exit: $RC"
+          exit "$RC"
           REMOTE
