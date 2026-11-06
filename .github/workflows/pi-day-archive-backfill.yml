@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "status (read-only), backfill, or dates"
+        description: "status (read-only), backfill, dates, or stop (end a running backfill and free the Pi queue)"
         required: true
         default: "status"
         type: choice
@@ -28,6 +28,7 @@ on:
           - "status"
           - "backfill"
           - "dates"
+          - "stop"
       max_days:
         description: "backfill: maximum days this run (1-40)"
         required: false
@@ -62,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" = "schedule" ]; then MODE=backfill; MAX_DAYS=6; DATES=""; fi
-          case "$MODE" in status|backfill|dates) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
+          case "$MODE" in status|backfill|dates|stop) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
           [[ "$MAX_DAYS" =~ ^[0-9]+$ ]] && [ "$MAX_DAYS" -ge 1 ] && [ "$MAX_DAYS" -le 40 ] || { echo "::error::max_days must be 1-40"; exit 1; }
           sel=""
           for d in $DATES; do
@@ -133,6 +134,23 @@ jobs:
           set -euo pipefail
           MODE="$1"; MAX="$2"; RUN="$3"; shift 3
           SVC=ar-local-day-archive.service
+          if [ "$MODE" = "stop" ]; then
+            # Cancelling a run on GitHub does not stop its queued unit on the Pi.
+            # Stop only this workflow's worker units; the queued script then
+            # records status and exits, releasing the shared queue claim.
+            units="$(systemctl list-units --type=service --state=active --no-legend --plain 'ar-local-day-archive-run-*' | awk '{print $1}')"
+            [ -n "$units" ] || { echo "no running day-archive backfill unit"; exit 0; }
+            for u in $units; do
+              [[ "$u" =~ ^ar-local-day-archive-run-[0-9]+-[0-9]+\.service$ ]] || continue
+              echo "stopping $u"; sudo systemctl stop "$u"
+            done
+            for _ in $(seq 1 60); do
+              left="$(systemctl list-units --type=service --state=active --no-legend --plain 'ar-local-day-archive-run-*' | wc -l)"
+              [ "$left" -eq 0 ] && { echo "day-archive backfill stopped"; exit 0; }
+              sleep 2
+            done
+            echo "backfill unit still active"; exit 1
+          fi
           for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
             [ ! -e "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
           done
