@@ -81,7 +81,7 @@ def product_constraints(record, section, evidence_id):
         kind = str(item.get("constraintType", "")).upper()
         mapping = {"MIN_LIMIT": ("amount", "minimum"), "MAX_LIMIT": ("amount", "maximum"),
                    "MIN_BALANCE": ("balance", "minimum"), "MAX_BALANCE": ("balance", "maximum"),
-                   "MAX_LVR": ("lvr", "maximum")}
+                   "MIN_LVR": ("lvr", "minimum"), "MAX_LVR": ("lvr", "maximum")}
         if kind not in mapping:
             continue
         field, bound = mapping[kind]

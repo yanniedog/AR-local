@@ -310,3 +310,22 @@ def test_restore_rejects_orphan_foreign_keys_in_every_preserved_database(tmp_pat
     assert not report["ok"]
     assert any(finding.startswith("sqlite_foreign_key_check:") for finding in report["findings"])
     assert _file_hashes(tmp_path) == before
+
+
+def test_version8_database_migrated_in_place_matches_reviewed_version9_form(tmp_path: Path):
+    """ALTER TABLE leaves different CREATE text from a fresh v9 database."""
+    import cdr_outputs
+    from laptop_backup_daily_verify import (HISTORICAL_DAILY_SCHEMA_SQL_SHA256,
+                                            MIGRATED_DAILY_SCHEMA_SQL_SHA256)
+    exports = write_legacy_export(tmp_path, "2026-08-23", schema_version="8")
+    database = exports / "local-cdr.sqlite"
+    with closing(sqlite3.connect(database)) as connection:
+        cdr_outputs.ensure_db(connection)
+        connection.commit()
+        schema = {str(name): hashlib.sha256(str(sql).encode("utf-8")).hexdigest()
+                  for name, sql in connection.execute(
+                      "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name != 'sqlite_sequence'")}
+        version = connection.execute("SELECT value FROM schema_meta WHERE key = 'version'").fetchone()[0]
+    assert version == "9"
+    assert schema == MIGRATED_DAILY_SCHEMA_SQL_SHA256["9"]
+    assert schema != HISTORICAL_DAILY_SCHEMA_SQL_SHA256["9"]

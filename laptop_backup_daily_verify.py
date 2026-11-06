@@ -53,6 +53,20 @@ HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
         "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
 }
+# A version-8 database reopened by the version-9 initializer gains the two
+# public-pricing columns by ALTER TABLE, so SQLite keeps different CREATE text
+# than a fresh version-9 database. Both reviewed forms are accepted.
+MIGRATED_DAILY_SCHEMA_SQL_SHA256 = {
+    "9": {
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_product_changes": "ec8fd2a618bd34c04e84e8e28401ed9f3c848e00bb27e3e5b20f03f225062049",
+        "bank_product_facts": "2b4ab300506dc67339d0982de038042c8cde0cd3cc8dc9b8d51ec0b1a4c2f788",
+        "bank_products": "92bb0b349682e2dfb4eae077bf732b039e25fb60e0363ed8fdbeed8fd5092ee7",
+        "bank_rates": "3a6d0430c135f2d47cad4440ab9d970616f9c5fad32c639d2bafb84003cb80ac",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
+    },
+}
 _LEGACY_CORE_POPULATIONS = frozenset(
     {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"}
 )
@@ -174,7 +188,8 @@ def daily_reconciliation_bounded(
             "SELECT value FROM schema_meta WHERE key = 'version'"
         ).fetchone()
         schema_version = str(schema_row[0]) if schema_row else ""
-        if schema_sql != HISTORICAL_DAILY_SCHEMA_SQL_SHA256.get(schema_version):
+        if schema_sql not in (HISTORICAL_DAILY_SCHEMA_SQL_SHA256.get(schema_version),
+                              MIGRATED_DAILY_SCHEMA_SQL_SHA256.get(schema_version)):
             raise ValueError("daily database definition does not match its schema version")
         if frozenset(exported) not in HISTORICAL_EXPORT_POPULATIONS[schema_version]:
             raise ValueError("daily export populations do not match its schema version")

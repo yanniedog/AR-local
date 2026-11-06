@@ -446,3 +446,16 @@ def test_malformed_formula_children_fail_closed_with_validation_error(bad):
         validate_programme({'formula': bad, 'components': [], 'conditions': []})
     with pytest.raises(ValueError, match='formula_budget_exceeded'):
         validate_programme({'phases': ['not-an-object'], 'components': [], 'conditions': []})
+
+
+def test_product_minimum_lvr_is_preserved_as_an_inclusive_bound():
+    from cdr_public_rates_conditions import product_constraints
+    record = {"constraints": [{"constraintType": "MIN_LVR", "additionalValue": "0.8325"},
+                              {"constraintType": "MAX_LVR", "additionalValue": "0.95"}]}
+    conditions = product_constraints(record, "Mortgage", "evidence-1")
+    bounds = {(c["field"], key): c[key] for c in conditions for key in ("minimum", "maximum") if key in c}
+    assert bounds == {("lvr", "minimum"): "0.8325", ("lvr", "maximum"): "0.95"}
+    state = lambda lvr: {condition_state(c, {"lvr": lvr}) for c in conditions}
+    assert state("0.81") == {"met", "unmet"}       # below the product's disclosed minimum
+    assert state("0.8325") == {"met"}             # minimum is inclusive
+    assert state("0.95") == {"met"}
