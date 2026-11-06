@@ -91,6 +91,18 @@ FAKE = {
                 raise ValueError('ledger event contract binding mismatch')
             return stored
     """,
+    "app_payload_common.py": """
+        DEFAULT_REPO = 'owner/repo'
+    """,
+    "app_payload_publish.py": """
+        import os, sys
+        from pathlib import Path
+        def _gh_available(): return str(Path(__file__).with_name('fake_gh.py'))
+    """,
+    "fake_gh.py": """#!/usr/bin/env python3
+import os
+print('false' if os.environ['D'] in os.environ.get('FAKE_DATED_MISSING', '').split() else 'true')
+""",
     "ar_local_pi_runtime.py": """
         from pathlib import Path
         def data_state_root(repo): return Path(repo) / 'state'
@@ -111,11 +123,11 @@ FAKE = {
 }
 
 
-def contract(day, *, population=True, state="partial", bounded=True, reconciled=False):
+def contract(day, *, population=True, state="partial", bounded=True, reconciled=False, generation=None):
     import hashlib
     coverage = {"provider_population_unverified": [{"provider": "x"}]} if population else {}
     body = {"observation_date": day, "observation_state": state, "bounded": bounded,
-            "reconciled": reconciled, "generation_id": "obs-" + day, "coverage": coverage}
+            "reconciled": reconciled, "generation_id": generation or "obs-" + day, "coverage": coverage}
     body["contract_digest"] = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
     return body
 
@@ -124,6 +136,7 @@ def contract(day, *, population=True, state="partial", bounded=True, reconciled=
 def repo(tmp_path):
     for name, source in FAKE.items():
         (tmp_path / name).write_text(textwrap.dedent(source))
+    (tmp_path / "fake_gh.py").chmod(0o755)
     (tmp_path / "state" / "contracts").mkdir(parents=True)
     return tmp_path
 
@@ -216,10 +229,10 @@ def ledger(repo, item, *, tamper=False):
 def test_inventory_lists_every_verified_generation_without_writing(repo):
     selected = contract("2026-11-04", bounded=False)
     seed(repo, [selected])
-    better = dict(contract("2026-11-04", bounded=False), generation_id="obs-2026-11-04-bbbbbbbbbbbbbbbb")
+    better = contract("2026-11-04", bounded=False, generation="obs-2026-11-04-bbbbbbbbbbbbbbbb")
     for item in (selected, better):
         ledger(repo, item)
-    broken = dict(contract("2026-11-04"), generation_id="obs-2026-11-04-cccccccccccccccc")
+    broken = contract("2026-11-04", generation="obs-2026-11-04-cccccccccccccccc")
     ledger(repo, broken, tamper=True)
     code, rows = run(repo, "--inventory", "--date", "2026-11-04")
     by_id = {row["inventory"]: row for row in rows}
@@ -302,3 +315,27 @@ def test_population_policy_does_not_waive_raw_status_classification(repo):
     item = json.loads((repo / "state/contracts/2026-10-29.json").read_text())
     code, rows = run(repo, "--publish", "--date", "2026-10-29", "--allow-digest", "2026-10-29=" + item["contract_digest"])
     assert code == 1 and published(repo) == ["2026-10-29 withheld"]
+
+
+def test_dated_release_must_be_complete_before_the_pointer_is_cleared(repo):
+    import os
+    first = contract("2026-10-29")
+    seed(repo, [first])
+    env = {**os.environ, "FAKE_DATED_MISSING": "2026-10-29"}
+    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-10-29",
+                     "--allow-digest", "2026-10-29=" + first["contract_digest"], env=env)
+    assert code == 1 and {"date": "2026-10-29", "result": "DATED_RELEASE_INCOMPLETE",
+                          "detail": "pointer kept pending"} in rows
+    assert not (repo / "state/cleared.log").exists()
+    code, rows = run(repo, "--publish", "--policy", "all", "--date", "2026-10-29",
+                     "--allow-digest", "2026-10-29=" + first["contract_digest"])
+    assert code == 0 and (repo / "state/cleared.log").read_text() == "2026-10-29\n"
+
+
+def test_malformed_ledger_event_is_reported_not_fatal(repo):
+    events = repo / "state/ledger-v2/events/2026-10-29"
+    events.mkdir(parents=True)
+    (events / "obs-bad.json").write_text("{truncated")
+    seed(repo, [contract("2026-10-29")])
+    code, rows = run(repo, "--inventory", "--date", "2026-10-29")
+    assert code == 0 and rows[0]["inventory"] == "obs-bad" and "error" in rows[0]

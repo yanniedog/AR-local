@@ -101,6 +101,32 @@ def sealed_status_intact(source, exports, contract):
         return False
 
 
+DATED_COMPLETE = ('[.assets[]] as $a'
+                  ' | ($a|map(select(.name=="manifest.json" and .state=="uploaded" and .size>0))|length==1)'
+                  ' and ($a|map(select((.name|startswith("core-"+env.D+"-")) and .state=="uploaded"'
+                  ' and .size>0))|length>=1) and ($a|all(.state=="uploaded"))')
+
+
+def dated_release_complete(day):
+    """True only when ``app-payload-<day>`` has an uploaded manifest and core shard.
+
+    ``maybe_publish_app_payload`` can report success once the rolling manifest is
+    confirmed even if the dated alias upload failed; the pending pointer must stay
+    queued until the dated release itself is usable.
+    """
+    import os
+    import subprocess
+    from app_payload_common import DEFAULT_REPO
+    from app_payload_publish import _gh_available
+    gh = _gh_available()
+    if not gh:
+        return False
+    result = subprocess.run([gh, "api", f"repos/{DEFAULT_REPO}/releases/tags/app-payload-{day}",
+                             "--jq", DATED_COMPLETE], capture_output=True, text=True, timeout=120,
+                            env={**os.environ, "D": day})
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
 def candidates_by_date(daily, retry, repo, dates):
     pending = daily.read_payload_publication_pending(repo)
     found = {}
@@ -130,9 +156,12 @@ def inventory(state, gate, day, pending_ids, load_contract, verify_event):
     """
     rows = []
     for path in sorted((state / "ledger-v2" / "events" / day).glob("*.json")):
-        event = json.loads(path.read_bytes())
+        event = {"generation_id": path.stem}
         try:
-            event = verify_event(state, event)
+            raw = json.loads(path.read_bytes())
+            if not isinstance(raw, dict):
+                raise ValueError("ledger event is not an object")
+            event = verify_event(state, raw)
             contract = load_contract((state.resolve() / event["contract_path"]).resolve())
             allowed, reason = gate.publication_allowed(contract)
             rows.append(dict(date=day, inventory=event.get("generation_id"),
@@ -279,6 +308,10 @@ def main(argv=None):
                 if outcome != daily.PUBLISH_PUBLISHED:
                     failures += 1
                     continue
+                if not dated_release_complete(day):
+                    emit(date=day, result="DATED_RELEASE_INCOMPLETE", detail="pointer kept pending")
+                    failures += 1
+                    continue
                 daily.clear_payload_publication_pending(repo, pointer)
                 if decision == "waivable":
                     receipt = {
@@ -289,8 +322,9 @@ def main(argv=None):
                         "waived_verdict": detail, "pointer": pointer,
                         "published_at": datetime.now(timezone.utc).isoformat(),
                     }
-                    atomic_write_json(state / "population-waiver-publications-v1" / f"{digest}.json",
-                                      receipt, create_once=True)
+                    receipt_path = state / "population-waiver-publications-v1" / f"{digest}.json"
+                    if not receipt_path.exists():
+                        atomic_write_json(receipt_path, receipt, create_once=True)
         finally:
             gate.publication_allowed = original
             source.reconciled_failure_statuses = original_statuses
