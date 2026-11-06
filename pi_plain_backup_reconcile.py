@@ -109,6 +109,15 @@ def reconcile_owned(run=subprocess.run,clock=time.monotonic):
     return 2 if failed else 0
 
 
+def installed_closure_sha256():
+    """Digest of the installed root-control manifest, as the installer computes
+    the registry's source_closure_sha256; an unverified claim never matches."""
+    closure=json.loads(protected(IMAGE/'root-control-manifest.json'))
+    if not isinstance(closure,dict):
+        raise RuntimeError('fixed image root closure differs')
+    return hashlib.sha256(json.dumps(closure,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
 def reconcile_image(run=subprocess.run):
     """Only the optional fixed root registry can add this bounded callback."""
     try:
@@ -117,8 +126,9 @@ def reconcile_image(run=subprocess.run):
         return 0
     from pi_shared_queue_post_hooks import root_json
     registry=root_json(IMAGE_REGISTRY)
-    if (set(registry)!={'schema','callback','callback_sha256','wrapper_sha256'}
+    if (set(registry)!={'schema','callback','callback_sha256','source_closure_sha256','wrapper_sha256'}
             or registry.get('schema')!='ar-local-system-recovery-reconcile-v1'
+            or registry.get('source_closure_sha256')!=installed_closure_sha256()
             or registry.get('callback')!=str(IMAGE/'reconcile.py')
             or not all(re.fullmatch('[0-9a-f]{64}',str(registry.get(key,''))) for key in
                 ('callback_sha256','wrapper_sha256'))

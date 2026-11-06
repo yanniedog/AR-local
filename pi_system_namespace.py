@@ -129,6 +129,18 @@ def package_lockset(plan):
             os.close(descriptor)
 
 
+def register_verified_module(name, path, source):
+    """Install a module from already hash-verified bytes (no path search)."""
+    import types
+    if name in sys.modules:
+        return sys.modules[name]
+    module = types.ModuleType(name)
+    module.__file__ = str(path)
+    exec(compile(source, str(path), "exec"), module.__dict__)
+    sys.modules[name] = module
+    return module
+
+
 def host_boot_device(additional):
     """Prove the boot UUID from the reviewed layout against the host device nodes."""
     from pi_system_filesystems import boot_device
@@ -215,11 +227,17 @@ def main(argv=None):
     approval = json.loads(approval_bytes)
     if set(approval["files"]) != set(BUNDLE):
         raise ValueError("source approval must cover the complete fixed bundle")
+    verified = {}
     for name in BUNDLE:
         path = bundle / name
         trusted_file(path)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != approval["files"][name]:
+        verified[name] = path.read_bytes()
+        if hashlib.sha256(verified[name]).hexdigest() != approval["files"][name]:
             raise ValueError("staged source differs from independent review")
+    # -I excludes the staged directory from sys.path: register the one helper the
+    # host launcher needs from the exact bytes just verified, nothing else.
+    register_verified_module("pi_system_filesystems", bundle / "pi_system_filesystems.py",
+                             verified["pi_system_filesystems.py"])
     work = args.host_workspace
     if not re.fullmatch(r"/var/lib/ar-local-system-recovery/[a-z0-9-]+", str(work)) or work.resolve() != work:
         raise ValueError("only a new dedicated system-image workspace is supported")

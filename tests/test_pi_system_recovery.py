@@ -705,3 +705,14 @@ def test_hardlink_created_after_prepare_across_scopes_refuses_finalize(tmp_path)
     database.commit(); database.close()
     with pytest.raises(ValueError, match="crosses mutable/online OS scopes.*etc/new-link"):
         capture.require_final_links_within_scope(tmp_path)
+
+
+def test_verified_filesystem_helper_loads_without_the_bundle_on_sys_path(tmp_path, monkeypatch):
+    import sys as _sys
+    source = (Path(namespace.__file__).parent / "pi_system_filesystems.py").read_bytes()
+    monkeypatch.delitem(_sys.modules, "pi_system_filesystems", raising=False)
+    monkeypatch.setattr(_sys, "path", [str(tmp_path)])  # as under python3 -I -S: bundle not importable
+    module = namespace.register_verified_module("pi_system_filesystems", tmp_path / "pi_system_filesystems.py", source)
+    assert _sys.modules["pi_system_filesystems"] is module and callable(module.boot_device)
+    from pi_system_filesystems import boot_device  # host_boot_device's import now resolves
+    assert boot_device is module.boot_device

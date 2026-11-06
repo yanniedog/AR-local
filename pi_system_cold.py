@@ -193,8 +193,11 @@ def restore(work, mirror, plan, guard):
     if type(allocation) is not int or allocation < 0:
         raise ValueError("invalid restored image allocation")
     # Raw workspace plus later raw insertion into the sparse image; logical
-    # unused ext4 capacity is not charged as dense allocation.
-    required = source_bytes * 2 + allocation + files * 2048 + 10 * 1024 ** 3
+    # unused ext4 capacity is not charged as dense allocation. Each of the two
+    # copies rounds every file up to whole 4 KiB blocks (at most 4096 extra
+    # bytes per file, since the catalog carries pack totals), plus metadata.
+    per_copy = source_bytes + files * 4096
+    required = per_copy * 2 + allocation + files * 2048 + 10 * 1024 ** 3
     if shutil.disk_usage(work).free < required:
         raise ValueError("complete cold raw/image/join capacity reserve unavailable")
     if hasattr(os, "statvfs") and os.statvfs(work).f_favail < files * 4 + 100000:
