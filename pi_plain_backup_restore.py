@@ -38,12 +38,26 @@ def no_duplicates(pairs):
     return result
 
 
-def safe_relative(value):
+_WIN_FORBIDDEN = re.compile(r'[<>:"|?*\x00-\x1f]')
+# Reserved device names, including the superscript-digit aliases Windows also maps.
+_WIN_RESERVED = re.compile(r'(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(?:COM|LPT)[0-9\u00b9\u00b2\u00b3])\Z', re.IGNORECASE)
+
+
+def windows_safe_component(name):
+    """A Linux member name that Windows would refuse or route to a device."""
+    stem = name.split('.', 1)[0].rstrip(' ')
+    return not (_WIN_FORBIDDEN.search(name) or name.endswith(('.', ' ')) or _WIN_RESERVED.match(stem))
+
+
+def safe_relative(value, *, windows=None):
     if not isinstance(value, str) or '\\' in value or len(value.encode('utf-8')) > 4096:
         raise ValueError('invalid recovery relative path')
     validate_archive_path(value, {})
     if str(PurePosixPath(value)) != value:
         raise ValueError('noncanonical recovery path')
+    if (os.name == 'nt' if windows is None else windows) and not all(
+            windows_safe_component(part) for part in PurePosixPath(value).parts):
+        raise ValueError('recovery path is not representable on Windows')
     return value
 
 
@@ -465,8 +479,21 @@ def private_workspace(path):
     return 'POSIX_0700'
 
 
+# Production roots this offline restore must never write beneath.
+PRODUCTION_ROOTS = (Path('/srv/ar-local'), Path('/var/lib/ar-local-drive-backup'),
+                    Path('/var/lib/ar-local-plain-backup-control'), Path('/etc/ar-local'))
+
+
+def outside_production(work, roots=PRODUCTION_ROOTS):
+    for root in roots:
+        resolved = root.resolve() if root.exists() else root
+        if work == resolved or resolved in work.parents or work == root or root in work.parents:
+            raise ValueError('recovery workspace must be outside production roots')
+
+
 def restore(mirror, catalog, catalog_sha256, workspace, *, guard, apply_metadata=False):
     mirror, catalog, work = Path(mirror), Path(catalog), Path(workspace)
+    outside_production(work)
     if not mirror.is_dir() or mirror.resolve() != mirror:
         raise ValueError('canonical downloaded object mirror required')
     if work.resolve() != work or work.exists() or work.is_symlink() or mirror == work or mirror in work.parents or work in mirror.parents:
