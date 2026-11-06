@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # On-Pi drift monitor. Deployment is manual and canary-gated; this service never
 # pulls, switches branches, restarts services, or mutates runtime data. Verification
-# may refresh remote refs so drift evidence is current.
+# queries the remote read-only (git ls-remote); it never writes Git metadata.
 set -euo pipefail
 REPO="${AR_LOCAL_REPO:-/srv/ar-local/AR-local}"
 export AR_PI_VERIFY_LOCAL=1

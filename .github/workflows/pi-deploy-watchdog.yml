@@ -79,19 +79,17 @@ jobs:
           PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
           PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
           PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
-          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
           chmod 600 ~/.ssh/pi_deploy_key
-          USER="${PI_SSH_USER:-pi}"
           printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           cat >> ~/.ssh/config <<EOF
           Host ar-local-pi5
             HostName ${PI_SSH_HOST}
-            User ${USER}
+            User ar-local-ci
             IdentityFile ~/.ssh/pi_deploy_key
             BatchMode yes
             ConnectTimeout 60
@@ -130,7 +128,7 @@ jobs:
           AR_PI_SITE_REPO: /srv/ar-local/australianrates
         run: |
           set +e
-          python pi_deploy_verify.py --verify
+          python pi_deploy_verify.py --restricted-ci --verify
           echo "exit=$?" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 

@@ -20,7 +20,6 @@ if [[ $# != 5 || "$1" != --install || ! "$3" =~ ^[0-9a-f]{64}$ || ! "$5" =~ ^[0-
   echo 'Usage: install-ci-access.sh [--check | --install ROOT_RECOVERY_APPROVAL_JSON SHA256 ROOT_STAGING_APPROVAL_JSON SHA256]' >&2
   exit 2
 fi
-[[ "$EUID" == 0 ]] || { echo 'Explicit installation requires root.' >&2; exit 2; }
 approval=$2
 approval_sha=$3
 # Never import checkout code to decide whether that same code can be trusted.
@@ -78,6 +77,7 @@ def validate_staging(installer, approval_path, approval_digest):
 if __name__ == "__main__":
     validate_staging(*sys.argv[1:])
 TRUST_PY
+[[ "$EUID" == 0 ]] || { echo 'Explicit installation requires root.' >&2; exit 2; }
 staging=${0%/*}
 /usr/bin/python3 -I - "$staging/pi_ci_access.py" "$approval" "$approval_sha" <<'PY'
 import importlib.util, pathlib, sys

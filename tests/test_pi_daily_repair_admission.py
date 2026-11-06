@@ -203,7 +203,7 @@ def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch
     # of the admission implementation's expected command.
     unit = Path(__file__).resolve().parents[1] / "deploy/pi" / unit_name
     line = next(line for line in unit.read_text().splitlines() if line.startswith("ExecStartPost=/bin/sh"))
-    command = shlex.split(line.split("=", 1)[1])[2].replace("{{AR_LOCAL_REPO}}/verify_local.py", str(verifier)).replace("%%", "%")
+    command = shlex.split(line.split("=", 1)[1])[2].replace('$$', '$').replace("%%", "%")
     row = ["/bin/sh", ["/bin/sh", "-c", command], False, 1, 6000000000, 2, 7000000000, 123, 1, 0]
     value = {"type": "a(sasbttttuii)", "data": [row]}
     if change == "ignore_errors": row[2] = True
@@ -232,7 +232,8 @@ def test_non_optional_exact_post_start_validation_is_bound(tmp_path, monkeypatch
         assert command[6] == expected_path[unit_name]
         return SimpleNamespace(stdout=json.dumps(value))
     monkeypatch.setattr(admission.subprocess, "run", run)
-    assert admission.validation_installed(terminal_units()[unit_name], unit=unit_name) is allowed
+    state = terminal_units()[unit_name] | {'WorkingDirectory': str(verifier.parent)}
+    assert admission.validation_installed(state, unit=unit_name) is allowed
 
 
 def test_unknown_unit_cannot_supply_validation(monkeypatch):
@@ -254,7 +255,9 @@ def test_default_verifier_binding_matches_shipped_runtime_units():
         unit = repo / "deploy/pi" / name
         line = next(row for row in unit.read_text().splitlines()
                     if row.startswith("ExecStartPost=/bin/sh"))
-        assert "{{AR_LOCAL_REPO}}/verify_local.py" in line
+        # The repo path is never spliced into the shell; systemd's
+        # WorkingDirectory={{AR_LOCAL_REPO}} supplies it as $PWD.
+        assert '"$$PWD/verify_local.py"' in line and "{{AR_LOCAL_REPO}}" not in line
         assert "/canary/" not in line
 
 

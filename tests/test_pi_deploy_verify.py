@@ -1017,3 +1017,32 @@ def test_ssh_invocation_carries_keepalives():
     assert "ServerAliveInterval=15" in pi_deploy_verify.SSH_OPTIONS
     assert "ServerAliveCountMax=3" in pi_deploy_verify.SSH_OPTIONS
     assert "BatchMode=yes" in pi_deploy_verify.SSH_OPTIONS
+
+
+@pytest.mark.parametrize("prefix", ["DAILY", "MANUAL"])
+@pytest.mark.parametrize("wd", [None, "/home/pi/AR-local", "", "/srv/ar-local/AR-local/../x"])
+def test_pwd_verifier_form_requires_unit_working_directory_proof(prefix, wd):
+    import json
+    import pi_deploy_service_snapshot as snapshot
+    base = _service_snapshot()
+    repo = base["AR_REPO_PHYSICAL"]
+    post = json.loads(base[prefix + "_START_POST_JSON"])
+    script = snapshot._post_start_shell(repo, working_directory=True)
+    post["data"][1] = ["/bin/sh", ["/bin/sh", "-c", script], [], 0, 0, 0, 0, 0, 0, 0]
+    snap = _service_snapshot(**{prefix + "_START_POST_JSON": json.dumps(post),
+                                prefix + "_WORKING_DIRECTORY": repo if wd is None else wd})
+    assert pi_deploy_verify.pi_ingest_service_fences_ok(snap) is (wd is None)
+
+
+def test_origin_main_is_queried_read_only_without_fetch(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    def run_local(argv):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="a" * 40 + "\trefs/heads/main\n", stderr="")
+    monkeypatch.setattr(pi_deploy_verify, "run_local", run_local)
+    assert pi_deploy_verify.origin_main_sha_local() == "a" * 40
+    assert calls == [["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]]
+    assert not any("fetch" in argv for argv in calls)
+    monkeypatch.setattr(pi_deploy_verify, "run_local", lambda argv: SimpleNamespace(returncode=2, stdout="", stderr="no ref"))
+    assert pi_deploy_verify.origin_main_sha_local() is None

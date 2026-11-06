@@ -34,11 +34,12 @@ def ingest_definition_fields(*, queued=False, repo=REPO, user="ar-local"):
         for field in ("CONDITION_JSON", "START_PRE_JSON", "STOP_JSON"):
             values[field] = json.dumps({"type": COMMAND_TYPE, "data": []})
         values["AMBIENT_CAPS_JSON"] = json.dumps({"type": "t", "data": 0})
+        values["WORKING_DIRECTORY"] = repo
         template = Path(__file__).resolve().parents[1] / "deploy/pi/ar-local-daily.service"
         post = []
         for line in template.read_text(encoding="utf-8").splitlines():
             if line.startswith("ExecStartPost="):
-                command = line.split("=", 1)[1].replace("{{AR_LOCAL_REPO}}", repo).replace("%%", "%")
+                command = line.split("=", 1)[1].replace("{{AR_LOCAL_REPO}}", repo).replace("%%", "%").replace('$$', '$')
                 flags = ["privileged"] if command.startswith("+") else []
                 argv = shlex.split(command.lstrip("+"))
                 post.append([argv[0], argv, flags, 0, 0, 0, 0, 0, 0, 0])

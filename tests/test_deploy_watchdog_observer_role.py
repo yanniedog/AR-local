@@ -94,7 +94,7 @@ def test_snapshot_transports_role_readback_and_dry_run_has_same_policy(monkeypat
     monkeypatch.setattr(verify, "run_ssh", no_ssh)
     dry = verify.pi_remote_snapshot(dry_run=True)
     assert verify.pi_ingest_service_fences_ok(dry)
-    assert "busctl --system --json=short --timeout=10 get-property" in captured[0]
+    assert "busctl --system --json=short --timeout=3 get-property" in captured[0]
     assert "org.freedesktop.systemd1.Service ExecStartEx" in captured[0]
     assert "org.freedesktop.systemd1.Service User" in captured[0]
     assert "ar_physical=$(CDPATH= cd /srv/ar-local/AR-local 2>/dev/null && pwd -P)" in captured[0]

@@ -392,14 +392,16 @@ def run_ssh(
 
 
 def origin_main_sha_local() -> Optional[str]:
-    fetch = run_local(["git", "fetch", "origin", "main"])
-    if fetch.returncode != 0:
-        print(f"pi_deploy_verify: git fetch failed: {fetch.stderr.strip()}", file=sys.stderr)
+    # Read-only remote query: the immutable, root-owned production checkout has
+    # no writable FETCH_HEAD or refs for the unprivileged watchdog.
+    query = run_local(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"])
+    if query.returncode != 0:
+        print(f"pi_deploy_verify: git ls-remote failed: {query.stderr.strip()}", file=sys.stderr)
         return None
-    rev = run_local(["git", "rev-parse", "origin/main"])
-    if rev.returncode != 0:
+    fields = query.stdout.split()
+    if len(fields) != 2 or fields[1] != "refs/heads/main" or not re.fullmatch(r"[0-9a-f]{40}", fields[0]):
         return None
-    return rev.stdout.strip()
+    return fields[0]
 
 
 def _parse_kv_lines(text: str) -> dict[str, str]:
@@ -1007,6 +1009,10 @@ def build_parser() -> argparse.ArgumentParser:
             "canary gate; required for --deploy."
         ),
     )
+    parser.add_argument('--restricted-ci', action='store_true',
+                        help='Use only the dedicated account status/check/activate protocol.')
+    parser.add_argument('--approved-plan', default=os.environ.get('AR_PI_APPROVED_PLAN', ''),
+                        help='Root-approved immutable plan SHA-256; required for restricted activation.')
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
         "--verify",
@@ -1038,6 +1044,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args.effective_command = shlex.join(
         [sys.executable, str(Path(__file__).resolve()), *effective_argv]
     )
+    if args.restricted_ci:
+        if args.needs_pi:
+            parser.error('--restricted-ci requires --verify or --deploy')
+        from pi_ci_client import execute
+        try:
+            expected = args.expected_commit or origin_main_sha_local()
+            if not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{40}', expected):
+                print('restricted CI verification: expected commit unavailable', file=sys.stderr)
+                return EXIT_VERIFY_FAIL
+            result = execute(args, host=ssh_host(), expected_commit=expected,
+                             canary_sha256=os.environ.get('AR_PI_CANARY_MANIFEST_SHA256', ''),
+                             canary_tag=os.environ.get('AR_PI_CANARY_RELEASE_TAG', ''))
+            if result or args.dry_run:
+                return result
+            return wait_for_http_smoke(pi_base_url(), require_rates=True)
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            print('Restricted Pi verification failed: ' + str(error), file=sys.stderr)
+            return EXIT_VERIFY_FAIL
     if args.needs_pi:
         return cmd_needs_pi(args)
     if args.verify:

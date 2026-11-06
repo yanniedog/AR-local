@@ -6,6 +6,7 @@ from itertools import islice
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import time
 from zoneinfo import ZoneInfo
@@ -20,7 +21,7 @@ INGEST_UNITS = ("ar-local-daily.service", "ar-local-ingest-now.service")
 # reviewed bytes pinned; a verifier change requires updating this contract too.
 VALIDATOR = Path(__file__).resolve().with_name("verify_local.py")
 VALIDATOR_SHA256 = "625b5f774985e6763523b8157693aac365dbe07672c90309b5b16eeb31eefaf2"
-PROPERTIES = "LoadState,ActiveState,MainPID,ControlPID,ControlGroup,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,InactiveEnterTimestampMonotonic"
+PROPERTIES = "LoadState,ActiveState,MainPID,ControlPID,ControlGroup,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,InactiveEnterTimestampMonotonic,WorkingDirectory"
 UNIT_PATHS = {
     INGEST_UNITS[0]: "/org/freedesktop/systemd1/unit/ar_2dlocal_2ddaily_2eservice",
     INGEST_UNITS[1]: "/org/freedesktop/systemd1/unit/ar_2dlocal_2dingest_2dnow_2eservice",
@@ -126,12 +127,15 @@ def validation_installed(daily, *, unit=INGEST_UNITS[0]):
         return False
     command = ('for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 '
         'http://127.0.0.1:8808/api/latest && break; sleep 3; done; /usr/bin/python3 '
-        + str(VALIDATOR) + ' --base-url=http://127.0.0.1:8808/ --require-banks-rates '
+        + shlex.quote(str(VALIDATOR)) + ' --base-url=http://127.0.0.1:8808/ --require-banks-rates '
         '--expect-run-date "$(date +%F)" --history-mode=compact --history-timeout-seconds=90')
     if any(not isinstance(row, list) or len(row) != 10 for row in value["data"]):
         return False
+    allowed = [command]
+    if daily.get('WorkingDirectory') == str(VALIDATOR.parent):
+        allowed.append(command.replace(shlex.quote(str(VALIDATOR)), '"$PWD/verify_local.py"'))
     matches = [row for row in value["data"] if row[0] == "/bin/sh"
-        and row[1] == ["/bin/sh", "-c", command] and row[2] is False]
+        and any(row[1] == ["/bin/sh", "-c", script] for script in allowed) and row[2] is False]
     if len(matches) != 1 or VALIDATOR.is_symlink():
         return False
     row = matches[0]
