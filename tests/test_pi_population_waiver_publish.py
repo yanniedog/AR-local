@@ -13,12 +13,27 @@ RUNNER = Path(__file__).resolve().parents[1] / "scripts/pi_population_waiver_pub
 
 FAKE = {
     "app_payload_observation_gate.py": """
+        import hashlib, json
+        def _seal(contract):
+            body = {k: v for k, v in contract.items() if k != 'contract_digest'}
+            return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+        def bounded_partial_v1_allowed(contract):
+            return contract.get('observation_state') == 'partial' and bool(contract.get('bounded'))
+        def authentication_exclusions(contract):
+            return {'failure_records': 0}
+        def reconciled_partial_v1_allowed(contract):
+            # Like production: re-verifies the sealed digest, which covers coverage.
+            return bool(contract.get('reconciled')) and _seal(contract) == contract.get('contract_digest')
         def publication_allowed(contract):
             if (contract.get('coverage') or {}).get('provider_population_unverified'):
                 return False, 'unverified_provider_population'
             if contract.get('observation_state') == 'complete':
                 return True, 'complete'
-            return (True, 'bounded_partial') if contract.get('bounded') else (False, 'outside_bounded_v1_policy')
+            if bounded_partial_v1_allowed(contract):
+                return True, 'bounded_partial'
+            if reconciled_partial_v1_allowed(contract):
+                return True, 'reconciled_partial'
+            return False, 'outside_bounded_v1_policy'
     """,
     "pi_daily_sync.py": """
         import json
@@ -71,11 +86,13 @@ FAKE = {
 }
 
 
-def contract(day, *, population=True, state="partial", bounded=True):
+def contract(day, *, population=True, state="partial", bounded=True, reconciled=False):
+    import hashlib
     coverage = {"provider_population_unverified": [{"provider": "x"}]} if population else {}
-    return {"observation_date": day, "observation_state": state, "bounded": bounded,
-            "contract_digest": (day.replace("-", "") * 8)[:64], "generation_id": "obs-" + day,
-            "coverage": coverage}
+    body = {"observation_date": day, "observation_state": state, "bounded": bounded,
+            "reconciled": reconciled, "generation_id": "obs-" + day, "coverage": coverage}
+    body["contract_digest"] = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    return body
 
 
 @pytest.fixture
@@ -149,3 +166,13 @@ def test_missing_pending_pointer_and_window_fail_closed(repo):
     import os
     code, rows = run(repo, "--report", "--date", "2026-10-29", env={**os.environ, "FAKE_WINDOW": "insufficient_publication_window"})
     assert code == 3 and rows == [{"result": "DEFERRED", "reason": "insufficient_publication_window"}]
+
+
+def test_reconciled_partial_is_evaluated_on_the_sealed_original(repo):
+    """Stripping coverage would break the sealed digest; the waiver must not."""
+    sealed = contract("2026-10-31", bounded=False, reconciled=True)
+    seed(repo, [sealed])
+    code, rows = run(repo, "--report", "--date", "2026-10-31")
+    assert code == 0 and rows[0]["decision"] == "waivable" and rows[0]["detail"] == "reconciled_partial"
+    code, rows = run(repo, "--publish", "--date", "2026-10-31", "--allow-digest", "2026-10-31=" + sealed["contract_digest"])
+    assert code == 0 and published(repo) == ["2026-10-31 ok"]

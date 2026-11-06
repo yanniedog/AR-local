@@ -177,17 +177,40 @@ jobs:
           for f in /etc/ar-local/app-payload.env /etc/ar-local/drive-backup.env /etc/ar-local/day-archive.env; do
             props+=(-p "EnvironmentFile=-$f")
           done
-          seq=0
+          # Couple every child unit to this queue job: BindsTo stops it when the
+          # queue's own unit stops (budget expiry or cancellation), and the trap
+          # stops and verifies it before the claim is released.
+          QUNIT="$(sed -n 's#^0::.*/\([^/]*\.service\)$#\1#p' /proc/self/cgroup)"
+          [[ "$QUNIT" =~ ^[A-Za-z0-9@_.:-]+\.service$ ]] || { echo "queue unit unknown; refusing"; exit 1; }
+          props+=(-p "BindsTo=$QUNIT" -p "After=$QUNIT")
+          seq=0; CHILD=""
+          stop_child() {
+            [ -n "$CHILD" ] || return 0
+            sudo systemctl stop "$CHILD" 2>/dev/null || true
+            for _ in $(seq 1 30); do
+              state="$(systemctl show -p ActiveState --value "$CHILD" 2>/dev/null || true)"
+              case "$state" in ""|inactive|failed) CHILD=""; return 0 ;; esac
+              sleep 2
+            done
+            echo "child $CHILD did not stop"; return 1
+          }
+          trap 'stop_child; exit 143' TERM INT HUP
           unit() {
-            seq=$((seq + 1))
+            seq=$((seq + 1)); CHILD="ar-local-payload-waiver-$RUN-$seq.service"
             sudo systemd-run --quiet --wait --pipe --collect \
-              --unit="ar-local-payload-waiver-$RUN-$seq" "${props[@]}" -p RuntimeMaxSec="$1" \
-              /usr/bin/python3 -I "$RUNNER" --repo "$REPO" "${@:2}"
+              --unit="$CHILD" "${props[@]}" -p RuntimeMaxSec="$1" \
+              /usr/bin/python3 -I "$RUNNER" --repo "$REPO" "${@:2}" &
+            local pid=$! rc=0
+            wait "$pid" || rc=$?
+            CHILD=""
+            return "$rc"
           }
           dargs=(); for d in "$@"; do dargs+=(--date "$d"); done
           set +e
-          report="$(unit 900 --report "${dargs[@]}" 2>&1)"; rrc=$?
+          OUT="$(mktemp)"
+          unit 900 --report "${dargs[@]}" >"$OUT" 2>&1; rrc=$?
           set -e
+          report="$(cat "$OUT")"; rm -f "$OUT"
           echo "$report"
           if [ "$MODE" != "publish" ]; then exit "$rrc"; fi
           [ "$rrc" -eq 0 ] || { echo "report refused at least one date; nothing published"; exit "$rrc"; }

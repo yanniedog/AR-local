@@ -19,7 +19,6 @@ user, with the daily service environment. ``--report`` writes nothing.
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import re
 import sys
@@ -35,12 +34,26 @@ def emit(**row):
     print("WAIVER " + json.dumps(row, sort_keys=True), flush=True)
 
 
-def without_population(contract):
-    waived = copy.deepcopy(dict(contract))
-    coverage = dict(waived.get("coverage") or {})
-    coverage.pop("provider_population_unverified", None)
-    waived["coverage"] = coverage
-    return waived
+def policy_without_population(gate, contract):
+    """``publication_allowed`` after its population check, on the original contract.
+
+    The contract is never modified: its sealed source-generation and contract
+    digests cover ``coverage``, and the reconciled-partial policy re-verifies
+    them, so a stripped copy would fail integrity rather than policy. These are
+    the production gate's own predicates, in its own order.
+    """
+    state = str(contract.get("observation_state") or "unknown")
+    if state == "complete":
+        return True, "complete"
+    if state == "partial":
+        if gate.bounded_partial_v1_allowed(contract):
+            if gate.authentication_exclusions(contract)["failure_records"]:
+                return True, "bounded_partial_with_nonblocking_authentication"
+            return True, "bounded_partial"
+        if gate.reconciled_partial_v1_allowed(contract):
+            return True, "reconciled_partial"
+        return False, "outside_bounded_v1_policy"
+    return False, f"observation_state={state}"
 
 
 def classify(gate, contract):
@@ -50,7 +63,7 @@ def classify(gate, contract):
         return "admitted", reason
     if reason != WAIVED:
         return "refused", reason
-    inner_allowed, inner = gate.publication_allowed(without_population(contract))
+    inner_allowed, inner = policy_without_population(gate, contract)
     return ("waivable", inner) if inner_allowed else ("refused", WAIVED + "+" + inner)
 
 
@@ -134,7 +147,7 @@ def main(argv=None):
             day = contract.get("observation_date")
             if authorised.get(day) != contract.get("contract_digest"):
                 return allowed, reason
-            inner_allowed, inner = original(without_population(contract))
+            inner_allowed, inner = policy_without_population(gate, contract)
             return (True, "operator_waived_population:" + inner) if inner_allowed else (allowed, reason)
 
         gate.publication_allowed = scoped
