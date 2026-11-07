@@ -37257,3 +37257,41 @@ contract digest pinned by the preceding report.
 | Waiver receipts | `state/population-waiver-publications-v1/<contract_digest>.json` on the Pi, one per waived date |
 | Already present | 2026-10-31 (published before this operation) |
 | Current phase / gates | Payload gap closed for the five waivable dates. The four refused dates need either a policy decision beyond the population waiver or recovered source data. Guarded canary gate still FAIL; production deployment not started. |
+
+## 2026-11-07 - Guarded canary passes pytest, times out in source audit (OPS-20261107-GC-01)
+
+Hosted `pi-quality-canary` runs on current main, `legacy` pressure profile, matched
+interpreter `/srv/ar-local/quality-python-ede584cfef64-20261107/bin/python3`
+(prepare-python, #1098: pytest 9.1.1, pypdf 6.21.2, CI-pinned packages).
+
+| Run | Commit | Stop | Fix |
+| --- | --- | --- | --- |
+| 42342143183 | `ede584cf` | evidence directory changed during snapshot (concurrent writer) | none needed; rerun passed the snapshot |
+| 42342268518 | `ede584cf` | host swap-in 16.4 MB > 16 MiB at 7.5 min; 7.4 GB available, 4 MB canary swap | #1099, then #1101 |
+| 42344897849 | `44af073e` | host swap-in 24.7 MB (Pi kernel has no per-cgroup `pswpin`); `test_pi_ci_access` read root-only `/etc/ar-local/ci-runtime.json` | #1101 (owner decision: canary records host swap-in, no stop); #1100 (hermetic test) |
+| 42348194677 | `fc216ff9` | module 350: `test_pi_plain_backup_restore` refused tmp under `/srv/ar-local` | #1102 (basetemp and `TMPDIR` in the unit's private `/var/tmp`) |
+| 42351256502 | `4eba0e19` | full pytest suite PASS (18:26-18:45 Hobart); `03-source-audit` reached `runs/2026-09-29` when `workload_timeout` hit at 5385 s (cap 5400 s) | sealed audit cache (below) |
+
+Memory at the timeout: 7.1 GB available, canary RSS 575 MB, canary swap 31 MB, no PSI
+or allocation stop. A full restricted-user replica of the Pi test environment
+(source under a production root, private temp) found no further environment-only
+failures.
+
+Next: seal operation `gh-42351256502-1` with `pi-quality-canary` mode `seal-cache`
+(confirm `SEAL_AUDIT_CACHE`, same interpreter), then run the canary on current main
+inside the 03:30-22:00 Hobart window with the printed `verified_cache` and
+`verified_cache_sha256` (docs/CDR_QUALITY_AUDIT_REUSE.md). The cache reuses completed
+historical audits only; every source byte is still rehashed and current-day sources
+are fully audited.
+
+Deployment (`pi-deploy-canary`) needs, after a PASS: a sealed `canary-acceptance.json`
+release assembled by `pi_canary_acceptance_assemble.py` from per-gate PASS evidence
+(including the human-supplied device/emulator matrix, shadow ingest, producer contracts
+and app compatibility gates), a root-approved plan hash, and the repository variables
+`AR_PI_CANARY_APPROVED_COMMIT`, `AR_PI_CANARY_MANIFEST_SHA256`,
+`AR_PI_CANARY_RELEASE_TAG` and `AR_PI_APPROVED_PLAN`. These are owner actions.
+`npm run verify:pi` needs a host on the tailnet; no workflow runs it.
+
+| Field | Value |
+| --- | --- |
+| Current phase / gates | Guarded canary: pytest PASS, source audit incomplete (timeout). Deployment not started. Production HEAD unchanged (`8590e238`). |
