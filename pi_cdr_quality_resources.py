@@ -124,7 +124,10 @@ def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=Fa
     # terms acquisition) keep their own stricter policy.
     if progress["swap_out_bytes"] and not (_pressure_verified or record_host_swap_out):
         return "host_swap_out_activity"
-    if progress["swap_in_bytes"] > limits.cold_swap_in_bytes:
+    # Quality canary: host-wide swap-in is recorded, not a stop (owner decision
+    # 2026-11-07); other processes paging their own memory back in is not the
+    # canary's pressure. The canary's own swap-in is budgeted in monitor().
+    if progress["swap_in_bytes"] > limits.cold_swap_in_bytes and not record_host_swap_out:
         return "host_cold_swap_in_budget"
     if sample["psi_avg10"] is not None and sample["psi_avg10"] >= 10:
         return "host_memory_pressure"
@@ -305,6 +308,7 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
             *, record_host_swap_out: bool = False) -> None:
     started = previous = time.monotonic()
     previous_host = baseline.get("admission_sample", baseline)
+    previous_workload_swap = 0
     while True:
         check_priority(priority_guard, receipt)
         sample = aggregate(cgroup)
@@ -317,8 +321,14 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
             peak_processes=max(receipt["peak_processes"], sample["processes"]),
             maximum_sample_gap_seconds=max(receipt["maximum_sample_gap_seconds"], gap), last_host_sample=host)
         progress = swap_progress(host, baseline, previous_host)
+        # Workload swap-in: every fall in the workload's resident swap between
+        # samples. A process exiting with swap also counts, so this over-counts
+        # and never under-counts the swap-in it can observe.
         receipt.update(cold_swap_in_bytes=progress["swap_in_bytes"],
-            peak_workload_swap_bytes=max(receipt["peak_workload_swap_bytes"], sample["swap_bytes"]))
+            peak_workload_swap_bytes=max(receipt["peak_workload_swap_bytes"], sample["swap_bytes"]),
+            workload_swap_in_bytes=receipt["workload_swap_in_bytes"]
+                + max(0, previous_workload_swap - sample["swap_bytes"]))
+        previous_workload_swap = sample["swap_bytes"]
         reason = None
         if pressure_context is not None:
             try:
@@ -333,6 +343,8 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
             reason = "aggregate_rss_early_stop"
         elif sample["swap_bytes"] > (CANARY_WORKLOAD_SWAP_BYTES if record_host_swap_out else 0):
             reason = "workload_swapped"
+        elif receipt["workload_swap_in_bytes"] > limits.cold_swap_in_bytes:
+            reason = "workload_cold_swap_in_budget"
         elif gap > limits.max_sample_gap_seconds:
             reason = "supervision_sample_gap"
         elif now - started >= limits.runtime_seconds:
@@ -366,7 +378,7 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
         raise ValueError("command and a new canonical absolute resource receipt path required")
     receipt = {"schema": SCHEMA, "result": "BLOCKED", "mode": "sampled_cgroup_rss",
         "limits": asdict(limits), "command": command, "samples": 0, "peak_rss_bytes": 0, "peak_processes": 0,
-        "peak_workload_swap_bytes": 0, "cold_swap_in_bytes": 0,
+        "peak_workload_swap_bytes": 0, "cold_swap_in_bytes": 0, "workload_swap_in_bytes": 0,
         "maximum_sample_gap_seconds": 0, "workload_exit_code": None, "workload_started": False, "group_clean": False}
     child = cgroup = None
     owned = False
@@ -479,7 +491,9 @@ def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=N
             or receipt.get("peak_rss_bytes", 3 * GIB) >= limits.workload_bytes - limits.margin_bytes
             or receipt.get("minimum_available_bytes", 0) < limits.reserve_bytes + limits.margin_bytes
             or receipt.get("maximum_sample_gap_seconds", 3) > limits.max_sample_gap_seconds
-            or any(type(receipt.get(key)) is not int for key in ("page_size_bytes", "cold_swap_in_bytes", "peak_workload_swap_bytes"))
+            or any(type(receipt.get(key)) is not int for key in
+                   ("page_size_bytes", "cold_swap_in_bytes", "peak_workload_swap_bytes", "workload_swap_in_bytes"))
+            or not 0 <= receipt.get("workload_swap_in_bytes") <= limits.cold_swap_in_bytes
             or receipt.get("page_size_bytes") != receipt["baseline"]["page_size_bytes"]
             or receipt.get("cold_swap_in_bytes") != progress["swap_in_bytes"]
             or not 0 <= receipt.get("peak_workload_swap_bytes")

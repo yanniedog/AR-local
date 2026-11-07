@@ -107,7 +107,7 @@ def sealed(tmp_path):
         "cgroup": "/sys/fs/cgroup/system.slice/ar-local-quality-canary-0123456789ab.service",
         "limits": asdict(Limits()), "group_clean": True, "workload_exit_code": 0, "samples": 2,
         "peak_rss_bytes": 100000, "minimum_available_bytes": 6 * GIB, "maximum_sample_gap_seconds": 0.1,
-        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0,
+        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0, "workload_swap_in_bytes": 0,
         "baseline": host, "last_host_sample": host})
     canary = save(operation / "canary.json", {"schema": evidence.CANARY_SCHEMA, "result": "PASS", "target_commit": TARGET,
         "source_files": files, "protected_files": protected, "tests": evidence.canary_test_result(operation, source, TARGET, files),

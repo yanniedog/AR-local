@@ -105,8 +105,8 @@ rebooting. The supervisor:
   workload swap up to 64 MiB is recorded (see "Memory stop policy"; this applies
   to both the legacy and `allocation-v1` canary profiles). With these memory
   guards, at most
-  16 MiB of total host swap-in is permitted as bounded readback of already-swapped
-  pages. This is one budget from the first admission sample through completion,
+  16 MiB of the canary workload's own swap-in is permitted as bounded readback
+  of already-swapped pages; host-wide swap-in is recorded, not a stop. This is one budget from the first admission sample through completion,
   not a budget renewed each sample. Existing swap is disclosed rather than claimed
   absent. The actual `SC_PAGE_SIZE` converts page counters to bytes; this Pi uses
   16 KiB pages. Missing/malformed counters, counter decreases, or changed page size
@@ -116,7 +116,7 @@ rebooting. The supervisor:
   process, conservatively overestimating workload RSS. It stops at 2.5 GiB summed
   RSS or below 2.5 GiB host availability, with a 512 MiB reaction margin relative
   to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, workload swap
-  above 64 MiB, host swap-in beyond the 16 MiB total, PSI avg10 at least 10%
+  above 64 MiB, workload swap-in beyond the 16 MiB total, PSI avg10 at least 10%
   when available, or a sample gap
   beyond two seconds all fail closed.
 - Applies a hard inherited 3 GiB **per-process virtual address-space** limit,
@@ -717,8 +717,17 @@ peak is recorded: run 42317086211 stopped on 1.4 MB of workload swap with
 workloads (terms worker, Drive backup) keep zero workload swap and the strict
 host swap-out stop.
 
+Host-wide swap-in is also **recorded, not a stop** for the canary
+(`cold_swap_in_bytes`). Run 42342268518 stopped at 7.5 minutes, with no test
+failures, on 16.4 MB of host swap-in while the canary itself held at most 4 MB
+of swap and 7.4 GB was available: other processes paging their own memory back
+in. The 16 MiB budget now applies to the canary's own swap-in
+(`workload_swap_in_bytes`): the sum of every fall in the workload's resident
+swap between samples. A process exiting with swap also counts, so the figure
+over-counts. Other supervised workloads keep the host-wide swap-in stop.
+
 Hard stops are unchanged: allocation stalls, direct reclaim/scan/steal,
 compaction stalls, OOM kills, any zone at or below its minimum watermark, PSI
 avg10 at or above 10%, host availability below the reserve plus margin,
-workload swap above its budget, cold swap-in beyond 16 MiB, RSS and address-space budgets,
+workload swap above its budget, workload swap-in beyond 16 MiB, RSS and address-space budgets,
 sample gaps and cleanup.

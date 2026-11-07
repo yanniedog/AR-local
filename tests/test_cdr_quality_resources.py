@@ -17,7 +17,7 @@ def receipt():
     return {"schema": resources.SCHEMA, "result": "PASS", "mode": "sampled_cgroup_rss", "limits": asdict(resources.Limits()),
         "samples": 2, "peak_rss_bytes": 1000, "minimum_available_bytes": 6 * resources.GIB,
         "maximum_sample_gap_seconds": 0.1, "group_clean": True, "workload_exit_code": 0,
-        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0,
+        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0, "workload_swap_in_bytes": 0,
         "baseline": host(), "last_host_sample": host()}
 
 
@@ -236,3 +236,39 @@ def test_canary_monitor_swap_boundary(monkeypatch, swap, stops):
         assert value["peak_workload_swap_bytes"] == swap
     with pytest.raises(RuntimeError, match="workload_swapped"):
         resources.monitor(child, Path("unused"), resources.Limits(), host(), {**receipt(), "samples": 0, "peak_processes": 0})
+
+
+def test_canary_records_host_swap_in_but_other_callers_stop_on_it():
+    limits = resources.Limits()
+    over = limits.cold_swap_in_bytes // 16384 + 1
+    assert resources.host_violation(host(swap=over), host(), limits) == "host_cold_swap_in_budget"
+    assert resources.host_violation(host(swap=over), host(), limits, record_host_swap_out=True) is None
+    recorded = {**receipt(), "cold_swap_in_bytes": over * 16384, "last_host_sample": host(swap=over)}
+    resources.require_receipt(recorded, record_host_swap_out=True)
+    with pytest.raises(ValueError):
+        resources.require_receipt(recorded)
+
+
+@pytest.mark.parametrize("value", [None, -1, resources.Limits().cold_swap_in_bytes + 1])
+def test_canary_receipt_requires_bounded_workload_swap_in(value):
+    bad = {**receipt(), "workload_swap_in_bytes": value}
+    with pytest.raises(ValueError):
+        resources.require_receipt(bad, record_host_swap_out=True)
+    missing = receipt()
+    missing.pop("workload_swap_in_bytes")
+    with pytest.raises(ValueError):
+        resources.require_receipt(missing, record_host_swap_out=True)
+
+
+def test_canary_stops_when_its_own_swap_in_exceeds_budget(monkeypatch):
+    budget = resources.Limits().cold_swap_in_bytes
+    swaps = iter([budget + 16384, 0])
+    monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": next(swaps), "processes": 1})
+    monkeypatch.setattr(resources, "host_sample", host)
+    monkeypatch.setattr(resources, "check_priority", lambda *_: None)
+    monkeypatch.setattr(resources.time, "sleep", lambda _: None)
+    value = {**receipt(), "samples": 0, "peak_processes": 0}
+    with pytest.raises(RuntimeError, match="workload_cold_swap_in_budget"):
+        resources.monitor(SimpleNamespace(poll=lambda: None), Path("unused"), resources.Limits(), host(), value,
+                          record_host_swap_out=True)
+    assert value["workload_swap_in_bytes"] == budget + 16384

@@ -83,7 +83,7 @@ def complete(scenario):
         'limits': asdict(resources.Limits()), 'samples': 1, 'peak_rss_bytes': 1000,
         'minimum_available_bytes': 7*resources.GIB, 'maximum_sample_gap_seconds': .1,
         'group_clean': True, 'workload_exit_code': 0, 'page_size_bytes': 16384,
-        'cold_swap_in_bytes': 0, 'peak_workload_swap_bytes': 0,
+        'cold_swap_in_bytes': 0, 'peak_workload_swap_bytes': 0, 'workload_swap_in_bytes': 0,
         'baseline': baseline, 'last_host_sample': values[-1],
         'cgroup': '/sys/fs/cgroup/system.slice/'+binding['unit'],
         'pressure_evidence': context.receipt()}
@@ -248,7 +248,7 @@ def test_monitor_retains_pressure_trigger_and_preceding_sample(scenario, monkeyp
     monkeypatch.setattr(resources, 'host_sample', lambda **_: bad)
     monkeypatch.setattr(resources, 'aggregate', lambda _: {'rss_bytes':100,'swap_bytes':0,'processes':1})
     receipt = {'samples':0,'peak_rss_bytes':0,'peak_processes':0,'minimum_available_bytes':7*resources.GIB,
-        'maximum_sample_gap_seconds':0,'peak_workload_swap_bytes':0}
+        'maximum_sample_gap_seconds':0,'peak_workload_swap_bytes':0,'workload_swap_in_bytes':0}
     baseline = {**values[0],'admission_sample':values[1]}
     with pytest.raises(RuntimeError, match='allocation_pressure'):
         resources.monitor(SimpleNamespace(poll=lambda:None), Path('unused'), resources.Limits(),
