@@ -101,8 +101,8 @@ rebooting. The supervisor:
 
 - Requires 5.5 GiB MemAvailable at workload admission: the 3 GiB workload budget,
   2 GiB host reserve and 512 MiB reaction margin. Activation/preflight alone
-  requires the reserve and margin. Host swap-out is recorded, not a stop, and
-  workload swap up to 64 MiB is recorded (see "Memory stop policy"; this applies
+  requires the reserve and margin. Host swap-out and canary workload swap are
+  recorded, not stops (see "Memory stop policy"; this applies
   to both the legacy and `allocation-v1` canary profiles). Host swap-in is also
   recorded, not a stop, for the canary. Other supervised workloads allow at most
   16 MiB of host swap-in, as one budget from the first admission sample through
@@ -115,7 +115,7 @@ rebooting. The supervisor:
   process, conservatively overestimating workload RSS. It stops at 2.5 GiB summed
   RSS or below 2.5 GiB host availability, with a 512 MiB reaction margin relative
   to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, workload swap
-  above 64 MiB, PSI avg10 at least 10%
+  for non-canary workloads, PSI avg10 at least 10%
   when available, or a sample gap
   beyond two seconds all fail closed.
 - Applies a hard inherited 3 GiB **per-process virtual address-space** limit,
@@ -710,18 +710,20 @@ These are now **recorded, not stops**: host swap-out bytes, initial and running
 low-plus-refault samples (`low_with_refault_samples`) and all refault evidence
 stay in the receipt, and receipt validation still rejects a forged count.
 
-Workload swap is allowed up to 64 MiB (`CANARY_WORKLOAD_SWAP_BYTES`) and its
-peak is recorded: run 42317086211 stopped on 1.4 MB of workload swap with
-7.26 GB available. Above that budget the run still stops. Other supervised
-workloads (terms worker, Drive backup) keep zero workload swap and the strict
-host swap-out stop.
+Workload swap is also **recorded, not a stop** (`peak_workload_swap_bytes`):
+run 42317086211 stopped on 1.4 MB of workload swap with 7.26 GB available, and
+run 42392238731 stopped at 78 minutes on 64.6 MiB with 6.9 GB available and
+600 MB RSS. Long runs page idle memory out regardless of headroom. Real memory
+pressure still stops the canary: `MemoryMax`, reserve headroom, PSI and the
+allocation stops. Other supervised workloads (terms worker, Drive backup) keep
+zero workload swap and the strict host swap-out stop.
 
 Host swap-in is also **recorded, not a stop** for the canary
 (`cold_swap_in_bytes`). Runs 42342268518 and 42344897849 stopped on 16.4 MB and
 24.7 MB of host swap-in with 7.4 GB available and at most 4 MB of canary swap:
 other processes paging their own memory back in. The Pi kernel does not account
 swap-in per cgroup, so the canary's share cannot be separated. The canary's own
-swap stays capped at 64 MiB. Other supervised workloads keep the 16 MiB host
+swap is recorded the same way. Other supervised workloads keep the 16 MiB host
 swap-in stop.
 
 Hard stops are unchanged: allocation stalls, direct reclaim/scan/steal,
