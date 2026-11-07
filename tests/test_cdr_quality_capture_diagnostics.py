@@ -107,7 +107,7 @@ def test_workload_monitor_still_retains_triggering_host_and_fail_latch(scenario,
     sample_sequence(monkeypatch, scenario, [values[2]])
     monkeypatch.setattr(resources, 'aggregate', lambda _: {'rss_bytes': 100, 'swap_bytes': 0, 'processes': 1})
     receipt = {'samples': 0, 'peak_rss_bytes': 0, 'peak_processes': 0, 'minimum_available_bytes': 7*resources.GIB,
-               'maximum_sample_gap_seconds': 0, 'peak_workload_swap_bytes': 0, 'workload_swap_in_bytes': 0}
+               'maximum_sample_gap_seconds': 0, 'peak_workload_swap_bytes': 0}
     baseline = {**values[0], 'admission_sample': values[1]}
     with pytest.raises(RuntimeError, match=reason):
         resources.monitor(SimpleNamespace(poll=lambda: None), scenario[0]/'group', resources.Limits(),

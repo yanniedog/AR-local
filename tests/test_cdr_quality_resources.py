@@ -17,7 +17,7 @@ def receipt():
     return {"schema": resources.SCHEMA, "result": "PASS", "mode": "sampled_cgroup_rss", "limits": asdict(resources.Limits()),
         "samples": 2, "peak_rss_bytes": 1000, "minimum_available_bytes": 6 * resources.GIB,
         "maximum_sample_gap_seconds": 0.1, "group_clean": True, "workload_exit_code": 0,
-        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0, "workload_swap_in_bytes": 0, "workload_swap_in_source": "host_wide",
+        "page_size_bytes": 16384, "cold_swap_in_bytes": 0, "peak_workload_swap_bytes": 0,
         "baseline": host(), "last_host_sample": host()}
 
 
@@ -146,14 +146,14 @@ def test_cold_swap_readback_budget_uses_actual_page_size_and_total_since_admissi
 def test_valid_bounded_cold_read_receipt_passes_without_upgrading_an_old_failure():
     value = receipt()
     value["last_host_sample"] = host(swap=3)
-    value["cold_swap_in_bytes"] = value["workload_swap_in_bytes"] = 3 * 16384
+    value["cold_swap_in_bytes"] = 3 * 16384
     resources.require_receipt(value)
     value["result"] = "FAIL"
     with pytest.raises(ValueError):
         resources.require_receipt(value)
     value["result"] = "PASS"
     value["last_host_sample"] = host(swap=1025)
-    value["cold_swap_in_bytes"] = value["workload_swap_in_bytes"] = 1025 * 16384
+    value["cold_swap_in_bytes"] = 1025 * 16384
     with pytest.raises(ValueError):
         resources.require_receipt(value)
 
@@ -239,100 +239,16 @@ def test_canary_monitor_swap_boundary(monkeypatch, swap, stops):
 
 
 
+
 def test_canary_records_host_swap_in_but_other_callers_stop_on_it():
     limits = resources.Limits()
     over = limits.cold_swap_in_bytes // 16384 + 1
     assert resources.host_violation(host(swap=over), host(), limits) == "host_cold_swap_in_budget"
     assert resources.host_violation(host(swap=over), host(), limits, record_host_swap_out=True) is None
-    attributed = {**receipt(), "cold_swap_in_bytes": over * 16384, "last_host_sample": host(swap=over),
-                  "workload_swap_in_source": "cgroup_pswpin", "workload_swap_in_bytes": 16384}
-    resources.require_receipt(attributed, record_host_swap_out=True)
+    recorded = {**receipt(), "cold_swap_in_bytes": over * 16384, "last_host_sample": host(swap=over)}
+    resources.require_receipt(recorded, record_host_swap_out=True)
     with pytest.raises(ValueError):
-        resources.require_receipt(attributed)
-    # Without per-cgroup accounting all host swap-in is the canary's.
-    unattributed = {**attributed, "workload_swap_in_source": "host_wide"}
+        resources.require_receipt(recorded)
+    # The recorded figure must still match the samples it came from.
     with pytest.raises(ValueError):
-        resources.require_receipt(unattributed, record_host_swap_out=True)
-
-
-def test_receipt_without_swap_in_attribution_validates_as_host_wide():
-    legacy = receipt()
-    del legacy["workload_swap_in_bytes"], legacy["workload_swap_in_source"]
-    resources.require_receipt(legacy)
-    resources.require_receipt(legacy, record_host_swap_out=True)
-    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
-    legacy.update(cold_swap_in_bytes=over * 16384, last_host_sample=host(swap=over))
-    with pytest.raises(ValueError):
-        resources.require_receipt(legacy, record_host_swap_out=True)
-    half = {**receipt()}
-    del half["workload_swap_in_source"]
-    with pytest.raises(ValueError):
-        resources.require_receipt(half, record_host_swap_out=True)
-
-
-@pytest.mark.parametrize("change", [{"workload_swap_in_bytes": None}, {"workload_swap_in_bytes": -1},
-    {"workload_swap_in_bytes": resources.Limits().cold_swap_in_bytes + 1}, {"workload_swap_in_source": None},
-    {"workload_swap_in_source": "net_decrease"}])
-def test_canary_receipt_requires_bounded_attributed_workload_swap_in(change):
-    with pytest.raises(ValueError):
-        resources.require_receipt({**receipt(), **change}, record_host_swap_out=True)
-
-
-def test_cgroup_swap_in_counter(tmp_path):
-    assert resources.workload_swap_in_pages(tmp_path) is None
-    (tmp_path / "memory.stat").write_text("anon 1\npswpout 9\n")
-    assert resources.workload_swap_in_pages(tmp_path) is None
-    (tmp_path / "memory.stat").write_text("anon 1\npswpin 7\npswpout 9\n")
-    assert resources.workload_swap_in_pages(tmp_path) == 7
-    (tmp_path / "memory.stat").write_text("pswpin x\n")
-    with pytest.raises(ValueError):
-        resources.workload_swap_in_pages(tmp_path)
-
-
-def _run_monitor(monkeypatch, tmp_path, stat_values, host_values):
-    stats, hosts = iter(stat_values), iter(host_values)
-    def stat(_):
-        value = next(stats)
-        return value
-    monkeypatch.setattr(resources, "workload_swap_in_pages", stat)
-    monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": 0, "processes": 1})
-    monkeypatch.setattr(resources, "host_sample", lambda: next(hosts))
-    monkeypatch.setattr(resources, "check_priority", lambda *_: None)
-    monkeypatch.setattr(resources.time, "sleep", lambda _: None)
-    value = {**receipt(), "samples": 0, "peak_processes": 0}
-    resources.monitor(SimpleNamespace(poll=lambda: None), tmp_path, resources.Limits(), host(), value,
-                      record_host_swap_out=True)
-    return value
-
-
-def test_canary_stops_on_its_own_attributed_swap_in(monkeypatch, tmp_path):
-    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
-    with pytest.raises(RuntimeError, match="workload_cold_swap_in_budget"):
-        _run_monitor(monkeypatch, tmp_path, [10, 10 + over], [host(), host()])
-
-
-def test_canary_falls_back_to_host_wide_swap_in(monkeypatch, tmp_path):
-    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
-    with pytest.raises(RuntimeError, match="workload_cold_swap_in_budget"):
-        _run_monitor(monkeypatch, tmp_path, [None], [host(swap=over)])
-
-
-def test_lost_cgroup_swap_accounting_fails_closed(monkeypatch, tmp_path):
-    for later in (None, 9):
-        with pytest.raises(RuntimeError, match="workload_swap_in_accounting"):
-            _run_monitor(monkeypatch, tmp_path, [10, later], [host()])
-    # A fall that stays above the baseline must not renew the budget.
-    with pytest.raises(RuntimeError, match="workload_swap_in_accounting"):
-        _run_monitor(monkeypatch, tmp_path, [0, 800, 100, 900], [host()] * 3)
-
-
-def test_swap_in_baseline_is_taken_before_the_child_starts(monkeypatch, tmp_path):
-    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
-    monkeypatch.setattr(resources, "workload_swap_in_pages", lambda _: over)
-    monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": 0, "processes": 1})
-    monkeypatch.setattr(resources, "host_sample", host)
-    monkeypatch.setattr(resources, "check_priority", lambda *_: None)
-    value = {**receipt(), "samples": 0, "peak_processes": 0, "workload_swap_in_base_pages": 0}
-    with pytest.raises(RuntimeError, match="workload_cold_swap_in_budget"):
-        resources.monitor(SimpleNamespace(poll=lambda: None), tmp_path, resources.Limits(), host(), value,
-                          record_host_swap_out=True)
+        resources.require_receipt({**recorded, "cold_swap_in_bytes": 0}, record_host_swap_out=True)
