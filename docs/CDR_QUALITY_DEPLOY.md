@@ -474,8 +474,8 @@ without effective memory-cgroup/PSI protection, not a Linux kernel requirement.
 
 Global `pswpout` measures host paging, not workload ownership or service harm.
 The enhanced profile permits background swap-out only with complete additional
-evidence. It does not add a megabyte allowance. All existing workload swap, RSS,
-host reserve, reaction margin, cold swap-in, sample-gap, deadline, pidfd cleanup,
+evidence. It does not add a megabyte allowance. Canary workload swap is recorded
+(see "Memory stop policy"); all existing RSS, host reserve, reaction margin, cold swap-in, sample-gap, deadline, pidfd cleanup,
 ownership, source integrity and publication-window checks still apply.
 
 The enhanced host profile requires the four suffixed `allocstall` counters,
@@ -729,5 +729,5 @@ swap-in stop.
 Hard stops are unchanged: allocation stalls, direct reclaim/scan/steal,
 compaction stalls, OOM kills, any zone at or below its minimum watermark, PSI
 avg10 at or above 10%, host availability below the reserve plus margin,
-workload swap above its budget, RSS and address-space budgets,
+RSS and address-space budgets,
 sample gaps and cleanup.

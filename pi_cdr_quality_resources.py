@@ -26,10 +26,9 @@ PRESSURE_SCHEMA = "ar-local-quality-resources-v6"
 UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
 
 
-# Quality-canary allowance for kernel-initiated swap of the workload's own cold
-# pages (owner decision 2026-11-07): run 42317086211 stopped on 1.4 MB of
-# workload swap with 7.26 GB available. The peak stays recorded; above this
-# budget the run still stops. Other supervised workloads keep zero.
+# Quality canary: the workload's own swap is recorded as a non-negative peak, not
+# a stop (owner decision 2026-11-07/08; runs 42317086211 and 42392238731).
+# Other supervised workloads keep zero workload swap.
 
 
 @dataclass(frozen=True)

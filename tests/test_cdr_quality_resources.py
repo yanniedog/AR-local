@@ -219,20 +219,16 @@ def test_canary_records_workload_swap_but_other_callers_do_not():
 
 
 
-@pytest.mark.parametrize("swap,stops", [(64 * 1024**2, False), (67715072, False)])
-def test_canary_monitor_records_workload_swap(monkeypatch, swap, stops):
+@pytest.mark.parametrize("swap", [64 * 1024**2, 67715072])
+def test_canary_monitor_records_workload_swap(monkeypatch, swap):
     monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": swap, "processes": 1})
     monkeypatch.setattr(resources, "host_sample", host)
     monkeypatch.setattr(resources, "members", lambda _: {resources.os.getpid()})
     value = receipt()
     value.update(samples=0, peak_processes=0)
     child = SimpleNamespace(poll=lambda: 0)
-    if stops:
-        with pytest.raises(RuntimeError, match="workload_swapped"):
-            resources.monitor(child, Path("unused"), resources.Limits(), host(), value, record_host_swap_out=True)
-    else:
-        resources.monitor(child, Path("unused"), resources.Limits(), host(), value, record_host_swap_out=True)
-        assert value["peak_workload_swap_bytes"] == swap
+    resources.monitor(child, Path("unused"), resources.Limits(), host(), value, record_host_swap_out=True)
+    assert value["peak_workload_swap_bytes"] == swap
     with pytest.raises(RuntimeError, match="workload_swapped"):
         resources.monitor(child, Path("unused"), resources.Limits(), host(), {**receipt(), "samples": 0, "peak_processes": 0})
 
