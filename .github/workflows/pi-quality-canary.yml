@@ -309,7 +309,13 @@ jobs:
           done
           echo "== prepared pythons =="
           find $ROOTS -maxdepth 5 -path '*/bin/python3' 2>/dev/null | sort | while read -r py; do
-            echo "$py $("$py" --version 2>&1)"
+            pk="$(timeout 20 "$py" -I -c 'import importlib.metadata as m
+          out = []
+          for n in ("pypdf", "pytest", "cryptography", "openpyxl", "jsonschema"):
+              try: out.append(n + "=" + m.version(n))
+              except Exception: out.append(n + "=missing")
+          print(" ".join(out))' 2>/dev/null || echo "packages=unreadable")"
+            echo "$py $("$py" --version 2>&1) $pk"
           done
           echo "== prior quality operations =="
           for op in $(ls -1d /srv/ar-local/quality-operation-* 2>/dev/null); do
