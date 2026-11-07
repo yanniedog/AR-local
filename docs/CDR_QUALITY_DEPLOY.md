@@ -722,9 +722,12 @@ Host-wide swap-in is also **recorded, not a stop** for the canary
 failures, on 16.4 MB of host swap-in while the canary itself held at most 4 MB
 of swap and 7.4 GB was available: other processes paging their own memory back
 in. The 16 MiB budget now applies to the canary's own swap-in
-(`workload_swap_in_bytes`): the sum of every fall in the workload's resident
-swap between samples. A process exiting with swap also counts, so the figure
-over-counts. Other supervised workloads keep the host-wide swap-in stop.
+(`workload_swap_in_bytes`), read from the canary cgroup's cumulative
+`memory.stat` `pswpin` counter (`workload_swap_in_source: cgroup_pswpin`). When
+the kernel does not account swap-in per cgroup, all host-wide swap-in counts as
+the canary's (`host_wide`), which is the previous stop. A counter that
+disappears or decreases mid-run fails closed. Other supervised workloads keep
+the host-wide swap-in stop.
 
 Hard stops are unchanged: allocation stalls, direct reclaim/scan/steal,
 compaction stalls, OOM kills, any zone at or below its minimum watermark, PSI

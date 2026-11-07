@@ -83,7 +83,7 @@ def complete(scenario):
         'limits': asdict(resources.Limits()), 'samples': 1, 'peak_rss_bytes': 1000,
         'minimum_available_bytes': 7*resources.GIB, 'maximum_sample_gap_seconds': .1,
         'group_clean': True, 'workload_exit_code': 0, 'page_size_bytes': 16384,
-        'cold_swap_in_bytes': 0, 'peak_workload_swap_bytes': 0, 'workload_swap_in_bytes': 0,
+        'cold_swap_in_bytes': 0, 'peak_workload_swap_bytes': 0, 'workload_swap_in_bytes': 0, 'workload_swap_in_source': 'host_wide',
         'baseline': baseline, 'last_host_sample': values[-1],
         'cgroup': '/sys/fs/cgroup/system.slice/'+binding['unit'],
         'pressure_evidence': context.receipt()}
