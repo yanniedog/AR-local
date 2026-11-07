@@ -27,7 +27,7 @@ on:
         required: true
         type: string
       mode:
-        description: "preflight / discover / inspect (read-only), prepare-python, or canary"
+        description: "preflight / discover / inspect (read-only), prepare-python, seal-cache, or canary"
         required: true
         default: "preflight"
         type: choice
@@ -36,6 +36,7 @@ on:
           - "discover"
           - "inspect"
           - "prepare-python"
+          - "seal-cache"
           - "canary"
       confirm:
         description: "Type RUN_GUARDED_CANARY for canary mode"
@@ -43,7 +44,7 @@ on:
         default: ""
         type: string
       operation_id:
-        description: "inspect mode: operation id, e.g. gh-41920760761-1"
+        description: "inspect / seal-cache mode: operation id, e.g. gh-41920760761-1"
         required: false
         default: ""
         type: string
@@ -58,6 +59,16 @@ on:
         type: string
       dispositions_sha256:
         description: "Optional; if set must equal the reviewed SHA-256 pinned in this workflow"
+        required: false
+        default: ""
+        type: string
+      verified_cache:
+        description: "canary mode, optional: sealed audit cache manifest.json (from seal-cache), see docs/CDR_QUALITY_AUDIT_REUSE.md"
+        required: false
+        default: ""
+        type: string
+      verified_cache_sha256:
+        description: "canary mode: SHA-256 of that manifest, as printed by seal-cache"
         required: false
         default: ""
         type: string
@@ -100,9 +111,20 @@ jobs:
           DISP_SHA: ${{ inputs.dispositions_sha256 }}
           PY: ${{ inputs.python }}
           DISP: ${{ inputs.dispositions }}
+          OPID: ${{ inputs.operation_id }}
+          VCACHE: ${{ inputs.verified_cache }}
+          VCACHE_SHA: ${{ inputs.verified_cache_sha256 }}
         run: |
           set -euo pipefail
           [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$MODE" = "seal-cache" ]; then
+            test "$CONFIRM" = "SEAL_AUDIT_CACHE" || { echo "::error::seal-cache needs confirm=SEAL_AUDIT_CACHE"; exit 1; }
+            [[ "$OPID" =~ ^gh-[0-9]+-[0-9]+$ ]] || { echo "::error::seal-cache needs operation_id gh-<run>-<attempt>"; exit 1; }
+          fi
+          if [ -n "$VCACHE$VCACHE_SHA" ]; then
+            [[ "$VCACHE" =~ ^/srv/ar-local/quality-audit-cache-gh-[0-9]+-[0-9]+/manifest\.json$ ]] || { echo "::error::verified_cache must be a seal-cache manifest path"; exit 1; }
+            [[ "$VCACHE_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::verified_cache_sha256 must be 64 hex"; exit 1; }
+          fi
           [[ "$PY" =~ ^/[A-Za-z0-9._/+-]+$ ]]
           # Absolute Pi path, or a path inside the candidate checkout (reviewed,
           # committed evidence such as the default).
@@ -311,6 +333,41 @@ jobs:
           echo "PREPARED_PYTHON=$D/bin/python3"
           REMOTE
 
+      # Seal the completed source audits of a closed, failed or interrupted
+      # canary operation (docs/CDR_QUALITY_AUDIT_REUSE.md). Writes only a new
+      # /srv/ar-local/quality-audit-cache-<op> directory; the next canary still
+      # rehashes every source byte and re-audits anything changed.
+      - name: Seal a closed operation's audit cache
+        if: inputs.mode == 'seal-cache'
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          OP_ID: ${{ inputs.operation_id }}
+          PY: ${{ inputs.python }}
+        run: |
+          set -euo pipefail
+          # PY must be the interpreter the original operation ran with; the
+          # sealer refuses any other.
+          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$OP_ID" "$PY" <<'REMOTE'
+          set -euo pipefail
+          COMMIT="$1"; OP_ID="$2"; PY="$3"
+          OP="/srv/ar-local/quality-operation-$OP_ID"
+          OUT="/srv/ar-local/quality-audit-cache-$OP_ID"
+          UNIT="$OP/canary-unit.json"
+          test -f "$UNIT" || { echo "no canary-unit.json in $OP"; exit 1; }
+          ORIG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["expected_commit"])' "$UNIT")"
+          SRC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$UNIT")"
+          [[ "$ORIG" =~ ^[0-9a-f]{40}$ && "$SRC" = "/srv/ar-local/quality-candidate-${ORIG:0:12}" ]] || { echo "unexpected unit identity"; exit 1; }
+          test -x "$PY" || { echo "interpreter $PY not found"; exit 1; }
+          NEW="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
+          test -f "$NEW/cdr_quality_cache.py" || NEW="$SRC"
+          test ! -e "$OUT" || { echo "cache $OUT already exists"; exit 1; }
+          echo "origin commit: $ORIG; source: $SRC; python: $PY"
+          nice -n 10 "$PY" -B "$NEW/cdr_quality_cache.py" --source "$SRC" --operation "$OP" \
+            --output "$OUT" --expected-commit "$ORIG" --attest-closed-protected-run
+          echo "VERIFIED_CACHE=$OUT/manifest.json"
+          echo "VERIFIED_CACHE_SHA256=$(sha256sum "$OUT/manifest.json" | cut -d' ' -f1)"
+          REMOTE
+
       - name: Read-only discovery of canary inputs
         if: inputs.mode == 'discover'
         run: |
@@ -396,11 +453,13 @@ jobs:
           DISP_SHA: ${{ env.REVIEWED_DISPOSITIONS_SHA256 }}
           PROFILE: ${{ inputs.pressure_profile }}
           OP_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+          VCACHE: ${{ inputs.verified_cache }}
+          VCACHE_SHA: ${{ inputs.verified_cache_sha256 }}
         run: |
           set -euo pipefail
-          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" <<'REMOTE'
+          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" "$VCACHE" "$VCACHE_SHA" <<'REMOTE'
           set -euo pipefail
-          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
+          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"; VCACHE="${7:-}"; VCACHE_SHA="${8:-}"
           CTL=/srv/ar-local/quality-gh-control
           mkdir -p "$CTL"
           PIDF="$CTL/$OP_ID.submitter.pid"
@@ -409,7 +468,7 @@ jobs:
           test ! -e "$QS" || { echo "queued script $QS already exists"; exit 1; }
           (umask 077; cat > "$QS") <<'QUEUED'
           set -euo pipefail
-          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"
+          COMMIT="$1"; PY="$2"; DISP="$3"; PROFILE="$4"; OP_ID="$5"; DISP_SHA="$6"; VCACHE="${7:-}"; VCACHE_SHA="${8:-}"
           CTL=/srv/ar-local/quality-gh-control
           C="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
           OP="/srv/ar-local/quality-operation-$OP_ID"
@@ -499,7 +558,8 @@ jobs:
             --source "$C" \
             --production /srv/ar-local/AR-local --data-root /srv/ar-local/data \
             --operation "$OP" --expected-commit "$COMMIT" --python "$PY" \
-            --dispositions "$DCOPY" --pressure-profile "$PROFILE" > "$HLOG" &
+            --dispositions "$DCOPY" --pressure-profile "$PROFILE" \
+            ${VCACHE:+--verified-cache "$VCACHE" --verified-cache-sha256 "$VCACHE_SHA"} > "$HLOG" &
           HELPER=$!
           set +e
           wait "$HELPER"; RC=$?
@@ -510,7 +570,7 @@ jobs:
           chmod 0500 "$QS"
           setsid /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
             --cpu-slots 2 --max-runtime 6000 --wait-timeout 1800 -- \
-            /bin/bash "$QS" "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" &
+            /bin/bash "$QS" "$COMMIT" "$PY" "$DISP" "$PROFILE" "$OP_ID" "$DISP_SHA" "$VCACHE" "$VCACHE_SHA" &
           SUB=$!
           echo "$SUB $OP_ID" > "$PIDF"
           trap 'kill -TERM "$SUB" 2>/dev/null || true' HUP TERM INT
