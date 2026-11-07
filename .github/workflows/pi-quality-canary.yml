@@ -27,7 +27,7 @@ on:
         required: true
         type: string
       mode:
-        description: "preflight / discover / inspect (read-only) or canary"
+        description: "preflight / discover / inspect (read-only), prepare-python, or canary"
         required: true
         default: "preflight"
         type: choice
@@ -35,6 +35,7 @@ on:
           - "preflight"
           - "discover"
           - "inspect"
+          - "prepare-python"
           - "canary"
       confirm:
         description: "Type RUN_GUARDED_CANARY for canary mode"
@@ -106,6 +107,9 @@ jobs:
           # Absolute Pi path, or a path inside the candidate checkout (reviewed,
           # committed evidence such as the default).
           [[ "$DISP" =~ ^/?[A-Za-z0-9._/+-]+$ && "$DISP" != *..* ]]
+          if [ "$MODE" = "prepare-python" ]; then
+            test "$CONFIRM" = "PREPARE_PYTHON" || { echo "::error::prepare-python needs confirm=PREPARE_PYTHON"; exit 1; }
+          fi
           if [ "$MODE" = "canary" ]; then
             test "$CONFIRM" = "RUN_GUARDED_CANARY"
             test "$DISP" = "$REVIEWED_DISPOSITIONS_PATH" || { echo "::error::canary accepts only the committed reviewed dispositions"; exit 1; }
@@ -283,6 +287,30 @@ jobs:
       # checkouts, dispositions files, prepared Pythons and prior operations.
       # Prints paths, hashes, counts and scalar identity fields only; never
       # disposition contents or reasons.
+      # Build a fresh canary test interpreter with the same pinned direct
+      # versions CI uses ("Install matched collection dependencies" in
+      # app-ci.yml). Creates a new directory only; never modifies an existing
+      # interpreter, the production checkout or system packages.
+      - name: Prepare a matched canary Python
+        if: inputs.mode == 'prepare-python'
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+        run: |
+          set -euo pipefail
+          ssh ar-local-pi5 bash -s -- "${TARGET_COMMIT:0:12}" <<'REMOTE'
+          set -euo pipefail
+          D="/srv/ar-local/quality-python-$1-$(TZ=Australia/Hobart date +%Y%m%d)"
+          if [ -e "$D" ]; then echo "exists: $D"; else
+            nice -n 10 /usr/bin/python3 -m venv "$D"
+            nice -n 10 "$D/bin/python3" -m pip install --quiet --no-cache-dir --disable-pip-version-check --only-binary=:all: \
+              pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 \
+              zstandard==0.25.0 fonttools==4.66.1 tzdata
+            chmod -R go-w "$D"
+          fi
+          "$D/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools")])'
+          echo "PREPARED_PYTHON=$D/bin/python3"
+          REMOTE
+
       - name: Read-only discovery of canary inputs
         if: inputs.mode == 'discover'
         run: |
