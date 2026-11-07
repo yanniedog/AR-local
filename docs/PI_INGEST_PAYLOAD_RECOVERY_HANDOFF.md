@@ -37294,4 +37294,17 @@ and app compatibility gates), a root-approved plan hash, and the repository vari
 
 | Field | Value |
 | --- | --- |
-| Current phase / gates | Guarded canary: pytest PASS, source audit incomplete (timeout). Deployment not started. Production HEAD unchanged (`8590e238`). |
+| 42392238731 | `91935f34` | sealed cache `gh-42351256502-1`; pytest PASS; audit reached 2026-10-21; `workload_swapped` 64.6 MiB at 78 min, 6.9 GB available | #1107 (canary workload swap recorded, not a stop) |
+| **42400482808** | **`96f3d17e`** | **PASS** with sealed cache `gh-42392238731-1` (`4de238ba...dad6`); `canary.json` sha256 `64b97493645e4f7545b46778eb1230e13ec8245f57cc5c0b2da3a01b15ff0748`, generation `obs-2026-11-08-78e3ec27d9cda8a9` | - |
+
+Dashboard check: `pi-deploy-watchdog` run 42407240596 fails at SSH transport (exit
+255) before verification. It has failed on every scheduled run since
+2026-10-30 (last pass 2026-10-30, `8590e238`). The workflow connects as the
+restricted `ar-local-ci` account with `PI_SSH_PRIVATE_KEY`, the key the canary
+workflow uses for `PI_SSH_USER`; the restricted account needs its own authorised key
+(docs/CI_PI_ACCESS.md). Owner action: provision or re-authorise the `ar-local-ci`
+key and secret.
+
+| Field | Value |
+| --- | --- |
+| Current phase / gates | Guarded canary PASS on `96f3d17e` (run 42400482808). Deployment not started: needs the sealed acceptance release, root-approved plan and `AR_PI_CANARY_*` / `AR_PI_APPROVED_PLAN` variables (owner). Watchdog SSH broken since 2026-10-30 (owner). Production HEAD unchanged (`8590e238`). |
