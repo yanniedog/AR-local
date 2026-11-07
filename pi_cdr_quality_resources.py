@@ -26,11 +26,9 @@ PRESSURE_SCHEMA = "ar-local-quality-resources-v6"
 UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
 
 
-# Quality-canary allowance for kernel-initiated swap of the workload's own cold
-# pages (owner decision 2026-11-07): run 42317086211 stopped on 1.4 MB of
-# workload swap with 7.26 GB available. The peak stays recorded; above this
-# budget the run still stops. Other supervised workloads keep zero.
-CANARY_WORKLOAD_SWAP_BYTES = 64 * 1024**2
+# Quality canary: the workload's own swap is recorded as a non-negative peak, not
+# a stop (owner decision 2026-11-07/08; runs 42317086211 and 42392238731).
+# Other supervised workloads keep zero workload swap.
 
 
 @dataclass(frozen=True)
@@ -119,14 +117,14 @@ def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=Fa
         return "host_reserve_headroom"
     # Quality canary (record_host_swap_out=True): host-wide swap-out is recorded,
     # not a stop (owner decision 2026-11-07). Linux pages idle anonymous memory
-    # out with ample MemAvailable; workload swap above 64 MiB, reserve headroom
+    # out with ample MemAvailable; MemoryMax, reserve headroom
     # and PSI still stop. Other callers (Drive backup, terms acquisition) keep
     # the strict swap-out and 16 MiB swap-in stops.
     if progress["swap_out_bytes"] and not (_pressure_verified or record_host_swap_out):
         return "host_swap_out_activity"
     # Quality canary: swap-in is recorded, not a stop (owner decision 2026-11-07).
     # With ample MemAvailable it is other processes paging their own memory back
-    # in, not canary pressure; the canary's own swap stays capped at 64 MiB, and
+    # in, not canary pressure; the canary's own swap is recorded too, and
     # reserve headroom, PSI and the allocation stops still apply.
     if progress["swap_in_bytes"] > limits.cold_swap_in_bytes and not record_host_swap_out:
         return "host_cold_swap_in_budget"
@@ -335,7 +333,7 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
                                     record_host_swap_out=record_host_swap_out)
         if sample["rss_bytes"] >= limits.workload_bytes - limits.margin_bytes:
             reason = "aggregate_rss_early_stop"
-        elif sample["swap_bytes"] > (CANARY_WORKLOAD_SWAP_BYTES if record_host_swap_out else 0):
+        elif sample["swap_bytes"] > 0 and not record_host_swap_out:
             reason = "workload_swapped"
         elif gap > limits.max_sample_gap_seconds:
             reason = "supervision_sample_gap"
@@ -486,8 +484,8 @@ def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=N
             or any(type(receipt.get(key)) is not int for key in ("page_size_bytes", "cold_swap_in_bytes", "peak_workload_swap_bytes"))
             or receipt.get("page_size_bytes") != receipt["baseline"]["page_size_bytes"]
             or receipt.get("cold_swap_in_bytes") != progress["swap_in_bytes"]
-            or not 0 <= receipt.get("peak_workload_swap_bytes")
-                   <= (CANARY_WORKLOAD_SWAP_BYTES if record_host_swap_out else 0)
+            or receipt.get("peak_workload_swap_bytes") < 0
+            or (receipt.get("peak_workload_swap_bytes") and not record_host_swap_out)
             or host_violation(receipt["last_host_sample"], receipt["baseline"], limits,
                               _pressure_verified=pressure_verified,
                               record_host_swap_out=record_host_swap_out)):
