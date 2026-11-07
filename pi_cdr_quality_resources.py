@@ -327,7 +327,9 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
     previous_host = baseline.get("admission_sample", baseline)
     # Canary swap-in budget: the cgroup's own cumulative pswpin when the kernel
     # accounts it; otherwise all host-wide swap-in counts as the canary's.
-    swap_in_base = workload_swap_in_pages(cgroup)
+    swap_in_base = (receipt["workload_swap_in_base_pages"] if "workload_swap_in_base_pages" in receipt
+                    else workload_swap_in_pages(cgroup))
+    swap_in_previous = swap_in_base
     receipt["workload_swap_in_source"] = "cgroup_pswpin" if swap_in_base is not None else "host_wide"
     while True:
         check_priority(priority_guard, receipt)
@@ -345,8 +347,10 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
             workload_swap_in = progress["swap_in_bytes"]
         else:
             current = workload_swap_in_pages(cgroup)
-            if current is None or current < swap_in_base:
+            # Cumulative counter: any decrease from the preceding sample fails closed.
+            if current is None or current < swap_in_previous:
                 raise RuntimeError("workload_swap_in_accounting")
+            swap_in_previous = current
             workload_swap_in = (current - swap_in_base) * baseline["page_size_bytes"]
         receipt.update(cold_swap_in_bytes=progress["swap_in_bytes"],
             peak_workload_swap_bytes=max(receipt["peak_workload_swap_bytes"], sample["swap_bytes"]),
@@ -431,6 +435,9 @@ def supervise(command: list[str], output: Path, limits: Limits, *,
         for signum in (signal.SIGTERM, signal.SIGINT):
             saved_signals[signum] = signal.signal(signum, interrupted)
         check_priority(priority_guard, receipt)
+        # Swap-in baseline before the child exists, so none of its swap-in is
+        # absorbed into the baseline.
+        receipt["workload_swap_in_base_pages"] = workload_swap_in_pages(cgroup)
         child = subprocess.Popen(command, shell=False, start_new_session=True,
             preexec_fn=lambda: restrict_address_space(limits.address_space_bytes))
         receipt['workload_started'] = True

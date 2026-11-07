@@ -321,3 +321,18 @@ def test_lost_cgroup_swap_accounting_fails_closed(monkeypatch, tmp_path):
     for later in (None, 9):
         with pytest.raises(RuntimeError, match="workload_swap_in_accounting"):
             _run_monitor(monkeypatch, tmp_path, [10, later], [host()])
+    # A fall that stays above the baseline must not renew the budget.
+    with pytest.raises(RuntimeError, match="workload_swap_in_accounting"):
+        _run_monitor(monkeypatch, tmp_path, [0, 800, 100, 900], [host()] * 3)
+
+
+def test_swap_in_baseline_is_taken_before_the_child_starts(monkeypatch, tmp_path):
+    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
+    monkeypatch.setattr(resources, "workload_swap_in_pages", lambda _: over)
+    monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": 0, "processes": 1})
+    monkeypatch.setattr(resources, "host_sample", host)
+    monkeypatch.setattr(resources, "check_priority", lambda *_: None)
+    value = {**receipt(), "samples": 0, "peak_processes": 0, "workload_swap_in_base_pages": 0}
+    with pytest.raises(RuntimeError, match="workload_cold_swap_in_budget"):
+        resources.monitor(SimpleNamespace(poll=lambda: None), tmp_path, resources.Limits(), host(), value,
+                          record_host_swap_out=True)
