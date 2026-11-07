@@ -507,6 +507,11 @@ def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=N
         pressure_verified = True
     elif "pressure_evidence" in receipt:
         raise ValueError("pressure receipt cannot be relabelled as legacy")
+    if "workload_swap_in_bytes" not in receipt and "workload_swap_in_source" not in receipt:
+        # Receipts written before swap-in attribution: validate them as
+        # host-wide, the stop they were supervised under.
+        receipt = {**receipt, "workload_swap_in_source": "host_wide",
+                   "workload_swap_in_bytes": receipt.get("cold_swap_in_bytes")}
     if (receipt.get("schema") not in {SCHEMA, PRESSURE_SCHEMA} or receipt.get("result") != "PASS"
             or receipt.get("mode") != "sampled_cgroup_rss" or receipt.get("group_clean") is not True
             or receipt.get("workload_exit_code") != 0 or receipt.get("samples", 0) < 1

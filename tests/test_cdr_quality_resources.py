@@ -255,6 +255,21 @@ def test_canary_records_host_swap_in_but_other_callers_stop_on_it():
         resources.require_receipt(unattributed, record_host_swap_out=True)
 
 
+def test_receipt_without_swap_in_attribution_validates_as_host_wide():
+    legacy = receipt()
+    del legacy["workload_swap_in_bytes"], legacy["workload_swap_in_source"]
+    resources.require_receipt(legacy)
+    resources.require_receipt(legacy, record_host_swap_out=True)
+    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
+    legacy.update(cold_swap_in_bytes=over * 16384, last_host_sample=host(swap=over))
+    with pytest.raises(ValueError):
+        resources.require_receipt(legacy, record_host_swap_out=True)
+    half = {**receipt()}
+    del half["workload_swap_in_source"]
+    with pytest.raises(ValueError):
+        resources.require_receipt(half, record_host_swap_out=True)
+
+
 @pytest.mark.parametrize("change", [{"workload_swap_in_bytes": None}, {"workload_swap_in_bytes": -1},
     {"workload_swap_in_bytes": resources.Limits().cold_swap_in_bytes + 1}, {"workload_swap_in_source": None},
     {"workload_swap_in_source": "net_decrease"}])
