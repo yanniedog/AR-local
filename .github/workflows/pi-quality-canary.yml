@@ -242,6 +242,36 @@ jobs:
           walk("", r)
           PY
           done
+          if [ -f "$OP/pytest-suite-failure.json" ]; then
+            echo "== pytest-suite-failure.json =="
+            python3 - "$OP/pytest-suite-failure.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          for k in ("error_type", "detail", "elapsed_seconds"):
+              print(f"{k}: {str(r.get(k))[:400]}")
+          done = r.get("completed_modules") or []
+          print(f"completed_modules: {len(done)}; last: {done[-1] if done else None}")
+          PY
+            # Newest batch: failing test ids and the tail of its pytest output.
+            B="$(ls -1dt "$OP"/pytest-suite/*/ 2>/dev/null | head -1)"
+            if [ -n "$B" ]; then
+              echo "== newest pytest batch: $(basename "$B") =="
+              [ -f "$B/exit.json" ] && python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print("returncode:", r.get("returncode"))' "$B/exit.json"
+              [ -f "$B/report.json" ] && python3 - "$B/report.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          print("exitstatus:", r.get("exitstatus"))
+          for t in r.get("tests") or []:
+              if t.get("outcome") not in ("passed", "skipped"):
+                  print("FAILED:", t.get("nodeid"))
+                  for phase in ("setup", "call", "teardown"):
+                      crash = ((t.get(phase) or {}).get("crash") or {})
+                      if crash:
+                          print("  ", phase, str(crash.get("message"))[:600])
+          PY
+              [ -f "$B/output.txt" ] && tail -n 60 "$B/output.txt" | sed -E '/[Dd]isposition/s/.*/[redacted disposition line]/' | cut -c1-300
+            fi
+          fi
           for name in canary-service.txt; do
             [ -f "$OP/$name" ] || continue
             echo "== tail $name (disposition lines redacted) =="
