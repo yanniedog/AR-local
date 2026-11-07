@@ -309,13 +309,15 @@ jobs:
           done
           echo "== prepared pythons =="
           find $ROOTS -maxdepth 5 -path '*/bin/python3' 2>/dev/null | sort | while read -r py; do
-            pk="$(timeout 20 "$py" -I -c 'import importlib.metadata as m
-          out = []
-          for n in ("pypdf", "pytest", "cryptography", "openpyxl", "jsonschema"):
-              try: out.append(n + "=" + m.version(n))
-              except Exception: out.append(n + "=missing")
-          print(" ".join(out))' 2>/dev/null || echo "packages=unreadable")"
-            echo "$py $("$py" --version 2>&1) $pk"
+            # Read versions from *.dist-info directory names only: executing a
+            # discovered interpreter would run its site hooks outside isolation.
+            pk=""
+            for n in pypdf pytest cryptography openpyxl jsonschema; do
+              v="$(find "$(dirname "$(dirname "$py")")"/lib/python3*/site-packages -maxdepth 1 -type d \
+                    -iname "${n}-*.dist-info" 2>/dev/null | head -1 | sed -E 's#.*/[^-]+-([^/]+)\.dist-info$#\1#')"
+              pk="$pk $n=${v:-missing}"
+            done
+            echo "$py$pk"
           done
           echo "== prior quality operations =="
           for op in $(ls -1d /srv/ar-local/quality-operation-* 2>/dev/null); do
