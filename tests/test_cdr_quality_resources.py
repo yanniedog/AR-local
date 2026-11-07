@@ -203,3 +203,16 @@ def test_workload_swap_is_rejected_even_with_bounded_host_readback(monkeypatch):
     with pytest.raises(RuntimeError, match="workload_swapped"):
         resources.monitor(SimpleNamespace(poll=lambda: None), Path("unused"), resources.Limits(), host(), value)
     assert value["peak_workload_swap_bytes"] == 16384 and value["cold_swap_in_bytes"] == 49152
+
+
+
+
+def test_canary_allows_bounded_workload_swap_but_other_callers_do_not():
+    budget = resources.CANARY_WORKLOAD_SWAP_BYTES
+    small = {**receipt(), "peak_workload_swap_bytes": 1458176}
+    resources.require_receipt(small, record_host_swap_out=True)
+    with pytest.raises(ValueError):
+        resources.require_receipt(small)
+    over = {**receipt(), "peak_workload_swap_bytes": budget + 16384}
+    with pytest.raises(ValueError):
+        resources.require_receipt(over, record_host_swap_out=True)

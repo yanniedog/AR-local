@@ -709,8 +709,14 @@ These are now **recorded, not stops**: host swap-out bytes, initial and running
 low-plus-refault samples (`low_with_refault_samples`) and all refault evidence
 stay in the receipt, and receipt validation still rejects a forged count.
 
+Workload swap is allowed up to 64 MiB (`CANARY_WORKLOAD_SWAP_BYTES`) and its
+peak is recorded: run 42317086211 stopped on 1.4 MB of workload swap with
+7.26 GB available. Above that budget the run still stops. Other supervised
+workloads (terms worker, Drive backup) keep zero workload swap and the strict
+host swap-out stop.
+
 Hard stops are unchanged: allocation stalls, direct reclaim/scan/steal,
 compaction stalls, OOM kills, any zone at or below its minimum watermark, PSI
-avg10 at or above 10%, host availability below the reserve plus margin, any
-workload swap, cold swap-in beyond 16 MiB, RSS and address-space budgets,
+avg10 at or above 10%, host availability below the reserve plus margin,
+workload swap above its budget, cold swap-in beyond 16 MiB, RSS and address-space budgets,
 sample gaps and cleanup.

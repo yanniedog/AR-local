@@ -114,7 +114,11 @@ def test_known_v2_still_requires_complete_resource_validation(tmp_path, monkeypa
                      maximum_sample_gap_seconds=.1,page_size_bytes=16384,cold_swap_in_bytes=0,
                      peak_workload_swap_bytes=0,baseline=host,last_host_sample=host)
     evidence.validate_manifest(path,digest,current=now)
+    # Canary evidence tolerates a bounded workload swap (owner decision 2026-11-07).
+    from pi_cdr_quality_resources import CANARY_WORKLOAD_SWAP_BYTES
     resources['peak_workload_swap_bytes'] = 1
+    evidence.validate_manifest(path,digest,current=now)
+    resources['peak_workload_swap_bytes'] = CANARY_WORKLOAD_SWAP_BYTES + 1
     with pytest.raises(ValueError): evidence.validate_manifest(path,digest,current=now)
     resources['peak_workload_swap_bytes'] = 0
     resources['pressure_evidence'] = {}

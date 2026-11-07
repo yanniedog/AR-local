@@ -26,6 +26,13 @@ PRESSURE_SCHEMA = "ar-local-quality-resources-v6"
 UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker)\.service")
 
 
+# Quality-canary allowance for kernel-initiated swap of the workload's own cold
+# pages (owner decision 2026-11-07): run 42317086211 stopped on 1.4 MB of
+# workload swap with 7.26 GB available. The peak stays recorded; above this
+# budget the run still stops. Other supervised workloads keep zero.
+CANARY_WORKLOAD_SWAP_BYTES = 64 * 1024**2
+
+
 @dataclass(frozen=True)
 class Limits:
     workload_bytes: int = 3 * GIB
@@ -324,7 +331,7 @@ def monitor(child: subprocess.Popen, cgroup: Path, limits: Limits, baseline: dic
                                     record_host_swap_out=record_host_swap_out)
         if sample["rss_bytes"] >= limits.workload_bytes - limits.margin_bytes:
             reason = "aggregate_rss_early_stop"
-        elif sample["swap_bytes"]:
+        elif sample["swap_bytes"] > (CANARY_WORKLOAD_SWAP_BYTES if record_host_swap_out else 0):
             reason = "workload_swapped"
         elif gap > limits.max_sample_gap_seconds:
             reason = "supervision_sample_gap"
@@ -475,7 +482,8 @@ def require_receipt(receipt: dict, *, expected_operation=None, expected_commit=N
             or any(type(receipt.get(key)) is not int for key in ("page_size_bytes", "cold_swap_in_bytes", "peak_workload_swap_bytes"))
             or receipt.get("page_size_bytes") != receipt["baseline"]["page_size_bytes"]
             or receipt.get("cold_swap_in_bytes") != progress["swap_in_bytes"]
-            or receipt.get("peak_workload_swap_bytes") != 0
+            or not 0 <= receipt.get("peak_workload_swap_bytes")
+                   <= (CANARY_WORKLOAD_SWAP_BYTES if record_host_swap_out else 0)
             or host_violation(receipt["last_host_sample"], receipt["baseline"], limits,
                               _pressure_verified=pressure_verified,
                               record_host_swap_out=record_host_swap_out)):
