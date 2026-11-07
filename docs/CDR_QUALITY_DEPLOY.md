@@ -101,8 +101,10 @@ rebooting. The supervisor:
 
 - Requires 5.5 GiB MemAvailable at workload admission: the 3 GiB workload budget,
   2 GiB host reserve and 512 MiB reaction margin. Activation/preflight alone
-  requires the reserve and margin. Any new host swap-out blocks admission or
-  terminates the canary. With these memory guards and zero workload swap, at most
+  requires the reserve and margin. Host swap-out is recorded, not a stop, and
+  workload swap up to 64 MiB is recorded (see "Memory stop policy"; this applies
+  to both the legacy and `allocation-v1` canary profiles). With these memory
+  guards, at most
   16 MiB of total host swap-in is permitted as bounded readback of already-swapped
   pages. This is one budget from the first admission sample through completion,
   not a budget renewed each sample. Existing swap is disclosed rather than claimed
@@ -113,8 +115,8 @@ rebooting. The supervisor:
   100 ms, including detached/orphaned children. Shared pages are counted once per
   process, conservatively overestimating workload RSS. It stops at 2.5 GiB summed
   RSS or below 2.5 GiB host availability, with a 512 MiB reaction margin relative
-  to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, any workload swap,
-  host swap-in beyond the 16 MiB total, PSI avg10 at least 10%
+  to the 3 GiB budget and 2 GiB reserve. Unreadable accounting, workload swap
+  above 64 MiB, host swap-in beyond the 16 MiB total, PSI avg10 at least 10%
   when available, or a sample gap
   beyond two seconds all fail closed.
 - Applies a hard inherited 3 GiB **per-process virtual address-space** limit,
