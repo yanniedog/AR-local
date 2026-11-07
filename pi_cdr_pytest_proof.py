@@ -118,12 +118,20 @@ def aggregate(cases):
     return ET.tostring(suite, encoding="utf-8", xml_declaration=True)
 
 
+PYTEST_TEMP_ROOT = Path("/var/tmp")
+
+
 def command(python, source, operation, selector, index, collect=False, *, partitioned=False, discovery=False):
     report = operation / "pytest-suite" / index / "report.json"
     selectors = [selector] if isinstance(selector, str) else list(selector)
+    # Test temp dirs live outside the operation, which sits under the
+    # production root /srv/ar-local: tests that refuse production paths must
+    # see an ordinary temp location. The canary unit has PrivateTmp, so
+    # /var/tmp is private to it and on disk. One level only: pytest creates
+    # the --basetemp directory itself but not its parents.
     argv = [str(python), "-u", "-B", "-m", "pytest", *selectors, "-v", "-p", "no:cacheprovider",
             "-p", "pi_cdr_pytest_report", "--rootdir", str(source), "--basetemp",
-            str(operation / "pytest-suite" / index / "tmp"), "--canary-report", str(report)]
+            str(PYTEST_TEMP_ROOT / f"ar-local-canary-pytest-{operation.name}-{index}"), "--canary-report", str(report)]
     return (argv + (["--collect-only"] if collect else [])
             + (["--canary-partitioned"] if partitioned else [])
             + (["--canary-discover-modules"] if discovery else []))

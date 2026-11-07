@@ -303,7 +303,9 @@ def canary(args) -> dict:
                   f"Environment=HOME={args.operation / 'home'}",
                   f"Environment=XDG_CONFIG_HOME={args.operation / 'home' / '.config'}",
                   "Environment=GIT_CONFIG_GLOBAL=/dev/null", "Environment=GIT_CONFIG_NOSYSTEM=1",
-                  f"Environment=TMPDIR={args.operation / 'tmp'}",
+                  # PrivateTmp /var/tmp: on disk, private to the unit, and
+                  # outside the /srv/ar-local production root that tests refuse.
+                  "Environment=TMPDIR=/var/tmp",
                   f"Environment=AR_LOCAL_DATA_ROOT={args.operation / 'private-data'}",
                   f"Environment=AR_LOCAL_PORTABLE_ROOT={args.operation / 'private-portable'}",
                   "CPUQuota=200%", "LimitAS=3G",
