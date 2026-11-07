@@ -103,11 +103,10 @@ rebooting. The supervisor:
   2 GiB host reserve and 512 MiB reaction margin. Activation/preflight alone
   requires the reserve and margin. Host swap-out is recorded, not a stop, and
   workload swap up to 64 MiB is recorded (see "Memory stop policy"; this applies
-  to both the legacy and `allocation-v1` canary profiles). With these memory
-  guards, at most
-  host swap-in is recorded, not a stop, for the canary; other supervised
-  workloads allow at most 16 MiB of host swap-in. That is one budget from the first admission sample through completion,
-  not a budget renewed each sample. Existing swap is disclosed rather than claimed
+  to both the legacy and `allocation-v1` canary profiles). Host swap-in is also
+  recorded, not a stop, for the canary. Other supervised workloads allow at most
+  16 MiB of host swap-in, as one budget from the first admission sample through
+  completion, not a budget renewed each sample. Existing swap is disclosed rather than claimed
   absent. The actual `SC_PAGE_SIZE` converts page counters to bytes; this Pi uses
   16 KiB pages. Missing/malformed counters, counter decreases, or changed page size
   fail closed.

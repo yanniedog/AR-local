@@ -252,3 +252,16 @@ def test_canary_records_host_swap_in_but_other_callers_stop_on_it():
     # The recorded figure must still match the samples it came from.
     with pytest.raises(ValueError):
         resources.require_receipt({**recorded, "cold_swap_in_bytes": 0}, record_host_swap_out=True)
+
+
+def test_canary_monitor_records_over_budget_host_swap_in_and_completes(monkeypatch):
+    over = resources.Limits().cold_swap_in_bytes // 16384 + 1
+    monkeypatch.setattr(resources, "aggregate", lambda _: {"rss_bytes": 100, "swap_bytes": 0, "processes": 1})
+    monkeypatch.setattr(resources, "host_sample", lambda: host(swap=over))
+    monkeypatch.setattr(resources, "members", lambda _: {resources.os.getpid()})
+    value = {**receipt(), "samples": 0, "peak_processes": 0}
+    child = SimpleNamespace(poll=lambda: 0)
+    resources.monitor(child, Path("unused"), resources.Limits(), host(), value, record_host_swap_out=True)
+    assert value["cold_swap_in_bytes"] == over * 16384
+    with pytest.raises(RuntimeError, match="host_cold_swap_in_budget"):
+        resources.monitor(child, Path("unused"), resources.Limits(), host(), {**receipt(), "samples": 0, "peak_processes": 0})

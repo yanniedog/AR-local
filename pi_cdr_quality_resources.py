@@ -119,9 +119,9 @@ def host_violation(sample: dict, baseline: dict, limits: Limits, *, admission=Fa
         return "host_reserve_headroom"
     # Quality canary (record_host_swap_out=True): host-wide swap-out is recorded,
     # not a stop (owner decision 2026-11-07). Linux pages idle anonymous memory
-    # out with ample MemAvailable; workload swap (MemorySwapMax=0), reserve
-    # headroom, cold swap-in and PSI still stop. Other callers (Drive backup,
-    # terms acquisition) keep their own stricter policy.
+    # out with ample MemAvailable; workload swap above 64 MiB, reserve headroom
+    # and PSI still stop. Other callers (Drive backup, terms acquisition) keep
+    # the strict swap-out and 16 MiB swap-in stops.
     if progress["swap_out_bytes"] and not (_pressure_verified or record_host_swap_out):
         return "host_swap_out_activity"
     # Quality canary: swap-in is recorded, not a stop (owner decision 2026-11-07).
