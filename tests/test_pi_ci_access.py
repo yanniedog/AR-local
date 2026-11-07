@@ -186,7 +186,10 @@ def test_writable_ancestor_is_rejected_even_if_leaf_is_root_owned(monkeypatch, t
         ci.require_root_path(path)
 
 
-def test_status_does_not_claim_verified_deployment_or_expose_environment(monkeypatch):
+def test_status_does_not_claim_verified_deployment_or_expose_environment(monkeypatch, tmp_path):
+    # Hermetic: the host's real /etc/ar-local/ci-runtime.json may exist or be
+    # unreadable (Pi canary user); this test covers the uncommissioned path.
+    monkeypatch.setattr(ci, "RUNTIME", tmp_path / "ci-runtime.json")
     calls = []
     monkeypatch.setattr(ci, "run", lambda argv, **kwargs:
                         calls.append(argv) or SimpleNamespace(returncode=0, stdout="LoadState=loaded\nActiveState=active\n"))
