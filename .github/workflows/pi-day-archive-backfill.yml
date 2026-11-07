@@ -9,18 +9,16 @@
 # create-only uploads, re-download sha256 verification, journals always on, and
 # source trees never deleted. Days that already PASS are skipped by the worker.
 #
-# Schedule: daily around midday Hobart (well clear of the worker's 00:30-02:00
-# quiet window and the overnight daily ingest), a bounded number of days per run,
-# so the series keeps itself complete. `status` is read-only and lists every non-PASS day.
+# No schedule: each new day is archived by the daily ingest itself, and the
+# historical series is already on Drive (owner decision 2026-11-07). Run
+# backfill manually only for a day `status` reports missing. `status` is read-only and lists every non-PASS day.
 name: pi-day-archive-backfill
 
 on:
-  schedule:
-    - cron: "20 1 * * *"   # 12:20 AEDT / 11:20 AEST
   workflow_dispatch:
     inputs:
       mode:
-        description: "status (read-only), backfill, dates, or stop (end a running backfill and free the Pi queue)"
+        description: "status (read-only), backfill, dates, stop (end a running backfill), merge-report (read-only) or merge-apply (merge the second Drive folder into the live one)"
         required: true
         default: "status"
         type: choice
@@ -29,6 +27,8 @@ on:
           - "backfill"
           - "dates"
           - "stop"
+          - "merge-report"
+          - "merge-apply"
       max_days:
         description: "backfill: maximum days this run (1-40)"
         required: false
@@ -62,8 +62,7 @@ jobs:
           DATES: ${{ inputs.dates }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "schedule" ]; then MODE=backfill; MAX_DAYS=6; DATES=""; fi
-          case "$MODE" in status|backfill|dates|stop) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
+          case "$MODE" in status|backfill|dates|stop|merge-report|merge-apply) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
           [[ "$MAX_DAYS" =~ ^[0-9]+$ ]] && [ "$MAX_DAYS" -ge 1 ] && [ "$MAX_DAYS" -le 40 ] || { echo "::error::max_days must be 1-40"; exit 1; }
           sel=""
           for d in $DATES; do
@@ -134,6 +133,77 @@ jobs:
           set -euo pipefail
           MODE="$1"; MAX="$2"; RUN="$3"; shift 3
           SVC=ar-local-day-archive.service
+          if [ "$MODE" = "merge-report" ] || [ "$MODE" = "merge-apply" ]; then
+            # Owner request 2026-11-07: one daily-cdr-raw-records folder. Folder
+            # 1FmECs... (created 2026-10-26) holds a second copy of the series;
+            # merge it server-side into the worker's live folder 1uL7kr....
+            # Unique names move; byte-identical (MD5) duplicates go to Drive
+            # trash (recoverable for 30 days); same-name different-content files
+            # move into a conflicts subfolder. Nothing is permanently deleted.
+            for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
+              [ ! -e "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
+            done
+            U="$(systemctl show -p User --value "$SVC")"; G="$(systemctl show -p Group --value "$SVC")"
+            test -n "$U" || { echo "day-archive service user unknown"; exit 1; }
+            MS="/srv/ar-local/payload-waiver-control/drive-merge-$RUN.sh"
+            install -d -m 0755 /srv/ar-local/payload-waiver-control
+            cat > "$MS" <<'MERGE'
+          set -euo pipefail
+          MODE="$1"
+          SRC_ID=1FmECsIaAMU_RSl2m9eRnEcLUY8_TREAN
+          DST_ID=1uL7krdRZYwiPcmMqZyiQ5y-Fs46vnSju
+          CONF="${RCLONE_CONFIG:?}"; NAME="${AR_LOCAL_DAY_ARCHIVE_REMOTE%%:*}"
+          [[ "$NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "remote name invalid"; exit 1; }
+          R=(/usr/bin/rclone --config "$CONF" --drive-server-side-across-configs --retries 3 --low-level-retries 10)
+          SRC="$NAME,root_folder_id=$SRC_ID:"; DST="$NAME,root_folder_id=$DST_ID:"
+          W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
+          "${R[@]}" lsjson --files-only --hash --hash-type md5 --no-mimetype "$SRC" > "$W/src.json"
+          "${R[@]}" lsjson --files-only --hash --hash-type md5 --no-mimetype "$DST" > "$W/dst.json"
+          python3 -I - "$W" <<'PY'
+          import json, sys, pathlib
+          w = pathlib.Path(sys.argv[1])
+          src = {r["Path"]: r for r in json.loads((w/"src.json").read_text())}
+          dst = {r["Path"]: r for r in json.loads((w/"dst.json").read_text())}
+          md5 = lambda r: (r.get("Hashes") or {}).get("md5") or (r.get("Hashes") or {}).get("MD5")
+          move, dup, conflict = [], [], []
+          for name, r in sorted(src.items()):
+              if "/" in name: conflict.append(name); continue
+              if name not in dst: move.append(name)
+              elif md5(r) and md5(r) == md5(dst[name]) and r["Size"] == dst[name]["Size"]: dup.append(name)
+              else: conflict.append(name)
+          for key, rows in (("move", move), ("dup", dup), ("conflict", conflict)):
+              (w/f"{key}.txt").write_text("".join(n + "\n" for n in rows))
+          days = lambda rows: sorted({n.split(".")[0] for n in rows if n[:4].isdigit()})
+          print(json.dumps({"MERGE_PLAN": {"source_files": len(src), "dest_files": len(dst),
+              "move": len(move), "identical_duplicates": len(dup), "conflicts": conflict,
+              "move_days": [days(move)[:1], days(move)[-1:], len(days(move))],
+              "duplicate_days": days(dup)}}))
+          PY
+          [ "$MODE" = "merge-apply" ] || exit 0
+          if [ -s "$W/move.txt" ]; then
+            "${R[@]}" move --files-from-raw "$W/move.txt" --no-traverse --immutable "$SRC" "$DST"
+          fi
+          if [ -s "$W/conflict.txt" ]; then
+            "${R[@]}" move --files-from-raw "$W/conflict.txt" --no-traverse --immutable "$SRC" "${DST}conflicts-from-second-folder"
+          fi
+          if [ -s "$W/dup.txt" ]; then
+            "${R[@]}" delete --drive-use-trash=true --files-from-raw "$W/dup.txt" "$SRC"
+          fi
+          left="$("${R[@]}" lsf --files-only "$SRC" | wc -l)"
+          echo "MERGE_DONE source_files_left=$left"
+          "${R[@]}" lsjson --files-only --hash --hash-type md5 --no-mimetype "$DST" > "$W/after.json"
+          python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); n=sorted({x["Path"].split(".")[0] for x in r if x["Path"][:4].isdigit() and x["Path"].endswith(".tar.zst")}); print("MERGE_DEST_DAYS", len(n), n[:1], n[-1:])' "$W/after.json"
+          MERGE
+            chmod 0555 "$MS"
+            props=(-p "User=$U" -p Type=exec -p RuntimeMaxSec=3600 -p EnvironmentFile=-/etc/ar-local/drive-backup.env
+                   -p EnvironmentFile=-/etc/ar-local/day-archive.env)
+            [ -n "$G" ] && props+=(-p "Group=$G")
+            rc=0
+            sudo systemd-run --quiet --wait --pipe --collect --unit="ar-local-drive-merge-$RUN.service" "${props[@]}" \
+              /bin/bash "$MS" "$MODE" || rc=$?
+            rm -f "$MS"
+            exit "$rc"
+          fi
           if [ "$MODE" = "stop" ]; then
             # Cancelling a run on GitHub does not stop its queued unit on the Pi.
             # Stop only this workflow's worker units; the queued script then
