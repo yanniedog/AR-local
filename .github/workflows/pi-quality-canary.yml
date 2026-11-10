@@ -234,6 +234,16 @@ jobs:
           sudo -n -l /usr/bin/systemctl >/dev/null 2>&1 && echo "sudo systemctl: allowed" || echo "sudo systemctl: NOT allowed non-interactively"
           df -h /srv/ar-local | tail -1
           grep -E 'MemAvailable' /proc/meminfo
+          ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5 || true
+          REMOTE
+
+      # Presence flags and timestamps only: this repository's logs are public.
+      - name: Read-only backup-state probe
+        if: inputs.mode == 'preflight'
+        run: |
+          set -uo pipefail
+          ssh ar-local-pi5 bash -s <<'REMOTE'
+          set -u
           echo "== backup-state probe (read-only) =="
           for f in backup.env drive-backup.env backup-boot-proof.json backup-gate.sha256 ci-runtime.json; do
             if sudo -n test -e "/etc/ar-local/$f" 2>/dev/null || test -e "/etc/ar-local/$f"; then echo "etc $f: present"; else echo "etc $f: absent"; fi
@@ -267,8 +277,7 @@ jobs:
           lsblk -n -o NAME,FSTYPE,MOUNTPOINT 2>&1 | sed 's/^/part: /' | head -20
           id ar-local-ci >/dev/null 2>&1 && echo "ci account: present" || echo "ci account: absent"
           if sudo -n test -s /etc/ssh/ar-local-ci-authorized-keys 2>/dev/null || test -s /etc/ssh/ar-local-ci-authorized-keys; then echo "ci authorized keys: non-empty"; else echo "ci authorized keys: empty, absent or unreadable"; fi
-          sudo -n true 2>/dev/null && echo "sudo: unrestricted non-interactive" || echo "sudo: restricted"
-          ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5 || true
+          sudo -n true 2>/dev/null && echo "sudo -n true: allowed" || echo "sudo -n true: not allowed"
           REMOTE
 
       # Read-only diagnosis of one finished canary operation: resource receipt
