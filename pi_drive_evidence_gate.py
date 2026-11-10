@@ -138,7 +138,7 @@ def create_backup(
         manifest = {"schema": SCHEMA, "name": name, "created_at": current.isoformat(), "protected_code_sha": protected,
                     "candidate_code_sha": candidate, "artefacts": artefacts}
         manifest_path = stage / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         remote = f"{settings['remote_root']}/{name}"
         base = ["rclone", "--config", str(config)]
         for argv, limit in ((["copy", "--checksum", str(stage), remote], 7200), (["check", "--one-way", str(stage), remote], 3600)):

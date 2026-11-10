@@ -308,6 +308,9 @@ append_installed_wrapper_hash deploy/pi/ar-local-backup-run.sh /usr/local/bin/ar
 
 sudo install -d -o root -g root -m 0755 /etc/ar-local
 sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/backup-gate.sha256
+if [ -d /var/lib/ar-local-day-archives ] && [ ! -L /var/lib/ar-local-day-archives ] && [ ! -L /var/lib/ar-local-day-archives/pre-deploy ]; then
+  sudo install -d -o "${run_user:-$(id -un)}" -g "${run_group:-$(id -gn)}" -m 0700 /var/lib/ar-local-day-archives/pre-deploy
+fi
 
 # Relative lib/schema paths resolve under $trusted; absolute wrapper paths verify
 # from any cwd. This matches runtime ar-local-backup-gate verification.
