@@ -277,6 +277,14 @@ jobs:
           ' 2>&1 | sed 's/^/boot-proof: /'
           systemctl list-timers 'ar-local-*' --all --no-pager 2>&1 | awk '/ar-local-.*\.timer/ {for (i = 1; i <= NF; i++) if ($i ~ /\.timer$/) print "timer:", $i}' | head -12
           systemctl show ar-local-drive-backup.service -p ActiveState -p Result -p ExecMainExitTimestamp --no-pager 2>&1 | sed 's/^/drive svc: /'
+          # Drive backup scheduling and hold state: flags, unit states and receipt names only.
+          for t in ar-local-drive-backup.timer ar-local-drive-backup-queue.timer; do
+            echo "unit $t: enabled=$(systemctl is-enabled "$t" 2>&1 | head -1) active=$(systemctl is-active "$t" 2>&1 | head -1)"
+          done
+          if test -e /etc/ar-local/drive-write-hold.json || test -L /etc/ar-local/drive-write-hold.json || sudo -n test -e /etc/ar-local/drive-write-hold.json 2>/dev/null; then echo "drive system hold: PRESENT"; else echo "drive system hold: not seen"; fi
+          if rd "$SPOOL/write-hold.json" >/dev/null || test -e "$SPOOL/write-hold.json"; then echo "drive spool hold: PRESENT"; else echo "drive spool hold: not seen"; fi
+          { ls -1 "$SPOOL/receipts" 2>/dev/null || sudo -n ls -1 "$SPOOL/receipts" 2>/dev/null; } | grep -E '^[0-9]{8}T[0-9]{6}-[0-9a-f]{12}\.(RUNNING|PASS|FAIL|BLOCKED)\.json$' | tail -8 | sed 's/^/drive receipt: /'
+          { journalctl -u ar-local-drive-backup.service -n 400 --no-pager -o short-iso 2>/dev/null || sudo -n journalctl -u ar-local-drive-backup.service -n 400 --no-pager -o short-iso 2>/dev/null; } | grep -o -E '^[0-9T:+-]+|Blocked|BLOCKED|hold|FAIL|PASS|Started|Finished|Failed' | paste -sd' ' | grep -o -E '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:+-]+( (Blocked|BLOCKED|hold|FAIL|PASS|Started|Finished|Failed))+' | tail -6 | sed 's/^/drive journal: /'
           # Type, transport and size only: device names and mountpoints can carry identifiers.
           lsblk -d -n -o TYPE,TRAN,SIZE 2>&1 | sed 's/^/disk: /'
           mountpoint -q /mnt/ar-local-backup 2>/dev/null && echo "backup mount: mounted" || echo "backup mount: not mounted"
