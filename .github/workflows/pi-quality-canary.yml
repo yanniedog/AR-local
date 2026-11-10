@@ -234,6 +234,40 @@ jobs:
           sudo -n -l /usr/bin/systemctl >/dev/null 2>&1 && echo "sudo systemctl: allowed" || echo "sudo systemctl: NOT allowed non-interactively"
           df -h /srv/ar-local | tail -1
           grep -E 'MemAvailable' /proc/meminfo
+          echo "== backup-state probe (read-only) =="
+          for f in backup.env drive-backup.env backup-boot-proof.json backup-gate.sha256 ci-runtime.json; do
+            if sudo -n test -e "/etc/ar-local/$f" 2>/dev/null || test -e "/etc/ar-local/$f"; then echo "etc $f: present"; else echo "etc $f: absent"; fi
+          done
+          test -x /usr/local/bin/ar-local-backup-gate && echo "gate bin: present" || echo "gate bin: absent"
+          (cd /usr/local/lib/ar-local-backup 2>/dev/null && sha256sum -c /etc/ar-local/backup-gate.sha256 >/dev/null 2>&1 && echo "gate bytes: manifest OK" || echo "gate bytes: manifest FAIL or unreadable")
+          sha256sum /usr/local/lib/ar-local-backup/pi_backup_foundation.py 2>/dev/null | cut -c1-16 | sed 's/^/gate foundation sha16: /'
+          python3 - <<'PY' 2>&1 | sed 's/^/drive: /'
+          import json, os
+          p = "/var/lib/ar-local-drive-backup/latest-verified.json"
+          try:
+              v = json.load(open(p))
+              for k in ("schema", "result", "action", "repository_check", "backup_date", "finished_at", "restore_verified_at"):
+                  print(k, "=", v.get(k))
+              print("keys =", sorted(v))
+          except Exception as e:
+              print("unreadable:", type(e).__name__, os.path.exists(p))
+          PY
+          python3 - <<'PY' 2>&1 | sed 's/^/boot-proof: /'
+          import json
+          try:
+              v = json.load(open("/etc/ar-local/backup-boot-proof.json"))
+              print({k: v.get(k) for k in ("result", "created_at", "candidate_code_sha", "proof_type") if k in v}, "keys =", sorted(v))
+          except Exception as e:
+              print("unreadable:", type(e).__name__)
+          PY
+          systemctl list-timers 'ar-local-*' --all --no-pager 2>&1 | awk 'NR>1 && /ar-local/ {print "timer:", $(NF-1), "last:", $0}' | cut -c1-200 | head -12
+          systemctl is-active ar-local-drive-backup.service 2>&1 | sed 's/^/drive service: /'
+          systemctl show ar-local-drive-backup.service -p Result -p ExecMainExitTimestamp --no-pager 2>&1 | sed 's/^/drive svc: /'
+          lsblk -d -n -o NAME,SIZE,TYPE,TRAN 2>&1 | sed 's/^/disk: /'
+          lsblk -n -o NAME,FSTYPE,MOUNTPOINT 2>&1 | sed 's/^/part: /' | head -20
+          id ar-local-ci >/dev/null 2>&1 && echo "ci account: present" || echo "ci account: absent"
+          if sudo -n test -s /etc/ssh/ar-local-ci-authorized-keys 2>/dev/null || test -s /etc/ssh/ar-local-ci-authorized-keys; then echo "ci authorized keys: non-empty"; else echo "ci authorized keys: empty, absent or unreadable"; fi
+          sudo -n true 2>/dev/null && echo "sudo: unrestricted non-interactive" || echo "sudo: restricted"
           ls -1d /srv/ar-local/quality-operation-* 2>/dev/null | tail -5 || true
           REMOTE
 
