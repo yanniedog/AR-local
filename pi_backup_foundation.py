@@ -821,7 +821,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     effective_argv = list(argv) if argv is not None else sys.argv[1:]
     exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "install-checkout", "rollback-checkout", "record-deployment", "record-rollback"))
+    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "install-checkout", "rollback-checkout", "record-deployment", "record-rollback", "drive-backup", "drive-gate", "drive-record-deployment", "drive-record-rollback"))
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--repo", type=Path, default=Path("/srv/ar-local/AR-local"))
     parser.add_argument("--site-repo", type=Path, default=Path("/srv/ar-local/australianrates"))
@@ -838,8 +838,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--services-verified", action="store_true")
     args = parser.parse_args(argv)
     try:
-        policy = BackupPolicy.from_env_file(args.config)
         repo, site_repo, data_root = _paths(args)
+        if args.command.startswith("drive-"):
+            # Drive-evidence mode needs no local backup disk and so no backup.env.
+            import pi_drive_evidence_gate as drive
+
+            protected, candidate = args.protected_code_sha or "", args.candidate_sha or ""
+            try:
+                if args.command == "drive-backup":
+                    report = drive.create_backup(repo, site_repo, data_root, protected, candidate)
+                elif args.command == "drive-gate":
+                    report = drive.gate(protected, candidate)
+                else:
+                    kind = "deployment" if args.command == "drive-record-deployment" else "rollback"
+                    report = drive.record(kind, protected, candidate, [*args.parent_command, exact_command])
+            except drive.Blocked as exc:
+                raise RuntimeError(str(exc)) from exc
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0 if report.get("ok", report.get("result") in {"PASS", "ROLLED_BACK"}) else 1
+        # Checkout moves use the production lock only; they never read the backup policy.
+        policy = None if args.command in {"install-checkout", "rollback-checkout"} else BackupPolicy.from_env_file(args.config)
         if args.command == "preflight":
             report = preflight(policy, repo, site_repo, data_root)
         elif args.command == "snapshot":

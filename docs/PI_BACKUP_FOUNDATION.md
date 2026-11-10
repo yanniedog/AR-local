@@ -69,3 +69,15 @@ Every preflight and deployment gate recomputes the raw and controlled runbook ha
 The software validates every boot-proof record against the checked-in schema but cannot manufacture one. The clone must actually be booted and its network, dashboard, timers, configured device identity, mountpoint, filesystem, code SHA, and evidence hashes recorded. The referenced evidence files must remain present and hash-identical when the deployment gate runs; acceptance then copies every referenced artifact into create-once deployment evidence so later log rotation cannot erase the proof. Until the external mount, restore drill, and physical boot test pass, Phase A remains `BLOCKED` and production deployment remains prohibited.
 
 After an authorized deployment passes exact-SHA synchronization, service checks, and the dashboard smoke test, `pi_deploy_verify.py` invokes the trusted `record-deployment` command. It carries forward the exact immutable backup/restore identities validated by the gate rather than rereading mutable latest pointers, archives the accepted boot proof and all of its artifacts, and writes a create-once acceptance record. A locked monotonic chain orders records even when they are created in the same second; if publishing the mutable head fails after a record is durable, the next attempt validates the complete record chain and repairs only a missing or lagging valid head. The record is bound to the protected and candidate SHAs, plan identities, exact parent and remote commands, evidence hashes, verification results, operator, timestamps, deviations, and the prior deployment-record digest. If the acceptance record cannot be durably created, the deploy command restores the exact protected SHA, re-applies its services, and verifies the dashboard; it never leaves an unaccepted candidate running silently.
+
+
+## Drive-evidence mode (no local backup disk)
+
+Owner decision 2026-11-10. With `AR_PI_BACKUP_GATE_MODE=drive-evidence`, `pi_deploy_verify.py --deploy` replaces the local-disk gate with `pi_drive_evidence_gate.py` (same trusted install, same `ar-local-backup-gate` wrapper; no `backup.env`). Deployment is admitted only when:
+
+- the day-archive ledger records an archive for the current or previous Hobart day, and
+- a backup of the AR-local and site checkouts and `data/state`, taken in the same run for the exact protected and candidate commits, was uploaded to `pre-deploy-backups/` beside the day archives, hash-checked with `rclone check` and its manifest read back.
+
+Receipts and append-only deployment or rollback records live under `<day-archive spool>/pre-deploy/`. This mode records `restore_drill` and `boot_proof` as `NOT_TESTED`: it is not a restore drill, boot proof or full-history backup. Run history relies on the day archives; code rollback relies on `rollback-checkout`. The default mode stays `local-disk`.
+
+Gate bytes for a new commit are installed with `pi-quality-canary` mode `install-gate` (confirm `INSTALL_GATE_BYTES`), which runs the `--gate-bytes-only` procedure above from a disposable clone.

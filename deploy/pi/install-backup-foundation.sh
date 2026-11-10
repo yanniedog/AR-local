@@ -187,6 +187,7 @@ for name in \
   pi_cdr_quality_read_io.py \
   ar_local_ingest_schedule.py \
   pi_backup_foundation.py \
+  pi_drive_evidence_gate.py \
   pi_ingest_terminal.py \
   process_safety.py \
   cdr_atomic.py \
@@ -237,6 +238,7 @@ done
     pi_cdr_quality_read_io.py \
     ar_local_ingest_schedule.py \
     pi_backup_foundation.py \
+    pi_drive_evidence_gate.py \
     pi_ingest_terminal.py \
     process_safety.py \
     cdr_atomic.py \

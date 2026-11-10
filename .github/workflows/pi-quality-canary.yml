@@ -27,7 +27,7 @@ on:
         required: true
         type: string
       mode:
-        description: "preflight / discover / inspect (read-only), prepare-python, seal-cache, canary, or operator-deploy"
+        description: "preflight / discover / inspect (read-only), prepare-python, seal-cache, canary, install-gate, or operator-deploy"
         required: true
         default: "preflight"
         type: choice
@@ -38,6 +38,7 @@ on:
           - "prepare-python"
           - "seal-cache"
           - "canary"
+          - "install-gate"
           - "operator-deploy"
       confirm:
         description: "Type RUN_GUARDED_CANARY for canary mode"
@@ -120,6 +121,9 @@ jobs:
           [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           if [ "$MODE" = "operator-deploy" ]; then
             test "$CONFIRM" = "DEPLOY_CANARY_PASSED_COMMIT" || { echo "::error::operator-deploy needs confirm=DEPLOY_CANARY_PASSED_COMMIT"; exit 1; }
+          fi
+          if [ "$MODE" = "install-gate" ]; then
+            test "$CONFIRM" = "INSTALL_GATE_BYTES" || { echo "::error::install-gate needs confirm=INSTALL_GATE_BYTES"; exit 1; }
           fi
           if [ "$MODE" = "seal-cache" ]; then
             test "$CONFIRM" = "SEAL_AUDIT_CACHE" || { echo "::error::seal-cache needs confirm=SEAL_AUDIT_CACHE"; exit 1; }
@@ -439,6 +443,30 @@ jobs:
           ref: ${{ inputs.target_commit }}
           fetch-depth: 1
 
+      # Installs the trusted backup-gate bytes for the target commit (which must be
+      # current origin/main) from a disposable clone, leaving the production
+      # checkout on its protected commit. Required before operator-deploy whenever
+      # the gate code changed.
+      - name: Install trusted gate bytes for the target commit
+        if: inputs.mode == 'install-gate'
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+        run: |
+          set -euo pipefail
+          ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          SRC="$(mktemp -d /srv/ar-local/gate-source-XXXXXX)"
+          trap 'rm -rf "$SRC"' EXIT
+          git clone -q https://github.com/yanniedog/AR-local.git "$SRC/AR-local"
+          test "$(git -C "$SRC/AR-local" rev-parse HEAD)" = "$1" || { echo "target is not current origin/main"; exit 1; }
+          PROD="$(git -C /srv/ar-local/AR-local rev-parse HEAD)"
+          sh "$SRC/AR-local/deploy/pi/install-backup-foundation.sh" --gate-bytes-only \
+            --prod-repo /srv/ar-local/AR-local --expect-prod-head "$PROD" \
+            "$SRC/AR-local" /srv/ar-local/australianrates /srv/ar-local/data "$1"
+          (cd /usr/local/lib/ar-local-backup && sha256sum -c /etc/ar-local/backup-gate.sha256 >/dev/null) && echo "gate bytes installed for $1; manifest OK"
+          test "$(git -C /srv/ar-local/AR-local rev-parse HEAD)" = "$PROD" && echo "production HEAD unchanged"
+          REMOTE
+
       - name: Operator deploy of a canary-passed commit
         if: inputs.mode == 'operator-deploy'
         env:
@@ -461,6 +489,10 @@ jobs:
           echo "canary PASS evidence: $PASSED"
           export AR_PI_SSH_HOST=ar-local-pi5 AR_PI_EXPECTED_COMMIT="$TARGET_COMMIT"
           export AR_PI_BASE_URL="http://${PI_SSH_HOST}/"
+          # Owner decision 2026-11-10: no separate backup disk exists, so the deploy
+          # gate requires a current Drive day archive plus a fresh, Drive-verified
+          # pre-deployment backup (docs/PI_BACKUP_FOUNDATION.md, Drive-evidence mode).
+          export AR_PI_BACKUP_GATE_MODE=drive-evidence
           python3 pi_deploy_verify.py --deploy --dry-run
           python3 pi_deploy_verify.py --deploy
           python3 pi_deploy_verify.py --verify
