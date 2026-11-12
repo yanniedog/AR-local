@@ -64,6 +64,8 @@ jobs:
         run: |
           ssh ar-local-pi5 bash -s <<'REMOTE'
           set +e
+          # Journal lines reach a hosted log: drop URLs and long token-like strings.
+          redact() { sed -E 's#[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]"]+#<url>#g; s#[A-Za-z0-9_/+=-]{40,}#<redacted>#g' | cut -c1-300; }
           echo "HEAD $(git -C /srv/ar-local/AR-local rev-parse HEAD) dirty=$(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
           date; uptime; df -h /srv /var/tmp | sed 1d; free -m | sed -n 2,3p
           echo "--- timers"; systemctl list-timers --all --no-pager 'ar-local*' | cut -c1-200
@@ -71,10 +73,10 @@ jobs:
           echo "--- daily service"; systemctl show ar-local-daily.service -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p Result -p ExecMainStatus
           for u in ar-local-day-archive ar-local-drive-backup ar-local-payload-daily-archive ar-local-ingest-alert ar-local-daily-watchdog ar-local-issue-watchdog; do
             echo "--- $u: $(systemctl show $u.service -p Result --value) $(systemctl show $u.service -p ExecMainExitTimestamp --value)"
-            journalctl -u $u.service --since '-36h' --no-pager -o cat 2>/dev/null | tail -6 | cut -c1-300
+            journalctl -u $u.service --since '-36h' --no-pager -o cat 2>/dev/null | tail -6 | redact
           done
           echo "--- daily journal (warnings, last run)"
-          journalctl -u ar-local-daily.service --since '-14h' --no-pager -o cat 2>/dev/null | grep -iE "withh|refus|error|fail|partial|population|publish" | tail -25 | cut -c1-300
+          journalctl -u ar-local-daily.service --since '-14h' --no-pager -o cat 2>/dev/null | grep -iE "withh|refus|error|fail|partial|population|publish" | tail -25 | redact
           REMOTE
 
       - name: Provider coverage by day
@@ -82,9 +84,12 @@ jobs:
           DAYS: ${{ inputs.days }}
         run: |
           set -euo pipefail
-          [[ "$DAYS" =~ ^[0-9]{1,2}$ ]] || DAYS=14
+          [[ "$DAYS" =~ ^[1-9][0-9]?$ ]] || DAYS=14
           rc=0
           ssh ar-local-pi5 python3 -I - /srv/ar-local/data "$DAYS" < scripts/pi_coverage_report.py || rc=$?
           if [ "$rc" = 3 ]; then
+            echo "--- retrying as the daily service user"
             ssh ar-local-pi5 'sudo -n -u "$(systemctl show -p User --value ar-local-daily.service)" python3 -I - /srv/ar-local/data '"$DAYS" < scripts/pi_coverage_report.py
+          else
+            exit "$rc"
           fi
