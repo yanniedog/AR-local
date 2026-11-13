@@ -87,8 +87,8 @@ The canary systemd scope has read-only candidate/production/data mounts, a priva
 writable temporary directory for SQLite WAL recovery, no network, no production
 environment file, no Drive credentials, and private derived output. CPU is capped
 at two cores, process count at 256, I/O weight remains 10 and runtime is at most
-90 minutes, shortened to finish before 22:00 Hobart. Start checks require the
-03:30–22:00 window, idle ingest and at least 8 GiB free disk. A resource or
+90 minutes, shortened to finish before 00:30 Hobart. Start checks require the
+03:30–00:30 window, idle ingest and at least 8 GiB free disk. A resource or
 dependency failure stays BLOCKED.
 
 The following legacy policy remains the default. The Pi kernel may lack both the memory cgroup controller and memory PSI. The
@@ -365,7 +365,7 @@ Sealing holds the shared production lock, rehashes the current contract artifact
 (including SQLite sidecars), ledger events, pointer, marker and contract, then
 retains complete candidate and predecessor Git bundles. The manifest includes
 the complete candidate file hashes and an exact changed/deleted file allowlist.
-It expires after six hours or at 22:00 Hobart, whichever comes first. Capture the
+It expires after six hours or at the next 00:30 Hobart boundary, whichever comes first. Capture the
 returned manifest hash; never substitute a recomputed hash after editing evidence.
 
 ```sh
@@ -383,7 +383,7 @@ Admission requires at least 30 minutes before the seal expires, checked before
 pausing timers and again immediately before checkout. This reserves 21 minutes
 for all three possible smoke phases plus nine minutes for other work; it is not
 a hard whole-operation deadline because inline hashing is not separately timed.
-The seal's 22:00 Hobart cutoff and capture window remain unchanged. Rollback
+The seal's 00:30 Hobart cutoff and capture window remain unchanged. Rollback
 remains available after expiry and does not require another admission check.
 
 Activation pauses only the daily-watchdog and runtime-health coordination timers;
@@ -675,7 +675,7 @@ the parent from accepting the canary.
 Before starting the companion, admission reserves its 32-second startup budget,
 31-second exit budget and the original 45-second unit/controller margin. After
 the initial healthy round, the parent recomputes the remaining workload time
-against 22:00 Hobart and refuses if fewer than 300 workload seconds remain.
+against 00:30 Hobart and refuses if fewer than 300 workload seconds remain.
 The 5,400-second maximum is unchanged; slow readiness never extends the window.
 
 The supervisor samples pressure and service evidence during both admission

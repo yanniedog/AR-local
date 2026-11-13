@@ -96,7 +96,8 @@ def run_ingest_process_group(cmd: list[str], *, timeout_seconds: Optional[float]
 def catch_up_timeout(now_utc: datetime) -> float:
     """Do not let an evening catch-up hold the lease across the next natural run."""
     local = now_utc.astimezone(HOBART)
-    closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    from ar_local_ingest_schedule import maintenance_closes_at
+    closing = maintenance_closes_at(local)
     return max(0.0, min(SUBPROCESS_INGEST_TIMEOUT_SEC,
                         (closing - local).total_seconds() - CLEANUP_SECONDS))
 

@@ -35,14 +35,14 @@ PENDING = {"pointer": {"observation_date": "2026-10-01", "generation_id": "octob
 
 
 @pytest.mark.parametrize("clock,expected", [
-    ((0, 0, 0), "protected_natural_ingest_window"),
+    ((0, 0, 0), "insufficient_publication_window"),
     ((0, 30, 0), "protected_natural_ingest_window"),
     ((1, 0, 0), "protected_natural_ingest_window"),
     ((3, 29, 59), "protected_natural_ingest_window"),
     ((3, 30, 0), ""),
-    ((21, 29, 15), ""),
-    ((21, 29, 16), "insufficient_publication_window"),
-    ((22, 0, 0), "protected_natural_ingest_window"),
+    ((23, 59, 15), ""),
+    ((23, 59, 16), "insufficient_publication_window"),
+    ((22, 0, 0), ""),
 ])
 @pytest.mark.parametrize("day", [1, 4, 5])
 def test_retry_cannot_overlap_natural_ingest_or_quiet_hours(clock, expected, day):
@@ -59,7 +59,7 @@ def test_retry_gate_does_not_move_the_natural_timer():
 
 @pytest.mark.parametrize("clock,expected", [
     ((0, 45), False), ((1, 0), False), ((1, 30), True),
-    ((21, 58), True), ((21, 59), False), ((22, 0), False),
+    ((21, 58), True), ((21, 59), True), ((22, 0), True), ((23, 59), True), ((0, 15), False),
 ])
 def test_catch_up_is_current_day_only_and_finishes_before_quiet_hours(monkeypatch, capsys, clock, expected):
     now = local_time(*clock)
@@ -84,7 +84,8 @@ def test_catch_up_is_current_day_only_and_finishes_before_quiet_hours(monkeypatc
         assert launch.call_args.args[0] == "2026-10-01"
         budget = launch.call_args.kwargs["timeout_seconds"]
         finish = (now + timedelta(seconds=budget + policy.CLEANUP_SECONDS)).astimezone(DAILY_INGEST_TZ)
-        assert finish.date().isoformat() == "2026-10-01" and finish.hour <= 22
+        from ar_local_ingest_schedule import maintenance_closes_at
+        assert finish <= maintenance_closes_at(now)
         assert 60 <= budget <= watchdog.SUBPROCESS_INGEST_TIMEOUT_SEC
     else:
         launch.assert_not_called()

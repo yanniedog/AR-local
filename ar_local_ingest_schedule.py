@@ -17,6 +17,22 @@ DAILY_INGEST_TZ = ZoneInfo(DAILY_INGEST_TZ_KEY)
 DAILY_INGEST_LOCAL_HOUR = 1
 DAILY_INGEST_SCHEDULE_LABEL = f"{DAILY_INGEST_LOCAL_HOUR:02d}:00 {DAILY_INGEST_TZ_KEY} daily"
 
+# Operator decision 2026-11-14: maintenance may continue until 00:30 daily.
+# Admission still requires enough time for each operation's cleanup budget.
+MAINTENANCE_WINDOW_LABEL = "03:30-00:30 Australia/Hobart"
+
+
+def maintenance_window_open(now_utc: datetime) -> bool:
+    local = _as_utc(now_utc).astimezone(DAILY_INGEST_TZ)
+    return not datetime_time(0, 30) <= local.time() < datetime_time(3, 30)
+
+
+def maintenance_closes_at(now_utc: datetime) -> datetime:
+    """Next 00:30 boundary, including today's boundary just after midnight."""
+    local = _as_utc(now_utc).astimezone(DAILY_INGEST_TZ)
+    boundary = local.replace(hour=0, minute=30, second=0, microsecond=0)
+    return boundary if local < boundary else boundary + timedelta(days=1)
+
 
 def _as_utc(now_utc: datetime) -> datetime:
     if now_utc.tzinfo is None:

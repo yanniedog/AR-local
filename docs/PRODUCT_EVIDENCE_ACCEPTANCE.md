@@ -296,7 +296,7 @@ native evidence and final report release.
 - [ ] **V-002 BLOCKED_EXTERNAL** Canary and deploy only the exact approved candidate
   through controlled activation, with verified rollback and resource results.
   Preserve 01:00 Hobart ingest priority, 00:30 freeze, actual terminal-job checks,
-  03:30–22:00 recovery limits, capacity and memory/swap safeguards.
+  03:30–00:30 recovery limits, capacity and memory/swap safeguards.
 - [ ] **V-003 BLOCKED_EXTERNAL** Inspect the actual Pi dashboard in external Chrome at
   `http://100.78.28.10/` and pass `npm run verify:pi` against that deployment. Record
   timestamp, commit and actual result; localhost/public-site checks do not substitute.

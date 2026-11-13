@@ -181,8 +181,10 @@ def operation_guard(data, production, reference, target, operation, stage):
 def current_state(data: Path) -> tuple[str, str, Path]:
     pointer = read(data / "state/observation-pointers-v2/latest-observation.json")
     run_date = str(pointer.get("run_date") or pointer.get("date") or pointer["generation_id"][4:14])
-    if run_date != datetime.now(TZ).date().isoformat():
-        raise ValueError("selected observation is not current-day")
+    from ar_local_ingest_schedule import latest_daily_due_utc, expected_run_date_for_due
+    expected = expected_run_date_for_due(latest_daily_due_utc(datetime.now(TZ)))
+    if run_date != expected:
+        raise ValueError("selected observation is not the latest scheduled ingest date")
     return run_date, pointer["generation_id"], relative(data, pointer["export_path"])
 
 

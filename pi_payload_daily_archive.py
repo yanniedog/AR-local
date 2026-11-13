@@ -73,9 +73,10 @@ def archive_signals():
 
 def window_reason(now: datetime) -> str:
     local = now.astimezone(HOBART)
-    if not daytime(3, 30) <= local.time() < daytime(22):
+    from ar_local_ingest_schedule import maintenance_closes_at, maintenance_window_open
+    if not maintenance_window_open(local):
         return "protected_natural_ingest_window"
-    closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    closing = maintenance_closes_at(local)
     if (closing - local).total_seconds() < PAYLOAD_TIMEOUT_SECONDS + CLEANUP_SECONDS:
         return "insufficient_publication_window"
     return ""

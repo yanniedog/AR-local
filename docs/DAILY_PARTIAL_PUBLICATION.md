@@ -52,7 +52,7 @@ Drive hold, quiet window, original archives and unknown lock owners.
 
 Production backfills and rolling-only refreshes now require an active bounded
 systemd service before acquiring the ingest lock. Starts are limited to
-03:30-22:00 Hobart. Use `Type=exec`, `RuntimeMaxSec=3600` or less,
+03:30-00:30 Hobart. Use `Type=exec`, `RuntimeMaxSec=3600` or less,
 `TimeoutStopSec=30` or less, `KillMode=control-group`, `SendSIGKILL=yes` and
 `Restart=no`; randomized extra runtime is refused. The guard checks final
 SIGKILL, standard stop-failure behavior and empty stop hooks, preventing custom
