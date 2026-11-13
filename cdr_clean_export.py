@@ -211,6 +211,7 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
         text(provider) for provider in banks.get("holder_attempts", []) if text(provider)
     } | observed | failed
     succeeded = attempted - (failed - observed)
+    prd_unavailable = banks.get('prd_unavailable', [])
     sections: Dict[str, Any] = {}
     for section in ("Mortgage", "Savings", "TD"):
         section_rates = [row for row in rates if row.get("dataset") == section]
@@ -241,10 +242,13 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
             "providers_partial": len(failed & observed),
             "providers_attempted": len(attempted),
             "providers_succeeded": len(succeeded),
+            "providers_registered": len(attempted) + len(prd_unavailable),
+            "providers_prd_unavailable": len(prd_unavailable),
         },
         "sections": sections,
         # Deliberately excludes endpoint URLs and response snippets.
         "provider_failures": _failure_rollup(failures),
+        "provider_prd_unavailable": prd_unavailable,
     })
 
 
@@ -405,12 +409,25 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "product_facts": [],
         "failures": read_failures(banks_root),
         "holder_attempts": [],
+        "prd_unavailable": [],
     }
     if not banks_root.exists():
         return dataset
     holders_root = banks_root / "_holders"
     if holders_root.exists():
         dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
+    status_path = banks_root / "ingest-status.json"
+    if status_path.is_file():
+        if status_path.stat().st_size > 32 * 1024**2:
+            raise ValueError("ingest status exceeds export metadata bound")
+        status = json.loads(status_path.read_bytes())
+        unavailable = [row for row in status.get('provider_states', [])
+                       if row.get('state') == 'not_attempted' and row.get('prd_availability') == 'UNAVAILABLE']
+        names = {row['provider_dir'] for row in unavailable}
+        dataset['holder_attempts'] = [name for name in dataset['holder_attempts'] if name not in names]
+        dataset['prd_unavailable'] = [
+            {key: row[key] for key in ('provider_uid', 'brand_name', 'population_known', 'prd_availability')}
+            for row in unavailable]
     for path in sorted(banks_root.rglob("product-detail.json")):
         source = path.read_bytes()
         rec = inner_record(json.loads(source))

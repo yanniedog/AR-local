@@ -52,8 +52,10 @@ def apply_population_coverage(export_root, run_date, providers):
             raise ValueError('population warning does not reconcile to a provider')
         if matches:
             provider = matches[0]
-            provider.update(state='failed', population_known=False,
-                            population_disposition='UNVERIFIED_SOURCE_ABSENCE')
+            # A registered brand without a PRD endpoint was not requested.
+            # Keep that honest attempt state while retaining the population gap.
+            provider.update(state=('not_attempted' if provider.get('state') == 'not_attempted' else 'failed'),
+                            population_known=False, population_disposition='UNVERIFIED_SOURCE_ABSENCE')
         else:
             provider = identity  # Prior identity is disclosed, never a current attempt.
         seen.add(name)

@@ -329,6 +329,10 @@ def ingest_brand(
     if not meta_path.exists():
         meta_path.write_text(json.dumps(brand, indent=2, ensure_ascii=False), encoding="utf-8")
 
+    if brand.get("prd_availability") == "UNAVAILABLE":
+        log(f"[banks] {bank_dir_name}: register v2 advertises no PRD endpoint; population unknown")
+        return  # No invented HTTP failure, zero-product claim or removal evidence.
+
     index_dir = holders_root / "_products-index"
     index_dir.mkdir(parents=True, exist_ok=True)
 
@@ -693,6 +697,7 @@ def _persist_ingest_status(
             )
         ).encode("utf-8")
         failures = int(by_provider.get(bdir) or 0)
+        unavailable = brand.get("prd_availability") == "UNAVAILABLE"
         provider_states.append(
             {
                 "provider_uid": f"legacy-prd:{hashlib.sha256(identity_material).hexdigest()}",
@@ -701,13 +706,19 @@ def _persist_ingest_status(
                 "brand_name": brand.get("brand_name") or None,
                 "legal_entity_name": brand.get("legal_entity_name") or None,
                 "endpoint_url": brand.get("endpoint_url") or None,
-                "state": "partial" if failures else "complete",
+                "state": "not_attempted" if unavailable else ("partial" if failures else "complete"),
+                **({"population_known": False, "prd_availability": "UNAVAILABLE",
+                    "prd_availability_evidence": brand["prd_availability_evidence"]} if unavailable else {}),
                 "failure_records": failures,
                 "failure_categories": status["by_provider_failure_category"].get(bdir, {}),
             }
         )
     status["providers_registered"] = snapshot.banking_count_before_filter
-    status["providers_attempted"] = len(bank_work)
+    unavailable_count = sum(row["state"] == "not_attempted" for row in provider_states)
+    status["providers_attempted"] = len(bank_work) - unavailable_count
+    if unavailable_count:
+        status["providers_prd_unavailable"] = unavailable_count
+    status["incomplete"] |= bool(unavailable_count)
     status["provider_states"] = provider_states
     attempt_summary = attempt_journal.summary()
     attempt_summary["path"] = attempt_journal.root.relative_to(run_root).as_posix()

@@ -67,10 +67,17 @@ def reconcile_register(exports, status, *, budget=None):
         brands.update(brand_key(row) for row in iter_banking_brands_from_payload(json.loads(raw)))
     states = status.get("provider_states") or []
     observed = {brand_key(row) for row in states}
+    unavailable = []
+    if status.get('providers_prd_unavailable') or any(row.get('prd_availability') == 'UNAVAILABLE' for row in states):
+        from cdr_provider_participation_evidence import current_register
+        _, register = current_register(exports, status, datetime.now(TZ).date().isoformat())
+        unavailable = register.get('prd_unavailable', [])
     if (found != expected or not brands or observed != brands or len(states) != len(brands)
-            or status.get("providers_registered") != len(brands) or status.get("providers_attempted") != len(brands)):
+            or status.get("providers_registered") != len(brands)
+            or status.get("providers_attempted") + len(unavailable) != len(brands)):
         raise ValueError("not every discovered financial provider has exactly one attempted state")
-    return {"registered": len(brands), "attempted": len(states), "register_body_sha256": sorted(found),
+    return {"registered": len(brands), "attempted": status['providers_attempted'],
+            "prd_unavailable": unavailable, "register_body_sha256": sorted(found),
             "unresolved_requests": status.get("total"), "provider_states": states,
             "upstream_complete": not bool(status.get("incomplete"))}
 

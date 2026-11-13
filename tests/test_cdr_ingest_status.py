@@ -331,7 +331,7 @@ def test_canonical_register_discovery_is_complete(monkeypatch):
     monkeypatch.setattr(
         cis,
         "iter_banking_brands_from_payload",
-        lambda _payload: [
+        lambda _payload, **_version: [
             {
                 "endpoint_url": "https://holder.example/products",
                 "brand_name": "Holder",
