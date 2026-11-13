@@ -119,6 +119,15 @@ budgets and the current consumer. User watchlist delivery is still unverified.
 
 ## Remaining acceptance
 
+Full hosted CI on synchronized head `5c46171` reported 9,452 passed,
+three failed and 55 skipped. The three failing queue-routing test cases supplied
+only `provider` in their stand-in coverage rows, omitting canonical
+`population_known=false` and `disposition=UNVERIFIED_SOURCE_ABSENCE`. The new
+recovery predicate correctly rejects those incomplete rows. Updated both test
+builders to the actual exported schema, preserving the retained real queue
+fixture; added explicit malformed-row rejection controls. Production admission
+was not weakened. Fresh exact-head full hosted CI remains required.
+
 - Review/implement tests and inspect consumer handling of uncertainty.
 - Complete repository CI, review feedback and guarded merge through root owner.
 - No Pi operation, deployment, SSH, backup write or publication has occurred in

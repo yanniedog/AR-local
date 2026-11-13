@@ -18,6 +18,16 @@ from tests.test_irreplaceable_finalization import make_export
 DAY = "2026-10-29"
 
 
+@pytest.mark.parametrize("finding", [
+    {"provider": "Wise"},
+    {"provider": "Wise", "population_known": True, "disposition": "UNVERIFIED_SOURCE_ABSENCE"},
+    {"provider": "Wise", "population_known": False, "disposition": "other"},
+])
+def test_incomplete_population_metadata_does_not_authorize_recovery(finding):
+    from cdr_population_coverage import has_unverified_provider_population
+    assert not has_unverified_provider_population({"coverage": {"provider_population_unverified": [finding]}})
+
+
 def retained_accounting(tmp_path, day=DAY):
     """Retained real counts; only the protocol date is varied for policy tests."""
     retained = json.loads((Path(__file__).parent / "fixtures" /

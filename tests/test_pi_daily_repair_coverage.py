@@ -54,7 +54,8 @@ def test_daily_owner_routes_matching_policy_hold_to_normal_bounded_recovery():
     from types import SimpleNamespace
     pointer={'schema_version':2,'observation_date':DATE,'generation_id':'selected'}
     observation={'pointer':pointer,'contract':{'observation_date':DATE,
-        'coverage':{'provider_population_unverified':[{'provider':'Provider'}]}}}
+        'coverage':{'provider_population_unverified':[{'provider':'Provider',
+            'population_known':False,'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]}}}
     w=SimpleNamespace(REPO_ROOT='repo',run_payload_retry=Mock(),run_recovery_ingest=Mock())
     r=Mock();r.recovery_block_reason.return_value='';r.selected_observation.return_value=observation
     pending={'run_date':DATE,'pointer':pointer}
