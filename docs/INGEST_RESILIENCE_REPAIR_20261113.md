@@ -4,7 +4,7 @@ Updated: 2026-11-13, Australia/Hobart. **Work in progress; production repair is 
 
 ## Objective and authority
 
-The operator requests maximum obtainable daily CDR coverage for every registered bank and mortgage, savings and term-deposit product; preservation of complete consumer-relevant details and longitudinal changes; daily Pi capture, GitHub publication and verified Google Drive backup. This request authorizes work toward those runtime outcomes and daily backups. Preserve immutable observations, prior recovery copies, resource limits, ownership locks and exact-commit deployment gates. Do not equate public availability with complete coverage. Never label carried-forward observations as fresh or infer product withdrawal from a failed provider capture.
+The operator requests maximum obtainable daily CDR coverage for every registered bank and mortgage, savings and term-deposit product; preservation of complete consumer-relevant details and longitudinal changes; daily Pi capture, GitHub publication and verified Google Drive backup. The current 2026-11-13 operator request explicitly says to ensure the Pi "backs everything up to Google Drive daily"; that request is the authority for restoring daily backups, not this handoff. Installed hold files remain untouched. Reconcile the applicable hold and recovery gates before any backup write; this document neither removes a hold nor certifies recovery readiness. Preserve immutable observations, prior recovery copies, resource limits, ownership locks and exact-commit deployment gates. Do not equate public availability with complete coverage. Never label carried-forward observations as fresh or infer product withdrawal from a failed provider capture.
 
 ## Resume first
 
