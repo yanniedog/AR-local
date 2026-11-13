@@ -72,12 +72,12 @@ def test_standing_policy_requires_nonempty_usable_population(tmp_path, field, va
     assert gate.publication_allowed(contract) == (False, "invalid_retained_partial")
 
 
-def finalized_population_control(tmp_path, *, status="worker_crash"):
+def finalized_population_control(tmp_path, *, status="worker_crash", failures=1):
     exports, state = tmp_path / "runs" / DAY / "_exports", tmp_path / "state"
-    make_export(exports, failures=1, observation_date=DAY)
+    make_export(exports, failures=failures, observation_date=DAY)
     status_path = exports / "ingest-status.json"
     data = json.loads(status_path.read_bytes())
-    data["by_status"] = {status: 1}
+    data["by_status"] = {status: failures} if failures else {}
     status_path.write_text(json.dumps(data), encoding="utf8")
     # Protocol uncertainty control; no product/rate row is invented.
     (exports / "provider-population-report.json").write_text(json.dumps({
