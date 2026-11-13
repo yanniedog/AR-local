@@ -64,3 +64,29 @@ unchanged so the historical discrepancy is still reproducible.
 
 Final focused validation after the producer correction: 83 report, ingest-status,
 product-change and compatibility tests passed; `git diff --check` passed.
+
+## Current upstream diagnosis (retained November13 capture)
+
+The read-only runtime extraction inspected 23 matching raw attempts from session
+`ingest-20261112T140604080483Z-8b2a76250285`. Each extracted record retains the
+event/body digest, version, host/path, status and bounded sanitized error body.
+These are captured-source findings; no new upstream request was made for this
+diagnosis. The original failures remain evidence, not repaired acceptance.
+
+| Provider | Terminal requests | Captured cause and implication |
+|---|---:|---|
+| Aussie Home Loans | 1 index | v6 HTTP404, Resource not found at the registered product path. No product body; verify a replacement only from authoritative discovery. |
+| DDH Graham | 1 index | v6 unsupported406 negotiated to v5; v5 HTTP401 EBAU001 says its upstream tenant authorization-token fetch failed. This is not a request for an AR-local customer credential. |
+| Thriday | 1 index | v6 transport599, dns_resolution_failed for the public CDR hostname. Keep bounded transport retry and rediscover official endpoint changes; do not bypass public-network/host safeguards. |
+| Bank of Sydney | 1 detail | usd_fccy_account v7 HTTP422 PCUA008: the provider's response validator requires depositRates[1].applicationType. The error contains no replacement rate/details. |
+| Bank of Queensland Limited | 2 details | HTTP500 PCBS021; retained v6/v7 attempts expose MIN_DEPOSIT_AMOUNT additionalValue failing AmountString validation. Retries cannot reconstruct the absent product body. |
+| ME Bank - ME Go | 1 detail | v7 HTTP500 PCBS021 with the same deposit-rate-tier AmountString validation error. |
+| CommFCU | 3 details | v7 HTTP400 explicitly reports the indexed product inactive (2.6141). Preserve the index/detail inconsistency and avoid presenting a fabricated current offer. |
+| MoveBank | 1 index diagnostic | v6 unsupported406 negotiates to v5 HTTP200. Same credit-card ID occurs twice with differing effectiveFrom/lastUpdated; both say unavailable to new customers. This is outside mortgages/savings/term deposits. The honest identity-conflict guard retains the warning and continues unrelated products/pages; no evidence supports choosing one conflicting row. |
+
+The recorded errors explain all eleven terminal requests. They do not establish
+that every upstream product is unavailable, nor that current target-product
+coverage is complete. Retained failure categories must stay separate from
+provider population checks and requested product scope. Broader financial
+register discovery, terms-document capture, current runtime deployment, natural
+daily acceptance and Drive read-back verification remain coordinated parent work.
