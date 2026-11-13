@@ -235,6 +235,7 @@ def ingest_definition_ok(snap, prefix):
 
 
 def _snapshot_script(ar, site, data, remote, *, fetch: bool = True):
+    from pi_deploy_checkout import inline_program
     q_remote = shlex.quote(remote)
     q_ar = shlex.quote(ar)
     q_site = shlex.quote(site)
@@ -242,19 +243,27 @@ def _snapshot_script(ar, site, data, remote, *, fetch: bool = True):
     q_remote_main = shlex.quote(f"{remote}/main")
     fetch_ar = f"timeout 12s git -C {q_ar} fetch {q_remote} 2>/dev/null; " if fetch else ""
     fetch_site = f"timeout 12s git -C {q_site} fetch {q_remote} 2>/dev/null; " if fetch else ""
+    def checkout(label, repo):
+        if fetch:  # Existing activation paths retain their own checkout contract.
+            return f"{label}_d=$(git -C {repo} status --porcelain | tr '\\n' ';'); "
+        program = shlex.quote(inline_program())
+        return (f"{label}_binding=$(timeout 25s python3 -I -B -c {program} {repo} 2>/dev/null); {label}_rc=$?; "
+                f"{label}_d=; if [ \"${label}_rc\" != 0 ]; then {label}_d=unverified; fi; ")
     return (
-        "set +e; "
+        "set +e; export GIT_OPTIONAL_LOCKS=0; "
         + _ingest_definition_script("DAILY", INGEST_UNITS["DAILY"])
         + _ingest_definition_script("MANUAL", INGEST_UNITS["MANUAL"])
         + f"ar_physical=$(CDPATH= cd {q_ar} 2>/dev/null && pwd -P); "
         + fetch_ar
         + f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
         f"ar_o=$(git -C {q_ar} rev-parse {q_remote_main} 2>/dev/null); "
-        f"ar_d=$(git -C {q_ar} status --porcelain | tr '\\n' ';'); "
+        + checkout("ar", q_ar)
         + fetch_site
         + f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
         f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
-        f"site_d=$(git -C {q_site} status --porcelain | tr '\\n' ';'); "
+        + checkout("site", q_site)
+        + (f"site_live=$(timeout 12s git -C {q_site} ls-remote --exit-code {q_remote} refs/heads/main 2>/dev/null); " if not fetch else "")
+        +
         f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
         f"dash_wd=$(systemctl show ar-local-dashboard.service -p WorkingDirectory --value 2>/dev/null); "
         f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
@@ -289,7 +298,11 @@ def _snapshot_script(ar, site, data, remote, *, fetch: bool = True):
         f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_site=$(df -P {q_site} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_data=$(df -P {q_data} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
+        f"ar_after=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
+        f"site_after=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
         f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
+        "printf 'AR_BINDING=%s\\nSITE_BINDING=%s\\nSITE_REMOTE_MAIN=%s\\nAR_HEAD_AFTER=%s\\nSITE_HEAD_AFTER=%s\\n' "
+        "\"$ar_binding\" \"$site_binding\" \"$site_live\" \"$ar_after\" \"$site_after\"; "
         f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\"; "
         f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
         f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
@@ -358,7 +371,9 @@ def remote_snapshot(*, ar, site, data, remote, run, parse, dry_run=False, fetch:
     if dry_run:
         return _dry_snapshot(ar)
     snap = parse(stdout)
-    required = ("AR_HEAD", "AR_ORIGIN", "SITE_HEAD", "SITE_ORIGIN", "DASHBOARD")
+    required = ("AR_HEAD", "SITE_HEAD", "DASHBOARD")
+    if fetch:
+        required += ("AR_ORIGIN", "SITE_ORIGIN")
     if all(snap.get(k) for k in required):
         return snap
     if code != 0:
