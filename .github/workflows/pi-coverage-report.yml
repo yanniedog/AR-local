@@ -1,0 +1,95 @@
+name: pi-coverage-report
+
+# Read-only: per-provider ingest failures by day, timers, failed units, disk and
+# backup journal from the Pi over the hosted Tailscale/SSH path. Writes nothing
+# to the Pi, the data root, releases or the repository.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Run dates to summarise (most recent N)"
+        required: false
+        default: "14"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-coverage-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Join Tailscale tailnet
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c  # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
+      - name: Configure SSH for Pi
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pi_deploy_key ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${PI_SSH_USER:-pi}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 60
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Host state
+        run: |
+          ssh ar-local-pi5 bash -s <<'REMOTE'
+          set +e
+          # Journal lines reach a hosted log: drop URLs and long token-like strings.
+          redact() { sed -E 's#[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]"]+#<url>#g; s#[A-Za-z0-9_/+=-]{40,}#<redacted>#g' | cut -c1-300; }
+          echo "HEAD $(git -C /srv/ar-local/AR-local rev-parse HEAD) dirty=$(git -C /srv/ar-local/AR-local status --porcelain | wc -l)"
+          date; uptime; df -h /srv /var/tmp | sed 1d; free -m | sed -n 2,3p
+          echo "--- timers"; systemctl list-timers --all --no-pager 'ar-local*' | cut -c1-200
+          echo "--- failed units"; systemctl --failed --no-pager --plain | head -20
+          echo "--- daily service"; systemctl show ar-local-daily.service -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p Result -p ExecMainStatus
+          for u in ar-local-day-archive ar-local-drive-backup ar-local-payload-daily-archive ar-local-ingest-alert ar-local-daily-watchdog ar-local-issue-watchdog; do
+            echo "--- $u: $(systemctl show $u.service -p Result --value) $(systemctl show $u.service -p ExecMainExitTimestamp --value)"
+            journalctl -u $u.service --since '-36h' --no-pager -o cat 2>/dev/null | tail -6 | redact
+          done
+          echo "--- daily journal (warnings, last run)"
+          journalctl -u ar-local-daily.service --since '-14h' --no-pager -o cat 2>/dev/null | grep -iE "withh|refus|error|fail|partial|population|publish" | tail -25 | redact
+          REMOTE
+
+      - name: Provider coverage by day
+        env:
+          DAYS: ${{ inputs.days }}
+        run: |
+          set -euo pipefail
+          [[ "$DAYS" =~ ^[1-9][0-9]?$ ]] || DAYS=14
+          rc=0
+          ssh ar-local-pi5 python3 -I - /srv/ar-local/data "$DAYS" < scripts/pi_coverage_report.py || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "--- retrying as the daily service user"
+            ssh ar-local-pi5 'sudo -n -u "$(systemctl show -p User --value ar-local-daily.service)" python3 -I - /srv/ar-local/data '"$DAYS" < scripts/pi_coverage_report.py
+          else
+            exit "$rc"
+          fi
