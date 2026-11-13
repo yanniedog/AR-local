@@ -91,6 +91,8 @@ render_unit "$repo_dir/deploy/pi/ar-local-runtime-health.service" "$tmp_dir/ar-l
 render_unit "$repo_dir/deploy/pi/ar-local-capacity-monitor.service" "$tmp_dir/ar-local-capacity-monitor.service"
 render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-now.service" "$tmp_dir/ar-local-ingest-now.service"
+restore_sha="$(sha256sum "$repo_dir/pi_manual_ingest_restore.py" | cut -d ' ' -f1)"
+sudo sh "$repo_dir/deploy/pi/install-manual-ingest-restore.sh" "$repo_dir" "$restore_sha"
 sudo sh "$repo_dir/deploy/pi/install-shared-network-watchdog.sh" "$repo_dir" "$data_dir" "$run_user" "$run_group"
 
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service

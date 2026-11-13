@@ -113,7 +113,7 @@ def test_checked_in_unit_argv_and_lifetime_are_bound():
     assert window.LIFETIME_SECONDS == 21600 + (46800 - 21600 - 21600) + 900
     assert 'TimeoutStartSec=6h15min' in direct and 'TimeoutStopSec=45s' in direct
     assert window.LIFETIME_SECONDS >= 6 * 3600 + 15 * 60 + 45
-    assert 'ExecStopPost=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_cdr_recovery.py --restore-dashboard' in direct
+    assert 'ExecStopPost=+/usr/bin/python3 -I -S /usr/local/lib/ar-local-manual-ingest/pi_manual_ingest_restore.py --data-root {{AR_LOCAL_DATA_ROOT}}' in direct
     wrapper = (ROOT / 'deploy/pi/cdr-ingest').read_text()
     assert wrapper.index('/usr/bin/python3 "$repo/pi_manual_ingest_window.py"') < wrapper.index('sudo systemctl reset-failed')
 

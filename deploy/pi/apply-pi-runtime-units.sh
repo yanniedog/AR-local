@@ -96,6 +96,9 @@ render_unit() {
     "$src" > "$dst"
 }
 
+restore_sha="$(sha256sum "$repo_dir/pi_manual_ingest_restore.py" | cut -d ' ' -f1)"
+sudo sh "$repo_dir/deploy/pi/install-manual-ingest-restore.sh" "$repo_dir" "$restore_sha"
+
 for name in \
   ar-local-dashboard.service \
   ar-local-daily.service \

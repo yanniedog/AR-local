@@ -62,11 +62,11 @@ def test_active_native_or_legacy_owner_prevents_restart(options):
 
 @pytest.mark.parametrize('hour,minute,restored', [(0, 29, True), (0, 30, False),
                                                 (1, 0, False), (3, 29, False), (3, 30, True)])
-def test_watchdog_preserves_protected_restoration_window(hour, minute, restored):
+@pytest.mark.parametrize('unit', ['ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'])
+def test_watchdog_and_manual_preserve_protected_restoration_window(hour, minute, restored, unit):
     from datetime import datetime
     from zoneinfo import ZoneInfo
     store = FixtureStore()
-    unit = 'ar-local-daily-watchdog.service'
     store.job['unit'] = unit
     events, kwargs = callbacks()
     now = datetime(2026, 10, 12, hour, minute, tzinfo=ZoneInfo('Australia/Hobart'))
@@ -83,7 +83,8 @@ def test_daily_failure_can_restore_inside_watchdog_protected_window():
     assert 'restart' in events
 
 
-def test_watchdog_rechecks_window_after_slow_native_inspection(monkeypatch):
+@pytest.mark.parametrize('unit', ['ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'])
+def test_watchdog_and_manual_recheck_window_after_slow_native_inspection(monkeypatch, unit):
     import pi_shared_queue_stop_hook as hook
     from datetime import datetime as DateTime
     from zoneinfo import ZoneInfo
@@ -94,7 +95,6 @@ def test_watchdog_rechecks_window_after_slow_native_inspection(monkeypatch):
         def now(tz): return next(times)
     monkeypatch.setattr(hook, 'datetime', Clock)
     store = FixtureStore()
-    unit = 'ar-local-daily-watchdog.service'
     store.job['unit'] = unit
     events, kwargs = callbacks()
     assert not recover(store, unit, 'a'*32, **kwargs)

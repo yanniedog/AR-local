@@ -18,7 +18,7 @@ def start_dashboard():
 
 
 def restoration_allowed(unit, now=None):
-    if unit != 'ar-local-daily-watchdog.service':
+    if unit not in ('ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'):
         return True
     local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Australia/Hobart'))
     return not time(0, 30) <= local.time() < time(3, 30)
@@ -29,7 +29,7 @@ def recover(store, unit, invocation, factory=native_lock_factory,
     if unit not in FIXED_AR_UNITS or not invocation:
         return False
     if not restoration_allowed(unit, now):
-        return False  # Preserve the watchdog's natural-ingest restore gate.
+        return False  # Manual admission failure must not restore during quiet hours.
     with store.transaction() as state:
         matches = [job for job in state['jobs']
                    if job['unit'] == unit and job['invocation_id'] == invocation
