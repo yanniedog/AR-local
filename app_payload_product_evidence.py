@@ -14,6 +14,7 @@ import sqlite3
 import time
 
 from cdr_export_contract import load_contract
+from cdr_atomic import _fsync_directory
 from cdr_product_facts import NORMALIZATION_VERSION
 from app_payload_product_evidence_contract import (
     COLUMNS, Limits, SCHEMA, SCOPE, canonical, decode, digest, fact, identity,
@@ -61,9 +62,15 @@ class Budget:
 def file_digest(path, budget):
     require(path.stat().st_size <= budget.limits.database_bytes, "database exceeds byte budget")
     value = hashlib.sha256()
+    consumed = 0
     with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        while True:
             budget.check()
+            chunk = stream.read(min(1024 * 1024, budget.limits.database_bytes - consumed + 1))
+            if not chunk:
+                break
+            consumed += len(chunk)
+            require(consumed <= budget.limits.database_bytes, "streamed database exceeds byte budget")
             value.update(chunk)
     return value.hexdigest()
 
@@ -111,8 +118,8 @@ def open_database(path, source, budget):
                 "unsupported database schema or fact normalization")
         require({row[1] for row in connection.execute("PRAGMA table_info(bank_product_facts)")} == set(COLUMNS),
                 "unsupported fact columns")
-        index = connection.execute("PRAGMA index_info(idx_bank_product_facts_product)").fetchmany(4)
-        require([row[2] for row in index] == ["run_date", "product_key", "kind"], "bounded product index required")
+        index = connection.execute("PRAGMA index_info(sqlite_autoindex_bank_product_facts_1)").fetchmany(4)
+        require([row[2] for row in index] == ["run_date", "product_key", "fact_id"], "bounded product identity index required")
         require(connection.execute("SELECT 1 FROM bank_product_facts WHERE run_date != ? OR run_date IS NULL LIMIT 1",
                                    (source["observation_date"],)).fetchone() is None, "database contains another observation date")
         connection.row_factory = sqlite3.Row
@@ -135,6 +142,8 @@ def write_page(output, source, product, sequence, rows, budget):
     name = "facts-" + checksum + ".json.gz"
     with (output / name).open("xb") as stream:
         stream.write(compressed)
+        stream.flush()
+        os.fsync(stream.fileno())
     return dict(name=name, sha256=checksum, bytes=len(compressed), raw_bytes=len(raw), facts=len(rows))
 
 
@@ -181,8 +190,8 @@ def prepare_snapshot(database, contract_path, output, *, limits=Limits()):
         output.mkdir(parents=True, exist_ok=False)
         # Required existing index avoids a full-table in-memory sort/materialization.
         columns = ", ".join('"' + key + '"' for key in COLUMNS)
-        rows = iter(connection.execute(f"SELECT {columns} FROM bank_product_facts INDEXED BY idx_bank_product_facts_product "
-                                       "WHERE run_date=? ORDER BY product_key, kind", (source["observation_date"],)))
+        rows = iter(connection.execute(f"SELECT {columns} FROM bank_product_facts INDEXED BY sqlite_autoindex_bank_product_facts_1 "
+                                       "WHERE run_date=? ORDER BY product_key, fact_id", (source["observation_date"],)))
         pending, products = next(rows, None), []
         require(pending is not None, "empty fact snapshot")
         index_bytes = 0
@@ -210,19 +219,26 @@ def prepare_snapshot(database, contract_path, output, *, limits=Limits()):
         stream.write(encoded)
         stream.flush()
         os.fsync(stream.fileno())
+    # Persist all referenced page entries before making completion visible.
+    _fsync_directory(output)
     os.link(temporary, output / "snapshot.json")  # Atomic create-once completion marker.
+    _fsync_directory(output)
     temporary.unlink()
+    _fsync_directory(output)
     return manifest
 
 
-def read_manifest(root):
+def read_manifest(root, *, limits=Limits()):
+    limits.validate()
     root = Path(root)
-    value = decode(bounded(root / "snapshot.json", Limits().index_bytes))
+    value = decode(bounded(root / "snapshot.json", limits.index_bytes))
     validate_manifest(value)
     return value
 
 
-def read_page(root, manifest, product, descriptor, sequence):
+def read_page(root, manifest, product, descriptor, sequence, *, limits=Limits()):
+    require(descriptor["bytes"] <= limits.page_compressed_bytes and descriptor["raw_bytes"] <= limits.page_raw_bytes
+            and descriptor["facts"] <= limits.page_rows, "page exceeds requested reader budget")
     blob = bounded(Path(root) / descriptor["name"], descriptor["bytes"])
     require(len(blob) == descriptor["bytes"] and digest(blob) == descriptor["sha256"], "page bytes/hash mismatch")
     with gzip.GzipFile(fileobj=io.BytesIO(blob)) as stream:
@@ -234,14 +250,17 @@ def read_page(root, manifest, product, descriptor, sequence):
     return value["facts"]
 
 
-def iter_product_facts(root, product_key):
+def iter_product_facts(root, product_key, *, limits=Limits()):
     """Validate metadata and only this product's bounded pages; not a publication read."""
-    manifest = read_manifest(root)
+    budget = Budget(limits)
+    manifest = read_manifest(root, limits=limits)
     selected = next((row for row in manifest["products"] if row["identity"]["product_key"] == product_key), None)
     require(selected is not None, "product absent from snapshot; absence is not withdrawal")
+    require(selected["facts"] <= limits.product_facts, "product exceeds requested reader budget")
     ids = set()
     for number, page in enumerate(selected["pages"]):
-        for item in read_page(root, manifest, selected, page, number):
+        budget.charge(pages=1, facts=page["facts"], raw_bytes=page["raw_bytes"], compressed_bytes=page["bytes"])
+        for item in read_page(root, manifest, selected, page, number, limits=limits):
             require(item["fact_id"] not in ids, "duplicate fact across pages")
             ids.add(item["fact_id"])
             yield item
@@ -249,14 +268,15 @@ def iter_product_facts(root, product_key):
 
 def validate_snapshot(root, *, limits=Limits()):
     budget = Budget(limits)
-    manifest = read_manifest(root)
+    manifest = read_manifest(root, limits=limits)
     for product in manifest["products"]:
         budget.charge(products=1)
+        require(product["facts"] <= limits.product_facts, "product exceeds requested reader budget")
         ids = set()
         for number, descriptor in enumerate(product["pages"]):
             budget.charge(pages=1, facts=descriptor["facts"], raw_bytes=descriptor["raw_bytes"],
                           compressed_bytes=descriptor["bytes"])
-            for item in read_page(root, manifest, product, descriptor, number):
+            for item in read_page(root, manifest, product, descriptor, number, limits=limits):
                 require(item["fact_id"] not in ids, "duplicate fact across pages")
                 ids.add(item["fact_id"])
         require(len(ids) == product["facts"], "snapshot product accounting mismatch")

@@ -63,7 +63,10 @@ def mutate_db(source, root, sql, values=()):
     database, _, rows = source
     with closing(sqlite3.connect(database)) as connection:
         connection.execute("PRAGMA ignore_check_constraints=ON")
-        connection.execute(sql, values)
+        if values:
+            connection.execute(sql, values)
+        else:
+            connection.executescript(sql)
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     return database, make_contract(database, root), rows
@@ -98,7 +101,7 @@ def test_deterministic_complete_bytes(source, tmp_path):
     ("UPDATE schema_meta SET value='999' WHERE key='version'", ()),
     ("UPDATE bank_product_facts SET run_date='2026-05-20'", ()),
     ("ALTER TABLE bank_product_facts ADD COLUMN new_field TEXT", ()),
-    ("DROP INDEX idx_bank_product_facts_product", ()),
+    ("CREATE TABLE copied AS SELECT * FROM bank_product_facts; DROP TABLE bank_product_facts; ALTER TABLE copied RENAME TO bank_product_facts", ()),
     ("UPDATE bank_product_facts SET source_value_json='NaN'", ()),
     ("UPDATE bank_product_facts SET source_value_json='1e400'", ()),
     ("UPDATE bank_product_facts SET qualifiers_json='[]'", ()),
@@ -247,6 +250,43 @@ def test_validator_honours_reduced_aggregate_budget(source, tmp_path):
         evidence.validate_snapshot(output, limits=replace(Limits(), raw_bytes=1))
 
 
+@pytest.mark.parametrize("reduction", [dict(index_bytes=1), dict(product_facts=1), dict(page_rows=1),
+                                      dict(page_raw_bytes=1), dict(page_compressed_bytes=1)])
+def test_all_reader_specific_ceilings_are_enforced(source, tmp_path, reduction):
+    output, manifest = build(source, tmp_path)
+    limits = replace(Limits(), **reduction)
+    with pytest.raises(ValueError, match="budget"):
+        evidence.validate_snapshot(output, limits=limits)
+    with pytest.raises(ValueError, match="budget"):
+        list(evidence.iter_product_facts(output, manifest["products"][0]["identity"]["product_key"], limits=limits))
+
+
+def test_range_and_scalar_bound_validation_matches_database(source):
+    from app_payload_product_evidence_contract import validate_fact
+    row = dict(source[2][0])
+    row["value_boolean"] = int(row["value_boolean"]) if row["value_boolean"] is not None else None
+    value = fact(row)
+    value.update(value_type="range", value=None, min_value=None, max_value=None)
+    with pytest.raises(ValueError, match="bound"):
+        validate_fact(value)
+    value.update(min_value=1)
+    validate_fact(value)
+    value.update(value_type="number", value=2)
+    with pytest.raises(ValueError, match="scalar"):
+        validate_fact(value)
+
+
+def test_existing_primary_index_supplies_stable_fact_order(source, tmp_path):
+    output, manifest = build(source, tmp_path)
+    for product in manifest["products"]:
+        ids = [row["fact_id"] for row in evidence.iter_product_facts(output, product["identity"]["product_key"])]
+        assert ids == sorted(ids)
+    with closing(sqlite3.connect(source[0])) as connection:
+        plan = connection.execute("EXPLAIN QUERY PLAN SELECT * FROM bank_product_facts INDEXED BY sqlite_autoindex_bank_product_facts_1 "
+                                  "WHERE run_date=? ORDER BY product_key, fact_id", (DAY,)).fetchall()
+    assert not any("TEMP B-TREE" in str(row) for row in plan)
+
+
 def test_forged_page_rebound_to_wrong_product_fails(source, tmp_path):
     import gzip
     output, manifest = build(source, tmp_path)
@@ -263,4 +303,83 @@ def test_forged_page_rebound_to_wrong_product_fails(source, tmp_path):
     manifest["totals"]["compressed_bytes"] += len(blob) - old_bytes
     (output / "snapshot.json").write_bytes(canonical(manifest))
     with pytest.raises(ValueError, match="detached"):
+        evidence.validate_snapshot(output)
+
+
+def test_pages_and_directory_are_synced_before_completion(source, tmp_path, monkeypatch):
+    events = []
+    real_sync, real_link, real_unlink = evidence.os.fsync, evidence.os.link, Path.unlink
+
+    def sync(descriptor):
+        events.append("file_sync")
+        real_sync(descriptor)
+
+    def link(before, after):
+        events.append("link")
+        real_link(before, after)
+
+    def unlink(path, *args, **kwargs):
+        if path.name == "snapshot.pending":
+            events.append("unlink")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(evidence.os, "fsync", sync)
+    monkeypatch.setattr(evidence.os, "link", link)
+    monkeypatch.setattr(evidence, "_fsync_directory", lambda _: events.append("dir_sync"))
+    monkeypatch.setattr(Path, "unlink", unlink)
+    _, manifest = build(source, tmp_path)
+    assert events == ["file_sync"] * (manifest["totals"]["pages"] + 1) + [
+        "dir_sync", "link", "dir_sync", "unlink", "dir_sync"]
+
+
+@pytest.mark.parametrize("failure", ["page", "before_link", "after_link", "after_unlink"])
+def test_sync_failure_propagates_without_claiming_success(source, tmp_path, monkeypatch, failure):
+    def failed_sync(_):
+        raise OSError("simulated durability failure")
+
+    if failure == "page":
+        monkeypatch.setattr(evidence.os, "fsync", failed_sync)
+    else:
+        calls = []
+        target = {"before_link": 1, "after_link": 2, "after_unlink": 3}[failure]
+
+        def directory_sync(path):
+            calls.append(path)
+            if len(calls) == target:
+                failed_sync(path)
+
+        monkeypatch.setattr(evidence, "_fsync_directory", directory_sync)
+    with pytest.raises(OSError, match="durability"):
+        build(source, tmp_path)
+    output = tmp_path / "snapshot"
+    if failure in {"page", "before_link"}:
+        assert not (output / "snapshot.json").exists()
+    else:
+        # A post-link sync failure is ambiguous completion, not missing pages.
+        assert evidence.validate_snapshot(output)["totals"]["facts"] == len(source[2])
+
+
+def test_hash_counts_growing_stream_not_only_initial_stat():
+    import io
+    from types import SimpleNamespace
+    requests = []
+
+    class GrowingFile(io.BytesIO):
+        def read(self, size):
+            requests.append(size)
+            return super().read(size)
+
+    source = SimpleNamespace(stat=lambda: SimpleNamespace(st_size=1),
+                             open=lambda _: GrowingFile(b"x" * 1024))
+    with pytest.raises(ValueError, match="streamed database exceeds"):
+        evidence.file_digest(source, evidence.Budget(replace(Limits(), database_bytes=6)))
+    assert requests == [7]  # One extra byte proves overflow; no unbounded growth read.
+
+
+@pytest.mark.parametrize("suffix", ["a" * 15, "a" * 17, "A" * 16, "z" * 16, "0" * 16 + "\n"])
+def test_generation_identity_is_canonical(source, tmp_path, suffix):
+    output, manifest = build(source, tmp_path)
+    manifest["source"]["generation_id"] = "obs-" + DAY + "-" + suffix
+    (output / "snapshot.json").write_bytes(canonical(manifest))
+    with pytest.raises(ValueError, match="generation"):
         evidence.validate_snapshot(output)
