@@ -369,17 +369,19 @@ def quote_column(column: str) -> str:
     return '"' + column.replace('"', '""') + '"'
 
 
-def insert_rows(con: sqlite3.Connection, table: str, rows: List[Mapping[str, Any]]) -> None:
+def insert_rows(con: sqlite3.Connection, table: str, rows: Iterable[Mapping[str, Any]]) -> None:
     if not rows:
         return
     columns = TABLE_COLUMNS[table]
     placeholders = ",".join("?" for _ in columns)
     quoted_columns = ",".join(quote_column(col) for col in columns)
     sql = f"INSERT INTO {quote_table(table)} ({quoted_columns}) VALUES ({placeholders})"
+    # executemany consumes one row at a time inside the caller's transaction.
+    # Do not duplicate the complete lossless fact table before inserting it.
     values = (
-        [[row.get(column) for column in columns] for row in rows]
+        ([row.get(column) for column in columns] for row in rows)
         if table in {"bank_product_facts", "bank_product_changes"}
-        else [row_for_columns(row, columns) for row in rows]
+        else (row_for_columns(row, columns) for row in rows)
     )
     con.executemany(sql, values)
 
@@ -410,12 +412,12 @@ def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> No
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
-def add_group(rows: List[Mapping[str, Any]], group: str) -> List[Dict[str, Any]]:
-    return [{**row, "item_group": group} for row in rows]
+def add_group(rows: Iterable[Mapping[str, Any]], group: str) -> Iterable[Dict[str, Any]]:
+    return ({**row, "item_group": group} for row in rows)
 
 
-def with_run_date(rows: List[Mapping[str, Any]], run_date: str) -> List[Dict[str, Any]]:
-    return [{"run_date": run_date, **row} for row in rows]
+def with_run_date(rows: Iterable[Mapping[str, Any]], run_date: str) -> Iterable[Dict[str, Any]]:
+    return ({"run_date": run_date, **row} for row in rows)
 
 
 def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any]) -> None:
