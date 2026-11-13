@@ -50,8 +50,13 @@ def test_main_records_capacity_without_notification(tmp_path: Path, monkeypatch)
         "disk_usage",
         lambda _path: SimpleNamespace(total=2_000, used=1_000, free=1_000),
     )
+    monkeypatch.setattr(monitor, "_now", lambda: _at(16))
     assert monitor.main(["--data-root", str(tmp_path), "--state", str(state)]) == 0
-    assert state.is_file()
+    saved = json.loads(state.read_text())
+    assert saved["checked_at"] == _at(16).isoformat()
+    assert saved["status"] == "critical"
+    assert saved["filesystem"] == {"total_bytes": 2000, "used_bytes": 1000, "free_bytes": 1000}
+    assert saved["samples"] == [{"day": "2026-08-16", "free_bytes": 1000}]
 
 
 def test_capacity_service_is_independent_from_daily_ingest() -> None:
