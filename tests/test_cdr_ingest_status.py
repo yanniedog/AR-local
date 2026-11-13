@@ -320,7 +320,7 @@ def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
 
 def test_canonical_register_discovery_is_complete(monkeypatch):
     success = FetchResult(
-        ok=True, status=200, url="https://register.example/ok", text="{}"
+        ok=True, status=200, url="https://register.example/ok", text='{"data": []}'
     )
     monkeypatch.setattr(cis, "fetch_cdr_json", lambda *a, **k: success)
     monkeypatch.setattr(
