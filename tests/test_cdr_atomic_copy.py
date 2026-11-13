@@ -1,11 +1,17 @@
 import hashlib
 import tracemalloc
+from pathlib import Path
 
 import pytest
 
 import cdr_atomic_copy as copying
 from cdr_atomic import ImmutablePathError
 from cdr_attempt_evidence_promotion import install_tree_create_once
+
+
+def test_trusted_installer_copies_and_hashes_streaming_dependency():
+    text = (Path(__file__).resolve().parents[1] / 'deploy/pi/install-backup-foundation.sh').read_text()
+    assert text.count('cdr_atomic_copy.py') == text.count('cdr_attempt_evidence_promotion.py') == 2
 
 
 def test_large_export_install_has_bounded_allocation_and_exact_replay(tmp_path):

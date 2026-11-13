@@ -266,9 +266,9 @@ def _copy_record_create_once(
         parent = _ensure_directory(destination_root, *relative.parts[:-1])
         copy_verified(source, parent / relative.name,
                       size=record.get("bytes"), sha256=record.get("sha256"))
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, ImmutablePathError) as error:
         raise AttemptEvidencePromotionError(
-            f"attempt evidence changed while copying: {relative.as_posix()}"
+            f"attempt evidence copy failed: {relative.as_posix()}"
         ) from error
 
 
