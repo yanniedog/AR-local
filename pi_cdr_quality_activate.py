@@ -149,7 +149,7 @@ def protected_files(data: Path) -> dict:
     return snapshot.finish()
 
 
-def guard(data: Path, production: Path) -> None:
+def guard(data: Path, production: Path, *, approved_deadline: datetime | None = None) -> None:
     if os.name != "posix":
         raise RuntimeError("activation requires the Pi Linux host")
     from pi_cdr_recovery import assert_recovery_start_safe
@@ -157,12 +157,25 @@ def guard(data: Path, production: Path) -> None:
     from pi_cdr_quality_resources import preflight
     if data_root(production) != data:
         raise ValueError("requested data root differs from production runtime data root")
-    assert_recovery_start_safe(production)
+    if approved_deadline is None:
+        assert_recovery_start_safe(production)
+    else:
+        assert_recovery_start_safe(production, approved_deadline=approved_deadline)
     if data.resolve() != data or production.resolve() != production:
         raise ValueError("canonical production paths required")
     if run(["systemctl", "show", "ar-local-daily.timer", "-p", "ActiveState", "--value"]) != "active":
         raise RuntimeError("mandatory natural ingest timer is not active")
     preflight(record_host_swap_out=True)
+
+
+def operation_guard(data, production, reference, target, operation, stage):
+    from pi_cdr_quality_window import load
+    extension = load(reference, now=datetime.now(timezone.utc), target=target, operation=operation, stage=stage)
+    if extension is None:
+        guard(data, production)
+    else:
+        guard(data, production, approved_deadline=extension)
+    return extension
 
 
 def current_state(data: Path) -> tuple[str, str, Path]:
@@ -271,7 +284,9 @@ def pressure_launch_budget(command, closing) -> int:
 
 def canary(args) -> dict:
     layout(args.source, args.production, args.data_root, args.operation)
-    guard(args.data_root, args.production)
+    from pi_cdr_quality_window import reference, deadline
+    authorization = reference(args)
+    extension = operation_guard(args.data_root, args.production, authorization, args.expected_commit, args.operation, "quality-canary")
     if clean_commit(args.source) != args.expected_commit or main_commit(args.source) != args.expected_commit:
         raise ValueError("canary must use exact clean authoritative main")
     cache_options = verified_cache_options(args)
@@ -288,8 +303,10 @@ def canary(args) -> dict:
         raise ValueError("unsupported pressure policy profile")
     command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect", f"--unit={unit}"]
     current = datetime.now(TZ)
-    closing = current.replace(hour=22, minute=0, second=0, microsecond=0)
+    closing = deadline(current, extension)
     margin = 108 if pressure_profile == "allocation-v1" else 45
+    if extension is not None:
+        margin = max(margin, 180)  # Preserve cleanup time before the one-off hard cutoff.
     runtime = min(5400, int((closing - current).total_seconds()) - margin)
     if runtime < 300:
         raise ValueError("insufficient time for canary before recovery cutoff")
@@ -358,6 +375,8 @@ def canary(args) -> dict:
     result = read(args.operation / "canary-worker.json")
     result["pressure_profile"] = pressure_profile
     result["resources"] = record(args.operation / "resources.json")
+    if authorization is not None:
+        result["window_authorization"] = authorization
     write(args.operation / "canary.json", result)
     return result
 
@@ -384,9 +403,13 @@ def seal(args) -> dict:
         raise ValueError("canary lacks exact complete sequential suite proof")
     if canary_result.get("result") != "PASS" or canary_result.get("target_commit") != target:
         raise ValueError("candidate canary missing or failed")
-    guard(args.data_root, args.production)
+    from pi_cdr_quality_window import reference, deadline
+    authorization = reference(args)
+    if authorization != canary_result.get("window_authorization"):
+        raise ValueError("seal must retain the canary operator authorization")
+    extension = operation_guard(args.data_root, args.production, authorization, target, args.operation, "quality-seal")
     with production_lock(args.data_root / "state/daily-ingest.lock", "quality-seal"):
-        guard(args.data_root, args.production)
+        extension = operation_guard(args.data_root, args.production, authorization, target, args.operation, "quality-seal")
         current_state(args.data_root)
         previous = clean_commit(args.production)
         before = protected_files(args.data_root)
@@ -405,7 +428,7 @@ def seal(args) -> dict:
         changed_files = {name: sha(relative(args.source, name)) if relative(args.source, name).exists() else None
                          for name in changed if name}
         created = datetime.now(timezone.utc)
-        expires = min(created + timedelta(hours=6), created.astimezone(TZ).replace(hour=22, minute=0, second=0, microsecond=0))
+        expires = min(created + timedelta(hours=6), deadline(created, extension))
         value = {"schema": SCHEMA, "authority": "D-027", "target_commit": target, "previous_commit": previous,
                  "source_root": str(args.source), "production_root": str(args.production), "data_root": str(args.data_root),
                  "operation_root": str(args.operation), "created_at": created.isoformat(), "expires_at": expires.isoformat(),
@@ -414,6 +437,8 @@ def seal(args) -> dict:
                  "evidence": {"candidate_bundle": record(bundle), "rollback_bundle": record(rollback),
                               "ci": record(args.ci_binding), "app": record(args.app_acceptance), "canary": record(canary_path)},
                  "backup": {"status": "UNVERIFIED", "reason": "independent Drive receipt; never inferred from activation"}}
+        if authorization is not None:
+            value["window_authorization"] = authorization
         manifest = args.operation / "activation.json"
         require_controls(args.data_root, controls, predecessor)
         require_predecessor(args.production, predecessor)
@@ -491,7 +516,8 @@ def activate(args) -> dict:
     source, production, data, operation = (Path(manifest[key]) for key in
                                          ("source_root", "production_root", "data_root", "operation_root"))
     layout(source, production, data, operation)
-    guard(data, production)
+    authorization = manifest.get("window_authorization")
+    operation_guard(data, production, authorization, manifest["target_commit"], operation, "quality-activate")
     if main_commit(source) != manifest["target_commit"] or clean_commit(production) != manifest["previous_commit"]:
         raise ValueError("main or production changed since sealing")
     for unit in ("ar-local-dashboard.service", "ar-local-daily.service"):
@@ -522,7 +548,7 @@ def activate(args) -> dict:
             if active(unit) not in {"inactive", "failed"}:
                 raise RuntimeError("coordination service still running; retry after it finishes")
         with production_lock(data / "state/daily-ingest.lock", "quality-activation"):
-            guard(data, production)
+            operation_guard(data, production, authorization, manifest["target_commit"], operation, "quality-activate")
             current_state(data)
             with require_dropbehind_reads():
                 validate_manifest(args.manifest, args.manifest_sha256)
@@ -620,6 +646,8 @@ def main(argv=None) -> int:
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--manifest-sha256")
     parser.add_argument("--dry-run", action="store_true")
+    from pi_cdr_quality_window import add_arguments
+    add_arguments(parser)
     args = parser.parse_args(argv)
     try:
         if args.command != "canary" and args.pressure_profile != "legacy":
