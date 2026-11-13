@@ -142,6 +142,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "contracts/export-contract-v2.schema.json",
+    "contracts/provider-participation/",
     "contracts/pi-backup-boot-proof-v1.schema.json",
     "contracts/pi-deployment-acceptance-v1.schema.json",
     "contracts/pi-preservation-snapshot-v1.schema.json",

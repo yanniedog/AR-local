@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "records": [
+    {
+      "brand_id": "9c8c5e8d-5cb9-ec11-a82d-000d3a8830d6",
+      "prior_register": {
+        "path": "prior-register.json",
+        "url": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+        "final_url": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+        "observed_at": "2026-10-14T12:38:46.354043+00:00",
+        "status": 200,
+        "bytes": 185824,
+        "sha256": "af0565aff5261fb21fffed4b8872714bf13a325a2d1a5ace2781e0e6428ebcf5"
+      },
+      "cessation_register": {
+        "path": "cessation-register.json",
+        "url": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+        "final_url": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+        "observed_at": "2026-11-13T10:57:06.646333+00:00",
+        "status": 200,
+        "bytes": 199565,
+        "sha256": "43e1fdbc0ffb9d37775592dbbb31201c175cb6fde88eeb6c6fe887dadc493e3a"
+      },
+      "response": {
+        "path": "cessation-response.json",
+        "url": "https://au-cdrbanking-pub.wise.com/cds-au/v1/banking/products",
+        "final_url": "https://au-cdrbanking-pub.wise.com/cds-au/v1/banking/products",
+        "observed_at": "2026-11-13T10:58:43.179412+00:00",
+        "status": 422,
+        "bytes": 210,
+        "sha256": "b353d4574d1eb5a1df3c6dea46ff875585a329778af985d499a336e2953f4b96"
+      },
+      "request_headers": {
+        "User-Agent": "AR-local-CDR-diagnostic/1.0 (public product coverage investigation)",
+        "Accept": "application/json",
+        "x-v": "6",
+        "x-min-v": "1"
+      }
+    }
+  ]
+}

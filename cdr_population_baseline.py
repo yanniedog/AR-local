@@ -101,6 +101,13 @@ def finalized_population_report(current_db, state_dir, *, run_date):
         observation = _baseline_observation(state, pointer, budget)
         contract = observation['contract']
         unresolved = contract['coverage'].get('provider_population_unverified', [])
+        # Re-evaluate confirmed CDR departures against each day's full register.
+        # Reappearance or unavailable proof restores the original uncertainty.
+        ceased = contract['coverage'].get('provider_participation_ceased', [])
+        if not isinstance(ceased, list) or any(not isinstance(row, dict)
+                or not isinstance(row.get('unresolved_finding'), dict) for row in ceased):
+            raise ValueError('invalid prior participation disposition')
+        unresolved = [*unresolved, *(row['unresolved_finding'] for row in ceased)]
         if not isinstance(unresolved, list) or any(not isinstance(row, dict)
                 or not isinstance(row.get('provider'), str) for row in unresolved):
             raise ValueError('invalid prior population disposition')

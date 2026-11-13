@@ -132,6 +132,10 @@ def _coverage(
     if population_unverified:
         coverage['provider_population_unverified'] = population_unverified
         coverage['unavailable_populations'].append('provider_population')
+    from cdr_population_lifecycle import participation_coverage
+    ceased = participation_coverage(export_root, status, str(manifest.get('run_date') or ''))
+    if ceased:
+        coverage['provider_participation_ceased'] = ceased
     return observation_state, coverage, provider_states, register_attempts
 
 
