@@ -19,7 +19,13 @@ def brand_key(row):
 def evidence_bytes(path, *, budget=None):
     # Parse the same identity-bound bytes whose digest was checked. The worker's
     # required scope makes this use drop-behind rather than a second buffered read.
-    return read_digest(path, capture=True, max_bytes=16 * 1024**2, budget=budget)
+    try:
+        return read_digest(path, capture=True, max_bytes=16 * 1024**2, budget=budget)
+    except ValueError as error:
+        # Keep cached audit semantics unchanged; this caller has a tighter bound.
+        if str(error) == "evidence JSON exceeds 64 MiB":
+            raise ValueError("live qualification evidence exceeds 16 MiB") from error
+        raise
 
 
 def archive_matches(path, generation, *, budget=None):

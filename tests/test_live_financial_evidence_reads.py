@@ -44,8 +44,18 @@ def test_evidence_size_limit_precedes_read_and_parse(tmp_path, monkeypatch):
     with path.open("wb") as stream:
         stream.truncate(16 * 1024**2 + 1)
     monkeypatch.setattr(digest, "_hash_stream", lambda *_a, **_k: pytest.fail("oversize read"))
-    with pytest.raises(ValueError, match="exceeds"):
+    with pytest.raises(ValueError, match="live qualification evidence exceeds 16 MiB$"):
         worker.archive_matches(path, "observed")
+
+
+def test_non_size_digest_errors_remain_unchanged(tmp_path, monkeypatch):
+    error = ValueError("evidence identity changed during snapshot")
+    def read(*_args, **_kwargs):
+        raise error
+    monkeypatch.setattr(worker, "read_digest", read)
+    with pytest.raises(ValueError) as caught:
+        worker.evidence_bytes(tmp_path / "evidence")
+    assert caught.value is error
 
 
 def test_evidence_deadline_precedes_read_and_is_rechecked_per_row(tmp_path):
