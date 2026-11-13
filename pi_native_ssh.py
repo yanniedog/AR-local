@@ -166,6 +166,9 @@ WantedBy=multi-user.target
 
 
 def run(args, *, check=True):
+    if (args[:1] == ['/usr/bin/systemctl'] and len(args) > 1
+            and args[1] in ('daemon-reload', 'start', 'enable', 'disable')):
+        window(datetime.now(timezone.utc))
     return subprocess.run(args, check=check, capture_output=True, text=True, timeout=30,
                           env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
 
@@ -338,6 +341,7 @@ def mutate(action, value, bodies, approval, uid, proof=None):
         if retired.exists() or retired.is_symlink():
             raise ValueError('previous rollback evidence exists')
         installed(bodies, approval)
+        admit(uid)
         create(retired, paths[UNIT]); UNIT.unlink()
         run(['/usr/bin/systemctl', 'daemon-reload'])
         return 'ROLLED_BACK_EVIDENCE_RETAINED'

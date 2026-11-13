@@ -195,3 +195,11 @@ def test_enable_requires_real_kernel_resource_enforcement(monkeypatch):
         previous = values[name]; values[name] = value
         with pytest.raises(ValueError): native.live_limits()
         values[name] = previous
+
+
+def test_each_service_mutation_rechecks_window_after_preparation(monkeypatch):
+    def closed(_): raise ValueError('window closed during preparation')
+    monkeypatch.setattr(native, 'window', closed)
+    monkeypatch.setattr(native.subprocess, 'run', lambda *a, **kw: pytest.fail('must not mutate late'))
+    for action in ('daemon-reload', 'start', 'enable', 'disable'):
+        with pytest.raises(ValueError): native.run(['/usr/bin/systemctl', action, native.SERVICE])
