@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 from ar_local_backup_policy import atomic_create_json, atomic_replace_json, load_env, sha256_file
 from ar_local_operation_lock import production_lock
+from cdr_file_lock import FileLock
 from pi_drive_backup_hold import Blocked as HoldBlocked, require_writes_allowed
 
 SCHEMA = "ar-local-drive-evidence-v1"
@@ -54,6 +55,12 @@ def _run(argv: Sequence[str], timeout: int) -> subprocess.CompletedProcess:
 
 def _require_drive_writes_allowed(spool: Path) -> None:
     try:
+        try:
+            os.lstat(spool / "backup.lock")
+        except FileNotFoundError:
+            pass
+        else:
+            raise Blocked(f"spool backup.lock is active: {spool / 'backup.lock'}")
         require_writes_allowed(spool)
         backup_spool = Path(
             os.environ.get("AR_LOCAL_DRIVE_BACKUP_SPOOL", str(DEFAULT_DRIVE_BACKUP_SPOOL))
@@ -204,19 +211,23 @@ def create_backup(
         base = ["rclone", "--config", str(config)]
         if settings["root_folder_id"]:
             base.extend(["--drive-root-folder-id", str(settings["root_folder_id"])])
-        for argv, limit in ((["copy", "--checksum", str(stage), remote], 900), (["check", "--one-way", str(stage), remote], 450)):
-            done = run([*base, *argv], limit)
-            if done.returncode != 0:
-                raise Blocked(f"rclone {argv[0]} failed (exit {done.returncode})")
-        back = run([*base, "cat", f"{remote}/manifest.json"], 120)
-        if back.returncode != 0 or back.stdout.encode("utf-8") != manifest_path.read_bytes():
-            raise Blocked("Drive read-back of the backup manifest did not match")
-        receipt = {**manifest, "result": "PASS", "remote": remote, "remote_hash_check": "PASS", "manifest_readback": "PASS",
-                   "manifest_sha256": sha256_file(manifest_path), "day_archive": archive,
-                   "restore_drill": "NOT_TESTED", "boot_proof": "NOT_TESTED"}
-        atomic_create_json(root / "receipts" / f"{name}.json", receipt)
-        atomic_replace_json(root / "latest.json", receipt)
-        return {"ok": True, **receipt}
+        with FileLock(root / "backup.lock"):
+            for argv, limit in ((["copy", "--checksum", str(stage), remote], 900), (["check", "--one-way", str(stage), remote], 450)):
+                _require_drive_writes_allowed(spool)
+                done = run([*base, *argv], limit)
+                if done.returncode != 0:
+                    raise Blocked(f"rclone {argv[0]} failed (exit {done.returncode})")
+            _require_drive_writes_allowed(spool)
+            back = run([*base, "cat", f"{remote}/manifest.json"], 120)
+            if back.returncode != 0 or back.stdout.encode("utf-8") != manifest_path.read_bytes():
+                raise Blocked("Drive read-back of the backup manifest did not match")
+            _require_drive_writes_allowed(spool)
+            receipt = {**manifest, "result": "PASS", "remote": remote, "remote_hash_check": "PASS", "manifest_readback": "PASS",
+                       "manifest_sha256": sha256_file(manifest_path), "day_archive": archive,
+                       "restore_drill": "NOT_TESTED", "boot_proof": "NOT_TESTED"}
+            atomic_create_json(root / "receipts" / f"{name}.json", receipt)
+            atomic_replace_json(root / "latest.json", receipt)
+            return {"ok": True, **receipt}
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 

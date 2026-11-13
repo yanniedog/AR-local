@@ -191,3 +191,18 @@ def test_root_folder_id_pin_is_forwarded_to_rclone(tmp_path):
     _backup(ctx, run)
     rclone_calls = [call for call in run.calls if call[0] == "rclone"]
     assert all("--drive-root-folder-id" in call and "1AbCdEfGhIjKlMnOp" in call for call in rclone_calls)
+
+
+def test_hold_installed_mid_capture_blocks_before_rclone(tmp_path):
+    ctx = _setup(tmp_path)
+    base_run = _runner()
+
+    def run_with_mid_hold(argv, timeout):
+        res = base_run(argv, timeout)
+        if argv[0] == "tar":
+            (ctx["spool"] / "write-hold.json").write_text("{}", encoding="utf-8")
+        return res
+
+    with pytest.raises(gate.Blocked, match="held"):
+        _backup(ctx, run_with_mid_hold)
+    assert not any(call[0] == "rclone" for call in base_run.calls)
