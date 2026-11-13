@@ -37381,3 +37381,10 @@ Resume CHECKPOINT18. DO NOTQUALIFY/DEPLOY602ba621asfinal: latevendorreviewarrive
 
 ### 03:26 native follow-up hold
 Nativecommissioning ALSOHELD: actualOpenSSH keygen-y trailingcomment rejectedbyoldparser; staleenablelinks couldbypassdisabled-firstproof; parentfsync/rollbackretirementreloadretry needfix. Runtimeownsnarrownativefollowup; oldc028helper/f922approvalhistoricalONLY. Merge nativefirst, thenwindow/verifierfollowuplastsync; re-freeze/rebindallfinalsourcebeforecapture. NoPioperationperformed. SeeCHECKPOINT18addendum.
+
+
+## 2026-11-14 03:33 Hobart - integrated late-fix PR1146
+
+Resume CHECKPOINT19. Combined1146 head44e97251ba92fe55585478bb3ad26a391cb86a4f/base602 replacesearlierthreePRmergeplan; finalimmutabletargetstillpending.387PASS11skips/398JUnitcases0errors0failures SHA672e6703f63c5a6180f7c67f625a18d11f616b28455225e96dff6448b53557e7;5actualshellboundarycasesPASS. Rootandindependentnative reviewclear; fullCIpending. Fixesmidnightcutoff/dueday/CLIpin/deployclassification, SSHkeycomment/staleenablelinks/completequeue/rollbackdurability, liveevidencereads, capacitynonfinite/configfailure/retryreservation, contradictoryemptyproviderdiagnostics. Actualreadonlynativeunitinventory12paths641entriesPASS; noPiinstallation.
+
+Oldnativeapprovalrevokedreceiptbe15ea54c3e6f7a8e7751e92e0d447a32fd20e264a26073633851fe77b5e4432.1137/38/39/42/44 latefeedbackresolved; runtime1140closing. Deferred1144failure-receiptlocations: preserveentireoperation+requestedRAMroot, actualfallbackmaybein operation/data/runs-archive/.daily-raw-stage; noPASS/deletionimplied. Windowscapacity10scontentiontimeoutonly; Linuxflockcorrect. Windowowns1146CI/merge, runtime solePioperator, publicationactualappauditstandby, rootdocs1129last.03:30windowopenbutqualifiedsourcepending; no602capture/deploy. SMTPdeferred; originalledgerprefixpreserved.
