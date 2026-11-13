@@ -45,7 +45,7 @@ def launch_properties(args, unit, parent_unit, runtime):
             f"ReadOnlyPaths={args.source}", f"ReadOnlyPaths={PRODUCTION}", f"ReadOnlyPaths={DATA}",
             f"ReadWritePaths={op}", f"ReadWritePaths={ram_root(args)}", "InaccessiblePaths=-/etc/ar-local",
             "InaccessiblePaths=-/var/lib/ar-local-drive-backup", "InaccessiblePaths=-/var/lib/ar-local-day-archives",
-            "CPUQuota=300%", "IOWeight=10", "TasksMax=256", "MemoryHigh=2500M", "MemoryMax=3G",
+            "CPUQuota=200%", "IOWeight=10", "TasksMax=256", "MemoryHigh=2500M", "MemoryMax=3G",
             "MemorySwapMax=0", "LimitAS=3G", "OOMPolicy=stop", "KillMode=control-group",
             "TimeoutStopSec=30s", f"RuntimeMaxSec={runtime + 30}s",
             f"BindsTo={parent_unit}", f"After={parent_unit}"]
