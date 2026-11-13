@@ -1,6 +1,6 @@
 # Ingest resilience: operational continuation
 
-Read the latest `INGEST_RESILIENCE_REPAIR_20261113.md`, mandatory runbook and full recovery ledger first. This is an evidence-backed route map, **not a receipt or authorization to bypass gates**. Source reviewed on 2026-11-13; recheck final integrated bytes. Preserve the accepted fallback and original sources. No operation below was executed by this repair session.
+Read the latest `INGEST_RESILIENCE_REPAIR_20261113.md`, mandatory runbook and full recovery ledger first. This is an evidence-backed route map, **not a receipt or authorization to bypass gates**. Source reviewed on 2026-11-13; recheck final integrated bytes. Preserve the accepted fallback and original sources. At 23:22 Hobart the independent Nov13 raw restore has passed; live financial capture, full candidate qualification and deployment remain pending.
 
 ## Existing retained-data qualification
 
@@ -18,11 +18,17 @@ gh workflow run pi-quality-canary.yml --ref main -f mode=canary -f target_commit
 
 This runs producer tests and retained-source/payload reconciliation under existing resource supervision and `PrivateNetwork=true`. It does not capture live providers, publish, restore or deploy. A source, date, generation or bound-control change requires fresh qualification. Preserve failed receipts; do not rerun blindly or waive gates.
 
-## Missing live qualification implementation
+## Live qualification route implemented; execution pending
+
+PR #1137 integrates `pi_live_financial_capture.py`, `pi_live_financial_worker.py` and hash-bound `pi_cdr_quality_window.py`. The final reviewed component is `72d0dde08f0f18cfbda1578d2bc007263765780c`: 143 focused/RAM checks passed, independent review cleared the absolute-deadline and drop-behind corrections. Use only the exact merged source after applicable CI. The paragraphs below describe the implementation requirements, not remaining missing source.
+
+The launcher supports `plan` followed by `run`, with required `--source`, `--operation`, `--expected-commit`, `--python`, and bounded `--runtime-seconds` (300–5400). A new operation must be immediately below `/srv/ar-local/canary`; its corresponding `/dev/shm/ar-local-canary-<operation-name>` must also be new. Production-equivalent automatic staging keeps raw capture in RAM and derived exports on disk; do **not** force `--ram-stage`, which also stages exports. The worker requires actual RAM-stage provenance, committed register-journal membership, a full audit binding and a matching local-only archive result. Request concurrency is production's 8 providers × 4 detail workers; the existing supervisor retains its 200% CPU ceiling, no-swap and memory/pressure gates.
+
+This session's explicit maintenance extension ends **2026-11-14 00:30 Hobart**. `--window-authorization` plus its SHA256 must bind exact source, canonical operation roots and named stages; the approval never crosses the quiet period. Remaining runtime is recalculated after snapshot hashing, with a cleanup reserve. The original operator-quote receipt is authority provenance, not a qualification result. The installed restricted CI activation helper retains its own normal window. Next normal window starts **03:30 Nov14**. The last full retained-data canary took 86 minutes despite a compatible audit cache: do not start it in a predictably shorter slot.
 
 The dynamic financial register currently contains 306 brands; never hardcode that future count. `pi_canary_shadow_ingest.py` supports only `template` and `canonicalize`, not a supervised ingest runner. Its scalar receipt checks do not prove resource limits, actual provider completeness or isolation. Production `pi_cdr_quality_repair.py` is a post-deployment path and cannot substitute for pre-deployment qualification.
 
-Implement and test a bounded network-enabled shadow launcher using the existing `pi_resource_supervisor.py` and shared queue. Review exact supervisor interfaces first. Bind detached exact source, new isolated `/srv/ar-local/canary/<generation>/` runs/state/spool and local-only archive configuration. Keep production paths read-only, production archive env/Drive credentials inaccessible, all child processes within resource accounting and cleanup, a finite deadline inside the permitted window, and before/after production preservation receipts. Do not merely remove `PrivateNetwork=true` from the retained-data canary.
+The bounded network-enabled shadow launcher uses the existing `pi_resource_supervisor.py` and shared queue. It binds detached exact source, new isolated `/srv/ar-local/canary/<generation>/` runs/state/spool and local-only archive configuration. Production paths remain read-only, production archive env/Drive credentials inaccessible, and child processes stay within resource accounting and cleanup, with a finite deadline and before/after production preservation receipts. This is a separate route from the retained-data canary's `PrivateNetwork=true` execution.
 
 Real acceptance must reconcile the fresh official financial population and all requested categories against attempted providers, index pages and detail outcomes. Record duration, peak resources, disk growth, payload sizes, raw/normalized identities, failure reasons and selected-generation contracts. Partial upstream responses remain partial. One index probe or an old 115-provider replay cannot satisfy this requirement.
 
@@ -45,15 +51,17 @@ After qualified deployment, the existing production recapture dry run is:
 
 It checks ownership, source, selected generation, recovery budget, pending publication and window. Only READY plus current gates permits the non-dry execution. CAPTURED is not proof of publication, backup, app acceptance or a natural daily cycle. Inspect the live Pi dashboard and run `npm run verify:pi` against the exact deployment; retain public asset readback and matching archive evidence separately.
 
-## Missing independent daily raw restore verification
+## Independent daily raw restore verification: Nov13 PASS
+
+`pi_daily_raw_restore.py` and `pi_daily_raw_restore_sqlite.py` now implement this route (component `c5dbbb1f847a1caeca724c4c53b03f9d75c30523`, integrated in #1137). Read `docs/DAILY_RAW_RESTORE_QUALIFICATION.md` for the exact CLI and bounds. The source document's original pending-runtime statements are superseded by checkpoint 9 of the progressive handoff. The real downloaded Nov13 generation passed: 42,669 files / 3,011,911,860 bytes, committed SQLite integrity and foreign-key checks, and unchanged originals/input hashes. This qualifies one captured, still-partial generation; broader recovery remains separate.
 
 `pi_daily_cdr_day_archive.py` has backup/request modes, **no restore command or CLI generation selector**. Finalization owns generation-specific archive binding. Use `raw-progress.jsonl` to select the exact generation, source fingerprint, immutable remote name, compressed bytes/hash and manifest. Canonical dates may coexist with generation-suffixed objects; a date-only lookup is insufficient.
 
-Implement a dedicated safe verifier for this archive format, reusing reviewed extraction patterns from `pi_plain_backup_restore.py` where compatible. The latter requires its own accepted plaintext catalog/packs and is not a decoder for daily raw archives. Read the actual raw manifest/transport implementation before designing validation.
+Use the dedicated verifier for this archive format. `pi_plain_backup_restore.py` requires its own accepted plaintext catalog/packs and is not a decoder for daily raw archives.
 
 Required independent acceptance: download the exact approved remote object to new private scratch using copy semantics; verify retained receipt size/SHA; validate embedded manifest; reject traversal, absolute paths, duplicate members, links and device entries; reconcile file count, bytes and hashes; validate copied SQLite databases/journals in isolated committed views. Never open originals beside their captured WAL or checkpoint source evidence. Bound decompression, disk and runtime resources; leave failed evidence intact. Produce a generation-bound receipt with actual checks, not a promoted upload PASS. Do not enable obsolete Restic services or delete old recovery copies.
 
-Nov7–13 selected raw archives already have compressed upload/readback PASS receipts. Full retained-generation inventory, independent extraction/semantic restore, system recovery and physical boot remain separate proof categories. Email remains explicitly deferred by the operator. Detailed private command/evidence inventory: `C:/code/AR-local/.work/ingest-resilience-20261113/runtime-handoff.md`.
+Nov7–13 selected raw archives already have compressed upload/readback PASS receipts; Nov13 now additionally has independent extraction/semantic restore PASS. Full retained-generation inventory, other-generation restores, system recovery and physical boot remain separate proof categories. Email remains explicitly deferred by the operator. Detailed private command/evidence inventory: `C:/code/AR-local/.work/ingest-resilience-20261113/runtime-handoff.md`.
 
 ## Consumer detail and quiet-change acceptance remains open
 

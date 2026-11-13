@@ -199,3 +199,34 @@ The standalone daily raw restore verifier is implemented at `c5dbbb1f847a1caeca7
 Shipping app `905eb334` passed all **24 tests across three required revision/accounting suites**, with complete raw Jest JSON, exact-head mobile-ci/merged-PR responses and a clean separate checkout. Private receipts: `app-qualification/` under the investigation directory. The actual private candidate payload audit remains pending until the canary produces it. `collect-producer-binding.py` in that directory's parent is prepared to capture fresh complete raw GitHub gate/review evidence and validate it with the integrated candidate's unchanged D027 validator; no final producer binding exists yet.
 
 Root review of the new live launcher found two concrete issues being corrected before execution: string-valued authorization roots could incorrectly pass substring scope checks, and the resource supervisor's unit allowlist did not yet recognize the new capture unit. Qualification now targets actual RAM staging, with an isolated `/dev/shm` root and retained failed-stage evidence. Committed register-journal membership and full audit-report binding are also required. No live expanded capture or deployment has occurred; no gate is bypassed by this checkpoint.
+
+## Checkpoint 9 — actual restore PASS; final integrated CI
+
+2026-11-13 approximately 23:24 Hobart. Stable integrated PR [#1137](https://github.com/yanniedog/AR-local/pull/1137) head is **`cec8d409a9a7a1f0e8e57ac9a0dc48e849c6ab32`**, incorporating the last live-capture correction `72d0dde08f0f18cfbda1578d2bc007263765780c`. Latest integrated tests: **144 passed / 5 platform skips**; prior component/combined results remain in their receipts. Independent review cleared the deadline recheck, queue stop margin, production automatic RAM staging, authorization types/unit allowlist and drop-behind corrections. All review threads were resolved at this checkpoint. Full exact-head CI is running; no merge or runtime success is inferred from focused tests.
+
+### Independent restoration of the actual Drive archive
+
+**PASS**, exit 0 after 293.469 seconds. Exact source `c5dbbb1f847a1caeca724c4c53b03f9d75c30523`; selected observation `obs-2026-11-13-c4352b79d899c191`. Remote objects were only read. Private workspace `C:/code/AR-local/.work/ingest-resilience-20261113/raw-restore-c5dbbb1-first`; complete runner result `C:/Users/jkoka/.codex/isolated-runs/20261113-225440-61b82744/result.json`. Preserve these originals and reports.
+
+| Binding | Verified value |
+|---|---|
+| Compressed archive | 205,329,655 bytes; SHA256 `b40a772cf7cd6bd1507e3fcd1bd5d194bfc8e1139d07de579ae7ec960a746a98` |
+| Original selected progress row | SHA256 `3781c9cb3372569070adfe0ac448978b14bedb7ae5e5816a2cf446998c326970` |
+| Source fingerprint | `ceab8677b7c7905206750ed2400835a1ad2af360285da470a0570d473782bd75` |
+| Embedded manifest | SHA256 `2c12cce8ef004c8d7328afefe70c594d94cbb82a8674f05a5bfda4d011257161` |
+| Restore result | SHA256 `f1d195ebcdc2ca127c654a683fd85ceed0067ca52f2629299162a09d70140dbb` |
+| Verified extraction | **42,669 files; 3,011,911,860 bytes**, all metadata/content checks passed; inputs and extracted originals rehashed unchanged |
+| Archived export contract | Validated generation/date; digest `aad0bc90c248bed6c44caabb4c09256b0a963d61dc87828362b824cd384c5748` |
+| SQLite committed copy | Integrity/FK PASS; products 2,966; rates 16,884; items 60,609; facts 648,625; changes 6,769 |
+
+The separately downloaded sidecar manifest includes compressed-object metadata and legitimately differs from the embedded manifest; its SHA256 is `6ebc94052589c7aedb09683319d2044f5252c5c60398f7154ce43d2eed598ef3`. Actual captured WAL is empty, so this run does not independently exercise nonempty-WAL replay; the regression suite's real SQLite WAL fixture does. Qualification covers this **still-partial captured generation**, not absent provider responses, every retained generation, system-image recovery or physical boot.
+
+A separate read-only audit of the committed copy found **zero duplicate product keys, orphaned rates/facts or malformed/empty product detail JSON**. Mortgage: 1,424 products/91 providers; savings: 876/104; TD: 666/88. Generic source facts number 58,065; 88 products retain structured bundles. These counts establish internal preservation, not market completeness or consumer UI support. Audit receipt SHA256 `76b329541524dc3971edae5a187cb606bd9779a333e3a1c66bc709d93add228e`, private `restored-consumer-evidence-audit.json`. The initial correlated orphan query exceeded its 60-second read budget; a bounded materialized-set query completed, without modifying data.
+
+### Remaining runtime sequence and window
+
+Production last observed clean at `8590e238d00f093e7f6d20fccfc2377c7abf1aec`; daily service inactive/success, dashboard active, queue empty and no Drive hold/ingest lock. These are snapshots, not admission for a later operation. About 983 GiB disk and 7.71 GB available RAM were observed; remeasure immediately before capture.
+
+The user's maintenance extension ends **00:30 Nov14 Hobart**; no integrity/resource/ownership gate is waived. Once exact integrated CI and guarded merge pass, the runtime owner may prepare the exact merged candidate and execute the new live route only if the bounded remaining slot is adequate. The full retained-data canary previously required **86 minutes even with the existing compatible audit cache**. Do not start that full run in an obviously shorter slot. Next normal window begins **03:30 Nov14**; rebind the then-current date/generation and fresh preflight. Main must remain stable during exact-main qualification; merge this documentation PR last.
+
+Then: capture full dynamic financial scope; retain truthful provider failures; qualify exact source/payload/resources; collect complete producer CI and current shipping-app bindings; audit actual private candidate payload; seal and activate the exact commit; verify Pi HTTP/browser behavior, dated/rolling GitHub assets and matching-generation Drive archive; observe natural daily operation. The actual expanded capture, activation, public publication/readback and post-deployment daily cycle remain open. Email remains deferred by explicit user choice. Consumer generic-detail/linked-terms/watchlist transport gaps remain documented in `INGEST_RESILIENCE_OPERATIONS_20261113.md`.
