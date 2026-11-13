@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app_payload_observation_gate import publication_allowed
+from app_payload_retained_policy import retained_partial_allowed
 from app_payload_source_verification import publication_source, reconciled_failure_statuses
 from ar_local_operation_lock import production_lock
 from ar_local_pi_runtime import data_runs_root, data_state_root
@@ -45,7 +46,8 @@ def retained_pointer(repo_root: Path, day: str) -> tuple[dict | None, str]:
     observed = load_pointer_observation(state, pointer)
     if observed["contract"] != contract or observed["export_root"] != exports.resolve():
         raise ValueError("historical source binding differs")
-    if contract["observation_state"] == "partial" and not reconciled_failure_statuses(exports, contract):
+    if (contract["observation_state"] == "partial" and not retained_partial_allowed(contract)
+            and not reconciled_failure_statuses(exports, contract)):
         return None, "unverified_failure_accounting"
     return pointer, reason
 

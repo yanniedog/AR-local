@@ -138,10 +138,16 @@ def _lock_owner_may_be_active(path: Path) -> bool:
     return True
 
 
-def assert_recovery_start_safe(repo_root: Path) -> None:
+def assert_recovery_start_safe(repo_root: Path, *, approved_deadline: datetime | None = None) -> None:
     """Called inside the existing DailyIngestLock, before pausing the dashboard."""
     now = datetime.now(timezone.utc)
-    if not recovery_window(now) or capture_timeout(now) < 60:
+    permitted = recovery_window(now) and capture_timeout(now) >= 60
+    if approved_deadline is not None:
+        from pi_cdr_quality_window import next_quiet
+        permitted = (approved_deadline.tzinfo is not None and now < approved_deadline <= next_quiet(now)
+                     and (approved_deadline - now).total_seconds() >= 60
+                     and not daytime(0, 30) <= now.astimezone(HOBART).time() < daytime(3, 30))
+    if not permitted:
         raise RuntimeError("Same-day recovery requires the daytime window or verified 03:00 daily service")
     reason = recovery_block_reason(repo_root, include_ingest_lock=False)
     if reason:

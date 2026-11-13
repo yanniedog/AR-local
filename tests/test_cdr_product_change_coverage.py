@@ -76,6 +76,9 @@ def test_export_empty_successful_index_does_not_emit_prior_product_removals(tmp_
     pages.mkdir(parents=True)
     fixture = Path(__file__).parent / "fixtures" / "ingest-capture-20261015" / "westpac-empty.json"
     (pages / "page-0001.json").write_bytes(fixture.read_bytes())
+    from cdr_ingest_recovery import _index_captured
+    assert _index_captured(root / "banks", "Westpac")
+    assert json.loads(fixture.read_bytes())["data"]["products"] == []
     # Isolate prior streaming/storage; identity and metadata facts are captured,
     # and the current run uses the untouched real HTTP-200 empty response.
     monkeypatch.setattr(cdr_outputs, "iter_run_fact_groups", lambda _: iter(westpac_groups()))
@@ -85,6 +88,15 @@ def test_export_empty_successful_index_does_not_emit_prior_product_removals(tmp_
     assert export["products"] == export["failures"] == export["product_changes"] == []
     assert export["product_change_summary"]["suppressed_incomplete_products"] == 2
     assert export["product_change_summary"]["suppression_reasons"] == {"provider_population_absent": 2}
+    from openpyxl import load_workbook
+    workbook = load_workbook(root / "_exports" / "banks-2026-10-15.xlsx", read_only=True)
+    try:
+        header, values = list(workbook["change_summary"].values)
+        row = dict(zip(header, values))
+        assert "suppression_reasons" not in row
+        assert json.loads(row["suppression_reasons_json"]) == {"provider_population_absent": 2}
+    finally:
+        workbook.close()
 
 
 @pytest.mark.parametrize("phase", [None, "products_index", "holder", "product_detail", "classification_detail"])
@@ -119,3 +131,20 @@ def test_unknown_provider_rename_does_not_authorize_removal():
         current_providers=["Renamed provider"],
     )
     assert not flat and count == 2
+
+
+@pytest.mark.parametrize("phase,reason", [
+    ("products_index", "provider_capture_incomplete"),
+    ("holder", "provider_capture_incomplete"),
+    ("product_detail", "product_capture_failed"),
+    ("classification_detail", "product_capture_failed"),
+])
+def test_known_failure_reason_precedes_empty_population_symptom(phase, reason):
+    previous, key = captured_facts()
+    failures = [{"phase": phase, "bank": key[0], "product_id": key[1], "status": 503}]
+    groups, counters = _exclude_failed_missing_product_groups(
+        iter([(key, previous)]), [], failures, current_providers=[],
+    )
+    assert diff_normalized_product_fact_groups(groups, [])["events"] == []
+    assert counters["suppressed"] == 1
+    assert counters["reasons"] == {reason: 1}

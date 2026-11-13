@@ -9,7 +9,9 @@ path was correctly refusing it.  Both callers now share the predicates here.
 The gate reads the export-contract v2 written by ``cdr_finalization``. Legacy
 bounded admission remains compatible; sealed, fully classified and reconciled
 partial observations can also publish their valid products without a numeric
-failure quota. Callers still verify the ledger and original artifacts.
+failure quota. The later standing daily policy publishes sealed retained partial
+captures from its authorized date with explicit coverage uncertainty. Callers
+still verify the ledger and original artifacts.
 """
 from __future__ import annotations
 
@@ -19,6 +21,9 @@ from typing import Any, Mapping, Optional, Tuple
 
 from app_payload_authentication import authentication_exclusions
 from app_payload_partial_accounting import reconciled_partial_v1_allowed
+from app_payload_retained_policy import (
+    AUTHORISED_FROM, POLICY_ID, public_population_findings, retained_partial_allowed,
+)
 
 # Legacy compatibility v1 is allowed to advance from a fully-audited partial
 # observation inside these bounds for failures other than attributable bank
@@ -81,6 +86,15 @@ def bounded_partial_v1_allowed(contract: Mapping[str, Any]) -> bool:
 
 def publication_allowed(contract: Optional[Mapping[str, Any]]) -> Tuple[bool, str]:
     """Return ``(allowed, reason)`` for one observation's v1 publication."""
+    if (isinstance(contract, Mapping) and contract.get("observation_state") == "partial"
+            and str(contract.get("observation_date") or "") >= AUTHORISED_FROM):
+        return ((True, "retained_partial") if retained_partial_allowed(contract)
+                else (False, "invalid_retained_partial"))
+    return _legacy_publication_allowed(contract)
+
+
+def _legacy_publication_allowed(contract: Optional[Mapping[str, Any]]) -> Tuple[bool, str]:
+    """Pre-standing-policy verdict, retained for old dates and disclosure."""
     if not isinstance(contract, Mapping) or not contract:
         return False, "missing_export_contract"
     coverage = contract.get("coverage")
@@ -108,10 +122,31 @@ def contract_coverage(contract: Optional[Mapping[str, Any]]) -> Optional[dict]:
     if not isinstance(coverage, Mapping):
         return None
     result = dict(coverage)
+    if "provider_population_unverified" in result:
+        result["provider_population_unverified"] = public_population_findings(result["provider_population_unverified"])
+    result["observation_state"] = contract.get("observation_state", "unknown")
+    if isinstance(contract.get("provider_states"), list):
+        # Publish identities/accounting, not endpoint URLs or transport snippets.
+        fields = ("provider_uid", "brand_name", "state", "failure_records",
+                  "failure_categories", "population_known")
+        result["provider_observations"] = [
+            {key: provider[key] for key in fields if key in provider}
+            for provider in contract["provider_states"] if isinstance(provider, Mapping)
+        ]
+    if 'provider_participation_ceased' in result:
+        from app_payload_participation import public_participation_cessations
+        result['provider_participation_ceased'] = public_participation_cessations(result['provider_participation_ceased'])
     auth = authentication_exclusions(contract)
     if auth["failure_records"]:
         result["nonblocking_authentication"] = auth
-    if not bounded_partial_v1_allowed(contract) and reconciled_partial_v1_allowed(contract):
+    if retained_partial_allowed(contract):
+        result["publication_policy"] = {
+            "id": POLICY_ID, "observation_state": "partial",
+            "severity": "degraded", "reason": "best_available_retained_capture",
+            "previous_verdict": _legacy_publication_allowed(contract)[1],
+            "absence_is_removal": False,
+        }
+    elif not bounded_partial_v1_allowed(contract) and reconciled_partial_v1_allowed(contract):
         result["publication_policy"] = {
             "id": "reconciled-partial-v1", "observation_state": "partial",
             "severity": "severe", "reason": "outside_legacy_failure_budget",

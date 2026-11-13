@@ -1,0 +1,21 @@
+{
+  "captured_on": "2026-11-13",
+  "scope": "Public provider data only; retained responses, not synthetic products",
+  "files": {
+    "360mms-index.json": {
+      "bytes": 7703,
+      "http_status": 200,
+      "url": "https://public.360mms.cdr.colcap.com.au/cds-au/v1/banking/products?page-size=100&page=1",
+      "api_version": 5,
+      "sha256": "38463453e3cdc8579a51f53e35026b2c5f38de904b6bff2c51e1fba4c0055210",
+      "representation": "Saved UTF-8 response body"
+    },
+    "register.json": {
+      "bytes": 199565,
+      "http_status": 200,
+      "url": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+      "sha256": "43e1fdbc0ffb9d37775592dbbb31201c175cb6fde88eeb6c6fe887dadc493e3a",
+      "representation": "Saved UTF-8 response body"
+    }
+  }
+}

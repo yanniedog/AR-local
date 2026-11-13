@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from app_payload_partial_accounting import CLASSIFIED_FAILURES
+from app_payload_retained_policy import retained_partial_allowed
 from cdr_compatibility import classify_fetch_failure
 from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
@@ -87,7 +88,12 @@ def verify_reconciled_source(state: Path, exports: Path, run_date: str, contract
         stored = load_contract(_within(state, marker['export_contract_path']))
         if stored != contract or not verify_completion_marker(marker, state, run_date):
             return False
+        # verify_completion_marker above verifies every sealed source artifact,
+        # including ingest-status.json. The standing daily policy admits retained
+        # partial facts even when status labels are unknown; it never waives that
+        # integrity check or changes the underlying failure/coverage accounting.
         return (contract.get('observation_state') == 'complete'
+                or retained_partial_allowed(contract)
                 or reconciled_failure_statuses(exports, contract))
     except (KeyError, OSError, ValueError, TypeError):
         return False

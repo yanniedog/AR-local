@@ -200,6 +200,7 @@ for name in \
   cdr_contracts.py \
   cdr_http_policy.py \
   cdr_ingest_support.py \
+  cdr_register_validation.py \
   cdr_journal_evidence.py \
   cdr_observation.py \
   cdr_observation_db.py \
@@ -252,6 +253,7 @@ done
     cdr_contracts.py \
     cdr_http_policy.py \
     cdr_ingest_support.py \
+    cdr_register_validation.py \
     cdr_journal_evidence.py \
     cdr_observation.py \
     cdr_observation_db.py \

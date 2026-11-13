@@ -190,6 +190,13 @@ def validate_manifest(path: Path, expected_hash: str, *, current: datetime | Non
         checked(entry)
     ci_binding(read(checked(value["evidence"]["ci"])), value["target_commit"])
     canary = read(checked(value["evidence"]["canary"]))
+    from pi_cdr_quality_window import load
+    authorization = value.get("window_authorization")
+    if authorization != canary.get("window_authorization"):
+        raise ValueError("activation window differs from canary authorization")
+    extension = load(authorization, now=now, target=value["target_commit"], operation=operation, stage="quality-activate")
+    if extension is not None and expires > extension:
+        raise ValueError("activation expires after operator authorization")
     app_binding(read(checked(value["evidence"]["app"])), value["target_commit"], canary)
     if (canary.get("schema") != CANARY_SCHEMA or canary.get("result") != "PASS"
             or canary.get("target_commit") != value["target_commit"]

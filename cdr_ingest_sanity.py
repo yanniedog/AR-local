@@ -152,6 +152,8 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path, *, st
         current_status = {}
     from cdr_population_identity import retain_population_uncertainty
     population = retain_population_uncertainty(population,current_status)
+    from cdr_population_lifecycle import reconcile_participation
+    population = reconcile_participation(population,current_status,exports_dir,run_date)
     compared = (population.get('baseline') or {}).get('observation_date')
     population_summary = {'run_date':run_date,'compared_against':compared,
                           'provider_population':population}

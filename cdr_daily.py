@@ -848,7 +848,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Request a same-day revision; historical dates remain unavailable to live ingest",
     )
-    parser.add_argument("--banks-only", action="store_true", help="Accepted for compatibility; banking is the only sector.")
+    parser.add_argument("--banks-only", action="store_true", help="Compatibility alias; collects banks and non-bank lenders through Banking Product APIs.")
     parser.add_argument("--resume-same-day", action="store_true",
                         help="Repair today's selected observation using verified same-day raw captures; requires --force.")
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
