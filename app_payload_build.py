@@ -318,10 +318,10 @@ def _stable_payload_coverage(
             pass
     if contract_coverage:
         _apply_contract_provider_counts(coverage, contract_coverage)
-        if "nonblocking_authentication" in contract_coverage:
-            coverage["nonblocking_authentication"] = deepcopy(contract_coverage["nonblocking_authentication"])
-        if "publication_policy" in contract_coverage:
-            coverage["publication_policy"] = deepcopy(contract_coverage["publication_policy"])
+        for key in ("nonblocking_authentication", "publication_policy", "observation_state",
+                    "provider_population_unverified", "provider_observations"):
+            if key in contract_coverage:
+                coverage[key] = deepcopy(contract_coverage[key])
     # Keep rebuild wall-clock metadata out of the content-hashed core. Coverage
     # is dated by its stable source observation (`observed_on`).
     coverage.pop("source_generated_at", None)

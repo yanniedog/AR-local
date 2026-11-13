@@ -435,7 +435,8 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
             if not verify_reconciled_source(runtime_state, exports, observation_date, contract):
                 print("[pi_daily_sync] app_payload promotion withheld reason=unverified_reconciled_source")
                 return PUBLISH_WITHHELD
-            qualifier = "reconciled" if policy == "reconciled_partial" else "bounded"
+            qualifier = {"reconciled_partial": "reconciled",
+                         "retained_partial": "retained"}.get(policy, "bounded")
             print(
                 f"[pi_daily_sync] app_payload {qualifier} partial v1 promotion "
                 f"run_date={observation_date} "
@@ -511,12 +512,23 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                     "[pi_daily_sync] app_payload v2 skipped "
                     f"reason=v1_revision_check_failed error={live_exc!r}"
                 )
+        dated_confirmed = published_dated
+        if not dated_confirmed:
+            try:
+                dated_status, live_dated = app_payload._live_manifest_status(
+                    app_payload.DEFAULT_REPO, dated_tag
+                )
+                dated_confirmed = (dated_status == "present" and isinstance(live_dated, dict)
+                                   and _same_payload_revision(manifest, live_dated))
+            except Exception as dated_exc:  # noqa: BLE001 - keep publication retry pending
+                print(f"[pi_daily_sync] dated revision check failed error={dated_exc!r}")
         outcome = (
             PUBLISH_PUBLISHED
-            if (rolling_confirmed or rolling_superseded)
+            if dated_confirmed and (rolling_confirmed or rolling_superseded)
             else PUBLISH_FAILED
         )
-        publication_failure_reason = "rolling_manifest_not_confirmed"
+        publication_failure_reason = ("rolling_manifest_not_confirmed" if dated_confirmed
+                                      else "dated_manifest_not_confirmed")
         if v2_eligible and not v2_publication_allowed():
             print(
                 "[pi_daily_sync] app_payload v2 skipped "
