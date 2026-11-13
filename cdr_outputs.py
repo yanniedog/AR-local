@@ -501,6 +501,7 @@ def _exclude_failed_missing_products(
     failures: List[Dict[str, Any]],
     *,
     current_providers: Optional[Iterable[str]] = None,
+    unavailable_providers: Iterable[str] = (),
 ) -> tuple[List[Dict[str, Any]], int]:
     """Prevent incomplete fetches from becoming false product removals."""
     current_keys = {
@@ -519,11 +520,12 @@ def _exclude_failed_missing_products(
         and row.get("product_id") not in (None, "")
     }
     observed_providers = None if current_providers is None else {name.casefold() for name in current_providers}
+    unavailable = {name.casefold() for name in unavailable_providers}
     suppressed = set()
     output = []
     for row in previous_facts:
         key = (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
-        reason = _missing_capture_reason(key, failed_providers, failed_products, observed_providers)
+        reason = _missing_capture_reason(key, failed_providers, failed_products, observed_providers, unavailable)
         if reason and key not in current_keys:
             suppressed.add(key)
             continue
@@ -531,8 +533,10 @@ def _exclude_failed_missing_products(
     return output, len(suppressed)
 
 
-def _missing_capture_reason(key, failed_providers, failed_products, observed_providers):
+def _missing_capture_reason(key, failed_providers, failed_products, observed_providers, unavailable=()):
     # Report a known cause before the more general missing-population symptom.
+    if key[0] in unavailable:
+        return "provider_prd_unavailable"
     if key[0] in failed_providers:
         return "provider_capture_incomplete"
     if (key[0], key[1]) in failed_products:
@@ -550,6 +554,7 @@ def _exclude_failed_missing_product_groups(
     failures: List[Dict[str, Any]],
     *,
     current_providers: Optional[Iterable[str]] = None,
+    unavailable_providers: Iterable[str] = (),
 ) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, Any]]:
     """Return filtered groups; the count is final after the iterable is exhausted."""
     current_keys = {
@@ -568,12 +573,13 @@ def _exclude_failed_missing_product_groups(
         and row.get("product_id") not in (None, "")
     }
     observed_providers = None if current_providers is None else {name.casefold() for name in current_providers}
+    unavailable = {name.casefold() for name in unavailable_providers}
     result = {"suppressed": 0, "reasons": {}}
 
     def filtered() -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
         for product_key, facts in previous_groups:
             key = (product_key[0].casefold(), product_key[1], product_key[2])
-            reason = _missing_capture_reason(key, failed_providers, failed_products, observed_providers)
+            reason = _missing_capture_reason(key, failed_providers, failed_products, observed_providers, unavailable)
             if reason and key not in current_keys:
                 result["suppressed"] += 1
                 result["reasons"][reason] = result["reasons"].get(reason, 0) + 1
@@ -599,6 +605,7 @@ def build_outputs(
             banks["product_facts"],
             banks["failures"],
             current_providers=(str(row.get("provider") or "") for row in banks["products"]),
+            unavailable_providers=(row['provider_dir'] for row in banks.get('prd_unavailable', [])),
         )
         changes = diff_normalized_product_fact_groups(
             previous_groups,
