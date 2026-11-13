@@ -218,15 +218,14 @@ def test_rolling_tiers_reuse_aggregate_read_pass(tmp_path, banks, monkeypatch):
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     target = exports / "dashboard-cache" / DAY / "banks.json"
     reads = []
-    for method in ("read_bytes", "read_text"):
-        original = getattr(Path, method)
+    original = Path.open
 
-        def read(path, *args, _read=original, **kwargs):
-            if path == target:
-                reads.append(path)
-            return _read(path, *args, **kwargs)
+    def read(path, *args, **kwargs):
+        if path == target:
+            reads.append(path)
+        return original(path, *args, **kwargs)
 
-        monkeypatch.setattr(Path, method, read)
+    monkeypatch.setattr(Path, "open", read)
     builder._compute_payload(exports)
     # Current catalogue, combined tier/aggregate pass, and existing spread pass.
     assert len(reads) == 3

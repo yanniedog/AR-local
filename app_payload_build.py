@@ -362,7 +362,8 @@ def _compute_payload(
     from app_payload_bank_rate_source import require_selected_current_export
     if not archive_snapshot:
         require_selected_current_export(exports_dir, run_date)
-    banks = _load_json(_find_banks_json(exports_dir, run_date))
+    from app_payload_banks_stream import read_banks
+    banks, _, _ = read_banks(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
     from cdr_public_rates_legacy import annotate_legacy_rates
@@ -493,7 +494,7 @@ def _compute_payload(
             run_date=run_date,
             history_dates=app_payload_mobile._history_dates,
             banks_path=app_payload_mobile._banks,
-            load_json=_load_json,
+            load_json=lambda path: read_banks(path, retain_fields={"run_date", "rates"})[0],
             schema_version=SCHEMA_VERSION,
         )
     else:
