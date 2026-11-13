@@ -37,3 +37,31 @@ def test_bad_lifecycle_metadata_cannot_be_misrepresented(tmp_path, field, value)
     rows[0][field] = value
     with pytest.raises(ValueError):
         public_participation_cessations(rows)
+
+
+def test_financial_scope_partial_publication_preserves_both_safe_disclosures(tmp_path):
+    """Integration: real register scope plus both formerly conflicting projections."""
+    from app_payload_observation_gate import contract_coverage, publication_allowed
+    from app_payload_build import _stable_payload_coverage
+    from tests.test_app_payload_retained_policy import retained_accounting
+    from tests.test_app_payload_partial_accounting import seal
+
+    status = captured_status(tmp_path)
+    assert status['providers_registered'] == 306  # 115 banks + 191 NBL in captured register.
+    population = reconcile_participation(captured_population(), status, tmp_path, DAY)
+    contract = retained_accounting(tmp_path, DAY)
+    contract['coverage']['provider_participation_ceased'] = population['participation_cessations']
+    # Protocol-only uncertainty metadata; no product/rate observation is invented.
+    contract['coverage']['provider_population_unverified'] = [{
+        'provider': 'Westpac', 'population_known': False, 'disposition': 'UNVERIFIED_SOURCE_ABSENCE',
+        'provider_identity': {'endpoint_url': 'https://transport.example/private-context'},
+    }]
+    seal(contract)
+    assert publication_allowed(contract) == (True, 'retained_partial')
+    built = _stable_payload_coverage({}, {}, DAY, contract_coverage(contract))
+    assert built['observation_state'] == 'partial'
+    assert built['publication_policy']['absence_is_removal'] is False
+    assert built['provider_population_unverified'][0]['provider'] == 'Westpac'
+    assert built['provider_participation_ceased'][0]['provider'] == 'Wise'
+    assert built['provider_participation_ceased'][0]['product_withdrawal_confirmed'] is False
+    assert 'https://' not in json.dumps(built)
