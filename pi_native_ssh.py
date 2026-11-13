@@ -20,7 +20,8 @@ import subprocess
 from zoneinfo import ZoneInfo
 
 ROOT = Path('/etc/ar-local-native-ssh')
-UNIT = Path('/etc/systemd/system/ar-local-native-ssh.service')
+# Persistent SSH must remain outside the legacy queue's ar-local-*.service batch scan.
+UNIT = Path('/etc/systemd/system/sshd-ar-local-tailnet.service')
 HOST_KEY = Path('/etc/ssh/ssh_host_ed25519_key')
 SERVICE = UNIT.name
 QUEUE = Path('/var/lib/shared-pi-queue/state.json')

@@ -17,6 +17,8 @@ from pi_cdr_quality_activate import (clean_commit, control_state, current_state,
     main_commit, operation_guard, protected_files, read, record, run, source_files, write)
 from pi_cdr_quality_window import add_arguments, deadline, reference, load
 from pi_cdr_quality_read_io import require_dropbehind_reads
+from pi_live_financial_stage import (PROFILES, choose_stage, directory_identity,
+    filesystem, production_configuration)
 
 PRODUCTION = Path("/srv/ar-local/AR-local")
 DATA = Path("/srv/ar-local/data")
@@ -24,14 +26,15 @@ CANARIES = Path("/srv/ar-local/canary")
 
 
 def ram_root(args):
-    return Path("/dev/shm") / ("ar-local-canary-" + args.operation.name)
+    return Path(args.stage_binding["root"])
 
 
 def arguments(args, command):
     result = [str(args.python), "-B", str(args.source / Path(__file__).name), command,
               "--source", str(args.source), "--operation", str(args.operation),
               "--expected-commit", args.expected_commit, "--python", str(args.python),
-              "--runtime-seconds", str(args.runtime_seconds)]
+              "--runtime-seconds", str(args.runtime_seconds),
+              "--stage-profile", args.stage_profile]
     if reference(args):
         result += ["--window-authorization", str(args.window_authorization),
                    "--window-authorization-sha256", args.window_authorization_sha256]
@@ -73,8 +76,7 @@ def remaining_budget(requested, closing, now):
 def preflight(args):
     layout(args.source, PRODUCTION, DATA, args.operation)
     if (args.operation.parent != CANARIES or args.operation.exists()
-            or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", args.operation.name)
-            or ram_root(args).exists() or ram_root(args).is_symlink()):
+            or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", args.operation.name)):
         raise ValueError("a new canonical generation directory immediately beneath the canary root is required")
     if args.source != Path(__file__).resolve().parent:
         raise ValueError("execute the launcher from the exact candidate source being qualified")
@@ -93,6 +95,7 @@ def preflight(args):
     now = datetime.now(timezone.utc)
     runtime = remaining_budget(args.runtime_seconds, deadline(now, extension), now)
     current_state(DATA)
+    args.stage_binding = choose_stage(args.operation, args.stage_profile, production_configuration())
     return runtime
 
 
@@ -144,7 +147,8 @@ def capture(args):
     decision = inherited_queue_admission()
     if args.command == "plan":
         return {"result": "READY", "mutated": False, "runtime_seconds": runtime,
-                "target_commit": args.expected_commit, "scope": "isolated live capture; no publication or Drive"}
+                "target_commit": args.expected_commit, "staging": args.stage_binding,
+                "scope": "isolated live capture; no publication or Drive"}
     if args.command == "run":
         if decision != "admit":
             raise ValueError("submit run outside an existing queue claim")
@@ -158,6 +162,7 @@ def capture(args):
     parent_unit = SHARED_QUEUE_UNIT_RE.search(_read_self_cgroup()).group(1) + ".service"
     args.operation.mkdir(mode=0o700)
     ram_root(args).mkdir(mode=0o700)
+    args.stage_binding["directory_identity"] = directory_identity(ram_root(args))
     for name in ("home", "config", "data", "data/runs", "data/state", "data/archive-spool"):
         (args.operation / name).mkdir(mode=0o700, parents=True, exist_ok=True)
     config = args.operation / "config"
@@ -168,7 +173,14 @@ def capture(args):
         f"AR_LOCAL_DAY_ARCHIVE_REMOTE=canary_local:{args.operation}/data/day-archive-remote\n"
         f"RCLONE_CONFIG={config}/rclone.conf\n", encoding="utf-8")
     before = {"production_commit": clean_commit(PRODUCTION), "protected_files": protected_files(DATA),
-              "publication_controls": control_state(DATA), "source_files": source_files(args.source)}
+              "publication_controls": control_state(DATA), "source_files": source_files(args.source),
+              "staging_configuration": production_configuration(),
+              "staging_filesystem": filesystem(ram_root(args)),
+              "production_staging_filesystem": filesystem(Path(args.stage_binding["production_configuration"]["effective_root"]))}
+    if (before["staging_configuration"] != args.stage_binding["production_configuration"]
+            or before["staging_filesystem"] != args.stage_binding["filesystem"]
+            or before["production_staging_filesystem"] != args.stage_binding["production_filesystem"]):
+        raise ValueError("staging configuration changed during preparation")
     # Source/protected-evidence hashing can be substantial. Revalidate the same
     # absolute authorization immediately before constructing the bounded unit.
     now = datetime.now(timezone.utc)
@@ -181,7 +193,8 @@ def capture(args):
               "operation": str(args.operation), "source": str(args.source), "unit": unit,
               "parent_queue_unit": parent_unit, "before": before,
               "window_authorization": reference(args), "runtime_seconds": runtime,
-              "ram_root": str(ram_root(args)), "absolute_cutoff": closing.isoformat(),
+              "ram_root": str(ram_root(args)), "staging": args.stage_binding,
+              "qualification": args.stage_binding["qualification"], "absolute_cutoff": closing.isoformat(),
               "resource_policy": "quality-canary-v2: host/workload swap recorded; RSS/reserve/pressure/deadline stops unchanged",
               "started_at": datetime.now(timezone.utc).isoformat()}
     write(args.operation / "intent.json", intent)
@@ -205,10 +218,14 @@ def capture(args):
         if resources.get("command") != arguments(args, "worker") or not str(resources.get("cgroup", "")).endswith("/" + unit):
             raise ValueError("resource receipt does not bind the owned worker/unit")
         worker = read(args.operation / "worker.json")
-        if worker.get("target_commit") != args.expected_commit or worker.get("result") != "PASS":
+        if (worker.get("target_commit") != args.expected_commit or worker.get("result") != "PASS"
+                or worker.get("staging", {}).get("qualification") != args.stage_binding["qualification"]):
             raise ValueError("complete live worker proof missing")
         after = {"production_commit": clean_commit(PRODUCTION), "protected_files": protected_files(DATA),
-                 "publication_controls": control_state(DATA), "source_files": source_files(args.source)}
+                 "publication_controls": control_state(DATA), "source_files": source_files(args.source),
+              "staging_configuration": production_configuration(),
+              "staging_filesystem": filesystem(ram_root(args)),
+              "production_staging_filesystem": filesystem(Path(args.stage_binding["production_configuration"]["effective_root"]))}
         if before != after:
             raise ValueError("production controls/data or candidate source changed")
         result.update(result="PASS", worker=record(args.operation / "worker.json"),
@@ -225,7 +242,11 @@ def capture(args):
                 now = datetime.now(timezone.utc)
                 extension = load(reference(args), now=now, target=args.expected_commit,
                                  operation=args.operation, stage="live-financial-capture")
-                result["failed_stage"] = preserve_failed_stage(ram_root(args), args.operation / "failed-ram", deadline(now, extension))
+                if args.stage_binding["filesystem"]["fstype"] == "tmpfs":
+                    result["failed_stage"] = preserve_failed_stage(ram_root(args), args.operation / "failed-ram", deadline(now, extension))
+                else:
+                    result["failed_stage"] = {"result": "RETAINED_IN_PLACE",
+                        "source": str(ram_root(args)), "source_deleted": False}
         except Exception as error:
             result.update(result="FAIL", cleanup_error=type(error).__name__)
         result["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -245,6 +266,7 @@ def main(argv=None):
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--python", type=Path, required=True)
     parser.add_argument("--runtime-seconds", type=int, default=5400)
+    parser.add_argument("--stage-profile", choices=PROFILES, default="production")
     add_arguments(parser)
     args = parser.parse_args(argv)
     if args.command == "worker":
