@@ -57,7 +57,7 @@ identity guard remains conservative across interim and registered ID fields.
 ## Supervised qualification route
 
 Runtime source `a98efe2`, resource correction `3df2f7c` and staging repair
-`7c123a3` add
+`7c123a3`, completed by deadline/read guard `72d0dde`, add
 `pi_live_financial_capture.py` and its worker. It
 requires exact clean current main, a new operation directory directly under
 `/srv/ar-local/canary`, the shared AR-local queue claim and a supervised owned
@@ -98,6 +98,14 @@ bounded `--runtime-seconds`, and both `--window-authorization` and
 `--window-authorization-sha256` when an explicit extension applies. `queued` and
 `worker` are internal supervised stages. This documentation is not a production
 execution receipt or standing permission extension.
+
+The final launcher revalidates authorization and recalculates its remaining
+runtime after preparation/hashing, preserving a 180-second cleanup reserve.
+Queue wait and parent-runtime bounds stay below the absolute cutoff. Parent
+evidence snapshots and worker audits require the existing Linux drop-behind
+read path; the ingest child keeps production's own behavior. The installed
+root-mediated `pi_ci_activate.py` independently retains its 03:30–22:00 window:
+this one-off authorization does not override every deployment entrypoint.
 
 Runtime's initial focused controls passed 113 tests. Existing activation fixtures
 cannot complete on this Windows interpreter because executable pathname mode
