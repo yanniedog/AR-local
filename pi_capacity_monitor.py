@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
+import smtplib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from ar_local_email_notify import email_configured, send_email
 from ar_local_pi_runtime import data_state_root
@@ -25,6 +27,7 @@ CRITICAL_FREE_BYTES = 100 * GIB
 WARNING_RUNWAY_DAYS = 180
 CRITICAL_RUNWAY_DAYS = 60
 ALERT_COOLDOWN_SECONDS = 24 * 60 * 60
+ALERT_RETRY_SECONDS = 60 * 60
 
 
 def _now() -> datetime:
@@ -139,24 +142,66 @@ def capacity_report(
     }
 
 
-def _maybe_notify(report: dict[str, Any], state: dict[str, Any], now: datetime) -> None:
+def _timestamp(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    try:
+        parsed = float(value)
+    except OverflowError:
+        return 0.0
+    return parsed if math.isfinite(parsed) and parsed >= 0 else 0.0
+
+
+def _carry_delivery(report: dict[str, Any], state: dict[str, Any]) -> None:
+    if _timestamp(state.get("last_alert_at")):
+        report["last_alert_at"] = state["last_alert_at"]
+    if state.get("last_alert_status") in ("warning", "critical"):
+        report["last_alert_status"] = state["last_alert_status"]
+    prior = state.get("notification")
+    if isinstance(prior, dict):
+        report["notification"] = {key: prior[key] for key in (
+            "status", "capacity_status", "attempted_at", "retry_after", "error_class"
+        ) if key in prior}
+
+
+def _maybe_notify(
+    report: dict[str, Any], state: dict[str, Any], now: datetime,
+    *, persist: Callable[[], None] | None = None,
+) -> bool:
+    _carry_delivery(report, state)
     last_value = state.get("last_alert_at")
     last_status = state.get("last_alert_status")
-    last = (
-        float(last_value)
-        if isinstance(last_value, (int, float))
-        and not isinstance(last_value, bool)
-        and last_value >= 0
-        else 0.0
-    )
-    if last:
-        report["last_alert_at"] = last
-    if last_status in ("warning", "critical"):
-        report["last_alert_status"] = last_status
-    if report["status"] == "healthy" or not email_configured():
-        return
+    last = _timestamp(last_value)
+    if report["status"] == "healthy":
+        return True
+    if not email_configured():
+        report["notification"] = {"status": "NOT_CONFIGURED"}
+        return True
     if now.timestamp() - last < ALERT_COOLDOWN_SECONDS and last_status == report["status"]:
-        return
+        return True
+    delivery = report.get("notification", {})
+    if (delivery.get("capacity_status") == report["status"]
+            and now.timestamp() < _timestamp(delivery.get("retry_after"))):
+        return False
+    report["notification"] = {
+        "status": "ATTEMPTING", "capacity_status": report["status"],
+        "attempted_at": now.timestamp(), "retry_after": now.timestamp() + ALERT_RETRY_SECONDS,
+    }
+    if persist:
+        persist()  # Retain the sample and retry reservation even if the sender dies.
+    try:
+        sent = _send_alert(report)
+    except (smtplib.SMTPException, OSError) as error:
+        report["notification"].update(status="FAILED", error_class=type(error).__name__)
+        return False  # Exception text can contain server credentials or addresses.
+    report["notification"]["status"] = "SENT" if sent else "NOT_SENT"
+    if sent:
+        report["last_alert_at"] = now.timestamp()
+        report["last_alert_status"] = report["status"]
+    return sent
+
+
+def _send_alert(report: dict[str, Any]) -> bool:
     fs = report["filesystem"]
     body = (
         "AR-local storage runway needs attention. Daily ingest remains enabled and no evidence was deleted.\n\n"
@@ -166,9 +211,7 @@ def _maybe_notify(report: dict[str, Any], state: dict[str, Any], now: datetime) 
         f"Runway: {report['runway_days'] if report['runway_days'] is not None else 'collecting samples'} days\n"
         "Required response: add verified off-Pi capacity or expand storage; do not delete source evidence."
     )
-    if send_email(f"AR-local Pi storage {report['status']}", body):
-        report["last_alert_at"] = now.timestamp()
-        report["last_alert_status"] = report["status"]
+    return send_email(f"AR-local Pi storage {report['status']}", body)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -193,11 +236,15 @@ def main(argv: list[str] | None = None) -> int:
         prior_samples=state.get("samples"),
         now=now,
     )
+    _carry_delivery(report, state)
+    _write_state(state_path, report)  # Assessment must survive a delivery failure.
+    delivered = True
     if args.notify:
-        _maybe_notify(report, state, now)
+        delivered = _maybe_notify(report, state, now, persist=lambda: _write_state(state_path, report))
     _write_state(state_path, report)
-    print(json.dumps({key: report[key] for key in ("status", "filesystem", "growth_bytes_per_day_p90", "runway_days", "policy")}, sort_keys=True))
-    return 0
+    keys = ("status", "filesystem", "growth_bytes_per_day_p90", "runway_days", "policy", "notification")
+    print(json.dumps({key: report[key] for key in keys if key in report}, sort_keys=True))
+    return 0 if delivered else 1
 
 
 if __name__ == "__main__":
