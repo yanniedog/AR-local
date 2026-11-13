@@ -10,4 +10,8 @@ Real captured register/index fixtures bind the 306-brand scope, preserve all 115
 
 No Pi, service, schedule or backup mutation is performed by this source patch. All-bank and NBL live acceptance, provider error repair, physical/Drive restore and consumer comparison/watchlist behavior remain separate checks. Do not report 306 complete providers merely because 306 were discovered.
 
+Register-response drift is now explicit: malformed/empty industry classifications, malformed envelopes, advertised uncaptured pages and inconsistent declared counts mark register provenance incomplete. Usable provider rows still ingest, preserving obtainable coverage. Additive fields and valid new industry names remain readable; unsupported industries stay outside financial scope. This detects future pagination rather than falsely declaring its first page complete; an actual newly paginated register still needs a qualified traversal adapter.
+
 Local validation: 99 tests passed across financial register, ingest status, official single-page recovery, ingest recovery and compatibility suites; `git diff --check` passed. Full exact-head producer/platform CI is pending. Worktree: `C:/code/AR-local-financial-provider-discovery-20261113`, branch `agent/financial-provider-discovery-20261113`. Original public response bytes/UTF-8 representations and provenance hashes are under `tests/fixtures/cdr-financial-register-20261113/`.
+
+After review fixes: 89 register/status/compatibility/recovery tests passed; independent review found no actionable defect and 34 register/status tests passed. Exact hosted CI must be rerun for the final integrated head.

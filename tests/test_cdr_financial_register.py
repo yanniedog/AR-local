@@ -75,3 +75,33 @@ def test_register_snapshot_counts_financial_scope_before_holder_filter(monkeypat
     assert [row["brand_name"] for row in snapshot.banking_brands] == ["360 MMS"]
     assert calls == [support.REGISTER_URL_SUMMARY]
     assert snapshot.register_attempts[0]["sha256"] == hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("change", [
+    {"links": {"next": "https://api.cdr.gov.au/next"}},
+    {"meta": {"totalRecords": 391}}, {"meta": {"totalRecords": "390"}},
+    {"meta": {"totalPages": 2}}, {"meta": []}, {"links": None},
+])
+def test_changed_register_keeps_obtainable_providers_but_marks_partial(monkeypatch, change):
+    register = json.loads(retained("register.json"))
+    register.update(change)
+    raw = json.dumps(register)
+    monkeypatch.setattr(support, "fetch_cdr_json", lambda *a, **k:
+                        support.FetchResult(True, 200, support.REGISTER_URL_SUMMARY, raw, version=2))
+    snapshot = support.collect_register_snapshot(timeout=1, max_retries=0, sleep_ms=0, holders_filter=None)
+    assert snapshot.register_ok  # Capture all usable rows instead of losing them.
+    assert len(snapshot.banking_brands) == 306
+    assert not snapshot.register_provenance_complete
+    assert snapshot.register_attempts[0]["ok"] is False
+    assert snapshot.register_attempts[0]["error"]
+
+
+def test_unclassified_brand_makes_register_incomplete_without_losing_other_rows(monkeypatch):
+    register = json.loads(retained("register.json"))
+    bank = next(row for row in register["data"] if "banking" in row["industries"])
+    bank["industries"] = None
+    monkeypatch.setattr(support, "fetch_cdr_json", lambda *a, **k:
+                        support.FetchResult(True, 200, support.REGISTER_URL_SUMMARY, json.dumps(register), version=2))
+    snapshot = support.collect_register_snapshot(timeout=1, max_retries=0, sleep_ms=0, holders_filter=None)
+    assert snapshot.register_ok and len(snapshot.banking_brands) == 305
+    assert not snapshot.register_provenance_complete

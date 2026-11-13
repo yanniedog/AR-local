@@ -31,6 +31,7 @@ from cdr_product_classification import (
     normalize_cdr_product_category, pick_text, safe_url,
 )
 from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
+from cdr_register_validation import register_summary_error
 from cdr_compatibility import (
     classify_fetch_failure, parse_supported_versions, response_shape_error,
 )
@@ -868,11 +869,13 @@ def collect_register_snapshot(
         )
         data = res.data
         attempt_ok = res.ok and data is not None and not has_cdr_errors(data)
+        completeness_error = register_summary_error(data) if attempt_ok else None
         register_attempts.append(
             {
                 "source_url": url,
                 "mode": mode,
-                "ok": attempt_ok,
+                "ok": attempt_ok and completeness_error is None,
+                **({"error": completeness_error} if completeness_error else {}),
                 "status": res.status,
                 "bytes": len((res.text or "").encode("utf-8")),
                 "sha256": hashlib.sha256((res.text or "").encode("utf-8")).hexdigest(),
