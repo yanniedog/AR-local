@@ -95,7 +95,7 @@ def test_launch_contains_writes_and_parent_lifetime(tmp_path):
     assert "BindsTo=ar-local-shared-task-parent.service" in properties
     assert "KillMode=control-group" in properties and "RuntimeMaxSec=930s" in properties
     writes = [p for p in properties if p.startswith("ReadWritePaths=")]
-    assert writes == [f"ReadWritePaths={args.operation}", f"ReadWritePaths={live.ram_root(args)}"]
+    assert writes == [f"ReadWritePaths={args.operation}", f"ReadWritePaths={args.stage_binding['root']}"]
     env = live.environment(args)
     assert env[:2] == ["/usr/bin/env", "-i"]
     assert f"RCLONE_CONFIG={args.operation / 'config/rclone.conf'}" in env
@@ -172,7 +172,7 @@ def test_ingest_uses_production_automatic_ram_and_detail_defaults(tmp_path):
     assert command[command.index("--workers") + 1] == str(DAILY_WORKER_COUNT)
     assert "--detail-workers" not in command
     assert "--ram-stage" not in command and "--no-ram-stage" not in command
-    assert command[command.index("--ram-root") + 1] == live.ram_root(args)
+    assert command[command.index("--ram-root") + 1] == Path(args.stage_binding["root"])
     from cdr_daily import parse_args
     parsed = parse_args([str(item) for item in command[3:]])
     production = parse_args(["--workers", str(DAILY_WORKER_COUNT), "--archive-failed-ram-stage", "--banks-only"])

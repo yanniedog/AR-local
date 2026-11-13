@@ -289,6 +289,7 @@ def canary(args) -> dict:
     from pi_cdr_quality_window import reference, deadline
     authorization = reference(args)
     extension = operation_guard(args.data_root, args.production, authorization, args.expected_commit, args.operation, "quality-canary")
+    closing = deadline(datetime.now(TZ), extension)
     if clean_commit(args.source) != args.expected_commit or main_commit(args.source) != args.expected_commit:
         raise ValueError("canary must use exact clean authoritative main")
     cache_options = verified_cache_options(args)
@@ -296,22 +297,22 @@ def canary(args) -> dict:
         from cdr_quality_cache import VerifiedAuditCache
         cache = VerifiedAuditCache(args.verified_cache, args.verified_cache_sha256, source_root=args.source)
         cache.close()
-    args.operation.mkdir(parents=True, exist_ok=False)
-    (args.operation / "tmp").mkdir()
-    (args.operation / "home").mkdir()
     unit = f"ar-local-quality-canary-{uuid.uuid4().hex[:12]}.service"
     pressure_profile = getattr(args, "pressure_profile", "legacy")
     if pressure_profile not in {"legacy", "allocation-v1"}:
         raise ValueError("unsupported pressure policy profile")
     command = ["sudo", "-n", "systemd-run", "--wait", "--pipe", "--collect", f"--unit={unit}"]
     current = datetime.now(TZ)
-    closing = deadline(current, extension)
+    closing = min(closing, deadline(current, extension))
     margin = 108 if pressure_profile == "allocation-v1" else 45
     if extension is not None:
         margin = max(margin, 180)  # Preserve cleanup time before the one-off hard cutoff.
     runtime = min(5400, int((closing - current).total_seconds()) - margin)
     if runtime < 300:
         raise ValueError("insufficient time for canary before recovery cutoff")
+    args.operation.mkdir(parents=True, exist_ok=False)
+    (args.operation / "tmp").mkdir()
+    (args.operation / "home").mkdir()
     properties = [f"User={getpass.getuser()}", f"WorkingDirectory={args.source}", "ProtectSystem=strict",
                   "ProtectHome=true", "PrivateTmp=true", "PrivateNetwork=true", "NoNewPrivileges=true",
                   "ProtectControlGroups=true", "RestrictNamespaces=true", "CapabilityBoundingSet=",
@@ -410,6 +411,7 @@ def seal(args) -> dict:
     if authorization != canary_result.get("window_authorization"):
         raise ValueError("seal must retain the canary operator authorization")
     extension = operation_guard(args.data_root, args.production, authorization, target, args.operation, "quality-seal")
+    closing = deadline(datetime.now(TZ), extension)
     with production_lock(args.data_root / "state/daily-ingest.lock", "quality-seal"):
         extension = operation_guard(args.data_root, args.production, authorization, target, args.operation, "quality-seal")
         current_state(args.data_root)
@@ -430,7 +432,9 @@ def seal(args) -> dict:
         changed_files = {name: sha(relative(args.source, name)) if relative(args.source, name).exists() else None
                          for name in changed if name}
         created = datetime.now(timezone.utc)
-        expires = min(created + timedelta(hours=6), deadline(created, extension))
+        expires = min(created + timedelta(hours=6), closing, deadline(created, extension))
+        if expires <= created:
+            raise ValueError("seal preparation exceeded its admission cutoff")
         value = {"schema": SCHEMA, "authority": "D-027", "target_commit": target, "previous_commit": previous,
                  "source_root": str(args.source), "production_root": str(args.production), "data_root": str(args.data_root),
                  "operation_root": str(args.operation), "created_at": created.isoformat(), "expires_at": expires.isoformat(),

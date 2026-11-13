@@ -58,7 +58,9 @@ def test_complete_documentation_proof_ignores_compare_files():
     ("docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md", "100644"), (DOC, "100755"), (DOC, "120000"),
     ("config.json", "100644"), ("module", "160000")])
 def test_unknown_runtime_or_special_modes_fail(path, mode):
-    local, replies, _, _ = evidence(after=[(path, mode, B), ("runtime.py", "100644", B)])
+    entries = {DOC: ("100644", A), "runtime.py": ("100644", A)}
+    entries[path] = (mode, B)
+    local, replies, _, _ = evidence(after=[(name, *entry) for name, entry in entries.items()])
     with pytest.raises(ValueError):
         docs.documentation_ahead(A, B, local, get=replies.__getitem__)
 
