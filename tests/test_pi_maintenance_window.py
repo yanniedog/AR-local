@@ -47,6 +47,21 @@ def test_short_backfill_after_midnight_keeps_termination_reserve():
         validate_containment(short, local("00:28"))
 
 
+@pytest.mark.parametrize("clock,allowed", [("23:44:59", True), ("23:45", False),
+    ("23:59", False), ("00:00", False), ("00:29", False)])
+def test_real_ci_launch_reserves_transaction_and_rollback_before_quiet(clock, allowed):
+    from pi_ci_access import activation_argv
+    from pi_shared_queue_policy import admission
+    from tests.shared_pi_queue_fixtures import record
+    argv = activation_argv("a" * 64)
+    unit = next(arg.split("=", 1)[1] for arg in argv if arg.startswith("--unit=")) + ".service"
+    now = local(clock)
+    job = record(unit=unit, resources=["ar-local", "host"],
+        cpu_slots=int(argv[argv.index("--cpu-slots") + 1]),
+        max_duration_seconds=int(argv[argv.index("--max-runtime") + 1]), ready_since=now.isoformat())
+    assert admission(job, [job], now) == (allowed, "admitted" if allowed else "would-cross-ingest-start")
+
+
 @pytest.mark.parametrize("clock,allowed", [("00:29", True), ("00:30", False),
     ("01:00", False), ("03:29", False), ("03:30", True), ("22:00", True), ("23:59", True)])
 def test_installed_root_guard_matches_window_without_importing_candidate(monkeypatch, clock, allowed):

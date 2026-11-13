@@ -60,3 +60,9 @@ isolated runner `20261114-001949-7843c505`; complete JUnit is retained privately
 `permanent-window-tests-final.xml`. The first run exposed stale old-window test
 expectations and the known Windows executable-identity limitation; the updated
 boundary expectations passed without changing the executable guard.
+
+After synchronizing the capacity-state repair, 192 additional checks passed
+(2 platform skips), including the actual CI launch descriptor fed through shared
+queue admission. Its 1,800-second transaction plus 900-second rollback reserve
+admits 23:44:59 and refuses 23:45, midnight and 00:29. A clock-only root guard test
+does not imply the mandatory queue permits a new deployment at 00:29.
