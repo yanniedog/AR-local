@@ -76,6 +76,19 @@ product/fact removals despite an unverified population. Coordinate through root
 and `docs/COVERAGE_PROVIDER_HANDOFF_20261113.md`; preserve actual absences and
 uncertainty instead of copying stale rows into today's observation.
 
+Historical false-removal transport audit: `app_payload_build._compute_payload`
+reads `banks.products` / `banks.rates` and constructs the core and details
+explicitly; no `app_payload*.py` consumer reads `banks.product_changes` or
+`bank_product_changes`. Therefore the existing sealed historical removal-event
+rows are not sent as events through the current v1/v2 publication path. V2
+`_moves` breaks continuity at `None` gaps. Revision summaries separately compare
+product/rate fingerprints and explicitly do not imply withdrawal
+(`app_payload_revisions_state._change_summary`). Optional executable/activity
+packages have separate feature gates and have not been accepted by this audit;
+do not infer their safety from the legacy v1/v2 trace. Existing stored historical
+change events remain untouched and need coverage-aware interpretation by any
+future consumer that exposes them.
+
 `app_payload_details.build_details` is a curated mobile projection of fees,
 features, eligibility, constraints, rate conditions and official document links.
 It does not transport every unknown upstream field or the full bundles object.
