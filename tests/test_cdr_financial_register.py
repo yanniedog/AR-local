@@ -1,5 +1,6 @@
 """Current official register and non-bank mortgage response, without live I/O."""
 import hashlib
+import gzip
 import json
 from pathlib import Path
 
@@ -10,7 +11,9 @@ FIXTURES = Path(__file__).parent / "fixtures/cdr-financial-register-20261113"
 
 def retained(name):
     provenance = json.loads((FIXTURES / "provenance.json").read_bytes())
-    raw = (FIXTURES / name).read_bytes()
+    path = FIXTURES / name
+    raw = path.read_bytes() if path.exists() else gzip.decompress(
+        (FIXTURES / (name + ".gz")).read_bytes())
     assert hashlib.sha256(raw).hexdigest() == provenance["files"][name]["sha256"]
     return raw
 
