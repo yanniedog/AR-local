@@ -21,7 +21,9 @@ from typing import Any, Mapping, Optional, Tuple
 
 from app_payload_authentication import authentication_exclusions
 from app_payload_partial_accounting import reconciled_partial_v1_allowed
-from app_payload_retained_policy import POLICY_ID, retained_partial_allowed
+from app_payload_retained_policy import (
+    AUTHORISED_FROM, POLICY_ID, public_population_findings, retained_partial_allowed,
+)
 
 # Legacy compatibility v1 is allowed to advance from a fully-audited partial
 # observation inside these bounds for failures other than attributable bank
@@ -84,8 +86,10 @@ def bounded_partial_v1_allowed(contract: Mapping[str, Any]) -> bool:
 
 def publication_allowed(contract: Optional[Mapping[str, Any]]) -> Tuple[bool, str]:
     """Return ``(allowed, reason)`` for one observation's v1 publication."""
-    if isinstance(contract, Mapping) and retained_partial_allowed(contract):
-        return True, "retained_partial"
+    if (isinstance(contract, Mapping) and contract.get("observation_state") == "partial"
+            and str(contract.get("observation_date") or "") >= AUTHORISED_FROM):
+        return ((True, "retained_partial") if retained_partial_allowed(contract)
+                else (False, "invalid_retained_partial"))
     return _legacy_publication_allowed(contract)
 
 
@@ -118,6 +122,8 @@ def contract_coverage(contract: Optional[Mapping[str, Any]]) -> Optional[dict]:
     if not isinstance(coverage, Mapping):
         return None
     result = dict(coverage)
+    if "provider_population_unverified" in result:
+        result["provider_population_unverified"] = public_population_findings(result["provider_population_unverified"])
     result["observation_state"] = contract.get("observation_state", "unknown")
     if isinstance(contract.get("provider_states"), list):
         # Publish identities/accounting, not endpoint URLs or transport snippets.

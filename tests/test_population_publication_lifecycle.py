@@ -10,32 +10,32 @@ from cdr_observation_selection import selected_observation
 from tests.test_cdr_same_day_selection import DATE,make_export,finish
 
 
-def held(root):
+def held(root,day=DATE):
     # Protocol-shell fixture: test policy/pending control, not fabricated source counts.
-    atomic_write_json(root/'provider-population-report.json',{'run_date':DATE,
+    atomic_write_json(root/'provider-population-report.json',{'run_date':day,
         'provider_population':{'status':'WARN','findings':[{'provider':'Provider',
             'code':'provider_population_disappeared','population_known':False,
             'disposition':'UNVERIFIED_SOURCE_ABSENCE'}]}})
 
 
-def runtime(tmp_path,monkeypatch,*,replacement_held=False,old_held=True,bad_source=False):
-    state=tmp_path/'state';primary=tmp_path/'runs'/DATE/'_exports'
-    make_export(primary,['p1','p2'],failures=0)
-    if old_held:held(primary)
-    finish(primary,state,'done');old=selected_observation(state,DATE)
+def runtime(tmp_path,monkeypatch,*,replacement_held=False,old_held=True,bad_source=False,day=DATE):
+    state=tmp_path/'state';primary=tmp_path/'runs'/day/'_exports'
+    make_export(primary,['p1','p2'],failures=0,date=day)
+    if old_held:held(primary,day)
+    finish(primary,state,'done',date=day);old=selected_observation(state,day)
     monkeypatch.setattr(sync,'data_state_root',lambda _:state)
     sync.mark_payload_publication_pending(tmp_path,'publication_started',old['pointer'])
     previous=sync.read_payload_publication_pending(tmp_path)
-    revision=tmp_path/'runs'/DATE/'_revisions/recovered/_exports'
-    status=make_export(revision,['p1','p2','p3'],failures=0)
+    revision=tmp_path/'runs'/day/'_revisions/recovered/_exports'
+    status=make_export(revision,['p1','p2','p3'],failures=0,date=day)
     status['same_day_reuse']={'schema_version':1,'reconciled':True,'withdrawals':[],
         'baseline':{'generation_id':old['contract']['generation_id'],
             'ledger_event_digest':old['event']['event_digest'],
             'export_contract_digest':'0'*64 if bad_source else old['contract']['contract_digest']}}
     atomic_write_json(revision/'ingest-status.json',status)
-    if replacement_held:held(revision)
-    marker=finish(revision,state,'revision.recovered',old['contract']['generation_id'])
-    new=selected_observation(state,DATE)
+    if replacement_held:held(revision,day)
+    marker=finish(revision,state,'revision.recovered',old['contract']['generation_id'],date=day)
+    new=selected_observation(state,day)
     assert new['contract']['generation_id']==marker['generation_id']
     monkeypatch.setattr(sync,'ensure_runtime_data_writable',lambda _:None)
     monkeypatch.setattr(sync,'pause_dashboard_for_ingest',lambda:False)
@@ -45,6 +45,23 @@ def runtime(tmp_path,monkeypatch,*,replacement_held=False,old_held=True,bad_sour
     monkeypatch.setattr(sync,'payload_retry_window_reason',lambda:'')
     monkeypatch.setenv('AR_LOCAL_APP_PAYLOAD','1')
     return state,previous,old,new
+
+
+@pytest.mark.parametrize('replacement_held',[False,True])
+def test_publishable_partial_keeps_population_recovery_and_supersession(tmp_path,monkeypatch,replacement_held):
+    from app_payload_observation_gate import publication_allowed
+    from cdr_population_recovery import population_pending_recovery_allowed
+    state,previous,old,new=runtime(tmp_path,monkeypatch,day='2026-10-29',replacement_held=replacement_held)
+    assert publication_allowed(old['contract'])==(True,'retained_partial')
+    assert population_pending_recovery_allowed(previous,old)
+    wrong={**previous,'pointer':{**old['pointer'],'generation_id':'wrong'}}
+    assert not population_pending_recovery_allowed(wrong,old)
+    sync.mark_payload_publication_pending(tmp_path,'publication_started',new['pointer'],
+                                          allow_policy_supersession=True)
+    assert sync.pending_publication_pointer(tmp_path)==new['pointer']
+    receipts=list((state/'population-publication-supersessions-v1').glob('*.json'))
+    assert len(receipts)==1
+    assert json.loads(receipts[0].read_bytes())['publication_confirmed'] is False
 
 
 @pytest.mark.parametrize('outcome,replacement_held',[

@@ -11,6 +11,7 @@ import pi_daily_sync
 from app_payload_retained_policy import retained_partial_allowed
 from app_payload_source_verification import verify_reconciled_source
 from cdr_export_contract import build_contract, load_contract
+from tests.test_app_payload_partial_accounting import seal
 from cdr_finalization import finalize_observation
 from tests.test_irreplaceable_finalization import make_export
 
@@ -41,6 +42,7 @@ def test_standing_policy_never_accepts_unsealed_identity(tmp_path, field):
     contract = retained_accounting(tmp_path)
     contract[field] = "0" * 64
     assert not retained_partial_allowed(contract)
+    assert gate.publication_allowed(contract) == (False, "invalid_retained_partial")
 
 
 @pytest.mark.parametrize("state", ["failed", "unknown", "complete"])
@@ -48,6 +50,16 @@ def test_standing_partial_policy_cannot_relabel_other_states(tmp_path, state):
     contract = retained_accounting(tmp_path)
     contract["observation_state"] = state
     assert not retained_partial_allowed(contract)
+
+
+@pytest.mark.parametrize("field", ["products_discovered", "eligible_rate_rows"])
+@pytest.mark.parametrize("value", [0, -1, True, "1", None])
+def test_standing_policy_requires_nonempty_usable_population(tmp_path, field, value):
+    contract = retained_accounting(tmp_path)
+    contract["coverage"][field] = value
+    seal(contract)
+    assert not retained_partial_allowed(contract)
+    assert gate.publication_allowed(contract) == (False, "invalid_retained_partial")
 
 
 def finalized_population_control(tmp_path, *, status="worker_crash"):
@@ -90,6 +102,24 @@ def test_provider_disclosure_excludes_transport_urls(tmp_path):
     assert any(p.get("brand_name") for p in public["provider_observations"])
 
 
+def test_historical_population_disclosure_strips_nested_transport(tmp_path):
+    _, _, contract = finalized_population_control(tmp_path)
+    finding = contract["coverage"]["provider_population_unverified"][0]
+    finding["provider_identity"] = {"endpoint_url": "https://private.example/transport"}
+    finding["historical_absence"] = {"provider_identity": finding["provider_identity"]}
+    finding["last_nonempty"] = {"observation_date": "2026-10-28", "products": 4,
+                                "rates": 7, "endpoint_url": "https://private.example/transport"}
+    seal(contract)
+    public = app_payload_build._stable_payload_coverage({}, {}, DAY, gate.contract_coverage(contract))
+    disclosed = public["provider_population_unverified"][0]
+    assert disclosed["provider"] == finding["provider"]
+    assert disclosed["last_nonempty"] == {"observation_date": "2026-10-28", "products": 4, "rates": 7}
+    assert "endpoint_url" not in json.dumps(disclosed)
+    assert "private.example" not in json.dumps(disclosed)
+    direct = app_payload_build._stable_payload_coverage({}, {}, DAY, contract["coverage"])
+    assert direct["provider_population_unverified"] == public["provider_population_unverified"]
+
+
 @pytest.mark.parametrize("fault", ["status", "artifact", "marker", "contract", "event", "source"])
 def test_standing_policy_still_rejects_tampered_source(tmp_path, fault):
     exports, state, contract = finalized_population_control(tmp_path)
@@ -124,3 +154,22 @@ def test_natural_daily_path_publishes_same_finalized_partial_with_disclosure(tmp
     assert built[0][0] == exports
     assert built[0][1]["source_observation"]["contract_digest"] == contract["contract_digest"]
     assert built[0][1]["contract_coverage"]["publication_policy"]["id"] == "best-available-retained-v1"
+
+
+def test_zero_capture_never_reaches_natural_publisher(tmp_path, monkeypatch):
+    import app_payload
+    exports, state = tmp_path / "runs" / DAY / "_exports", tmp_path / "state"
+    make_export(exports, failures=1, observation_date=DAY)
+    cache = exports / "dashboard-cache/latest.json"
+    latest = json.loads(cache.read_bytes())
+    latest["banks_counts"].update(products=0, rates=0)
+    cache.write_text(json.dumps(latest), encoding="utf8")
+    marker = finalize_observation(exports, state, state / f"{DAY}.done.json",
+        observation_date=DAY, result={"run_date": DAY, "banks_counts": {"rates": 0}})
+    contract = load_contract(state / marker["export_contract_path"])
+    assert contract["observation_state"] == "partial"
+    assert not gate.publication_allowed(contract)[0]
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _: state)
+    monkeypatch.setattr(app_payload, "build_and_publish_dual", lambda *a, **k: pytest.fail("empty capture published"))
+    assert pi_daily_sync.maybe_publish_app_payload(tmp_path) == pi_daily_sync.PUBLISH_WITHHELD

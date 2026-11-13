@@ -5,6 +5,7 @@ from app_payload_observation_gate import publication_allowed
 from cdr_atomic import atomic_write_json,canonical_json_bytes
 from cdr_observation_selection import load_pointer_observation,selected_observation
 from cdr_population_pending import population_queue
+from cdr_population_coverage import has_unverified_provider_population
 
 
 def _verified_replacement(state,previous,pointer):
@@ -24,7 +25,7 @@ def _verified_replacement(state,previous,pointer):
         source=reuse.get('baseline') or {}
         if (new['contract']['observation_date']!=day
                 or not selected or selected['pointer']!=pointer
-                or publication_allowed(old['contract'])!=(False,'unverified_provider_population')
+                or not has_unverified_provider_population(old['contract'])
                 or new['contract']['observation_state'] not in {'complete','partial'}
                 or new['event'].get('parent_generation_id')!=old['contract']['generation_id']
                 or new['event'].get('parent_event_digest')!=old['event']['event_digest']

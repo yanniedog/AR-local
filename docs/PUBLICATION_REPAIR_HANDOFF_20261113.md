@@ -29,7 +29,11 @@ Branch: `agent/publication-resilience-20261113`; base `4e3e394`.
 `app_payload_retained_policy.py` integrates the documented standing policy into
 the shared gate for sealed partial contracts dated 2026-10-29 onwards. The old
 policy remains for older contracts, unknown/missing contracts and failed
-finalizations. Marker/ledger/artifact checks remain unchanged; unknown failure
+finalizations. The standing policy requires positive integer product and eligible
+rate counts: a sealed all-empty partial cannot replace usable rolling data.
+The existing natural completion-marker check also rejects zero-rate captures;
+the shared predicate now enforces this before admission. Archive/failure evidence
+remains retained. Marker/ledger/artifact checks remain unchanged; unknown failure
 classification no longer withholds the entire retained partial capture after
 those integrity checks succeed. No contract, failure record or ledger state is
 rewritten or upgraded to complete.
@@ -66,6 +70,17 @@ Local receipts are under the isolated-run directories ending
 `20261113-213924-a5400a91` and `20261113-214113-1e1efb16`; complete JUnit files
 `publication-focused-results.xml` and `publication-integration-results.xml` are
 untracked worktree evidence, not committed source.
+
+Review follow-up: population recovery and pending-source replacement must follow
+verified uncertainty, not the obsolete publication rejection string. The two
+callers now use an independent uncertainty predicate; exact pending-pointer and
+selected parent/reuse/ledger binding and existing budgets stay enforced. Public
+population findings are projected to identity/status and last-nonempty counts;
+nested historical endpoint URLs remain local. Current-policy invalid contracts
+cannot fall back to legacy bounded admission. Expanded follow-up validation:
+282 passed in 26.60s with complete JUnit (`publication-feedback-results.xml`,
+isolated run `20261113-214950-9e970d57`). PR #1131 remains draft pending exact-head
+CI/review and root integration; no deployment is implied.
 
 ## Integration dependency and product-detail follow-up
 

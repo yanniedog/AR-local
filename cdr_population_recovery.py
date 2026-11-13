@@ -104,7 +104,7 @@ def population_pending_recovery_allowed(pending, observation):
 
     This grants no extra claim or budget and settles no outstanding upload.
     """
-    from app_payload_observation_gate import publication_allowed
+    from cdr_population_coverage import has_unverified_provider_population
     from cdr_population_pending import population_queue
     if not isinstance(observation, dict) or not isinstance(observation.get('contract'), dict):
         return False
@@ -112,7 +112,7 @@ def population_pending_recovery_allowed(pending, observation):
     queue = population_queue(pending, observation['contract'].get('observation_date'))
     return (isinstance(pointer, dict) and bool(pointer) and queue is not None
         and queue[0] == pointer
-        and publication_allowed(observation['contract']) == (False, 'unverified_provider_population'))
+        and has_unverified_provider_population(observation['contract']))
 
 
 def guard_population_index_requests(observation,providers,requests):
