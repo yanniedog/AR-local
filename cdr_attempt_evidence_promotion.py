@@ -260,22 +260,16 @@ def _copy_record_create_once(
 ) -> None:
     relative = _safe_relative(record.get("path"))
     source = source_root.joinpath(*relative.parts)
+    from cdr_atomic_copy import copy_verified
     try:
-        payload = source.read_bytes()
-    except OSError as error:
+        _validate_node(source, directory=False)
+        parent = _ensure_directory(destination_root, *relative.parts[:-1])
+        copy_verified(source, parent / relative.name,
+                      size=record.get("bytes"), sha256=record.get("sha256"))
+    except (OSError, ValueError) as error:
         raise AttemptEvidencePromotionError(
-            f"attempt evidence file disappeared: {relative.as_posix()}"
+            f"attempt evidence changed while copying: {relative.as_posix()}"
         ) from error
-    if (
-        len(payload) != record.get("bytes")
-        or hashlib.sha256(payload).hexdigest() != record.get("sha256")
-    ):
-        raise AttemptEvidencePromotionError("attempt evidence changed while copying")
-    atomic_write_bytes(
-        destination_root.joinpath(*relative.parts),
-        payload,
-        create_once=True,
-    )
 
 
 def _manifest(
