@@ -129,6 +129,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
     "pi_backup_foundation.py",
+    "pi_drive_evidence_gate.py",
     "pi_ingest_terminal.py",
     "ar_local_backup_policy.py",
     "ar_local_backup_scope.py",
@@ -150,6 +151,15 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "cdr_dashboard_server.py",
     "package.json",
 )
+
+
+def drive_evidence_mode() -> bool:
+    """Owner-approved gate on Drive evidence when no local backup disk exists."""
+
+    mode = _env("AR_PI_BACKUP_GATE_MODE", "local-disk")
+    if mode not in ("local-disk", "drive-evidence"):
+        raise SystemExit("pi_deploy_verify: AR_PI_BACKUP_GATE_MODE must be local-disk or drive-evidence")
+    return mode == "drive-evidence"
 
 
 def pi_backup_config() -> str:
@@ -647,10 +657,24 @@ def deployment_backup_gate(
         f"--protected-code-sha {shell_quote(protected_commit)} "
         f"--candidate-sha {shell_quote(expected_commit)}"
     )
+    if drive_evidence_mode():
+        shas = (
+            f"--repo {shell_quote(ar)} --site-repo {shell_quote(site)} --data-root {shell_quote(data)} "
+            f"--protected-code-sha {shell_quote(protected_commit)} "
+            f"--candidate-sha {shell_quote(expected_commit)}"
+        )
+        script = (
+            "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+            f"/usr/local/bin/ar-local-backup-gate drive-backup {shas}; "
+            f"/usr/local/bin/ar-local-backup-gate drive-gate {shas}"
+        )
     code, out, err = run_deploy_mutation(
         script, dry_run=dry_run, max_runtime=BACKUP_QUEUE_MAX_RUNTIME_SEC
     )
     if dry_run:
+        if drive_evidence_mode():
+            print("pi_deploy_verify: dry-run would require a current Drive day archive and a fresh verified Drive pre-deployment backup")
+            return EXIT_OK
         print("pi_deploy_verify: dry-run would require a fresh verified backup, restore drill, and boot proof")
         return EXIT_OK
     if code != 0:
@@ -683,6 +707,8 @@ def record_deployment_acceptance(
         f"--candidate-sha {shell_quote(expected_commit)} "
         f"--parent-command {shell_quote(parent_command)} --dashboard-verified --services-verified"
     )
+    if drive_evidence_mode():
+        script = script.replace(" record-deployment ", " drive-record-deployment ", 1)
     code, out, err = run_deploy_mutation(
         script, dry_run=dry_run, max_runtime=BACKUP_QUEUE_MAX_RUNTIME_SEC
     )
@@ -741,6 +767,8 @@ def rollback_to_protected_commit(
         f"--parent-command {shell_quote(parent_command)} "
         f"--parent-command {shell_quote(script)} --dashboard-verified --services-verified"
     )
+    if drive_evidence_mode():
+        record_script = record_script.replace(" record-rollback ", " drive-record-rollback ", 1)
     code, out, err = run_deploy_mutation(record_script, dry_run=False)
     if code != 0:
         print(err or out or "pi_deploy_verify: rollback acceptance record failed", file=sys.stderr)

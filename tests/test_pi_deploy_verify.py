@@ -197,6 +197,28 @@ def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(
     assert "git show" not in command
 
 
+def test_drive_evidence_mode_backs_up_then_gates_without_backup_env(monkeypatch):
+    captured = []
+    monkeypatch.setenv("AR_PI_BACKUP_GATE_MODE", "drive-evidence")
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False, timeout=None: captured.append(command) or (0, "{}", ""),
+    )
+    assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
+    assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40, "cmd") == pi_deploy_verify.EXIT_OK
+    gate, record = captured
+    assert gate.index("ar-local-backup-gate drive-backup") < gate.index("ar-local-backup-gate drive-gate")
+    assert "backup.env" not in gate and " gate --config" not in gate
+    assert "ar-local-backup-gate drive-record-deployment" in record
+
+
+def test_unknown_backup_gate_mode_is_refused(monkeypatch):
+    monkeypatch.setenv("AR_PI_BACKUP_GATE_MODE", "none")
+    with pytest.raises(SystemExit):
+        pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40)
+
+
 def test_backup_gate_failure_blocks_deployment(monkeypatch, capsys):
     monkeypatch.setattr(
         pi_deploy_verify,
@@ -458,6 +480,7 @@ def test_runtime_verifier_modules_require_pi_deploy(path):
         "ar_local_rollback_record.py",
         "ar_local_restore_verification.py",
         "pi_ingest_terminal.py",
+        "pi_drive_evidence_gate.py",
         "contracts/export-contract-v2.schema.json",
         "contracts/pi-backup-boot-proof-v1.schema.json",
         "contracts/pi-deployment-acceptance-v1.schema.json",
