@@ -5,9 +5,11 @@ from __future__ import annotations
 import html
 import re
 import zipfile
+from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
+MAX_WORKSHEET_ROWS = 1_048_576
 INVALID_SHEET_CHARS = re.compile(r"[\[\]:*?/\\]")
 LEADING_ZERO_ID = re.compile(r"^[+-]?0\d")
 DECIMAL_NUMBER = re.compile(r"^[+-]?0\.")
@@ -117,17 +119,18 @@ def _write_xml_part(handle: Any, value: str) -> None:
 def _write_sheet(
     archive: zipfile.ZipFile,
     path: str,
-    rows: Sequence[Mapping[str, Any]],
+    rows: Iterable[Mapping[str, Any]],
+    columns: Sequence[str],
+    data_row_count: int,
 ) -> None:
-    columns = _sheet_columns(rows)
-    row_count = len(rows) + 1 if rows else 1
+    row_count = data_row_count + 1
     column_count = max(len(columns), 1)
     ref = f"A1:{cell_ref(row_count, column_count)}"
     widths = "".join(
         f'<col min="{idx}" max="{idx}" width="18" customWidth="1"/>'
         for idx in range(1, column_count + 1)
     )
-    filters = f'<autoFilter ref="{ref}"/>' if rows else ""
+    filters = f'<autoFilter ref="{ref}"/>' if data_row_count else ""
     prefix = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
@@ -138,7 +141,7 @@ def _write_sheet(
     )
     with archive.open(path, "w", force_zip64=True) as handle:
         _write_xml_part(handle, prefix)
-        if not rows:
+        if not data_row_count:
             _write_xml_part(handle, '<row r="1"><c r="A1" t="inlineStr"><is><t>empty</t></is></c></row>')
         else:
             header = "".join(cell_xml(1, idx, value) for idx, value in enumerate(columns, 1))
@@ -228,13 +231,22 @@ def styles_xml() -> str:
 def write_workbook(path: Path, sheets: Mapping[str, Sequence[Mapping[str, Any]]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     used: set[str] = set()
-    named_sheets = [(sheet_name(raw_name, used), rows) for raw_name, rows in sheets.items()]
-    names = [name for name, _ in named_sheets]
+    named_sheets = []
+    # Share one row iterator between successive parts; never copy a large table.
+    # Every part uses the full table's columns, including fields first seen late.
+    capacity = MAX_WORKSHEET_ROWS - 1
+    for raw_name, rows in sheets.items():
+        columns = _sheet_columns(rows)
+        iterator = iter(rows)
+        for start in range(0, max(len(rows), 1), capacity):
+            count = min(capacity, len(rows) - start)
+            named_sheets.append((sheet_name(raw_name, used), islice(iterator, count), columns, count))
+    names = [name for name, _, _, _ in named_sheets]
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml(len(names)))
         zf.writestr("_rels/.rels", root_rels_xml())
         zf.writestr("xl/workbook.xml", workbook_xml(names))
         zf.writestr("xl/_rels/workbook.xml.rels", rels_xml(names))
         zf.writestr("xl/styles.xml", styles_xml())
-        for idx, (_, rows) in enumerate(named_sheets, 1):
-            _write_sheet(zf, f"xl/worksheets/sheet{idx}.xml", rows)
+        for idx, (_, rows, columns, count) in enumerate(named_sheets, 1):
+            _write_sheet(zf, f"xl/worksheets/sheet{idx}.xml", rows, columns, count)
