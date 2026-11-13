@@ -18,6 +18,8 @@ from typing import Any, Callable, Iterable
 
 from ar_local_email_notify import email_configured, send_email
 from ar_local_pi_runtime import data_state_root
+from cdr_atomic import atomic_write_json
+from cdr_file_lock import FileLock
 
 REPO_ROOT = Path(__file__).resolve().parent
 GIB = 1024**3
@@ -49,10 +51,7 @@ def _read_state(path: Path) -> dict[str, Any]:
 
 
 def _write_state(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    atomic_write_json(path, value)
 
 
 def _valid_samples(values: Any) -> list[dict[str, Any]]:
@@ -174,14 +173,14 @@ def _maybe_notify(
     last = _timestamp(last_value)
     if report["status"] == "healthy":
         return True
-    if not email_configured():
-        report["notification"] = {"status": "NOT_CONFIGURED"}
-        return True
     if now.timestamp() - last < ALERT_COOLDOWN_SECONDS and last_status == report["status"]:
         return True
     delivery = report.get("notification", {})
     if (delivery.get("capacity_status") == report["status"]
             and now.timestamp() < _timestamp(delivery.get("retry_after"))):
+        return False
+    if not email_configured():
+        report["notification"] = {"status": "NOT_CONFIGURED"}
         return False
     report["notification"] = {
         "status": "ATTEMPTING", "capacity_status": report["status"],
@@ -191,7 +190,7 @@ def _maybe_notify(
         persist()  # Retain the sample and retry reservation even if the sender dies.
     try:
         sent = _send_alert(report)
-    except (smtplib.SMTPException, OSError) as error:
+    except (smtplib.SMTPException, OSError, ValueError, OverflowError) as error:
         report["notification"].update(status="FAILED", error_class=type(error).__name__)
         return False  # Exception text can contain server credentials or addresses.
     report["notification"]["status"] = "SENT" if sent else "NOT_SENT"
@@ -214,6 +213,26 @@ def _send_alert(report: dict[str, Any]) -> bool:
     return send_email(f"AR-local Pi storage {report['status']}", body)
 
 
+def _sample_and_notify(data_root: Path, state_path: Path, notify: bool) -> tuple[dict, bool]:
+    # Serialize the entire read/assessment/reservation/outcome transaction.
+    # The kernel releases ownership on exit/crash; this lock is monitor-only.
+    with FileLock(state_path.with_name(state_path.name + ".lock")):
+        usage = shutil.disk_usage(data_root)
+        state = _read_state(state_path)
+        now = _now()
+        report = capacity_report(
+            total_bytes=usage.total, used_bytes=usage.used, free_bytes=usage.free,
+            prior_samples=state.get("samples"), now=now,
+        )
+        _carry_delivery(report, state)
+        _write_state(state_path, report)  # Assessment survives delivery failure.
+        delivered = True
+        if notify:
+            delivered = _maybe_notify(report, state, now, persist=lambda: _write_state(state_path, report))
+        _write_state(state_path, report)
+        return report, delivered
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Record Pi storage runway without deleting data.")
     parser.add_argument(
@@ -225,23 +244,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--notify", action="store_true")
     args = parser.parse_args(argv)
     data_root = args.data_root.expanduser().resolve()
-    usage = shutil.disk_usage(data_root)
-    state_path = args.state or _state_path()
-    state = _read_state(state_path)
-    now = _now()
-    report = capacity_report(
-        total_bytes=usage.total,
-        used_bytes=usage.used,
-        free_bytes=usage.free,
-        prior_samples=state.get("samples"),
-        now=now,
-    )
-    _carry_delivery(report, state)
-    _write_state(state_path, report)  # Assessment must survive a delivery failure.
-    delivered = True
-    if args.notify:
-        delivered = _maybe_notify(report, state, now, persist=lambda: _write_state(state_path, report))
-    _write_state(state_path, report)
+    state_path = (args.state or _state_path()).expanduser().resolve()
+    report, delivered = _sample_and_notify(data_root, state_path, args.notify)
     keys = ("status", "filesystem", "growth_bytes_per_day_p90", "runway_days", "policy", "notification")
     print(json.dumps({key: report[key] for key in keys if key in report}, sort_keys=True))
     return 0 if delivered else 1
