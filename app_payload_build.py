@@ -326,6 +326,10 @@ def _stable_payload_coverage(
                     coverage[key] = public_population_findings(contract_coverage[key])
                 else:
                     coverage[key] = deepcopy(contract_coverage[key])
+        if "provider_participation_ceased" in contract_coverage:
+            from app_payload_participation import public_participation_cessations
+            coverage["provider_participation_ceased"] = public_participation_cessations(
+                contract_coverage["provider_participation_ceased"])
     # Keep rebuild wall-clock metadata out of the content-hashed core. Coverage
     # is dated by its stable source observation (`observed_on`).
     coverage.pop("source_generated_at", None)

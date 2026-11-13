@@ -482,6 +482,7 @@ def test_runtime_verifier_modules_require_pi_deploy(path):
         "pi_ingest_terminal.py",
         "pi_drive_evidence_gate.py",
         "contracts/export-contract-v2.schema.json",
+        "contracts/provider-participation/evidence.json",
         "contracts/pi-backup-boot-proof-v1.schema.json",
         "contracts/pi-deployment-acceptance-v1.schema.json",
         "contracts/pi-preservation-snapshot-v1.schema.json",
