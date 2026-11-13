@@ -23,11 +23,32 @@ and confirmed CDR participation cessation. Neither projection exposes nested
 transport/history provenance. All original integrity, source selection and
 zero-usable-data guards remain.
 
+Integration regression `f3d765c` exercises both public disclosures together using
+the captured 306-provider financial register. Review repair `ccbc823` accepts
+retained interim registry IDs and revokes cessation when that identity reappears
+under either identity field. The report's Counter serialization allegation was
+declined: Counter is a dictionary subclass, and actual CLI/isolated-stdin tests
+already execute that path successfully. Both substantive threads were resolved.
+
+Restore qualification `c5dbbb1` is integrated. Its standalone local verifier binds
+an already downloaded daily raw archive to an exact retained upload receipt and
+generation, validates bounded archive extraction, and checks SQLite committed
+state on separate copies while preserving all originals. It does not download,
+write Drive, change production, or establish real-generation acceptance through
+fixture tests. See `DAILY_RAW_RESTORE_QUALIFICATION.md` for invocation and limits.
+
 Component validation: #1131 synchronized controls 120 passed; #1135 synchronized
 controls 144 passed; #1136 108 passed plus independent 15-test review. #1134 full
 CI exposed a real missing trusted-bundle module, repaired in `d9d88cb`; 73
 restore/register tests then passed. These are not a substitute for integrated
 exact-head hosted CI. Preserve untracked JUnit and isolated-run evidence.
+
+Integrated local checks: 486 component tests passed (one existing workbook style
+warning); 55 combined public-projection checks passed; 209 lifecycle, report and
+restore checks passed after the interim-ID review repair. The latter includes
+all new restore tests and existing restore/archive compatibility controls. Root
+independently passed all 31 new restore checks. These receipts do not establish
+live capture or production restore success.
 
 Next: integrated regression checks, review/merge optional qualification-route
 branches when ready, full exact-head CI, substantive feedback disposition and
