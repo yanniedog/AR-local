@@ -192,6 +192,7 @@ for name in \
   pi_ingest_terminal.py \
   process_safety.py \
   cdr_atomic.py \
+  cdr_atomic_copy.py \
   cdr_export_contract.py \
   cdr_file_lock.py \
   cdr_ledger_v2.py \
@@ -245,6 +246,7 @@ done
     pi_ingest_terminal.py \
     process_safety.py \
     cdr_atomic.py \
+    cdr_atomic_copy.py \
     cdr_export_contract.py \
     cdr_file_lock.py \
     cdr_ledger_v2.py \
