@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import os
 from pathlib import Path
 import sys
 
@@ -20,7 +19,7 @@ LIFETIME_SECONDS = EXECUTION_SECONDS + POST_HOOK_SECONDS + STOP_SECONDS
 
 def manual_service(cgroup_path: Path | None = None) -> bool:
     """Recognize the actual unit even when an installed argv predates the flag."""
-    if cgroup_path is None and os.name != 'posix':
+    if cgroup_path is None and sys.platform != 'linux':
         return False
     path = cgroup_path or Path('/proc/self/cgroup')
     try:

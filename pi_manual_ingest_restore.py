@@ -6,6 +6,7 @@ The queued unit uses its existing claim-aware stop hook instead.
 from __future__ import annotations
 
 import argparse
+import ctypes
 from contextlib import contextmanager
 from datetime import datetime, time, timedelta, timezone
 import json
@@ -183,6 +184,19 @@ def same_inode(root, name, info):
     return (current.st_dev, current.st_ino) == (info.st_dev, info.st_ino)
 
 
+def rename_retained(root, name):
+    """Linux atomic no-replace rename: interruption never creates a two-link lease."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(libc, 'renameat2', None)
+    if rename is None:
+        raise OSError('atomic no-replace rename unavailable; retain original lease')
+    rename.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+    rename.restype = ctypes.c_int
+    if rename(root, LOCK.encode(), root, name.encode(), 1) != 0:  # RENAME_NOREPLACE
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
 def retain_own_stale(root, details, uid, boot):
     """Only the just-ended producer's exact ordinary lease may be reclaimed."""
     fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=root)
@@ -194,10 +208,9 @@ def retain_own_stale(root, details, uid, boot):
             raise ValueError('another or ambiguous native lease retained')
         # Preserve the exact stale bytes; never overwrite a prior recovery record.
         retained = '.' + LOCK + '.stale-' + str(uuid.uuid4())
-        os.link(LOCK, retained, src_dir_fd=root, dst_dir_fd=root, follow_symlinks=False)
-        if not same_inode(root, LOCK, info):
+        rename_retained(root, retained)
+        if not same_inode(root, retained, info):
             raise ValueError('native lease changed during recovery')
-        os.unlink(LOCK, dir_fd=root)
         os.fsync(root)
     finally:
         os.close(fd)

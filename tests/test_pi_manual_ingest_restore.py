@@ -116,7 +116,7 @@ def test_no_restore_on_any_late_gate_change(monkeypatch, reason):
     assert not any(isinstance(item, tuple) for item in events)
 
 
-@pytest.mark.skipif(os.name != 'posix', reason='real Linux flock/dirfd ownership protocol')
+@pytest.mark.skipif(sys.platform != 'linux', reason='real Linux flock/dirfd ownership protocol')
 @pytest.mark.parametrize('previous', ['absent', 'own-dead', 'other-pid', 'other-role', 'manual-recovery', 'live-pid'])
 def test_native_lease_reclaims_only_exact_dead_producer_and_preserves_bytes(tmp_path, previous):
     state = tmp_path / 'state'; state.mkdir()
@@ -143,6 +143,42 @@ def test_native_lease_reclaims_only_exact_dead_producer_and_preserves_bytes(tmp_
         with pytest.raises(ValueError):
             with restore.native_lease(str(tmp_path), current, account): pytest.fail('acquired foreign lease')
         assert lock.read_text() == original
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='real Linux atomic no-replace rename')
+def test_interruption_after_atomic_retention_is_retryable_without_two_link_lease(tmp_path, monkeypatch):
+    state = tmp_path / 'state'; state.mkdir()
+    account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    current = details()
+    lock = state / restore.LOCK
+    original = f"pid={current['ExecMainPID']}\nrole=ingest\nboot_id={boot}\n"
+    lock.write_text(original)
+    rename = restore.rename_retained
+    def interrupted(root, name):
+        rename(root, name)
+        raise OSError('interrupted after atomic retention')
+    monkeypatch.setattr(restore, 'rename_retained', interrupted)
+    with pytest.raises(OSError, match='interrupted'):
+        with restore.native_lease(str(tmp_path), current, account): pytest.fail('unexpected acquisition')
+    assert not lock.exists()
+    retained = list(state.glob('.daily-ingest.lock.stale-*'))
+    assert len(retained) == 1 and retained[0].read_text() == original
+    assert retained[0].stat().st_nlink == 1
+    monkeypatch.setattr(restore, 'rename_retained', rename)
+    with restore.native_lease(str(tmp_path), current, account):
+        assert 'role=manual-dashboard-restore' in lock.read_text()
+    assert not lock.exists() and retained[0].read_text() == original
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='real Linux atomic no-replace rename')
+def test_atomic_retention_never_overwrites_existing_evidence(tmp_path):
+    (tmp_path / restore.LOCK).write_text('lease')
+    (tmp_path / 'retained').write_text('irreplaceable')
+    with restore.directory(tmp_path) as root:
+        with pytest.raises(FileExistsError): restore.rename_retained(root, 'retained')
+    assert (tmp_path / restore.LOCK).read_text() == 'lease'
+    assert (tmp_path / 'retained').read_text() == 'irreplaceable'
 
 
 @pytest.mark.skipif(os.name != 'posix', reason='real Linux queue flock protocol')
@@ -173,3 +209,20 @@ def test_installer_and_service_do_not_elevate_repository_python():
         text = (root / 'deploy/pi' / name).read_text()
         assert 'install-manual-ingest-restore.sh' in text
         assert text.index('install-manual-ingest-restore.sh') < text.index('sudo install -m 0644')
+        assert 'sudo sh "$repo_dir/deploy/pi/install-manual-ingest-restore.sh"' not in text
+        assert 'sudo sh "$restore_stage/install-manual-ingest-restore.sh" "$restore_stage" "$restore_sha"' in text
+        assert 'restore_stage="/var/lib/ar-local-manual-ingest/approved-$restore_commit"' in text
+        assert '"$restore_stage/helper.sha256"' in text
+
+
+def test_digest_is_git_lf_and_installer_rejects_crlf_before_destination_writes(tmp_path, monkeypatch):
+    import hashlib
+    import pi_manual_ingest_contract as contract
+    monkeypatch.setattr(contract, '__file__', str(tmp_path / 'pi_manual_ingest_contract.py'))
+    helper = tmp_path / 'pi_manual_ingest_restore.py'
+    helper.write_bytes(b'print("qualified")\r\n')
+    assert contract.source_digest() == hashlib.sha256(b'print("qualified")\n').hexdigest()
+    assert contract.source_digest() != hashlib.sha256(helper.read_bytes()).hexdigest()
+    root = Path(__file__).resolve().parents[1]
+    installer = (root / 'deploy/pi/install-manual-ingest-restore.sh').read_text()
+    assert installer.index("grep -q \"$(printf '\\r')\"") < installer.index('bundle=/usr/local/lib')

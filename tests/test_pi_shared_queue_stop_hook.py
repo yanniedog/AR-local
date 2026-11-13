@@ -70,6 +70,8 @@ def test_watchdog_and_manual_preserve_protected_restoration_window(hour, minute,
     store.job['unit'] = unit
     events, kwargs = callbacks()
     now = datetime(2026, 10, 12, hour, minute, tzinfo=ZoneInfo('Australia/Hobart'))
+    if unit == 'ar-local-ingest-now.service' and hour == 0 and minute == 29:
+        restored = False
     assert recover(store, unit, 'a'*32, now=now, **kwargs) is restored
     assert ('restart' in events) is restored
     if not restored: assert events == []
@@ -88,9 +90,9 @@ def test_watchdog_and_manual_recheck_window_after_slow_native_inspection(monkeyp
     import pi_shared_queue_stop_hook as hook
     from datetime import datetime as DateTime
     from zoneinfo import ZoneInfo
-    times = iter([DateTime(2026, 10, 12, 0, 29, tzinfo=ZoneInfo('Australia/Hobart')),
+    times = iter([DateTime(2026, 10, 12, 0, 14, tzinfo=ZoneInfo('Australia/Hobart')),
                   DateTime(2026, 10, 12, 0, 30, tzinfo=ZoneInfo('Australia/Hobart'))])
-    class Clock:
+    class Clock(DateTime):
         @staticmethod
         def now(tz): return next(times)
     monkeypatch.setattr(hook, 'datetime', Clock)
@@ -99,3 +101,16 @@ def test_watchdog_and_manual_recheck_window_after_slow_native_inspection(monkeyp
     events, kwargs = callbacks()
     assert not recover(store, unit, 'a'*32, **kwargs)
     assert events == ['lease', 'released']
+
+
+@pytest.mark.parametrize('minute,second,allowed', [(14, 59, True), (15, 0, False), (29, 59, False)])
+def test_manual_restoration_reserves_full_existing_stop_budget(minute, second, allowed):
+    from datetime import datetime
+    from pathlib import Path
+    from zoneinfo import ZoneInfo
+    from pi_shared_queue_stop_hook import restoration_allowed, MANUAL_STOP_SECONDS
+    now = datetime(2026, 11, 14, 0, minute, second, tzinfo=ZoneInfo('Australia/Hobart'))
+    assert restoration_allowed('ar-local-ingest-now.service', now) is allowed
+    assert restoration_allowed('ar-local-daily-watchdog.service', now)
+    unit = Path(__file__).resolve().parents[1] / 'deploy/pi/shared-queue-ingest-now.conf'
+    assert 'TimeoutStopSec=' + str(MANUAL_STOP_SECONDS) + 's' in unit.read_text()

@@ -35,7 +35,9 @@ changes schedules, enables services, grants sudo permissions or clears queue job
 
 The queued profile keeps its existing claim-aware installed stop hook. Manual
 cleanup now observes the watchdog's 00:30–03:30 gate, including a child rejected
-after the queue set `command_started=true`. Natural daily failure cleanup keeps
+after the queue set `command_started=true`. It also reserves its existing full
+900-second `TimeoutStopSec` before the cutoff, both before ownership work and
+immediately before starting the dashboard. Natural daily failure cleanup keeps
 its existing policy. Both manual profiles require the exact `--manual-ingest`
 argv; direct cleanup also requires the exact privileged isolated helper command.
 The service snapshot checks root-protected installed hook bytes against reviewed
@@ -67,10 +69,23 @@ second queued manual job. No timers are created or rescheduled by this repair.
    bytes, owners/modes, symlink/absence evidence and effective native unit argv
    in the private rollback bundle. Verify the manual unit and all other
    producers/claim owners are idle before changing definitions.
-2. Install the direct helper using the reviewed definitions-only installer:
-   `sudo sh "$SOURCE/deploy/pi/install-manual-ingest-restore.sh" "$SOURCE" "$RESTORE_SHA256"`.
-   The supplied digest must come from the independently approved source manifest.
-   Both ordinary Pi unit installers call this before writing the new base unit.
+2. From the independently approved source manifest, provision
+   `/var/lib/ar-local-manual-ingest/approved-<40-character-commit>` using the
+   trusted operator bootstrap. All parent directories must be root-owned and
+   non-writable by other users. The stage must contain the reviewed
+   `install-manual-ingest-restore.sh`, `pi_manual_ingest_restore.py` and
+   `helper.sha256` (the manifest's helper digest plus newline), as root-owned
+   read-only regular files. Validate their exact manifest bytes before use;
+   never execute the installer directly from the writable checkout.
+   Install the helper using the staged definitions-only installer:
+   `sudo sh "$APPROVED_ROOT_STAGE/install-manual-ingest-restore.sh" "$APPROVED_ROOT_STAGE" "$RESTORE_SHA256"`.
+   Both ordinary Pi unit installers require this protected stage for the exact
+   checkout commit, check its helper digest against the source, and call only
+   that staged installer before writing the new base unit. A missing stage
+   blocks installation. Approved payload bytes must be canonical Git LF bytes;
+   CRLF installer input is refused before destination writes. Windows-side
+   verification computes the same Git LF digest, while installed proof hashes
+   exact bytes and never normalizes a changed installed file.
    Those broad installers also affect other services; for an already commissioned
    Pi use the same reviewed render/install steps for the manual base unit only.
 3. If the shared queue is commissioned, preserve its existing integration and

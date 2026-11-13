@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from pi_shared_queue_native import NATIVE_LOCK, legacy_host_ready, native_lock_factory
 from pi_shared_queue_store import FIXED_AR_UNITS, Store
+
+MANUAL_STOP_SECONDS = 900  # shared-queue-ingest-now.conf TimeoutStopSec.
 
 
 def start_dashboard():
@@ -21,7 +23,14 @@ def restoration_allowed(unit, now=None):
     if unit not in ('ar-local-daily-watchdog.service', 'ar-local-ingest-now.service'):
         return True
     local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('Australia/Hobart'))
-    return not time(0, 30) <= local.time() < time(3, 30)
+    if time(0, 30) <= local.time() < time(3, 30):
+        return False
+    if unit == 'ar-local-ingest-now.service':
+        close = datetime.combine(local.date(), time(0, 30), local.tzinfo)
+        if local >= close:
+            close += timedelta(days=1)
+        return (close.astimezone(timezone.utc) - local.astimezone(timezone.utc)).total_seconds() > MANUAL_STOP_SECONDS
+    return True
 
 
 def recover(store, unit, invocation, factory=native_lock_factory,

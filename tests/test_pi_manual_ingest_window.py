@@ -54,6 +54,13 @@ def test_unknown_service_inventory_fails_closed(tmp_path, content):
         window.manual_service(path)
 
 
+@pytest.mark.parametrize('platform', ['darwin', 'win32', 'freebsd14'])
+def test_nonlinux_ordinary_ingest_does_not_read_linux_proc(monkeypatch, platform):
+    monkeypatch.setattr(window.sys, 'platform', platform)
+    monkeypatch.setattr(window.Path, 'open', lambda *_: pytest.fail('Linux-only cgroup read'))
+    assert window.manual_service() is False
+
+
 def test_actual_queue_can_admit0230_but_manual_child_cannot():
     from pi_shared_queue_policy import admission
     from tests.shared_pi_queue_fixtures import record
