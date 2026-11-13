@@ -83,7 +83,7 @@ explicitly; no `app_payload*.py` consumer reads `banks.product_changes` or
 rows are not sent as events through the current v1/v2 publication path. V2
 `_moves` breaks continuity at `None` gaps. Revision summaries separately compare
 product/rate fingerprints and explicitly do not imply withdrawal
-(`app_payload_revisions_state._change_summary`). Optional executable/activity
+(`app_payload_revisions_state.revision_delta`). Optional executable/activity
 packages have separate feature gates and have not been accepted by this audit;
 do not infer their safety from the legacy v1/v2 trace. Existing stored historical
 change events remain untouched and need coverage-aware interpretation by any
