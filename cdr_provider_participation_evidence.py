@@ -48,7 +48,11 @@ def register_rows(payload):
 
 def matching_registration(row, prior):
     """Any same identity, entity, name or endpoint origin revokes cessation."""
-    for field in ('dataHolderBrandId', 'abn', 'acn', 'brandName'):
+    identity_fields = ('dataHolderBrandId', 'interimId')
+    prior_ids = {str(prior[k]).casefold() for k in identity_fields if prior.get(k)}
+    if any(str(row[k]).casefold() in prior_ids for k in identity_fields if row.get(k)):
+        return True
+    for field in ('abn', 'acn', 'brandName'):
         if prior.get(field) and str(row.get(field, '')).casefold() == str(prior[field]).casefold():
             return True
     origins = {urlsplit(prior.get(k, '')).netloc.lower() for k in ('publicBaseUri', 'productBaseUri')}
@@ -79,7 +83,8 @@ def load_cessation_evidence(root=EVIDENCE_ROOT):
     for record in records:
         prior_rows = register_rows(_source(root, record['prior_register'], register=True))
         later_rows = register_rows(_source(root, record['cessation_register'], register=True))
-        prior = [row for row in prior_rows if row.get('dataHolderBrandId') == record['brand_id']]
+        prior = [row for row in prior_rows if record['brand_id'] in
+                 (row.get('dataHolderBrandId'), row.get('interimId'))]
         if len(prior) != 1 or any(matching_registration(row, prior[0]) for row in later_rows):
             raise ValueError('cessation does not reconcile with official registration')
         brands = list(iter_banking_brands_from_payload({'data': prior}))

@@ -183,6 +183,34 @@ def test_unsupported_or_corrupt_evidence_is_not_cessation(tmp_path, mutation):
         load_cessation_evidence(root)
 
 
+@pytest.mark.parametrize('return_id', [None, 'interimId', 'dataHolderBrandId'])
+def test_interim_identity_cessation_and_reappearance(tmp_path, return_id):
+    # Change identity metadata only on captured registers, never business data.
+    root = tmp_path / 'evidence'
+    shutil.copytree(EVIDENCE_ROOT, root)
+    manifest = json.loads((root / 'evidence.json').read_bytes())
+    record = manifest['records'][0]
+    prior = json.loads((root / record['prior_register']['path']).read_bytes())
+    provider = next(row for row in prior['data'] if row.get('dataHolderBrandId') == record['brand_id'])
+    provider['interimId'] = provider.pop('dataHolderBrandId')
+    mutations = {'prior_register': prior}
+    if return_id:
+        later = json.loads((root / record['cessation_register']['path']).read_bytes())
+        # All other identity fields differ; the retained interim ID alone revokes.
+        later['data'][0][return_id] = record['brand_id']
+        mutations['cessation_register'] = later
+    for kind, payload in mutations.items():
+        body = json.dumps(payload).encode()
+        (root / record[kind]['path']).write_bytes(body)
+        record[kind].update(sha256=hashlib.sha256(body).hexdigest(), bytes=len(body))
+    (root / 'evidence.json').write_text(json.dumps(manifest))
+    if return_id:
+        with pytest.raises(ValueError, match='official registration'):
+            load_cessation_evidence(root)
+    else:
+        assert load_cessation_evidence(root)[0]['prior_registration']['interimId'] == record['brand_id']
+
+
 @pytest.mark.parametrize('damage', ['corrupt', 'missing'])
 def test_finalization_retains_lifecycle_proof_in_coverage(tmp_path, damage):
     from tests.test_irreplaceable_finalization import make_export
