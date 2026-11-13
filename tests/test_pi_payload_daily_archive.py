@@ -146,8 +146,9 @@ def test_guard_refusal_has_no_archive_writes(runtime, monkeypatch, guard):
 
 
 @pytest.mark.parametrize("hour,minute,expected", [(3, 29, "protected_natural_ingest_window"),
-    (3, 30, ""), (21, 29, ""), (21, 30, "insufficient_publication_window"),
-    (22, 0, "protected_natural_ingest_window")])
+    (3, 30, ""), (21, 29, ""), (21, 30, ""), (22, 0, ""),
+    (23, 59, ""), (0, 0, "insufficient_publication_window"),
+    (0, 30, "protected_natural_ingest_window")])
 def test_window_reserves_full_child_and_cleanup_budget(hour, minute, expected):
     assert archive.window_reason(datetime(2026, 10, 30, hour, minute, tzinfo=archive.HOBART)) == expected
 

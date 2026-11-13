@@ -9,7 +9,7 @@ from contextlib import nullcontext
 from datetime import datetime, time as daytime, timedelta, timezone
 from pathlib import Path
 
-from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from ar_local_ingest_schedule import DAILY_INGEST_TZ, maintenance_closes_at, maintenance_window_open
 from ar_local_pi_runtime import data_state_root
 from cdr_atomic import atomic_write_json, canonical_json_bytes
 from cdr_file_lock import FileLock
@@ -24,11 +24,11 @@ RETRY_STATE_DIRECTORY = "app-payload-retries"
 def payload_retry_window_reason(now_utc: datetime | None = None) -> str:
     now = now_utc or datetime.now(timezone.utc)
     local = now.astimezone(DAILY_INGEST_TZ)
-    if not daytime(3, 30) <= local.time() < daytime(22):
+    if not maintenance_window_open(local):
         from pi_daily_repair_admission import early_daily_allowed
         if not early_daily_allowed(now):
             return "protected_natural_ingest_window"
-    closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    closing = maintenance_closes_at(local)
     if (closing - local).total_seconds() < PAYLOAD_TIMEOUT_SECONDS + CLEANUP_SECONDS:
         return "insufficient_publication_window"
     return ""

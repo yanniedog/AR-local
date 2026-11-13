@@ -11,7 +11,7 @@ evidence remains immutable. Historical physical-boot claims are not upgraded by
 database backup success. No Windows elevation is needed for this pipeline.
 
 The 01:00 Australia/Hobart natural ingest remains mandatory. Mutating operations
-yield to ingest. Same-day recovery keeps the existing 03:30–22:00 window,
+yield to ingest. Same-day recovery keeps the existing 03:30–00:30 window,
 resource checks, operation lock and immutable-observation safeguards. A later
 calendar day's source is never relabelled as an earlier day. Unknown/malformed
 source evidence remains a disclosed gap; missing data is never manufactured.
@@ -41,7 +41,7 @@ remain quiet; meaningful improvements, failures and required action are reported
 Capture, finalization, publication, consumer verification, and backup each have
 their own result. PASS means the corresponding evidence actually exists.
 
-Publication retries run only from 03:30 to 22:00 Hobart, with their full
+Publication retries run only from 03:30 to 00:30 Hobart, with their full
 30-minute execution and 45-second cleanup budget fitting before closing. They
 never occupy the natural ingest window. A failed source backs off for one,
 two, four, then six hours; the reservation is durable before starting, so an
@@ -73,7 +73,7 @@ Activation requires at least 30 minutes before sealed expiry before changing
 coordination timers and again immediately before checkout: 21 minutes for all
 three smoke paths plus a 9-minute margin for other work. This admission margin
 is not a hard whole-operation deadline for existing inline source hashing.
-Rollback remains available after expiry. The 22:00 activation/capture cutoff and
+Rollback remains available after expiry. The 00:30 activation/capture cutoff and
 the natural-ingest quiet window remain unchanged.
 
 ## Payload revisions

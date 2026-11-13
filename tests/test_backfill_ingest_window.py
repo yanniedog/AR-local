@@ -26,7 +26,7 @@ def properties(**changes):
                 RuntimeRandomizedExtraUSec='0', **changes)
 
 
-@pytest.mark.parametrize('clock', ['00:00', '00:29', '00:30', '01:00', '03:29', '22:00', '23:59'])
+@pytest.mark.parametrize('clock', ['00:30', '01:00', '03:29'])
 def test_refuses_quiet_and_late_start_windows(clock):
     from app_payload_backfill_window import validate_containment
     now = datetime.fromisoformat('2026-09-22T' + clock).replace(tzinfo=ZoneInfo('Australia/Hobart'))
@@ -34,7 +34,7 @@ def test_refuses_quiet_and_late_start_windows(clock):
         validate_containment(properties(), now)
 
 
-@pytest.mark.parametrize('clock', ['03:30', '12:00', '21:59'])
+@pytest.mark.parametrize('clock', ['03:30', '12:00', '21:59', '22:00', '23:00'])
 def test_bounded_service_finishes_before_freeze(clock):
     from app_payload_backfill_window import validate_containment
     now = datetime.fromisoformat('2026-09-22T' + clock).replace(tzinfo=ZoneInfo('Australia/Hobart'))

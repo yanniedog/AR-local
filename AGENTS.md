@@ -1,5 +1,13 @@
 # AR-local ? Agent configuration
 
+> **Permanent Pi maintenance window (operator decision 2026-11-14):** Pi
+> maintenance and updates are permitted daily from 03:30 until the next 00:30
+> Australia/Hobart, including 00:00–00:30. Preserve the 00:30–03:30 ingest quiet
+> period, natural 01:00 ingest, ownership, resource limits, exact-source gates
+> and each operation's cleanup reserve. Bounded read-only access remains allowed.
+> This supersedes older 22:00 maintenance cutoffs; it does not extend individually
+> sealed evidence expiries or activate installed helper/service updates by itself.
+
 > **Google Drive hold (operator decision 2026-09-14):** Recovery handoff
 > entry D-028 supersedes the unattended daily Drive-write authority for
 > product-evidence and historical-coverage work. Preserve the accepted fallback;

@@ -363,8 +363,8 @@ class Native:
         local = now.astimezone(ZoneInfo('Australia/Hobart'))
         # Opens at 03:30 like the recovery window; the queue's own protected
         # window ends earlier and does not cover 03:00-03:30.
-        if not (3, 30) <= (local.hour, local.minute) < (22, 0):
-            raise RuntimeError('deployment is outside the approved daytime operating window')
+        if (0, 30) <= (local.hour, local.minute) < (3, 30):
+            raise RuntimeError('deployment is inside the protected 00:30-03:30 ingest window')
         self.lease()
 
     def rollback_guard(self):

@@ -464,7 +464,7 @@ jobs:
           ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" <<'REMOTE'
           set -euo pipefail
           NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
-          [ "$NOW_HM" -ge 0330 ] && [ "$NOW_HM" -lt 2200 ] || { echo "outside 03:30-22:00 Hobart"; exit 1; }
+          { [ "$NOW_HM" -ge 0330 ] || [ "$NOW_HM" -lt 0030 ]; } || { echo "inside 00:30-03:30 Hobart quiet window"; exit 1; }
           test -x /usr/local/bin/pi-shared-task || { echo "pi-shared-task missing"; exit 1; }
           /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
             --cpu-slots 1 --max-runtime 600 --wait-timeout 600 -- bash -s -- "$1" <<'QUEUED'
@@ -648,7 +648,7 @@ jobs:
           }
           trap on_term TERM INT HUP
           NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
-          [ "$NOW_HM" -ge 0330 ] && [ "$NOW_HM" -lt 2200 ] || { echo "outside 03:30-22:00 Hobart"; exit 1; }
+          { [ "$NOW_HM" -ge 0330 ] || [ "$NOW_HM" -lt 0030 ]; } || { echo "inside 00:30-03:30 Hobart quiet window"; exit 1; }
           D_ACTIVE="$(systemctl show ar-local-daily.service -p ActiveState --value)"
           D_RESULT="$(systemctl show ar-local-daily.service -p Result --value)"
           D_EXIT="$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value)"

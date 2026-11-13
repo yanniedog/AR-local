@@ -163,8 +163,11 @@ def test_both_legacy_policies_only_open_early_for_verified_daily_context(monkeyp
     monkeypatch.setattr(admission, "natural_clearance", lambda *a, **k: clear)
     assert recovery.recovery_window(NOW) is allowed
     assert (publication.payload_retry_window_reason(NOW) == "") is allowed
-    for clock in ["00:30", "02:59", "22:00"]:
+    for clock in ["00:30", "02:59"]:
         assert not recovery.recovery_window(datetime.fromisoformat("2026-10-16T" + clock + ":00+11:00"))
+    late = datetime.fromisoformat("2026-10-16T22:00:00+11:00")
+    assert recovery.recovery_window(late)
+    assert publication.payload_retry_window_reason(late) == ""
     assert recovery.recovery_window(NOW + timedelta(minutes=30))
 
 

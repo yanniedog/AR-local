@@ -48,9 +48,9 @@ def _unit_properties() -> dict[str, str]:
 
 def validate_containment(properties: dict[str, str], now: datetime) -> None:
     now = now.astimezone(TZ)
-    minute = now.hour * 60 + now.minute
-    if not 210 <= minute < 1320:
-        raise RuntimeError('backfill quiet window: starts allowed 03:30-22:00 Hobart')
+    from ar_local_ingest_schedule import maintenance_closes_at, maintenance_window_open
+    if not maintenance_window_open(now):
+        raise RuntimeError('backfill quiet window: starts allowed 03:30-00:30 Hobart')
     if (properties.get('Type') not in {'exec', 'simple'}
             or properties.get('ActiveState') != 'active'
             or properties.get('KillMode') != 'control-group'
@@ -63,7 +63,7 @@ def validate_containment(properties: dict[str, str], now: datetime) -> None:
     runtime = _seconds(properties.get('RuntimeMaxUSec', 'infinity'))
     stop = _seconds(properties.get('TimeoutStopUSec', 'infinity'))
     extra = _seconds(properties.get('RuntimeRandomizedExtraUSec', '0'))
-    freeze = (now + timedelta(days=1)).replace(hour=0, minute=30, second=0, microsecond=0)
+    freeze = maintenance_closes_at(now)
     # Conservatively charge the entire configured lifetime, even if already running.
     if not (0 < runtime <= 3600 and 0 <= stop <= 30 and extra == 0
             and runtime + stop + 60 < (freeze - now).total_seconds()):
