@@ -41,6 +41,19 @@ argv; direct cleanup also requires the exact privileged isolated helper command.
 The service snapshot checks root-protected installed hook bytes against reviewed
 source hashes. Missing/old/unprotected bytes fail the fence.
 
+When expanded capture cannot fit the separate 1800-second quality-recapture
+budget, the supported full manual route retains its existing six-hour execution
+budget. `--force` appends a verified same-day ledger revision and separate raw
+and export roots; it runs the normal archive and publication hooks. It does not
+intrinsically pin an expected commit/generation or settle pending publication.
+The operator must bind immutable source, selected generation and settled pending
+publication in a preflight inside the same queue claim that launches the child,
+then verify the resulting selection/publication afterward. An outer claim that
+starts a second queued unit can deadlock; releasing it before the preflight
+creates a race. Use one reviewed PID1/queue invocation with the actual ordered
+environment files and existing resource limits. The full 7h15 admission still
+applies; a longer budget never authorizes crossing 00:30.
+
 ## Controlled installation and rollback
 
 Source activation alone does not rewrite either unit or the installed queue
