@@ -187,10 +187,17 @@ def window(now):
 
 
 def queue_claim(state, cgroup, boot, properties, lease):
-    matches = [j for j in state.get('jobs', []) if j.get('cgroup') == cgroup]
+    jobs = state.get('jobs') if isinstance(state, dict) else None
+    if not isinstance(jobs, list) or any(not isinstance(j, dict) for j in jobs):
+        raise ValueError('complete queue records required')
+    matches = [j for j in jobs if j.get('cgroup') == cgroup]
     if len(matches) != 1:
         raise ValueError('unique current host queue claim required')
     job = matches[0]
+    if any(other is not job and other.get('state') != 'waiting' for other in jobs):
+        raise ValueError('another active or ambiguous queue claim exists')
+    expected_lease = {'pid': str(job.get('pid')), 'boot_id': boot,
+                      'role': 'shared-pi-host-task:' + str(job.get('id')), 'recovery': 'manual'}
     if (not re.fullmatch(r'/system.slice/ar-local-queue-task-[0-9a-f]{32}\.service', cgroup)
             or job.get('state') != 'running' or job.get('project') != 'ar-local'
             or job.get('mode') != 'exclusive' or not isinstance(job.get('resources'), list)
@@ -200,8 +207,7 @@ def queue_claim(state, cgroup, boot, properties, lease):
             or properties.get('ControlGroup') != cgroup or properties.get('ActiveState') != 'active'
             or properties.get('InvocationID') != job.get('invocation_id')
             or properties.get('MainPID') != str(job.get('pid'))
-            or lease.get('pid') != str(job.get('pid')) or lease.get('boot_id') != boot
-            or lease.get('role') != 'shared-pi-host-task:' + str(job.get('id'))):
+            or lease != expected_lease):
         raise ValueError('exclusive current host/native ownership differs')
     return job
 

@@ -203,3 +203,28 @@ def test_each_service_mutation_rechecks_window_after_preparation(monkeypatch):
     monkeypatch.setattr(native.subprocess, 'run', lambda *a, **kw: pytest.fail('must not mutate late'))
     for action in ('daemon-reload', 'start', 'enable', 'disable'):
         with pytest.raises(ValueError): native.run(['/usr/bin/systemctl', action, native.SERVICE])
+
+
+@pytest.mark.parametrize('state', ['running', 'quarantined', 'unknown', None])
+def test_exclusive_host_rejects_other_active_or_ambiguous_claims(state):
+    args = list(claim()); other = {'id': 'other', 'cgroup': '/other', 'state': state}
+    args[0]['jobs'].append(other)
+    with pytest.raises(ValueError, match='another active or ambiguous'): native.queue_claim(*args)
+
+
+def test_exclusive_host_allows_waiting_jobs():
+    args = list(claim()); args[0]['jobs'].append({'id': 'other', 'cgroup': '/other', 'state': 'waiting'})
+    assert native.queue_claim(*args)['id'] == 'job'
+
+
+@pytest.mark.parametrize('recovery', [None, 'automatic', ''])
+def test_native_lease_requires_exact_manual_recovery_marker(recovery):
+    args = list(claim())
+    if recovery is None: args[4].pop('recovery')
+    else: args[4]['recovery'] = recovery
+    with pytest.raises(ValueError): native.queue_claim(*args)
+
+
+def test_native_lease_rejects_unexpected_fields():
+    args = list(claim()); args[4]['unknown'] = 'value'
+    with pytest.raises(ValueError): native.queue_claim(*args)
