@@ -10,6 +10,13 @@ remain separate. This document does not claim installation or wire acceptance.
 `--action validate` is read-only. It never edits the main sshd config, Tailscale,
 firewall, host private keys, existing owner keys, timers, or production data.
 
+The persistent unit is `sshd-ar-local-tailnet.service`. The legacy shared-queue
+bridge deliberately treats running `ar-local-*.service` units as batch work;
+using that namespace for an always-active SSH listener would block future claims.
+The SSH namespace keeps that existing gate intact. Configuration remains under
+`/etc/ar-local-native-ssh`; approvals, ownership checks and resource controls are
+unchanged. This listener has not been installed, so no old-unit migration is needed.
+
 ## Review and approval
 
 Read the mandatory recovery runbook and latest complete append-only handoff.

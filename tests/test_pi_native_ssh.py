@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import base64
 import copy
+import fnmatch
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -44,6 +45,31 @@ def test_configuration_is_standalone_private_and_public_key_only():
     assert 'NoNewPrivileges' not in unit and 'ProtectHome' not in unit
     assert 'MemoryMax=512M' in unit and 'TasksMax=128' in unit
     assert 'LimitAS=536870912:536870912' in unit
+
+
+@pytest.mark.parametrize('batch_active', [False, True])
+def test_persistent_ssh_does_not_hide_or_block_legacy_batch_work(monkeypatch, batch_active):
+    import pi_shared_queue_native as bridge
+
+    services = [dict(unit=native.SERVICE, active='active', sub='running'),
+                dict(unit='ar-local-daily.service', active='active' if batch_active else 'inactive',
+                     sub='running' if batch_active else 'dead')]
+    inspected = []
+
+    def systemctl(command, **kwargs):
+        if 'list-units' in command:
+            assert command[-1] == 'ar-local-*.service'
+            selected = [row for row in services if fnmatch.fnmatchcase(row['unit'], command[-1])]
+            return SimpleNamespace(stdout=json.dumps(selected))
+        assert command[:2] == ['systemctl', 'show']
+        inspected.extend(command[2:-1])
+        return SimpleNamespace(stdout='\n\n'.join(
+            f"Id={unit}\nMainPID=123\nActiveState=active\nSubState=running" for unit in command[2:-1]))
+
+    monkeypatch.setattr(bridge.subprocess, 'run', systemctl)
+    assert bridge.legacy_host_ready(set()) is not batch_active
+    assert inspected == (['ar-local-daily.service'] if batch_active else [])
+    assert native.SERVICE == 'sshd-ar-local-tailnet.service'
 
 
 @pytest.mark.parametrize('stamp,allowed', [
@@ -189,7 +215,7 @@ def test_failed_effective_validation_never_publishes_unit(tmp_path, monkeypatch)
 @pytest.fixture
 def kernel_limits(monkeypatch):
     facts = dict(MemoryMax='536870912', MemorySwapMax='0', CPUQuotaPerSecUSec='1s', TasksMax='128',
-                 ControlGroup='/system.slice/ar-local-native-ssh.service', MainPID='42',
+                 ControlGroup='/system.slice/sshd-ar-local-tailnet.service', MainPID='42',
                  InvocationID='a'*32, ActiveState='active', LimitAS='536870912', LimitASSoft='536870912')
     values = {'memory.max': '536870912', 'memory.swap.max': '0', 'pids.max': '128', 'cpu.max': '100000 100000',
               'cgroup.controllers': 'cpu pids memory',
