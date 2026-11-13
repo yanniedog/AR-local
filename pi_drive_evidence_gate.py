@@ -27,6 +27,7 @@ from typing import Callable, Sequence
 from zoneinfo import ZoneInfo
 
 from ar_local_backup_policy import atomic_create_json, atomic_replace_json, load_env, sha256_file
+from ar_local_operation_lock import production_lock
 from pi_drive_backup_hold import Blocked as HoldBlocked, require_writes_allowed
 
 SCHEMA = "ar-local-drive-evidence-v1"
@@ -85,8 +86,16 @@ def _settings(env_path: Path) -> dict[str, object]:
         raise Blocked("day-archive remote is not a folder inside a dedicated Drive root")
     if not spool.is_absolute() or not config.is_absolute():
         raise Blocked("day-archive spool and rclone config must be absolute paths")
+    root_folder_id = values.get("AR_LOCAL_DRIVE_ROOT_FOLDER_ID", "").strip()
+    if root_folder_id and not re.fullmatch(r"[a-zA-Z0-9_-]{10,200}", root_folder_id):
+        raise Blocked("pinned Drive root folder ID is invalid")
     parent = "/".join(segments[:-1])
-    return {"spool": spool, "config": config, "remote_root": f"{name}:{parent}/pre-deploy-backups"}
+    return {
+        "spool": spool,
+        "config": config,
+        "remote_root": f"{name}:{parent}/pre-deploy-backups",
+        "root_folder_id": root_folder_id,
+    }
 
 
 def _root(spool: Path) -> Path:
@@ -155,9 +164,6 @@ def create_backup(
     for label, path in sources.items():
         if path.is_symlink() or not path.is_dir():
             raise Blocked(f"backup source is not a real directory: {label}")
-    head_done = run(["git", "-C", str(repo), "rev-parse", "HEAD"], 30)
-    if head_done.returncode != 0 or head_done.stdout.strip() != protected:
-        raise Blocked("protected checkout HEAD does not match protected_code_sha")
     root = _root(spool)
     _check_no_symlinks(spool, root, root / "receipts", root / "staging")
     try:
@@ -172,13 +178,22 @@ def create_backup(
     stage.mkdir(mode=0o700)
     try:
         artefacts = []
-        for label, path in sources.items():
-            target = stage / f"{label}.tar.zst"
-            excludes = [f"--exclude={item}" for item in TAR_EXCLUDES]
-            done = run(["tar", "--zstd", *excludes, "-cf", str(target), "-C", str(path.parent), path.name], 300)
-            if done.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
-                raise Blocked(f"tar failed for {label} (exit {done.returncode})")
-            artefacts.append({"name": target.name, "bytes": target.stat().st_size, "sha256": sha256_file(target), "tar_exit": done.returncode})
+        try:
+            with production_lock(data_root / "state/daily-ingest.lock", "drive-backup"):
+                head_done = run(["git", "-C", str(repo), "rev-parse", "HEAD"], 30)
+                if head_done.returncode != 0 or head_done.stdout.strip() != protected:
+                    raise Blocked("protected checkout HEAD does not match protected_code_sha")
+                for label, path in sources.items():
+                    target = stage / f"{label}.tar.zst"
+                    excludes = [f"--exclude={item}" for item in TAR_EXCLUDES]
+                    done = run(["tar", "--zstd", *excludes, "-cf", str(target), "-C", str(path.parent), path.name], 300)
+                    if done.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
+                        raise Blocked(f"tar failed for {label} (exit {done.returncode})")
+                    artefacts.append({"name": target.name, "bytes": target.stat().st_size, "sha256": sha256_file(target), "tar_exit": done.returncode})
+        except RuntimeError as exc:
+            if isinstance(exc, Blocked):
+                raise
+            raise Blocked(str(exc)) from exc
         if sum(int(item["bytes"]) for item in artefacts) > MAX_TOTAL_BYTES:
             raise Blocked("pre-deployment backup exceeds the size cap")
         manifest = {"schema": SCHEMA, "name": name, "created_at": current.isoformat(), "protected_code_sha": protected,
@@ -187,6 +202,8 @@ def create_backup(
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         remote = f"{settings['remote_root']}/{name}"
         base = ["rclone", "--config", str(config)]
+        if settings["root_folder_id"]:
+            base.extend(["--drive-root-folder-id", str(settings["root_folder_id"])])
         for argv, limit in ((["copy", "--checksum", str(stage), remote], 900), (["check", "--one-way", str(stage), remote], 450)):
             done = run([*base, *argv], limit)
             if done.returncode != 0:

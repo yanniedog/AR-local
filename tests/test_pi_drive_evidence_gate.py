@@ -53,12 +53,12 @@ def _runner(fail: str | None = None, corrupt_readback: bool = False, tar_exit: i
             if tar_exit == 0:
                 Path(argv[argv.index("-cf") + 1]).write_bytes(b"archive")
             return subprocess.CompletedProcess(argv, tar_exit, "", "" if tar_exit == 0 else "changed")
-        verb = argv[3]
+        verb = next(arg for arg in argv[3:] if arg in ("copy", "check", "cat"))
         if verb == fail:
             return subprocess.CompletedProcess(argv, 1, "", "boom")
         out = ""
         if verb == "cat":
-            staged = Path(calls[-3][-2]) / "manifest.json"
+            staged = Path(calls[-3][calls[-3].index("copy") + 2]) / "manifest.json"
             out = staged.read_text(encoding="utf-8") + ("x" if corrupt_readback else "")
         return subprocess.CompletedProcess(argv, 0, out, "")
 
@@ -179,3 +179,15 @@ def test_hold_marker_and_bad_remote_and_sha_block(tmp_path):
     ctx["env"].write_text(ctx["env"].read_text(encoding="utf-8").replace("r:daily", "r:Root/../other/daily"), encoding="utf-8")
     with pytest.raises(gate.Blocked, match="dedicated Drive root"):
         gate.gate(P, C, env_path=ctx["env"])
+
+
+def test_root_folder_id_pin_is_forwarded_to_rclone(tmp_path):
+    ctx = _setup(tmp_path)
+    ctx["env"].write_text(
+        ctx["env"].read_text(encoding="utf-8") + "AR_LOCAL_DRIVE_ROOT_FOLDER_ID=1AbCdEfGhIjKlMnOp\n",
+        encoding="utf-8",
+    )
+    run = _runner()
+    _backup(ctx, run)
+    rclone_calls = [call for call in run.calls if call[0] == "rclone"]
+    assert all("--drive-root-folder-id" in call and "1AbCdEfGhIjKlMnOp" in call for call in rclone_calls)
