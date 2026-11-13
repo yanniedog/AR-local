@@ -13,6 +13,7 @@ import pi_cdr_quality_window as window
 import pi_deploy_verify as deploy
 import pi_live_financial_capture as live
 from tests.test_cdr_quality_canary_unit import canary_args
+from tests.test_pi_deploy_verify import _verified_sync_snapshot
 
 TZ = ZoneInfo("Australia/Hobart")
 
@@ -49,6 +50,19 @@ def test_verify_cli_mismatched_pin_refuses_before_pi_contact(monkeypatch):
     monkeypatch.setattr(deploy, "pi_remote_snapshot", lambda **kw: pytest.fail("pin mismatch contacted Pi"))
     args = deploy.build_parser().parse_args(["--verify", "--expected-commit", "a" * 40, "--dry-run"])
     assert deploy.cmd_verify(args) == deploy.EXIT_CONFIG
+
+
+@pytest.mark.parametrize("extra", [[], ["--expected-commit", ""], ["--expected-commit", "a" * 40]])
+def test_verify_cli_optional_or_matching_pin_reaches_verification(monkeypatch, extra):
+    monkeypatch.setattr(deploy, "origin_main_sha_local", lambda: "a" * 40)
+    calls = []
+    def snapshot(**kwargs):
+        calls.append(kwargs)
+        return _verified_sync_snapshot("a" * 40)
+    monkeypatch.setattr(deploy, "pi_remote_snapshot", snapshot)
+    args = deploy.build_parser().parse_args(["--verify", "--dry-run", *extra])
+    assert deploy.cmd_verify(args) == deploy.EXIT_OK
+    assert calls == [{"dry_run": True, "fetch": False}]
 
 
 def test_live_capture_and_failed_stage_copy_keep_original_cutoff(tmp_path, monkeypatch):

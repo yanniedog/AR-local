@@ -866,7 +866,7 @@ def changed_files_since(ref: str) -> list[str]:
 def cmd_verify(args: argparse.Namespace) -> int:
     code = verify_sync(
         dry_run=args.dry_run,
-        expected_commit=args.expected_commit,
+        expected_commit=args.expected_commit or None,
         allow_unarmed_ingest_timers=bool(args.allow_unarmed_ingest_timers),
     )
     if code != EXIT_OK:

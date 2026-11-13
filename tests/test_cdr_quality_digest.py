@@ -19,6 +19,14 @@ import pi_cdr_quality_digest as digest
 PUBLIC = Path(__file__).parents[1] / "docs/evidence/backup-observation-20260911/publication"
 
 
+@pytest.mark.parametrize("limit", [16, 64])
+def test_size_error_reports_callers_actual_bound(tmp_path, limit):
+    path = tmp_path / "evidence"
+    path.write_bytes(b"x" * (limit + 1))
+    with pytest.raises(ValueError, match=rf"exceeds configured limit of {limit} bytes$"):
+        digest.read_digest(path, max_bytes=limit)
+
+
 @pytest.fixture
 def protected(tmp_path, monkeypatch):
     data, state = tmp_path / "data", tmp_path / "data/state"

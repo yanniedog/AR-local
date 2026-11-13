@@ -96,7 +96,7 @@ def read_digest(path: Path, *, root: Path | None = None, capture: bool = False,
     identity, ancestors = _file_state(path, root)
     size = identity[4]
     if max_bytes is not None and size > max_bytes:
-        raise ValueError("evidence JSON exceeds 64 MiB")
+        raise ValueError(f"evidence exceeds configured limit of {max_bytes} bytes")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
     descriptor = os.open(path, flags)
