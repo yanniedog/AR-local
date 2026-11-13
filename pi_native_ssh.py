@@ -27,6 +27,8 @@ QUEUE = Path('/var/lib/shared-pi-queue/state.json')
 LEASE = Path('/srv/ar-local/data/state/daily-ingest.lock')
 TZ = ZoneInfo('Australia/Hobart')
 SCHEMA = 'ar-local-native-ssh-v1'
+RESOURCE_POLICY = 'native-ssh-cpu-pids-address-space-v1'
+ADDRESS_BYTES = 512 * 1024**2
 
 
 def unique(pairs):
@@ -80,11 +82,13 @@ def public_key(value):
 
 
 def validate_approval(value):
-    fields = {'schema', 'source_commit', 'installer_sha256', 'address', 'port', 'user', 'authorized_key', 'host_public_key'}
+    fields = {'schema', 'source_commit', 'installer_sha256', 'address', 'port', 'user', 'authorized_key', 'host_public_key', 'resource_policy'}
     if not isinstance(value, dict) or set(value) != fields or value['schema'] != SCHEMA:
         raise ValueError('invalid approval schema')
     if not re.fullmatch('[0-9a-f]{40}', str(value['source_commit'])) or not re.fullmatch('[0-9a-f]{64}', str(value['installer_sha256'])):
         raise ValueError('exact reviewed source identity required')
+    if value['resource_policy'] != RESOURCE_POLICY:
+        raise ValueError('reviewed listener resource policy required')
     address = ipaddress.IPv4Address(value['address'])
     if str(address) != value['address'] or address not in ipaddress.IPv4Network('100.64.0.0/10'):
         raise ValueError('exact tailnet IPv4 required')
@@ -154,6 +158,7 @@ TimeoutStartSec=30s
 TimeoutStopSec=20s
 KillMode=control-group
 CPUQuota=100%
+LimitAS=536870912:536870912
 MemoryMax=512M
 MemorySwapMax=0
 TasksMax=128
@@ -297,7 +302,7 @@ def installed(bodies, approval):
     return paths
 
 
-def mutate(action, value, bodies, approval, uid, proof=None):
+def mutate(action, value, bodies, approval, uid, proof=None, evidence=None):
     admit(uid)
     if action == 'install':
         if ROOT.exists() or ROOT.is_symlink() or UNIT.exists() or UNIT.is_symlink():
@@ -331,7 +336,9 @@ def mutate(action, value, bodies, approval, uid, proof=None):
         validate_proof(proof, hashlib.sha256(approval).hexdigest(), datetime.now(timezone.utc))
         service_definition()
         run(['/usr/bin/systemctl', 'is-active', SERVICE])
-        live_limits()
+        limits = live_limits()
+        if evidence is not None:
+            evidence['resource_evidence'] = limits
         run(['/usr/bin/systemctl', 'enable', SERVICE])
         return 'ENABLED_AFTER_WIRE_PROOF'
     if action == 'rollback':
@@ -361,28 +368,66 @@ def service_definition():
         raise ValueError('unexpected service override; do not start or enable')
 
 
+def daemon_identity(pid):
+    path = Path('/proc') / str(pid)
+    record = (path / 'stat').read_text()
+    rest = record.rsplit(')', 1)[1].split()
+    if record.split(' ', 1)[0] != str(pid) or rest[0] == 'Z' or os.readlink(path / 'exe') != '/usr/sbin/sshd':
+        raise ValueError('current native sshd process identity required')
+    return int(rest[19])
+
+
 def live_limits():
-    result = run(['/usr/bin/systemctl', 'show', SERVICE,
-                  '--property=MemoryMax,MemorySwapMax,CPUQuotaPerSecUSec,TasksMax,ControlGroup'])
+    fields = 'MemoryMax,MemorySwapMax,CPUQuotaPerSecUSec,TasksMax,ControlGroup,MainPID,InvocationID,ActiveState,LimitAS,LimitASSoft'
+    result = run(['/usr/bin/systemctl', 'show', SERVICE, '--property=' + fields])
     facts = dict(line.split('=', 1) for line in result.stdout.splitlines())
-    expected = {'MemoryMax': '536870912', 'MemorySwapMax': '0', 'CPUQuotaPerSecUSec': '1s',
-                'TasksMax': '128', 'ControlGroup': '/system.slice/' + SERVICE}
-    if facts != expected:
+    expected = {'CPUQuotaPerSecUSec': '1s', 'TasksMax': '128',
+                'ControlGroup': '/system.slice/' + SERVICE, 'ActiveState': 'active',
+                'LimitAS': str(ADDRESS_BYTES), 'LimitASSoft': str(ADDRESS_BYTES)}
+    if (set(facts) != set(fields.split(',')) or any(facts.get(k) != v for k, v in expected.items())
+            or not facts['MainPID'].isdigit() or int(facts['MainPID']) < 1
+            or not re.fullmatch('[0-9a-f]{32}', facts['InvocationID'])):
         raise ValueError('effective listener resource limits differ')
+    pid = int(facts['MainPID']); identity = daemon_identity(pid)
+    limits = (Path('/proc') / str(pid) / 'limits').read_text()
+    pattern = rf'^Max address space\s+{ADDRESS_BYTES}\s+{ADDRESS_BYTES}\s+bytes\s*$'
+    if not re.search(pattern, limits, re.MULTILINE):
+        raise ValueError('actual native daemon hard/soft address-space limit differs')
     root = Path('/sys/fs/cgroup') / facts['ControlGroup'].lstrip('/')
-    values = {name: (root / name).read_text().strip() for name in
-              ('memory.max', 'memory.swap.max', 'pids.max', 'cpu.max')}
+    values = {name: (root / name).read_text().strip() for name in ('pids.max', 'cpu.max')}
     quota = values['cpu.max'].split()
-    if (values['memory.max'] != '536870912' or values['memory.swap.max'] != '0'
-            or values['pids.max'] != '128' or len(quota) != 2
+    if (values['pids.max'] != '128' or len(quota) != 2
             or not all(v.isdigit() for v in quota) or not 0 < int(quota[0]) == int(quota[1])):
-        raise ValueError('kernel listener resource enforcement unavailable or different')
-    return facts
+        raise ValueError('kernel listener CPU/task enforcement differs')
+    controllers = Path('/sys/fs/cgroup/cgroup.controllers').read_text().split()
+    if not {'cpu', 'pids'} <= set(controllers):
+        raise ValueError('complete root kernel controller capability required')
+    memory = {'state': 'UNAVAILABLE', 'reason': 'kernel memory controller absent'}
+    if 'memory' in controllers:
+        values.update({name: (root / name).read_text().strip() for name in ('memory.max', 'memory.swap.max')})
+        if (facts['MemoryMax'] != str(ADDRESS_BYTES) or facts['MemorySwapMax'] != '0'
+                or values['memory.max'] != str(ADDRESS_BYTES) or values['memory.swap.max'] != '0'):
+            raise ValueError('advertised memory controller lacks expected live limits')
+        memory = {'state': 'ENFORCED', 'memory_max_bytes': ADDRESS_BYTES, 'swap_max_bytes': 0}
+    elif any((root / name).exists() for name in ('memory.max', 'memory.swap.max')):
+        raise ValueError('contradictory kernel memory capability evidence')
+    after = run(['/usr/bin/systemctl', 'show', SERVICE,
+                 '--property=MainPID,InvocationID,ControlGroup,ActiveState']).stdout
+    if (dict(line.split('=', 1) for line in after.splitlines()) !=
+            {k: facts[k] for k in ('MainPID', 'InvocationID', 'ControlGroup', 'ActiveState')}
+            or daemon_identity(pid) != identity):
+        raise ValueError('native daemon changed during resource verification')
+    return {'profile': RESOURCE_POLICY, 'systemd': facts, 'kernel_cgroup': values,
+            'address_space_bytes_per_process': ADDRESS_BYTES, 'daemon_start_ticks': identity,
+            'listener_cgroup_memory_and_swap': memory,
+            'scope': 'CPU/pids and optional memory/swap apply to listener cgroup only; PAM sessions may leave it. '
+                     'Address-space limit is per process; fresh authenticated-session inheritance is separately proven. '
+                     'No aggregate authenticated-session memory/CPU/pids or zero-swap guarantee.'}
 
 
 def validate_proof(proof, digest, now):
     required = {'schema', 'approval_sha256', 'verified_at', 'native_banner', 'publickey_authenticated',
-                'host_pin_matched', 'sftp_roundtrip_verified', 'wrong_key_rejected', 'password_rejected', 'root_rejected', 'exclusive_tailnet_binding'}
+                'host_pin_matched', 'sftp_roundtrip_verified', 'address_space_limit_inherited', 'wrong_key_rejected', 'password_rejected', 'root_rejected', 'exclusive_tailnet_binding'}
     if (not isinstance(proof, dict) or set(proof) != required or proof['schema'] != 'ar-local-native-ssh-wire-v1'
             or proof['approval_sha256'] != digest or not isinstance(proof['native_banner'], str)
             or not proof['native_banner'].startswith('SSH-2.0-OpenSSH_')
@@ -414,10 +459,11 @@ def main(argv=None):
         uid = host_validate(value)
     proof = json.loads(checked(args.proof, args.proof_sha256), object_pairs_hook=unique) if args.proof else None
     result = 'VALIDATED_DEFINITION_ONLY'
+    evidence = {}
     if args.action != 'validate':
-        result = mutate(args.action, value, bodies, approval, uid, proof)
+        result = mutate(args.action, value, bodies, approval, uid, proof, evidence)
     print(json.dumps({'result': result, 'source_commit': value['source_commit'],
-                      'approval_sha256': args.approval_sha256,
+                      'approval_sha256': args.approval_sha256, **evidence,
                       'artifacts': {k: hashlib.sha256(v).hexdigest() for k, v in bodies.items()}}))
     return 0
 

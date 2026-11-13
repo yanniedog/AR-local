@@ -12,13 +12,14 @@ import pi_native_ssh as native
 def approval():
     key = 'ssh-ed25519 ' + base64.b64encode(b'\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20' + bytes(range(32))).decode()
     return dict(schema=native.SCHEMA, source_commit='a' * 40, installer_sha256='b' * 64,
-                address='100.99.88.77', port=2222, user='operator', authorized_key=key, host_public_key=key)
+                address='100.99.88.77', port=2222, user='operator', authorized_key=key, host_public_key=key,
+                resource_policy=native.RESOURCE_POLICY)
 
 
 @pytest.mark.parametrize('field,value', [
     ('address', '0.0.0.0'), ('address', '127.0.0.1'), ('address', '192.168.1.2'),
     ('address', '::1'), ('address', '100.64.0.1\nListenAddress 0.0.0.0'),
-    ('port', 22), ('port', True), ('port', 65536), ('port', '2222'),
+    ('resource_policy', 'unbounded'), ('port', 22), ('port', True), ('port', 65536), ('port', '2222'),
     ('user', 'root'), ('user', 'pi\nAllowUsers *'), ('user', '*'),
     ('source_commit', 'main'), ('installer_sha256', 'pending'),
     ('authorized_key', 'command="x" ssh-ed25519 AAAA'), ('host_public_key', 'ssh-ed25519 AAAA')])
@@ -42,6 +43,7 @@ def test_configuration_is_standalone_private_and_public_key_only():
     assert 'ExecStart=/usr/sbin/sshd -D -e -f /etc/ar-local-native-ssh/sshd_config' in unit
     assert 'NoNewPrivileges' not in unit and 'ProtectHome' not in unit
     assert 'MemoryMax=512M' in unit and 'TasksMax=128' in unit
+    assert 'LimitAS=536870912:536870912' in unit
 
 
 @pytest.mark.parametrize('stamp,allowed', [
@@ -89,7 +91,7 @@ def test_claim_requires_native_lease_and_no_duplicates():
 def proof():
     return dict(schema='ar-local-native-ssh-wire-v1', approval_sha256='a' * 64,
                 verified_at='2026-11-14T03:45:00+11:00', native_banner='SSH-2.0-OpenSSH_10.0',
-                publickey_authenticated=True, host_pin_matched=True, sftp_roundtrip_verified=True, wrong_key_rejected=True,
+                publickey_authenticated=True, host_pin_matched=True, sftp_roundtrip_verified=True, address_space_limit_inherited=True, wrong_key_rejected=True,
                 password_rejected=True, root_rejected=True, exclusive_tailnet_binding=True)
 
 
@@ -184,17 +186,58 @@ def test_failed_effective_validation_never_publishes_unit(tmp_path, monkeypatch)
     assert len(calls) == 1 and 'show' in calls[0]
 
 
-def test_enable_requires_real_kernel_resource_enforcement(monkeypatch):
-    text = ('MemoryMax=536870912\nMemorySwapMax=0\nCPUQuotaPerSecUSec=1s\nTasksMax=128\n'
-            'ControlGroup=/system.slice/ar-local-native-ssh.service\n')
-    monkeypatch.setattr(native, 'run', lambda _: SimpleNamespace(stdout=text))
-    values = {'memory.max': '536870912', 'memory.swap.max': '0', 'pids.max': '128', 'cpu.max': '100000 100000'}
-    monkeypatch.setattr(Path, 'read_text', lambda self, **_: values[self.name])
-    native.live_limits()
+@pytest.fixture
+def kernel_limits(monkeypatch):
+    facts = dict(MemoryMax='536870912', MemorySwapMax='0', CPUQuotaPerSecUSec='1s', TasksMax='128',
+                 ControlGroup='/system.slice/ar-local-native-ssh.service', MainPID='42',
+                 InvocationID='a'*32, ActiveState='active', LimitAS='536870912', LimitASSoft='536870912')
+    values = {'memory.max': '536870912', 'memory.swap.max': '0', 'pids.max': '128', 'cpu.max': '100000 100000',
+              'cgroup.controllers': 'cpu pids memory',
+              'limits': 'Max address space         536870912            536870912            bytes\n'}
+    def command(args):
+        fields = args[-1].removeprefix('--property=').split(',')
+        return SimpleNamespace(stdout=''.join(f'{k}={facts[k]}\n' for k in fields))
+    monkeypatch.setattr(native, 'run', command)
+    monkeypatch.setattr(native, 'daemon_identity', lambda pid: 100)
+    def read(path, **_):
+        if path.name not in values: raise FileNotFoundError(path)
+        return values[path.name]
+    monkeypatch.setattr(Path, 'read_text', read)
+    monkeypatch.setattr(Path, 'exists', lambda path: path.name in values)
+    return values, facts
+
+
+def test_enable_requires_actual_supported_kernel_enforcement(kernel_limits):
+    values, facts = kernel_limits
+    assert native.live_limits()['listener_cgroup_memory_and_swap']['state'] == 'ENFORCED'
     for name, value in [('memory.max', 'max'), ('memory.swap.max', 'max'), ('pids.max', 'max'), ('cpu.max', 'max 100000')]:
         previous = values[name]; values[name] = value
         with pytest.raises(ValueError): native.live_limits()
         values[name] = previous
+
+
+def test_absent_kernel_memory_controller_is_explicit_not_fabricated(kernel_limits):
+    values, facts = kernel_limits
+    values['cgroup.controllers'] = 'cpuset cpu io pids'
+    del values['memory.max']; del values['memory.swap.max']
+    result = native.live_limits()
+    assert result['listener_cgroup_memory_and_swap'] == {'state': 'UNAVAILABLE', 'reason': 'kernel memory controller absent'}
+    assert result['address_space_bytes_per_process'] == 536870912
+    assert 'No aggregate authenticated-session' in result['scope']
+
+
+def test_supported_but_missing_memory_files_cannot_use_absent_fallback(kernel_limits):
+    values, facts = kernel_limits; del values['memory.max']
+    with pytest.raises(FileNotFoundError): native.live_limits()
+
+
+def test_actual_daemon_address_space_limit_and_identity_required(kernel_limits, monkeypatch):
+    values, facts = kernel_limits
+    previous = values['limits']; values['limits'] = 'Max address space unlimited unlimited bytes\n'
+    with pytest.raises(ValueError, match='actual native daemon'): native.live_limits()
+    values['limits'] = previous
+    calls = iter([100,101]); monkeypatch.setattr(native, 'daemon_identity', lambda pid: next(calls))
+    with pytest.raises(ValueError, match='daemon changed'): native.live_limits()
 
 
 def test_each_service_mutation_rechecks_window_after_preparation(monkeypatch):

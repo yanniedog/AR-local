@@ -30,6 +30,7 @@ are not runnable authority):
   "installer_sha256": "<SHA256 of exact pi_native_ssh.py bytes>",
   "address": "<verified tailscale0 IPv4 in 100.64.0.0/10>",
   "port": 2222,
+  "resource_policy": "native-ssh-cpu-pids-address-space-v1",
   "user": "<existing non-system operator>",
   "authorized_key": "ssh-ed25519 <existing owner public key, no options/comment>",
   "host_public_key": "ssh-ed25519 <independently retained native host public key>"
@@ -42,8 +43,25 @@ verifies the live interface, account, existing owner key and actual host key.
 The listener permits public-key authentication only, one owner and no root,
 password, keyboard-interactive, forwarding, user RC or user environment. It uses
 a standalone config with no global Include/Match inheritance. PAM account/session
-policy remains active. The listener cgroup is bounded to CPU 100%, 512 MiB, zero swap and 128
-processes (PAM may move authenticated sessions to their normal session scopes); heavy maintenance must run in separately supervised queue units.
+policy remains active. The named resource profile requires CPU 100% and 128 tasks in the listener cgroup,
+and a hard and soft 512 MiB virtual address-space limit **per process**. Fresh
+post-PAM session inheritance is independently tested. MaxStartups=2:50:4 begins
+probabilistic rejection at two unauthenticated connections and caps them at four;
+MaxSessions=4 limits four sessions per connection.
+These are not aggregate authenticated-connection limits. PAM moves authenticated
+sessions to their normal session scopes, outside this listener's CPU/task limits.
+Heavy maintenance must run in separately supervised queue units.
+
+MemoryMax=512M and MemorySwapMax=0 remain requested additional controls when the
+kernel supports them. Enablement verifies the actual cgroup files. If the root
+kernel controller list explicitly omits memory, the receipt says UNAVAILABLE;
+it never claims aggregate memory or zero-swap enforcement. A supported controller
+with missing or mismatched live files fails closed. The observed Pi lacks this
+controller; no kernel/reboot change is required for the named per-process profile.
+The existing native daemon used about 11 MiB virtual memory, with observed session
+peaks below 38 MiB; 512 MiB preserves ample SSH/SFTP headroom. These measurements
+are baseline observations, not an aggregate bound or a guarantee for arbitrary
+commands. Both process identity and actual /proc limits are checked before enable.
 
 ## Protected bootstrap and queue
 
@@ -93,6 +111,8 @@ fresh verbose proof that the existing key authenticated, a read-only sentinel,
 and server listener inventory proving only the approved tailnet IPv4/port.
 Verify SFTP with a small known byte sequence uploaded to a NEW private scratch
 file and downloaded unchanged; preserve its hash, never overwrite existing data.
+In that fresh authenticated session, verify both resource.RLIMIT_AS values equal
+536870912 after PAM and retain the exact result with the wire evidence.
 Reject fallback to port 22. Prove each negative case independently: a different key
 with the real key/agent disabled, password-only with keys disabled, and root login
 with the known owner key must all fail and execute no sentinel. Keep sanitized
@@ -109,6 +129,7 @@ A protected root-owned read-only proof JSON must contain exactly:
   "publickey_authenticated": true,
   "host_pin_matched": true,
   "sftp_roundtrip_verified": true,
+  "address_space_limit_inherited": true,
   "wrong_key_rejected": true,
   "password_rejected": true,
   "root_rejected": true,
@@ -120,8 +141,9 @@ These booleans are claims supported by the retained independent logs, not facts
 the installer manufactures. Review/hash the proof before root staging. Repeat the
 queued command with `--action enable --proof <protected-proof.json>
 --proof-sha256 <retained-SHA256>`. The helper requires fresh complete proof and
-unchanged installed bytes, effective systemd limits and actual kernel CPU/memory/
-swap/task enforcement; then enable persistence. Independently verify enabled
+unchanged installed bytes, daemon identity, actual hard/soft address-space limits
+and kernel CPU/task enforcement; it records memory/swap capability honestly,
+then enables persistence. Independently verify enabled
 and active state, exact service source/config and a fresh native login. Preserve
 port 22's original state. Actual reboot resilience remains unproven until a later
 authorized reboot; do not reboot solely for this task without a controlled plan.
