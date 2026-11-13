@@ -76,10 +76,18 @@ def status_report(status):
     provider_counts = collections.Counter()
     for name, number in (raw_counts or {}).items():
         provider_counts[safe(aliases.get(name, name), 64)] += number
+    state_totals = collections.Counter()
+    for name, number in state_counts.items():
+        state_totals[safe(name, 64)] += number
+    state_rows = status.get("provider_states")
+    states_agree = (not isinstance(state_rows, list) or not state_rows or
+                    (len(state_rows) <= MAX_PROVIDERS and state_totals == provider_counts and
+                     all(isinstance(row, dict) and count(row.get("failure_records")) is not None
+                         for row in state_rows)))
     total = count(status.get("total"))
     known = (total is not None and raw_counts is not None and
-             sum(raw_counts.values()) == total and
-             status.get("failure_provenance_complete") is not False)
+             sum(raw_counts.values()) == total and states_agree and
+             status.get("failure_provenance_complete") is True)
     samples = collections.Counter()
     requests = status.get("unresolved_requests")
     request_schema_known = isinstance(requests, list)

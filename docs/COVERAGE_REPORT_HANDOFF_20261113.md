@@ -64,6 +64,10 @@ unchanged so the historical discrepancy is still reproducible.
 
 Final focused validation after the producer correction: 83 report, ingest-status,
 product-change and compatibility tests passed; `git diff --check` passed.
+Review correction: aggregate acceptance requires explicit true failure
+provenance; a missing field cannot establish zero failures. Present provider-state
+counts must reconcile with the aggregate. Missing provenance and contradictory
+zero-count summaries are covered by the existing schema-drift regression.
 
 ## Current upstream diagnosis (retained November13 capture)
 

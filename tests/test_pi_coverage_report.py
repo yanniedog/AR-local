@@ -44,12 +44,16 @@ def test_partial_request_sample_does_not_reduce_aggregate_count():
 
 def test_unknown_or_inconsistent_schema_never_reports_complete_zero():
     assert report.status_report({"total": 11, "future_failures": []})["total"] is None
+    assert report.status_report({"total": 0, "by_provider": {}})["total"] is None
     status = captured_status()
     status["by_provider"] = {}
     assert report.status_report(status)["total"] is None
     status.update(total=0, failure_provenance_complete=False)
     assert report.status_report(status)["total"] is None
     assert report.status_report({"total": 0, "by_provider": {}, "failure_provenance_complete": True})["total"] == 0
+    status = captured_status()
+    status.update(total=0, by_provider={})
+    assert report.status_report(status)["total"] is None
 
 
 def test_capped_and_malformed_samples_stay_explicit(monkeypatch):
