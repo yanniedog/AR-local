@@ -1,10 +1,14 @@
 # Native SSH listener commissioning
 
 Tailscale SSH intercepts tailnet port 22 and uses its own authentication, including
-browser checks. A pinned native OpenSSH listener on a different, tailnet-only
-port supplies durable operator access without changing other users' Tailscale SSH
+browser checks. A pinned native OpenSSH listener on a different port bound to
+the exact tailnet IPv4 address supplies durable access without changing other users' Tailscale SSH
 policy or the existing native LAN listener. Node expiry and transport health
 remain separate. This document does not claim installation or wire acceptance.
+The address bind is not an ingress-interface firewall: Linux can route a packet
+for that address through another interface. This helper does not install firewall
+rules or claim that every accepted packet arrived through tailscale0. The existing
+tailnet/network policy and pinned public-key authentication remain separate controls.
 
 `pi_native_ssh.py` is a self-contained root commissioning helper. Default
 `--action validate` is read-only. It never edits the main sshd config, Tailscale,
@@ -47,6 +51,8 @@ are not runnable authority):
 Check that the selected dedicated port is unoccupied. Review the complete
 rendered config/unit and retain their SHA256 values with the approval. The helper
 verifies the live interface, account, existing owner key and actual host key.
+An optional comment printed by `ssh-keygen -y` is ignored only when comparing the
+derived host public key; approvals still require exactly the key type and bytes.
 The listener permits public-key authentication only, one owner and no root,
 password, keyboard-interactive, forwarding, user RC or user environment. It uses
 a standalone config with no global Include/Match inheritance. PAM account/session
@@ -97,7 +103,10 @@ Default validation can precede installation. `install` refuses any pre-existing
 owned directory/unit/service; it creates no active or enabled service. It retains
 partial preparation on error for inspection. It validates `sshd -t` and effective
 `sshd -T -C user/addr/laddr/lport` before publishing the unit. Files are create-only,
-fsynced and read-only. No ambiguous upgrade or deletion is implemented.
+fsynced and read-only, including parent-directory durability. It also refuses
+pre-existing dependencies or aliases (including dangling links) in systemd's unit
+search paths, and verifies disabled state after publication and before start.
+No ambiguous upgrade or deletion is implemented.
 
 Repeat the same queued invocation with `--action start`. It checks exact installed
 bytes, reloads systemd, rejects unexpected drop-ins/fragments, starts only this
@@ -105,8 +114,9 @@ listener and checks its active state. Start remains **disabled at boot** pending
 wire proofs. If tailscale0's address is absent during boot, exact binding fails;
 systemd retries at 30-second intervals without a permanent short-outage start-limit
 lockout. There is no wildcard/FreeBind/public fallback. TimeoutStopSec=20s and
-KillMode=control-group also stop this listener's sessions; keep the old LAN
-session for recovery.
+KillMode=control-group stop processes remaining in this listener's cgroup. PAM
+sessions already moved into separate session scopes survive listener rollback;
+rollback is not session revocation. Keep the old LAN session for recovery.
 
 ## Independent wire proof and enable
 
@@ -145,7 +155,9 @@ A protected root-owned read-only proof JSON must contain exactly:
 ```
 
 These booleans are claims supported by the retained independent logs, not facts
-the installer manufactures. Review/hash the proof before root staging. Repeat the
+the installer manufactures. `exclusive_tailnet_binding` means only the approved
+socket address/port was observed; it does not assert ingress-interface filtering.
+Review/hash the proof before root staging. Repeat the
 queued command with `--action enable --proof <protected-proof.json>
 --proof-sha256 <retained-SHA256>`. The helper requires fresh complete proof and
 unchanged installed bytes, daemon identity, actual hard/soft address-space limits
@@ -165,11 +177,15 @@ after an ambiguous disconnect.
 
 From the retained native LAN session, use the same reviewed protected helper and
 approval under a fresh exclusive host+AR-local claim with `--action rollback`.
-It first verifies every owned byte; drift blocks rollback for inspection. It
+It first verifies every owned byte and loaded fragment/drop-ins; drift blocks
+rollback for inspection. It
 disables/stops only this dedicated listener and verifies no PID/cgroup remains
 (inactive or stopped failed state), copies
 its exact unit to retained `retired-unit.service`, removes only that exact unit
-and reloads systemd. Config/public key/approval stay intact. Preserve all logs.
+and reloads systemd. The unit-directory removal is fsynced. A retry can finish an
+interrupted retirement/reload only when all retained bytes match and the listener
+has no PID/cgroup; it never replaces prior evidence. Config/public key/approval
+stay intact. Preserve all logs.
 Existing port 22, Tailscale settings, owner keys and host keys are untouched. Check
 for subsequent local user edits before restoring the backed-up client config;
 never blindly replace their work. Partial preparation and future upgrades need

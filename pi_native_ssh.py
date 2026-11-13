@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import uuid
 from zoneinfo import ZoneInfo
 
 ROOT = Path('/etc/ar-local-native-ssh')
@@ -30,6 +31,8 @@ TZ = ZoneInfo('Australia/Hobart')
 SCHEMA = 'ar-local-native-ssh-v1'
 RESOURCE_POLICY = 'native-ssh-cpu-pids-address-space-v1'
 ADDRESS_BYTES = 512 * 1024**2
+QUEUE_NAME = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
+QUEUE_UNIT = re.compile(r'(?:ar-local-(?:daily|daily-watchdog|ingest-now)|ar-local-plain-backup-[0-9a-f]{32}|ar-local-ci-activate-[0-9a-f]{64}|ar-local-payload-[a-zA-Z0-9_.-]+|ar-local-queue-task-[a-zA-Z0-9_.-]+|shared-pi-task-[a-zA-Z0-9_.-]+)\.service\Z')
 
 
 def unique(pairs):
@@ -202,6 +205,8 @@ def queue_claim(state, cgroup, boot, properties, lease):
     job = matches[0]
     if any(other is not job and other.get('state') != 'waiting' for other in jobs):
         raise ValueError('another active or ambiguous queue claim exists')
+    for record in jobs:
+        queue_record(record)
     expected_lease = {'pid': str(job.get('pid')), 'boot_id': boot,
                       'role': 'shared-pi-host-task:' + str(job.get('id')), 'recovery': 'manual'}
     if (not re.fullmatch(r'/system.slice/ar-local-queue-task-[0-9a-f]{32}\.service', cgroup)
@@ -216,6 +221,42 @@ def queue_claim(state, cgroup, boot, properties, lease):
             or lease != expected_lease):
         raise ValueError('exclusive current host/native ownership differs')
     return job
+
+
+def queue_record(job):
+    """Self-contained copy of the installed queue's complete record contract.
+
+    Waiting records already own their supervisor identity, before admission.
+    Never import owner-writable queue modules into this privileged helper.
+    """
+    required = {'id', 'project', 'resources', 'mode', 'cpu_slots', 'max_duration_seconds',
+                'state', 'sequence', 'queued_monotonic', 'pid', 'start_ticks', 'boot_id',
+                'unit', 'invocation_id', 'cgroup'}
+    if not required <= set(job) or set(job) - required - {'command_started'}:
+        raise ValueError('incomplete queue record')
+    if job['state'] not in ('waiting', 'running', 'quarantined') or ('command_started' in job and type(job['command_started']) is not bool):
+        raise ValueError('invalid queue state')
+    if any(not isinstance(job[k], str) or not QUEUE_NAME.fullmatch(job[k]) for k in ('id', 'project')):
+        raise ValueError('invalid queue name')
+    if any(not isinstance(job[k], str) or not 1 <= len(job[k]) <= 256 for k in ('boot_id', 'unit', 'invocation_id', 'cgroup')):
+        raise ValueError('invalid queue ownership')
+    if (str(uuid.UUID(job['boot_id'])) != job['boot_id'] or not QUEUE_UNIT.fullmatch(job['unit'])
+            or not job['cgroup'].startswith('/') or not job['cgroup'].endswith('/' + job['unit'])
+            or '..' in Path(job['cgroup']).parts or not re.fullmatch('[0-9a-f]{32}', job['invocation_id'])):
+        raise ValueError('invalid queue identity')
+    limits = {'pid': (1, 2**31 - 1), 'start_ticks': (1, 2**63 - 1), 'sequence': (0, 2**63 - 1),
+              'cpu_slots': (1, 3 if job['project'] == 'ar-local' else 1),
+              'max_duration_seconds': (1, 21600 if job['project'] == 'ar-local' else 1800)}
+    if any(type(job[k]) is not int or not low <= job[k] <= high for k, (low, high) in limits.items()):
+        raise ValueError('invalid queue bounds')
+    resources = job['resources']
+    if (job['mode'] not in ('shared', 'exclusive') or not isinstance(resources, list)
+            or not 1 <= len(resources) <= 32
+            or any(not isinstance(r, str) or not QUEUE_NAME.fullmatch(r) for r in resources)
+            or len(set(resources)) != len(resources)
+            or (job['project'] == 'ar-local' and 'ar-local' not in resources)
+            or type(job['queued_monotonic']) not in (int, float) or not 0 <= job['queued_monotonic'] < 1e15):
+        raise ValueError('invalid queue resources or age')
 
 
 def admit(uid):
@@ -244,13 +285,22 @@ def host_validate(value):
     if not any(line.split()[:2] == value['authorized_key'].split() for line in keys):
         raise ValueError('approved key must already be an option-free owner key')
     protected(HOST_KEY, readonly=False, limit=16384)
-    actual = run(['/usr/bin/ssh-keygen', '-y', '-f', str(HOST_KEY)]).stdout.strip()
-    if public_key(actual) != value['host_public_key']:
+    actual = run(['/usr/bin/ssh-keygen', '-y', '-f', str(HOST_KEY)]).stdout
+    if derived_host_key(actual) != value['host_public_key']:
         raise ValueError('native host public key differs from independently retained key')
     addresses = json.loads(run(['/usr/sbin/ip', '-j', '-4', 'addr', 'show', 'dev', 'tailscale0']).stdout)
     if value['address'] not in {a.get('local') for item in addresses for a in item.get('addr_info', [])}:
         raise ValueError('approved address is not on tailscale0')
     return owner.pw_uid
+
+
+def derived_host_key(output):
+    # ssh-keygen -y can retain the private key's comment. Only this trusted
+    # command output permits comments; approval/authorized-key grammar stays strict.
+    lines = output.splitlines()
+    if len(lines) != 1 or len(lines[0].split()) < 2:
+        raise ValueError('one derived native host public key required')
+    return public_key(' '.join(lines[0].split()[:2]))
 
 
 def effective_validate(value, path):
@@ -283,24 +333,63 @@ def protected_directory(path):
             raise ValueError('destination parents must remain root controlled')
 
 
-def create(path, body, mode=0o444):
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
-    with os.fdopen(fd, 'wb') as stream:
-        stream.write(body); stream.flush(); os.fchmod(stream.fileno(), mode); os.fsync(stream.fileno())
-    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
 
 
-def installed(bodies, approval):
+def create(path, body, mode=0o444):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(body); stream.flush(); os.fchmod(stream.fileno(), mode); os.fsync(stream.fileno())
+    sync_directory(path.parent)
+
+
+def installed(bodies, approval, *, retired=False):
     paths = {ROOT / name: body for name, body in bodies.items() if name != 'unit'}
-    paths[UNIT] = bodies['unit']; paths[ROOT / 'approval.json'] = approval
+    paths[ROOT / 'retired-unit.service' if retired else UNIT] = bodies['unit']
+    paths[ROOT / 'approval.json'] = approval
     for path, body in paths.items():
         if protected(path) != body:
             raise ValueError('commissioned path changed; preserve and inspect')
     return paths
+
+
+def no_existing_links():
+    """Inspect manager search paths, including dangling enablement/alias links."""
+    roots = run(['/usr/bin/systemd-analyze', 'unit-paths']).stdout.splitlines()
+    if not 1 <= len(roots) <= 64 or any(not Path(p).is_absolute() for p in roots):
+        raise ValueError('bounded systemd unit search paths required')
+    remaining = 32768
+    for name in roots:
+        root = Path(name)
+        if not root.exists():
+            continue
+        root = root.resolve()
+        protected_directory(root)
+        pending = [root]
+        while pending:
+            directory = pending.pop()
+            with os.scandir(directory) as entries:
+                for item in entries:
+                    remaining -= 1
+                    if remaining < 0:
+                        raise ValueError('systemd link inventory exceeds bound')
+                    path = Path(item.path)
+                    if item.name == SERVICE or (item.is_symlink() and path.resolve() == UNIT):
+                        raise ValueError('existing service enablement or alias must be inspected')
+                    if directory == root and item.name.endswith(('.wants', '.requires', '.upholds')):
+                        protected_directory(path)
+                        pending.append(path)
+
+
+def disabled():
+    result = run(['/usr/bin/systemctl', 'is-enabled', SERVICE], check=False)
+    if result.returncode != 1 or result.stdout.strip() != 'disabled':
+        raise ValueError('listener must remain disabled pending wire proof')
 
 
 def mutate(action, value, bodies, approval, uid, proof=None, evidence=None):
@@ -312,24 +401,31 @@ def mutate(action, value, bodies, approval, uid, proof=None, evidence=None):
         state = run(['/usr/bin/systemctl', 'show', SERVICE, '--property=LoadState']).stdout.strip()
         if state != 'LoadState=not-found':
             raise ValueError('existing service must not be replaced')
+        no_existing_links()
+        admit(uid)
         # Retain any failed preparation for inspection. No service definition
         # exists until syntax/effective authentication checks succeed.
         ROOT.mkdir(mode=0o755)
         os.chmod(ROOT, 0o755)
+        sync_directory(ROOT.parent)
         create(ROOT / 'approval.json', approval)
         for name in ('authorized_keys', 'sshd_config'):
+            admit(uid)
             create(ROOT / name, bodies[name])
         effective_validate(value, ROOT / 'sshd_config')
         admit(uid)
         create(UNIT, bodies['unit'])
+        disabled()
         return 'INSTALLED_DISABLED'
+    if action == 'rollback':
+        return rollback(bodies, approval, uid)
     paths = installed(bodies, approval)
-    if action != 'rollback':
-        effective_validate(value, ROOT / 'sshd_config')
+    effective_validate(value, ROOT / 'sshd_config')
     admit(uid)
     if action == 'start':
         run(['/usr/bin/systemctl', 'daemon-reload'])
         service_definition()
+        disabled()
         run(['/usr/bin/systemctl', 'start', SERVICE])
         run(['/usr/bin/systemctl', 'is-active', SERVICE])
         return 'STARTED_NOT_ENABLED'
@@ -342,31 +438,58 @@ def mutate(action, value, bodies, approval, uid, proof=None, evidence=None):
             evidence['resource_evidence'] = limits
         run(['/usr/bin/systemctl', 'enable', SERVICE])
         return 'ENABLED_AFTER_WIRE_PROOF'
-    if action == 'rollback':
-        run(['/usr/bin/systemctl', 'disable', '--now', SERVICE])
-        stopped = dict(line.split('=', 1) for line in run(['/usr/bin/systemctl', 'show', SERVICE,
-                       '--property=ActiveState,MainPID,ControlGroup']).stdout.splitlines())
-        if (stopped.get('ActiveState') not in ('inactive', 'failed')
-                or stopped.get('MainPID') != '0' or stopped.get('ControlGroup') != ''):
-            raise ValueError('listener did not stop; preserve all definitions')
-        # Preserve every approval/config/key byte. Only our exact unit moves to
-        # an evidence name; nothing about the incumbent port22 service changes.
-        retired = ROOT / 'retired-unit.service'
-        if retired.exists() or retired.is_symlink():
-            raise ValueError('previous rollback evidence exists')
-        installed(bodies, approval)
-        admit(uid)
-        create(retired, paths[UNIT]); UNIT.unlink()
-        run(['/usr/bin/systemctl', 'daemon-reload'])
-        return 'ROLLED_BACK_EVIDENCE_RETAINED'
     raise ValueError('unsupported mutation')
 
 
-def service_definition():
+def stopped_listener():
+    stopped = dict(line.split('=', 1) for line in run(['/usr/bin/systemctl', 'show', SERVICE,
+                   '--property=ActiveState,MainPID,ControlGroup']).stdout.splitlines())
+    if (stopped.get('ActiveState') not in ('inactive', 'failed')
+            or stopped.get('MainPID') != '0' or stopped.get('ControlGroup') != ''):
+        raise ValueError('listener did not stop; preserve all definitions')
+
+
+def rollback(bodies, approval, uid):
+    retired = ROOT / 'retired-unit.service'
+    unit_present = UNIT.exists() or UNIT.is_symlink()
+    installed(bodies, approval, retired=not unit_present)
+    if retired.exists() or retired.is_symlink():
+        if protected(retired) != bodies['unit']:
+            raise ValueError('previous rollback evidence differs')
+    admit(uid)
+    if unit_present:
+        # Load a just-installed definition; refuse pending or loaded overrides
+        # before invoking any stop hook. No network/key readiness is required.
+        run(['/usr/bin/systemctl', 'daemon-reload'])
+        service_definition()
+        run(['/usr/bin/systemctl', 'disable', '--now', SERVICE])
+        stopped_listener()
+        installed(bodies, approval)
+        admit(uid)
+        if not retired.exists():
+            create(retired, bodies['unit'])
+        admit(uid)
+        UNIT.unlink()
+        sync_directory(UNIT.parent)
+    else:
+        # A previous attempt may have durably retired the file, then expired
+        # before reload. Resume only with the exact retained artifacts and no PID.
+        stopped_listener()
+        service_definition(allow_retired=True)
+        admit(uid)
+        sync_directory(UNIT.parent)
+    run(['/usr/bin/systemctl', 'daemon-reload'])
+    stopped_listener()
+    service_definition(allow_retired=True)
+    return 'ROLLED_BACK_EVIDENCE_RETAINED'
+
+
+def service_definition(*, allow_retired=False):
     result = run(['/usr/bin/systemctl', 'show', SERVICE, '--property=FragmentPath,DropInPaths'])
     facts = dict(line.split('=', 1) for line in result.stdout.splitlines())
-    if facts != {'FragmentPath': str(UNIT), 'DropInPaths': ''}:
-        raise ValueError('unexpected service override; do not start or enable')
+    expected = [str(UNIT), ''] if allow_retired else [str(UNIT)]
+    if set(facts) != {'FragmentPath', 'DropInPaths'} or facts['FragmentPath'] not in expected or facts['DropInPaths']:
+        raise ValueError('unexpected service override; do not mutate listener')
 
 
 def daemon_identity(pid):
