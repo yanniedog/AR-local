@@ -19,7 +19,8 @@ are refused: supply verified committed bytes with their matching original
 contract, never fabricate a replacement contract around arbitrary database bytes.
 The connection uses `mode=ro&immutable=1`, query-only, a 2MiB cache, disabled mmap,
 bounded SQLite rows and a cooperative deadline. The existing product index drives
-streaming; no complete export JSON or fact table is loaded into memory. Database
+streaming in product-key/fact-ID order with its existing primary-key index; no
+complete export JSON, fact table or full-table sort is loaded into memory. Database
 and contract identities/hashes are rechecked before completion. Symlink paths,
 existing destinations and destinations overlapping source trees are refused.
 
@@ -34,9 +35,14 @@ the supported normalizer keep their source values and paths.
 
 The authoritative machine contract is `app_payload_product_evidence_contract.py`.
 Every object has an exact field set; JSON duplicate keys/nonfinite values are
-rejected. `snapshot.json` is an atomically created, create-once completion marker.
-An interrupted/failed build may leave private page files but no completed marker.
-There is no automatic deletion or overwrite of prior attempts.
+rejected. Generation IDs use the canonical `obs-YYYY-MM-DD-<16 lowercase hex>`
+contract format. `snapshot.json` is an atomically created, create-once completion
+marker. Page files are flushed/fsynced before the marker; on POSIX, the output
+directory is synced before and after marker linking and after temporary unlinking.
+The existing portable directory-sync helper is a no-op on Windows. Sync errors
+propagate. Failure before linking leaves no marker; failure after linking may
+retain the complete marker/pages but is not a successful command result. Preserve
+that evidence for verification; never overwrite or automatically delete attempts.
 
 Top-level fields are `schema`, `source`, `scope`, `publication_authorized=false`,
 `selection_verified=false`, `coverage=complete_for_bound_fact_table_only`,
@@ -78,6 +84,8 @@ them: database4GiB; total raw evidence1GiB/compressed256MiB; page512KiB raw/1MiB
 compressed and1,024 facts; index8MiB;20,000 products/pages;3,000,000 total facts;
 50,000 facts/product;600 seconds per operation. Oversize individual facts,
 products, pages, metadata, cumulative work or expired deadlines fail explicitly.
+Database hashing counts actual streamed bytes and refuses growth past the cap,
+rather than trusting only the initial file size.
 No rows are dropped to satisfy a limit. Limits apply to this offline format only;
 they neither raise existing mobile/release budgets nor establish Pi resource
 qualification. Resource/size measurements must precede delivery layout selection.

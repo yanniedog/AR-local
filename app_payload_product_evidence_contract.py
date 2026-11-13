@@ -114,6 +114,8 @@ def validate_fact(value):
     for key in ("min_value", "max_value"):
         bound = value[key]
         require(bound is None or type(bound) in (int, float) and math.isfinite(bound), "invalid numeric bound")
+    has_bound = value["min_value"] is not None or value["max_value"] is not None
+    require(has_bound == (kind == "range"), "range requires a bound; scalar facts cannot have range bounds")
     canonical(value)
 
 
@@ -122,7 +124,9 @@ def validate_source(value):
                    "contract_file_sha256", "contract_normalization", "fact_normalization", "database"))
     require(date.fromisoformat(value["observation_date"]).isoformat() == value["observation_date"], "invalid date")
     require(value["observation_state"] in {"complete", "partial", "failed"}, "invalid source observation state")
-    require(type(value["generation_id"]) is str and value["generation_id"].startswith("obs-" + value["observation_date"] + "-"), "wrong generation date")
+    require(type(value["generation_id"]) is str and re.fullmatch(
+        r"obs-" + re.escape(value["observation_date"]) + r"-[0-9a-f]{16}", value["generation_id"]),
+        "invalid generation identity/date")
     for key in ("contract_digest", "source_generation_digest", "contract_file_sha256"):
         require(type(value[key]) is str and SHA.fullmatch(value[key]), "invalid source digest")
     require(type(value["contract_normalization"]) is str and value["contract_normalization"], "missing contract normalization")
