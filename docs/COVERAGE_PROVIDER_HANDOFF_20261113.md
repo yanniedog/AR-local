@@ -1,6 +1,7 @@
 # Provider coverage repair handoff — 2026-11-13
 
-Status: two focused repairs implemented and locally verified; PR publication pending. No Pi,
+Status: three focused repairs implemented; draft PR #1130 requires refreshed
+exact-head CI/review after the latest extension. No Pi,
 publication, backup, or runtime changes made by this worker.
 
 ## Resume
@@ -44,13 +45,27 @@ publication, backup, or runtime changes made by this worker.
    authoritative full response backstop. Unknown future fields are not
    automatically searchable/displayed; raw retention and consumer feature
    completeness are separate acceptance bars.
-6. Broader confirmed design gap, not changed in this patch: `build_outputs`
+6. Repaired population-absence gap: `build_outputs`
    computes change events before `cdr_daily` writes the provider-population
    report. A successful but empty index has no HTTP failure, so the current
    failure-only removal guards can emit removals before finalization records
-   `UNVERIFIED_SOURCE_ABSENCE`. Follow-up should make the diff coverage-aware
-   using the same trusted population identities, rather than infer removals or
-   fabricate HTTP failures. This also matters when publishing a degraded day.
+   `UNVERIFIED_SOURCE_ABSENCE`. The export now supplies its actual observed
+   provider set to the missing-capture guard before diffing. Missing prior
+   products from a wholly absent provider are suppressed as
+   `provider_population_absent`, without carrying any prior rows or inventing
+   HTTP failures. Existing index/holder/detail/classification failures still
+   suppress attributable gaps. A single-product removal remains detectable
+   when the provider retains other current products and has no relevant capture
+   failure. Counts by reason are emitted in `product_change_summary`.
+   Provider labels use the existing fact identity and casefold matching; a
+   rename cannot authorize a removal. The last-product withdrawal remains
+   unconfirmed until affirmative retirement evidence is supported.
+   This is conservative event suppression, not authority to declare a provider
+   healthy or to bypass contract-bound population/recovery checks.
+7. Existing immutable exports are unchanged. The publisher/consumer must also
+   filter removal events in retained historical partial exports against their
+   bound coverage. Publication worker was notified; the new source guard alone
+   does not repair historic false events.
 
 ## Evidence still needed
 
@@ -88,6 +103,12 @@ publication, backup, or runtime changes made by this worker.
   that interpreter lacks `jsonschema`; initial unfiltered collection also hit an
   incompatible installed pytest-asyncio. No shared packages were modified.
 - Full producer and platform CI remain mandatory on the exact PR head.
+- Follow-up coverage/export suites: **107 passed**, including the untouched
+  retained Westpac empty-index response with genuine prior-index identity facts,
+  partial index/holder/detail controls, true single-product removal and provider
+  rename. No test is Pi or current-provider acceptance evidence.
+- Final combined ten-suite run: **210 passed, 2 pre-existing openpyxl style
+  warnings**, Python 3.10.9, 8.18 seconds; `git diff --check` passed.
 
 Windows process
 helper inspected: `process_safety.py` uses native handles on Windows and confines
