@@ -7,13 +7,15 @@ local route is unavailable. The actual requested command executes once;
 disconnects never trigger an automatic replay of a possibly completed mutation.
 The previous configuration and accepted host pins are preserved privately.
 
-**Nov14 checkpoint: LAN access is verified; durable tailnet fallback is still
-being repaired.** Wire inspection identified OpenSSH on the LAN and Tailscale
-SSH on tailnet port 22. The successful fallback probe established connectivity,
-not freedom from future Tailscale check-mode reauthentication. A dedicated
-key-only OpenSSH listener bound only to the private tailnet address is being
-prepared. Do not claim it is installed until its controlled installation and
-positive/negative authentication tests are recorded in the recovery handoff.
+**Nov14 checkpoint: native LAN access and native tailnet fallback are verified.**
+The separately installed `sshd-ar-local-tailnet.service` uses port 2222 and the
+retained native host/owner keys. It passed native-banner, actual public-key,
+wrong-key/password/root rejection, SFTP round-trip, resource and unchanged-port-22
+checks before boot enablement. Canonical access prefers LAN; a forced failed LAN
+probe successfully used native tailnet SSH, and a wrong host pin prevented command
+execution. This route does not use Tailscale SSH check-mode browser authentication.
+Existing Tailscale SSH on port 22 remains separate. Enabled configuration is proven;
+a physical reboot was not performed. Address binding is not an ingress firewall.
 
 The transport choice does not grant deployment authority. Keep the shared host
 queue, production leases, exact-source qualification, resource limits and
@@ -36,9 +38,12 @@ worked. That network fault is separate from SSH check-mode browser prompts.
 Avoid logging out or forcing reauthentication as a generic repair. Replacing
 transport routes must preserve strict host verification and existing users.
 
-For resumption, consult the private `runtime-handoff.md`,
+For resumption, consult checkpoint 23 of the progressive repair handoff and private
+`native-canonical-route-0d3f4b8d/installed-result.json` (SHA256
+`4f0e647e3f65f04f6af9db09151a809f11b4be323c288795f07dc37f23a6e009`).
+Preserve `runtime-handoff.md`,
 `native-ssh-route-install.json`, `native-ssh-route-tests.json`, and
 `native-vs-tailscale-ssh-proof.json` under the Nov13 investigation directory.
-The last receipt corrects the initial interpretation of the fallback as native
-OpenSSH. A passing connection alone is insufficient proof of its authentication
-method or long-term availability.
+The last historical receipt corrected the initial interpretation of the old
+port-22 fallback. New native acceptance is supported by the explicit wire and
+client checks above. A connection alone is insufficient authentication evidence.
