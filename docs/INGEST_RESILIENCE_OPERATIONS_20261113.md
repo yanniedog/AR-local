@@ -41,7 +41,7 @@ Preferred D027 source activation is documented in `docs/CDR_QUALITY_DEPLOY.md`. 
 "$PY" "$C/pi_cdr_quality_activate.py" activate --manifest "$OP/activation.json" --manifest-sha256 "$RETURNED_SEAL_SHA" --dry-run
 ```
 
-Remove only `--dry-run` after current technical gates pass. Seal expires after six hours or 22:00 Hobart, whichever comes first; activation needs at least 30 minutes remaining. Current observations and publication controls are bound into the seal. This source route does not commission unrelated service bundles. Do not confuse quality `canary.json` with the distinct restricted-deployment `canary-acceptance.json`/approved-plan route or fill repository approval variables with the wrong manifest hash.
+Remove only `--dry-run` after current technical gates pass. With permanent-window PR #1139, seal expires after six hours or the next 00:30 Hobart cutoff, whichever comes first; activation needs at least 30 minutes remaining. Current observations and publication controls are bound into the seal. This source route does not commission unrelated service bundles. Do not confuse quality `canary.json` with the distinct restricted-deployment `canary-acceptance.json`/approved-plan route or fill repository approval variables with the wrong manifest hash. The restricted CI bundle was independently found **absent**, not installed with an old cutoff; do not commission that separate system to perform this repair.
 
 After qualified deployment, the existing production recapture dry run is:
 
