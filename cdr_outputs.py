@@ -432,8 +432,10 @@ def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any
             "product_facts": banks["product_facts"],
             "product_changes": banks.get("product_changes", []),
             "change_summary": [{
-                **{key: value for key, value in (banks.get("product_change_summary") or {}).items() if key != "products"},
+                **{key: value for key, value in (banks.get("product_change_summary") or {}).items()
+                   if key not in {"products", "suppression_reasons"}},
                 "products_json": json.dumps((banks.get("product_change_summary") or {}).get("products") or {}, sort_keys=True),
+                "suppression_reasons_json": json.dumps((banks.get("product_change_summary") or {}).get("suppression_reasons") or {}, sort_keys=True),
             }],
             "failures": banks["failures"],
         },
@@ -528,14 +530,15 @@ def _exclude_failed_missing_products(
 
 
 def _missing_capture_reason(key, failed_providers, failed_products, observed_providers):
-    # A whole provider's population disappearing is unverified source absence,
-    # even when its empty index returned HTTP 200. Do not infer retirement.
-    if observed_providers is not None and key[0] not in observed_providers:
-        return "provider_population_absent"
+    # Report a known cause before the more general missing-population symptom.
     if key[0] in failed_providers:
         return "provider_capture_incomplete"
     if (key[0], key[1]) in failed_products:
         return "product_capture_failed"
+    # A whole provider's population disappearing is unverified source absence,
+    # even when its empty index returned HTTP 200. Do not infer retirement.
+    if observed_providers is not None and key[0] not in observed_providers:
+        return "provider_population_absent"
     return None
 
 
