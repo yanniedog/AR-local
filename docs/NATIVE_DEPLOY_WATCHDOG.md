@@ -8,6 +8,11 @@ does not fetch, update refs/index/FETCH_HEAD, switch checkouts, or deploy.
 `pi_deploy_checkout.py` compares the complete index with HEAD, rejects masked
 index entries and untracked files, hashes actual tracked bytes/modes without
 Git clean filters or external diff, and checks that HEAD stayed fixed. The
+Pi checker anchors traversal to directory descriptors with `O_NOFOLLOW`, checks
+each parent inode, and repeats index/mask/untracked and file metadata checks
+after hashing to reject concurrent changes. This is a bounded observation;
+source immutability and deployment ownership remain required, not replaced by
+the observer. The
 checker is carried inline from the reviewed caller with Python isolated mode
 and bytecode writes disabled; it needs no new helper installed in an older Pi
 checkout and writes no remote script or cache. The site checkout must equal its

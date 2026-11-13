@@ -565,9 +565,9 @@ def verify_sync(
         return EXIT_SSH
 
     head_ar = snap["AR_HEAD"]
-    origin_ar = snap["AR_ORIGIN"]
+    origin_ar = snap.get("AR_ORIGIN", "")
     head_site = snap["SITE_HEAD"]
-    origin_site = snap["SITE_ORIGIN"]
+    origin_site = snap.get("SITE_ORIGIN", "")
 
     if _snap_has_dirty_repos(snap):
         return EXIT_VERIFY_FAIL
@@ -607,6 +607,8 @@ def verify_sync(
                 raise ValueError("service evidence changed during documentation proof")
             snap = fresh
             print(f"pi_deploy_verify: documentation_ahead deployed={head_ar} main={local_main} paths={paths}")
+        if origin_main_sha_local() != local_main:
+            raise ValueError("remote main changed during observation")
         if origin_ar != local_main or origin_site != head_site:
             print("pi_deploy_verify: cached remote refs stale; live remote identities verified without fetch")
     except (ValueError, TypeError, OSError, http.client.HTTPException) as exc:

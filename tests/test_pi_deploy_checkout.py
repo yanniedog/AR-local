@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+import pi_deploy_checkout as checkout
 from pi_deploy_checkout import checkout_binding, inline_program
 
 
@@ -70,6 +71,43 @@ def test_external_clean_filter_is_never_invoked(repo):
     with pytest.raises(ValueError, match="tracked bytes"):
         checkout_binding(repo)
     assert not (repo / "FILTER_RAN").exists()
+
+
+@pytest.mark.parametrize("mutation", ["bytes", "skip-worktree", "untracked"])
+def test_state_changed_after_hash_cannot_be_certified(repo, monkeypatch, mutation):
+    original = checkout._blob
+    def change(*args):
+        result = original(*args)
+        if mutation == "bytes": (repo / "runtime.py").write_bytes(b"changed after hash\n")
+        if mutation == "skip-worktree": git(repo, "update-index", "--skip-worktree", "runtime.py")
+        if mutation == "untracked": (repo / "late.py").write_bytes(b"new")
+        return result
+    monkeypatch.setattr(checkout, "_blob", change)
+    with pytest.raises(ValueError):
+        checkout_binding(repo)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Pi uses directory descriptors and O_NOFOLLOW")
+def test_parent_swapped_for_symlink_is_not_followed(repo, tmp_path, monkeypatch):
+    folder = repo / "nested"
+    folder.mkdir()
+    git(repo, "mv", "runtime.py", "nested/runtime.py")
+    git(repo, "commit", "-m", "nested")
+    outside = tmp_path.parent / (tmp_path.name + "-outside")
+    outside.mkdir()
+    (outside / "runtime.py").write_bytes(b"checked source\n")
+    original = os.open
+    def race(path, flags, *args, **kwargs):
+        if path == "nested":
+            assert flags & os.O_NOFOLLOW
+            folder.rename(repo / "previous")
+            os.symlink(outside, folder)
+        return original(path, flags, *args, **kwargs)
+    monkeypatch.setattr(checkout.os, "open", race)
+    # Preserve capability discovery when replacing the callable for this race.
+    monkeypatch.setattr(checkout.os, "supports_dir_fd", {*os.supports_dir_fd, race})
+    with pytest.raises((ValueError, OSError)):
+        checkout_binding(repo)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file and symlink mode contract")

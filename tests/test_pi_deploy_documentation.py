@@ -151,6 +151,20 @@ def test_matching_live_head_ignores_stale_cached_ref_without_api(monkeypatch):
     assert verify.verify_sync() == verify.EXIT_OK
 
 
+def test_missing_cached_ref_keys_are_informational(monkeypatch):
+    snap = snapshot(B)
+    del snap["AR_ORIGIN"], snap["SITE_ORIGIN"]
+    prepare(monkeypatch, snap)
+    assert verify.verify_sync() == verify.EXIT_OK
+
+
+def test_matching_head_still_rechecks_live_main(monkeypatch):
+    prepare(monkeypatch, snapshot(B))
+    values = iter([B, SITE])
+    monkeypatch.setattr(verify, "origin_main_sha_local", lambda: next(values))
+    assert verify.verify_sync() == verify.EXIT_VERIFY_FAIL
+
+
 def test_native_snapshot_has_no_git_mutations_or_filter_operations():
     script = _snapshot_script("/srv/ar", "/srv/site", "/srv/data", "origin", fetch=False)
     for forbidden in (" fetch ", " status ", " diff ", " checkout ", " reset ", " pull "):
