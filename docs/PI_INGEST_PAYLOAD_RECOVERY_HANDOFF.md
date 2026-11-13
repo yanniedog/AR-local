@@ -37308,3 +37308,12 @@ key and secret.
 | Field | Value |
 | --- | --- |
 | Current phase / gates | Guarded canary PASS on `96f3d17e` (run 42400482808). Deployment not started: needs the sealed acceptance release, root-approved plan and `AR_PI_CANARY_*` / `AR_PI_APPROVED_PLAN` variables (owner). Watchdog SSH broken since 2026-10-30 (owner). Production HEAD unchanged (`8590e238`). |
+
+
+## 2026-11-13 22:17 Hobart - daily ingest resilience repair checkpoint
+
+Resume from docs/INGEST_RESILIENCE_REPAIR_20261113.md checkpoint 4 and its specialist handoffs (public PR #1129). The operator reaffirmed the FULL historical-ledger review requirement; this team completed the full runbook and ledger with exact reconstruction/range receipts under the private .work/ingest-resilience-20261113 directory. Original ledger prefix SHA256: 9eb0d3483e9872a0ea0084994cd0372f7524f99e00f62c53688320527a8697a8. No historical commands were replayed.
+
+Read-only live evidence: production remains clean 8590e238d00f093e7f6d20fccfc2377c7abf1aec; Nov13 selected observation obs-2026-11-13-c4352b79d899c191 is partial, 11 unresolved requests across 8 providers. Nov7-13 selected-generation raw Drive archives have matching PASS receipts; Nov13 archive 205329655 bytes, SHA256 b40a772cf7cd6bd1507e3fcd1bd5d194bfc8e1139d07de579ae7ec960a746a98. Full historical/physical recovery remains unproven. Existing Drive hold files were absent when checked; none were removed. The current operator request explicitly authorizes daily backups, subject to retained technical recovery/ownership gates.
+
+PR #1130 merged as 6143102d7f10696407629ffe04f83fe83c12846b; #1131-1135 remain source repair/review work. They cover sealed-partial publication, failure-report accounting, capacity SMTP durability, omitted non-bank lenders and evidence-backed CDR participation cessation. Official current register has 115 banks plus 191 non-bank lenders; activation needs a new guarded full-financial capture, not the previous 115-provider replay. Wise cessation evidence is not product withdrawal. No Pi mutation, manual ingest, publication, backup write or deployment occurred in this session. The 03:30-22:00 mutation window is closed. Continue local/source work, then qualify the exact integrated candidate during the next allowed window with current locks, canary, Drive/recovery gates and public/Pi acceptance. Detailed provider errors, receipts, PR heads, validation and remaining work are in the progressive handoff.

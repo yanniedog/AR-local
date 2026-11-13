@@ -80,3 +80,59 @@ Authorized read-only workflow https://github.com/yanniedog/AR-local/actions/runs
 - Reviewed current v1/v2 builders do not serialize stored `bank_product_changes` removal events; old false events therefore need no historical mutation for these transports. Future/optional activity consumers still require an explicit coverage-aware audit. Existing AR-app coverage presentation reads failure counts but does not consume every new per-provider uncertainty field; full consumer behavior is not accepted by producer tests.
 
 Next: finish current provider/backup diagnostics, correct the diagnostic parser, investigate Wise using authoritative register/provider evidence, finish source CI/feedback/merge, then qualify and activate the exact integrated candidate. New fixes are **not deployed** and all-provider completeness, Drive restore and natural daily acceptance remain open.
+
+## Checkpoint 4 — root causes, verified archives and expanded provider scope
+
+Recorded 2026-11-13 approximately 22:17 Hobart. The **03:30–22:00 runtime mutation window has closed**. Continue source, review and bounded read-only work; do not activate outside the applicable window. No Pi mutation, manual ingest, publication or backup write has been performed by this repair session.
+
+### Current runtime and backup evidence
+
+- Production remains `8590e238d00f093e7f6d20fccfc2377c7abf1aec`; source fixes below are not deployed. The deploy watchdog's drift failure remains actionable. Its older SSH transport history is not evidence that today's owner read-only route is unavailable: the pinned route worked in this session.
+- **Nov7–13 selected observations have matching raw-archive PASS receipts.** Nov13 completed 02:19:14 Hobart: 205,329,655 bytes, SHA256 `b40a772cf7cd6bd1507e3fcd1bd5d194bfc8e1139d07de579ae7ec960a746a98`. The receipt records remote download/hash verification and captured wire/raw journals. Drain is IDLE, pending request count zero. This supersedes the earlier unknown daily-backup assessment; it does not prove every historical generation or a complete machine/database restore.
+- Observed `/etc/ar-local/drive-write-hold.json`, activation lock and ingest lock were absent. No hold file was removed. Current daily/day-archive launchers use production code; do not reactivate an obsolete backup launcher. `NO_CURRENT_VERIFIED_RECOVERY` is a separate broader recovery gate, not proof the daily raw archive failed.
+- Capacity has about **982.51 GiB free**. The model reports about 104 days at historical p90 growth (~9.37 GiB/day), a model rather than a precise exhaustion date. Persisted September capacity state was stale because SMTP login disconnection occurred before writing the sample. PR #1133 fixes persistence and bounded delivery retries; **actual SMTP delivery remains unresolved**. Preserve evidence rather than deleting it to clear a forecast warning.
+- Private evidence: `C:/code/AR-local/.work/ingest-resilience-20261113/runtime-handoff.md`, `live-runtime-20261113.jsonl` and `failing-provider-evidence.jsonl`. The latter contains 23 retained HTTP attempts behind today's 11 failures; SHA256 `ab0f936e2775211daf2dd592fd64dbe7f5a1d5bb09de4c38c1ae74b4a965c61b`. Parse by prefix/date; avoid dumping the entire log. No access credentials belong in this public handoff.
+
+### Today's eleven unresolved requests
+
+| Provider | Count | Retained evidence / required handling |
+|---|---:|---|
+| Aussie Home Loans | 1 | Product index 404 Resource not found. Reconcile current authoritative endpoint; absence is not product withdrawal. |
+| DDH Graham | 1 | v6 rejects with 406; negotiated v5 returns 401 EBAU001 from the provider's internal tenant-token fetch. Ordinary API-version fallback already runs. |
+| Thriday | 1 | DNS resolution failure. Retry within bounds and detect authoritative endpoint changes. |
+| Bank of Sydney | 1 | USD account detail 422: provider validation reports missing depositRates[1].applicationType. Error body contains no valid detail record to recover. |
+| Bank of Queensland | 2 | Detail 500, MIN_DEPOSIT_AMOUNT AmountString validation; both attempted v6/v7 fail. |
+| ME Bank - ME Go | 1 | Same provider validation class as BOQ. |
+| CommFCU | 3 | Detail 400 explicitly says products are inactive. A listed inactive product is not a successfully captured current detail; retain evidence and reconcile index membership on recovery. |
+| MoveBank | 1 | Conflicting duplicate credit-card identity; effectiveFrom/lastUpdated differ. Credit cards are outside the three requested datasets, but do not erase the physical conflict or weaken identity guards. A future separate relevance field requires both conflicting raw records; unknown/mixed categories remain unresolved. |
+
+These are actual upstream error responses, not eleven recoverable product documents. A new client cannot manufacture withheld rates or terms. Keep per-provider coverage truthful, preserve successful responses and continue bounded recovery; do not bulk-close partial-ingest issues.
+
+### Provider discovery and lifecycle
+
+The captured unfiltered official register contains **390 brands: 115 banking, 191 non-bank lending, 84 energy**. The previous banking-only parser silently excluded all 191 lenders. PR #1134 includes both financial industries through the shared Banking Product APIs; unchanged identity/category machinery retains existing banks. A real 360 MMS index supplies 12 residential mortgages. Official rollout: https://www.cdr.gov.au/rollout/cdr-non-bank-lenders-sector . Real register/index bytes, provenance and hashes are committed as fixtures (register losslessly compressed).
+
+**Expansion activation requires a new resource-guarded real capture of all 306 financial providers.** Measure duration, pagination/detail accounting, memory, disk growth and payload sizes. The existing 115-provider retained replay cannot qualify this expansion. Discovery count is not a successful-coverage count. Explicit empty/malformed/unknown industries are excluded; legacy rows without the key remain compatible.
+
+Wise's registered product endpoint returned HTTP 422 with explicit CDR participation cessation, and Wise is absent from the complete current register. Body SHA256: `b353d4574d1eb5a1df3c6dea46ff875585a329778af985d499a336e2953f4b96`. PR #1135 uses a generic evidence-bound lifecycle adapter: exact identity/endpoint, hashed cessation response, complete current unfiltered register, daily re-evaluation, and archived proofs. Any identity reappearance revokes cessation. Bare 404/absence never suffices, old dates remain unknown, and ceased CDR participation **does not confirm product withdrawal**. Missing/corrupt archived proofs fail validation without silently recreating evidence. Once #1134 is integrated, old 115-provider captures correctly fail the expanded-register completeness check; a fresh full-scope capture is required. Safe public lifecycle disclosure is still being integrated with #1131.
+
+### Source status and ownership
+
+| PR | Scope / handoff | State at this checkpoint |
+|---|---|---|
+| [#1130](https://github.com/yanniedog/AR-local/pull/1130) | Recovery envelope compatibility; failed-classification/absent-provider removal guards. `docs/COVERAGE_PROVIDER_HANDOFF_20261113.md` | **Merged** as `6143102d7f10696407629ffe04f83fe83c12846b` after exact-head gates; 210 focused tests. No runtime activation. Guarded command later failed only local main-worktree cleanup; remote MERGED state verified. |
+| [#1131](https://github.com/yanniedog/AR-local/pull/1131) | Daily sealed-partial publication, independent dated upload acknowledgment, public uncertainty sanitization, independent recovery eligibility. `docs/PUBLICATION_REPAIR_HANDOFF_20261113.md` | Open. Full CI found three recovery test fixtures missing canonical population metadata (9,452 passed); worker is fixing fixtures and adding malformed-row controls. Recheck new exact head; do not accept failed CI. |
+| [#1132](https://github.com/yanniedog/AR-local/pull/1132) | Canonical provider failure report, truthful UNKNOWN/count reconciliation and explicit category consistency. `docs/COVERAGE_REPORT_HANDOFF_20261113.md` | Open, head `75520658f0af8f2c6218bf5350e66949f6e1f4eb`, 83 focused tests passed, hosted CI pending. |
+| [#1133](https://github.com/yanniedog/AR-local/pull/1133) | Persist capacity samples before SMTP; sanitized delivery status, retry reservation/backoff. | Open, head `45395f86160a5c93327321c5977694dc4998f7c7`, 8 tests passed, hosted CI pending. Runtime worker owns feedback/closeout. |
+| [#1134](https://github.com/yanniedog/AR-local/pull/1134) | Include registered non-bank lenders. `docs/FINANCIAL_PROVIDER_DISCOVERY_20261113.md` | Open, head prefix `3dbeac2`; initial 99 checks passed, independent 20, then 71 after malformed-industry review fix. Hosted CI pending. Root owns closeout. |
+| [#1135](https://github.com/yanniedog/AR-local/pull/1135) | Evidence-backed provider participation cessation. `docs/PROVIDER_LIFECYCLE_HANDOFF_20261113.md` | Open, head at independent review `497220f98aad7b841dcc56d336197e647c646a9c`. 28 lifecycle tests passed independently after two review fixes; broader integration 259 passed/1 skipped before the last read-only validation correction. Publication worker owns integration/feedback. |
+| [#1129](https://github.com/yanniedog/AR-local/pull/1129) | This progressive handoff and append-only historical-ledger checkpoint. | Open; merge after source integration to reduce stale-base CI churn. |
+
+### Exact continuation sequence
+
+1. Preserve original dirty checkout; reuse the specialist worktrees only after checking ownership/clean status. Re-read current PR head/base and substantive feedback. Fix actual failures, synchronize stale branches separately, then require exact-head CI and guarded merge. No CI watch loops; park when only GitHub work remains. Run the post-merge feedback audit.
+2. Integrate #1131 before #1135's public lifecycle projection. Revalidate #1134/#1135 together against real full-register evidence. Update this handoff with final merge SHAs and any new findings. No pending PR is deployment evidence.
+3. In the next permitted Pi window, recheck queue/locks, selected generation, backup receipt and live commit. Build the exact integrated candidate, run the new guarded full-financial capture and sealed canary, bind current approval/Drive evidence to that exact commit, then use the controlled deployment path. Preserve the accepted fallback. Never substitute moving main or the old #1128 canary receipt.
+4. Validate selected observation accounting for all registered financial providers and all three requested categories; explain every failure, unknown, genuine empty result and lifecycle exclusion. Compare retained sources, not only output row totals. Verify every successful detail's raw retention and normalized consumer facts; audit linked-document capture and downstream watchlist changes separately.
+5. Verify dated and rolling GitHub assets by independent public readback/hash and generation/revision membership; run Pi dashboard browser acceptance plus `npm run verify:pi`; verify the matching generation's Drive archive and perform an isolated restore/rehash. Preserve existing backups until broader recovery acceptance is met.
+6. Observe multiple natural daily capture/publication/archive cycles before declaring the ongoing problem resolved. Actual provider-side errors, SMTP delivery, full-history restore, wider-universe resource limits and app comparison/watchlist behavior remain open acceptance work. **This checkpoint is a concrete repair handoff, not a claim of complete production resolution.**
