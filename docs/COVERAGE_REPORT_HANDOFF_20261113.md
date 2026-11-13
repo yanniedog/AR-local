@@ -52,3 +52,15 @@ report/status/change tests pass on Python3.10.9, including standalone isolated
 stdin execution matching the hosted transport;
 the existing requests dependency warning remains unrelated. `git diff --check`
 passes. CI, reviewed main merge and a fresh hosted read remain outstanding.
+
+The live MoveBank conflict also exposed an owning producer bug: overall category
+counts honored the recorded failure_category, but per-provider counts discarded
+it and reclassified the synthetic status as unknown_internal. The rollup now
+uses the same recorded-or-derived category for both maps. A regression replays
+all eleven retained terminal requests through summarize_failures and preserves
+the MoveBank invalid_response classification. Identity-conflict handling and
+fetch/recovery behavior are unchanged. The original captured fixture remains
+unchanged so the historical discrepancy is still reproducible.
+
+Final focused validation after the producer correction: 83 report, ingest-status,
+product-change and compatibility tests passed; `git diff --check` passed.

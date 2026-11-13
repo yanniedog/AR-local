@@ -47,6 +47,18 @@ def test_summarize_failures_rolls_up_by_phase_and_status(tmp_path):
     assert s["by_status"] == {"503": 2, "circuit_open": 1, "500": 1}
 
 
+def test_provider_categories_preserve_retained_terminal_failure_classification(tmp_path):
+    captured = json.loads((Path(__file__).parent / "fixtures" / "coverage-report-20261113.json").read_text())
+    records = [dict(row, bank=row["provider_dir"]) for row in captured["unresolved_requests"]]
+    (tmp_path / "failures.jsonl").write_text("\n".join(json.dumps(row) for row in records), encoding="utf-8")
+    summary = cis.summarize_failures(tmp_path)
+
+    assert summary["total"] == 11
+    assert summary["by_failure_category"] == captured["by_failure_category"]
+    assert summary["by_provider_failure_category"]["MoveBank"] == {"invalid_response": 1}
+    assert "unknown_internal" not in summary["by_provider_failure_category"]["MoveBank"]
+
+
 def test_register_failure_still_publishes_verified_attempt_journal_status(
     tmp_path,
     monkeypatch,
