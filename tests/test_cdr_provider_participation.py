@@ -45,7 +45,7 @@ def captured_status(root, day=DAY, payload=None):
             state='complete') for brand in brands],
         'register_attempts': [{'ok': True, 'status': 200, 'source_url': REGISTER_URL_SUMMARY,
             'sha256': hashlib.sha256(body).hexdigest(), 'bytes': len(body)}],
-        'raw_attempt_journal': {'verified': True, 'session_id': journal.session_id,
+        'raw_attempt_journal': {**journal.summary(recover=False),
             'path': journal.root.relative_to(root).as_posix(),
             'path_resolution': 'relative_to_finalized_export_root'}}
 
@@ -121,6 +121,25 @@ def test_current_return_or_missing_proof_reopens_previous_disposition(tmp_path):
     result = reconcile_participation(resolved, status, tmp_path, DAY)
     assert result['status'] == 'WARN' and len(result['findings']) == 1
     assert 'participation_cessations' not in result
+
+
+@pytest.mark.parametrize('damage', ['uncommitted_event', 'missing_key', 'wrong_head'])
+def test_uncommitted_or_unbound_register_event_retains_uncertainty(tmp_path, damage):
+    status = captured_status(tmp_path)
+    pointer = status['raw_attempt_journal']
+    journal_root = tmp_path / pointer['path']
+    current_path = journal_root/'current.json'
+    current = json.loads(current_path.read_bytes())
+    if damage == 'uncommitted_event':
+        current.update(sequence=0, head_digest=None)
+        pointer.update(attempts=0, head_digest=None)
+    elif damage == 'wrong_head':
+        pointer['head_digest'] = '0' * 64
+    else:
+        next((journal_root/'keys').glob('*.json')).unlink()
+    atomic_write_json(current_path, current)
+    population = captured_population()
+    assert reconcile_participation(population, status, tmp_path, DAY) == population
 
 
 def test_unknown_report_cannot_smuggle_a_cessation_disposition(tmp_path):

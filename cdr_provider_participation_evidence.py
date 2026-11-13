@@ -125,13 +125,23 @@ def current_register(export_root, status, run_date):
         raise ValueError('current register lacks promoted raw evidence')
     journal_root = safe_child(export_root, pointer['path'])
     journal = RawAttemptJournal(journal_root.parent, session)
+    committed = read_json(journal.current_path, max_bytes=65536)
+    if (committed.get('schema_version') != 1 or committed.get('session_id') != session
+            or type(committed.get('sequence')) is not int or committed['sequence'] < 1
+            or committed['sequence'] != pointer.get('attempts')
+            or committed.get('head_digest') != pointer.get('head_digest')):
+        raise ValueError('register journal is not bound to its committed promotion')
     previous = None
-    for sequence in range(1, 65):
+    for sequence in range(1, min(committed['sequence'], 64) + 1):
         paths = list(journal.events.glob(f'{sequence:08d}-*.json'))
         if len(paths) != 1 or paths[0].is_symlink() or paths[0].stat().st_size > 65536:
             raise ValueError('register evidence sequence is unavailable or exceeds budget')
         event = journal._validate_event(paths[0], sequence=sequence, previous_digest=previous)
         previous = event['event_digest']
+        key = read_json(journal.keys / (event['attempt_key_hash'] + '.json'), max_bytes=65536)
+        if (key != journal._pointer_for(event, paths[0].name)
+                or (sequence == committed['sequence'] and previous != committed['head_digest'])):
+            raise ValueError('register event is not committed by its journal key/head')
         if event['context'].get('phase') != 'register_discovery':
             raise ValueError('register evidence must precede provider capture')
         response = event['response']

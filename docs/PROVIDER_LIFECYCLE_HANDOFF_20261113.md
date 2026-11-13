@@ -88,3 +88,21 @@ Future changes to the curated evidence directory trigger `pi:needs-deploy`.
 Mobile projection is required before integration completion: provider, observed
 date, disposition and explicit false product-withdrawal flag only. This awaits
 the publication repair PR #1131 landing on main; do not duplicate that PR's commits.
+
+Independent review found two boundary issues, now fixed: declared register
+`totalRecords` must be an exact integer matching the retained rows (missing meta
+remains supported), and finalization cannot recreate missing captured evidence.
+It only reads/verifies already archived proof; missing/corrupt files fail.
+The extended population/finalization/deployment-path suite passed 259 tests with
+one existing opt-in skip; the later focused lifecycle run passed all 28 tests.
+Committed Git blobs were independently hashed against every raw-source digest;
+`.gitattributes` preserves literal CRLF bytes on Linux and Windows.
+
+PR #1135 review additionally required committed-journal binding. The reader now
+checks promoted attempt count/head against `current.json`, refuses events beyond
+that committed sequence, and verifies each inspected key pointer and the head
+when reached. Added uncommitted-event, missing-key and mismatched-head controls.
+The public projection helper is implemented separately and rejects malformed
+withdrawal claims; transport URLs and nested historical identities never pass.
+Its call sites still await #1131 integration. Latest focused lifecycle/projection
+run: 35 passed in 2.79s. Draft remains intentionally unready until integration.
