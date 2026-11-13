@@ -112,6 +112,8 @@ def resolve_configuration(fields, reader=read_environment_file, uid_for_user=Non
     assignments = []
     for token in shlex.split(fields.get("Environment", "")):
         key, sep, item = token.partition("=")
+        if key == KEY and not sep:
+            raise ValueError("bare staging environment key is ambiguous")
         if key == KEY and sep:
             value = canonical_name(item)
             assignments.append({"source": "Environment", "value": item})

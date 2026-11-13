@@ -1,4 +1,4 @@
-# Integrated ingest repair continuation â€” 2026-11-13
+# Integrated ingest repair continuation — 2026-11-13
 
 Root authorized consolidating source PRs #1131, #1132, #1134, #1135 and #1136
 into one exact-head tested PR, preserving component commits and feedback
@@ -73,8 +73,8 @@ The launcher preserves production's automatic Pi staging flags and binds the
 effective daily unit `AR_LOCAL_RAM_ROOT`, including ordered environment files
 and final unset rules. It never sources shell text or saves other environment
 values. Ambiguous or unsupported configuration fails closed. The default
-`--stage-profile production` uses a new stage on the same device, filesystem and
-mount as production: inside the isolated operation for disk, or an isolated
+`--stage-profile production` uses a new stage on the same backing device and
+filesystem as production: inside the isolated operation for disk, or an isolated
 `/dev/shm` directory for matching tmpfs. The configuration and both filesystem
 identities must remain unchanged through capture. The finalized marker must
 prove that exact stage was selected. `ram_staged=true` alone does not mean tmpfs.
@@ -116,7 +116,7 @@ runtime after preparation/hashing, preserving a 180-second cleanup reserve.
 Queue wait and parent-runtime bounds stay below the absolute cutoff. Parent
 evidence snapshots and worker audits require the existing Linux drop-behind
 read path; the ingest child keeps production's own behavior. The installed
-root-mediated `pi_ci_activate.py` independently retains its 03:30â€“22:00 window:
+root-mediated `pi_ci_activate.py` independently retains its 03:30–22:00 window:
 this one-off authorization does not override every deployment entrypoint.
 
 Runtime's initial focused controls passed 113 tests. Existing activation fixtures

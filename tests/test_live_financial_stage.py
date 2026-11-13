@@ -35,6 +35,7 @@ def test_ordered_environment_files_override_unit_and_final_unset_restores_uid_de
     {"EnvironmentFiles": "/etc/first (ignore_errors=yes) trailing"},
     {"Environment": "AR_LOCAL_RAM_ROOT=relative"}, {"Environment": "AR_LOCAL_RAM_ROOT=/srv/../other"},
     {"Environment": "AR_LOCAL_RAM_ROOT=/srv//other"}, {"Environment": "AR_LOCAL_RAM_ROOT=/srv/$OTHER"},
+    {"Environment": "AR_LOCAL_RAM_ROOT"},
     {"User": ""},
 ])
 def test_ambiguous_or_noncanonical_configuration_fails_closed(change):
