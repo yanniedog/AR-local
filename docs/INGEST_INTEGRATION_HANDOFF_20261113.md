@@ -50,6 +50,10 @@ all new restore tests and existing restore/archive compatibility controls. Root
 independently passed all 31 new restore checks. These receipts do not establish
 live capture or production restore success.
 
+Independent review of `ccbc823` and `f3d765c` found no actionable introduced
+defects; 39 lifecycle/public-disclosure tests independently passed. The interim
+identity guard remains conservative across interim and registered ID fields.
+
 Next: integrated regression checks, review/merge optional qualification-route
 branches when ready, full exact-head CI, substantive feedback disposition and
 guarded squash closeout. Root owns any Pi action. The explicitly extended
