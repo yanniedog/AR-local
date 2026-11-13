@@ -9,6 +9,14 @@ import cdr_ingest_support as support
 from cdr_compatibility import classify_fetch_failure, compact_failure_evidence, parse_supported_versions
 
 
+ACTUAL_406 = '{"errors":[{"code":"NOT_ACCEPTABLE","detail":"No supported version found between x-min-v and x-v. This endpoint supports v7 and above."}]}'
+
+
+def test_actual_not_acceptable_preamble_does_not_hide_advertised_minimum():
+    assert parse_supported_versions(ACTUAL_406) == [7]
+    assert parse_supported_versions(compact_failure_evidence(406, ACTUAL_406)) == [7]
+
+
 # Observed406 clause; successful data below is an untouched retained capture.
 RETAINED_406 = "This endpoint supports v7 and above."
 DEFENCE = json.loads((Path(__file__).parent / "fixtures" / "cdr-september7" /
@@ -57,8 +65,9 @@ def test_compact_failure_retains_exact_minimum_and_negotiation_decision():
     (1, True, [6], False),
     (2, False, [6, 7], False),
 ])
+@pytest.mark.parametrize('error_body', [RETAINED_406, ACTUAL_406])
 def test_minimum_negotiation_keeps_shared_budget_and_strict_identity(
-        monkeypatch, budget, valid_detail, expected_calls, success):
+        monkeypatch, budget, valid_detail, expected_calls, success, error_body):
     detail = copy.deepcopy(DEFENCE["body"])
     if not valid_detail:
         detail["data"]["productId"] = "wrong-identity"
@@ -67,7 +76,7 @@ def test_minimum_negotiation_keeps_shared_budget_and_strict_identity(
     def request(url, headers, **_):
         calls.append(int(headers["x-v"]))
         return ((200, json.dumps(detail), None) if headers["x-v"] == "7"
-                else (406, RETAINED_406, None))
+                else (406, error_body, None))
 
     monkeypatch.setattr(support, "http_request", request)
     result = support.fetch_cdr_json(
