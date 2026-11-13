@@ -49,6 +49,10 @@ REGISTER_URL_BANKING_REGISTER = (
     "https://api.cdr.gov.au/cdr-register/v1/banking/register"
 )
 
+# Both financial industries expose the Banking Product APIs. Non-bank lenders
+# have published PRD since July 2026; excluding them silently loses mortgages.
+FINANCIAL_PRD_INDUSTRIES = frozenset({"banking", "non-bank-lending"})
+
 # Bank PRD endpoints often negotiate newer x-v; CDR register currently responds at v2 in practice.
 REGISTER_FETCH_VERSIONS = [2, 1, 6, 5, 4, 3]
 # Get Product Detail moved to v7 in August 2026. Keep the newest known version
@@ -127,7 +131,11 @@ def product_index_request_url(url: str) -> str:
 
 
 def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
-    """Yield banking PRD brand rows from one register payload."""
+    """Yield financial PRD brands using the shared Banking Product APIs.
+
+    The historical function/row names remain compatible with existing callers.
+    Energy and unknown industries remain outside the financial product scope.
+    """
     if is_record(payload):
         data_array = as_array(payload.get("data"))
     else:
@@ -147,7 +155,7 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
             if not base:
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
-            if "banking" in inds:
+            if inds & FINANCIAL_PRD_INDUSTRIES:
                 yield {
                     "brand_name": brand_name,
                     "legal_entity_name": legal_name,
@@ -819,13 +827,13 @@ def collect_register_snapshot(
     holders_filter: Optional[str],
     attempt_journal: Optional[RawAttemptJournal] = None,
 ) -> RegisterSnapshot:
-    """Merge banking holder rows from all register URLs."""
+    """Merge bank and non-bank lender rows from the authoritative register."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
     register_payload_ok = False
     register_attempts: List[Dict[str, Any]] = []
 
     # The all-industries summary is the current public discovery endpoint and
-    # already contains the complete banking population.  The two legacy
+    # contains both banking and non-bank-lending populations. The two legacy
     # banking URLs formerly configured here now return
     # permanent 404s; continuing to probe them makes an otherwise authoritative
     # register snapshot fail provenance reconciliation every day.
