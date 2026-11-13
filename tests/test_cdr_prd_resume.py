@@ -8,7 +8,8 @@ import pytest
 import cdr_ingest_lib as ingest
 import cdr_outputs as outputs
 from cdr_clean_export import app_coverage_aliases, coverage_summary, parse_banks_run
-from cdr_ingest_support import allocate_bank_dir
+from tests.test_cdr_prd_availability import capture
+from tests.test_cdr_financial_register import retained
 
 
 def retained_products():
@@ -25,29 +26,30 @@ def raw_detail(run, provider, record):
 
 
 def test_partial_resume_keeps_cached_product_but_not_attempts_or_withdrawals(tmp_path, monkeypatch):
-    # Routing/availability metadata varies; both business records are retained
-    # Westpac source records. A differing display name tests canonical-dir use.
-    brand_name = 'Westpac / Banking'
-    provider = allocate_bank_dir(brand_name, 'Westpac', 'https://digital-api.westpac.com.au', set())
+    # Only register routing metadata varies; business records retain Westpac
+    # source values. The modified routing is bound to a real raw journal event.
+    payload = json.loads(retained('register.json'))
+    registration = next(row for row in payload['data'] if row['brandName'] == 'AAA Mortgage Finance')
+    registration['brandName'] = brand_name = 'Routing / unavailable'
+    current, _, snapshot, _ = capture(tmp_path, monkeypatch,
+        register_body=json.dumps(payload).encode(), holders_filter=brand_name)
+    status_path = current / 'banks/ingest-status.json'
+    status = json.loads(status_path.read_bytes())
+    provider = status['provider_states'][0]['provider_dir']
     assert provider != brand_name
-    previous, current = tmp_path / '2026-10-14', tmp_path / '2026-10-15'
+    previous = tmp_path / '2026-11-12'
     records = retained_products()
     assert len(records) == 2
     for record in records:
         raw_detail(previous, provider, record)
     cached = raw_detail(current, provider, records[0])
     before = cached.read_bytes()
-    status = {'provider_states': [{'provider_uid': 'routing-control', 'provider_dir': provider,
-        'brand_name': brand_name, 'state': 'not_attempted', 'population_known': False,
-        'prd_availability': 'UNAVAILABLE'}]}
-    (current / 'banks/ingest-status.json').write_text(json.dumps(status), encoding='utf-8')
-    (current / 'banks/failures.jsonl').write_bytes(b'')
 
     def forbidden(*args, **kwargs):
         pytest.fail('unavailable resume must not request provider HTTP data')
 
     monkeypatch.setattr(ingest, 'fetch_cdr_json', forbidden)
-    ingest.ingest_brand({'brand_name': brand_name, 'endpoint_url': '', 'prd_availability': 'UNAVAILABLE'},
+    ingest.ingest_brand(snapshot.banking_brands[0],
         date_root=current / 'banks', resume=True, sleep_ms=0, timeout=1, max_retries=0,
         max_pages=None, max_products=None, fetch_unknown_detail=True,
         bank_dir_name=provider, detail_workers=1, log=lambda _: None)

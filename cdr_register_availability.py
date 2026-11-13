@@ -11,7 +11,7 @@ def validate_prd_dispositions(payload, status, event, uid_for, *, allow_filtered
     """
     if 'providers_prd_unavailable' not in status:
         return []
-    from cdr_ingest_support import iter_banking_brands_from_payload, REGISTER_URL_SUMMARY
+    from cdr_ingest_support import allocate_bank_dir, iter_banking_brands_from_payload, REGISTER_URL_SUMMARY
     providers = status['provider_states']
     count = status['providers_prd_unavailable']
     if type(count) is not int or count < 0:
@@ -31,7 +31,22 @@ def validate_prd_dispositions(payload, status, event, uid_for, *, allow_filtered
         raise ValueError('PRD unavailability requires captured register v2')
     expected = {}
     observed = {row['provider_uid'] for row in providers}
-    for brand in iter_banking_brands_from_payload(payload, register_version=2):
+    brands = {uid_for(brand): brand for brand in iter_banking_brands_from_payload(payload, register_version=2)}
+    seen_directories, directories = set(), {}
+    # Discovery filters before its stable name sort and directory allocation.
+    selected = sorted((brand for uid, brand in brands.items() if uid in observed),
+                      key=lambda brand: (brand['brand_name'] or brand['legal_entity_name'] or '').lower())
+    for brand in selected:
+        directory = allocate_bank_dir(brand['brand_name'], brand['legal_entity_name'],
+                                      brand['endpoint_url'], seen_directories)
+        directories[uid_for(brand)] = directory
+    for provider in providers:
+        brand = brands[provider['provider_uid']]
+        if (provider.get('provider_dir') != directories[provider['provider_uid']]
+                or any((provider.get(key) or '') != (brand.get(key) or '')
+                       for key in ('brand_name', 'legal_entity_name', 'endpoint_url'))):
+            raise ValueError('PRD provider directory differs from verified registration')
+    for brand in brands.values():
         if brand.get('prd_availability') != 'UNAVAILABLE':
             continue
         if allow_filtered and uid_for(brand) not in observed:

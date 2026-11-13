@@ -428,6 +428,10 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         status = json.loads(status_path.read_bytes())
         unavailable = [row for row in status.get('provider_states', [])
                        if row.get('state') == 'not_attempted' and row.get('prd_availability') == 'UNAVAILABLE']
+        if status.get('providers_prd_unavailable') or any(
+                row.get('prd_availability') == 'UNAVAILABLE' for row in status.get('provider_states', [])):
+            from cdr_provider_participation_evidence import current_register
+            current_register(run_root, status, run_root.name, allow_filtered=True, ingest_root=True)
         names = {row['provider_dir'] for row in unavailable}
         dataset['holder_attempts'] = [name for name in dataset['holder_attempts'] if name not in names]
         dataset['prd_unavailable'] = [

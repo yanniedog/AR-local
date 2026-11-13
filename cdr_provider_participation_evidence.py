@@ -108,8 +108,8 @@ def load_cessation_evidence(root=EVIDENCE_ROOT):
     return results
 
 
-def current_register(export_root, status, run_date, *, allow_filtered=False):
-    """Read only the bounded initial register events, not the whole ingest journal."""
+def current_register(export_root, status, run_date, *, allow_filtered=False, ingest_root=False):
+    """Verify bounded initial events in the explicitly selected evidence namespace."""
     attempts = status.get('register_attempts')
     providers = status.get('provider_states')
     if (status.get('register_provenance_complete') is not True
@@ -124,10 +124,12 @@ def current_register(export_root, status, run_date, *, allow_filtered=False):
         raise ValueError('current register is not authoritative')
     pointer = status['raw_attempt_journal']
     session = pointer['session_id']
+    namespace = '_raw-attempt-journals-v1' if ingest_root else 'attempt-evidence/raw-attempt-journals-v1'
+    resolution = 'relative_to_ingest_run_root' if ingest_root else 'relative_to_finalized_export_root'
     if (pointer.get('verified') is not True
-            or pointer.get('path_resolution') != 'relative_to_finalized_export_root'
-            or pointer.get('path') != f'attempt-evidence/raw-attempt-journals-v1/{session}'):
-        raise ValueError('current register lacks promoted raw evidence')
+            or pointer.get('path_resolution') != resolution
+            or pointer.get('path') != f'{namespace}/{session}'):
+        raise ValueError('current register lacks correctly bound raw evidence')
     journal_root = safe_child(export_root, pointer['path'])
     journal = RawAttemptJournal(journal_root.parent, session)
     committed = read_json(journal.current_path, max_bytes=65536)

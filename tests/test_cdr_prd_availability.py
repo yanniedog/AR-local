@@ -17,11 +17,12 @@ from tests.test_cdr_financial_register import retained
 DAY = '2026-11-13'
 
 
-def capture(tmp_path, monkeypatch, *, response_version='2', register_hour_utc='00'):
-    body = retained('register.json')
+def capture(tmp_path, monkeypatch, *, response_version='2', register_hour_utc='00',
+            register_body=None, holders_filter=None):
+    body = register_body if register_body is not None else retained('register.json')
     monkeypatch.setattr(support, 'fetch_cdr_json', lambda *args, **kwargs:
         support.FetchResult(True, 200, support.REGISTER_URL_SUMMARY, body.decode(), version=2))
-    snapshot = support.collect_register_snapshot(timeout=1, max_retries=0, sleep_ms=0, holders_filter=None)
+    snapshot = support.collect_register_snapshot(timeout=1, max_retries=0, sleep_ms=0, holders_filter=holders_filter)
     run = tmp_path / DAY
     journal = RawAttemptJournal(run/'_raw-attempt-journals-v1', 'capture-'+DAY)
     journal.record('register', request_url=support.REGISTER_URL_SUMMARY,
