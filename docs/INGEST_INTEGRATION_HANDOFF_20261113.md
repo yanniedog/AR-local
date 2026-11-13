@@ -54,6 +54,54 @@ Independent review of `ccbc823` and `f3d765c` found no actionable introduced
 defects; 39 lifecycle/public-disclosure tests independently passed. The interim
 identity guard remains conservative across interim and registered ID fields.
 
+## Supervised qualification route
+
+Runtime source `a98efe2` plus resource correction `3df2f7c` adds
+`pi_live_financial_capture.py` and its worker. It
+requires exact clean current main, a new operation directory directly under
+`/srv/ar-local/canary`, the shared AR-local queue claim and a supervised owned
+systemd unit. Source and production mounts are read-only; writes stay in the
+operation and RAM stage. Private rclone configuration points only to a local
+archive destination. Production concurrency is retained (8 providers, default
+4 detail workers), with three reserved queue CPU slots, the existing 200% CPU
+ceiling, 3GiB memory cap, existing
+quality resource telemetry/stops and a bounded cleanup reserve. The receipt
+states the inherited quality-canary swap-recording policy explicitly.
+
+The worker independently verifies promoted committed journal evidence, attempts
+every discovered financial provider exactly once, audits captured source/ledger/
+SQLite accounting and requires the matching local-only raw archive receipt.
+Upstream failures remain explicit; a qualification PASS does not mean every
+upstream product was available. Production publication, Drive transport and
+selection are not invoked. Failed RAM evidence is preserved after owned-unit
+cleanup; the original stage is never deleted by this route.
+
+`pi_cdr_quality_window.py` supports a one-off, SHA256-bound authorization JSON:
+schema `ar-local-operation-window-v1`, exact `target_commit`, timezone
+`Australia/Hobart`, nonempty operator `reason`, aware `issued_at`, `not_before`
+and `expires_at`, explicit canonical `operation_roots` and `stages` selected
+from `quality-canary`, `quality-seal`, `quality-activate`,
+`live-financial-capture`. Duration is at most four hours and expiry cannot cross
+the next 00:30 quiet boundary. It changes no unattended schedule or default
+window. Canary, seal and activation retain the same hash-bound authorization.
+
+After runtime-owner review, use the exact candidate's Python and script with
+`plan`, then `run`, `--source`, `--operation`, `--expected-commit`, `--python`,
+bounded `--runtime-seconds`, and both `--window-authorization` and
+`--window-authorization-sha256` when an explicit extension applies. `queued` and
+`worker` are internal supervised stages. This documentation is not a production
+execution receipt or standing permission extension.
+
+Runtime's initial focused controls passed 113 tests. Existing activation fixtures
+cannot complete on this Windows interpreter because executable pathname mode
+includes execute bits while descriptor mode does not, and the existing strict
+identity guard rejects that mismatch. The 34 setup errors remain recorded;
+production identity checks were not relaxed. Full integrated Linux CI must pass.
+
+The integrated financial-discovery/lifecycle/disclosure/restore/live-route/
+resource/recovery/deployment controls passed 288 tests. The final focused rerun
+passed 71 tests, including the corrected CPU property and its ceiling assertion.
+
 Next: integrated regression checks, review/merge optional qualification-route
 branches when ready, full exact-head CI, substantive feedback disposition and
 guarded squash closeout. Root owns any Pi action. The explicitly extended
