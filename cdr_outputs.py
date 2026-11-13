@@ -509,7 +509,8 @@ def _exclude_failed_missing_products(
     failed_products = {
         (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
         for row in failures
-        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+        if str(row.get("phase") or "") in {"product_detail", "classification_detail"}
+        and row.get("product_id") not in (None, "")
     }
     suppressed = set()
     output = []
@@ -541,7 +542,8 @@ def _exclude_failed_missing_product_groups(
     failed_products = {
         (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
         for row in failures
-        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+        if str(row.get("phase") or "") in {"product_detail", "classification_detail"}
+        and row.get("product_id") not in (None, "")
     }
     result = {"suppressed": 0}
 

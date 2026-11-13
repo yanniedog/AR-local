@@ -3,6 +3,8 @@ import json
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from cdr_ingest_recovery import _index_captured, _reconcile, recover_transient_providers
 
 CAPTURE = Path(__file__).parent / "fixtures" / "cdr-september7"
@@ -116,3 +118,26 @@ def test_incomplete_current_index_does_not_clear_old_failure(tmp_path):
 
     assert not _index_captured(tmp_path, "Defence Bank")
     assert _reconcile(tmp_path, [failure], [failure], "Defence Bank") == [failure]
+
+
+@pytest.mark.parametrize("complete", [True, False])
+def test_recovery_accepts_ingest_list_envelope_without_losing_accounting(tmp_path, complete):
+    body = json.loads((CAPTURE / "defence.json").read_text())["products_index"]["body"]
+    # Preserve captured product data; vary only the supported envelope and totals.
+    body["data"] = body["data"]["products"]
+    body["meta"] = {"totalRecords": len(body["data"]) + (0 if complete else 1), "totalPages": 1}
+    body["links"].pop("next", None)
+    pages = tmp_path / "_holders" / "Defence Bank" / "_products-index"
+    pages.mkdir(parents=True)
+    (pages / "page-0001.json").write_text(json.dumps(body))
+    failure = {"bank": "Defence Bank", "phase": "products_index", "status": 503}
+    journal(tmp_path, [failure])
+
+    result = recover_transient_providers(
+        tmp_path, [({}, "Defence Bank")], lambda *a, **k: None,
+        log=lambda _: None, sleep=lambda _: None,
+    )
+
+    assert result["result"] == "completed"
+    assert result["remaining_failures"] == (0 if complete else 1)
+    assert len(list((tmp_path / "_recovery").glob("failures-*.jsonl"))) == 1
