@@ -85,9 +85,10 @@ isolated runner completion recorded. Skip is the existing opt-in retained
 real-export test. Independent review pending. A new invalid-status regression
 also proves that an UNKNOWN report cannot smuggle a cessation disposition.
 Future changes to the curated evidence directory trigger `pi:needs-deploy`.
-Mobile projection is required before integration completion: provider, observed
-date, disposition and explicit false product-withdrawal flag only. This awaits
-the publication repair PR #1131 landing on main; do not duplicate that PR's commits.
+Mobile projection is now included: provider, observed date, disposition and
+explicit false product-withdrawal flag, with safe identity/membership metadata.
+Synchronize with publication repair PR #1131 after it lands; its policy has not
+been duplicated in this branch.
 
 Independent review found two boundary issues, now fixed: declared register
 `totalRecords` must be an exact integer matching the retained rows (missing meta
@@ -102,7 +103,10 @@ PR #1135 review additionally required committed-journal binding. The reader now
 checks promoted attempt count/head against `current.json`, refuses events beyond
 that committed sequence, and verifies each inspected key pointer and the head
 when reached. Added uncommitted-event, missing-key and mismatched-head controls.
-The public projection helper is implemented separately and rejects malformed
-withdrawal claims; transport URLs and nested historical identities never pass.
-Its call sites still await #1131 integration. Latest focused lifecycle/projection
-run: 35 passed in 2.79s. Draft remains intentionally unready until integration.
+The public projection helper rejects malformed withdrawal claims; transport URLs
+and nested historical identities never pass. It is now wired into BOTH
+`contract_coverage` and the payload-builder boundary, with the regression testing
+direct internal coverage and already-sanitized input. This additive integration
+does not duplicate #1131's publication policy and will be reconciled when that PR
+lands. Latest pre-integration focused run: 35 passed in 2.79s; current integrated
+validation is recorded in the PR. Source is reviewable; CI/merge/runtime pending.

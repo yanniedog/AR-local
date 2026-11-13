@@ -108,6 +108,9 @@ def contract_coverage(contract: Optional[Mapping[str, Any]]) -> Optional[dict]:
     if not isinstance(coverage, Mapping):
         return None
     result = dict(coverage)
+    if 'provider_participation_ceased' in result:
+        from app_payload_participation import public_participation_cessations
+        result['provider_participation_ceased'] = public_participation_cessations(result['provider_participation_ceased'])
     auth = authentication_exclusions(contract)
     if auth["failure_records"]:
         result["nonblocking_authentication"] = auth

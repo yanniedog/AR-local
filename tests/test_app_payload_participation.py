@@ -8,6 +8,8 @@ from cdr_population_lifecycle import reconcile_participation
 
 
 def test_public_disclosure_is_explicit_without_internal_provenance(tmp_path):
+    from app_payload_observation_gate import contract_coverage
+    from app_payload_build import _stable_payload_coverage
     population = reconcile_participation(captured_population(), captured_status(tmp_path), tmp_path, DAY)
     receipts = population['participation_cessations']
     public = public_participation_cessations(receipts)
@@ -18,6 +20,13 @@ def test_public_disclosure_is_explicit_without_internal_provenance(tmp_path):
     assert not {'sources', 'unresolved_finding', 'current_register'} & public[0].keys()
     assert 'https://' not in json.dumps(public)
     assert 'sources' in receipts[0]  # Internal audit remains intact.
+    internal = {'provider_participation_ceased': receipts}
+    disclosed = contract_coverage({'coverage': internal, 'observation_state': 'complete'})
+    assert disclosed['provider_participation_ceased'] == public
+    for incoming in (internal, disclosed):
+        built = _stable_payload_coverage({}, {}, DAY, incoming)
+        assert built['provider_participation_ceased'] == public
+        assert 'https://' not in json.dumps(built['provider_participation_ceased'])
 
 
 @pytest.mark.parametrize('field,value', [('provider', {'endpoint': 'https://private.example'}),
