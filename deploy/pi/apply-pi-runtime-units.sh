@@ -96,6 +96,25 @@ render_unit() {
     "$src" > "$dst"
 }
 
+# Root bootstrap is a separate reviewed operation. Never sudo a checkout script.
+restore_commit="$(git -C "$repo_dir" rev-parse HEAD)"
+case "$restore_commit" in ''|*[!0-9a-f]*) exit 1;; esac
+[ "${#restore_commit}" -eq 40 ] || exit 1
+restore_stage="/var/lib/ar-local-manual-ingest/approved-$restore_commit"
+for trusted in /var /var/lib /var/lib/ar-local-manual-ingest "$restore_stage"; do
+  [ -d "$trusted" ] && [ ! -L "$trusted" ] || { echo 'Provision the approved root-owned manual restore stage first' >&2; exit 1; }
+  [ "$(stat -c %u "$trusted")" = 0 ] || exit 1
+  [ -z "$(find "$trusted" -maxdepth 0 -perm /022 -print)" ] || exit 1
+done
+for trusted in "$restore_stage/install-manual-ingest-restore.sh" "$restore_stage/pi_manual_ingest_restore.py" "$restore_stage/helper.sha256"; do
+  [ -f "$trusted" ] && [ ! -L "$trusted" ] || exit 1
+  [ "$(stat -c %u "$trusted")" = 0 ] || exit 1
+  [ -z "$(find "$trusted" -maxdepth 0 -perm /222 -print)" ] || exit 1
+done
+restore_sha="$(cat "$restore_stage/helper.sha256")"
+[ "$(sha256sum "$repo_dir/pi_manual_ingest_restore.py" | cut -d ' ' -f1)" = "$restore_sha" ] || exit 1
+sudo sh "$restore_stage/install-manual-ingest-restore.sh" "$restore_stage" "$restore_sha"
+
 for name in \
   ar-local-dashboard.service \
   ar-local-daily.service \

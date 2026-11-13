@@ -7,6 +7,8 @@ import re
 import shlex
 import sys
 
+from pi_manual_ingest_contract import installed_proof_script, restore_argv, source_digest
+
 from pi_observer_unit_contract import (
     COMMAND_TYPE, canonical_remote_repo, command_matches, native_property,
     unprivileged_user, watchdog_snapshot_ok,
@@ -71,7 +73,7 @@ def _producer_argv(repo, prefix):
     argv = ["/usr/bin/python3", repo + "/pi_daily_sync.py", "--banks-only"]
     if prefix == "MANUAL":
         argv.append("--force")
-    return [*argv, "--skip-git-sync"]
+    return [*argv, "--skip-git-sync", *(["--manual-ingest"] if prefix == "MANUAL" else [])]
 
 
 def _queued_argv(producer):
@@ -140,6 +142,7 @@ def _queued_archive_readback_ok(commands, repo, prefix, source_commit):
 
 
 def _dry_ingest_definition(prefix, repo):
+    stop = restore_argv('/dry/data') if prefix == 'MANUAL' else BASE_STOP
     return {
         **{prefix + "_" + field: json.dumps({"type": COMMAND_TYPE, "data": []}) for field in EMPTY_HOOKS},
         prefix + "_AMBIENT_CAPS_JSON": json.dumps({"type": "t", "data": 0}),
@@ -153,12 +156,12 @@ def _dry_ingest_definition(prefix, repo):
         prefix + "_EXEC_JSON": json.dumps({"type": COMMAND_TYPE, "data": [[
             "/usr/bin/python3", _producer_argv(repo, prefix), [], 0, 0, 0, 0, 0, 0, 0]]}),
         prefix + "_STOP_POST_JSON": json.dumps({"type": COMMAND_TYPE, "data": [[
-            BASE_STOP[0], BASE_STOP, ["privileged"], 0, 0, 0, 0, 0, 0, 0]]}),
+            stop[0], stop, ["privileged"], 0, 0, 0, 0, 0, 0, 0]]}),
     }
 
 
 def _base_stop_matches(commands, expected=BASE_STOP):
-    # Only the checked-in +systemctl dashboard cleanup has this modifier.
+    # Only an exact checked-in root command may have this modifier.
     # Do not weaken the shared unprivileged start/queue/observer matcher.
     if not isinstance(commands, list) or len(commands) != 1:
         return False
@@ -217,10 +220,18 @@ def ingest_definition_ok(snap, prefix):
         producer = _producer_argv(repo, prefix)
         if command_matches(commands, producer):
             start, stop = "6h 15min", "45s"
-            if not _base_stop_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE)):
+            expected = BASE_STOP
+            if prefix == 'MANUAL':
+                data = canonical_remote_repo(snap.get('AR_DATA_ROOT'))
+                expected = restore_argv(data)
+                if snap.get('MANUAL_RESTORE_SHA256') != source_digest():
+                    return False
+            if not _base_stop_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE), expected):
                 return False
         elif command_matches(commands, _queued_argv(producer)):
             start, stop = "13h", "15min"
+            if prefix == 'MANUAL' and snap.get('MANUAL_QUEUE_STOP_SHA256') != source_digest(queued=True):
+                return False
             if not command_matches(native_property(snap.get(prefix + "_STOP_POST_JSON"), COMMAND_TYPE), QUEUE_STOP):
                 return False
         elif _queued_archive_readback_ok(commands, repo, prefix, snap.get("AR_HEAD")):
@@ -251,6 +262,8 @@ def _snapshot_script(ar, site, data, remote, *, fetch: bool = True):
                 f"{label}_d=; if [ \"${label}_rc\" != 0 ]; then {label}_d=unverified; fi; ")
     return (
         "set +e; export GIT_OPTIONAL_LOCKS=0; "
+        + installed_proof_script()
+        + f"printf 'AR_DATA_ROOT=%s\\n' {q_data}; "
         + _ingest_definition_script("DAILY", INGEST_UNITS["DAILY"])
         + _ingest_definition_script("MANUAL", INGEST_UNITS["MANUAL"])
         + f"ar_physical=$(CDPATH= cd {q_ar} 2>/dev/null && pwd -P); "
@@ -321,6 +334,9 @@ def _dry_snapshot(ar):
             **_dry_ingest_definition("MANUAL", ar.rstrip("/")),
             "AR_HEAD": "dry",
             "AR_REPO_PHYSICAL": ar.rstrip("/"),
+            "AR_DATA_ROOT": "/dry/data",
+            "MANUAL_RESTORE_SHA256": source_digest(),
+            "MANUAL_QUEUE_STOP_SHA256": source_digest(queued=True),
             "DAILY_USER": "ar-local", "DAILY_USER_UID": "1000",
             "WATCHDOG_USER_JSON": json.dumps({"type": "s", "data": "ar-local"}),
             "WATCHDOG_ACTIVE_STATE": "inactive", "WATCHDOG_SUB_STATE": "dead",

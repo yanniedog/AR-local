@@ -30,6 +30,23 @@ def test_exact_direct_and_commissioned_queued_profiles_pass(queued):
     assert service.pi_ingest_service_fences_ok(snapshot(queued=queued))
 
 
+@pytest.mark.parametrize('queued', [False, True])
+@pytest.mark.parametrize('mutation', ['old-flag', 'missing-hash', 'wrong-hash', 'repo-hook', 'unprivileged'])
+def test_manual_window_requires_exact_installed_helper_and_flag(queued, mutation):
+    current = snapshot(queued=queued)
+    key = 'MANUAL_QUEUE_STOP_SHA256' if queued else 'MANUAL_RESTORE_SHA256'
+    if mutation == 'missing-hash': current.pop(key)
+    elif mutation == 'wrong-hash': current[key] = '0' * 64
+    else:
+        field = 'MANUAL_EXEC_JSON' if mutation == 'old-flag' else 'MANUAL_STOP_POST_JSON'
+        rows = json.loads(current[field])
+        if mutation == 'old-flag': rows['data'][0][1].remove('--manual-ingest')
+        elif mutation == 'repo-hook': rows['data'][0][1][1] = REPO + '/pi_cdr_recovery.py'
+        else: rows['data'][0][2] = ['privileged'] if queued else []
+        current[field] = json.dumps(rows)
+    assert not service.pi_ingest_service_fences_ok(current)
+
+
 def _archive_readback_daily_argv(repo=REPO):
     digest = "d393c008e272ec01d030e91f4ce66c8b4370aa74f5d5603bb114be1bf0da03f8"
     package = f"/usr/local/lib/ar-local-payload-archive/{digest}"
@@ -101,9 +118,9 @@ def test_profile_control_argv_and_deadlines_match_checked_in_templates(manual):
         if queued:
             assert json.loads(fields[prefix + "_STOP_POST_JSON"])["data"][0][1] == shlex.split(unit["ExecStopPost"])
         else:
-            assert unit["ExecStopPost"].startswith("+/usr/bin/systemctl ")
+            assert unit["ExecStopPost"].startswith("+/usr/bin/python3 -I -S " if manual else "+/usr/bin/systemctl ")
             command = json.loads(fields[prefix + "_STOP_POST_JSON"])["data"][0]
-            assert command[1] == shlex.split(unit["ExecStopPost"][1:])
+            assert command[1] == shlex.split(unit["ExecStopPost"][1:].replace('{{AR_LOCAL_DATA_ROOT}}', fields['AR_DATA_ROOT']))
             assert command[2] == ["privileged"]
 
 
