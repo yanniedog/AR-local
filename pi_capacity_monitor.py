@@ -159,8 +159,12 @@ def _carry_delivery(report: dict[str, Any], state: dict[str, Any]) -> None:
     prior = state.get("notification")
     if isinstance(prior, dict):
         report["notification"] = {key: prior[key] for key in (
-            "status", "capacity_status", "attempted_at", "retry_after", "error_class"
-        ) if key in prior}
+            "status", "capacity_status", "error_class"
+        ) if isinstance(prior.get(key), str)}
+        for key in ("attempted_at", "retry_after"):
+            value = prior.get(key)
+            if _timestamp(value) or (type(value) in (int, float) and value == 0):
+                report["notification"][key] = value
 
 
 def _maybe_notify(
@@ -179,7 +183,16 @@ def _maybe_notify(
     if (delivery.get("capacity_status") == report["status"]
             and now.timestamp() < _timestamp(delivery.get("retry_after"))):
         return False
-    if not email_configured():
+    try:
+        configured = email_configured()
+    except (OSError, ValueError, OverflowError) as error:
+        report["notification"] = {
+            "status": "FAILED", "capacity_status": report["status"],
+            "attempted_at": now.timestamp(), "retry_after": now.timestamp() + ALERT_RETRY_SECONDS,
+            "error_class": type(error).__name__,
+        }
+        return False
+    if not configured:
         report["notification"] = {"status": "NOT_CONFIGURED"}
         return False
     report["notification"] = {
