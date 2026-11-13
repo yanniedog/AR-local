@@ -4,7 +4,7 @@ After=network-online.target ar-local-dashboard.service
 Wants=network-online.target
 
 [Service]
-# Run verification as the repo owner so refreshing remote refs and reading the
+# Run verification as the repo owner while leaving Git metadata unchanged; reading the
 # checkout do not trigger Git's dubious-ownership protection. This unit never
 # pulls, switches, restarts services, or deploys code.
 User={{AR_LOCAL_USER}}
