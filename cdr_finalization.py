@@ -82,10 +82,17 @@ def _coverage(
     )
     registered = int(status.get("providers_registered") or 0)
     attempted = int(status.get("providers_attempted") or 0)
+    prd_unavailable = []
+    if status.get('providers_prd_unavailable') or any(
+            row.get('prd_availability') == 'UNAVAILABLE' for row in status.get('provider_states', [])):
+        from cdr_provider_participation_evidence import current_register
+        _, register = current_register(export_root, status, str(manifest.get('run_date') or ''),
+                                       allow_filtered=True)
+        prd_unavailable = register.get('prd_unavailable', [])
     providers_reconcile = (
         bool(provider_states)
-        and attempted == len(provider_states)
-        and registered == attempted
+        and registered == len(provider_states)
+        and registered == attempted + len(prd_unavailable)
     )
     provenance_complete = (
         status.get("failure_provenance_complete") is True
@@ -95,6 +102,7 @@ def _coverage(
     incomplete = (
         status.get("incomplete") is not False
         or bool(population_unverified)
+        or bool(prd_unavailable)
         or failures > 0
         or corrupt > 0
         or not provenance_complete
@@ -132,6 +140,10 @@ def _coverage(
     if population_unverified:
         coverage['provider_population_unverified'] = population_unverified
         coverage['unavailable_populations'].append('provider_population')
+    if prd_unavailable:
+        coverage['providers_prd_unavailable'] = len(prd_unavailable)
+        coverage['provider_prd_unavailable'] = prd_unavailable
+        coverage['unavailable_populations'].append('registered_prd_endpoints')
     from cdr_population_lifecycle import participation_coverage
     ceased = participation_coverage(export_root, status, str(manifest.get('run_date') or ''))
     if ceased:

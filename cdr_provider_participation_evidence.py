@@ -108,15 +108,15 @@ def load_cessation_evidence(root=EVIDENCE_ROOT):
     return results
 
 
-def current_register(export_root, status, run_date):
-    """Read only the bounded initial register events, not the whole ingest journal."""
+def current_register(export_root, status, run_date, *, allow_filtered=False, ingest_root=False):
+    """Verify bounded initial events in the explicitly selected evidence namespace."""
     attempts = status.get('register_attempts')
     providers = status.get('provider_states')
     if (status.get('register_provenance_complete') is not True
             or not isinstance(attempts, list) or len(attempts) != 1
             or not isinstance(providers, list) or not providers
-            or status.get('providers_registered') != status.get('providers_attempted')
-            or status.get('providers_attempted') != len(providers)):
+            or (not allow_filtered and status.get('providers_registered') != len(providers))
+            or status.get('providers_attempted') != sum(row.get('state') != 'not_attempted' for row in providers)):
         raise ValueError('current register is incomplete or filtered')
     attempt = attempts[0]
     if (attempt.get('ok') is not True or attempt.get('status') != 200
@@ -124,10 +124,12 @@ def current_register(export_root, status, run_date):
         raise ValueError('current register is not authoritative')
     pointer = status['raw_attempt_journal']
     session = pointer['session_id']
+    namespace = '_raw-attempt-journals-v1' if ingest_root else 'attempt-evidence/raw-attempt-journals-v1'
+    resolution = 'relative_to_ingest_run_root' if ingest_root else 'relative_to_finalized_export_root'
     if (pointer.get('verified') is not True
-            or pointer.get('path_resolution') != 'relative_to_finalized_export_root'
-            or pointer.get('path') != f'attempt-evidence/raw-attempt-journals-v1/{session}'):
-        raise ValueError('current register lacks promoted raw evidence')
+            or pointer.get('path_resolution') != resolution
+            or pointer.get('path') != f'{namespace}/{session}'):
+        raise ValueError('current register lacks correctly bound raw evidence')
     journal_root = safe_child(export_root, pointer['path'])
     journal = RawAttemptJournal(journal_root.parent, session)
     committed = read_json(journal.current_path, max_bytes=65536)
@@ -162,8 +164,17 @@ def current_register(export_root, status, run_date):
             'sha256': attempt['sha256'], 'bytes': attempt['bytes']}, register=True)
         rows = register_rows(payload)
         expected = {provider_uid(brand) for brand in iter_banking_brands_from_payload(payload)}
-        if expected != {row['provider_uid'] for row in providers}:
+        observed = {row['provider_uid'] for row in providers}
+        if (status.get('providers_registered') != len(expected)
+                or len(observed) != len(providers)
+                or (not observed <= expected if allow_filtered else expected != observed)):
             raise ValueError('current provider scope differs from the complete register')
+        from cdr_register_availability import validate_prd_dispositions
+        unavailable = validate_prd_dispositions(payload, status, event, provider_uid,
+                                                allow_filtered=allow_filtered)
+        if sum(row.get('state') == 'not_attempted' for row in providers) != len(unavailable):
+            raise ValueError('unattempted providers lack verified register dispositions')
         return rows, {'sha256': attempt['sha256'], 'bytes': body_path.stat().st_size,
-                      'observed_at': response['completed_at'], 'event_digest': event['event_digest']}
+                      'observed_at': response['completed_at'], 'event_digest': event['event_digest'],
+                      **({'prd_unavailable': unavailable} if unavailable else {})}
     raise ValueError('register discovery exceeds evidence event budget')

@@ -131,7 +131,7 @@ def product_index_request_url(url: str) -> str:
     return url
 
 
-def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
+def iter_banking_brands_from_payload(payload: Any, *, register_version: Optional[int] = None) -> Iterable[Dict[str, Any]]:
     """Yield financial PRD brands using the shared Banking Product APIs.
 
     The historical function/row names remain compatible with existing callers.
@@ -157,11 +157,21 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
             if inds & FINANCIAL_PRD_INDUSTRIES:
-                yield {
+                brand = {
                     "brand_name": brand_name,
                     "legal_entity_name": legal_name,
                     "endpoint_url": normalize_banking_products_url(base),
                 }
+                # V2 explicitly distinguishes public discovery from PRD. Keep
+                # the historical identity locator, but never request it when
+                # the authoritative register says no PRD endpoint is available.
+                # Unknown/historical versions retain their established fallback.
+                registration_id = item.get("dataHolderBrandId") or item.get("interimId")
+                if (register_version == 2 and item.get("productBaseUri") is None
+                        and isinstance(registration_id, str) and registration_id.strip()):
+                    brand.update(prd_availability="UNAVAILABLE", register_version=2,
+                                 registration_id=registration_id)
+                yield brand
             continue
 
         # Legacy banking endpoint rows omit the key; malformed modern rows do not.
@@ -881,6 +891,7 @@ def collect_register_snapshot(
                 "ok": attempt_ok and completeness_error is None,
                 **({"error": completeness_error} if completeness_error else {}),
                 "status": res.status,
+                "version": res.version,
                 "bytes": len((res.text or "").encode("utf-8")),
                 "sha256": hashlib.sha256((res.text or "").encode("utf-8")).hexdigest(),
             }
@@ -888,7 +899,15 @@ def collect_register_snapshot(
         if not attempt_ok:
             continue
         register_payload_ok = True
-        for b in iter_banking_brands_from_payload(data):
+        for b in iter_banking_brands_from_payload(
+                data, register_version=res.version if completeness_error is None else None):
+            if b.get("prd_availability") == "UNAVAILABLE":
+                b["prd_availability_evidence"] = {
+                    "register_version": res.version,
+                    "register_body_sha256": register_attempts[-1]["sha256"],
+                    "registration_id": b.get("registration_id"),
+                    "source_url": url,
+                }
             key = (
                 b["endpoint_url"].lower(),
                 (b["brand_name"] or "").lower(),
