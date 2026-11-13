@@ -56,7 +56,8 @@ identity guard remains conservative across interim and registered ID fields.
 
 ## Supervised qualification route
 
-Runtime source `a98efe2` plus resource correction `3df2f7c` adds
+Runtime source `a98efe2`, resource correction `3df2f7c` and staging repair
+`7c123a3` add
 `pi_live_financial_capture.py` and its worker. It
 requires exact clean current main, a new operation directory directly under
 `/srv/ar-local/canary`, the shared AR-local queue claim and a supervised owned
@@ -67,6 +68,12 @@ archive destination. Production concurrency is retained (8 providers, default
 ceiling, 3GiB memory cap, existing
 quality resource telemetry/stops and a bounded cleanup reserve. The receipt
 states the inherited quality-canary swap-recording policy explicitly.
+
+The launcher preserves production's automatic Pi raw-RAM/derived-disk staging;
+it does not force `--ram-stage`, which disables that production path. Its RAM
+root is isolated. Qualification verifies the actual finalized marker used that
+RAM root; a disk fallback remains retained evidence but cannot claim RAM-mode
+qualification. Tests compare the parsed command to production's arguments.
 
 The worker independently verifies promoted committed journal evidence, attempts
 every discovered financial provider exactly once, audits captured source/ledger/
@@ -101,6 +108,9 @@ production identity checks were not relaxed. Full integrated Linux CI must pass.
 The integrated financial-discovery/lifecycle/disclosure/restore/live-route/
 resource/recovery/deployment controls passed 288 tests. The final focused rerun
 passed 71 tests, including the corrected CPU property and its ceiling assertion.
+After staging repair `7c123a3`, 108 integrated live/resource/actual-RAM-stage and
+capacity checks passed. The earlier test invocation used a nonexistent test
+filename and collected no tests; its receipt is retained and is not acceptance.
 
 Next: integrated regression checks, review/merge optional qualification-route
 branches when ready, full exact-head CI, substantive feedback disposition and
