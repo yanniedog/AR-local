@@ -1,4 +1,4 @@
-# Integrated ingest repair continuation — 2026-11-13
+# Integrated ingest repair continuation â€” 2026-11-13
 
 Root authorized consolidating source PRs #1131, #1132, #1134, #1135 and #1136
 into one exact-head tested PR, preserving component commits and feedback
@@ -62,18 +62,30 @@ Runtime source `a98efe2`, resource correction `3df2f7c` and staging repair
 requires exact clean current main, a new operation directory directly under
 `/srv/ar-local/canary`, the shared AR-local queue claim and a supervised owned
 systemd unit. Source and production mounts are read-only; writes stay in the
-operation and RAM stage. Private rclone configuration points only to a local
+operation and isolated capture stage. Private rclone configuration points only to a local
 archive destination. Production concurrency is retained (8 providers, default
 4 detail workers), with three reserved queue CPU slots, the existing 200% CPU
 ceiling, 3GiB memory cap, existing
 quality resource telemetry/stops and a bounded cleanup reserve. The receipt
 states the inherited quality-canary swap-recording policy explicitly.
 
-The launcher preserves production's automatic Pi raw-RAM/derived-disk staging;
-it does not force `--ram-stage`, which disables that production path. Its RAM
-root is isolated. Qualification verifies the actual finalized marker used that
-RAM root; a disk fallback remains retained evidence but cannot claim RAM-mode
-qualification. Tests compare the parsed command to production's arguments.
+The launcher preserves production's automatic Pi staging flags and binds the
+effective daily unit `AR_LOCAL_RAM_ROOT`, including ordered environment files
+and final unset rules. It never sources shell text or saves other environment
+values. Ambiguous or unsupported configuration fails closed. The default
+`--stage-profile production` uses a new stage on the same device, filesystem and
+mount as production: inside the isolated operation for disk, or an isolated
+`/dev/shm` directory for matching tmpfs. The configuration and both filesystem
+identities must remain unchanged through capture. The finalized marker must
+prove that exact stage was selected. `ram_staged=true` alone does not mean tmpfs.
+
+An explicit `--stage-profile tmpfs-supplemental` can test RAM separately, but its
+receipt says `SUPPLEMENTAL` and `production_fidelity=false`; it cannot qualify
+the configured disk production profile. Neither profile forces `--ram-stage`
+or `--no-ram-stage`. Tests compare parsed flags with production. Disk failure
+evidence stays in place; failed tmpfs evidence retains the existing bounded
+copy and original-preservation policy. No isolated evidence is copied into
+production data or selection.
 
 The worker independently verifies promoted committed journal evidence, attempts
 every discovered financial provider exactly once, audits captured source/ledger/
@@ -104,7 +116,7 @@ runtime after preparation/hashing, preserving a 180-second cleanup reserve.
 Queue wait and parent-runtime bounds stay below the absolute cutoff. Parent
 evidence snapshots and worker audits require the existing Linux drop-behind
 read path; the ingest child keeps production's own behavior. The installed
-root-mediated `pi_ci_activate.py` independently retains its 03:30–22:00 window:
+root-mediated `pi_ci_activate.py` independently retains its 03:30â€“22:00 window:
 this one-off authorization does not override every deployment entrypoint.
 
 Runtime's initial focused controls passed 113 tests. Existing activation fixtures

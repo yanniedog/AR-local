@@ -87,7 +87,8 @@ def test_legacy_guard_keeps_default_and_extension_is_revalidated(tmp_path, monke
 
 
 def test_launch_contains_writes_and_parent_lifetime(tmp_path):
-    args = SimpleNamespace(source=tmp_path / "source", operation=tmp_path / "operation")
+    args = SimpleNamespace(source=tmp_path / "source", operation=tmp_path / "operation",
+        stage_binding={"root": str(tmp_path / "operation/capture-stage")})
     properties = live.launch_properties(args, "unused", "ar-local-shared-task-parent.service", 900)
     assert "CPUQuota=200%" in properties
     assert "MemoryMax=3G" in properties and "MemorySwapMax=0" in properties
@@ -165,7 +166,8 @@ def test_register_reconciliation_rejects_wrong_head_or_missing_provider(tmp_path
 def test_ingest_uses_production_automatic_ram_and_detail_defaults(tmp_path):
     from pi_live_financial_worker import ingest_command
     from ar_local_launcher_constants import DAILY_WORKER_COUNT
-    args = SimpleNamespace(python=Path("python"), source=tmp_path / "source", operation=tmp_path / "op")
+    args = SimpleNamespace(python=Path("python"), source=tmp_path / "source", operation=tmp_path / "op",
+        stage_binding={"root": str(tmp_path / "op/capture-stage")})
     command = ingest_command(args, "2026-11-13", DAILY_WORKER_COUNT)
     assert command[command.index("--workers") + 1] == str(DAILY_WORKER_COUNT)
     assert "--detail-workers" not in command

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pi_cdr_quality_read_io import require_dropbehind_reads
+from pi_live_financial_stage import verify_directory, verify_stage
 from pi_cdr_quality_activate import clean_commit, read, record, relative, run, source_files, write, TZ
 
 
@@ -53,7 +54,7 @@ def reconcile_register(exports, status):
 def ingest_command(args, run_date, workers):
     from pi_live_financial_capture import ram_root
     op = args.operation
-    # Match production's automatic Pi mode: raw RAM, derived exports on disk.
+    # Match production's automatic Pi mode and observed staging filesystem.
     # Explicit --ram-stage also moves derived exports to RAM and is not equivalent.
     return [args.python, "-B", args.source / "cdr_daily.py", "--runs", op / "data/runs",
             "--state", op / "data/state", "--date", run_date, "--banks-only",
@@ -71,6 +72,10 @@ def worker(args):
     if (intent["target_commit"] != args.expected_commit or intent["operation"] != str(op)
             or clean_commit(args.source) != args.expected_commit or source_files(args.source) != intent["before"]["source_files"]):
         raise ValueError("worker does not match exact launch source")
+    args.stage_binding = intent["staging"]
+    if args.stage_binding["profile"] != args.stage_profile:
+        raise ValueError("worker staging profile differs from launch intent")
+    stage_before = verify_directory(args.stage_binding)
     from ar_local_launcher_constants import DAILY_WORKER_COUNT
     from cdr_ingest_lib import parse_args
     detail_workers = parse_args([]).detail_workers
@@ -78,8 +83,9 @@ def worker(args):
     command = ingest_command(args, run_date, DAILY_WORKER_COUNT)
     run(command, timeout=args.runtime_seconds, output=op / "ingest.txt")
     marker = read(op / "data/state" / f"{run_date}.done.json")
-    if marker.get("ram_staged") is not True or marker.get("ram_root") != str(ram_root(args)):
-        raise ValueError("capture did not exercise production RAM staging (disk fallback is not RAM qualification)")
+    staging = verify_stage(marker, args.stage_binding)
+    verify_directory(args.stage_binding)
+    staging["before_capture_filesystem"] = stage_before
     exports = op / "data/runs" / run_date / "_exports"
     status = read(exports / "ingest-status.json")
     coverage = reconcile_register(exports, status)
@@ -97,7 +103,7 @@ def worker(args):
         raise ValueError("audit pointer does not identify the completed report")
     result = {"schema": "ar-local-live-financial-worker-v1", "result": "PASS", "target_commit": args.expected_commit,
               "run_date": run_date, "generation_id": report["capture"]["generation_id"], "coverage": coverage,
-              "concurrency": {"workers": DAILY_WORKER_COUNT, "detail_workers": detail_workers},
+              "concurrency": {"workers": DAILY_WORKER_COUNT, "detail_workers": detail_workers}, "staging": staging,
               "ingest_status": record(exports / "ingest-status.json"), "archive_progress": record(archives),
               "audit_pointer": record(op / "audit/latest.json"), "audit": record(audit_path), "publication": "NOT_ATTEMPTED", "drive": "NOT_ATTEMPTED",
               "scope": "isolated full financial population attempted; upstream failures remain explicit"}
