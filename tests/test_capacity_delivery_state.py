@@ -138,3 +138,37 @@ def test_invalid_utf8_notification_config_retains_sanitized_failure_and_retry(tm
     output = capsys.readouterr()
     assert "private-config-detail" not in state.read_text() + output.out + output.err
     assert str(config) not in output.out + output.err
+
+
+def test_unconfigured_severity_change_preserves_prior_attempt_reservation(tmp_path, monkeypatch):
+    clock, state, args = configured(tmp_path, monkeypatch)
+    attempts = []
+    monkeypatch.setattr(monitor, "send_email", lambda *_: attempts.append(True) and False)
+    assert monitor.main(args) == 1
+    prior = json.loads(state.read_text())["notification"]
+    clock[0] += timedelta(minutes=10)
+    monkeypatch.setattr(monitor, "email_configured", lambda: False)
+    monkeypatch.setattr(monitor.shutil, "disk_usage", lambda _: SimpleNamespace(
+        total=1000 * monitor.GIB, used=950 * monitor.GIB, free=50 * monitor.GIB))
+    assert monitor.main(args) == 1
+    saved = json.loads(state.read_text())
+    assert saved["status"] == "critical" and saved["notification"] == prior
+    clock[0] += timedelta(minutes=10)
+    monkeypatch.setattr(monitor, "email_configured", lambda: True)
+    monkeypatch.setattr(monitor.shutil, "disk_usage", lambda _: SimpleNamespace(
+        total=1000 * monitor.GIB, used=800 * monitor.GIB, free=200 * monitor.GIB))
+    assert monitor.main(args) == 1
+    assert json.loads(state.read_text())["notification"] == prior and attempts == [True]
+
+
+def test_configured_critical_escalation_does_not_wait_for_warning_retry(tmp_path, monkeypatch):
+    clock, state, args = configured(tmp_path, monkeypatch)
+    attempts = []
+    monkeypatch.setattr(monitor, "send_email", lambda subject, _: attempts.append(subject) and False)
+    assert monitor.main(args) == 1
+    clock[0] += timedelta(minutes=10)
+    monkeypatch.setattr(monitor.shutil, "disk_usage", lambda _: SimpleNamespace(
+        total=1000 * monitor.GIB, used=950 * monitor.GIB, free=50 * monitor.GIB))
+    assert monitor.main(args) == 1
+    assert len(attempts) == 2 and attempts[-1].endswith("critical")
+    assert json.loads(state.read_text())["notification"]["capacity_status"] == "critical"

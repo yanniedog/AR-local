@@ -193,6 +193,10 @@ def _maybe_notify(
         }
         return False
     if not configured:
+        # No new delivery superseded the prior attempt. Keep its reservation
+        # across severity changes; configured escalations still proceed below.
+        if now.timestamp() < _timestamp(delivery.get("retry_after")):
+            return False
         report["notification"] = {"status": "NOT_CONFIGURED"}
         return False
     report["notification"] = {
