@@ -17,7 +17,7 @@ from tests.test_cdr_financial_register import retained
 DAY = '2026-11-13'
 
 
-def capture(tmp_path, monkeypatch, *, response_version='2'):
+def capture(tmp_path, monkeypatch, *, response_version='2', register_hour_utc='00'):
     body = retained('register.json')
     monkeypatch.setattr(support, 'fetch_cdr_json', lambda *args, **kwargs:
         support.FetchResult(True, 200, support.REGISTER_URL_SUMMARY, body.decode(), version=2))
@@ -27,7 +27,7 @@ def capture(tmp_path, monkeypatch, *, response_version='2'):
     journal.record('register', request_url=support.REGISTER_URL_SUMMARY,
         request_headers={'x-v': '2', 'x-min-v': '2'}, status=200, outcome='success', body=body,
         response_headers={} if response_version is None else {'x-v': response_version},
-        started_at=DAY+'T00:00:00Z', completed_at=DAY+'T00:00:01Z',
+        started_at=DAY+f'T{register_hour_utc}:00:00Z', completed_at=DAY+f'T{register_hour_utc}:00:01Z',
         context={'phase': 'register_discovery', 'cdr_version': 2})
     banks = run/'banks'; banks.mkdir(); (banks/'failures.jsonl').write_bytes(b'')
     seen = set()
@@ -207,3 +207,25 @@ def test_unavailable_population_never_implies_product_removal():
     groups, result = _exclude_failed_missing_product_groups([(key, [])], [], [], current_providers=[])
     assert list(groups) == []
     assert result['suppressed'] == 1 and result['reasons'] == {'provider_population_absent': 1}
+
+
+def test_live_reconciliation_keeps_capture_date_across_midnight(tmp_path, monkeypatch):
+    from datetime import datetime
+    import pi_live_financial_worker as worker
+
+    # Retained register bytes; only timing controls vary. Capture starts23:00
+    # Hobart and finishes00:10, inside the unchanged00:30 absolute cutoff.
+    _, exports, _, status = capture(tmp_path, monkeypatch, register_hour_utc='12')
+
+    class AfterMidnight(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 14, 0, 10, tzinfo=worker.TZ).astimezone(tz)
+
+    monkeypatch.setattr(worker, 'datetime', AfterMidnight)
+    assert worker.datetime.now(worker.TZ).date().isoformat() != DAY
+    report = worker.reconcile_register(exports, status, DAY)
+    assert report['registered'] == 306 and report['attempted'] == 262
+    assert len(report['prd_unavailable']) == 44
+    with pytest.raises(ValueError, match='stale'):
+        worker.reconcile_register(exports, status, '2026-11-14')

@@ -19,7 +19,7 @@ def test_register_parse_uses_single_captured_identity_bound_read(tmp_path, monke
         reads.append(path)
         return real_read(path, **kwargs)
     monkeypatch.setattr(worker, "evidence_bytes", read)
-    assert worker.reconcile_register(exports, status)["registered"] == 1
+    assert worker.reconcile_register(exports, status, "2026-08-15")["registered"] == 1
     assert len(reads) == 1
 
 
