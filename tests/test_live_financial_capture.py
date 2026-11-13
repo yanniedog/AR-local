@@ -89,6 +89,7 @@ def test_legacy_guard_keeps_default_and_extension_is_revalidated(tmp_path, monke
 def test_launch_contains_writes_and_parent_lifetime(tmp_path):
     args = SimpleNamespace(source=tmp_path / "source", operation=tmp_path / "operation")
     properties = live.launch_properties(args, "unused", "ar-local-shared-task-parent.service", 900)
+    assert "CPUQuota=200%" in properties
     assert "MemoryMax=3G" in properties and "MemorySwapMax=0" in properties
     assert "BindsTo=ar-local-shared-task-parent.service" in properties
     assert "KillMode=control-group" in properties and "RuntimeMaxSec=930s" in properties
