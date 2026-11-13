@@ -3,6 +3,7 @@ import base64
 import copy
 import fnmatch
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -87,12 +88,14 @@ def test_admission_preserves_quiet_and_cleanup_budget(stamp, allowed):
 
 def claim():
     group = '/system.slice/ar-local-queue-task-' + 'a' * 32 + '.service'
+    boot = '11111111-1111-4111-8111-111111111111'
     job = dict(id='job', project='ar-local', state='running', resources=['ar-local', 'host'],
-               mode='exclusive', cgroup=group, unit=group.split('/')[-1], boot_id='boot', pid=123,
-               invocation_id='b' * 32)
+               mode='exclusive', cgroup=group, unit=group.split('/')[-1], boot_id=boot, pid=123,
+               invocation_id='b' * 32, start_ticks=1234, cpu_slots=1, max_duration_seconds=1200,
+               sequence=0, queued_monotonic=42.5, command_started=True)
     props = dict(ControlGroup=group, ActiveState='active', MainPID='123', InvocationID='b' * 32)
-    lease = dict(pid='123', boot_id='boot', role='shared-pi-host-task:job', recovery='manual')
-    return {'jobs': [job]}, group, 'boot', props, lease
+    lease = dict(pid='123', boot_id=boot, role='shared-pi-host-task:job', recovery='manual')
+    return {'jobs': [job]}, group, boot, props, lease
 
 
 def test_current_exclusive_host_native_claim_accepted():
@@ -171,17 +174,21 @@ def test_rollback_remains_available_with_broken_network_keys_or_sshd(tmp_path, m
     unit = tmp_path / 'owned.service'; unit.write_bytes(b'unit')
     monkeypatch.setattr(native, 'ROOT', root); monkeypatch.setattr(native, 'UNIT', unit)
     monkeypatch.setattr(native, 'admit', lambda _: None)
-    monkeypatch.setattr(native, 'installed', lambda *_: {unit: b'unit'})
+    monkeypatch.setattr(native, 'installed', lambda *_, **kw: {unit: b'unit'})
     monkeypatch.setattr(native, 'effective_validate', lambda *_: pytest.fail('broken sshd must not block rollback'))
     monkeypatch.setattr(native, 'create', lambda path, body: path.write_bytes(body))
+    monkeypatch.setattr(native, 'sync_directory', lambda path: None)
     calls = []
     def fake_run(args):
         calls.append(args)
+        if args[-1] == '--property=FragmentPath,DropInPaths':
+            return SimpleNamespace(stdout=f'FragmentPath={unit if unit.exists() else ""}\nDropInPaths=\n')
         return SimpleNamespace(stdout='ActiveState=failed\nMainPID=0\nControlGroup=\n' if 'show' in args else '')
     monkeypatch.setattr(native, 'run', fake_run)
-    assert native.mutate('rollback', approval(), {}, b'{}', 1000) == 'ROLLED_BACK_EVIDENCE_RETAINED'
+    assert native.mutate('rollback', approval(), {'unit': b'unit'}, b'{}', 1000) == 'ROLLED_BACK_EVIDENCE_RETAINED'
     assert not unit.exists() and (root / 'retired-unit.service').read_bytes() == b'unit'
     assert all('start' not in command and 'enable' not in command for command in calls)
+    assert ['/usr/bin/systemctl', 'disable', '--now', native.SERVICE] in calls
 
 
 def test_rollback_main_skips_network_and_key_readiness(monkeypatch):
@@ -201,6 +208,8 @@ def test_failed_effective_validation_never_publishes_unit(tmp_path, monkeypatch)
     monkeypatch.setattr(native, 'admit', lambda _: None)
     monkeypatch.setattr(native, 'protected_directory', lambda _: None)
     monkeypatch.setattr(native, 'create', lambda path, body: path.write_bytes(body))
+    monkeypatch.setattr(native, 'sync_directory', lambda path: None)
+    monkeypatch.setattr(native, 'no_existing_links', lambda: None)
     calls = []
     def fake_run(args):
         calls.append(args); return SimpleNamespace(stdout='LoadState=not-found\n')
@@ -282,8 +291,23 @@ def test_exclusive_host_rejects_other_active_or_ambiguous_claims(state):
 
 
 def test_exclusive_host_allows_waiting_jobs():
-    args = list(claim()); args[0]['jobs'].append({'id': 'other', 'cgroup': '/other', 'state': 'waiting'})
+    from pi_shared_queue_store import validate_job
+    args = list(claim()); other = dict(args[0]['jobs'][0], id='other', state='waiting', command_started=False)
+    other['unit'] = 'ar-local-queue-task-' + 'c' * 32 + '.service'
+    other['cgroup'] = '/system.slice/' + other['unit']
+    validate_job(other)  # Same complete pre-admission identity used by the installed queue.
+    args[0]['jobs'].append(other)
     assert native.queue_claim(*args)['id'] == 'job'
+
+
+@pytest.mark.parametrize('change', [lambda j: j.pop('unit'), lambda j: j.update(pid=0),
+    lambda j: j.update(queued_monotonic=float('nan')), lambda j: j.update(resources='host'),
+    lambda j: j.update(start_ticks=True), lambda j: j.update(invocation_id='')])
+def test_malformed_waiting_record_cannot_hide_ambiguous_ownership(change):
+    args = list(claim()); other = dict(args[0]['jobs'][0], state='waiting', id='other')
+    other['cgroup'] = '/system.slice/shared-pi-task-other.service'; other['unit'] = 'shared-pi-task-other.service'
+    change(other); args[0]['jobs'].append(other)
+    with pytest.raises(ValueError): native.queue_claim(*args)
 
 
 @pytest.mark.parametrize('recovery', [None, 'automatic', ''])

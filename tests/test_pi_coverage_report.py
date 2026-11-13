@@ -66,6 +66,18 @@ def test_capped_and_malformed_samples_stay_explicit(monkeypatch):
     assert value["sample_complete"] is False
 
 
+def test_explicit_empty_provider_states_do_not_confirm_nonzero_failure_aggregate():
+    status = captured_status()
+    status["provider_states"] = []
+    value = report.status_report(status)
+    assert value["total"] is None and value["reported_total"] == 11
+    assert sum(value["providers"].values()) == 11  # Retain claims without inventing replacements.
+    status.pop("provider_states")
+    assert report.status_report(status)["total"] == 11  # Legacy absent optional inventory.
+    status.update(provider_states=[], total=0, by_provider={})
+    assert report.status_report(status)["total"] == 0
+
+
 def test_cli_sanitizes_unknown_fields_and_reports_real_totals(tmp_path, capsys):
     status = captured_status()
     status["private_metadata"] = {"bank": "DO-NOT-PRINT", "phase": "secret"}

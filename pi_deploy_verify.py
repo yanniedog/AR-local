@@ -126,6 +126,8 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_deploy_http_smoke.py",
     "pi_deploy_ingest_timers.py",
     "pi_deploy_service_snapshot.py",
+    "pi_deploy_checkout.py",
+    "pi_deploy_documentation.py",
     "pi_observer_unit_contract.py",
     "pi_observer_unit_verify.py",
     "pi_runtime_health.py",
@@ -864,6 +866,7 @@ def changed_files_since(ref: str) -> list[str]:
 def cmd_verify(args: argparse.Namespace) -> int:
     code = verify_sync(
         dry_run=args.dry_run,
+        expected_commit=args.expected_commit or None,
         allow_unarmed_ingest_timers=bool(args.allow_unarmed_ingest_timers),
     )
     if code != EXIT_OK:

@@ -1,13 +1,13 @@
 """Protected live capture and independent register/source reconciliation."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from datetime import datetime
 from pathlib import Path
 
 from pi_cdr_quality_read_io import require_dropbehind_reads
+from pi_cdr_quality_digest import read_digest
 from pi_live_financial_stage import verify_directory, verify_stage
 from pi_cdr_quality_activate import clean_commit, read, record, relative, run, source_files, write, TZ
 
@@ -16,7 +16,31 @@ def brand_key(row):
     return tuple(str(row.get(k) or "").strip().lower() for k in ("endpoint_url", "brand_name", "legal_entity_name"))
 
 
-def reconcile_register(exports, status):
+def evidence_bytes(path, *, budget=None):
+    # Parse the same identity-bound bytes whose digest was checked. The worker's
+    # required scope makes this use drop-behind rather than a second buffered read.
+    try:
+        return read_digest(path, capture=True, max_bytes=16 * 1024**2, budget=budget)
+    except ValueError as error:
+        # Keep cached audit semantics unchanged; this caller has a tighter bound.
+        if str(error) == "evidence JSON exceeds 64 MiB":
+            raise ValueError("live qualification evidence exceeds 16 MiB") from error
+        raise
+
+
+def archive_matches(path, generation, *, budget=None):
+    _, raw = evidence_bytes(path, budget=budget)
+    matched = False
+    for line in raw.splitlines():
+        if budget is not None:
+            budget()
+        if line.strip():
+            row = json.loads(line)
+            matched |= row.get("result") == "PASS" and row.get("generation_id") == generation
+    return matched
+
+
+def reconcile_register(exports, status, *, budget=None):
     from cdr_ingest_support import iter_banking_brands_from_payload
     from cdr_attempt_evidence_promotion import verify_promoted_attempt_evidence
     if status.get("register_provenance_complete") is not True or status.get("failure_provenance_complete") is not True:
@@ -28,15 +52,15 @@ def reconcile_register(exports, status):
     journal = verify_promoted_attempt_evidence(exports, status["raw_attempt_journal"])
     found, brands = set(), set()
     for event in journal.evidence_records(recover=False):
+        if budget is not None:
+            budget()
         if event.get("context", {}).get("phase") != "register_discovery":
             continue
         if event["status"] != 200 or event["outcome"] != "success" or event["body_sha256"] not in expected:
             continue
         body = relative(journal.root, event["body_path"])
-        if body.stat().st_size > 16 * 1024**2:
-            raise ValueError("register response exceeds qualification budget")
-        raw = body.read_bytes()
-        digest = hashlib.sha256(raw).hexdigest()
+        evidence, raw = evidence_bytes(body, budget=budget)
+        digest = evidence.sha256
         if digest != event["body_sha256"]:
             raise ValueError("register response changed")
         found.add(digest)
@@ -69,6 +93,10 @@ def worker(args):
     if any(os.access(p, os.W_OK) for p in (args.source, DATA, PRODUCTION)):
         raise ValueError("live worker requires read-only source and production mounts")
     intent = read(op / "intent.json")
+    cutoff = datetime.fromisoformat(intent["absolute_cutoff"])
+    def read_budget(**_):
+        if datetime.now(TZ) >= cutoff:
+            raise TimeoutError("live evidence read exceeded its absolute cutoff")
     if (intent["target_commit"] != args.expected_commit or intent["operation"] != str(op)
             or clean_commit(args.source) != args.expected_commit or source_files(args.source) != intent["before"]["source_files"]):
         raise ValueError("worker does not match exact launch source")
@@ -88,13 +116,12 @@ def worker(args):
     staging["before_capture_filesystem"] = stage_before
     exports = op / "data/runs" / run_date / "_exports"
     status = read(exports / "ingest-status.json")
-    coverage = reconcile_register(exports, status)
+    coverage = reconcile_register(exports, status, budget=read_budget)
     report = audit(op / "data", run_date, scrub=True, public=False, audit_root=op / "audit")
     if report["capture"]["status"] != "PASS" or report["issues"]:
         raise ValueError("fresh live capture did not pass source/ledger/SQLite accounting")
     archives = op / "data/archive-spool/meta/raw-progress.jsonl"
-    rows = [json.loads(line) for line in archives.read_text().splitlines() if line.strip()]
-    if not any(r.get("result") == "PASS" and r.get("generation_id") == report["capture"]["generation_id"] for r in rows):
+    if not archive_matches(archives, report["capture"]["generation_id"], budget=read_budget):
         raise ValueError("matching local-only raw archive receipt missing")
     if clean_commit(args.source) != args.expected_commit or source_files(args.source) != intent["before"]["source_files"]:
         raise ValueError("source changed during live capture")

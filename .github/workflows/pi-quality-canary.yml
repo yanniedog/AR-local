@@ -654,7 +654,14 @@ jobs:
           D_EXIT="$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value)"
           [ "$D_ACTIVE" = inactive ] && [ "$D_RESULT" = success ] || { echo "daily ingest not terminally successful ($D_ACTIVE/$D_RESULT)"; exit 1; }
           D_DAY="$(TZ=Australia/Hobart date -d "$D_EXIT" +%F 2>/dev/null || echo none)"
-          [ "$D_DAY" = "$(TZ=Australia/Hobart date +%F)" ] || { echo "today natural ingest/validation has not completed (last exit: $D_EXIT)"; exit 1; }
+          D_NOW="$(TZ=Australia/Hobart date '+%F %H%M')"
+          D_EXPECTED="${D_NOW% *}"
+          D_HM="${D_NOW#* }"
+          # Before the next 01:00 natural ingest, the last due date is yesterday.
+          if [ "$D_HM" -lt 0100 ]; then
+            D_EXPECTED="$(TZ=Australia/Hobart date -d "$D_EXPECTED -1 day" +%F)"
+          fi
+          [ "$D_DAY" = "$D_EXPECTED" ] || { echo "latest due natural ingest/validation has not completed (last exit: $D_EXIT)"; exit 1; }
           # Parents must be canonical, symlink-free real directories before any
           # clone can write through them.
           for P in /srv /srv/ar-local; do
