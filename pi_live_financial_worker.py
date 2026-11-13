@@ -49,6 +49,16 @@ def reconcile_register(exports, status):
             "upstream_complete": not bool(status.get("incomplete"))}
 
 
+def ingest_command(args, run_date, workers):
+    from pi_live_financial_capture import ram_root
+    op = args.operation
+    # Match production's automatic Pi mode: raw RAM, derived exports on disk.
+    # Explicit --ram-stage also moves derived exports to RAM and is not equivalent.
+    return [args.python, "-B", args.source / "cdr_daily.py", "--runs", op / "data/runs",
+            "--state", op / "data/state", "--date", run_date, "--banks-only",
+            "--ram-root", ram_root(args), "--archive-failed-ram-stage", "--workers", str(workers)]
+
+
 def worker(args):
     from pi_live_financial_capture import DATA, PRODUCTION, ram_root
     from cdr_quality_audit import audit
@@ -63,11 +73,11 @@ def worker(args):
     from cdr_ingest_lib import parse_args
     detail_workers = parse_args([]).detail_workers
     run_date = datetime.now(TZ).date().isoformat()
-    command = [args.python, "-B", args.source / "cdr_daily.py", "--runs", op / "data/runs",
-               "--state", op / "data/state", "--date", run_date, "--banks-only", "--ram-stage",
-               "--ram-root", ram_root(args), "--archive-failed-ram-stage",
-               "--workers", str(DAILY_WORKER_COUNT)]
+    command = ingest_command(args, run_date, DAILY_WORKER_COUNT)
     run(command, timeout=args.runtime_seconds, output=op / "ingest.txt")
+    marker = read(op / "data/state" / f"{run_date}.done.json")
+    if marker.get("ram_staged") is not True or marker.get("ram_root") != str(ram_root(args)):
+        raise ValueError("capture did not exercise production RAM staging (disk fallback is not RAM qualification)")
     exports = op / "data/runs" / run_date / "_exports"
     status = read(exports / "ingest-status.json")
     coverage = reconcile_register(exports, status)

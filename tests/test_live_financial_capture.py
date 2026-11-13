@@ -160,3 +160,20 @@ def test_register_reconciliation_rejects_wrong_head_or_missing_provider(tmp_path
     from cdr_attempt_evidence_promotion import AttemptEvidencePromotionError
     with pytest.raises(AttemptEvidencePromotionError):
         reconcile_register(exports, status)
+
+
+def test_ingest_uses_production_automatic_ram_and_detail_defaults(tmp_path):
+    from pi_live_financial_worker import ingest_command
+    from ar_local_launcher_constants import DAILY_WORKER_COUNT
+    args = SimpleNamespace(python=Path("python"), source=tmp_path / "source", operation=tmp_path / "op")
+    command = ingest_command(args, "2026-11-13", DAILY_WORKER_COUNT)
+    assert command[command.index("--workers") + 1] == str(DAILY_WORKER_COUNT)
+    assert "--detail-workers" not in command
+    assert "--ram-stage" not in command and "--no-ram-stage" not in command
+    assert command[command.index("--ram-root") + 1] == live.ram_root(args)
+    from cdr_daily import parse_args
+    parsed = parse_args([str(item) for item in command[3:]])
+    production = parse_args(["--workers", str(DAILY_WORKER_COUNT), "--archive-failed-ram-stage", "--banks-only"])
+    assert (parsed.ram_stage, parsed.no_ram_stage, parsed.ingest_arg) == (
+        production.ram_stage, production.no_ram_stage, production.ingest_arg)
+    assert not parsed.ram_stage and not parsed.no_ram_stage
