@@ -252,11 +252,16 @@ def gate(protected: str, candidate: str, *, env_path: Path = DEFAULT_ENV, now: d
 
 
 def record(kind: str, protected: str, candidate: str, commands: Sequence[str], *, env_path: Path = DEFAULT_ENV,
-           now: datetime | None = None) -> dict[str, object]:
+           now: datetime | None = None, repo: Path | None = None, run: Runner = _run) -> dict[str, object]:
     """Append-only deployment or rollback record bound to a passing gate and immutable receipt."""
     _check_shas(protected, candidate)
     if kind not in ("deployment", "rollback"):
         raise Blocked("unknown record kind")
+    if repo is not None:
+        expected_head = candidate if kind == "deployment" else protected
+        head_done = run(["git", "-C", str(repo), "rev-parse", "HEAD"], 30)
+        if head_done.returncode != 0 or head_done.stdout.strip() != expected_head:
+            raise Blocked(f"active checkout HEAD does not match expected {kind} SHA")
     current = now or _now()
     report = gate(protected, candidate, env_path=env_path, now=current)
     if not report.get("ok") or not report.get("backup"):

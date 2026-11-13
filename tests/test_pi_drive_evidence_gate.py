@@ -149,6 +149,8 @@ def test_gate_rejects_other_commits_stale_backup_and_missing_receipt(tmp_path):
     assert "backup_stale_or_future" in gate.gate(P, C, env_path=ctx["env"], now=NOW + timedelta(hours=7))["findings"]
     with pytest.raises(gate.Blocked):
         gate.record("deployment", C, P, [], env_path=ctx["env"])
+    with pytest.raises(gate.Blocked, match="active checkout HEAD"):
+        gate.record("deployment", P, C, [], env_path=ctx["env"], now=NOW, repo=ctx["repo"], run=_runner(git_head=P))
 
 
 def test_tampered_latest_receipt_is_rejected(tmp_path):

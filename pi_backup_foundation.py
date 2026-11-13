@@ -850,8 +850,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 elif args.command == "drive-gate":
                     report = drive.gate(protected, candidate)
                 else:
+                    if args.command == "drive-record-deployment" and not (args.dashboard_verified and args.services_verified):
+                        raise ValueError("--dashboard-verified and --services-verified are required for drive-record-deployment")
                     kind = "deployment" if args.command == "drive-record-deployment" else "rollback"
-                    report = drive.record(kind, protected, candidate, [*args.parent_command, exact_command])
+                    report = drive.record(kind, protected, candidate, [*args.parent_command, exact_command], repo=repo)
             except drive.Blocked as exc:
                 raise RuntimeError(str(exc)) from exc
             print(json.dumps(report, indent=2, sort_keys=True))
