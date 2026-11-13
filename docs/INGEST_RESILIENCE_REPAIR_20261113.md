@@ -151,3 +151,25 @@ Recorded 2026-11-13 approximately 22:32 Hobart; supersedes earlier status where 
 - **Two concrete operational implementation gaps remain:** the existing guarded quality canary has `PrivateNetwork=true` and only replays retained data; the older shadow helper only emits/canonicalizes receipts. A reviewed, isolated, network-enabled capture launcher with the existing resource supervisor is needed to qualify the expanded live financial population. Separately, no standalone verifier was found for independently downloading, safely extracting and semantically validating the daily raw-archive format. Upload/readback hashes are already verified; a fresh restore requires more than that. See the operational continuation document; do not fabricate new CLI flags or PASS receipts.
 
 Continue by resolving late #1130 findings, completing source integration and current-head checks, then implementing/qualifying those operational gaps. The existing mutation window, integrity, ownership and recovery constraints remain. The operator's email deferral changes only email work. Watchlist notifications, full consumer detail rendering, historical/physical restore and multiple natural daily cycles are still unaccepted.
+
+## Checkpoint 6 — source repair handoff, 2026-11-13 22:33 Hobart
+
+**Not a completed production repair.** The maintenance window remains closed. No Pi deployment, manual ingest/publication or backup mutation occurred. Original developer checkout remains unchanged, including unrelated untracked files.
+
+All six late #1130 threads now have Implemented/Declined dispositions and are resolved. Follow-up [#1136](https://github.com/yanniedog/AR-local/pull/1136) fixes two introduced defects (suppression-reason precedence and dictionary values in workbook cells) and strengthens the real empty-index regression. 108 focused tests passed in the isolated runner, plus 15 independent tests/review. The conservative withdrawal guard, pre-existing deliberate same-day retention and requested detailed handoff were retained with explicit rationale. A fresh post-merge audit of #1130 reports **1 checked, 1 clean, 0 thread gaps**; the code corrections themselves still require #1136 to merge. See `docs/PRODUCT_CHANGE_REVIEW_HANDOFF_20261113.md` in that PR.
+
+Current source pointers, all based/synchronized on `865a8542faeb2d2446f6cd72ebee6f48c998bc3d`:
+
+| Open PR | Exact head | Latest local validation |
+|---|---|---|
+| #1131 | `3309a9e7773a8d027c401b124b24026e3f77fd9d` | 120 focused/integration tests after base sync |
+| #1132 | `c0c0bcbeefc1538f7a872b755fd30c1915fc8ef8` | 146 tests after auth-exemption correction |
+| #1134 | `e923ed608e11dacef3f1d78c9bed5dab1c218c15` | 97 integrated tests; independent review clear |
+| #1135 | `f22f435e9a6149b8abf8c39ad14e16c09482af47` | 144 tests after base sync; prior 233 projection/integration tests |
+| #1136 | `5705193299f53cb5c95406a524867f506ff19606` | 108 isolated tests; independent 15 tests/review |
+
+These are test receipts, **not hosted-CI or merge claims**. Exact-head hosted validation and guarded closeout remain. A single latest #1134 gate check returned pending CI/feedback; no merge was attempted. Workers are parked under WORKFLOW's no-watch-loop rule. Recheck heads, current feedback and CI once on continuation; fix failures immediately, synchronize stale branches separately and reverify. Integrate #1131 before reconciling #1135's publication/lifecycle changes, then #1134/#1135 together against the expanded register. Do not deploy the current main without the unmerged corrections.
+
+Remaining work is ordered in `INGEST_RESILIENCE_OPERATIONS_20261113.md`: complete source integration; implement and qualify the isolated supervised live financial capture and independent daily-archive restore verification; qualify/seal/activate the exact integrated commit during the allowed window; validate public assets, Pi dashboard and matching Drive generation; address consumer field/history transport gaps; observe multiple natural daily cycles. Upstream errors remain explicit and retryable. SMTP is deferred by operator decision.
+
+Local handoff: `C:/code/AR-local-ingest-handoff-20261113/docs/INGEST_RESILIENCE_REPAIR_20261113.md`. Public handoff PR remains [#1129](https://github.com/yanniedog/AR-local/pull/1129); merge it after source integration. The private runtime/endpoint evidence is preserved under `C:/code/AR-local/.work/ingest-resilience-20261113/`. Specialist worktrees retain untracked JUnit results intentionally; do not commit them as product fixtures or discard them during cleanup.
