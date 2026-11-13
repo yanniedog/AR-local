@@ -5,7 +5,7 @@ import shutil
 
 import pytest
 
-from cdr_atomic import ImmutablePathError, atomic_write_json
+from cdr_atomic import atomic_write_json
 from cdr_finalization import _coverage
 from cdr_ingest_support import REGISTER_URL_SUMMARY, iter_banking_brands_from_payload
 from cdr_population_lifecycle import reconcile_participation, participation_coverage
@@ -164,7 +164,8 @@ def test_unsupported_or_corrupt_evidence_is_not_cessation(tmp_path, mutation):
         load_cessation_evidence(root)
 
 
-def test_finalization_retains_lifecycle_proof_in_coverage(tmp_path):
+@pytest.mark.parametrize('damage', ['corrupt', 'missing'])
+def test_finalization_retains_lifecycle_proof_in_coverage(tmp_path, damage):
     from tests.test_irreplaceable_finalization import make_export
     make_export(tmp_path, observation_date=DAY)
     status = captured_status(tmp_path)
@@ -176,6 +177,11 @@ def test_finalization_retains_lifecycle_proof_in_coverage(tmp_path):
     assert state == 'complete' and 'provider_population_unverified' not in coverage
     assert len(coverage['provider_participation_ceased']) == 1
     source = population['participation_cessations'][0]['sources']['response']['path']
-    (tmp_path/source).write_bytes(b'corrupt')
-    with pytest.raises(ImmutablePathError):
+    if damage == 'corrupt':
+        (tmp_path/source).write_bytes(b'corrupt')
+    else:
+        (tmp_path/source).unlink()
+    with pytest.raises((ValueError, FileNotFoundError)):
         _coverage(tmp_path)
+    if damage == 'missing':
+        assert not (tmp_path/source).exists()

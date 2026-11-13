@@ -6,11 +6,11 @@ from cdr_export_contract import read_json
 from cdr_population_identity import verified_prior_identity
 from cdr_provider_participation_evidence import (
     EVIDENCE_ROOT, current_register, load_cessation_evidence,
-    matching_registration, observed_day,
+    matching_registration, observed_day, _source,
 )
 
 
-def reconcile_participation(population, status, export_root, run_date):
+def reconcile_participation(population, status, export_root, run_date, *, install_evidence=True):
     """Unknown evidence keeps the original hold; never probes the network."""
     if population.get('status') not in {'PASS', 'WARN'}:
         return population
@@ -42,9 +42,12 @@ def reconcile_participation(population, status, export_root, run_date):
         for kind in ('prior_register', 'cessation_register', 'response'):
             source = entry['evidence'][kind]
             relative = f"provider-participation-evidence/{source['sha256']}.json"
-            atomic_write_bytes(export_root / relative, (EVIDENCE_ROOT / source['path']).read_bytes(),
-                               create_once=True)
             sources[kind] = dict(source, path=relative)
+            if install_evidence:
+                atomic_write_bytes(export_root / relative, (EVIDENCE_ROOT / source['path']).read_bytes(),
+                                   create_once=True)
+            else:
+                _source(export_root, sources[kind], register=kind != 'response')
         cessations.append({'provider': finding['provider'], 'provider_uid': entry['provider_uid'],
             'disposition': 'CDR_PARTICIPATION_CEASED', 'observed_at': entry['observed_at'],
             'applicable_observation_date': run_date, 'current_register_membership': 'absent',
@@ -85,7 +88,7 @@ def participation_coverage(export_root, status, run_date):
     if population.get('status') not in {'PASS', 'WARN'} or not isinstance(recorded, list):
         raise ValueError('participation disposition requires a verified population comparison')
     # Recheck current raw registration and every captured source before sealing.
-    verified = reconcile_participation(population, status, export_root, run_date)
+    verified = reconcile_participation(population, status, export_root, run_date, install_evidence=False)
     if report.get('run_date') != run_date or verified.get('participation_cessations') != recorded:
         raise ValueError('participation disposition no longer reconciles to its evidence')
     return recorded
