@@ -177,3 +177,13 @@ def test_ingest_uses_production_automatic_ram_and_detail_defaults(tmp_path):
     assert (parsed.ram_stage, parsed.no_ram_stage, parsed.ingest_arg) == (
         production.ram_stage, production.no_ram_stage, production.ingest_arg)
     assert not parsed.ram_stage and not parsed.no_ram_stage
+
+
+def test_launch_budget_recomputed_after_preparation_preserves_cleanup_margin():
+    closing = NOW + timedelta(minutes=20)
+    initial = live.remaining_budget(5400, closing, NOW)
+    later = live.remaining_budget(initial, closing, NOW + timedelta(minutes=4))
+    assert initial == 1020 and later == 780
+    assert later + 30 < (closing - (NOW + timedelta(minutes=4))).total_seconds()
+    with pytest.raises(ValueError):
+        live.remaining_budget(initial, closing, closing - timedelta(seconds=479))
