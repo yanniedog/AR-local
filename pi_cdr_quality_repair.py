@@ -3,7 +3,7 @@
 
 This entrypoint does not edit code or bypass review/deployment. The Codex owner
 supplies the exact tested, already deployed clean commit and selected generation.
-Existing same-day cooldown, budget, operation lock and 22:00 cutoff still apply.
+Existing same-day cooldown, budget, operation lock and 00:30 cutoff still apply.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def recapture(repo: Path, expected: str, generation: str, reason: str, *, dry_ru
     verify_candidate(repo, expected)
     now = datetime.now(timezone.utc)
     if not recovery_window(now) or capture_timeout(now) < 60:
-        return {"status": "BLOCKED", "reason": "outside_03:30_to_22:00_Hobart_window"}
+        return {"status": "BLOCKED", "reason": "outside_03:30_to_00:30_Hobart_window"}
     block = recovery_block_reason(repo)
     if block:
         return {"status": "BLOCKED", "reason": block}

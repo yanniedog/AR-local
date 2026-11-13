@@ -42,6 +42,7 @@ Held-timer rollouts:
 from __future__ import annotations
 
 import argparse
+import http.client
 import os
 import re
 import shlex
@@ -52,6 +53,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from pi_deploy_http_smoke import http_smoke, wait_for_http_smoke  # noqa: F401 — re-exported
+from pi_deploy_documentation import documentation_ahead, native_binding
 from pi_deploy_ingest_timers import (  # noqa: F401 — re-exported for tests
     pi_ingest_timer_fields_observed,
     pi_ingest_timers_allow_unarmed,
@@ -128,6 +130,9 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_observer_unit_verify.py",
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
+    "pi_cdr_quality_",
+    "pi_live_financial_",
+    "pi_daily_raw_restore",
     "pi_backup_foundation.py",
     "pi_drive_evidence_gate.py",
     "pi_ingest_terminal.py",
@@ -142,6 +147,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "contracts/export-contract-v2.schema.json",
+    "contracts/provider-participation/",
     "contracts/pi-backup-boot-proof-v1.schema.json",
     "contracts/pi-deployment-acceptance-v1.schema.json",
     "contracts/pi-preservation-snapshot-v1.schema.json",
@@ -553,15 +559,15 @@ def verify_sync(
         )
         return EXIT_CONFIG
 
-    snap = pi_remote_snapshot(dry_run=dry_run)
+    snap = pi_remote_snapshot(dry_run=dry_run, fetch=False)
     if snap is None:
         print("pi_deploy_verify: could not read Pi sync state (SSH)", file=sys.stderr)
         return EXIT_SSH
 
     head_ar = snap["AR_HEAD"]
-    origin_ar = snap["AR_ORIGIN"]
+    origin_ar = snap.get("AR_ORIGIN", "")
     head_site = snap["SITE_HEAD"]
-    origin_site = snap["SITE_ORIGIN"]
+    origin_site = snap.get("SITE_ORIGIN", "")
 
     if _snap_has_dirty_repos(snap):
         return EXIT_VERIFY_FAIL
@@ -586,22 +592,27 @@ def verify_sync(
     print(f"pi_deploy_verify: Pi AR-local HEAD={head_ar[:12]} origin/main={origin_ar[:12]}")
     print(f"pi_deploy_verify: Pi australianrates HEAD={head_site[:12]} origin/main={origin_site[:12]}")
 
-    drift: list[str] = []
-    if head_ar != origin_ar:
-        drift.append(f"AR-local not on {pi_remote()}/main (HEAD {head_ar[:12]} != {origin_ar[:12]})")
-    if head_site != origin_site:
-        drift.append(
-            f"australianrates not on {pi_remote()}/main (HEAD {head_site[:12]} != {origin_site[:12]})"
-        )
-    if origin_ar != local_main:
-        drift.append(
-            f"Pi origin/main ({origin_ar[:12]}) differs from local origin/main "
-            f"({local_main[:12]}); retain drift until canary approval"
-        )
-
-    if drift:
-        for item in drift:
-            print(f"pi_deploy_verify: DRIFT {item}", file=sys.stderr)
+    try:
+        binding = native_binding(snap)
+        if head_ar != local_main:
+            if expected_commit is not None:
+                raise ValueError("Pi HEAD differs from approved commit")
+            paths = documentation_ahead(head_ar, local_main, binding[1])
+            # An API proof does not cover a checkout or main ref that moved meanwhile.
+            fresh = pi_remote_snapshot(dry_run=False, fetch=False)
+            if fresh is None or native_binding(fresh) != binding or origin_main_sha_local() != local_main:
+                raise ValueError("checkout or remote main changed during documentation proof")
+            timers_ok = pi_ingest_timers_allow_unarmed if allow_unarmed_ingest_timers else pi_ingest_timers_ok
+            if not pi_service_paths_ok(fresh) or not timers_ok(fresh) or not pi_ingest_service_fences_ok(fresh):
+                raise ValueError("service evidence changed during documentation proof")
+            snap = fresh
+            print(f"pi_deploy_verify: documentation_ahead deployed={head_ar} main={local_main} paths={paths}")
+        if origin_main_sha_local() != local_main:
+            raise ValueError("remote main changed during observation")
+        if origin_ar != local_main or origin_site != head_site:
+            print("pi_deploy_verify: cached remote refs stale; live remote identities verified without fetch")
+    except (ValueError, TypeError, OSError, http.client.HTTPException) as exc:
+        print(f"pi_deploy_verify: DRIFT {exc}", file=sys.stderr)
         return EXIT_VERIFY_FAIL
 
     if not dashboard_active(dry_run=dry_run, snap=snap):

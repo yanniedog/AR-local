@@ -243,7 +243,8 @@ def test_observed_oct29_oct30_nov1_nov2_queue_at_both_entry_points(tmp_path, mon
     assert [pending['pointer']['observation_date'], *[p['observation_date'] for p in pending['queued_pointers']]] == [
         '2026-10-29', '2026-10-30', '2026-11-01', '2026-11-02']
     observation = {'pointer': selected, 'contract': {'observation_date': '2026-11-02',
-        'coverage': {'provider_population_unverified': [{'provider': 'Wise'}]} if hold else {}}}
+        'coverage': {'provider_population_unverified': [{'provider': 'Wise',
+            'population_known': False, 'disposition': 'UNVERIFIED_SOURCE_ABSENCE'}]} if hold else {}}}
     before = copy.deepcopy(pending)
     assert population_pending_recovery_allowed(pending, observation) is hold
     monkeypatch.setattr(policy, 'reconcile_selected_population_pending', lambda *a: False)

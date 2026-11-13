@@ -715,9 +715,37 @@ def test_newer_live_rolling_manifest_is_not_a_failure(
     with mock.patch(
         "app_payload.build_and_publish_dual", return_value=(_payload_manifest(date), False, False)
     ):
-        with mock.patch("app_payload._live_manifest_status", return_value=("present", newer)):
+        with mock.patch("app_payload._live_manifest_status", side_effect=lambda _repo, tag:
+                        ("present", newer if tag == "app-payload-latest" else _payload_manifest(date))):
             outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
     assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
+
+
+@pytest.mark.parametrize("dated_status", ["missing", "wrong_date", "wrong_revision", "error"])
+@pytest.mark.parametrize("rolling_newer", [False, True])
+def test_dated_failure_cannot_clear_retry_when_rolling_is_healthy(
+    tmp_path, monkeypatch, dated_status, rolling_newer
+):
+    date = "2026-08-16"
+    _stage_complete_payload_run(tmp_path, monkeypatch, date)
+    manifest = _payload_manifest(date)
+    rolling = _payload_manifest("2026-08-17") if rolling_newer else manifest
+    def live(_repo, tag):
+        if tag == "app-payload-latest":
+            return "present", rolling
+        if dated_status == "error":
+            raise RuntimeError("dated readback unavailable")
+        if dated_status == "missing":
+            return "missing", None
+        if dated_status == "wrong_date":
+            return "present", _payload_manifest("2026-08-17")
+        wrong = _payload_manifest(date)
+        wrong["files"]["core"]["sha256"] = "different-revision"
+        return "present", wrong
+    with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, False, False)), \
+         mock.patch("app_payload._live_manifest_status", side_effect=live), \
+         mock.patch("app_payload.build_and_publish_v2", return_value=({}, True)):
+        assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) == pi_daily_sync.PUBLISH_FAILED
 
 
 def test_successful_publish_refreshes_dates_index(

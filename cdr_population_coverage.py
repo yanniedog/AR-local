@@ -3,6 +3,20 @@ import json
 from cdr_population_identity import current_provider_matches,verified_prior_identity
 
 
+def has_unverified_provider_population(contract):
+    """Coverage uncertainty survives permission to publish retained partial data.
+
+    Callers must first verify the observation's contract, marker and source.
+    This predicate grants neither integrity nor additional recovery budgets.
+    """
+    coverage = contract.get('coverage') if isinstance(contract,dict) else None
+    findings = coverage.get('provider_population_unverified') if isinstance(coverage,dict) else None
+    return (isinstance(findings,list) and bool(findings)
+        and all(isinstance(row,dict) and row.get('population_known') is False
+            and row.get('disposition') == 'UNVERIFIED_SOURCE_ABSENCE'
+            and isinstance(row.get('provider'),str) and bool(row['provider']) for row in findings))
+
+
 def apply_population_coverage(export_root, run_date, providers):
     path = export_root / 'provider-population-report.json'
     if not path.is_file():

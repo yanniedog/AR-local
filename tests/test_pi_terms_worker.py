@@ -210,9 +210,9 @@ def test_retry_bounds_and_timezones():
     with pytest.raises(ValueError):
         worker.parsed_time('2026-09-14T01:00:00')
     assert worker.operating_window(datetime(2026, 9, 13, 17, 30, tzinfo=timezone.utc))
-    assert not worker.operating_window(datetime(2026, 9, 14, 11, 45, tzinfo=timezone.utc))
-    assert worker.runtime_window(datetime(2026, 9, 14, 11, 59, tzinfo=timezone.utc))
-    assert not worker.runtime_window(datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc))
+    assert not worker.operating_window(datetime(2026, 9, 14, 14, 15, tzinfo=timezone.utc))
+    assert worker.runtime_window(datetime(2026, 9, 14, 14, 29, tzinfo=timezone.utc))
+    assert not worker.runtime_window(datetime(2026, 9, 14, 14, 30, tzinfo=timezone.utc))
 
 
 def acquisition_receipt(operation, result='NO_WORK'):

@@ -1,0 +1,24 @@
+# Financial provider discovery repair
+
+Current official register contains 115 banking, 191 non-bank-lending and 84 energy brands. The banking-only industry filter silently excluded every non-bank lender even though they use the Banking Product APIs and can supply relevant mortgages. The current 360 MMS endpoint returns 12 RESIDENTIAL_MORTGAGES products using Get Products v5. Official rollout: https://www.cdr.gov.au/rollout/cdr-non-bank-lenders-sector .
+
+The parser now includes both financial industries and keeps energy/unknown industries outside scope. Existing bank names, endpoint normalization, identity construction, category selection, raw capture, pagination, retry limits and holder filters remain. The historical `banking_brands` field and `--banks-only` flag remain compatible names, now documented as the financial API scope. Discovery does not imply every lender supplies mortgages or valid responses.
+
+Real captured register/index fixtures bind the 306-brand scope, preserve all 115 existing banks and demonstrate existing mortgage classification for the 12 observed NBL products. Tests are local replay, not full Pi capture acceptance.
+
+**Activation gate:** do not deploy this expansion based solely on the previous 115-provider retained replay. Run a new resource-guarded real financial-provider capture in an isolated candidate; measure all pages/detail requests, run duration, peak memory/storage and resulting payload sizes. Verify complete attempted-provider accounting and the ordinary resource/quiet-window controls. The extra 191 brands may share backends but must retain distinct identities; don't collapse them or multiply retries without evidence. Preserve any old accepted production/backup until exact-source tests, current canary, publication checks and recovery gates pass.
+
+No Pi, service, schedule or backup mutation is performed by this source patch. All-bank and NBL live acceptance, provider error repair, physical/Drive restore and consumer comparison/watchlist behavior remain separate checks. Do not report 306 complete providers merely because 306 were discovered.
+
+Register-response drift is now explicit: malformed/empty industry classifications, malformed envelopes, advertised uncaptured pages and inconsistent declared counts mark register provenance incomplete. Usable provider rows still ingest, preserving obtainable coverage. Additive fields and valid new industry names remain readable; unsupported industries stay outside financial scope. This detects future pagination rather than falsely declaring its first page complete; an actual newly paginated register still needs a qualified traversal adapter.
+
+Local validation: 99 tests passed across financial register, ingest status, official single-page recovery, ingest recovery and compatibility suites; `git diff --check` passed. Full exact-head producer/platform CI is pending. Worktree: `C:/code/AR-local-financial-provider-discovery-20261113`, branch `agent/financial-provider-discovery-20261113`. Original public response bytes/UTF-8 representations and provenance hashes are under `tests/fixtures/cdr-financial-register-20261113/`.
+
+After review fixes: 89 register/status/compatibility/recovery tests passed; independent review found no actionable defect and 34 register/status tests passed. Exact hosted CI must be rerun for the final integrated head.
+
+Full hosted CI on `e923ed6` found a real packaging regression: the trusted installed
+restore bundle imported `cdr_ingest_support` but omitted its new
+`cdr_register_validation` dependency. Added the module to both the installation
+and SHA256 inventories, with an explicit isolated-bundle import assertion. The
+existing canonical/legacy/WAL restoration test remains the end-to-end regression;
+no repository import fallback or verification gate is relaxed.

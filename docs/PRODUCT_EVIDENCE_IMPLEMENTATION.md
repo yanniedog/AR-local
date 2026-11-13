@@ -185,7 +185,7 @@ physical-device or physical-recovery proof in older programmes.
 | Backup hold | Persistent refusal at all dispatch boundaries and disabled write schedules; retain requests and receipts. A disabled daily timer alone is insufficient because terminal events and queue timers also dispatch. |
 | Existing upload | Reconcile actual terminal state before hold/control transition; never kill an unknown job or clear its lock. Preserve reclaim restoration independently. |
 | Natural ingest | Keep 01:00 Australia/Hobart timer unchanged. All new work yields to actual ingest/publication activity and the 00:30 freeze. |
-| Heavy work | Use existing priority, lock, capacity, deadline and resource controls. Recovery/activation is within 03:30–22:00; late ingest defers work. |
+| Heavy work | Use existing priority, lock, capacity, deadline and resource controls. Recovery/activation is within 03:30–00:30; late ingest defers work. |
 | Resources | Preserve measured RSS/address-space, reserve, PSI, disk, CPU/I/O, no workload swap/new host swap-out and descendant cleanup gates. Nominal systemd MemoryMax is insufficient where memory cgroups are disabled. |
 | Activation | Exact tested candidate, controlled canary, immutable receipts, rollback proof, deployed hash, live smoke, two-hour soak and natural-ingest proof. Merge does not prove deployment. |
 | Git workflow | Fresh default-base topic checkout, focused PR, applicable CI, substantive dispositions/resolution, tracked `pr:merge` wrapper, post-merge audit. No watch loops or direct protection bypass. |

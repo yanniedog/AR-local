@@ -16,6 +16,7 @@ from typing import Callable
 from cdr_atomic import atomic_write_json
 from cdr_compatibility import pagination_accounting_error, response_shape_error
 from cdr_http_policy import DEFAULT_HTTP_POLICY
+from cdr_ingest_support import extract_products
 
 RECOVERY_SECONDS = 180.0
 RECOVERY_PROVIDERS = 12
@@ -65,7 +66,8 @@ def _index_captured(root: Path, provider: str) -> bool:
             value = json.loads(path.read_text(encoding="utf-8"))
             if response_shape_error(value, phase="products_index") or value.get("errors"):
                 return False
-            products += len(value["data"]["products"])
+            # Recovery must accept the same validated envelopes as ingestion.
+            products += len(extract_products(value))
             has_next = bool((value.get("links") or {}).get("next"))
             if pagination_accounting_error(value, pages=number, products=products, has_next=has_next):
                 return False

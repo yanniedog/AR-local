@@ -432,8 +432,10 @@ def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any
             "product_facts": banks["product_facts"],
             "product_changes": banks.get("product_changes", []),
             "change_summary": [{
-                **{key: value for key, value in (banks.get("product_change_summary") or {}).items() if key != "products"},
+                **{key: value for key, value in (banks.get("product_change_summary") or {}).items()
+                   if key not in {"products", "suppression_reasons"}},
                 "products_json": json.dumps((banks.get("product_change_summary") or {}).get("products") or {}, sort_keys=True),
+                "suppression_reasons_json": json.dumps((banks.get("product_change_summary") or {}).get("suppression_reasons") or {}, sort_keys=True),
             }],
             "failures": banks["failures"],
         },
@@ -495,6 +497,8 @@ def _exclude_failed_missing_products(
     previous_facts: List[Dict[str, Any]],
     current_facts: List[Dict[str, Any]],
     failures: List[Dict[str, Any]],
+    *,
+    current_providers: Optional[Iterable[str]] = None,
 ) -> tuple[List[Dict[str, Any]], int]:
     """Prevent incomplete fetches from becoming false product removals."""
     current_keys = {
@@ -509,25 +513,42 @@ def _exclude_failed_missing_products(
     failed_products = {
         (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
         for row in failures
-        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+        if str(row.get("phase") or "") in {"product_detail", "classification_detail"}
+        and row.get("product_id") not in (None, "")
     }
+    observed_providers = None if current_providers is None else {name.casefold() for name in current_providers}
     suppressed = set()
     output = []
     for row in previous_facts:
         key = (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
-        failed = key[0] in failed_providers or (key[0], key[1]) in failed_products
-        if failed and key not in current_keys:
+        reason = _missing_capture_reason(key, failed_providers, failed_products, observed_providers)
+        if reason and key not in current_keys:
             suppressed.add(key)
             continue
         output.append(row)
     return output, len(suppressed)
 
 
+def _missing_capture_reason(key, failed_providers, failed_products, observed_providers):
+    # Report a known cause before the more general missing-population symptom.
+    if key[0] in failed_providers:
+        return "provider_capture_incomplete"
+    if (key[0], key[1]) in failed_products:
+        return "product_capture_failed"
+    # A whole provider's population disappearing is unverified source absence,
+    # even when its empty index returned HTTP 200. Do not infer retirement.
+    if observed_providers is not None and key[0] not in observed_providers:
+        return "provider_population_absent"
+    return None
+
+
 def _exclude_failed_missing_product_groups(
     previous_groups: Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]],
     current_facts: List[Dict[str, Any]],
     failures: List[Dict[str, Any]],
-) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, int]]:
+    *,
+    current_providers: Optional[Iterable[str]] = None,
+) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, Any]]:
     """Return filtered groups; the count is final after the iterable is exhausted."""
     current_keys = {
         (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
@@ -541,16 +562,19 @@ def _exclude_failed_missing_product_groups(
     failed_products = {
         (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
         for row in failures
-        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+        if str(row.get("phase") or "") in {"product_detail", "classification_detail"}
+        and row.get("product_id") not in (None, "")
     }
-    result = {"suppressed": 0}
+    observed_providers = None if current_providers is None else {name.casefold() for name in current_providers}
+    result = {"suppressed": 0, "reasons": {}}
 
     def filtered() -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
         for product_key, facts in previous_groups:
             key = (product_key[0].casefold(), product_key[1], product_key[2])
-            failed = key[0] in failed_providers or (key[0], key[1]) in failed_products
-            if failed and key not in current_keys:
+            reason = _missing_capture_reason(key, failed_providers, failed_products, observed_providers)
+            if reason and key not in current_keys:
                 result["suppressed"] += 1
+                result["reasons"][reason] = result["reasons"].get(reason, 0) + 1
                 continue
             yield product_key, facts
 
@@ -572,6 +596,7 @@ def build_outputs(
             iter_run_fact_groups(previous),
             banks["product_facts"],
             banks["failures"],
+            current_providers=(str(row.get("provider") or "") for row in banks["products"]),
         )
         changes = diff_normalized_product_fact_groups(
             previous_groups,
@@ -580,8 +605,10 @@ def build_outputs(
             current_run_date=run_date,
         )
         suppressed_incomplete_products = suppression["suppressed"]
+        suppression_reasons = suppression["reasons"]
     else:
         suppressed_incomplete_products = 0
+        suppression_reasons = {}
         changes = {
             "schema_version": 1, "normalization_version": NORMALIZATION_VERSION,
             "previous_run_date": None, "run_date": run_date, "change_count": 0,
@@ -589,6 +616,7 @@ def build_outputs(
             "events": [],
         }
     changes["suppressed_incomplete_products"] = suppressed_incomplete_products
+    changes["suppression_reasons"] = suppression_reasons
     banks["product_changes"] = product_change_rows(changes)
     banks["product_change_summary"] = {
         "schema_version": changes.get("schema_version", 1),
@@ -598,6 +626,7 @@ def build_outputs(
         "change_count": changes.get("change_count", len(changes.get("events") or [])),
         "products": changes.get("products") or {},
         "suppressed_incomplete_products": changes.get("suppressed_incomplete_products", 0),
+        "suppression_reasons": changes.get("suppression_reasons", {}),
     }
     write_json(out_dir / f"banks-{run_date}.json", banks)
     write_sector_workbooks(out_dir, run_date, banks)

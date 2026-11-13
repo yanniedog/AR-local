@@ -463,7 +463,7 @@ def test_forward_verification_requires_dropbehind_reads(monkeypatch, phase, requ
     assert bool(entered) is required
 
 
-@pytest.mark.parametrize('hour,minute,allowed', [(3, 0, False), (3, 29, False), (3, 30, True), (21, 59, True), (22, 0, False)])
+@pytest.mark.parametrize('hour,minute,allowed', [(3, 0, False), (3, 29, False), (3, 30, True), (21, 59, True), (22, 0, True), (0, 29, True), (0, 30, False)])
 def test_deployment_window_opens_at_0330(monkeypatch, hour, minute, allowed):
     from datetime import datetime as real, timezone, timedelta
     from zoneinfo import ZoneInfo
@@ -478,7 +478,7 @@ def test_deployment_window_opens_at_0330(monkeypatch, hour, minute, allowed):
     if allowed:
         native.guard()
     else:
-        with pytest.raises(RuntimeError, match='daytime operating window'):
+        with pytest.raises(RuntimeError, match='protected 00:30-03:30'):
             native.guard()
 
 

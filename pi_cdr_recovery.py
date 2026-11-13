@@ -25,6 +25,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from ar_local_pi_runtime import data_state_root
+from ar_local_ingest_schedule import maintenance_closes_at, maintenance_window_open, MAINTENANCE_WINDOW_LABEL
 from cdr_atomic import atomic_write_json, canonical_json_bytes
 from cdr_observation_selection import captured_identities, provider_directories, selected_observation
 from cdr_recovery_legacy import legacy_recovery_requests, terminal_index_failure
@@ -52,7 +53,7 @@ EXPECTED_GENERATION_ENV = "AR_LOCAL_CDR_RECOVERY_GENERATION"
 
 def recovery_window(now: datetime) -> bool:
     local = now.astimezone(HOBART)
-    if daytime(3, 30) <= local.time() < daytime(22):
+    if maintenance_window_open(local):
         return True
     from pi_daily_repair_admission import early_daily_allowed
     return early_daily_allowed(now)
@@ -60,7 +61,7 @@ def recovery_window(now: datetime) -> bool:
 
 def capture_timeout(now: datetime) -> float:
     local = now.astimezone(HOBART)
-    closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    closing = maintenance_closes_at(local)
     return max(0.0, min(CAPTURE_BUDGET_SECONDS, (closing - local).total_seconds() - CLEANUP_SECONDS))
 
 
@@ -138,10 +139,16 @@ def _lock_owner_may_be_active(path: Path) -> bool:
     return True
 
 
-def assert_recovery_start_safe(repo_root: Path) -> None:
+def assert_recovery_start_safe(repo_root: Path, *, approved_deadline: datetime | None = None) -> None:
     """Called inside the existing DailyIngestLock, before pausing the dashboard."""
     now = datetime.now(timezone.utc)
-    if not recovery_window(now) or capture_timeout(now) < 60:
+    permitted = recovery_window(now) and capture_timeout(now) >= 60
+    if approved_deadline is not None:
+        from pi_cdr_quality_window import next_quiet
+        permitted = (approved_deadline.tzinfo is not None and now < approved_deadline <= next_quiet(now)
+                     and (approved_deadline - now).total_seconds() >= 60
+                     and not daytime(0, 30) <= now.astimezone(HOBART).time() < daytime(3, 30))
+    if not permitted:
         raise RuntimeError("Same-day recovery requires the daytime window or verified 03:00 daily service")
     reason = recovery_block_reason(repo_root, include_ingest_lock=False)
     if reason:
@@ -368,7 +375,7 @@ def _probe_due(root: Path, observation: dict, providers: dict, due: list[dict],
                history: list[dict], now: datetime,
                *, probe_budget_seconds: float = PROBE_BUDGET_SECONDS) -> tuple[list[dict], list[dict]]:
     local = datetime.now(timezone.utc).astimezone(HOBART)
-    closing = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    closing = maintenance_closes_at(local)
     remaining = max(0.0, (closing - local).total_seconds())
     if not recovery_window(local) or remaining <= 0:
         return [], []
@@ -547,7 +554,7 @@ def run_same_day_recovery(repo_root: Path, *, now_utc: datetime, dry_run: bool,
                           execution_deadline: float | None = None) -> dict:
     """One watchdog tick. Dry runs perform no probes, reservations, or captures."""
     if not recovery_window(now_utc):
-        return {"status": "outside_recovery_window", "window": "03:30-22:00 Australia/Hobart"}
+        return {"status": "outside_recovery_window", "window": MAINTENANCE_WINDOW_LABEL}
     if dry_run:
         return {"status": "dry_run", "capture_attempted": False}
     reason = recovery_block_reason(repo_root)

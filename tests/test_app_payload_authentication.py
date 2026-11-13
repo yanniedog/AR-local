@@ -201,13 +201,20 @@ def test_unreconciled_classification_never_grants_a_blanket_exemption(mutation):
     assert not gate.publication_allowed(contract)[0]
 
 
-def test_recorded_category_cannot_mislabel_a_server_failure_as_authentication(tmp_path):
-    row = {"bank": "New Holder", "phase": "products_index", "status": 503,
-           "snippet": "Service unavailable", "failure_category": AUTH}
+@pytest.mark.parametrize("recorded", [AUTH, "access_denied"])
+@pytest.mark.parametrize("status,expected", [
+    (503, "transient_upstream"), (495, "security_policy"),
+    ("conflicting_product_identity", "unknown_internal"),
+])
+def test_recorded_category_cannot_mislabel_a_server_failure_as_authentication(tmp_path, recorded, status, expected):
+    row = {"bank": "New Holder", "phase": "products_index", "status": status,
+           "snippet": "Service unavailable", "failure_category": recorded}
     (tmp_path / "failures.jsonl").write_text(json.dumps(row) + "\n")
-    assert support.summarize_failures(tmp_path)["by_provider_failure_category"] == {
-        "New Holder": {"transient_upstream": 1},
+    summary = support.summarize_failures(tmp_path)
+    assert summary["by_provider_failure_category"] == {
+        "New Holder": {expected: 1},
     }
+    assert summary["by_failure_category"] == {expected: 1}
 
 
 def test_ingest_binds_classification_to_provider_state(tmp_path):

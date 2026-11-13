@@ -7,7 +7,7 @@ REPO="${AR_LOCAL_REPO:-/srv/ar-local/AR-local}"
 export AR_PI_VERIFY_LOCAL=1
 export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://127.0.0.1/}"
 cd "$REPO"
-if python3 pi_deploy_verify.py --verify; then
+if python3 -B pi_deploy_verify.py --verify; then
   exit 0
 fi
 echo "ar-local-deploy-watchdog: drift detected; automatic deployment is disabled" >&2

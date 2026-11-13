@@ -31,6 +31,7 @@ from cdr_product_classification import (
     normalize_cdr_product_category, pick_text, safe_url,
 )
 from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
+from cdr_register_validation import register_summary_error
 from cdr_compatibility import (
     classify_fetch_failure, parse_supported_versions, response_shape_error,
 )
@@ -48,6 +49,10 @@ REGISTER_URL_BANKING_BRANDS = (
 REGISTER_URL_BANKING_REGISTER = (
     "https://api.cdr.gov.au/cdr-register/v1/banking/register"
 )
+
+# Both financial industries expose the Banking Product APIs. Non-bank lenders
+# have published PRD since July 2026; excluding them silently loses mortgages.
+FINANCIAL_PRD_INDUSTRIES = frozenset({"banking", "non-bank-lending"})
 
 # Bank PRD endpoints often negotiate newer x-v; CDR register currently responds at v2 in practice.
 REGISTER_FETCH_VERSIONS = [2, 1, 6, 5, 4, 3]
@@ -127,7 +132,11 @@ def product_index_request_url(url: str) -> str:
 
 
 def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
-    """Yield banking PRD brand rows from one register payload."""
+    """Yield financial PRD brands using the shared Banking Product APIs.
+
+    The historical function/row names remain compatible with existing callers.
+    Energy and unknown industries remain outside the financial product scope.
+    """
     if is_record(payload):
         data_array = as_array(payload.get("data"))
     else:
@@ -137,7 +146,7 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
         if not is_record(item):
             continue
         industries_list = as_array(item.get("industries"))
-        if industries_list:
+        if "industries" in item:
             brand_name = pick_text(item, ["brandName", "dataHolderBrandName"])
             legal_entity = item.get("legalEntity")
             legal_name = ""
@@ -147,7 +156,7 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
             if not base:
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
-            if "banking" in inds:
+            if inds & FINANCIAL_PRD_INDUSTRIES:
                 yield {
                     "brand_name": brand_name,
                     "legal_entity_name": legal_name,
@@ -155,7 +164,7 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
                 }
             continue
 
-        # Legacy register row (e.g. banking data-holders/brands) — no industries array.
+        # Legacy banking endpoint rows omit the key; malformed modern rows do not.
         endpoint_detail = item.get("endpointDetail")
         ed: Mapping[str, Any] = endpoint_detail if is_record(endpoint_detail) else {}
         endpoint_raw = (
@@ -774,9 +783,13 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 if not isinstance(evidence, str):
                     evidence = rec.get("snippet") or ""
                 classified = classify_fetch_failure(rec.get("status"), evidence)
-                provider_categories = by_provider_failure_category.setdefault(provider, {})
-                provider_categories[classified.category] = provider_categories.get(classified.category, 0) + 1
                 category = str(rec.get("failure_category") or classified.category)
+                # Recorded structural failures preserve decisions unavailable to
+                # the HTTP classifier. Auth exemptions still need response evidence.
+                if category in {"public_endpoint_auth_required", "access_denied"}:
+                    category = classified.category
+                provider_categories = by_provider_failure_category.setdefault(provider, {})
+                provider_categories[category] = provider_categories.get(category, 0) + 1
                 retryable = rec.get("retryable")
                 retry_key = str(retryable if isinstance(retryable, bool) else classified.retryable).lower()
                 by_failure_category[category] = by_failure_category.get(category, 0) + 1
@@ -819,13 +832,13 @@ def collect_register_snapshot(
     holders_filter: Optional[str],
     attempt_journal: Optional[RawAttemptJournal] = None,
 ) -> RegisterSnapshot:
-    """Merge banking holder rows from all register URLs."""
+    """Merge bank and non-bank lender rows from the authoritative register."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
     register_payload_ok = False
     register_attempts: List[Dict[str, Any]] = []
 
     # The all-industries summary is the current public discovery endpoint and
-    # already contains the complete banking population.  The two legacy
+    # contains both banking and non-bank-lending populations. The two legacy
     # banking URLs formerly configured here now return
     # permanent 404s; continuing to probe them makes an otherwise authoritative
     # register snapshot fail provenance reconciliation every day.
@@ -860,11 +873,13 @@ def collect_register_snapshot(
         )
         data = res.data
         attempt_ok = res.ok and data is not None and not has_cdr_errors(data)
+        completeness_error = register_summary_error(data) if attempt_ok else None
         register_attempts.append(
             {
                 "source_url": url,
                 "mode": mode,
-                "ok": attempt_ok,
+                "ok": attempt_ok and completeness_error is None,
+                **({"error": completeness_error} if completeness_error else {}),
                 "status": res.status,
                 "bytes": len((res.text or "").encode("utf-8")),
                 "sha256": hashlib.sha256((res.text or "").encode("utf-8")).hexdigest(),
