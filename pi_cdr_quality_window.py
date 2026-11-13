@@ -1,4 +1,4 @@
-"""Explicit, hash-bound operator extensions; never changes scheduled policy."""
+"""Daily maintenance cutoff and optional narrower hash-bound operator authority."""
 from __future__ import annotations
 
 import hashlib
@@ -8,6 +8,8 @@ import stat
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from ar_local_ingest_schedule import maintenance_closes_at
 
 TZ = ZoneInfo("Australia/Hobart")
 SCHEMA = "ar-local-operation-window-v1"
@@ -22,9 +24,7 @@ def timestamp(value: str) -> datetime:
 
 
 def next_quiet(now: datetime) -> datetime:
-    local = now.astimezone(TZ)
-    boundary = local.replace(hour=0, minute=30, second=0, microsecond=0)
-    return boundary if local < boundary else boundary + timedelta(days=1)
+    return maintenance_closes_at(now)
 
 
 def validate(value: dict, *, now: datetime, target: str, operation: Path, stage: str) -> datetime:
@@ -77,7 +77,8 @@ def reference(args) -> dict | None:
 
 
 def deadline(now: datetime, extension: datetime | None) -> datetime:
-    return extension if extension is not None else now.astimezone(TZ).replace(hour=22, minute=0, second=0, microsecond=0)
+    closing = maintenance_closes_at(now)
+    return min(extension, closing) if extension is not None else closing
 
 
 def add_arguments(parser) -> None:

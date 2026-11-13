@@ -49,8 +49,8 @@ def stage(monkeypatch, tmp_path):
     return state, observation
 
 
-@pytest.mark.parametrize("hour,minute,allowed", [(0, 29, False), (0, 30, False), (1, 0, False),
-    (3, 29, False), (3, 30, True), (21, 59, True), (22, 0, False), (23, 59, False)])
+@pytest.mark.parametrize("hour,minute,allowed", [(0, 29, True), (0, 30, False), (1, 0, False),
+    (3, 29, False), (3, 30, True), (21, 59, True), (22, 0, True), (23, 59, True)])
 def test_recovery_window_uses_hobart_not_host_timezone(hour, minute, allowed):
     local = datetime(2026, 9, 7, hour, minute, tzinfo=recovery.HOBART)
     assert recovery.recovery_window(local.astimezone(timezone.utc)) is allowed
@@ -58,7 +58,7 @@ def test_recovery_window_uses_hobart_not_host_timezone(hour, minute, allowed):
 
 def test_capture_deadline_reserves_cleanup_before_quiet_hours():
     assert recovery.capture_timeout(NOW) == 1800
-    late = datetime(2026, 9, 7, 21, 58, tzinfo=recovery.HOBART)
+    late = datetime(2026, 9, 8, 0, 28, tzinfo=recovery.HOBART)
     assert recovery.capture_timeout(late) == 75
     assert recovery.capture_timeout(late + timedelta(minutes=1)) == 15
 

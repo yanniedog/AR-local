@@ -37,7 +37,7 @@ an explicit `--once` without `--since` scans all retained finalized dates.
 `--dry-run` checks admission and source metadata without upload or state writes;
 it is not an artifact verification or publication success.
 
-The worker admits only from 03:30 through 22:00 Australia/Hobart, reserving the
+The worker admits only from 03:30 through 00:30 Australia/Hobart, reserving the
 full 30-minute child deadline plus 45-second cleanup allowance. It requires the
 current natural ingest to be terminal, both ingest service process trees to be
 clear, and the native lease to be absent before acquiring it. Unknown ownership

@@ -52,12 +52,14 @@ def parsed_time(value: str) -> datetime:
 
 def operating_window(now: datetime) -> bool:
     local = now.astimezone(HOBART)
-    return time(3, 30) <= local.time().replace(tzinfo=None) < time(21, 45)
+    from ar_local_ingest_schedule import maintenance_closes_at, maintenance_window_open
+    return maintenance_window_open(local) and (maintenance_closes_at(local) - local).total_seconds() > 15 * 60
 
 
 def runtime_window(now: datetime) -> bool:
     local = now.astimezone(HOBART)
-    return time(3, 30) <= local.time().replace(tzinfo=None) < time(22)
+    from ar_local_ingest_schedule import maintenance_window_open
+    return maintenance_window_open(local)
 
 
 def admission(repo: Path, root: Path, now: datetime) -> str | None:

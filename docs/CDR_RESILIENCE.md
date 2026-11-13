@@ -37,7 +37,7 @@ not itself a count of missing products.
 ## Automatic same-day gap recovery
 
 The existing 15-minute watchdog also checks incomplete current-day observations
-between 03:30 and 22:00 Hobart. It persists request reservations and outcomes
+between 03:30 and 00:30 Hobart. It persists request reservations and outcomes
 before doing work, so a crash or restart cannot reset the day's retry budget.
 Provider backoff grows from 15 minutes to two hours. Every failure category stays
 eligible for a later probe, including an access or schema error that the provider

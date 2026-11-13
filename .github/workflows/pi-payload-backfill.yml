@@ -15,7 +15,7 @@
 # queue behave exactly as on a natural daily retry. A waiver applies only to the
 # exact contract digests the preceding report saw.
 #
-# Schedule: twice daily inside the 03:30-22:00 Hobart retry window, publish every
+# Schedule: twice daily inside the 03:30-00:30 Hobart retry window, publish every
 # withheld date since AUTHORISED_FROM with `policy: all`, then fail the run (and
 # so notify) if any date from AUTHORISED_FROM to yesterday still has no dated
 # release.
