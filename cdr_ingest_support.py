@@ -145,7 +145,7 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
         if not is_record(item):
             continue
         industries_list = as_array(item.get("industries"))
-        if industries_list:
+        if "industries" in item:
             brand_name = pick_text(item, ["brandName", "dataHolderBrandName"])
             legal_entity = item.get("legalEntity")
             legal_name = ""
@@ -163,7 +163,7 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
                 }
             continue
 
-        # Legacy register row (e.g. banking data-holders/brands) — no industries array.
+        # Legacy banking endpoint rows omit the key; malformed modern rows do not.
         endpoint_detail = item.get("endpointDetail")
         ed: Mapping[str, Any] = endpoint_detail if is_record(endpoint_detail) else {}
         endpoint_raw = (

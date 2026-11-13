@@ -4,6 +4,8 @@ import gzip
 import json
 from pathlib import Path
 
+import pytest
+
 import cdr_ingest_support as support
 
 FIXTURES = Path(__file__).parent / "fixtures/cdr-financial-register-20261113"
@@ -40,6 +42,21 @@ def test_registered_nonbank_mortgages_use_existing_category_contract():
     products = support.extract_products(index)
     assert len(products) == index["meta"]["totalRecords"] == 12
     assert {support.dataset_from_cdr_category(row["productCategory"]) for row in products} == {"home_loans"}
+
+
+@pytest.mark.parametrize("industries", [[], None, {}, "banking", ["unknown"], ["energy"]])
+def test_explicit_unknown_or_malformed_industry_does_not_use_legacy_fallback(industries):
+    row = json.loads(retained("register.json"))["data"][0]
+    row["industries"] = industries
+    assert list(support.iter_banking_brands_from_payload({"data": [row]})) == []
+
+
+def test_legacy_row_without_industries_remains_compatible():
+    row = json.loads(retained("register.json"))["data"][0]
+    row.pop("industries")
+    result = list(support.iter_banking_brands_from_payload({"data": [row]}))
+    assert len(result) == 1
+    assert result[0]["brand_name"] == row["brandName"]
 
 
 def test_register_snapshot_counts_financial_scope_before_holder_filter(monkeypatch):
