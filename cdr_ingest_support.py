@@ -775,6 +775,10 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                     evidence = rec.get("snippet") or ""
                 classified = classify_fetch_failure(rec.get("status"), evidence)
                 category = str(rec.get("failure_category") or classified.category)
+                # Recorded structural failures preserve decisions unavailable to
+                # the HTTP classifier. Auth exemptions still need response evidence.
+                if category in {"public_endpoint_auth_required", "access_denied"}:
+                    category = classified.category
                 provider_categories = by_provider_failure_category.setdefault(provider, {})
                 provider_categories[category] = provider_categories.get(category, 0) + 1
                 retryable = rec.get("retryable")

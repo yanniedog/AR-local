@@ -94,3 +94,7 @@ coverage is complete. Retained failure categories must stay separate from
 provider population checks and requested product scope. Broader financial
 register discovery, terms-document capture, current runtime deployment, natural
 daily acceptance and Drive read-back verification remain coordinated parent work.
+
+## CI integration correction
+
+Full app-ci at `75520658f0af8f2c6218bf5350e66949f6e1f4eb` exposed an authentication-policy regression: trusting a recorded auth category on an ordinary HTTP503 would grant a false provider exemption. The corrected common rollup keeps recorded structural classifications (including MoveBank's invalid response) but requires status/text classifier evidence for either `public_endpoint_auth_required` or `access_denied`. Both aggregate maps use the same corrected decision. Regression covers both recorded labels against outage, security-policy and unknown structural statuses; the original captured auth fixtures remain positive controls. Base separately merged from `865a854` without rewriting history. All 146 focused report/status/change/compatibility/authentication tests pass. New exact-head CI is required.
