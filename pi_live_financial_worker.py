@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from pi_cdr_quality_read_io import require_dropbehind_reads
 from pi_cdr_quality_activate import clean_commit, read, record, relative, run, source_files, write, TZ
 
 
@@ -59,6 +60,7 @@ def ingest_command(args, run_date, workers):
             "--ram-root", ram_root(args), "--archive-failed-ram-stage", "--workers", str(workers)]
 
 
+@require_dropbehind_reads()
 def worker(args):
     from pi_live_financial_capture import DATA, PRODUCTION, ram_root
     from cdr_quality_audit import audit

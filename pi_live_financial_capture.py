@@ -15,7 +15,8 @@ from pathlib import Path
 
 from pi_cdr_quality_activate import (clean_commit, control_state, current_state, git, layout,
     main_commit, operation_guard, protected_files, read, record, run, source_files, write)
-from pi_cdr_quality_window import add_arguments, deadline, reference
+from pi_cdr_quality_window import add_arguments, deadline, reference, load
+from pi_cdr_quality_read_io import require_dropbehind_reads
 
 PRODUCTION = Path("/srv/ar-local/AR-local")
 DATA = Path("/srv/ar-local/data")
@@ -62,6 +63,13 @@ def environment(args):
             f"RCLONE_CONFIG={op / 'config/rclone.conf'}"]
 
 
+def remaining_budget(requested, closing, now):
+    runtime = min(requested, int((closing - now).total_seconds()) - 180)
+    if runtime < 300:
+        raise ValueError("insufficient time before operator/quiet cutoff including cleanup reserve")
+    return runtime
+
+
 def preflight(args):
     layout(args.source, PRODUCTION, DATA, args.operation)
     if (args.operation.parent != CANARIES or args.operation.exists()
@@ -83,9 +91,7 @@ def preflight(args):
     if recovery_block_reason(PRODUCTION):
         raise ValueError("production operation or source backup is active")
     now = datetime.now(timezone.utc)
-    runtime = min(args.runtime_seconds, int((deadline(now, extension) - now).total_seconds()) - 180)
-    if runtime < 300:
-        raise ValueError("insufficient time before operator/quiet cutoff including cleanup reserve")
+    runtime = remaining_budget(args.runtime_seconds, deadline(now, extension), now)
     current_state(DATA)
     return runtime
 
@@ -131,6 +137,7 @@ def preserve_failed_stage(source, destination, closing):
     return {"result": "COPIED", "files": files, "bytes": size, "source": str(source), "source_deleted": False}
 
 
+@require_dropbehind_reads()
 def capture(args):
     from pi_deploy_queue_claim import inherited_queue_admission, _read_self_cgroup, SHARED_QUEUE_UNIT_RE
     runtime = preflight(args)
@@ -142,7 +149,7 @@ def capture(args):
         if decision != "admit":
             raise ValueError("submit run outside an existing queue claim")
         command = ["/usr/local/bin/pi-shared-task", "--project", "ar-local", "--resource", "ar-local",
-                   "--cpu-slots", "3", "--max-runtime", str(runtime + 90), "--wait-timeout", "120", "--",
+                   "--cpu-slots", "3", "--max-runtime", str(runtime + 60), "--wait-timeout", "60", "--",
                    *arguments(args, "queued")]
         run(command, timeout=runtime + 240)
         return read(args.operation / "result.json")
@@ -162,12 +169,19 @@ def capture(args):
         f"RCLONE_CONFIG={config}/rclone.conf\n", encoding="utf-8")
     before = {"production_commit": clean_commit(PRODUCTION), "protected_files": protected_files(DATA),
               "publication_controls": control_state(DATA), "source_files": source_files(args.source)}
+    # Source/protected-evidence hashing can be substantial. Revalidate the same
+    # absolute authorization immediately before constructing the bounded unit.
+    now = datetime.now(timezone.utc)
+    extension = load(reference(args), now=now, target=args.expected_commit,
+                     operation=args.operation, stage="live-financial-capture")
+    closing = deadline(now, extension)
+    runtime = remaining_budget(runtime, closing, now)
     unit = f"ar-local-live-capture-{uuid.uuid4().hex[:12]}.service"
     intent = {"schema": "ar-local-live-financial-capture-v1", "target_commit": args.expected_commit,
               "operation": str(args.operation), "source": str(args.source), "unit": unit,
               "parent_queue_unit": parent_unit, "before": before,
               "window_authorization": reference(args), "runtime_seconds": runtime,
-              "ram_root": str(ram_root(args)),
+              "ram_root": str(ram_root(args)), "absolute_cutoff": closing.isoformat(),
               "resource_policy": "quality-canary-v2: host/workload swap recorded; RSS/reserve/pressure/deadline stops unchanged",
               "started_at": datetime.now(timezone.utc).isoformat()}
     write(args.operation / "intent.json", intent)
@@ -208,7 +222,6 @@ def capture(args):
         try:
             stop_owned(unit)
             if result["result"] != "PASS":
-                from pi_cdr_quality_window import load
                 now = datetime.now(timezone.utc)
                 extension = load(reference(args), now=now, target=args.expected_commit,
                                  operation=args.operation, stage="live-financial-capture")
