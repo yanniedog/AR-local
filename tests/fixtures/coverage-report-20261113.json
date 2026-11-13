@@ -1,0 +1,236 @@
+{
+  "by_failure_category": {
+    "endpoint_not_found": 1,
+    "invalid_response": 1,
+    "product_inactive": 3,
+    "transport": 1,
+    "upstream_dependency_failure": 1,
+    "upstream_schema_invalid": 4
+  },
+  "by_phase": {
+    "product_detail": 7,
+    "products_index": 4
+  },
+  "by_provider": {
+    "Aussie Home Loans": 1,
+    "Bank of Queensland Limited": 2,
+    "Bank of Sydney": 1,
+    "CommFCU": 3,
+    "DDH Graham": 1,
+    "ME Bank - ME Go": 1,
+    "MoveBank": 1,
+    "Thriday": 1
+  },
+  "by_provider_failure_category": {
+    "Aussie Home Loans": {
+      "endpoint_not_found": 1
+    },
+    "Bank of Queensland Limited": {
+      "upstream_schema_invalid": 2
+    },
+    "Bank of Sydney": {
+      "upstream_schema_invalid": 1
+    },
+    "CommFCU": {
+      "product_inactive": 3
+    },
+    "DDH Graham": {
+      "upstream_dependency_failure": 1
+    },
+    "ME Bank - ME Go": {
+      "upstream_schema_invalid": 1
+    },
+    "MoveBank": {
+      "unknown_internal": 1
+    },
+    "Thriday": {
+      "transport": 1
+    }
+  },
+  "by_status": {
+    "400": 3,
+    "401": 1,
+    "404": 1,
+    "422": 1,
+    "500": 3,
+    "599": 1,
+    "conflicting_product_identity": 1
+  },
+  "date": "2026-11-13",
+  "incomplete": true,
+  "total": 11,
+  "unresolved_requests": [
+    {
+      "failure_category": "endpoint_not_found",
+      "phase": "products_index",
+      "product_id": "",
+      "provider_dir": "Aussie Home Loans",
+      "provider_uid": "legacy-prd:226112a4639dcad35d13cfecdbdaec52c79b35126dd9b1da804cbb197f177751",
+      "status": 404
+    },
+    {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "usd_fccy_account",
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "status": 422
+    },
+    {
+      "failure_category": "product_inactive",
+      "phase": "product_detail",
+      "product_id": "BP-INVPI-1YRF-LVR95",
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "status": 400
+    },
+    {
+      "failure_category": "product_inactive",
+      "phase": "product_detail",
+      "product_id": "BP-INVPI-1YRF-LVR80",
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "status": 400
+    },
+    {
+      "failure_category": "product_inactive",
+      "phase": "product_detail",
+      "product_id": "CA-INVPI-2YRF",
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "status": 400
+    },
+    {
+      "failure_category": "invalid_response",
+      "phase": "products_index",
+      "product_id": "14ec1ebc-5bca-448d-86ab-e0f541db0b64",
+      "provider_dir": "MoveBank",
+      "provider_uid": "legacy-prd:918977e4219819198656a9c9dfe98976cb64f4505c43e9489261bb99c42f230f",
+      "status": "conflicting_product_identity"
+    },
+    {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "98f3781e-102c-ee11-9966-002248e1d7d5",
+      "provider_dir": "ME Bank - ME Go",
+      "provider_uid": "legacy-prd:75412f027e7f847106a4514d6da00f14628001ae2aef52f94ddf7ed4436ae81f",
+      "status": 500
+    },
+    {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "1c906e88-5c03-ee11-8f6e-00224814d330",
+      "provider_dir": "Bank of Queensland Limited",
+      "provider_uid": "legacy-prd:bd616870cb02cc215be57de414b6645f10f9c8e9420bd957be84893b4f282b36",
+      "status": 500
+    },
+    {
+      "failure_category": "upstream_schema_invalid",
+      "phase": "product_detail",
+      "product_id": "19906e88-5c03-ee11-8f6e-00224814d330",
+      "provider_dir": "Bank of Queensland Limited",
+      "provider_uid": "legacy-prd:bd616870cb02cc215be57de414b6645f10f9c8e9420bd957be84893b4f282b36",
+      "status": 500
+    },
+    {
+      "failure_category": "upstream_dependency_failure",
+      "phase": "products_index",
+      "product_id": "",
+      "provider_dir": "DDH Graham",
+      "provider_uid": "legacy-prd:b108f137850b675d19580de7edfd48022efb4bdef98734b00560bf3056cbb299",
+      "status": 401
+    },
+    {
+      "failure_category": "transport",
+      "phase": "products_index",
+      "product_id": "",
+      "provider_dir": "Thriday",
+      "provider_uid": "legacy-prd:23901fcec27dc2a1760487e9f3ec09c9781fab3d4521d926e89820d6564e5fba",
+      "status": 599
+    }
+  ],
+  "provider_states": [
+    {
+      "provider_dir": "Aussie Home Loans",
+      "provider_uid": "legacy-prd:226112a4639dcad35d13cfecdbdaec52c79b35126dd9b1da804cbb197f177751",
+      "brand_name": "Aussie Home Loans",
+      "state": "partial",
+      "failure_records": 1,
+      "failure_categories": {
+        "endpoint_not_found": 1
+      }
+    },
+    {
+      "provider_dir": "Bank of Queensland Limited",
+      "provider_uid": "legacy-prd:bd616870cb02cc215be57de414b6645f10f9c8e9420bd957be84893b4f282b36",
+      "brand_name": "Bank of Queensland Limited",
+      "state": "partial",
+      "failure_records": 2,
+      "failure_categories": {
+        "upstream_schema_invalid": 2
+      }
+    },
+    {
+      "provider_dir": "Bank of Sydney",
+      "provider_uid": "legacy-prd:36b79e4ddf94d60e3ea7ffce7c0f4afe31ddd8e686e6263772063d343b26ea75",
+      "brand_name": "Bank of Sydney",
+      "state": "partial",
+      "failure_records": 1,
+      "failure_categories": {
+        "upstream_schema_invalid": 1
+      }
+    },
+    {
+      "provider_dir": "CommFCU",
+      "provider_uid": "legacy-prd:46087b310196f512a78e467092561868c35f3b12bf04625cddd617b0fabebef1",
+      "brand_name": "CommFCU",
+      "state": "partial",
+      "failure_records": 3,
+      "failure_categories": {
+        "product_inactive": 3
+      }
+    },
+    {
+      "provider_dir": "DDH Graham",
+      "provider_uid": "legacy-prd:b108f137850b675d19580de7edfd48022efb4bdef98734b00560bf3056cbb299",
+      "brand_name": "DDH Graham",
+      "state": "partial",
+      "failure_records": 1,
+      "failure_categories": {
+        "upstream_dependency_failure": 1
+      }
+    },
+    {
+      "provider_dir": "ME Bank - ME Go",
+      "provider_uid": "legacy-prd:75412f027e7f847106a4514d6da00f14628001ae2aef52f94ddf7ed4436ae81f",
+      "brand_name": "ME Bank - ME Go",
+      "state": "partial",
+      "failure_records": 1,
+      "failure_categories": {
+        "upstream_schema_invalid": 1
+      }
+    },
+    {
+      "provider_dir": "MoveBank",
+      "provider_uid": "legacy-prd:918977e4219819198656a9c9dfe98976cb64f4505c43e9489261bb99c42f230f",
+      "brand_name": "MoveBank",
+      "state": "partial",
+      "failure_records": 1,
+      "failure_categories": {
+        "unknown_internal": 1
+      }
+    },
+    {
+      "provider_dir": "Thriday",
+      "provider_uid": "legacy-prd:23901fcec27dc2a1760487e9f3ec09c9781fab3d4521d926e89820d6564e5fba",
+      "brand_name": "Thriday",
+      "state": "partial",
+      "failure_records": 1,
+      "failure_categories": {
+        "transport": 1
+      }
+    }
+  ],
+  "unresolved_requests_complete": true,
+  "failure_provenance_complete": true
+}
