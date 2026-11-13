@@ -1,5 +1,6 @@
 deploy/pi/*.sh text eol=lf
 deploy/pi/*.sudoers text eol=lf
+contracts/provider-participation/** -text whitespace=cr-at-eol
 
 # These fixtures are literal, hash-bound evidence. Never apply checkout EOL conversion.
 contracts/historical-fees/may23-reviewed-registry-v1.json -text

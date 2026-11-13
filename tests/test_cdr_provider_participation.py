@@ -104,6 +104,16 @@ def test_any_current_registration_identity_revokes_cessation(tmp_path, field):
     assert reconcile_participation(population, status, tmp_path, DAY) == population
 
 
+@pytest.mark.parametrize('meta', [{'totalRecords': 391}, {'totalRecords': '390'},
+                                 {'totalRecords': True}, {'totalPages': True}])
+def test_declared_register_truncation_or_malformed_counts_retains_warning(tmp_path, meta):
+    payload = json.loads((EVIDENCE_ROOT/'cessation-register.json').read_bytes())
+    payload['meta'] = meta
+    status = captured_status(tmp_path, payload=payload)
+    population = captured_population()
+    assert reconcile_participation(population, status, tmp_path, DAY) == population
+
+
 def test_current_return_or_missing_proof_reopens_previous_disposition(tmp_path):
     status = captured_status(tmp_path)
     resolved = reconcile_participation(captured_population(), status, tmp_path, DAY)

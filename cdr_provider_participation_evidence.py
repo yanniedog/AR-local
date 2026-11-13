@@ -31,9 +31,13 @@ def provider_uid(brand):
 
 def register_rows(payload):
     rows = payload.get('data')
+    meta = payload.get('meta', {})
     if (not isinstance(rows, list) or not rows or payload.get('errors')
+            or not isinstance(meta, dict)
             or payload.get('links', {}).get('next')
-            or payload.get('meta', {}).get('totalPages', 1) != 1
+            or (type(meta.get('totalPages', 1)) is not int or meta.get('totalPages', 1) != 1)
+            or ('totalRecords' in meta and
+                (type(meta['totalRecords']) is not int or meta['totalRecords'] != len(rows)))
             or any(not isinstance(row, dict) or not (row.get('dataHolderBrandId') or row.get('interimId'))
                    or not row.get('brandName') or not isinstance(row.get('industries'), list)
                    for row in rows)
