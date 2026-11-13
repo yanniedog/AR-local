@@ -80,7 +80,7 @@ def status_report(status):
     for name, number in state_counts.items():
         state_totals[safe(name, 64)] += number
     state_rows = status.get("provider_states")
-    states_agree = (not isinstance(state_rows, list) or not state_rows or
+    states_agree = (not isinstance(state_rows, list) or
                     (len(state_rows) <= MAX_PROVIDERS and state_totals == provider_counts and
                      all(isinstance(row, dict) and count(row.get("failure_records")) is not None
                          for row in state_rows)))

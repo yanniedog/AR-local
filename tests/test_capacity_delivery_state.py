@@ -89,3 +89,86 @@ def test_concurrent_monitor_waits_for_delivery_outcome_before_reading(tmp_path, 
     assert saved["notification"]["status"] == "SENT" and saved["samples"]
     assert saved["last_alert_status"] == "warning"
     assert not list(tmp_path.glob("*.tmp*"))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -float("inf"), {"nested": float("nan")}])
+@pytest.mark.parametrize("field", ["attempted_at", "retry_after", "error_class"])
+def test_nonfinite_retained_notification_cannot_block_sampling(tmp_path, monkeypatch, bad, field):
+    clock, state, args = configured(tmp_path, monkeypatch)
+    prior = {"status": "FAILED", "capacity_status": "warning",
+             "attempted_at": clock[0].timestamp(),
+             "retry_after": clock[0].timestamp() + 3600, "error_class": "OSError"}
+    prior[field] = bad
+    state.write_text(json.dumps({"notification": prior}))
+    assert monitor.main(args[:-1]) == 0
+    saved = json.loads(state.read_text())
+    assert saved["samples"] and saved["checked_at"] == clock[0].isoformat()
+    assert field not in saved["notification"]
+    assert saved["notification"] == {k: v for k, v in prior.items() if k != field}
+    json.dumps(saved, allow_nan=False)
+
+
+def test_invalid_prior_field_preserves_valid_retry_reservation(tmp_path, monkeypatch):
+    clock, state, args = configured(tmp_path, monkeypatch)
+    until = clock[0].timestamp() + 3600
+    state.write_text(json.dumps({"notification": {"status": "FAILED", "capacity_status": "warning",
+        "attempted_at": float("nan"), "retry_after": until}}))
+    monkeypatch.setattr(monitor, "send_email", lambda *_: pytest.fail("retry reservation lost"))
+    assert monitor.main(args) == 1
+    assert json.loads(state.read_text())["notification"]["retry_after"] == until
+
+
+def test_invalid_utf8_notification_config_retains_sanitized_failure_and_retry(tmp_path, monkeypatch, capsys):
+    import ar_local_email_notify
+    clock, state, args = configured(tmp_path, monkeypatch)
+    config = tmp_path / "private-notify.env"
+    config.write_bytes(b"private-config-detail=\xff\n")
+    monkeypatch.setenv("AR_LOCAL_NOTIFY_ENV", str(config))
+    monkeypatch.setattr(monitor, "email_configured", ar_local_email_notify.email_configured)
+    monkeypatch.setattr(monitor, "send_email", lambda *_: pytest.fail("invalid config sent"))
+    assert monitor.main(args) == 1
+    saved = json.loads(state.read_text())
+    assert saved["samples"] and saved["status"] == "warning"
+    assert saved["notification"]["status"] == "FAILED"
+    assert saved["notification"]["error_class"] == "UnicodeDecodeError"
+    assert saved["notification"]["retry_after"] == clock[0].timestamp() + monitor.ALERT_RETRY_SECONDS
+    clock[0] += timedelta(minutes=1)
+    monkeypatch.setattr(monitor, "email_configured", lambda: pytest.fail("config retry reservation lost"))
+    assert monitor.main(args) == 1
+    output = capsys.readouterr()
+    assert "private-config-detail" not in state.read_text() + output.out + output.err
+    assert str(config) not in output.out + output.err
+
+
+def test_unconfigured_severity_change_preserves_prior_attempt_reservation(tmp_path, monkeypatch):
+    clock, state, args = configured(tmp_path, monkeypatch)
+    attempts = []
+    monkeypatch.setattr(monitor, "send_email", lambda *_: attempts.append(True) and False)
+    assert monitor.main(args) == 1
+    prior = json.loads(state.read_text())["notification"]
+    clock[0] += timedelta(minutes=10)
+    monkeypatch.setattr(monitor, "email_configured", lambda: False)
+    monkeypatch.setattr(monitor.shutil, "disk_usage", lambda _: SimpleNamespace(
+        total=1000 * monitor.GIB, used=950 * monitor.GIB, free=50 * monitor.GIB))
+    assert monitor.main(args) == 1
+    saved = json.loads(state.read_text())
+    assert saved["status"] == "critical" and saved["notification"] == prior
+    clock[0] += timedelta(minutes=10)
+    monkeypatch.setattr(monitor, "email_configured", lambda: True)
+    monkeypatch.setattr(monitor.shutil, "disk_usage", lambda _: SimpleNamespace(
+        total=1000 * monitor.GIB, used=800 * monitor.GIB, free=200 * monitor.GIB))
+    assert monitor.main(args) == 1
+    assert json.loads(state.read_text())["notification"] == prior and attempts == [True]
+
+
+def test_configured_critical_escalation_does_not_wait_for_warning_retry(tmp_path, monkeypatch):
+    clock, state, args = configured(tmp_path, monkeypatch)
+    attempts = []
+    monkeypatch.setattr(monitor, "send_email", lambda subject, _: attempts.append(subject) and False)
+    assert monitor.main(args) == 1
+    clock[0] += timedelta(minutes=10)
+    monkeypatch.setattr(monitor.shutil, "disk_usage", lambda _: SimpleNamespace(
+        total=1000 * monitor.GIB, used=950 * monitor.GIB, free=50 * monitor.GIB))
+    assert monitor.main(args) == 1
+    assert len(attempts) == 2 and attempts[-1].endswith("critical")
+    assert json.loads(state.read_text())["notification"]["capacity_status"] == "critical"

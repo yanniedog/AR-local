@@ -73,6 +73,13 @@ def remaining_budget(requested, closing, now):
     return runtime
 
 
+def admitted_deadline(args, now):
+    """Revalidate authority without renewing this operation's original cutoff."""
+    extension = load(reference(args), now=now, target=args.expected_commit,
+                     operation=args.operation, stage="live-financial-capture")
+    return min(args.admission_cutoff, deadline(now, extension))
+
+
 def preflight(args):
     layout(args.source, PRODUCTION, DATA, args.operation)
     if (args.operation.parent != CANARIES or args.operation.exists()
@@ -93,7 +100,8 @@ def preflight(args):
     if recovery_block_reason(PRODUCTION):
         raise ValueError("production operation or source backup is active")
     now = datetime.now(timezone.utc)
-    runtime = remaining_budget(args.runtime_seconds, deadline(now, extension), now)
+    args.admission_cutoff = deadline(now, extension)
+    runtime = remaining_budget(args.runtime_seconds, args.admission_cutoff, now)
     current_state(DATA)
     args.stage_binding = choose_stage(args.operation, args.stage_profile, production_configuration())
     return runtime
@@ -160,6 +168,8 @@ def capture(args):
     if decision != "reuse":
         raise ValueError("live capture requires an inherited exclusive AR-local queue claim")
     parent_unit = SHARED_QUEUE_UNIT_RE.search(_read_self_cgroup()).group(1) + ".service"
+    now = datetime.now(timezone.utc)
+    runtime = remaining_budget(runtime, admitted_deadline(args, now), now)
     args.operation.mkdir(mode=0o700)
     ram_root(args).mkdir(mode=0o700)
     args.stage_binding["directory_identity"] = directory_identity(ram_root(args))
@@ -184,9 +194,7 @@ def capture(args):
     # Source/protected-evidence hashing can be substantial. Revalidate the same
     # absolute authorization immediately before constructing the bounded unit.
     now = datetime.now(timezone.utc)
-    extension = load(reference(args), now=now, target=args.expected_commit,
-                     operation=args.operation, stage="live-financial-capture")
-    closing = deadline(now, extension)
+    closing = admitted_deadline(args, now)
     runtime = remaining_budget(runtime, closing, now)
     unit = f"ar-local-live-capture-{uuid.uuid4().hex[:12]}.service"
     intent = {"schema": "ar-local-live-financial-capture-v1", "target_commit": args.expected_commit,
@@ -240,10 +248,9 @@ def capture(args):
             stop_owned(unit)
             if result["result"] != "PASS":
                 now = datetime.now(timezone.utc)
-                extension = load(reference(args), now=now, target=args.expected_commit,
-                                 operation=args.operation, stage="live-financial-capture")
                 if args.stage_binding["filesystem"]["fstype"] == "tmpfs":
-                    result["failed_stage"] = preserve_failed_stage(ram_root(args), args.operation / "failed-ram", deadline(now, extension))
+                    result["failed_stage"] = preserve_failed_stage(
+                        ram_root(args), args.operation / "failed-ram", admitted_deadline(args, now))
                 else:
                     result["failed_stage"] = {"result": "RETAINED_IN_PLACE",
                         "source": str(ram_root(args)), "source_deleted": False}

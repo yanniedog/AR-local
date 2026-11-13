@@ -9,7 +9,7 @@ from datetime import datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ar_local_ingest_schedule import maintenance_closes_at
+from ar_local_ingest_schedule import maintenance_closes_at, maintenance_window_open
 
 TZ = ZoneInfo("Australia/Hobart")
 SCHEMA = "ar-local-operation-window-v1"
@@ -77,6 +77,8 @@ def reference(args) -> dict | None:
 
 
 def deadline(now: datetime, extension: datetime | None) -> datetime:
+    if not maintenance_window_open(now):
+        raise ValueError("operation deadline cannot be renewed inside the quiet window")
     closing = maintenance_closes_at(now)
     return min(extension, closing) if extension is not None else closing
 
