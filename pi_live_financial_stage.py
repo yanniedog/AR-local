@@ -37,8 +37,10 @@ def canonical(value):
 
 def environment_file(text):
     """Conservative systemd literal grammar; reject unsupported syntax globally."""
+    if "\0" in text or any(c.isspace() and c not in " \t\r\n" for c in text) or "\r" in text.replace("\r\n", ""):
+        raise ValueError("unsupported environment-file separator")
     assignments = []
-    for line in text.splitlines():
+    for line in text.replace("\r\n", "\n").split("\n"):
         line = line.strip()
         if not line or line.startswith(("#", ";")):
             continue
@@ -136,19 +138,32 @@ def resolve_configuration(fields, reader=read_environment_file, uid_for_user=Non
 
 
 def production_configuration():
+    from pi_live_financial_stage_env import read_files
     result = subprocess.run(["systemctl", "show", SERVICE,
         "--property=User,Environment,EnvironmentFiles,PassEnvironment,UnsetEnvironment"],
         capture_output=True, text=True, check=True, timeout=15)
-    return resolve_configuration(property_fields(result.stdout))
+    rows = iter(read_files())
+    def reader(name, optional):
+        row = next(rows, None)
+        if not isinstance(row, dict) or row.get("path") != name or row.get("optional") is not optional:
+            raise ValueError("root-readonly file order differs from service observation")
+        return row["assignments"], {key: value for key, value in row.items() if key != "assignments"}
+    resolved = resolve_configuration(property_fields(result.stdout), reader)
+    if next(rows, None) is not None:
+        raise ValueError("root-readonly environment inventory has unexpected files")
+    return resolved
 
 
 def property_fields(text):
+    if len(text.encode("utf-8")) > 65536:
+        raise ValueError("production environment properties exceed bound")
     fields = {}
     for line in text.splitlines():
         key, sep, value = line.partition("=")
-        if not sep or key not in PROPERTIES or key in fields:
+        if not sep or key not in PROPERTIES or key in fields and key != "EnvironmentFiles":
             raise ValueError("duplicate or unexpected production environment property")
-        fields[key] = value
+        # systemctl prints this array property once per file, preserving order.
+        fields[key] = (fields[key] + " " + value) if key == "EnvironmentFiles" and key in fields else value
     if set(fields) != PROPERTIES:
         raise ValueError("incomplete production environment properties")
     return fields

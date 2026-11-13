@@ -2,6 +2,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 import json
+import os
 
 import pytest
 
@@ -133,3 +134,79 @@ def test_truncated_duplicate_or_extra_systemctl_properties_are_refused():
             stage.property_fields(invalid)
     with pytest.raises(ValueError, match="complete exact"):
         resolve({"User": "pi"})
+
+
+def test_repeated_environment_file_properties_preserve_all_files_and_duplicate_order():
+    text = "User=pi\nEnvironment=\nPassEnvironment=\nUnsetEnvironment=\n" + "\n".join([
+        "EnvironmentFiles=/etc/private.env (ignore_errors=yes)",
+        "EnvironmentFiles=/etc/public.env (ignore_errors=no)",
+        "EnvironmentFiles=/etc/private.env (ignore_errors=yes)"])
+    seen = []
+    def reader(name, optional):
+        seen.append((name, optional))
+        return ["/srv/" + str(len(seen))], {"path": name}
+    result = resolve(stage.property_fields(text), reader)
+    assert result["effective_root"] == "/srv/3"
+    assert seen == [("/etc/private.env", True), ("/etc/public.env", False), ("/etc/private.env", True)]
+
+
+def root_reader_namespace():
+    from pi_live_financial_stage_env import ROOT_READER
+    namespace = {"__name__": "offline_root_reader_test"}
+    exec(compile(ROOT_READER, "<fixed-root-reader>", "exec"), namespace)
+    return namespace
+
+
+def test_root_literal_emits_only_allowlisted_assignments_and_retains_file_order(monkeypatch):
+    namespace = root_reader_namespace()
+    monkeypatch.setitem(namespace, "canonical", lambda value: stage.canonical_name(value))
+    assert namespace["assignments"]("IGNORED=example\nAR_LOCAL_RAM_ROOT='/srv/capture'\n") == ["/srv/capture"]
+    for text in ("OTHER=one\\\ntwo", "OTHER='multiline", "export OTHER=x"):
+        with pytest.raises(ValueError):
+            namespace["assignments"](text)
+    output = "EnvironmentFiles=/etc/one (ignore_errors=yes)\nEnvironmentFiles=/etc/two (ignore_errors=no)\nEnvironmentFiles=/etc/one (ignore_errors=yes)\n"
+    monkeypatch.setattr(namespace["subprocess"], "run", lambda *a, **k: SimpleNamespace(stdout=output))
+    monkeypatch.setitem(namespace, "read_file", lambda path, optional: {"path": path, "optional": optional})
+    assert namespace["collect"]()["files"] == [
+        {"path": "/etc/one", "optional": True}, {"path": "/etc/two", "optional": False}, {"path": "/etc/one", "optional": True}]
+
+
+def test_root_literal_limits_property_bytes_and_file_count_before_read(monkeypatch):
+    namespace = root_reader_namespace()
+    seen = []
+    monkeypatch.setitem(namespace, "read_file", lambda *args: seen.append(args) or {})
+    monkeypatch.setattr(namespace["subprocess"], "run", lambda *a, **k: SimpleNamespace(stdout='x' * 65537))
+    with pytest.raises(ValueError, match="property bound"):
+        namespace["collect"]()
+    assert seen == []
+    output = "EnvironmentFiles=/etc/one (ignore_errors=yes)\n" * 33
+    monkeypatch.setattr(namespace["subprocess"], "run", lambda *a, **k: SimpleNamespace(stdout=output))
+    with pytest.raises(ValueError, match="file count bound"):
+        namespace["collect"]()
+    assert len(seen) == 32
+
+
+@pytest.mark.parametrize('separator', ['\u2028', '\u0085', '\u00a0', '\u001c', '\v', '\f', '\0', '\r'])
+def test_non_systemd_separators_never_create_phantom_staging_assignment(separator):
+    text = 'OTHER=opaque' + separator + 'AR_LOCAL_RAM_ROOT=/srv/wrong'
+    for reader in (stage.environment_file, root_reader_namespace()['assignments']):
+        with pytest.raises(ValueError, match='separator'):
+            reader(text)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="root NOFOLLOW descriptor contract is POSIX")
+def test_root_literal_projects_mode0600_file_without_returning_unrelated_values(tmp_path, monkeypatch):
+    namespace = root_reader_namespace()
+    path = tmp_path / "private.env"
+    path.write_text("OTHER=example\nAR_LOCAL_RAM_ROOT=/srv/capture\n")
+    path.chmod(0o600)
+    real_lstat, real_fstat = Path.lstat, os.fstat
+    def root_stat(value, directory=False):
+        return SimpleNamespace(**{name: (0 if name == 'st_uid' else 0o40755 if name == 'st_mode' and directory else getattr(value, name))
+            for name in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')})
+    monkeypatch.setitem(namespace, "canonical", lambda name: Path(name))
+    monkeypatch.setattr(Path, "lstat", lambda self: root_stat(real_lstat(self), self != path))
+    monkeypatch.setattr(os, "fstat", lambda fd: root_stat(real_fstat(fd)))
+    result = namespace["read_file"](str(path), False)
+    assert result['assignments'] == ['/srv/capture'] and result['identity'][2] & 0o777 == 0o600
+    assert 'example' not in json.dumps(result) and 'OTHER' not in json.dumps(result)
