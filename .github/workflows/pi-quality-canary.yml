@@ -82,6 +82,14 @@ on:
         options:
           - "legacy"
           - "allocation-v1"
+      backup_gate_mode:
+        description: "operator-deploy mode: backup gate (local-disk or owner-approved drive-evidence)"
+        required: false
+        default: "local-disk"
+        type: choice
+        options:
+          - "local-disk"
+          - "drive-evidence"
 
 permissions:
   contents: read
@@ -455,6 +463,12 @@ jobs:
           set -euo pipefail
           ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" <<'REMOTE'
           set -euo pipefail
+          NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
+          [ "$NOW_HM" -ge 0330 ] && [ "$NOW_HM" -lt 2200 ] || { echo "outside 03:30-22:00 Hobart"; exit 1; }
+          test -x /usr/local/bin/pi-shared-task || { echo "pi-shared-task missing"; exit 1; }
+          /usr/local/bin/pi-shared-task --project ar-local --resource ar-local \
+            --cpu-slots 1 --max-runtime 600 --wait-timeout 600 -- bash -s -- "$1" <<'QUEUED'
+          set -euo pipefail
           SRC="$(mktemp -d /srv/ar-local/gate-source-XXXXXX)"
           trap 'rm -rf "$SRC"' EXIT
           git clone -q https://github.com/yanniedog/AR-local.git "$SRC/AR-local"
@@ -465,6 +479,7 @@ jobs:
             "$SRC/AR-local" /srv/ar-local/australianrates /srv/ar-local/data "$1"
           (cd /usr/local/lib/ar-local-backup && sha256sum -c /etc/ar-local/backup-gate.sha256 >/dev/null) && echo "gate bytes installed for $1; manifest OK"
           test "$(git -C /srv/ar-local/AR-local rev-parse HEAD)" = "$PROD" && echo "production HEAD unchanged"
+          QUEUED
           REMOTE
 
       - name: Operator deploy of a canary-passed commit
@@ -489,10 +504,7 @@ jobs:
           echo "canary PASS evidence: $PASSED"
           export AR_PI_SSH_HOST=ar-local-pi5 AR_PI_EXPECTED_COMMIT="$TARGET_COMMIT"
           export AR_PI_BASE_URL="http://${PI_SSH_HOST}/"
-          # Owner decision 2026-11-10: no separate backup disk exists, so the deploy
-          # gate requires a current Drive day archive plus a fresh, Drive-verified
-          # pre-deployment backup (docs/PI_BACKUP_FOUNDATION.md, Drive-evidence mode).
-          export AR_PI_BACKUP_GATE_MODE=drive-evidence
+          export AR_PI_BACKUP_GATE_MODE="${{ inputs.backup_gate_mode }}"
           python3 pi_deploy_verify.py --deploy --dry-run
           python3 pi_deploy_verify.py --deploy
           python3 pi_deploy_verify.py --verify

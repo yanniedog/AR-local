@@ -187,6 +187,7 @@ for name in \
   pi_cdr_quality_read_io.py \
   ar_local_ingest_schedule.py \
   pi_backup_foundation.py \
+  pi_drive_backup_hold.py \
   pi_drive_evidence_gate.py \
   pi_ingest_terminal.py \
   process_safety.py \
@@ -238,6 +239,7 @@ done
     pi_cdr_quality_read_io.py \
     ar_local_ingest_schedule.py \
     pi_backup_foundation.py \
+    pi_drive_backup_hold.py \
     pi_drive_evidence_gate.py \
     pi_ingest_terminal.py \
     process_safety.py \
@@ -308,8 +310,20 @@ append_installed_wrapper_hash deploy/pi/ar-local-backup-run.sh /usr/local/bin/ar
 
 sudo install -d -o root -g root -m 0755 /etc/ar-local
 sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/backup-gate.sha256
-if [ -d /var/lib/ar-local-day-archives ] && [ ! -L /var/lib/ar-local-day-archives ] && [ ! -L /var/lib/ar-local-day-archives/pre-deploy ]; then
-  sudo install -d -o "${run_user:-$(id -un)}" -g "${run_group:-$(id -gn)}" -m 0700 /var/lib/ar-local-day-archives/pre-deploy
+if [ -L /var/lib/ar-local-day-archives ]; then
+  echo "Refusing symlinked day-archive spool: /var/lib/ar-local-day-archives" >&2
+  exit 1
+fi
+if [ -d /var/lib/ar-local-day-archives ]; then
+  if [ -L /var/lib/ar-local-day-archives/pre-deploy ] || { [ -e /var/lib/ar-local-day-archives/pre-deploy ] && [ ! -d /var/lib/ar-local-day-archives/pre-deploy ]; }; then
+    echo "Refusing non-directory pre-deploy spool path: /var/lib/ar-local-day-archives/pre-deploy" >&2
+    exit 1
+  fi
+  spool_user="${run_user:-$(systemctl show ar-local-daily.service -p User --value 2>/dev/null || true)}"
+  spool_user="${spool_user:-$(id -un)}"
+  spool_group="${run_group:-$(systemctl show ar-local-daily.service -p Group --value 2>/dev/null || true)}"
+  spool_group="${spool_group:-$(id -gn "$spool_user")}"
+  sudo install -d -o "$spool_user" -g "$spool_group" -m 0700 /var/lib/ar-local-day-archives/pre-deploy
 fi
 
 # Relative lib/schema paths resolve under $trusted; absolute wrapper paths verify
