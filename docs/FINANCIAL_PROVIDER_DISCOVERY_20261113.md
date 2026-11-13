@@ -15,3 +15,10 @@ Register-response drift is now explicit: malformed/empty industry classification
 Local validation: 99 tests passed across financial register, ingest status, official single-page recovery, ingest recovery and compatibility suites; `git diff --check` passed. Full exact-head producer/platform CI is pending. Worktree: `C:/code/AR-local-financial-provider-discovery-20261113`, branch `agent/financial-provider-discovery-20261113`. Original public response bytes/UTF-8 representations and provenance hashes are under `tests/fixtures/cdr-financial-register-20261113/`.
 
 After review fixes: 89 register/status/compatibility/recovery tests passed; independent review found no actionable defect and 34 register/status tests passed. Exact hosted CI must be rerun for the final integrated head.
+
+Full hosted CI on `e923ed6` found a real packaging regression: the trusted installed
+restore bundle imported `cdr_ingest_support` but omitted its new
+`cdr_register_validation` dependency. Added the module to both the installation
+and SHA256 inventories, with an explicit isolated-bundle import assertion. The
+existing canonical/legacy/WAL restoration test remains the end-to-end regression;
+no repository import fallback or verification gate is relaxed.

@@ -35,6 +35,7 @@ def test_trusted_bundle_includes_and_imports_process_safety(tmp_path: Path):
     inventory = _install_inventory()
     assert "process_safety.py" in inventory
     assert "pi_cdr_quality_read_io.py" in inventory
+    assert "cdr_register_validation.py" in inventory
     bundle = tmp_path / "trusted"
     for relative in inventory:
         destination = bundle / relative
@@ -49,9 +50,11 @@ assert all(not value or Path(value).resolve() != repo for value in sys.path)
 import process_safety
 import ar_local_restore_io
 import pi_cdr_quality_read_io
+import cdr_register_validation
 assert Path(process_safety.__file__).resolve().parent == bundle
 assert Path(ar_local_restore_io.__file__).resolve().parent == bundle
 assert Path(pi_cdr_quality_read_io.__file__).resolve().parent == bundle
+assert Path(cdr_register_validation.__file__).resolve().parent == bundle
 assert not pi_cdr_quality_read_io.dropbehind_required()
 assert callable(process_safety.process_alive)
 print("ok")
