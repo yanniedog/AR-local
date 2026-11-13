@@ -179,11 +179,10 @@ def app_coverage_aliases(coverage: Mapping[str, Any]) -> Dict[str, Any]:
         if isinstance(result.get("provider_failures"), list)
         else []
     )
-    succeeded = int(counts.get("providers_succeeded") or counts.get("brands_observed") or 0)
-    attempted = int(
-        counts.get("providers_attempted")
-        or (succeeded + int(counts.get("providers_failed") or 0))
-    )
+    succeeded = counts.get("providers_succeeded")
+    succeeded = int(counts.get("brands_observed") or 0) if succeeded is None else int(succeeded)
+    attempted = counts.get("providers_attempted")
+    attempted = (succeeded + int(counts.get("providers_failed") or 0)) if attempted is None else int(attempted)
     observed_at = ""
     if observed_on:
         observed_at = (
@@ -207,9 +206,16 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
     failures = [row for row in banks.get("failures", []) if isinstance(row, Mapping)]
     observed = {text(row.get("provider")) for row in [*rates, *products]} - {""}
     failed = {text(row.get("bank")) for row in failures} - {""}
+    prd_unavailable = banks.get('prd_unavailable', [])
+    unavailable_dirs = {text(row['provider_dir']).casefold() for row in prd_unavailable}
     attempted = {
         text(provider) for provider in banks.get("holder_attempts", []) if text(provider)
     } | observed | failed
+    # A resumed capture may retain earlier raw details/failures. Those bytes
+    # remain useful evidence, but do not turn register-proven absence into a
+    # fresh request or success for this unavailable provider.
+    attempted = {name for name in attempted if name.casefold() not in unavailable_dirs}
+    failed = {name for name in failed if name.casefold() not in unavailable_dirs}
     succeeded = attempted - (failed - observed)
     sections: Dict[str, Any] = {}
     for section in ("Mortgage", "Savings", "TD"):
@@ -241,10 +247,13 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
             "providers_partial": len(failed & observed),
             "providers_attempted": len(attempted),
             "providers_succeeded": len(succeeded),
+            "providers_registered": len(attempted) + len(prd_unavailable),
+            "providers_prd_unavailable": len(prd_unavailable),
         },
         "sections": sections,
         # Deliberately excludes endpoint URLs and response snippets.
         "provider_failures": _failure_rollup(failures),
+        "provider_prd_unavailable": prd_unavailable,
     })
 
 
@@ -405,12 +414,29 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "product_facts": [],
         "failures": read_failures(banks_root),
         "holder_attempts": [],
+        "prd_unavailable": [],
     }
     if not banks_root.exists():
         return dataset
     holders_root = banks_root / "_holders"
     if holders_root.exists():
         dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
+    status_path = banks_root / "ingest-status.json"
+    if status_path.is_file():
+        if status_path.stat().st_size > 32 * 1024**2:
+            raise ValueError("ingest status exceeds export metadata bound")
+        status = json.loads(status_path.read_bytes())
+        unavailable = [row for row in status.get('provider_states', [])
+                       if row.get('state') == 'not_attempted' and row.get('prd_availability') == 'UNAVAILABLE']
+        if status.get('providers_prd_unavailable') or any(
+                row.get('prd_availability') == 'UNAVAILABLE' for row in status.get('provider_states', [])):
+            from cdr_provider_participation_evidence import current_register
+            current_register(run_root, status, run_root.name, allow_filtered=True, ingest_root=True)
+        names = {row['provider_dir'] for row in unavailable}
+        dataset['holder_attempts'] = [name for name in dataset['holder_attempts'] if name not in names]
+        dataset['prd_unavailable'] = [
+            {key: row[key] for key in ('provider_uid', 'provider_dir', 'brand_name', 'population_known', 'prd_availability')}
+            for row in unavailable]
     for path in sorted(banks_root.rglob("product-detail.json")):
         source = path.read_bytes()
         rec = inner_record(json.loads(source))

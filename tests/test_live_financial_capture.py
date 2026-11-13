@@ -142,25 +142,25 @@ def promoted_control(tmp_path, monkeypatch):
 def test_register_reconciliation_requires_entire_promoted_committed_inventory(tmp_path, monkeypatch):
     exports, status = promoted_control(tmp_path, monkeypatch)
     before = {str(p): p.read_bytes() for p in exports.rglob("*") if p.is_file()}
-    assert reconcile_register(exports, status)["registered"] == 1
+    assert reconcile_register(exports, status, "2026-08-15")["registered"] == 1
     assert before == {str(p): p.read_bytes() for p in exports.rglob("*") if p.is_file()}
     root = exports / status["raw_attempt_journal"]["path"]
     (root / "events/uncommitted.json").write_text("{}")
     from cdr_attempt_evidence_promotion import AttemptEvidencePromotionError
     with pytest.raises(AttemptEvidencePromotionError):
-        reconcile_register(exports, status)
+        reconcile_register(exports, status, "2026-08-15")
 
 
 def test_register_reconciliation_rejects_wrong_head_or_missing_provider(tmp_path, monkeypatch):
     exports, status = promoted_control(tmp_path, monkeypatch)
     status["providers_attempted"] = 0
     with pytest.raises(ValueError, match="every discovered"):
-        reconcile_register(exports, status)
+        reconcile_register(exports, status, "2026-08-15")
     status["providers_attempted"] = 1
     status["raw_attempt_journal"]["head_digest"] = "0" * 64
     from cdr_attempt_evidence_promotion import AttemptEvidencePromotionError
     with pytest.raises(AttemptEvidencePromotionError):
-        reconcile_register(exports, status)
+        reconcile_register(exports, status, "2026-08-15")
 
 
 def test_ingest_uses_production_automatic_ram_and_detail_defaults(tmp_path):

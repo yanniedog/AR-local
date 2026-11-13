@@ -41,7 +41,17 @@ def parse_supported_versions(body: str) -> list[int]:
         r"\s*(?:include|are)?\s*:?\s*\[?([\d,\s]+(?:\band\b[\d,\s]+)?)",
         text, re.I,
     )
-    return _versions(match.group(1)) if match else []
+    if match:
+        return _versions(match.group(1))
+    # An open-ended advertisement proves its minimum, not an arbitrary upper
+    # version. Require an affirmative endpoint/API clause and an explicit v
+    # marker; never turn "v7 and above" into a speculative 7..99 sweep.
+    minimum = re.search(
+        r"(?:^|[\"'\n.!?:])\s*(?:this\s+)?(?:endpoint|api)\s+supports\s+"
+        r"(?:v\s*|versions?\s+)([1-9][0-9]?)\s+(?:and|or)\s+(?:above|higher|later)\b",
+        text, re.I,
+    )
+    return [int(minimum.group(1))] if minimum else []
 
 
 class FetchFailure(NamedTuple):

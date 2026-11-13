@@ -40,7 +40,7 @@ def archive_matches(path, generation, *, budget=None):
     return matched
 
 
-def reconcile_register(exports, status, *, budget=None):
+def reconcile_register(exports, status, run_date, *, budget=None):
     from cdr_ingest_support import iter_banking_brands_from_payload
     from cdr_attempt_evidence_promotion import verify_promoted_attempt_evidence
     if status.get("register_provenance_complete") is not True or status.get("failure_provenance_complete") is not True:
@@ -67,10 +67,17 @@ def reconcile_register(exports, status, *, budget=None):
         brands.update(brand_key(row) for row in iter_banking_brands_from_payload(json.loads(raw)))
     states = status.get("provider_states") or []
     observed = {brand_key(row) for row in states}
+    unavailable = []
+    if status.get('providers_prd_unavailable') or any(row.get('prd_availability') == 'UNAVAILABLE' for row in states):
+        from cdr_provider_participation_evidence import current_register
+        _, register = current_register(exports, status, run_date)
+        unavailable = register.get('prd_unavailable', [])
     if (found != expected or not brands or observed != brands or len(states) != len(brands)
-            or status.get("providers_registered") != len(brands) or status.get("providers_attempted") != len(brands)):
+            or status.get("providers_registered") != len(brands)
+            or status.get("providers_attempted") + len(unavailable) != len(brands)):
         raise ValueError("not every discovered financial provider has exactly one attempted state")
-    return {"registered": len(brands), "attempted": len(states), "register_body_sha256": sorted(found),
+    return {"registered": len(brands), "attempted": status['providers_attempted'],
+            "prd_unavailable": unavailable, "register_body_sha256": sorted(found),
             "unresolved_requests": status.get("total"), "provider_states": states,
             "upstream_complete": not bool(status.get("incomplete"))}
 
@@ -116,7 +123,7 @@ def worker(args):
     staging["before_capture_filesystem"] = stage_before
     exports = op / "data/runs" / run_date / "_exports"
     status = read(exports / "ingest-status.json")
-    coverage = reconcile_register(exports, status, budget=read_budget)
+    coverage = reconcile_register(exports, status, run_date, budget=read_budget)
     report = audit(op / "data", run_date, scrub=True, public=False, audit_root=op / "audit")
     if report["capture"]["status"] != "PASS" or report["issues"]:
         raise ValueError("fresh live capture did not pass source/ledger/SQLite accounting")

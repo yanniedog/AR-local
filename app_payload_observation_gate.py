@@ -128,7 +128,7 @@ def contract_coverage(contract: Optional[Mapping[str, Any]]) -> Optional[dict]:
     if isinstance(contract.get("provider_states"), list):
         # Publish identities/accounting, not endpoint URLs or transport snippets.
         fields = ("provider_uid", "brand_name", "state", "failure_records",
-                  "failure_categories", "population_known")
+                  "failure_categories", "population_known", "prd_availability")
         result["provider_observations"] = [
             {key: provider[key] for key in fields if key in provider}
             for provider in contract["provider_states"] if isinstance(provider, Mapping)
