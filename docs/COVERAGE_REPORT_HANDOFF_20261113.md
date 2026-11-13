@@ -1,0 +1,54 @@
+# Coverage report schema repair — 2026-11-13
+
+Source-only task; no Pi mutation. Parent owns controlled activation and acceptance.
+
+## Confirmed failure
+
+Hosted report run 43412528732 read November 13 ingest-status with total=11,
+eight by_provider entries and eleven unresolved_requests, but printed zero
+failures and an empty provider table for fourteen days. Recursive scanning only
+recognized bank/provider/brand fields; current status uses provider_dir and
+provider_uid, with brand_name in provider_states and keyed aggregate maps.
+
+Authoritative failure-record counts and the bounded, deduplicated recovery queue
+are different populations. Adding them double-counts; counting only the queue
+can undercount. Parse the current aggregate schema explicitly, map identities
+through provider_states, and display request samples separately. Unknown or
+inconsistent schema must print UNKNOWN rather than a successful zero.
+
+## Evidence and next steps
+
+The separately captured sanitized live-runtime-20261113.jsonl confirms eleven
+current failures: Aussie index404; DDH Graham index401; Thriday transport599;
+MoveBank conflicting product identity; Bank of Sydney detail422; three CommFCU
+inactive400; two Bank of Queensland and one ME Go detail500. Raw evidence lives
+in the root task's private `.work/ingest-resilience-20261113/` directory. Tests
+will use a field-only projection of that real status, with no response bodies,
+URLs, credentials or invented products.
+
+Preserve standalone stdlib execution over SSH stdin, bounded reads/output,
+read-only behavior and redaction. Validate extraction, overlapping views,
+schema mismatch, incomplete/capped samples, sanitization and CLI output before
+publishing a separate PR. Actual provider error diagnosis remains pending raw
+attempt evidence; HTTP codes alone do not prove the underlying cause.
+
+## Implemented and verified
+
+The standalone report now reads authoritative counts and category maps once,
+resolves directory/UID aliases through provider_states, and separately prints
+the bounded request sample with its completeness flag and phase/status detail.
+Provider-state counts are a fallback only when the aggregate map is absent.
+Missing/inconsistent totals return UNKNOWN and exit2. Journal fallback reads
+only the primary capture, so revisions cannot be added to the same population.
+Reads, sample size and output remain bounded; URL/long-token/control-character
+redaction applies to displayed fields, and unknown metadata is not traversed.
+
+Real sanitized fixture `tests/fixtures/coverage-report-20261113.json` is a
+field-only projection of November13 DAY_STATUS, UNRESOLVED and the eight failed
+PROVIDER_STATES from the runtime capture. The complete/provenance booleans are
+copied from hosted run43412528732 STATUS_SHAPE. No response bodies, URLs or
+credentials are included. After integrating merged coverage PR1130, 38 focused
+report/status/change tests pass on Python3.10.9, including standalone isolated
+stdin execution matching the hosted transport;
+the existing requests dependency warning remains unrelated. `git diff --check`
+passes. CI, reviewed main merge and a fresh hosted read remain outstanding.
