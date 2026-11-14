@@ -163,6 +163,7 @@ class OwnedProductionLock:
     # Avoid @dataclass with postponed annotations: the pinned root queue bridge
     # executes this file without registering spec.name in sys.modules.
     __slots__ = ("path", "descriptor", "role", "acquisition_id", "identity", "pid", "boot_id", "_active")
+    __match_args__ = __slots__
 
     def __init__(self, path: Path, descriptor: int, role: str, acquisition_id: str,
                  identity: tuple[int, int], pid: int, boot_id: str, _active: bool = True) -> None:
@@ -184,13 +185,14 @@ class OwnedProductionLock:
     def __eq__(self, other: object) -> bool:
         if type(other) is not type(self):
             return NotImplemented
-        return tuple(getattr(self, f) for f in self.__slots__) == tuple(getattr(other, f) for f in self.__slots__)
+        fields = OwnedProductionLock.__slots__
+        return tuple(getattr(self, f) for f in fields) == tuple(getattr(other, f) for f in fields)
 
     def __hash__(self) -> int:
-        return hash(tuple(getattr(self, f) for f in self.__slots__))
+        return hash(tuple(getattr(self, f) for f in OwnedProductionLock.__slots__))
 
     def __repr__(self) -> str:
-        fields = ", ".join(f"{name}={getattr(self, name)!r}" for name in self.__slots__)
+        fields = ", ".join(f"{name}={getattr(self, name)!r}" for name in OwnedProductionLock.__slots__)
         return f"{type(self).__name__}({fields})"
 
     def _revoke(self) -> None:

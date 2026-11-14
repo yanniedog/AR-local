@@ -304,6 +304,7 @@ def test_deployed_operation_lock_imports_without_sys_modules_entry(tmp_path, mon
     with module.production_lock(tmp_path / 'daily-ingest.lock', 'shared-pi-host-task:test') as lease:
         assert isinstance(lease, module.OwnedProductionLock)
         assert isinstance(hash(lease), int)
+        assert module.OwnedProductionLock.__match_args__ == module.OwnedProductionLock.__slots__
         assert lease.verified_record()['role'] == 'shared-pi-host-task:test'
         with pytest.raises(AttributeError):
             lease.role = 'mutated'
