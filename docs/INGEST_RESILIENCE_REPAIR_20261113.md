@@ -616,3 +616,13 @@ Bounded read-only extraction of the preserved376 journal captured59 error attemp
 
 Private next-window-commands.md now contains one current UNBOUND sequence covering final freeze, independent expanded capture/payload, D027, released-app binding, exact activation, protected manual installation, pending-publication settlement, full production capture and new Drive download/restore. The obsolete pinned376/786 recipe is preserved in next-window-commands-superseded-through-checkpoint47.md. No active Pi claim/workload, production source8590 and selecteda23 unchanged. Root continues rollout after exact gates; optional consumer1154 remains held.
 
+
+
+## Checkpoint 49 — app merged; public release verification pending
+
+App486 merged as bf28a0c0139ddcce7b26c07a3daefc9f4335648e after exact57a8 CI/review success. Automatic canonical dual-APK workflow43534951559 is building; no duplicate dispatch. Clean detached C:/code/AR-app-qualification-bf28a0c0 has exact-lock dependencies installed; its compiler and manifest match producerf5db byte-for-byte. Public binaries, native identity, QR/install links and final source/release receipts are still pending. The reviewed private APK verifier now rereads BOTH rolling manifests after both channels' binaries and checks final HEAD/clean state. Producer1155 exact f5db05ae CI43532988887 and feedback pass; its only unarmed gate is intentional auto-merge hold until actual compatible app release proof. No source activation, new Pi capture or deployment has occurred.
+
+Root made six bounded Windows public API probes (one request per version6/5 for one previously failing BOQ, ME Go and Bank of Sydney product), using the unchanged strict HTTP client and a new raw attempt journal. None succeeded: version6 retains500/422 failures; version5 is unsupported406. Evidence schema-version-diagnostic-20261114/ and schema-version-probes.log. This supports retaining upstream schema failures rather than adding speculative version retries. No production capture/evidence was altered and these probes are not capture acceptance.
+
+While release builds, window owns isolated HELD lazy product-evidence producer/app new files; publication retains operational486/1155 and snapshot1154 gates. Completion readback, bounded compression, strict nested JSON and bounded acquisition/cache controls are being qualified locally. Producer32/app25 focused checks passed; actual retained large-snapshot packing is ongoing. Publication independently reviews this feature work. No optional source merge, release, Pi write, legacy wiring or claim that raw-body/history/watchlist stages are complete is authorized by these intermediate checks. Root remains sole Pi operator; current unbound next-window-commands.md controls the next runtime sequence.
+
