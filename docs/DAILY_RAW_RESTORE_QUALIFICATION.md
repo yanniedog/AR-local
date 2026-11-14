@@ -43,3 +43,24 @@ Focused verification: `python -m pytest tests/test_pi_daily_raw_restore.py tests
 - Complete independent review and final integrated exact-head CI; root owns integration PR/runtime authorization.
 - Locate an actual retained raw archive for independent runtime qualification; do not fabricate a production acceptance receipt.
 - Verify exact-head CI and feedback, then use the root/runtime owner's controlled read-back and execution path. Source merge is not restore acceptance.
+# Case-distinct Linux paths
+
+The verifier tests the newly created protected workspace and two newly created
+descendant directories with exclusive case-variant files. It verifies distinct
+file identities and original contents, then removes only identity-matched probe
+artifacts. The receipt records each level's actual behavior; operating-system
+names or a parent flag alone are insufficient evidence of inheritance.
+
+Only a fully verified case-sensitive workspace may restore distinct paths such
+as `AXIS Lending` and `Axis Lending`. Other filesystems retain conservative
+case-folded name checks, including directory-prefix aliases with different leaf
+filenames. Exact duplicate paths, file/directory conflicts, unsafe paths and links
+remain errors. All logical identities stay literal strings rather than
+case-folding Windows `Path` keys.
+
+The verifier never changes filesystem settings, requests elevation, renames
+original paths or merges provider metadata. On Windows, provisioning a suitable
+empty NTFS parent is a separate operator action; every subsequent restore still
+proves its own root and descendant behavior. Ambiguous or replaced probe files
+fail and are preserved. This support does not establish Linux ownership/mode
+restoration, cloud-backup verification or production deployment.

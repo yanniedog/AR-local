@@ -26,6 +26,7 @@ from cdr_export_contract import load_contract
 from pi_daily_cdr_day_archive_ingest import require_generation
 from pi_daily_cdr_day_archive_scope import require_day
 from pi_daily_raw_restore_sqlite import verify_databases
+from pi_daily_raw_restore_names import create_name_index, reserve_name, workspace_case_capability
 from pi_plain_backup_restore import (
     BLOCK, BoundedTarInfo, Guarded, PRODUCTION_ROOTS, digest, frame, hexadecimal, no_duplicates,
     object_arrays, outside_production, private_file, private_workspace, regular,
@@ -104,7 +105,7 @@ def _metadata(row):
         raise ValueError('daily archive metadata outside supported bounds')
 
 
-def _manifest(path, receipt, index, guard):
+def _manifest(path, receipt, index, guard, *, case_sensitive=False):
     count = size = 0
     previous = ''
     def row(item):
@@ -116,6 +117,7 @@ def _manifest(path, receipt, index, guard):
         previous = name; count += 1; size += item['size']
         if count > guard.limits.files or size > guard.limits.unpacked_bytes:
             raise ValueError('daily archive declared file/byte budget exceeded')
+        reserve_name(index, name, case_sensitive=case_sensitive, guard=guard)
         index.execute('INSERT INTO files VALUES (?,?,?)', (name, name.casefold(), json.dumps(item)))
     result = object_arrays(path, {'files': row}, guard)
     if (result.get('schema') != SCHEMA or result.get('series') != SERIES
@@ -131,7 +133,7 @@ def _manifest(path, receipt, index, guard):
     return result
 
 
-def _extract(source, receipt, work, index, guard):
+def _extract(source, receipt, work, index, guard, *, case_sensitive=False):
     decoder = zstandard.ZstdDecompressor(max_window_size=128 * 1024**2)
     limits = guard.limits
     bound = limits.unpacked_bytes + limits.manifest_bytes + (limits.files + 1) * 32768 + 65536
@@ -143,7 +145,7 @@ def _extract(source, receipt, work, index, guard):
                 raise ValueError('daily archive must begin with MANIFEST.json')
             manifest_path = work / 'MANIFEST.json'
             manifest_sha = write_member(tar, member, manifest_path, guard, limit=limits.manifest_bytes)
-            manifest = _manifest(manifest_path, receipt, index, guard)
+            manifest = _manifest(manifest_path, receipt, index, guard, case_sensitive=case_sensitive)
             # Tighten after reading actual manifest; permit bounded PAX/padding overhead.
             bounded.limit = manifest['total_bytes'] + member.size + (manifest['file_count'] + 1) * 32768 + 65536
             tar.members.clear()
@@ -201,10 +203,12 @@ def qualify(archive, receipt_path, receipt_sha256, generation, workspace, *, lim
                   archive_bytes=receipt['bytes'], receipt_sha256=receipt_sha256,
                   workspace_privacy=privacy, budgets=asdict(limits))
     try:
+        names = workspace_case_capability(work, guard)
+        result['workspace_names'] = names
         (work / 'archive-receipt.json').write_bytes(receipt_raw)
         with audit_budget(guard.deadline), closing(sqlite3.connect(work / 'restore-index.sqlite')) as index:
             index.execute('PRAGMA cache_size=-4096'); index.execute('PRAGMA temp_store=FILE')
-            index.execute('CREATE TABLE files(logical TEXT PRIMARY KEY, folded TEXT UNIQUE, value TEXT)')
+            create_name_index(index, case_sensitive=names['case_sensitive'])
             with pinned_reader(archive) as (source, _):
                 sha = hashlib.sha256()
                 for block in iter(lambda: source.read(BLOCK), b''):
@@ -212,7 +216,8 @@ def qualify(archive, receipt_path, receipt_sha256, generation, workspace, *, lim
                 if sha.hexdigest() != receipt['sha256']:
                     raise ValueError('compressed archive SHA256 differs')
                 frame(archive, guard); source.seek(0)
-                manifest, manifest_sha = _extract(source, receipt, work, index, guard)
+                manifest, manifest_sha = _extract(source, receipt, work, index, guard,
+                                                 case_sensitive=names['case_sensitive'])
             contract = _archived_contract(receipt, work, index, guard)
             checks = verify_databases(index, work, guard)
             # Re-hash exact extracted evidence after all semantic work.
