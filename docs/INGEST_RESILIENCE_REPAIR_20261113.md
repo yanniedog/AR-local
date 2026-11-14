@@ -696,3 +696,15 @@ Root approved held current-facts streaming implementation in a NEW clean6c26 wor
 
 Retained expanded failure summary:11 requests across BOQ2, Bank of Sydney1, Cairns1, CommFCU3, DDH Graham1, ME Go1, MoveBank1, Thriday1. Keep exact failure categories/unknown coverage; zero audit-integrity issues does not mean upstream completeness. The original live-source response log location has not yet been collected; two guessed shallow paths were absent and no absence claim is made.
 
+
+
+## Checkpoint 55 — 2026-11-14 — immediate prior-day expansion qualification gate
+
+Root traced final6c26 cdr_outputs.build_outputs and cdr_product_changes: isolated live qualification used fresh data, so previous_finalized_run was absent and no previous-day diff ran. Production compares to a genuine prior finalized day; each newly discovered fact creates an event in _append_product_diff, and old code retains global events plus product_change_rows. With expanded live peak only46,956,544B below the2.5GiB stop, the much larger discovery/change workload is an immediate unqualified production risk. Failure is not yet measured and must not be asserted as proven; the isolated PASS does not cover this execution path.
+
+Full expanded production recapture now requires actual Nov14 captured current input versus genuine Nov13 prior source under unchanged resource guards, with exact event/output parity and source preservation. Root will copy the local-only live archive after D027 releases admission; it is307,276,590B, SHAa3362e871a4234775f673dbb806c82c5a8716b244355dc008524f31fce7df25f, generationobs-2026-11-14-da1296d122215d25. This is not a Drive download or production promotion. Exact6c26 activation/manual safeguards/current a23 publication settlement can proceed after existing gates, while the expanded recapture remains held for this additional proof. If the old path exceeds limits, qualify the held streaming repair through exact CI/merge/fresh canary before full production capture; do not raise memory limits or drop changes.
+
+Held replay source passed independent publication review;356 focused/integration test cases represented in retained runs plus34 independently rerun controls. Real Nov13 baseline PASS220.77s,2,966 products/648,625 facts, peakRSS1,430,372,352B;16,351 raw files and source modules unchanged. Sequential candidate measurement running, no final peak or parity acceptance yet. Both experiments explicitly suppress previous-day lookup and therefore do not qualify change workload. Measurement helper744aea36c6b232c8e87ac8a4f0ffe65eb1e74bbb58b8158b6c55d36512dc8077 and pinned-receipt comparatorbac88c15ef1344579cfb23aea14ddfdcf4a90f3021bdff7761739b5f3093d878 independently reviewed. Outer Windows runner7200s,3GiB committed-memory ceilings,2CPU affinity,2.5GiB RSS stop remain bounded and separate from Pi proof.
+
+D02743544626096 continues unchanged. No source/app/service merge or production mutation performed by the held feature workers. All original ledger prefix, qualification failures and accepted fallback preserved.
+
