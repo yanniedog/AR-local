@@ -89,18 +89,18 @@ def resolve_publication_inventory(manifest_raw, expected_manifest_sha256, read_c
     return PublicationInventory(raw)
 
 
-def verify_local_publication_inventory(root, *, expected_manifest_sha256):
-    """Clean staging only; all transitive bytes/routes plus root pin rechecked.
+def verify_local_publication_inventory(root, *, expected_manifest_sha256, controls=None):
+    """All transitive bytes/routes plus root and explicit control pins rechecked.
 
-    Reservation/archive control files are intentionally still unsupported. Their
-    future owning callers must explicitly enumerate and validate those controls.
+    Clean staging is the default. Owning transactions may supply an exact,
+    bounded map of independently validated reservation/control descriptors.
     """
     deadline = time.monotonic() + SECONDS
     root = Path(root).absolute()
     raw, identity = read_stable(root / 'manifest.json', 65536)
     resolved = resolve_publication_inventory(raw, expected_manifest_sha256,
         lambda entry: read_stable(root / entry['name'], entry['bytes'])[0])
-    proof = verify_local_inventory(root)
+    proof = verify_local_inventory(root, controls=controls)
     require(proof['manifest_sha256'] == expected_manifest_sha256
             and canonical(proof['inventory']) == canonical(resolved.document()['inventory']),
             'full local readback differs from frozen inventory')

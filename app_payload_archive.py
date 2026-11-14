@@ -15,7 +15,7 @@ from typing import Any, Mapping
 from app_payload_bank_history_asset import retag_namespace
 from app_payload_build import _compute_payload, _package_payload
 from app_payload_common import DEFAULT_REPO
-from app_payload_optional_assets import iter_payload_assets
+from app_payload_publication_assets import complete_assets, has_evidence, checked_asset_bytes
 from app_payload_revisions_github import GitHubRevisionStore, write_once
 from app_payload_revisions_state import (
     RevisionError, _asset_json, bundle_sha256, canonical, decode_document,
@@ -93,13 +93,15 @@ def _archive_locked(payload_dir: Path, manifest: dict[str, Any], destination: Pa
         validate_manifest(archived)
         if (archived.get("tag") != tag or bundle_sha256(archived) != bundle
                 or any(entry.get("url") != store.url(tag, entry["name"])
-                       for _, entry in iter_payload_assets(archived))):
+                       for _, entry in complete_assets(archived, root=payload_dir) if 'url' in entry)):
             raise RevisionError("immutable archive manifest differs from candidate")
-    for _, entry in iter_payload_assets(manifest):
-        write_once(destination / entry["name"], (payload_dir / entry["name"]).read_bytes())
+    for _, entry in complete_assets(manifest, root=payload_dir):
+        raw = (checked_asset_bytes(payload_dir, entry) if has_evidence(manifest)
+               else (payload_dir / entry['name']).read_bytes())
+        write_once(destination / entry["name"], raw)
     write_once(target, retained if retained is not None else canonical(archived))
     validate_manifest(archived, destination)
-    paths = [destination / entry["name"] for _, entry in iter_payload_assets(archived)]
+    paths = [destination / entry["name"] for _, entry in complete_assets(archived, root=destination)]
     paths.append(target)  # Commit marker is uploaded last.
     store.archive(tag, paths)
     # Recheck the complete set even for resumed uploads, with ARE2 required.

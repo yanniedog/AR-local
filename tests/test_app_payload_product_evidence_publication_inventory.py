@@ -45,7 +45,7 @@ def test_legacy_inventory_identity_and_callback_nonuse_are_unchanged(prepared):
     assert result['bundle_sha256']==bundle_sha256(base)
 
 
-def test_full_bundle_keeps_exact_original_identity_while_legacy_publisher_fails_closed(prepared):
+def test_full_bundle_keeps_exact_original_identity_with_explicit_structural_admission(prepared):
     from app_payload_revisions_state import bundle_sha256
     from app_payload_product_evidence_reference import bound_bundle_sha256
     _,manifest,_=prepared;value=ready(manifest)
@@ -55,7 +55,7 @@ def test_full_bundle_keeps_exact_original_identity_while_legacy_publisher_fails_
     expected['files']={k:{name:field for name,field in entry.items() if name!='url'} for k,entry in value['files'].items()}
     assert bound_bundle_sha256(value)==digest(canonical(expected))
     assert bound_bundle_sha256(value)!=bound_bundle_sha256({k:v for k,v in value.items() if k not in (*LANES,STATUS)})
-    with pytest.raises(ValueError,match='complete publication inventory'):bundle_sha256(value)
+    assert bundle_sha256(value)==bound_bundle_sha256(value)
 
 
 @pytest.mark.parametrize('ready_lane',[None,'product_evidence_v1'])

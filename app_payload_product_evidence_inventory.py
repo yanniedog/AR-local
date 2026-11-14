@@ -1,9 +1,10 @@
 """Held complete local inventory adapter; no uploads, writes or selection changes.
 
-Accepts a clean isolated payload staging directory, not an archive containing
-reservation/control documents. Operational callers are deliberately not wired.
+Accepts a clean isolated payload staging directory, or an exact externally
+validated inventory of its local transaction control documents.
 """
 from pathlib import Path
+import re
 import time
 
 from app_payload_network_budget import validate_payload_network_budget, MANIFEST_MAX_BYTES
@@ -18,12 +19,27 @@ MAX_FILES = 1024
 MAX_SECONDS = 600
 
 
-def _members(root):
+def _members(root, controls=None):
     require(root.is_dir() and not any(p.is_symlink() for p in (root, *root.parents)), 'unsafe inventory root')
     members = {}
-    for path in root.iterdir():
-        require(len(members) < MAX_FILES and path.is_file() and not path.is_symlink(), 'unsafe or oversized inventory')
-        members[path.name] = signature(path.lstat())
+    controls = controls or {}
+    pending = [root]; directories = set()
+    for name in controls:
+        require(type(name) is str and len(name) <= 512
+                and re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*', name)
+                and not Path(name).is_absolute() and '\\' not in name
+                and all(part not in ('.', '..', '') for part in name.split('/')), 'unsafe control path')
+        parts = Path(name).parts
+        directories.update('/'.join(parts[:index]) for index in range(1, len(parts)))
+    while pending:
+        for path in pending.pop().iterdir():
+            name = path.relative_to(root).as_posix()
+            require(not path.is_symlink(), 'unsafe inventory link')
+            if path.is_dir():
+                require(name in directories, 'unbound inventory directory'); pending.append(path)
+            else:
+                require(len(members) < MAX_FILES + len(controls) and path.is_file(), 'unsafe or oversized inventory')
+                members[name] = signature(path.lstat())
     return members
 
 
@@ -54,7 +70,7 @@ def _direct(manifest):
     return entries
 
 
-def verify_local_inventory(root):
+def verify_local_inventory(root, *, controls=None):
     """Verify every local byte and transitive route; return diagnostic-only evidence.
 
     Root manifest remains <=64 KiB; existing current assets keep the unchanged
@@ -62,7 +78,9 @@ def verify_local_inventory(root):
     The source fields are publisher attestations, not current-selection proof.
     """
     deadline = time.monotonic() + MAX_SECONDS
-    root = Path(root).absolute(); initial = _members(root)
+    controls = controls or {}
+    require(type(controls) is dict and len(controls) <= 4096, 'invalid control inventory')
+    root = Path(root).absolute(); initial = _members(root, controls)
     raw, before = read_stable(root / 'manifest.json', MANIFEST_MAX_BYTES)
     manifest = decode(raw); namespaces = reference_namespaces(manifest)
     require(len(raw) <= MANIFEST_MAX_BYTES, 'root manifest exceeds 64 KiB')
@@ -98,7 +116,15 @@ def verify_local_inventory(root):
                              'decoded_bytes': sum(a['decoded_bytes'] for a in assets),
                              'capability_compressed_bytes': descriptor['bytes']}
     expected = {'manifest.json', *(item['name'] for item in inventory.values())}
-    require(set(initial) == expected and _members(root) == initial, 'incomplete or changed payload inventory')
+    require(not expected.intersection(controls), 'control shadows payload asset')
+    control_bytes = 0
+    for name, entry in controls.items():
+        require(type(entry) is dict and set(entry) == {'bytes', 'sha256'} and type(entry['bytes']) is int
+                and 0 <= entry['bytes'] <= 64 * 1024 * 1024, 'invalid control descriptor')
+        control_bytes += entry['bytes']; require(control_bytes <= 128 * 1024 * 1024, 'control byte budget exceeded')
+        _read(root, dict(name=name, **entry), identities, deadline)
+    expected.update(controls)
+    require(set(initial) == expected and _members(root, controls) == initial, 'incomplete or changed payload inventory')
     require(all(initial[name] == value for name, value in identities.items()), 'payload changed during inventory verification')
     _check(deadline)
     return dict(selection_verified=False, publication_authorized=False, manifest_sha256=digest(raw),
