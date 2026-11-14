@@ -35,7 +35,7 @@ def staged(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("role", ["ingest", "backup", "deploy"])
-def test_existing_production_owner_prevents_both_service_mutations(staged, role):
+def test_existing_production_owner_prevents_both_service_mutations(staged, role, capsys):
     state, args = staged
     lock = state / "daily-ingest.lock"
     with operation_lock.production_lock(lock, role):
@@ -46,7 +46,8 @@ def test_existing_production_owner_prevents_both_service_mutations(staged, role)
     health.restart_tailscaled.assert_not_called()
     receipt = health.load_state()
     assert receipt["http_fail_streak"] == 2
-    assert receipt["http_heal_deferred_reason"] == "production_lock_unavailable"
+    assert receipt == {"http_fail_streak": 2, "tailscale_fail_streak": 0}
+    assert 'state persistence deferred (production_lock_unavailable)' in capsys.readouterr().out
     assert "last_http_heal_at" not in receipt
     health.check_tailscale.assert_called_once_with(http_timeout=args.timeout, probe_application=False)
 
@@ -68,7 +69,7 @@ def test_ingest_acquired_after_failed_probe_is_not_restarted(staged, monkeypatch
     assert "last_http_heal_at" not in health.load_state()
 
 
-def test_backup_starting_before_lease_acquisition_is_rechecked_inside_lease(staged, monkeypatch):
+def test_backup_starting_before_lease_acquisition_is_rechecked_inside_lease(staged, monkeypatch, capsys):
     state, args = staged
     checks = []
 
@@ -85,7 +86,8 @@ def test_backup_starting_before_lease_acquisition_is_rechecked_inside_lease(stag
     assert not (state / "daily-ingest.lock").exists()
     health.restart_dashboard_and_nginx.assert_not_called()
     receipt = health.load_state()
-    assert receipt["http_heal_deferred_reason"] == "backup_source_active"
+    assert receipt == {"http_fail_streak": 2, "tailscale_fail_streak": 0}
+    assert 'state persistence deferred (backup_source_active)' in capsys.readouterr().out
     assert receipt["http_fail_streak"] == 2
     assert "last_http_heal_at" not in receipt
 
@@ -117,14 +119,15 @@ def test_restart_holds_the_same_exclusive_lease_as_daily_ingest(staged, monkeypa
 
 @pytest.mark.parametrize("reason", ["production_ingest_or_backup_lock_active", "scheduled_or_manual_ingest_active",
                                    "backup_source_active", "production_activity_unavailable"])
-def test_known_coordinated_work_skips_application_probes_and_healing(staged, monkeypatch, reason):
+def test_known_coordinated_work_skips_application_probes_and_healing(staged, monkeypatch, reason, capsys):
     _, args = staged
     monkeypatch.setattr(health, "_production_activity_block_reason", Mock(return_value=reason))
     assert health.cmd_heal(args) == health.EXIT_OK
     health.run_http_probes.assert_not_called()
     health.restart_dashboard_and_nginx.assert_not_called()
     receipt = health.load_state()
-    assert receipt["http_heal_deferred_reason"] == reason
+    assert receipt == {"http_fail_streak": 2, "tailscale_fail_streak": 0}
+    assert f'state persistence deferred ({reason})' in capsys.readouterr().out
     assert receipt["http_fail_streak"] == 2
     assert "last_http_heal_at" not in receipt
 
@@ -139,12 +142,13 @@ def test_failed_service_restart_releases_lease_without_claiming_heal(staged, mon
     assert "last_http_heal_at" not in receipt
 
 
-def test_later_idle_tick_clears_deferral_and_heals(staged, monkeypatch):
+def test_later_idle_tick_clears_deferral_and_heals(staged, monkeypatch, capsys):
     _, args = staged
     activity = Mock(return_value="backup_source_active")
     monkeypatch.setattr(health, "_production_activity_block_reason", activity)
     assert health.cmd_heal(args) == health.EXIT_OK
-    assert "http_heal_deferred_reason" in health.load_state()
+    assert health.load_state() == {"http_fail_streak": 2, "tailscale_fail_streak": 0}
+    assert 'state persistence deferred (backup_source_active)' in capsys.readouterr().out
     activity.return_value = ""
     monkeypatch.setattr(health, "run_http_probes", Mock(side_effect=[(False, ["fail"]), (True, ["OK"])]))
     assert health.cmd_heal(args) == health.EXIT_OK
@@ -177,7 +181,7 @@ def test_deferred_application_keeps_independent_tailscale_checks(monkeypatch, fa
     app_probe.assert_not_called()
 
 
-def test_tailscale_failure_defers_network_mutation_during_coordinated_work(staged, monkeypatch):
+def test_tailscale_failure_defers_network_mutation_during_coordinated_work(staged, monkeypatch, capsys):
     _, args = staged
     health.save_state({"http_fail_streak": 2, "tailscale_fail_streak": 1})
     monkeypatch.setattr(health, "_production_activity_block_reason", Mock(return_value="backup_source_active"))
@@ -190,10 +194,11 @@ def test_tailscale_failure_defers_network_mutation_during_coordinated_work(stage
     assert "last_http_heal_at" not in receipt
     assert "last_tailscale_heal_at" not in receipt
     assert receipt["tailscale_fail_streak"] == 1
-    assert receipt["tailscale_heal_deferred_reason"] == "backup_source_active"
+    assert receipt == {"http_fail_streak": 2, "tailscale_fail_streak": 1}
+    assert 'state persistence deferred (backup_source_active)' in capsys.readouterr().out
 
 
-def test_native_host_lease_prevents_tailscale_restart(staged, monkeypatch):
+def test_native_host_lease_prevents_tailscale_restart(staged, monkeypatch, capsys):
     state, args = staged
     health.save_state({"http_fail_streak": 2, "tailscale_fail_streak": 1})
     monkeypatch.setattr(health, "check_tailscale", Mock(return_value=(False, ["network transaction active"])))
@@ -204,7 +209,8 @@ def test_native_host_lease_prevents_tailscale_restart(staged, monkeypatch):
         assert lock.read_bytes() == before
     health.restart_tailscaled.assert_not_called()
     receipt = health.load_state()
-    assert receipt["tailscale_heal_deferred_reason"] == "production_lock_unavailable"
+    assert receipt == {"http_fail_streak": 2, "tailscale_fail_streak": 1}
+    assert 'state persistence deferred (production_lock_unavailable)' in capsys.readouterr().out
     assert receipt["tailscale_fail_streak"] == 1
     assert "last_tailscale_heal_at" not in receipt
 
@@ -218,7 +224,8 @@ def test_tailscale_restart_holds_native_lease_and_rechecks_activity(staged, monk
     def activity(*, include_ingest_lock=True):
         checks.append(include_ingest_lock)
         if not include_ingest_lock:
-            assert "role=runtime-health-network" in (state / "daily-ingest.lock").read_text()
+            assert any(role in (state / "daily-ingest.lock").read_text()
+                       for role in ("role=runtime-health-network", "role=runtime-health-state"))
         return ""
     def restart(*, dry_run):
         assert not dry_run
@@ -235,7 +242,7 @@ def test_tailscale_restart_holds_native_lease_and_rechecks_activity(staged, monk
     assert "last_tailscale_heal_at" in health.load_state()
 
 
-def test_tailscale_restart_defers_if_activity_appears_inside_lease(staged, monkeypatch):
+def test_tailscale_restart_defers_if_activity_appears_inside_lease(staged, monkeypatch, capsys):
     state, args = staged
     health.save_state({"http_fail_streak": 0, "tailscale_fail_streak": 1})
     monkeypatch.setattr(health, "run_http_probes", Mock(return_value=(True, ["OK"])))
@@ -245,7 +252,8 @@ def test_tailscale_restart_defers_if_activity_appears_inside_lease(staged, monke
     assert health.cmd_heal(args) == health.EXIT_OK
     health.restart_tailscaled.assert_not_called()
     assert not (state / "daily-ingest.lock").exists()
-    assert health.load_state()["tailscale_heal_deferred_reason"] == "backup_source_active"
+    assert health.load_state() == {"http_fail_streak": 0, "tailscale_fail_streak": 1}
+    assert 'state persistence deferred (backup_source_active)' in capsys.readouterr().out
 
 
 def test_healthy_network_clears_previous_tailscale_deferral(staged, monkeypatch):
