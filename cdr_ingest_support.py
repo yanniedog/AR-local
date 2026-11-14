@@ -565,7 +565,9 @@ def fetch_cdr_json(
             timeout=timeout,
             max_retries=per_version_retries,
             sleep_ms=sleep_ms,
-            retry_on=retryable_status,
+            # The full-body classifier still rejects ordinary authentication
+            # failures. Only its exact tenant-dependency 401 evidence is retryable.
+            retry_on=lambda status: retryable_status(status) or status == 401,
             deadline=deadline,
             attempt_journal=attempt_journal,
             attempt_context={
