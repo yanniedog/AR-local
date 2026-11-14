@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import sqlite3
+import os
 import pytest
 
 from cdr_json_replay import write_json_object
@@ -31,7 +32,9 @@ def test_replay_is_ordered_reusable_and_not_a_list(tmp_path):
         assert list(first) == list(second) == values[1:]
         assert list(spool.facts) == values
         with pytest.raises(RuntimeError, match='sealed'): spool.facts.append(values[0])
-    assert not root.exists()
+    assert root.is_dir()
+    if os.name == 'posix': assert not list(root.iterdir())
+    else: assert spool.cleanup_receipt['state'] == 'RETAINED_UNSUPPORTED_ANCHORED_DELETE'
     with pytest.raises(RuntimeError, match='closed'): list(spool.facts)
 
 
@@ -169,3 +172,27 @@ def test_failed_sqlite_rollback_invalidates_cache_and_cannot_reuse_store(tmp_pat
                           lambda: spool.product(('Technical', 'control', 'Savings'))):
             with pytest.raises(ReplayLimitError, match='SQLite write failed'): operation()
     assert root.is_dir() and json.loads((root / 'failure.json').read_bytes())['finalized'] is False
+
+
+@pytest.mark.parametrize('operation', ['fact', 'change', 'read', 'product_count', 'take_product'])
+def test_sqlite_progress_limit_preserves_replay_error_and_failed_closure(tmp_path, operation):
+    with store(tmp_path) as spool:
+        root = spool.root; row = fact(); spool.facts.append(row)
+        if operation != 'fact': spool.facts.seal()
+        def expire():
+            spool.deadline = 0
+            return spool._progress()
+        spool.connection.set_progress_handler(expire, 1)
+        actions = {
+            'fact': lambda: spool.facts.append(row),
+            'change': lambda: spool.append_change({'control': 1}, ('p', 'id', 's', 0, '', '')),
+            'read': lambda: list(spool.facts),
+            'product_count': spool.product_count,
+            'take_product': lambda: spool.take_product(_product_key(row)),
+        }
+        with pytest.raises(ReplayLimitError, match='lifetime/read/row budget exhausted') as raised:
+            actions[operation]()
+        assert isinstance(raised.value.__cause__, sqlite3.OperationalError)
+        assert spool.exhausted and not spool.write_failed
+        with pytest.raises(ReplayLimitError, match='budget exhausted'): spool.product_count()
+    assert root.is_dir() and (root / 'failure.json').is_file()

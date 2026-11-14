@@ -1,5 +1,6 @@
 """Private, finite disk replay for export facts/changes; never authoritative data."""
 from contextlib import closing
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import math
@@ -62,7 +63,7 @@ class ReplayRows:
 
     def seal(self):
         self.store.check(disk=True)
-        self.store.connection.commit()
+        with self.store.database_boundary(): self.store.connection.commit()
         self.sealed = True
 
     def __iter__(self):
@@ -91,6 +92,8 @@ class ReplayStore:
         self.read_bytes = self.written_rows = 0
         self.exhausted = False
         self.write_failed = False
+        self._progress_error = None
+        self.cleanup_receipt = None
         self._last_product = self._last_presence = None
         self.closed = False
         self.connection = None
@@ -134,8 +137,19 @@ class ReplayStore:
 
     def _progress(self):
         try: self.check()
-        except ReplayLimitError: return 1
+        except ReplayLimitError as error:
+            self._progress_error = error
+            return 1
         return 0
+
+    @contextmanager
+    def database_boundary(self):
+        try:
+            yield
+        except sqlite3.Error as error:
+            if self._progress_error is not None:
+                raise self._progress_error from error
+            raise
 
     def _disk_bytes(self):
         info = self.root.lstat()
@@ -178,44 +192,56 @@ class ReplayStore:
     def append_fact(self, row):
         key = self.key_of(row); self.validate_fact(row)
         raw = self._append_bytes('facts', row)
-        con = self.connection
         # Existing suppression uses raw canonical fields without the diff's
         # whitespace trimming or aliases; preserve that distinct contract.
         presence = (str(row.get('provider') or '').casefold(), str(row.get('product_id') or ''), str(row.get('dataset') or ''))
         try:
-            if self._last_product is not None and self._last_product[0] == key:
-                number = self._last_product[1]
-            else:
-                ident = encoded(key)
-                con.execute('INSERT OR IGNORE INTO products(identity,k1,k2,k3,first_seq) VALUES(?,?,?,?,?)',
-                            (ident, sort_blob(key[0].casefold()), sort_blob(key[1]), sort_blob(key[2]), self.facts.count))
-                number = con.execute('SELECT id FROM products WHERE identity=?', (ident,)).fetchone()[0]
-            if self._last_presence != presence:
-                con.execute('INSERT OR IGNORE INTO presence(identity) VALUES(?)', (encoded(presence),))
-            con.execute('INSERT INTO facts(product,payload) VALUES(?,?)', (number, raw))
+            with self.database_boundary():
+                self._insert_fact(key, presence, raw)
         except sqlite3.Error:
             # SQLITE_FULL/ROLLBACK can invalidate earlier rows and cached IDs.
             self._last_product = self._last_presence = None
             self.write_failed = True
             raise
+        except ReplayLimitError:
+            self._last_product = self._last_presence = None
+            raise
         self.facts.count += 1
-        self._last_product, self._last_presence = (key, number), presence
+        self._last_presence = presence
         self.check(disk=True)
+
+    def _insert_fact(self, key, presence, raw):
+        con = self.connection
+        if self._last_product is not None and self._last_product[0] == key:
+            number = self._last_product[1]
+        else:
+            ident = encoded(key)
+            con.execute('INSERT OR IGNORE INTO products(identity,k1,k2,k3,first_seq) VALUES(?,?,?,?,?)',
+                        (ident, sort_blob(key[0].casefold()), sort_blob(key[1]), sort_blob(key[2]), self.facts.count))
+            number = con.execute('SELECT id FROM products WHERE identity=?', (ident,)).fetchone()[0]
+        if self._last_presence != presence:
+            con.execute('INSERT OR IGNORE INTO presence(identity) VALUES(?)', (encoded(presence),))
+        con.execute('INSERT INTO facts(product,payload) VALUES(?,?)', (number, raw))
+        self._last_product = (key, number)
 
     def append_change(self, row, key):
         raw = self._append_bytes('changes', row)
         keys = tuple(value if i == 3 else sort_blob(value) for i, value in enumerate(key))
         try:
-            self.connection.execute('INSERT INTO changes(k1,k2,k3,k4,k5,k6,payload) VALUES(?,?,?,?,?,?,?)', (*keys, raw))
+            with self.database_boundary():
+                self.connection.execute('INSERT INTO changes(k1,k2,k3,k4,k5,k6,payload) VALUES(?,?,?,?,?,?,?)', (*keys, raw))
         except sqlite3.Error:
             self._last_product = self._last_presence = None
             self.write_failed = True
+            raise
+        except ReplayLimitError:
+            self._last_product = self._last_presence = None
             raise
         self.changes.count += 1; self.check(disk=True)
 
     def read_rows(self, query, args=()):
         self.check()
-        with closing(self.connection.execute(query, args)) as cursor:
+        with self.database_boundary(), closing(self.connection.execute(query, args)) as cursor:
             for (raw,) in cursor:
                 self.check(read=len(raw))
                 yield json.loads(raw)
@@ -228,20 +254,23 @@ class ReplayStore:
 
     def take_product(self, key):
         self.check(disk=True); ident = encoded(key)
-        try: self.connection.execute('INSERT INTO previous_keys(identity) VALUES(?)', (ident,))
-        except sqlite3.IntegrityError as error: raise ValueError(f'prior product group repeated: {key!r}') from error
-        row = self.connection.execute('SELECT id FROM products WHERE identity=?', (ident,)).fetchone()
-        if row is None: return None
-        self.connection.execute('UPDATE products SET matched=1 WHERE id=?', row)
-        return list(self.read_rows('SELECT payload FROM facts WHERE product=? ORDER BY seq', row))
+        with self.database_boundary():
+            try: self.connection.execute('INSERT INTO previous_keys(identity) VALUES(?)', (ident,))
+            except sqlite3.IntegrityError as error: raise ValueError(f'prior product group repeated: {key!r}') from error
+            row = self.connection.execute('SELECT id FROM products WHERE identity=?', (ident,)).fetchone()
+            if row is None: return None
+            self.connection.execute('UPDATE products SET matched=1 WHERE id=?', row)
+            return list(self.read_rows('SELECT payload FROM facts WHERE product=? ORDER BY seq', row))
 
     def product(self, key):
         self.check()
-        row = self.connection.execute('SELECT id FROM products WHERE identity=?', (encoded(key),)).fetchone()
-        return list(self.read_rows('SELECT payload FROM facts WHERE product=? ORDER BY seq', row))
+        with self.database_boundary():
+            row = self.connection.execute('SELECT id FROM products WHERE identity=?', (encoded(key),)).fetchone()
+            return list(self.read_rows('SELECT payload FROM facts WHERE product=? ORDER BY seq', row))
 
     def product_count(self):
-        self.check(); return self.connection.execute('SELECT COUNT(*) FROM products').fetchone()[0]
+        self.check()
+        with self.database_boundary(): return self.connection.execute('SELECT COUNT(*) FROM products').fetchone()[0]
 
     def close(self, *, failed=False):
         if self.closed: return
@@ -259,6 +288,8 @@ class ReplayStore:
                                    read_bytes=self.read_bytes, finalized=False), stream)
             except (OSError, ReplayLimitError): pass
             return
-        self._disk_bytes()  # Validate finite membership/ownership before any deletion.
-        for path in tuple(self.root.iterdir()): path.unlink()
-        self.root.rmdir()
+        retained_bytes = self._disk_bytes()
+        from cdr_replay_cleanup import cleanup
+        self.cleanup_receipt = cleanup(self.root, self.identity, self.FILES)
+        if self.cleanup_receipt['state'].startswith('RETAINED_'):
+            self.cleanup_receipt['bytes'] = retained_bytes

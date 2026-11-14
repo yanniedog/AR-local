@@ -2,6 +2,7 @@
 from contextlib import closing
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import sqlite3
 import zipfile
@@ -62,7 +63,10 @@ def test_every_export_matches_legacy_list_oracle_and_sources_remain_unchanged(tm
     for path in (expected / 'dashboard-cache').rglob('*.json'):
         assert path.read_bytes() == (actual / path.relative_to(expected)).read_bytes()
     assert {p: p.read_bytes() for p in original} == original
-    assert not list(tmp_path.glob('.cdr-facts-*'))
+    scratch = list(tmp_path.glob('.cdr-facts-*'))
+    assert len(scratch) == 1
+    if os.name == 'posix': assert not list(scratch[0].iterdir())
+    else: assert result['replay_cleanup']['state'] == 'RETAINED_UNSUPPORTED_ANCHORED_DELETE'
 
 
 def test_stream_diff_matches_unchanged_pure_oracle_for_real_fact_mutation_controls(tmp_path):

@@ -601,7 +601,9 @@ def build_outputs(
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     from cdr_product_changes import _product_key, _fact_key
     with ReplayStore(out_dir.parent, key_of=_product_key, validate_fact=_fact_key) as store:
-        return _build_outputs(run_root, out_dir, db_path, previous_run_root, store)
+        result = _build_outputs(run_root, out_dir, db_path, previous_run_root, store)
+    result['replay_cleanup'] = store.cleanup_receipt
+    return result
 
 
 def _build_outputs(run_root, out_dir, db_path, previous_run_root, store):

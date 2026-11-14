@@ -33,9 +33,19 @@ SQLite's hard page limit also reserves conservative rollback-journal overhead.
 These bounds do not replace the owning job's resource/queue/quiet-window gates.
 
 Scratch is a unique `.cdr-facts-*` directory beside the export directory, on the
-same configured filesystem. A successful build removes only that owned directory
-after all readers close. Failure retains scratch and a non-finalized diagnostic
-where safe. Unknown files, links or changed directory ownership prevent cleanup.
+same configured filesystem. On POSIX, successful cleanup opens the directory with
+O_DIRECTORY/O_NOFOLLOW, verifies its original inode, then removes only validated
+entries relative to that descriptor. It retains the tiny empty directory rather
+than deleting a pathname that could now identify another directory. This is not
+an atomic compare-and-unlink guarantee against arbitrary same-user changes
+inside the private, solely owned directory.
+
+Windows retains successful scratch because equivalent anchored deletion is not
+implemented. `build_outputs` returns an explicit `replay_cleanup` receipt with
+state/path/retained bytes; operators must budget and retain these diagnostics
+until separately controlled cleanup. Failure retains scratch and a non-finalized
+diagnostic where safe. Unknown files, links or changed directory ownership
+prevent cleanup.
 Operators must account for spool plus normal JSON/XLSX/final SQLite bytes and
 retained failures before admitting large work; a failed scratch directory is not
 an authoritative product capture or a backup.
