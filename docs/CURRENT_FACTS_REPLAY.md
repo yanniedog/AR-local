@@ -33,7 +33,13 @@ SQLite's hard page limit also reserves conservative rollback-journal overhead.
 These bounds do not replace the owning job's resource/queue/quiet-window gates.
 
 Scratch is a unique `.cdr-facts-*` directory beside the export directory, on the
-same configured filesystem. On POSIX, successful cleanup opens the directory with
+same configured filesystem for standalone callers. Daily ingest explicitly uses
+the private persistent data namespace `.daily-replay-stage`, outside the dated
+export stage whose strict cleanup seal permits only its expected export contents.
+This keeps large replay files off raw tmpfs and preserves that cleanup gate.
+An explicit `replay_parent` must have safe non-reparse ancestry and private current
+user ownership; existing directories are validated, never broadly repermissioned.
+On POSIX, successful cleanup opens the directory with
 O_DIRECTORY/O_NOFOLLOW, verifies its original inode, then removes only validated
 entries relative to that descriptor. It retains the tiny empty directory rather
 than deleting a pathname that could now identify another directory. This is not
