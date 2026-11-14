@@ -29,15 +29,20 @@ adding a v1 consumer capability.
 | Asset/journey | Budget |
 | --- | ---: |
 | Manifest | 64 KiB |
-| Critical core | 512 KiB |
-| Details (on demand) | 4 MiB |
+| Critical core | 1 MiB |
+| Details (on demand) | 8 MiB |
 | Search index (on demand) | 2 MiB |
 | Bank rate catalogue envelope (deferred optional asset) | 8 MiB compressed / 24 MiB decoded |
 | Inner bank rate catalogue archive | 16 MiB compressed / 128 MiB decoded |
 | Other individual asset | 1 MiB |
-| All rolling assets | 8 MiB |
+| All rolling assets | 16 MiB |
 | Product history sidecar (on demand) | 8 MiB |
 | Economic sidecar (on demand) | 1 MiB |
+
+These active transfer limits match `app_payload_network_budget.py`, updated for
+expanded financial-provider coverage on 2026-11-14. Separate deferred-history
+decode and v2 sidecar budgets are unchanged. The measurements below are historical
+evidence, not estimates for the larger current population.
 
 Measured 2026-08-16 against the live 2026-08-14 complete manifest:
 
@@ -63,9 +68,9 @@ Times exclude DNS/TLS/GitHub redirect latency, retries, decryption, inflation, J
 
 The suitability capability is a cross-repository contract change and must not be activated until producer and app validators, fixtures, cache behavior, and cold-start tests converge on the same bytes.
 
-The critical core cap remains 512 KiB. Neither raw `bank_rate_history` nor raw
+The critical core cap is 1 MiB. Neither raw `bank_rate_history` nor raw
 `bank_rate_history_catalogue` may be embedded in that core: a small gzip archive
 can still expand into tens of MiB and block legacy clients before first paint.
-The deferred catalogue is included in the existing 8 MiB total release budget;
+The deferred catalogue is included in the 16 MiB total rolling release budget;
 its individual cap does not raise that total. See `MOBILE_APP.md` for both byte
 domains, core binding, immutable revision routing, and activation acceptance.

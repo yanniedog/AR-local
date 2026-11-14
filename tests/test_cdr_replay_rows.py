@@ -109,6 +109,35 @@ def test_disk_hard_limit_is_finite_and_unknown_files_are_never_deleted(tmp_path)
     assert foreign.read_bytes() == b'keep'
 
 
+def test_standalone_scratch_is_private_before_sqlite_opens(tmp_path, monkeypatch):
+    from cdr_replay_paths import private_replay_parent
+    real_connect = sqlite3.connect
+    observed = []
+    def connect(path, *args, **kwargs):
+        # Actual POSIX mode / Windows protected DACL inspection, not a mock ACL.
+        observed.append(private_replay_parent(Path(path).parent))
+        return real_connect(path, *args, **kwargs)
+    monkeypatch.setattr(sqlite3, 'connect', connect)
+    with store(tmp_path) as spool:
+        assert observed == [spool.root]
+        spool.facts.append(fact())
+
+
+@pytest.mark.parametrize('in_context', [False, True])
+def test_cleanup_refusal_surfaces_retained_path_without_writing_foreign_directory(tmp_path, in_context):
+    spool = store(tmp_path); foreign = spool.root / 'foreign'; foreign.write_bytes(b'preserve')
+    before = {path.name: path.read_bytes() for path in spool.root.iterdir()}
+    with pytest.raises(ReplayLimitError, match='unknown file') as raised:
+        if in_context:
+            with spool: pass
+        else: spool.close()
+    assert spool.cleanup_receipt['state'] == 'RETAINED_CLEANUP_REFUSED'
+    assert spool.cleanup_receipt['path'] == str(spool.root)
+    assert spool.cleanup_receipt['finalized'] is False
+    assert str(spool.root) in '\n'.join(raised.value.__notes__)
+    assert {path.name: path.read_bytes() for path in spool.root.iterdir()} == before
+
+
 def test_queries_use_declared_indexes_without_temp_sort(tmp_path):
     with store(tmp_path) as spool:
         for sql in ['SELECT payload FROM facts WHERE product=1 ORDER BY seq',

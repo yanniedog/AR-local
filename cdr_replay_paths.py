@@ -51,25 +51,35 @@ def _windows_private(path):
         close(token)
 
 
-def private_replay_parent(supplied):
-    path = Path(supplied).absolute()
-    if path.resolve() != path: raise ValueError('canonical replay namespace required')
+def _directory_ancestry(path):
+    target = None
     for parent in (path, *path.parents):
         if not parent.exists() and not parent.is_symlink(): continue
         info = parent.lstat()
         if (not stat.S_ISDIR(info.st_mode) or parent.is_symlink()
                 or getattr(info, 'st_file_attributes', 0) & 0x400):
             raise ValueError('replay namespace has unsafe directory/reparse ancestry')
+        if parent == path: target = info
+    return target
+
+
+def private_replay_parent(supplied):
+    path = Path(supplied).absolute()
+    if path.resolve() != path: raise ValueError('canonical replay namespace required')
+    _directory_ancestry(path)
     if not path.parent.is_dir(): raise ValueError('replay namespace parent must already exist')
     if not path.exists():
         from pi_plain_backup_restore import private_workspace
-        private_workspace(path)
-    before = path.lstat()
+        try: private_workspace(path)
+        except FileExistsError: pass  # A concurrent creator must pass every check below.
+    before = _directory_ancestry(path)
+    if before is None: raise ValueError('replay namespace disappeared after creation')
     if os.name == 'nt':
         _windows_private(path)
     elif before.st_uid != os.getuid() or stat.S_IMODE(before.st_mode) & 0o077:
         raise ValueError('replay namespace must be owned and private')
-    after = path.lstat()
+    after = _directory_ancestry(path)
+    if after is None: raise ValueError('replay namespace disappeared during validation')
     if (before.st_dev, before.st_ino, before.st_mode) != (after.st_dev, after.st_ino, after.st_mode):
         raise ValueError('replay namespace changed during validation')
     return path

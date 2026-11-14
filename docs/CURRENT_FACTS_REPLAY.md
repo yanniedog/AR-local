@@ -32,8 +32,10 @@ raises; no rows are silently dropped, deduplicated or replaced with zero counts.
 SQLite's hard page limit also reserves conservative rollback-journal overhead.
 These bounds do not replace the owning job's resource/queue/quiet-window gates.
 
-Scratch is a unique `.cdr-facts-*` directory beside the export directory, on the
-same configured filesystem for standalone callers. Daily ingest explicitly uses
+Scratch is a unique private `.cdr-facts-*` directory. Standalone callers use a
+validated `.cdr-replay-stage` namespace beside the export directory, on the same
+configured filesystem. Each scratch directory receives its final private mode
+or protected user/SYSTEM DACL before SQLite opens. Daily ingest explicitly uses
 the private persistent data namespace `.daily-replay-stage`, outside the dated
 export stage whose strict cleanup seal permits only its expected export contents.
 This keeps large replay files off raw tmpfs and preserves that cleanup gate.
@@ -52,6 +54,11 @@ state/path/retained bytes; operators must budget and retain these diagnostics
 until separately controlled cleanup. Failure retains scratch and a non-finalized
 diagnostic where safe. Unknown files, links or changed directory ownership
 prevent cleanup.
+Cleanup refusal raises with the retained path and an explicit in-memory refusal
+receipt; it does not write diagnostic files into an unsafe directory. Workbook
+failure leaves the previous workbook intact: a complete closed sibling archive
+replaces it only after successful row replay. Other exports still require the
+normal whole-capture finalization gates.
 Operators must account for spool plus normal JSON/XLSX/final SQLite bytes and
 retained failures before admitting large work; a failed scratch directory is not
 an authoritative product capture or a backup.

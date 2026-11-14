@@ -80,7 +80,10 @@ sample-to-production publisher in this repository.
 ## Deferred bank rate history capability
 
 The critical schema-v1 core excludes both raw history namespaces and retains its
-512 KiB compressed limit. The optional catalogue is outside `manifest.files`, so
+1 MiB compressed transfer limit. Current details are limited to 8 MiB, search
+to 2 MiB, and the combined rolling release to 16 MiB, as enforced by
+`app_payload_network_budget.py` for expanded financial-provider coverage.
+The optional catalogue is outside `manifest.files`, so
 older installed clients ignore it instead of eagerly downloading and parsing it:
 
 ```json
@@ -111,7 +114,8 @@ manifests, indexes and the optional asset; authenticated readback remains requir
 The outer archive is limited to 8 MiB compressed and 24 MiB decoded. Its inner
 archive is limited to 16 MiB compressed and 128 MiB decoded. Both decoded length
 and SHA-256 must pass before adoption; strict source/tier/evidence validation is
-unchanged. The existing total release budget remains 8 MiB. Consumers validate
+unchanged. The total rolling release budget is 16 MiB; these deferred-history
+decode limits and the separate v2 budgets are unchanged. Consumers validate
 the asset basename and exact trusted repository/tag URL, then fetch, verify and
 decode after first paint. Network/cache failure must preserve currently verified
 history while leaving current-core authority and correction checks intact.

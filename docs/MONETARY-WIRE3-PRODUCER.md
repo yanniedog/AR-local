@@ -31,7 +31,10 @@ supersession is required only over the conflicting authority intersection.
 Historical graph members remain limited to 2 MiB each, 32 MiB raw and 24 MiB
 decoded per operation. Current adopted core/details and fetched monetary bodies
 use a separate 24 MiB expanded public-snapshot budget. The manifest inventory
-retains its existing 8 MiB compressed aggregate limit. Decoded historical bytes
+uses the current 16 MiB compressed rolling aggregate limit, with 1 MiB core,
+8 MiB details and 2 MiB search caps (`app_payload_network_budget.py`). This does
+not increase the monetary operation or public-snapshot decode budgets above.
+Decoded historical bytes
 are reused once; no global source or authorization cache is introduced.
 
 Full historical core/details larger than 2 MiB are unsupported as retained

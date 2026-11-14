@@ -7,8 +7,8 @@ import math
 from pathlib import Path
 import sqlite3
 import stat
-import tempfile
 import time
+import uuid
 
 
 class ReplayLimitError(RuntimeError):
@@ -85,7 +85,10 @@ class ReplayStore:
         parent = Path(parent).absolute()
         if any(p.is_symlink() for p in (parent, *parent.parents)): raise ValueError('symlink replay parent')
         parent.mkdir(parents=True, exist_ok=True)
-        self.root = Path(tempfile.mkdtemp(prefix='.cdr-facts-', dir=parent))
+        from pi_plain_backup_restore import private_workspace
+        self.root = parent / ('.cdr-facts-' + uuid.uuid4().hex)
+        # Create with its final private DACL/mode, before opening any data file.
+        private_workspace(self.root)
         self.identity = self.root.stat().st_dev, self.root.stat().st_ino
         self.limits, self.key_of, self.validate_fact = limits, key_of, validate_fact
         self.deadline = time.monotonic() + limits.seconds
@@ -288,8 +291,15 @@ class ReplayStore:
                                    read_bytes=self.read_bytes, finalized=False), stream)
             except (OSError, ReplayLimitError): pass
             return
-        retained_bytes = self._disk_bytes()
-        from cdr_replay_cleanup import cleanup
-        self.cleanup_receipt = cleanup(self.root, self.identity, self.FILES)
-        if self.cleanup_receipt['state'].startswith('RETAINED_'):
-            self.cleanup_receipt['bytes'] = retained_bytes
+        try:
+            retained_bytes = self._disk_bytes()
+            from cdr_replay_cleanup import cleanup
+            self.cleanup_receipt = cleanup(self.root, self.identity, self.FILES)
+            if self.cleanup_receipt['state'].startswith('RETAINED_'):
+                self.cleanup_receipt['bytes'] = retained_bytes
+        except BaseException as error:
+            self.cleanup_receipt = dict(state='RETAINED_CLEANUP_REFUSED', path=str(self.root),
+                reason=type(error).__name__ + ': ' + str(error), finalized=False)
+            if hasattr(error, 'add_note'):
+                error.add_note(f'Private replay cleanup refused; retained scratch: {self.root}')
+            raise

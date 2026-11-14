@@ -81,10 +81,14 @@ def workspace_case_capability(work, guard):
             _read(path, identity, body)
 
 
-def create_name_index(index, *, case_sensitive):
+def create_name_index(index, *, case_sensitive, entries=2000000, name_bytes=512 * 1024**2):
+    if any(type(value) is not int or value < 1 for value in (entries, name_bytes)):
+        raise ValueError('invalid restore name index budget')
     folded_constraint = '' if case_sensitive else ' UNIQUE'
     index.execute(f'CREATE TABLE files(logical TEXT PRIMARY KEY, folded TEXT{folded_constraint}, value TEXT)')
     index.execute('CREATE TABLE path_names(identity TEXT PRIMARY KEY, logical TEXT NOT NULL, kind TEXT NOT NULL)')
+    index.execute('CREATE TABLE name_budget(entries INTEGER, bytes INTEGER, max_entries INTEGER, max_bytes INTEGER)')
+    index.execute('INSERT INTO name_budget VALUES(0,0,?,?)', (entries, name_bytes))
 
 
 def reserve_name(index, logical, *, case_sensitive, guard):
@@ -96,6 +100,13 @@ def reserve_name(index, logical, *, case_sensitive, guard):
         kind = 'file' if position == len(parts) else 'directory'
         prior = index.execute('SELECT logical,kind FROM path_names WHERE identity=?', (key,)).fetchone()
         if prior is None:
+            # Charge every unique cumulative prefix before inserting either text
+            # column. A small manifest can otherwise amplify quadratically.
+            size = len(key.encode('utf-8')) + len(name.encode('utf-8'))
+            charged = index.execute('UPDATE name_budget SET entries=entries+1, bytes=bytes+? '
+                'WHERE entries<max_entries AND bytes+?<=max_bytes', (size, size))
+            if charged.rowcount != 1:
+                raise ValueError('restore name index budget exceeded')
             index.execute('INSERT INTO path_names VALUES(?,?,?)', (key, name, kind))
         elif prior != (name, kind):
             raise ValueError('archive directory/file alias requires distinct safe paths')

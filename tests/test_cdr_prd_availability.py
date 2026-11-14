@@ -205,9 +205,10 @@ def test_unavailable_population_never_implies_product_removal():
     from cdr_outputs import _exclude_failed_missing_product_groups
     # Metadata-only guard test; no invented rate values or published products.
     key = ('aaa mortgage finance', 'retained-product', 'Mortgage')
-    groups, result = _exclude_failed_missing_product_groups([(key, [])], [], [], current_providers=[])
+    groups, result = _exclude_failed_missing_product_groups([(key, [])], [], [],
+        current_providers=[], unavailable_providers=['AAA Mortgage Finance'])
     assert list(groups) == []
-    assert result['suppressed'] == 1 and result['reasons'] == {'provider_population_absent': 1}
+    assert result['suppressed'] == 1 and result['reasons'] == {'provider_prd_unavailable': 1}
 
 
 def test_live_reconciliation_keeps_capture_date_across_midnight(tmp_path, monkeypatch):
