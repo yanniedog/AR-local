@@ -218,15 +218,14 @@ def test_rolling_tiers_reuse_aggregate_read_pass(tmp_path, banks, monkeypatch):
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     target = exports / "dashboard-cache" / DAY / "banks.json"
     reads = []
-    for method in ("read_bytes", "read_text"):
-        original = getattr(Path, method)
+    original = Path.open
 
-        def read(path, *args, _read=original, **kwargs):
-            if path == target:
-                reads.append(path)
-            return _read(path, *args, **kwargs)
+    def read(path, *args, **kwargs):
+        if path == target:
+            reads.append(path)
+        return original(path, *args, **kwargs)
 
-        monkeypatch.setattr(Path, method, read)
+    monkeypatch.setattr(Path, "open", read)
     builder._compute_payload(exports)
     # Current catalogue, combined tier/aggregate pass, and existing spread pass.
     assert len(reads) == 3
@@ -238,6 +237,20 @@ def test_current_payload_rejects_an_unselected_export_before_building(tmp_path, 
     save_export(tmp_path, banks, "corrected")
     with pytest.raises(ValueError, match="not the selected observation"):
         _compute_payload(original)
+
+
+def test_current_selected_source_hash_is_checked_before_payload_derivation(tmp_path, banks, monkeypatch):
+    import app_payload_build as builder
+    exports = save_export(tmp_path, banks)
+    path = exports / "dashboard-cache" / DAY / "banks.json"
+    value = json.loads(path.read_bytes())
+    value["products"][0]["description"] = "Deliberate retained-source corruption control"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("derived payload work started before source validation")
+    monkeypatch.setattr(builder, "_stable_payload_coverage", forbidden)
+    with pytest.raises(ValueError, match="differs from its contract"):
+        builder._compute_payload(exports)
 
 
 @pytest.mark.parametrize("canonical_exists", [False, True])

@@ -92,7 +92,7 @@ def attach_history(core, observations, dates):
 
 def bank_rate_history_rows(core, exports_dir):
     """Encode tiers while yielding each selected day's rows to other reducers."""
-    from app_payload_bank_catalogue import HistoricalCatalogue, RetainedEvidenceCache, UNKNOWN, retained_evidence
+    from app_payload_bank_catalogue import HistoricalCatalogue, RetainedEvidenceCache, UNKNOWN, StreamedRetainedEvidence
     observed = _history_dates(exports_dir, core["run_date"])
     if not observed:
         return
@@ -108,7 +108,8 @@ def bank_rate_history_rows(core, exports_dir):
     started = monotonic()
     print(f"[app_payload] bank-rate history starting dates={len(observed)} run_date={core['run_date']}", flush=True)
     for position, day in enumerate(observed, 1):
-        banks = historical_banks(exports_dir, day, unavailable, sources)
+        projected = StreamedRetainedEvidence(cache=evidence_cache)
+        banks = historical_banks(exports_dir, day, unavailable, sources, product_consumer=projected.consume)
         rows = [row for row in (banks.get("rates") or [])
                 if isinstance(row, dict)]
         sections = {section: [compact({k: row.get(k) for k in CORE_RATE_FIELDS})
@@ -116,7 +117,7 @@ def bank_rate_history_rows(core, exports_dir):
                                        and section_filter(section, row)]
                               for section in VALID_SECTIONS}
         history.observe(day, sections)
-        evidence = retained_evidence(banks.get("products"), cache=evidence_cache)
+        evidence = projected.result
         catalogue.observe(day, sections, lambda row, section: evidence.get(row.get("product_key"), UNKNOWN),
                           sources.get(day))
         yield day, rows
