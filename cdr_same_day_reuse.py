@@ -428,6 +428,14 @@ def reconcile_same_day_reuse(run_root: Path) -> None:
         if captured.tzinfo is None or captured.astimezone(HOBART).date().isoformat() != manifest["baseline"]["run_date"]:
             raise ValueError("same-day recovery crossed the observation date boundary")
     providers = provider_directories(status)
+    unavailable = set()
+    if status.get('providers_prd_unavailable') or any(
+            row.get('prd_availability') == 'UNAVAILABLE' for row in providers.values()):
+        from cdr_provider_participation_evidence import current_register
+        current_register(run_root, status, manifest['baseline']['run_date'],
+                         allow_filtered=True, ingest_root=True)
+        unavailable = {name for name, row in providers.items()
+                       if row.get('prd_availability') == 'UNAVAILABLE'}
     diagnostics = status.get("index_diagnostics") or {}
     _block_duplicate_provider_directories(banks, manifest, providers)
     provider_ids = sorted({row["provider_dir"] for row in manifest["reused"]})
@@ -478,7 +486,8 @@ def reconcile_same_day_reuse(run_root: Path) -> None:
             elif row["product_id"] not in seen:
                 manifest["unconfirmed"].append({"provider_dir": provider, "product_id": row["product_id"]})
                 unconfirmed = True
-        if unconfirmed and not identity_blocked and not (status.get("by_provider") or {}).get(provider):
+        if (unconfirmed and provider not in unavailable and not identity_blocked
+                and not (status.get("by_provider") or {}).get(provider)):
             append_failure(banks, {
                 "phase": "products_index", "bank": provider,
                 "status": "same_day_index_unconfirmed", "failure_category": "invalid_response",
@@ -494,7 +503,7 @@ def reconcile_same_day_reuse(run_root: Path) -> None:
     for provider, value in providers.items():
         value["failure_records"] = int((status.get("by_provider") or {}).get(provider) or 0)
         value["failure_categories"] = status["by_provider_failure_category"].get(provider, {})
-        if value["failure_records"]:
+        if value["failure_records"] and provider not in unavailable:
             value["state"] = "partial"
     status["provider_states"] = list(providers.values())
     status["retained_provider_states"] = retained

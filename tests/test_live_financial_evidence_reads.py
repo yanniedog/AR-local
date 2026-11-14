@@ -58,13 +58,15 @@ def test_non_size_digest_errors_remain_unchanged(tmp_path, monkeypatch):
     assert caught.value is error
 
 
-def test_evidence_deadline_precedes_read_and_is_rechecked_per_row(tmp_path):
+def test_evidence_deadline_precedes_read_and_is_rechecked_per_row(tmp_path, monkeypatch):
     path = tmp_path / "progress.jsonl"
     path.write_text(json.dumps({"result": "PASS", "generation_id": "observed"}) + "\n")
     def expired(**_):
         raise TimeoutError("deadline")
-    with pytest.raises(TimeoutError, match="deadline"):
-        worker.archive_matches(path, "observed", budget=expired)
+    with monkeypatch.context() as context:
+        context.setattr(digest, '_file_state', lambda *_: pytest.fail('expired budget entered file reader'))
+        with pytest.raises(TimeoutError, match="deadline"):
+            worker.archive_matches(path, "observed", budget=expired)
     checks = []
     def budget(**kwargs):
         checks.append(kwargs)
@@ -73,3 +75,16 @@ def test_evidence_deadline_precedes_read_and_is_rechecked_per_row(tmp_path):
             raise TimeoutError("deadline while parsing")
     with pytest.raises(TimeoutError, match="parsing"):
         worker.archive_matches(path, "observed", budget=budget)
+
+
+def test_archive_proof_retains_parsed_digest_and_rejects_later_mutation(tmp_path):
+    path = tmp_path / 'progress.jsonl'
+    raw = b'{"result":"PASS","generation_id":"observed"}\n'
+    path.write_bytes(raw)
+    proof = worker.archive_proof(path, 'observed')
+    assert proof.sha256 == hashlib.sha256(raw).hexdigest()
+    proof.recheck(path, path.parent)
+    path.write_bytes(b'{"result":"FAIL","generation_id":"observed"}\n')
+    assert proof.sha256 != worker.record(path)['sha256']
+    with pytest.raises(ValueError, match='identity changed'):
+        proof.recheck(path, path.parent)

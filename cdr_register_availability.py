@@ -10,6 +10,9 @@ def validate_prd_dispositions(payload, status, event, uid_for, *, allow_filtered
     response version is not. Future/unknown versions cannot authorize absence.
     """
     if 'providers_prd_unavailable' not in status:
+        if any(row.get('prd_availability') == 'UNAVAILABLE'
+               for row in status.get('provider_states', [])):
+            raise ValueError('register PRD disposition count is missing')
         return []
     from cdr_ingest_support import allocate_bank_dir, iter_banking_brands_from_payload, REGISTER_URL_SUMMARY
     providers = status['provider_states']
@@ -64,9 +67,18 @@ def validate_prd_dispositions(payload, status, event, uid_for, *, allow_filtered
             continue
         if (provider.get('state') != 'not_attempted' or provider.get('population_known') is not False
                 or provider.get('prd_availability') != 'UNAVAILABLE'
-                or provider.get('prd_availability_evidence') != expected[uid]
-                or provider.get('failure_records') != 0 or provider.get('failure_categories') != {}):
+                or provider.get('prd_availability_evidence') != expected[uid]):
             raise ValueError('register PRD disposition does not match provider state')
+        # A same-day resume retains earlier failures as evidence. They do not
+        # mean the currently unavailable endpoint was requested again.
+        directory = provider['provider_dir']
+        failures, categories = provider.get('failure_records'), provider.get('failure_categories')
+        if (type(failures) is not int or failures < 0 or not isinstance(categories, dict)
+                or any(type(n) is not int or n <= 0 for n in categories.values())
+                or sum(categories.values()) != failures
+                or failures != (status.get('by_provider') or {}).get(directory, 0)
+                or categories != (status.get('by_provider_failure_category') or {}).get(directory, {})):
+            raise ValueError('retained unavailable-provider failures do not reconcile')
         found.append({'provider': provider['brand_name'], 'provider_uid': uid,
                       'disposition': 'PRD_UNAVAILABLE', 'population_known': False,
                       'product_withdrawal_confirmed': False,

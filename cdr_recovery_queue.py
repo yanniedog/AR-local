@@ -62,6 +62,13 @@ def add_recovery_requests(status: dict, banks_root: Path, bank_work: list) -> No
                         raise ValueError("failure is not an object")
                     provider = str(row.get("bank") or "")
                     brand = providers[provider]
+                    current = fresh.get(provider) or {}
+                    if (current.get('state') == 'not_attempted'
+                            and current.get('prd_availability') == 'UNAVAILABLE'):
+                        # Preserve the old failure journal, but do not turn its
+                        # requests into work for an unavailable current endpoint.
+                        complete = False
+                        continue
                     phase = str(row.get("phase") or "")
                     pid = str(row.get("product_id") or "")
                     endpoint = str(brand.get("endpoint_url") or "").rstrip("/")

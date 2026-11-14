@@ -49,7 +49,7 @@ def parse_supported_versions(body: str) -> list[int]:
     # version. Require an affirmative endpoint/API clause and an explicit v
     # marker; never turn "v7 and above" into a speculative 7..99 sweep.
     minimum = re.search(
-        r"(?:^|[\"'\n.!?:])\s*(?:this\s+)?(?:endpoint|api)\s+supports\s+"
+        r"(?:^|[\"'\n.!?:])\s*(?:(?:this|the)\s+)?(?:endpoint|api)\s+supports\s+"
         r"(?:v\s*|versions?\s+)([1-9][0-9]?)\s+(?:and|or)\s+(?:above|higher|later)\b",
         text, re.I,
     )

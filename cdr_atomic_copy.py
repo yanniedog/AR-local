@@ -9,6 +9,17 @@ from cdr_atomic import ImmutablePathError, _fsync_directory
 
 def copy_verified(source: Path, target: Path, *, size: int, sha256: str) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target.is_symlink():
+        existing = regular_identity(target)
+        if existing[3] != size or hash_file(target, expected=existing) != sha256:
+            raise ImmutablePathError('immutable copy destination differs')
+        original = regular_identity(source)
+        if original[3] != size or hash_file(source, expected=original) != sha256:
+            raise ValueError('source changed while verifying existing copy')
+        if regular_identity(target) != existing:
+            raise ValueError('existing copy changed during verification')
+        _fsync_directory(target.parent)
+        return
     temporary = target.parent / f'.{target.name}.copy-{os.getpid()}-{os.urandom(8).hex()}'
     try:
         with pinned_reader(source) as (reader, before):
@@ -34,3 +45,4 @@ def copy_verified(source: Path, target: Path, *, size: int, sha256: str) -> None
         _fsync_directory(target.parent)
     finally:
         temporary.unlink(missing_ok=True)
+        _fsync_directory(target.parent)
