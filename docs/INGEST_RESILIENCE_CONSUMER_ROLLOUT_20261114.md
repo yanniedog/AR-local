@@ -113,3 +113,22 @@ revision reservation; retries retain that same descriptor even if new packages
 appear. Optional retries require a new revision and verified predecessor, and
 must never clear financial pending state. Default flags remain disabled. The
 later typed comparison, full terms, change-ledger and watchlist gaps above remain.
+
+## Continuation: complete publication adapters and combined daily wiring
+
+Reviewed held delivery commit `93c6b1156bb285acbac3eaac2ba2785f45eb6fe3`
+is backed up on `agent/product-evidence-publication-20261114`. It implements
+recursive revision/archive/upload/readback, encrypted immutable delivery, exact
+transaction controls and predecessor-verified interrupted optional retry.
+284 broad tests passed with five existing absent-sample skips; 31 final affected
+controls passed, with independent window/root review. Pruning remains disabled.
+The finite alias inventory limit needs attention before enabling: lazy assets
+already resolve immutable revisions, so duplicate alias copies can be avoided in
+a separately reviewed change without deleting unknown remote data.
+
+The daily-intent child has 40 focused passing controls and is integrating this
+delivery commit for combined retry testing. App explicit pending/unavailable/
+ready-status support is being implemented on a separate child of `1e011e5d`.
+These are held source changes. Producer main remains frozen at `80b999eb` and
+shipping app at `bf28a0c0` for operational qualification; no optional feature
+flag, route, source selection or release has been activated by this continuation.
