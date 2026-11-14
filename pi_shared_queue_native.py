@@ -292,7 +292,16 @@ def native_lock_factory(repo=Path('/srv/ar-local/AR-local')):
         if spec is None or spec.loader is None:
             raise ValueError('production helper loader unavailable')
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        previous = sys.modules.get(spec.name)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            if previous is None:
+                sys.modules.pop(spec.name, None)
+            else:
+                sys.modules[spec.name] = previous
+            raise
         factory = getattr(module, 'production_lock', None)
         if not callable(factory):
             raise ValueError('deployed production lock function unavailable')

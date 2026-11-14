@@ -7,7 +7,6 @@ import stat
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
@@ -158,18 +157,38 @@ def _open_after_network_recovery(path: Path, role: str) -> int:
             time.sleep(0.25)
 
 
-@dataclass(frozen=True)
 class OwnedProductionLock:
     """Evidence usable only while the acquiring context retains its descriptor."""
 
-    path: Path
-    descriptor: int
-    role: str
-    acquisition_id: str
-    identity: tuple[int, int]
-    pid: int
-    boot_id: str
-    _active: bool = True
+    # Avoid @dataclass with postponed annotations: the pinned root queue bridge
+    # executes this file without registering spec.name in sys.modules.
+    __slots__ = ("path", "descriptor", "role", "acquisition_id", "identity", "pid", "boot_id", "_active")
+
+    def __init__(self, path: Path, descriptor: int, role: str, acquisition_id: str,
+                 identity: tuple[int, int], pid: int, boot_id: str, _active: bool = True) -> None:
+        object.__setattr__(self, "path", path)
+        object.__setattr__(self, "descriptor", descriptor)
+        object.__setattr__(self, "role", role)
+        object.__setattr__(self, "acquisition_id", acquisition_id)
+        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "pid", pid)
+        object.__setattr__(self, "boot_id", boot_id)
+        object.__setattr__(self, "_active", _active)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) is not type(self):
+            return NotImplemented
+        return tuple(getattr(self, f) for f in self.__slots__) == tuple(getattr(other, f) for f in self.__slots__)
+
+    def __repr__(self) -> str:
+        fields = ", ".join(f"{name}={getattr(self, name)!r}" for name in self.__slots__)
+        return f"{type(self).__name__}({fields})"
 
     def _revoke(self) -> None:
         object.__setattr__(self, "_active", False)
