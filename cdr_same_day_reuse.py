@@ -460,7 +460,9 @@ def reconcile_same_day_reuse(run_root: Path) -> None:
                     "status": "provider_identity_migration_blocked", "failure_category": "invalid_response", "retryable": False})
         if fresh is None or identity_blocked:
             retained.append({**identity, "retained_from_generation_id": manifest["baseline"]["generation_id"]})
-        proof = None if fresh is None or identity_blocked else _fresh_index(
+        # Register-proven unavailability leaves the current population unknown.
+        # Retained/stray index evidence cannot confirm or withdraw cached IDs.
+        proof = None if fresh is None or identity_blocked or provider in unavailable else _fresh_index(
             banks, provider, diagnostics.get(provider) or {}, journal, events, str(fresh["endpoint_url"]))
         # A provider can transiently return a valid empty catalogue (including
         # during version fallback). That cannot withdraw an already captured

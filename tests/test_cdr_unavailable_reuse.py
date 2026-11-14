@@ -16,9 +16,10 @@ from tests.test_cdr_financial_register import retained
 
 
 @pytest.mark.parametrize('retained_failure', [False, True])
-def test_unavailable_reconciliation_retains_product_and_finalizes_without_new_request(tmp_path, monkeypatch, retained_failure):
+@pytest.mark.parametrize('stray_index', [False, True])
+def test_unavailable_reconciliation_retains_product_and_finalizes_without_new_request(tmp_path, monkeypatch, retained_failure, stray_index):
     monkeypatch.setattr(fixture, 'DATE', DAY)
-    row = fixture._record()
+    row = fixture._record('Defence Bank') if stray_index else fixture._record()
     # The official register omits legalEntityName; preserve that actual identity.
     row['brand']['legal_entity_name'] = ''
     material = '\x1f'.join(row['brand'][key].lower() for key in
@@ -51,15 +52,35 @@ def test_unavailable_reconciliation_retains_product_and_finalizes_without_new_re
     ingest.ingest_brand(brand, date_root=banks, resume=True, sleep_ms=0, timeout=1,
         max_retries=0, max_pages=None, max_products=None, fetch_unknown_detail=True,
         bank_dir_name=row['provider'], detail_workers=1, log=lambda _: None)
+    if stray_index:
+        # Complete retained/stray proof is a fault control made from actual CDR
+        # rows; it must not override the current register's unknown population.
+        page = fixture._complete_listing_without(row)[0]
+        directory = banks / '_holders' / row['provider'] / '_products-index'
+        atomic_write_json(directory / 'page-0001.json', page)
+        tracker = fixture.ProductIndexTracker()
+        for product in page['data']['products']: tracker.observe(product['productId'], product)
+        diagnostics = tracker.summary(pages=1, raw_records=len(page['data']['products']), complete=True, meta=page['meta'])
+        atomic_write_json(directory / 'diagnostics.json', diagnostics)
+        journal.record('stray-index', request_url=reuse.product_index_request_url(row['brand']['endpoint_url']),
+            status=200, outcome='success', body=json.dumps(page).encode(),
+            started_at=DAY+'T01:00:02Z', completed_at=DAY+'T01:00:03Z',
+            context={'phase': 'products_index', 'provider': row['provider'], 'page': 1})
+        proof = reuse._fresh_index(banks, row['provider'], diagnostics, journal,
+                                   reuse._journal_events(journal), row['brand']['endpoint_url'])
+        assert proof['complete'] and proof['observed_product_ids'] and row['pid'] not in proof['observed_product_ids']
     ingest._persist_ingest_status(banks_root=banks, run_root=stage, snapshot=snapshot,
                                   bank_work=work, attempt_journal=journal)
-    reuse.reconcile_same_day_reuse(stage)
+    with monkeypatch.context() as guarded:
+        guarded.setattr(reuse, '_fresh_index', lambda *a, **k: pytest.fail('unavailable index proof evaluated'))
+        reuse.reconcile_same_day_reuse(stage)
     status = json.loads((banks / 'ingest-status.json').read_bytes())
     provider = next(item for item in status['provider_states'] if item['provider_dir'] == row['provider'])
     assert provider['state'] == 'not_attempted' and provider['population_known'] is False
     assert status['providers_attempted'] == 261 and status['providers_prd_unavailable'] == 45
     assert status['total'] == provider['failure_records'] == int(retained_failure)
     assert not status['unresolved_requests'] and not status['same_day_reuse']['withdrawals']
+    assert not status['same_day_reuse']['withdrawal_indexes']
     assert status['same_day_reuse']['unconfirmed'] == [{'provider_dir': row['provider'], 'product_id': row['pid']}]
     assert (fixture._leaf(stage, row) / 'product-detail.json').read_bytes() == row['body']
     finalized = fixture._finalize_repair(state, stage, parent, 'unavailable')
