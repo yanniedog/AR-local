@@ -615,6 +615,16 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
         elif rolling_confirmed and pricing_kwargs:
             from cdr_public_rates_runtime import acknowledge_warning_publication
             acknowledge_warning_publication(pricing_kwargs['public_rates_root'], manifest)
+        if outcome == PUBLISH_PUBLISHED:
+            # Preparation is separate from this frozen financial transaction.
+            # A setup failure cannot undo success or skip terminal backup.
+            try:
+                from pi_product_evidence_dispatch import enqueue_after_financial
+                optional_queue = enqueue_after_financial(repo_root, manifest)
+                if optional_queue.get('status') != 'disabled':
+                    print('[pi_daily_sync] optional evidence preparation ' + json.dumps(optional_queue, sort_keys=True))
+            except Exception as optional_error:
+                print('[pi_daily_sync] optional evidence enqueue failed reason=' + type(optional_error).__name__)
         return outcome
     except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
         if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':

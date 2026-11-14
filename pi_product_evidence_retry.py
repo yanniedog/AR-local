@@ -157,21 +157,57 @@ class OptionalRetry:
 
 def publish_optional_retry(repo_root, request_sha256):
     """Explicit admitted call only. Never clears or writes financial pending."""
-    from ar_local_pi_runtime import data_state_root
-    from pi_daily_sync import DailyIngestLock, payload_publication_pending
     from pi_payload_retry_policy import payload_retry_window_reason
     from pi_deploy_queue_claim import inherited_queue_admission
+    require(not payload_retry_window_reason(),'optional retry needs existing bounded admission')
+    def validate_owner():
+        require(inherited_queue_admission() == 'reuse',
+                'optional retry needs existing bounded admission')
+    return publish_optional_retry_owned(repo_root,request_sha256,validate_owner=validate_owner)
+
+
+def publish_optional_retry_owned(repo_root,request_sha256,*,validate_owner,completion_writer=None):
+    """Worker reuses its parent's claim, then owns the production lock exactly once.
+
+    The fixed launcher worker supplies a live parent/child validator. This is not
+    a CLI, new queue claim, host lease, scheduler or financial pending mutation.
+    """
+    from ar_local_pi_runtime import data_state_root
+    from pi_daily_sync import DailyIngestLock
+    state=data_state_root(repo_root)
+    return _publish_optional_retry(repo_root,request_sha256,validate_owner=validate_owner,completion_writer=completion_writer,
+                                   lock_context=DailyIngestLock(state/'daily-ingest.lock'))
+
+
+def publish_optional_retry_delegated(value,request_sha256,*,completion_writer):
+    """Only the exact commissioned child may use its retained parent descriptor."""
+    from contextlib import nullcontext
+    from pi_product_evidence_worker import validate
+    validate(value)
+    require(value['request']['phase']=='publish','delegation is publication-only')
+    return _publish_optional_retry(Path(value['production']),request_sha256,validate_owner=lambda:validate(value),
+        completion_writer=completion_writer,lock_context=nullcontext())
+
+
+def _publish_optional_retry(repo_root,request_sha256,*,validate_owner,completion_writer,lock_context):
+    from ar_local_pi_runtime import data_state_root
+    from pi_daily_sync import payload_publication_pending
+    from pi_payload_retry_policy import payload_retry_window_reason
     from app_payload_product_evidence_daily import FinancialEvidence
     from app_payload_build import build_and_publish_dual
-    reason = payload_retry_window_reason()
-    require(not reason and inherited_queue_admission() == 'reuse', 'optional retry needs existing bounded admission')
+    validate_owner()
+    if completion_writer is not None:
+        from pi_product_evidence_completion import validate_writer
+        validate_writer(completion_writer)
     state = data_state_root(repo_root); owner = OptionalRetry(state, request_sha256)
-    with DailyIngestLock(state / 'daily-ingest.lock'):
+    with lock_context:
         reason = payload_retry_window_reason()
         if reason: return {'status':'deferred','reason':reason}
+        validate_owner()
         if payload_publication_pending(repo_root): return {'status':'deferred','reason':'financial_publication_pending'}
-        attempt = owner.begin(datetime.now(timezone.utc))
-        if attempt is None: return {'status':'deferred','reason':'optional_cooldown_or_complete'}
+        already_published=completion_writer is not None and owner.progress().get('status')=='published'
+        attempt = None if already_published else owner.begin(datetime.now(timezone.utc))
+        if attempt is None and not already_published:return {'status':'deferred','reason':'optional_cooldown_or_complete'}
         try:
             pointer = owner.request['pointer']
             worker = FinancialEvidence(repo_root,state,pointer,owner.request['source'],pin_store=owner)
@@ -187,9 +223,14 @@ def publish_optional_retry(repo_root, request_sha256):
                         and (_same_payload_revision(manifest,live)
                              or str(live.get('run_date') or '') > manifest['run_date']),
                         'optional rolling alias was not verified or legitimately superseded')
-            owner.finish(attempt,'published',datetime.now(timezone.utc))
+            completion={}
+            if completion_writer is not None:
+                from pi_product_evidence_completion import complete
+                validate_owner()
+                completion['completion']=complete(state,owner,manifest,completion_writer)
+            if attempt is not None:owner.finish(attempt,'published',datetime.now(timezone.utc))
             return {'status':'published','request_sha256':request_sha256,'latest_alias':latest,
-                    'revision':manifest.get('payload_revision')}
+                    'revision':manifest.get('payload_revision'),**completion}
         except Exception as error:
-            owner.finish(attempt,'failed',datetime.now(timezone.utc),type(error).__name__)
+            if attempt is not None:owner.finish(attempt,'failed',datetime.now(timezone.utc),type(error).__name__)
             raise

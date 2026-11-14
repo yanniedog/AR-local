@@ -327,6 +327,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                 payload_pending = payload_publication_pending(REPO_ROOT)
     publication_failed = (publication["publication_current"] is False
                           or publication.get("publication_continuous") is False)
+    optional_evidence = {"status": "not_due"}
+    if (not args.dry_run and complete and not active and not should_start and not writable_error
+            and not payload_pending and not payload_retry_attempted and not recovery.get("capture_attempted")
+            and publication.get("publication_current") is True and not publication_failed):
+        try:
+            from pi_product_evidence_dispatch import dispatch
+            optional_evidence = dispatch(REPO_ROOT)
+        except Exception as exc:  # Optional enrichment cannot replace financial pending.
+            optional_evidence = {"status": "failed", "reason": type(exc).__name__}
     payload = {
         "now_utc": now_utc.isoformat(),
         "due_utc": due_utc.isoformat(),
@@ -349,6 +358,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "payload_retry": payload_retry,
         "payload_continuity": continuity,
         "same_day_recovery": recovery,
+        "optional_product_evidence": optional_evidence,
         "dry_run": bool(args.dry_run),
     }
     if args.json:
