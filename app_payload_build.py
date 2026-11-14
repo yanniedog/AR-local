@@ -773,6 +773,7 @@ def build_and_publish_dual(
     public_rates_receipt: Optional[Path] = None,
     pre_promotion_guard: Callable[[], None] | None = None,
     pre_promotion_fence: Callable[[], ContextManager] | None = None,
+    optional_evidence: Any = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -814,33 +815,52 @@ def build_and_publish_dual(
         raise ValueError('Public rate publication requires immutable revisions and a shipped consumer')
     if revisions and state_dir is None:
         raise ValueError("revision publication requires persistent state_dir")
-    data = _app_payload("_compute_payload")(
-        exports_dir,
-        include_history=need_latest or revisions,
-        state_dir=state_dir,
-        contract_coverage=contract_coverage,
-        public_rates_enabled=public_rates_root is not None,
-    )
-    if source_observation:
-        data["source_observation"] = dict(source_observation)
+    resumed = None
+    if optional_evidence is not None:
+        if not revisions:
+            raise ValueError('Optional evidence requires immutable revision publication')
+        resumed = optional_evidence.resume()  # Exact pending pin, BEFORE any recomputation.
+        original_guard = pre_promotion_guard
+        def guard():
+            if original_guard: original_guard()
+            optional_evidence.check()
+        pre_promotion_guard = guard
+    if resumed is None:
+        data = _app_payload("_compute_payload")(
+            exports_dir,
+            include_history=need_latest or revisions,
+            state_dir=state_dir,
+            contract_coverage=contract_coverage,
+            public_rates_enabled=public_rates_root is not None,
+        )
+        if source_observation:
+            data["source_observation"] = dict(source_observation)
 
-    _attach_terms(data, terms_root)
-    data['executable_root'] = executable_root
-    data['executable_v2_root'] = executable_v2_root
-    data['executable_v3_root'] = executable_v3_root
-    data['executable_v4_root'] = executable_v4_root
-    data['public_rates_root'] = public_rates_root
-    data['public_rates_receipt'] = public_rates_receipt
+        _attach_terms(data, terms_root)
+        data['executable_root'] = executable_root
+        data['executable_v2_root'] = executable_v2_root
+        data['executable_v3_root'] = executable_v3_root
+        data['executable_v4_root'] = executable_v4_root
+        data['public_rates_root'] = public_rates_root
+        data['public_rates_receipt'] = public_rates_receipt
 
     if revisions:
         # The caller holds the production lock through archive verification,
         # selected-head promotion and both compatibility aliases.
         full_dir = state_dir / "v1-latest"
-        _package_payload(data, full_dir, repo=repo, tag=DEFAULT_TAG)
+        if resumed is None:
+            _package_payload(data, full_dir, repo=repo, tag=DEFAULT_TAG)
+            if optional_evidence is not None:
+                full_dir, _ = optional_evidence.freeze(full_dir)
+        else:
+            full_dir, _ = resumed
         guard_kwargs = ({'pre_promotion_guard': pre_promotion_guard, 'pre_promotion_fence': pre_promotion_fence}
                         if pre_promotion_guard is not None or pre_promotion_fence is not None else {})
+        if optional_evidence is not None and optional_evidence.expected_predecessor is not None:
+            guard_kwargs['expected_predecessor'] = optional_evidence.expected_predecessor
         revision = publish_revision_bundle(full_dir, state_dir=state_dir / "revision-history",
                                            repo=repo, enabled=True, **guard_kwargs)
+        guard_kwargs.pop('expected_predecessor', None)  # Only the revision transaction owns this CAS.
         if pre_promotion_guard:
             pre_promotion_guard()
         published_dated = publish_payload(revision.archive_dir, repo=repo, tag=dated_tag(run_date), **guard_kwargs)

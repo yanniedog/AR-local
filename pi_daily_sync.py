@@ -238,6 +238,9 @@ def _mark_payload_publication_pending(
     app-payload-latest sat two ingest cycles behind the dated releases on
     2026-08-15. Keeping the pointer lets the retry go back for the right day.
     """
+    if isinstance(pointer, dict) and 'optional_product_evidence_intent' in pointer:
+        from pi_product_evidence_intent import validate_pointer
+        validate_pointer(pointer)
     path = payload_publication_pending_path(repo_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = read_payload_publication_pending(repo_root)
@@ -256,6 +259,9 @@ def _mark_payload_publication_pending(
                        if allow_policy_supersession else None)
         if replacement is not None:
             record = replacement
+            if any(key in previous for key in ('optional_candidate_pins','optional_product_evidence_intents')):
+                from pi_product_evidence_intent import preserve_pending_references
+                record = preserve_pending_references(previous, record)
         else:
             queued = list(previous.get("queued_pointers") or [])
             if pointer and pointer != previous["pointer"] and pointer not in queued:
@@ -291,6 +297,11 @@ def _clear_payload_publication_pending(repo_root: Path, pointer: Optional[dict])
     path = payload_publication_pending_path(repo_root)
     record = read_payload_publication_pending(repo_root)
     queued = list(record.get("queued_pointers") or [])
+    settled = pointer or record.get('pointer')
+    if settled and (settled == record.get('pointer') or settled in queued) and any(
+            key in record for key in ('optional_candidate_pins','optional_product_evidence_intents')):
+        from pi_product_evidence_intent import settled_candidate_pin
+        record = settled_candidate_pin(record, settled)
     if pointer and record.get("pointer") and record["pointer"] != pointer:
         record["queued_pointers"] = [item for item in queued if item != pointer]
         atomic_replace_json(path, record)
@@ -332,7 +343,7 @@ def _bounded_partial_v1_allowed(contract: dict) -> bool:
     return contract.get("observation_state") == "partial" and gate.publication_allowed(contract)[0]
 
 
-def current_publication_pointer(repo_root: Path) -> dict:
+def current_publication_pointer(repo_root: Path, *, evidence_delivery=None) -> dict:
     """The observation this run would publish: today's partial, else latest complete."""
     runtime_state = data_state_root(repo_root)
     latest_observation = _read_observation_pointer(
@@ -343,11 +354,16 @@ def current_publication_pointer(repo_root: Path) -> dict:
     if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
         from cdr_public_rates_runtime import enrich_publication_pointer
         try:
-            return enrich_publication_pointer(repo_root, pointer)
+            pointer = enrich_publication_pointer(repo_root, pointer)
         except (OSError, ValueError, KeyError, TypeError) as error:
             # Missing pricing evidence cannot fail the completed bank ingest.
             # The publication worker fails closed and keeps its retry intent.
             print(f'[pi_daily_sync] public pricing pointer unavailable: {error}', file=sys.stderr)
+    # Only explicit already-prepared callers enrich here. Ordinary optional
+    # setup belongs inside the nonfatal publication boundary, after pending CAS.
+    if evidence_delivery is not None:
+        from pi_product_evidence_intent import enrich_pointer
+        pointer = enrich_pointer(repo_root, pointer, delivery=evidence_delivery)
     return pointer
 
 
@@ -460,6 +476,18 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
         if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
             from cdr_public_rates_runtime import publication_kwargs
             pricing_kwargs = publication_kwargs(repo_root, contract, pointer)
+        evidence_kwargs = {}
+        evidence_pointer = None
+        if ('optional_product_evidence_intent' in pointer
+                or 'optional_product_evidence_intents' in read_payload_publication_pending(repo_root)
+                or any(os.environ.get(name, '0') != '0' for name in (
+                    'AR_LOCAL_PRODUCT_EVIDENCE_DELIVERY','AR_LOCAL_PRODUCT_RESPONSE_EVIDENCE_DELIVERY'))):
+            from pi_product_evidence_intent import admit_financial_intent
+            evidence_pointer = admit_financial_intent(repo_root, pointer)
+        if evidence_pointer is not None:
+            from app_payload_product_evidence_daily import FinancialEvidence
+            evidence_kwargs['optional_evidence'] = FinancialEvidence(repo_root, runtime_state, evidence_pointer,
+                                                                     contract, pending_pointer=pointer)
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
             exports,
@@ -469,6 +497,7 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
                 "generation_id", "observation_date", "observation_state", "contract_digest", "source_path"
             ) if key in contract},
             **pricing_kwargs,
+            **evidence_kwargs,
         )
         pruned_v1 = sum(
             prune_payload_staging(payload_state / "v1" / folder, "manifest.json")
