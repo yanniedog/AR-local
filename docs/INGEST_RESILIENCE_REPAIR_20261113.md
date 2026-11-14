@@ -1062,3 +1062,5 @@ Still open, in order:
 5. `ar-local-capacity-monitor.service` is failed on SMTP disconnect only (email deferred by operator). `ar-local-daily-watchdog.service` fails while item 1 is open. PR1162 and held consumer branches remain held.
 
 Private resume (`C:/code/AR-local/.work/ingest-resilience-20261113/`): `activate-live-f76c84ee-r2.stdout`, `activate-dryrun-f76c84ee-r2.stdout`, `manual-window-before-f76c84ee.json`, `manual-window-final-f76c84ee-reviewed.json`, `manual-window-f76c84ee-reviewed-{check,apply}/`, `manual-window-f76c84ee-{check,apply}.log`, `manual-window-postapply-f76c84ee.json`. Directory `manual-window-f76c84ee-reviewed-check2-mislabelled` is a duplicate check launch built by mistake; it was never executed.
+
+Addendum 07:40 AEDT: the first watchdog run on f76c84ee (07:38:58) is observation-only (`repair_started: false`, attention `PUBLICATION_NOT_CURRENT`); the activated runtime does NOT settle the pending Nov15 publication by itself. Item 1 needs the bound retry route or the next capture. No retry or recapture was started in this session.
