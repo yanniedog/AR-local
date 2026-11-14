@@ -21,6 +21,7 @@ def copy_verified(source: Path, target: Path, *, size: int, sha256: str) -> None
         _fsync_directory(target.parent)
         return
     temporary = target.parent / f'.{target.name}.copy-{os.getpid()}-{os.urandom(8).hex()}'
+    failure = None
     try:
         with pinned_reader(source) as (reader, before):
             if before[3] != size:
@@ -43,6 +44,15 @@ def copy_verified(source: Path, target: Path, *, size: int, sha256: str) -> None
             if existing[3] != size or hash_file(target, expected=existing) != sha256:
                 raise ImmutablePathError('immutable copy destination differs') from error
         _fsync_directory(target.parent)
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        temporary.unlink(missing_ok=True)
-        _fsync_directory(target.parent)
+        try:
+            temporary.unlink(missing_ok=True)
+            _fsync_directory(target.parent)
+        except OSError as cleanup_error:
+            if failure is None:
+                raise
+            # Keep cancellation/deadline semantics, with cleanup failure visible.
+            raise failure from cleanup_error
