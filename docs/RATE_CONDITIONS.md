@@ -30,8 +30,9 @@ Limits are 1,024 entries per product, 16,384 UTF-8 bytes per quote, 512 ASCII
 characters per pointer, and 1 MiB of compact UTF-8 envelope JSON. Packaging rejects
 invalid or oversized present metadata; it never truncates quotes. Source export
 capture retains the full envelope even when a later package must reject its size.
-The unchanged v1 transfer limits also reject details exceeding 4 MiB of compressed
-(or encrypted compressed) asset bytes and total assets exceeding 8 MiB. A failed
+The active v1 transfer limits also reject details exceeding 8 MiB of compressed
+(or encrypted compressed) asset bytes and total assets exceeding 16 MiB; see
+`STORAGE_AND_PAYLOAD_BUDGETS.md` for the complete current policy. A failed
 budget leaves candidate assets for diagnosis but does not write a new manifest.
 
 Old clients can ignore the optional field; all existing product fields and the
