@@ -190,7 +190,7 @@ def test_reference_roundtrip_deterministic_and_wrong_product_lane_rejected(prepa
 @pytest.mark.parametrize('fault', [None, 'latest', 'wrong-repo', 'wrong-generation', 'outside', 'different-capability'])
 def test_readback_url_resolves_only_exact_immutable_adopted_asset(prepared, fault):
     from app_payload_common import DEFAULT_REPO
-    from app_payload_revisions_state import bundle_sha256
+    from app_payload_product_evidence_reference import bound_bundle_sha256 as bundle_sha256
     root, manifest, caps = prepared; namespace = 'product_evidence_v1'; cap = deepcopy(caps[namespace])
     manifest['repo'] = DEFAULT_REPO; manifest['tag'] = 'app-payload-2026-05-19-r000001'
     checksum = bundle_sha256(manifest)
@@ -215,7 +215,7 @@ def test_readback_url_resolves_only_exact_immutable_adopted_asset(prepared, faul
 
 def test_historical_compressor_encoding_does_not_change_adopted_asset_resolution(prepared, monkeypatch):
     from app_payload_common import DEFAULT_REPO
-    from app_payload_revisions_state import bundle_sha256
+    from app_payload_product_evidence_reference import bound_bundle_sha256 as bundle_sha256
     _, manifest, caps = prepared; namespace = 'product_evidence_v1'; cap = caps[namespace]
     blob = gzip.compress(canonical(cap), compresslevel=1, mtime=123)
     checksum = digest(blob); descriptor = manifest[namespace]['capability']

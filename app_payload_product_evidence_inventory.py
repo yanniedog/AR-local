@@ -11,8 +11,8 @@ from app_payload_optional_assets import iter_payload_assets
 from app_payload_product_evidence_contract import canonical, decode, digest, require
 from app_payload_product_evidence_delivery_check import read_stable, signature, verify_assets as verify_facts
 from app_payload_product_response_transport import verify_assets as verify_responses
-from app_payload_product_evidence_reference import LANES, decode_capability, reference_namespaces
-from app_payload_revisions_state import bundle_sha256, validate_manifest
+from app_payload_product_evidence_reference import LANES, decode_capability, reference_namespaces, bound_bundle_sha256
+from app_payload_revisions_state import validate_manifest
 
 MAX_FILES = 1024
 MAX_SECONDS = 600
@@ -66,8 +66,10 @@ def verify_local_inventory(root):
     raw, before = read_stable(root / 'manifest.json', MANIFEST_MAX_BYTES)
     manifest = decode(raw); namespaces = reference_namespaces(manifest)
     require(len(raw) <= MANIFEST_MAX_BYTES, 'root manifest exceeds 64 KiB')
-    validate_manifest(manifest)
-    base = {k: v for k, v in manifest.items() if k not in LANES}
+    # This complete verifier owns the detached namespaces; legacy iterators now
+    # reject them rather than silently enumerate only the financial assets.
+    base = {k: v for k, v in manifest.items() if k not in (*LANES, 'optional_product_evidence_status')}
+    validate_manifest(base)
     base_report = validate_payload_network_budget(base, manifest_bytes=len(raw), asset_root=root)
     inventory = {}; identities = {'manifest.json': before}
     for key, descriptor in _direct(base).items():
@@ -100,5 +102,5 @@ def verify_local_inventory(root):
     require(all(initial[name] == value for name, value in identities.items()), 'payload changed during inventory verification')
     _check(deadline)
     return dict(selection_verified=False, publication_authorized=False, manifest_sha256=digest(raw),
-                bundle_sha256=bundle_sha256(manifest), inventory=inventory, namespaces=totals,
+                bundle_sha256=bound_bundle_sha256(manifest), inventory=inventory, namespaces=totals,
                 base_network_budget=base_report, total_compressed_bytes=sum(x['bytes'] for x in inventory.values()))

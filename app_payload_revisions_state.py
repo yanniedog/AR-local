@@ -118,18 +118,8 @@ def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> Non
 
 def bundle_sha256(manifest: dict[str, Any]) -> str:
     validate_manifest(manifest)
-    value = {key: val for key, val in manifest.items()
-             if key not in {"generated_at", "tag", "payload_revision", "files"}}
-    value["files"] = {key: {k: v for k, v in entry.items() if k != "url"}
-                      for key, entry in manifest["files"].items()}
-    if NAMESPACE in value:
-        namespace = value[NAMESPACE]
-        value[NAMESPACE] = {**namespace, "file": {
-            key: val for key, val in namespace["file"].items() if key != "url"}}
-    if "public_rate_catalogue" in value:
-        from app_payload_public_rates import identity_namespace
-        value["public_rate_catalogue"] = identity_namespace(value["public_rate_catalogue"])
-    return digest(canonical(value))
+    from app_payload_bundle_identity import manifest_bundle_sha256
+    return manifest_bundle_sha256(manifest)
 
 
 def reserve_revision(

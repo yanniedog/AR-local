@@ -108,6 +108,17 @@ def decode_capability(namespace, reference, blob, manifest):
     return value
 
 
+def bound_bundle_sha256(manifest):
+    """Hash validated root bindings, not an inventory or publication proof."""
+    from app_payload_bundle_identity import manifest_bundle_sha256
+    from app_payload_revisions_state import validate_manifest
+    reference_namespaces(manifest)
+    base = {key: value for key, value in manifest.items()
+            if key not in (*LANES, 'optional_product_evidence_status')}
+    validate_manifest(base)
+    return manifest_bundle_sha256(manifest)
+
+
 def immutable_asset_url(manifest, namespace, entry, *, capability_blob=None):
     """Resolve only adopted capability/index/shard bytes in the fixed repository.
 
@@ -115,14 +126,14 @@ def immutable_asset_url(manifest, namespace, entry, *, capability_blob=None):
     predecessor validation remain separate, mandatory publisher responsibilities.
     """
     from app_payload_common import DEFAULT_REPO
-    from app_payload_revisions_state import bundle_sha256, revision_tag
+    from app_payload_revisions_state import revision_tag
     validate_reference(namespace, manifest.get(namespace), manifest)
     require(manifest.get('repo') == DEFAULT_REPO, 'evidence repository differs')
     revision = manifest.get('payload_revision')
     require(type(revision) is dict and type(revision.get('schema_version')) is int
             and revision['schema_version'] == 1, 'evidence requires immutable revision')
     tag = revision_tag(manifest['run_date'], revision.get('revision'))
-    identity = bundle_sha256(manifest)
+    identity = bound_bundle_sha256(manifest)
     require(manifest.get('tag') == tag and revision.get('bundle_sha256') == identity
             and revision.get('generation_id') == 'sha256-' + identity, 'evidence immutable bundle differs')
     candidates = [manifest[namespace]['capability']]
