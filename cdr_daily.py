@@ -666,6 +666,7 @@ def run_once(args: argparse.Namespace) -> int:
             staged_exports,
             args.db,
             previous_run_root=previous_run_root,
+            replay_parent=persistent_runs_root.parent / '.daily-replay-stage',
         )
         promotion = persist_ingest_status(staged_runs / date, staged_exports)
         if promotion is not None:
@@ -694,6 +695,7 @@ def run_once(args: argparse.Namespace) -> int:
             target_export_root,
             args.db,
             previous_run_root=previous_run_root,
+            replay_parent=persistent_runs_root.parent / '.daily-replay-stage',
         )
         promotion = persist_ingest_status(run_root / date, target_export_root)
         if promotion is not None:

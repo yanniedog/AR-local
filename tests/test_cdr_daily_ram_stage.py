@@ -95,8 +95,9 @@ def _configure(tmp_path, monkeypatch, *, rates=1):
         assert date == DATE
         _write_ingest(out_dir / date)
 
-    def build(_run_root, export_root, _db, *, previous_run_root=None):
+    def build(_run_root, export_root, _db, *, previous_run_root=None, replay_parent=None):
         assert previous_run_root is None
+        assert replay_parent == runs.parent / '.daily-replay-stage'
         cache = export_root / "dashboard-cache"
         cache.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
@@ -234,7 +235,7 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
 
     monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
 
-    def build(run_root, export_root, db_path, *, previous_run_root=None):
+    def build(run_root, export_root, db_path, *, previous_run_root=None, replay_parent=None):
         assert export_root == expected_stage
         assert not str(export_root).startswith(str(ram))
         return cdr_outputs.build_outputs(
@@ -242,6 +243,7 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
             export_root,
             db_path,
             previous_run_root=previous_run_root,
+            replay_parent=replay_parent,
         )
 
     monkeypatch.setattr(cdr_daily, "build_outputs", build)

@@ -279,6 +279,9 @@ def test_original_failed_capture_seals_stage_and_successful_retry_releases_it(tm
     args.ram_stage = not automatic_pi
     assert cdr_daily.run_once(args) == 1
     assert (ram / "runs" / DAY).exists()
+    replay = list((runs.parent / '.daily-replay-stage').glob('.cdr-facts-*'))
+    assert len(replay) == 1
+    assert not list((runs.parent / '.daily-export-stage' / DAY).glob('.cdr-facts-*'))
     assert list((state / "ram-capture-cleanup").glob("*.json"))
     marker = state / (DAY + ".done.json")
     before = marker.read_bytes()
@@ -289,6 +292,8 @@ def test_original_failed_capture_seals_stage_and_successful_retry_releases_it(tm
     assert stale_export.read_text() == 'Unrelated optional RAM export must survive'
     assert not (ram / "exports" / DAY / '_exports').exists()
     assert marker.read_bytes() == before
+    assert replay[0].is_dir()  # Separately owned replay evidence is not stage cleanup authority.
+    if os.name == 'posix': assert not list(replay[0].iterdir())
 
 
 def test_uncheckpointed_archive_is_preserved_without_sidecar_changes(completed):

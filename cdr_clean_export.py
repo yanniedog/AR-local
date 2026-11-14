@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
 from cdr_product_facts import clean_fact_rows
+from cdr_replay_rows import ReplayRows
 from cdr_rate_normalize import normalized_rate_value, rate_divisor
 from cdr_product_classification import has_savings_term_deposit_evidence
 from cdr_terms.discovery import discover_references
@@ -399,7 +400,7 @@ def append_bank_details(
             )
 
 
-def parse_banks_run(run_root: Path) -> Dict[str, Any]:
+def parse_banks_run(run_root: Path, *, facts_sink=None) -> Dict[str, Any]:
     banks_root = run_root / "banks"
     dataset: Dict[str, Any] = {
         "generated_at": utc_now(),
@@ -411,7 +412,7 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "features": [],
         "eligibility": [],
         "constraints": [],
-        "product_facts": [],
+        "product_facts": [] if facts_sink is None else facts_sink,
         "failures": read_failures(banks_root),
         "holder_attempts": [],
         "prd_unavailable": [],
@@ -473,5 +474,5 @@ def summary_counts(dataset: Mapping[str, Any]) -> Dict[str, int]:
     return {
         key: len(value)
         for key, value in dataset.items()
-        if isinstance(value, list)
+        if isinstance(value, (list, ReplayRows))
     }
