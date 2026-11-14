@@ -992,3 +992,18 @@ Late PR1161 review added7 threads at06:41UTC after merge. All now have evidenced
 
 Fresh raw producer binding after all late threads resolved PASS: private producer-binding-80b999-late-v2/producer-binding.json SHAc79ccdf7919f4e2e68c229c9a045983f7f596d4ce59fe8e2a811a6a02466454b. Use this fresh binding rather than the earlier three-thread snapshot. Main80b/appbf28 still frozen. Next root: expanded original receipts/all-assets copy + shippingbf28 audit; final cache validation and fullD027; seal/activation/manual00:30 install; fresh production publication assessment (a23baseline already publicPASS/no pending), new Drive/restore/dashboard and next natural acceptance. Held window dispatch and publication criteria work remain separate; largest retained6241-fact criteria measurement released offline only, not phone/public proof. Full consumer/watchlist scope and SMTP exception unchanged.
 
+
+
+## Checkpoint 77 - 2026-11-14: final expanded PASS; D027 dispatched for deployment
+
+User directs full deployment now. Root remains sole Pi operator. Final operational main remains80b999eb4e3198c7cea7e71fb689d4ceaeb1a6c9; shipping app remainsbf28a0c0139ddcce7b26c07a3daefc9f4335648e. Held consumer branches and PR1162 must not move main during this acceptance.
+
+- Recovered original expanded execution16461: exit0/PASS, no duplicate run. Operation /srv/ar-local/canary/expanded-payload-20261114-80b999eb4e31-r2. Original resultSHA367c031a88e2b5ae50a1d106f0661c8dbafa2db6d92395af6479920deea311ac; manifestSHAb495e9804ffdd94fb4a7439f9d537eb04cd2b7cb77d42fa6a9fda9e4b9e52948.15 originals copied and hash-reread unchanged; peakRSS1327316992B. Actual fresh5be generation, not priora23 production.
+- Releasedbf28 audited all10 exact assets:15PASS/3WARN, noFAIL. ReportSHA2496f6ee9ca5d571c249e58b47eb6b5e25c16c8da90ff020817868feeec13107. Warnings retain single-day/previous-day/public-head limitations. This is private compatibility, not publication or deployment.
+- Final-source qualified-runtime cache validationPASS210 entries; original failed6c provenance retained. Fresh08:35:25UTC native preflight queueempty/no native lease/jobs, daily/archiveinactive, source8590 unchanged,996958269440B diskfree.
+- Dispatched full D027 at08:36:10UTC, workflow43576601585: https://github.com/yanniedog/AR-local/actions/runs/43576601585 . Operation expected /srv/ar-local/quality-operation-gh-43576601585-1. Dispatch receipt is not canary acceptance. Recover actual terminal original receipts and empty queue before any subsequent AR mutation.
+- Deployment sequence: actual D027PASS -> separate actual D027payload bf28 audit -> fresh exactCI/app bindings -> reviewed stagev2 -> seal -> dry-run/activate exactsealedmanifest -> narrow manual00:30 installation -> Pi dashboard/verify:local -> actual newproduction/publication/Drive+independentrestore and naturalNov15 01:00 evidence. Preserve existing fallback and source/selection until accepted activation. No stalea23 pending replay: original marker absent and publicbaseline alreadyPASS.
+- Corrected held criteria semantic matching independently reviewed; final real6241fact measurement v2PASS1.983s/288862208BRSS. Source-only commit permitted after final tests, no main/release. Held dispatcher final installer/worker review remains independent work. SMTP intentionally deferred.
+
+Private resume: d027-final-80b999-dispatch-receipt.json, expanded-final-80b999-originals/, cache-final-80b999-verification.json, preflight-before-d027-final-80b999.json, producer-binding-80b999-late-v2/producer-binding.json. Fresh producer bindingSHA c79ccdf7919f4e2e68c229c9a045983f7f596d4ce59fe8e2a811a6a02466454b. Old source-bound recipes below are historical only.
+
