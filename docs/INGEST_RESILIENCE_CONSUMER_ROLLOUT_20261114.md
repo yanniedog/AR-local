@@ -132,3 +132,33 @@ ready-status support is being implemented on a separate child of `1e011e5d`.
 These are held source changes. Producer main remains frozen at `80b999eb` and
 shipping app at `bf28a0c0` for operational qualification; no optional feature
 flag, route, source selection or release has been activated by this continuation.
+
+## Checkpoint74: exact held dependency tips and remaining dispatch
+
+Remote source backups are verified for daily frozen intent573dd4278d53a0fb15de9ec5bf39d5c8638b4e35,
+immutable-only lazy alias storagea20145949cda7518a0b9c35d1852f60aa76604aa,
+and their combined producer acceptance9ff233a6944241495ba7dc9273c3b9d28d8c189f.
+Producer acceptance validates complete public/D027 evidence receipts and requires
+ready packages under the supported state backup tree; actual captured package
+freeze/restore and corruption checks passed. Raw daily archive scope is unchanged.
+
+App status/cachec2b7c8f1f03f5ab8f5c4725a8981c3d87396df38 and complete
+app audit332983ca66d979b307cadd9a33e21535adb6a178 are also remotely backed up.
+The audit traverses every declared asset with bounded memory/time and exact
+hash/schema checks. Actual retained152asset/648625fact/3176body packages passed;
+the explicit-status control preserves original asset bytes and has matching
+Python/app receipts. Approximate584MB local peak is measured for this retained
+package only, not a phone or the newer larger capture. No public/head/rendered
+or full-population authority follows from these private audits.
+
+Flags alone still cannot prepare daily packages. The next held child of9ff adds
+post-financial immutable preparation requests, bounded stages and separate
+optional revisions through existing watchdog opportunities. Financial publication
+and backup remain independent. Root approved source implementation of a narrow
+parent-bound resource-controlled worker where existing primitives do not fit;
+no new timer, nested queue/native lease, raised resource cap or runtime installation
+is authorized by a source receipt. Preserve fixed original retry bytes and
+source/head supersession. Main80b999 and shippingbf28 remain frozen. Integrate,
+CI/review/merge/release and independently qualify the whole train before flags.
+Typed comparison, full external terms, non-rate change transport and durable
+watchlists still require implementation and acceptance.
