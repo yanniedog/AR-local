@@ -1,5 +1,6 @@
 """Independent limits for a prepared, lazy descriptive-evidence delivery lane."""
 from dataclasses import dataclass
+import math
 
 from app_payload_product_evidence_contract import (
     FACT_TEXT, IDENTITY, SHA, SCOPE, canonical, decode, fields, identity, require,
@@ -8,6 +9,20 @@ from app_payload_product_evidence_contract import (
 
 SCHEMA = "ar-product-evidence-delivery-v1"
 JSON_FIELDS = ("value", "source_value", "qualifiers", "min_value", "max_value")
+
+
+def bounded_json(value):
+    require(len(canonical(value)) <= 512 * 1024, "descriptive JSON exceeds byte budget")
+    pending, nodes = [(value, 0)], 0
+    while pending:
+        item, depth = pending.pop(); nodes += 1
+        require(depth <= 64 and nodes <= 65536, "descriptive JSON structure exceeds budget")
+        if type(item) in (int, float):
+            try: finite = math.isfinite(item)
+            except OverflowError: finite = False
+            require(finite, "nonfinite descriptive JSON")
+        if isinstance(item, dict): pending.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list): pending.extend((child, depth + 1) for child in item)
 
 
 @dataclass(frozen=True)
@@ -30,6 +45,7 @@ class DeliveryLimits:
 
 def wire_fact(value):
     validate_fact(value)
+    for key in JSON_FIELDS: bounded_json(value[key])
     return {**{key: value[key] for key in FACT_TEXT},
             **{key + "_json": canonical(value[key]).decode("utf-8") for key in JSON_FIELDS}}
 
@@ -39,6 +55,7 @@ def validate_wire_fact(value):
     require(all(type(value[key + "_json"]) is str for key in JSON_FIELDS), "evidence JSON text required")
     original = {**{key: value[key] for key in FACT_TEXT},
                 **{key: decode(value[key + "_json"]) for key in JSON_FIELDS}}
+    for key in JSON_FIELDS: bounded_json(original[key])
     validate_fact(original)
 
 

@@ -113,3 +113,101 @@ def test_route_cross_generation_or_duplicate_page_is_rejected(source, tmp_path):
     altered["products"][0]["pages"].append(altered["products"][0]["pages"][0])
     with pytest.raises(ValueError, match="duplicate"):
         validate_index(altered, cap)
+
+
+def test_completed_delivery_readback_accounts_for_all_real_facts(source, tmp_path):
+    from app_payload_product_evidence_delivery_check import verify_prepared
+    _, snapshot, output, prepared = pack(source, tmp_path)
+    report = verify_prepared(output, expected_binding=prepared['capability']['binding'])
+    assert report['totals']['facts'] == snapshot['totals']['facts']
+    assert report['totals']['products'] == snapshot['totals']['products']
+    assert report['publication_authorized'] is False
+
+
+@pytest.mark.parametrize('fault', ['missing', 'tampered', 'partial', 'marker', 'wrong-binding'])
+def test_completion_marker_never_substitutes_verified_assets(source, tmp_path, fault):
+    from app_payload_product_evidence_delivery_check import verify_prepared
+    _, _, output, prepared = pack(source, tmp_path)
+    binding = deepcopy(prepared['capability']['binding'])
+    shard = output / prepared['capability']['shards'][0]['name']
+    if fault == 'missing': shard.unlink()
+    elif fault == 'tampered': shard.write_bytes(b'broken')
+    elif fault == 'partial': (output / 'prepared.pending').write_bytes(b'interrupted')
+    elif fault == 'marker': (output / 'prepared.json').write_bytes(b'{}')
+    else: binding['core_sha256'] = 'f' * 64
+    with pytest.raises((ValueError, OSError)):
+        verify_prepared(output, expected_binding=binding)
+
+
+def test_compression_work_is_not_repeated_for_every_pending_page(source, tmp_path, monkeypatch):
+    compress, calls = transport.compressed, []
+    def measured(raw):
+        calls.append(len(raw)); return compress(raw)
+    monkeypatch.setattr(transport, 'compressed', measured)
+    _, snapshot, _, _ = pack(source, tmp_path)
+    assert len(calls) < snapshot['totals']['pages'] // 2
+
+
+def test_failed_readback_never_installs_completion_marker(source, tmp_path, monkeypatch):
+    import app_payload_product_evidence_delivery_check as check
+    def fail(*_args, **_kwargs): raise ValueError('readback failure')
+    monkeypatch.setattr(check, 'verify_assets', fail)
+    with pytest.raises(ValueError, match='readback failure'): pack(source, tmp_path)
+    assert not (tmp_path / 'delivery/prepared.json').exists()
+
+
+@pytest.mark.parametrize('case', ['depth', 'nodes', 'infinite'])
+def test_wire_source_json_has_same_bounded_structure_as_consumer(case):
+    from app_payload_product_evidence_transport_contract import bounded_json
+    value = None
+    if case == 'depth':
+        for _ in range(66): value = [value]
+    elif case == 'nodes': value = [None] * 65536
+    else: value = 10 ** 400
+    with pytest.raises(ValueError): bounded_json(value)
+    bounded_json({'unrounded': 9007199254740993, 'unknown': [None, '', False]})
+
+
+@pytest.mark.parametrize('fault', ['unrouted', 'sequence', 'duplicate-fact', 'gzip-trailer'])
+def test_complete_readback_rejects_semantic_corruption_even_with_matching_hashes(source, tmp_path, fault):
+    from app_payload_product_evidence_contract import canonical
+    from app_payload_product_evidence_delivery_check import verify_assets
+    _, _, output, prepared = pack(source, tmp_path)
+    cap = prepared['capability']; index = read_asset(output, cap['index'])
+    old = cap['shards'][0]; shard = read_asset(output, old)
+    if fault == 'unrouted': shard['pages'].append(deepcopy(shard['pages'][0]))
+    elif fault == 'sequence': shard['pages'][0]['sequence'] += 1
+    elif fault == 'duplicate-fact':
+        assert shard['pages'][0]['identity'] == shard['pages'][1]['identity']
+        shard['pages'][1]['facts'][0] = deepcopy(shard['pages'][0]['facts'][0])
+
+    def install(kind, value, trailer=b''):
+        raw = canonical(value); blob = transport.compressed(raw) + trailer; sha = digest(blob)
+        name = f'product-evidence-{kind}-{sha}.json.gz'
+        (output / name).write_bytes(blob)
+        return dict(name=name, sha256=sha, bytes=len(blob), decoded_bytes=len(raw))
+
+    changed = install('shard', shard, transport.compressed(b'') if fault == 'gzip-trailer' else b'')
+    cap['shards'][0] = changed
+    for product in index['products']:
+        for page in product['pages']:
+            if page['shard'] == old['sha256']: page['shard'] = changed['sha256']
+    cap['index'] = install('index', index)
+    with pytest.raises(ValueError, match='unrouted|duplicate product fact|gzip boundary'):
+        verify_assets(output, cap)
+
+
+def test_interrupted_marker_link_is_not_completed_delivery(source, tmp_path, monkeypatch):
+    from app_payload_product_evidence_delivery_check import verify_prepared
+    original = transport.os.link
+    def interrupted(*args):
+        original(*args)
+        if args[1].name == 'prepared.json':
+            raise OSError('interrupted before pending cleanup')
+    monkeypatch.setattr(transport.os, 'link', interrupted)
+    with pytest.raises(OSError, match='interrupted'): pack(source, tmp_path)
+    output = tmp_path / 'delivery'
+    prepared = decode((output / 'prepared.json').read_bytes())
+    assert (output / 'prepared.pending').exists()
+    with pytest.raises(ValueError, match='unsafe|partial'):
+        verify_prepared(output, expected_binding=prepared['capability']['binding'])

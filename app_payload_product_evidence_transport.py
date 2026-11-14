@@ -18,7 +18,7 @@ from app_payload_product_evidence_transport_contract import (
 
 def compressed(raw):
     output = io.BytesIO()
-    with gzip.GzipFile(fileobj=output, mode="wb", filename="", mtime=0) as stream:
+    with gzip.GzipFile(fileobj=output, mode="wb", filename="", compresslevel=6, mtime=0) as stream:
         stream.write(raw)
     return output.getvalue()
 
@@ -34,6 +34,7 @@ class Packer:
     def __init__(self, output, binding, limits):
         self.output, self.binding, self.limits = output, binding, limits
         self.pending, self.routes, self.shards = [], [], []
+        self.pending_bytes = 0
         self.raw_bytes, self.compressed_bytes = 0, 0
         self.deadline = time.monotonic() + 600
 
@@ -43,10 +44,10 @@ class Packer:
     def envelope(self, pages):
         return dict(schema=SCHEMA, binding=self.binding, pages=pages)
 
-    def asset(self, kind, raw):
+    def asset(self, kind, raw, blob=None):
         self.check()
         require(len(raw) <= getattr(self.limits, kind + "_raw_bytes"), "decoded delivery asset exceeds budget")
-        blob = compressed(raw)
+        blob = compressed(raw) if blob is None else blob
         require(len(blob) <= getattr(self.limits, kind + "_compressed_bytes"), "compressed delivery asset exceeds budget")
         self.raw_bytes += len(raw)
         self.compressed_bytes += len(blob)
@@ -60,28 +61,37 @@ class Packer:
     def flush(self):
         if not self.pending:
             return
+        self.flush_group(self.pending, self.routes)
+        self.pending, self.routes, self.pending_bytes = [], [], 0
+
+    def flush_group(self, pages, routes):
+        self.check()
+        value = self.envelope(pages)
+        raw = canonical(value)
+        blob = compressed(raw)
+        if len(blob) > self.limits.shard_compressed_bytes:
+            require(len(pages) > 1, "single evidence page exceeds compressed delivery budget")
+            middle = len(pages) // 2
+            self.flush_group(pages[:middle], routes[:middle])
+            self.flush_group(pages[middle:], routes[middle:])
+            return
         require(len(self.shards) < self.limits.shards, "delivery shard count exceeded")
-        value = self.envelope(self.pending)
         validate_shard(value, {"binding": self.binding})
-        descriptor = self.asset("shard", canonical(value))
+        descriptor = self.asset("shard", raw, blob)
         self.shards.append(descriptor)
-        for position, (route, page) in enumerate(zip(self.routes, self.pending)):
+        for position, (route, page) in enumerate(zip(routes, pages)):
             route["pages"].append(dict(shard=descriptor["sha256"], page=position, facts=len(page["facts"])))
-        self.pending, self.routes = [], []
 
     def append(self, route, page):
         self.check()
-        candidate = canonical(self.envelope([*self.pending, page]))
-        # Check compressed size too; pathological incompressible evidence is never truncated.
-        if self.pending and (len(candidate) > self.limits.shard_raw_bytes
-                             or len(compressed(candidate)) > self.limits.shard_compressed_bytes):
+        page_bytes = len(canonical(page))
+        envelope_bytes = len(canonical(self.envelope([])))
+        if self.pending and envelope_bytes + self.pending_bytes + page_bytes + len(self.pending) > self.limits.shard_raw_bytes:
             self.flush()
-            candidate = canonical(self.envelope([page]))
-        require(len(candidate) <= self.limits.shard_raw_bytes
-                and len(compressed(candidate)) <= self.limits.shard_compressed_bytes,
-                "single evidence page exceeds delivery budget")
+        require(envelope_bytes + page_bytes <= self.limits.shard_raw_bytes, "single evidence page exceeds delivery budget")
         self.pending.append(page)
         self.routes.append(route)
+        self.pending_bytes += page_bytes
 
 
 def pack_snapshot(snapshot_root, output, *, expected_source, core_sha256, details_sha256, limits=DeliveryLimits()):
@@ -119,6 +129,8 @@ def pack_snapshot(snapshot_root, output, *, expected_source, core_sha256, detail
                       shards=writer.shards, products=len(products), facts=sum(p["facts"] for p in products))
     validate_capability(capability, limits=limits)
     validate_index(index, capability, limits=limits)
+    from app_payload_product_evidence_delivery_check import verify_assets
+    verify_assets(output, capability, limits=limits, deadline=writer.deadline)
     require(bounded(root / "snapshot.json", Limits().index_bytes) == original, "snapshot changed during packing")
     writer.check()
     prepared = dict(publication_authorized=False, selection_verified=False, capability=capability)
