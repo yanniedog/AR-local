@@ -91,3 +91,25 @@ terms completeness, change transport and watchlist notifications are separate
 completion milestones. Preserve consumer-completeness-next-steps.md for the
 original detailed gap trace; no headless D027/old APK/local pack proof closes the
 new rendered/background/Drive acceptance requirements.
+
+## 17:26 continuation: frozen retry and recursive inventory adapters
+
+Reviewed held producer tip 0fa80d702ae4df3b56b5d8827f6df4bfbc54e99f
+is published on agent/product-evidence-runtime-freeze-20261114, atop
+the earlier 89a03f3 full stack. It adds externally pinned frozen adoption/resume,
+complete capability/index/shard inventory and byte-verification distinctions,
+and shared unchanged canonical bundle identity. Unadapted legacy publishers
+reject the optional namespace rather than publish an incomplete inventory.
+163 focused controls passed; independent review is clear. This is source backup,
+not a merged release, actual daily wiring, selected-source acceptance or activation.
+The exact contract is contracts/product_evidence/frozen-delivery-v1.md on that branch.
+
+Next work proceeds on separate child branches: window owns daily/pending frozen
+intent and separate optional-retry state; publication owns complete authenticated
+delivery/revision/readback/archive/prune adapters. The initial daily intent exists
+before actual financial base bytes, so it must not claim a ready base-bound
+package. A later create-once descriptor must bind actual base bytes before any
+revision reservation; retries retain that same descriptor even if new packages
+appear. Optional retries require a new revision and verified predecessor, and
+must never clear financial pending state. Default flags remain disabled. The
+later typed comparison, full terms, change-ledger and watchlist gaps above remain.
