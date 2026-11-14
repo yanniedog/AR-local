@@ -1,5 +1,21 @@
 # Ready history compiler
 
+## Expanded-source compatibility candidate (2026-11-14)
+
+The current pair is copied byte-for-byte from AR-app PR486, reviewed source
+commit `656db364c05b2c57ef07006c2e338e129c061cdb`, compiler SHA-256
+`ee91ff248a3afc6b6e99cbe45f588ee621a210a01efdea1f5c197a52e6233ab3`.
+It changes only the original-source provenance size ceiling to 512 MiB,
+matching the bounded producer reader. App asset/download/inflation limits and
+history/cohort semantics remain unchanged. The app explicitly retains the
+previous `c6d1ff...` compiler as compatible while the producer rolls forward.
+Regenerating the retained real fixture changes only its compiler receipt.
+
+This is a source candidate: release qualification, exact copied-byte comparison,
+supervised expanded payload/app validation and deployment are separate gates.
+Do not publish expanded history until the compatible app is released and verified.
+The older entries below remain historical evidence, not the current compiler pin.
+
 ## Current proposed producer artifact (2026-10-31)
 
 The compiler and manifest in this checkout are exact Git blobs from AR-app

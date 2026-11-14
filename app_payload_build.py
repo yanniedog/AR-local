@@ -360,10 +360,17 @@ def _compute_payload(
     if not run_date:
         raise ValueError("latest.json has no run_date")
     from app_payload_bank_rate_source import require_selected_current_export
-    if not archive_snapshot:
-        require_selected_current_export(exports_dir, run_date)
+    selected_contract = None if archive_snapshot else require_selected_current_export(exports_dir, run_date)
     from app_payload_banks_stream import read_banks
-    banks, _, _ = read_banks(_find_banks_json(exports_dir, run_date))
+    banks_path = _find_banks_json(exports_dir, run_date)
+    expected = None
+    if selected_contract is not None:
+        name = banks_path.relative_to(exports_dir).as_posix()
+        records = [item for item in selected_contract["artifacts"] if item["path"] == name]
+        if len(records) != 1:
+            raise ValueError("Current banks source is absent from selected contract")
+        expected = records[0]
+    banks, _, _ = read_banks(banks_path, expected=expected)
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
     from cdr_public_rates_legacy import annotate_legacy_rates

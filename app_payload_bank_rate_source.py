@@ -17,17 +17,17 @@ _UNRESOLVED_SELECTION = {
 }
 
 
-def require_selected_current_export(exports_dir: Path, day: str) -> None:
+def require_selected_current_export(exports_dir: Path, day: str) -> dict | None:
     """A current core and its last history point must describe one observation."""
     root = _runs_root(exports_dir)
     if root is None:
-        return
+        return None
     state = root.parent / "state"
     contract, selected = publication_source(state, day, root / day / "_exports")
     if contract is not None:
         if selected.resolve() != exports_dir.resolve():
             raise ValueError("Current payload export is not the selected observation")
-        return
+        return contract
     if any((state / "export-contracts-v2" / day).glob("*.json")):
         raise ValueError("Current payload has an invalid retained contract")
     candidates = list((root / day).glob("_exports/dashboard-cache/" + day + "/banks.json"))

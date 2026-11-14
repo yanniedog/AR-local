@@ -239,6 +239,20 @@ def test_current_payload_rejects_an_unselected_export_before_building(tmp_path, 
         _compute_payload(original)
 
 
+def test_current_selected_source_hash_is_checked_before_payload_derivation(tmp_path, banks, monkeypatch):
+    import app_payload_build as builder
+    exports = save_export(tmp_path, banks)
+    path = exports / "dashboard-cache" / DAY / "banks.json"
+    value = json.loads(path.read_bytes())
+    value["products"][0]["description"] = "Deliberate retained-source corruption control"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("derived payload work started before source validation")
+    monkeypatch.setattr(builder, "_stable_payload_coverage", forbidden)
+    with pytest.raises(ValueError, match="differs from its contract"):
+        builder._compute_payload(exports)
+
+
 @pytest.mark.parametrize("canonical_exists", [False, True])
 def test_current_payload_rejects_noncanonical_legacy_export_layout(tmp_path, banks, canonical_exists):
     import shutil
