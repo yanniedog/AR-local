@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import json
 import socket
 import subprocess
@@ -70,13 +70,39 @@ def load_state() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def save_state(state: dict[str, Any]) -> None:
-    ensure_runtime_data_writable(REPO_ROOT)
-    path = state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(path)
+def save_state(state: dict[str, Any]) -> bool:
+    # Even the writability probes mutate production directory identities. Keep
+    # them inside the same exclusion as the state replacement, before any mkdir.
+    with _state_write_guard() as reason:
+        if reason:
+            print(f"pi_runtime_health: state persistence deferred ({reason})")
+            return False
+        ensure_runtime_data_writable(REPO_ROOT)
+        path = state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(path)
+    return True
+
+
+@contextmanager
+def _state_write_guard():
+    # Admission stays excluded until the native lease and write have completed.
+    # Catch entry failures only: actual persistence/cleanup errors must propagate.
+    with ExitStack() as stack:
+        reason = "shared_queue_occupied_or_unavailable"
+        try:
+            stack.enter_context(_queue_network_guard())
+            reason = _production_activity_block_reason()
+            if not reason:
+                reason = "production_lock_unavailable"
+                stack.enter_context(production_lock(
+                    data_state_root(REPO_ROOT) / "daily-ingest.lock", "runtime-health-state"))
+                reason = _production_activity_block_reason(include_ingest_lock=False)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            reason = reason or "production_activity_unavailable"
+        yield reason
 
 
 def probe_urls() -> tuple[str, ...]:
