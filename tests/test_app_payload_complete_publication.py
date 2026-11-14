@@ -227,10 +227,13 @@ def test_interrupted_optional_selection_recovers_only_exact_retained_parent(payl
     assert store.promotions==2
 
 
-def test_actual_alias_publisher_keeps_recursive_inventory_and_retries_cleanly(payload,tmp_path,monkeypatch):
+@pytest.mark.parametrize('dated',[False,True])
+def test_actual_alias_publisher_keeps_recursive_inventory_without_duplicate_lazy_copies(payload,tmp_path,monkeypatch,dated):
     import app_payload_publish as publisher
     from release_transport import decrypt_transport
     root,_=payload;store=Store();selected=publish(root,store,tmp_path/'state');protected=[];uploads=[]
+    tag=f'app-payload-{selected.manifest["run_date"]}' if dated else DEFAULT_TAG
+    store.objects[tag,'unknown-preserve']=b'untouched'
     key=bytes(range(32));keyfile=tmp_path/'key';keyfile.write_text(key.hex());monkeypatch.setenv('AR_LOCAL_PAYLOAD_KEY_FILE',str(keyfile))
     monkeypatch.setattr('app_payload_revisions_github.GitHubRevisionStore',lambda *a,**k:store)
     monkeypatch.setattr('app_payload_v2_archive.GitHubRevisionStore',lambda *a,**k:store)
@@ -239,30 +242,50 @@ def test_actual_alias_publisher_keeps_recursive_inventory_and_retries_cleanly(pa
         if argv[1]=='api':
             if '--paginate' in argv:
                 values=[dict(id=i+1,name=name) for i,(_,name) in enumerate(
-                    key for key in store.objects if key[0]==DEFAULT_TAG)]
+                    key for key in store.objects if key[0]==tag)]
                 output=json.dumps([values])
-            else:output=json.dumps(dict(id=1,tag_name=DEFAULT_TAG))
+            else:output=json.dumps(dict(id=1,tag_name=tag))
         elif argv[1:3]==['release','upload']:
             paths=[Path(p) for p in argv[4:argv.index('--repo')]];uploads.append([p.name for p in paths])
-            for path in paths:store.objects[DEFAULT_TAG,path.name]=decrypt_transport(path.read_bytes(),lambda _:key)
+            for path in paths:store.objects[tag,path.name]=decrypt_transport(path.read_bytes(),lambda _:key)
             output=''
         else:output=''
         return SimpleNamespace(returncode=0,stdout=output,stderr='')
     def live(*args):
-        raw=store.objects.get((DEFAULT_TAG,'manifest.json'))
+        raw=store.objects.get((tag,'manifest.json'))
         return ('present',json.loads(raw)) if raw else ('missing',None)
     functions={'_gh_available':lambda:'gh','_gh_authed':lambda gh:True,'subprocess':SimpleNamespace(run=run),
         '_live_manifest_status':live,'_manifest_should_replace':publisher._manifest_should_replace,
         '_update_release_title':lambda *a:True,'_prune_release_assets':lambda *a:protected.append(a[-1]) or 0}
     monkeypatch.setattr(publisher,'_app_payload',functions.__getitem__)
-    assert publisher.publish_payload(selected.archive_dir,repo=DEFAULT_REPO)
-    expected={entry['name'] for _,entry in complete_assets(selected.manifest,root=selected.archive_dir)}
-    assert protected==[expected] and expected <= {name for tag,name in store.objects if tag==DEFAULT_TAG}
+    entries=complete_assets(selected.manifest,root=selected.archive_dir)
+    expected={entry['name'] for _,entry in entries}
+    lazy={entry['name'] for name,entry in entries if name.startswith(tuple(lane+'_' for lane in LANES))}
+    assert lazy
+    # Complete immutable evidence remains mandatory BEFORE any alias mutation.
+    missing=next((selected.manifest['tag'],name) for name in lazy if '-shard-' in name)
+    original=store.objects.pop(missing);before=dict(store.objects)
+    with pytest.raises(ValueError,match='immutable evidence asset'):
+        publisher.publish_payload(selected.archive_dir,repo=DEFAULT_REPO,tag=tag)
+    assert not uploads and store.objects==before
+    store.objects[missing]=original;store.reads.clear()
+    assert publisher.publish_payload(selected.archive_dir,repo=DEFAULT_REPO,tag=tag)
+    alias_names={name for release,name in store.objects if release==tag}
+    assert protected==([] if dated else [expected]) and expected-lazy <= alias_names
+    assert lazy.isdisjoint(alias_names) and store.objects[tag,'unknown-preserve']==b'untouched'
+    assert {name for release,name,encrypted in store.reads if release==selected.manifest['tag'] and encrypted} >= expected
+    assert {name for release,name,encrypted in store.reads if release==tag and encrypted} >= expected-lazy
+    assert lazy.isdisjoint({name for batch in uploads for name in batch})
     assert uploads[-1]==['manifest.json'] and all(len(batch)<=16 for batch in uploads)
     # Previously the missing-alias path left an empty, unbound backup directory.
     assert not (selected.archive_dir/'.prev-manifest').exists()
-    publisher.publish_payload(selected.archive_dir,repo=DEFAULT_REPO)
+    publisher.publish_payload(selected.archive_dir,repo=DEFAULT_REPO,tag=tag)
     validate_manifest(selected.manifest,selected.archive_dir)
+    copied=selected.manifest['files']['core']['name'];store.objects[tag,copied]=b'corrupted alias financial asset'
+    prior_uploads=len(uploads)
+    with pytest.raises(RevisionError,match='public asset failed encrypted byte verification'):
+        publisher.publish_payload(selected.archive_dir,repo=DEFAULT_REPO,tag=tag)
+    assert len(uploads)==prior_uploads and store.objects[tag,'unknown-preserve']==b'untouched'
 
 
 @pytest.mark.parametrize('fault',[None,'failed','duplicate','wrong-tag','oversized'])

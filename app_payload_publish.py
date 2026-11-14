@@ -423,6 +423,12 @@ def publish_payload(
         from app_payload_revisions_github import GitHubRevisionStore
         from app_payload_publication_assets import verify_selected_remote
         verify_selected_remote(GitHubRevisionStore(repo, gh=gh), manifest, payload_dir, inventory)
+        # Evidence URLs always name the verified immutable revision. Aliases
+        # retain their financial copies; duplicating every lazy shard here only
+        # consumes release slots and cannot serve an additional consumer route.
+        from app_payload_product_evidence_reference import LANES
+        data_assets = [payload_dir / entry['name'] for key, entry in inventory
+                       if not key.startswith(tuple(lane + '_' for lane in LANES))]
 
     # Ensure the release/tag exists (idempotent). All calls use a fixed argv with
     # shell=False and a timeout; repo/tag/paths are operator-controlled, not untrusted.

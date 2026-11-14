@@ -51,3 +51,19 @@ Tests use retained real products/rates/facts/original bodies and offline protoco
 faults. They are not Pi, public delivery, shipping app or device acceptance.
 Daily frozen-candidate preparation/retry integration and coordinated app/Worker
 release remain separate held dependencies; no environment flag is enabled here.
+
+## Compatibility alias storage
+
+The complete local inventory and the selected immutable manifest **and every
+asset** must verify before an evidence-bearing compatibility alias is mutated.
+Detached capability/index/shard URLs resolve only to that immutable revision.
+The dated/rolling aliases therefore copy and verify their financial assets but
+do not duplicate lazy evidence files. Their manifest remains identical to the
+selected immutable manifest; capability references and bundle identity do not
+change. Mandatory full immutable readback, encrypted financial alias readback,
+source/selection guards and promotion fences remain independent requirements.
+
+No remote objects are deleted. Complete authenticated listing and the finite
+100-page bound remain; prior duplicates/unknown objects are preserved. Financial
+alias asset growth still needs separately reviewed retention before service
+limits are reached. This storage optimization creates no deployment authority.
