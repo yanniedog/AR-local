@@ -296,16 +296,16 @@ def native_lock_factory(repo=Path('/srv/ar-local/AR-local')):
         sys.modules[spec.name] = module
         try:
             spec.loader.exec_module(module)
+            factory = getattr(module, 'production_lock', None)
+            if not callable(factory):
+                raise ValueError('deployed production lock function unavailable')
+            return factory
         except BaseException:
             if previous is None:
                 sys.modules.pop(spec.name, None)
             else:
                 sys.modules[spec.name] = previous
             raise
-        factory = getattr(module, 'production_lock', None)
-        if not callable(factory):
-            raise ValueError('deployed production lock function unavailable')
-        return factory
     finally:
         sys.path[:] = old_path
 

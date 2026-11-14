@@ -303,6 +303,7 @@ def test_deployed_operation_lock_imports_without_sys_modules_entry(tmp_path, mon
     monkeypatch.setattr(module, '_current_boot_id', lambda: '11111111-1111-4111-8111-111111111111')
     with module.production_lock(tmp_path / 'daily-ingest.lock', 'shared-pi-host-task:test') as lease:
         assert isinstance(lease, module.OwnedProductionLock)
+        assert isinstance(hash(lease), int)
         assert lease.verified_record()['role'] == 'shared-pi-host-task:test'
         with pytest.raises(AttributeError):
             lease.role = 'mutated'
@@ -319,3 +320,15 @@ def test_native_lock_factory_loads_repo_operation_lock(tmp_path, monkeypatch):
         assert sys.modules['_shared_pi_native_lock'].production_lock is factory
     finally:
         sys.modules.pop('_shared_pi_native_lock', None)
+
+
+def test_native_lock_factory_cleans_sys_modules_on_missing_callable(tmp_path, monkeypatch):
+    import pi_shared_queue_native as native
+    fake_repo = tmp_path / 'repo'
+    fake_repo.mkdir()
+    (fake_repo / 'ar_local_operation_lock.py').write_text('production_lock = 123\n', encoding='utf-8')
+    monkeypatch.setattr(native, 'verify_native_deployment', lambda: None)
+    monkeypatch.delitem(sys.modules, '_shared_pi_native_lock', raising=False)
+    with pytest.raises(ValueError, match='deployed production lock function unavailable'):
+        native.native_lock_factory(fake_repo)
+    assert '_shared_pi_native_lock' not in sys.modules

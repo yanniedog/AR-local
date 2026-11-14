@@ -186,6 +186,9 @@ class OwnedProductionLock:
             return NotImplemented
         return tuple(getattr(self, f) for f in self.__slots__) == tuple(getattr(other, f) for f in self.__slots__)
 
+    def __hash__(self) -> int:
+        return hash(tuple(getattr(self, f) for f in self.__slots__))
+
     def __repr__(self) -> str:
         fields = ", ".join(f"{name}={getattr(self, name)!r}" for name in self.__slots__)
         return f"{type(self).__name__}({fields})"
