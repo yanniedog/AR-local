@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any, Callable, ContextManager, Dict, Iterable, List, Optional, Tuple
 
 from pi_payload_freshness import fresh_document_url
-from app_payload_optional_assets import iter_payload_assets, executable_asset_url
+from app_payload_optional_assets import executable_asset_url
+from app_payload_publication_assets import complete_assets, has_evidence, verify_publication_root, asset_url
 
 from app_payload_common import (
     DATED_TAG_PREFIX,
@@ -365,10 +366,14 @@ def publish_payload(
     if any(key in manifest for key in ("bank_rate_history_catalogue", "bank_rate_history_catalogue_packed", "bank_rate_history_ready")):
         from app_payload_revisions_state import validate_manifest
         validate_manifest(manifest, payload_dir)
-    for key, entry in iter_payload_assets(manifest):
-        if key.startswith(('executable_v2_','monetary_v3_','monetary_v4_')):
+    verify_publication_root(payload_dir, manifest)
+    inventory = complete_assets(manifest, root=payload_dir)
+    for key, entry in inventory:
+        if has_evidence(manifest):
+            asset_url(manifest, key, entry, repo=repo, inventory=inventory)
+        elif key.startswith(('executable_v2_','monetary_v3_','monetary_v4_')):
             executable_asset_url(manifest,entry,repo=repo)
-    names = [entry["name"] for _, entry in iter_payload_assets(manifest)]
+    names = [entry["name"] for _, entry in inventory]
     # Upload the data assets first and the manifest LAST, so the rolling manifest is
     # never left pointing at a missing/half-replaced asset if an upload fails.
     data_assets = [payload_dir / n for n in names]
@@ -414,6 +419,11 @@ def publish_payload(
         )
         return False
 
+    if has_evidence(manifest):
+        from app_payload_revisions_github import GitHubRevisionStore
+        from app_payload_publication_assets import verify_selected_remote
+        verify_selected_remote(GitHubRevisionStore(repo, gh=gh), manifest, payload_dir, inventory)
+
     # Ensure the release/tag exists (idempotent). All calls use a fixed argv with
     # shell=False and a timeout; repo/tag/paths are operator-controlled, not untrusted.
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
@@ -433,18 +443,24 @@ def publish_payload(
     # byte verification below. Never delete an
     # asset the current manifest still references (an interrupted clobber could lose it).
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    listed = _app_payload("subprocess").run(
-        [gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q", ".assets[].name"],
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
-    )
-    existing = set(listed.stdout.split()) if listed.returncode == 0 else set()
+    if has_evidence(manifest):
+        from app_payload_publication_listing import list_asset_names
+        existing = list_asset_names(gh, repo, tag, runner=_app_payload("subprocess").run)
+    else:
+        listed = _app_payload("subprocess").run(
+            [gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q", ".assets[].name"],
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+        )
+        existing = set(listed.stdout.split()) if listed.returncode == 0 else set()
     to_upload = [a for a in data_assets if a.name not in existing]
     if to_upload:
+        batch_size = 16 if has_evidence(manifest) else len(to_upload)
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-        secure_upload(
-            [gh, "release", "upload", tag, *[str(a) for a in to_upload], "--repo", repo], runner=_app_payload("subprocess").run,
-            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
-        )
+        for start in range(0, len(to_upload), batch_size):
+            secure_upload(
+                [gh, "release", "upload", tag, *[str(a) for a in to_upload[start:start+batch_size]], "--repo", repo],
+                runner=_app_payload("subprocess").run, check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+            )
     from app_payload_revisions_github import GitHubRevisionStore
     from app_payload_revisions_state import RevisionError
     store = GitHubRevisionStore(repo, gh=gh)
@@ -492,7 +508,8 @@ def publish_payload(
     backup_gen = str((live or {}).get("generated_at") or "") if status == "present" else None
     backup_dir = payload_dir / ".prev-manifest"
     backup_manifest = backup_dir / "manifest.json"
-    backup_dir.mkdir(exist_ok=True)
+    if status == 'present' or not has_evidence(manifest):
+        backup_dir.mkdir(exist_ok=True)
     if backup_manifest.exists():
         backup_manifest.unlink()
     if status == "present" and live is not None:
