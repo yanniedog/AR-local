@@ -37685,3 +37685,19 @@ Full D027 hosted run43544626096 dispatched once02:08:38UTC against exact6c26 and
 
 Held optional evidence/adoption review found repeated full-source proof accounting would exhaust lifetime100k entry budget on actual9,959-artifact source. Fix is scoped to explicit finite proof phases, preserving absolute600s deadline and outer resources; independent review remains required. Also require externally retained preparation-receipt SHA and classify deeply malformed claimed-ready JSON as fatal. No optional source/app/service merge or runtime flag enablement is authorized while operational qualification is frozen. Current-facts memory scaling risk recorded at checkpoint52 remains open.
 
+
+
+## Checkpoint 54 — 2026-11-14 13:36 Hobart — guarded activation prepared; retained audit progressing
+
+D02743544626096 completed its sequential test phase and entered phase03 source audit. At02:35:16UTC it was rehashing/reusing retained2026-08-19 evidence; RSS270,254,080B. This is progress, not terminal PASS. Root remains sole Pi operator; production8590/a23 and final producer6c26/shippingbf28 remain fixed. No duplicate canary or activation occurred.
+
+Private build-final-evidence-stage.py independently reviewed CLEAR by root/publication, SHA59cba50a9c7d017134152476c8b0941bf94425485c1e7fcde2bb4f95dd206a6b. It builds only a bounded hash-pinned stdin bundle and exact one300s AR queue argv. Runtime creates a NEW0700 evidence directory,0400 files, preserves raw receipt bytes and remaps only binding descriptors; actual producer/app validators run after readback. It requires terminal D027 PASS and a NEW released-app audit of D027 bytes. next-window-commands.md now has exact final execution pointer, including the REQUIRED seal --expected-commit argument omitted by earlier shorthand. No staged binding/seal exists yet.
+
+Public-production-acceptance-bf28.md prepares independent source pins, immutable+dated+rolling manifests, every asset for each tag, final consistency rereads and actual shipping-app audit. The CLI --date follows the immutable index head and does not alone verify dated/rolling aliases. Old APK proofs need no redundant download; source/release identity still needs current readback. Download/restore must use the NEW production archive and original matching progress row; oldNov13 proof is separate.
+
+Held optional adoption committed locally89a03f321d1549e3c03972866ef8f12584069881 (no push), atopcac760:107 focused tests represented, final affected source37 and independent4 controls PASS. External preparation-receipt SHA, fatal malformed-ready classification, and max5 explicitly bounded proof phases preserve absolute600s lifetime; actual9,959-artifact repeated-read accounting regression passes. No runtime wiring/enablement claimed.
+
+Root approved held current-facts streaming implementation in a NEW clean6c26 worktree after current-facts-scaling-design.md and independent consumer trace review. Private replayable disk store must preserve complete facts/event order/types, IDs, coverage suppression, JSON/XLSX/SQLite semantics and fixed Pi limits. Actual current-scale before/after measurements remain required. Planned private spool ceilings are distinct from unchanged runtime limits; prior JSON fallback, enormous individual products, and other catalogue tables remain explicit risks. This feature is not merged/deployed and must not move operational source during qualification.
+
+Retained expanded failure summary:11 requests across BOQ2, Bank of Sydney1, Cairns1, CommFCU3, DDH Graham1, ME Go1, MoveBank1, Thriday1. Keep exact failure categories/unknown coverage; zero audit-integrity issues does not mean upstream completeness. The original live-source response log location has not yet been collected; two guessed shallow paths were absent and no absence claim is made.
+
