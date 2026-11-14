@@ -61,6 +61,16 @@ filenames. Exact duplicate paths, file/directory conflicts, unsafe paths and lin
 remain errors. All logical identities stay literal strings rather than
 case-folding Windows `Path` keys.
 
+The directory-prefix index independently caps unique entries at 2,000,000 and
+the combined UTF-8 bytes of their identity and literal-path columns at 512 MiB.
+Each new cumulative prefix is charged before insertion; shared prefixes are
+charged once. These limits prevent deep paths from amplifying a bounded manifest
+into an unbounded index. They are logical index limits, not a claim about exact
+SQLite physical bytes; the existing free-space and external operation limits
+remain in force. `--max-name-entries` and `--max-name-bytes` configure these
+positive bounds, which are recorded in the restore receipt. Failure occurs before
+member materialization and retains a FAIL receipt.
+
 The verifier never changes filesystem settings, requests elevation, renames
 original paths or merges provider metadata. On Windows, provisioning a suitable
 empty NTFS parent is a separate operator action; every subsequent restore still

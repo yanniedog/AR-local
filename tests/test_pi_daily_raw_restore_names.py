@@ -1,6 +1,7 @@
 """Technical filesystem/path controls; actual archives are qualified separately."""
 import hashlib
 import json
+import os
 import sqlite3
 import tarfile
 
@@ -115,8 +116,22 @@ def add_actual_holder_case_names(members):
 
 
 def test_case_sensitive_filesystem_restores_all_observed_holder_spellings(tmp_path):
-    if not names.workspace_case_capability(tmp_path, lambda: None)['case_sensitive']:
-        pytest.skip('actual case-sensitive filesystem required; no simulated acceptance')
+    # Determine platform eligibility independently: an always-False production
+    # probe must fail this test, rather than turn its positive path into a skip.
+    current = tmp_path / 'independent-name-proof'
+    for depth in range(3):
+        current.mkdir()
+        first, second = current / 'Case', current / 'case'
+        first.write_bytes(b'upper')
+        try:
+            with second.open('xb') as stream: stream.write(b'lower')
+        except FileExistsError:
+            assert os.path.samefile(first, second)
+            pytest.skip('independently verified case-insensitive filesystem')
+        assert not os.path.samefile(first, second)
+        assert first.read_bytes() == b'upper' and second.read_bytes() == b'lower'
+        current = current / 'nested'
+    assert names.workspace_case_capability(tmp_path, lambda: None)['case_sensitive']
     inputs = rewrite_archive(make_archive(tmp_path), add_actual_holder_case_names, tmp_path)
     result = qualify(tmp_path, inputs)
     assert result['result'] == 'PASS' and result['workspace_names']['case_sensitive']
@@ -136,3 +151,34 @@ def test_insensitive_restore_rejects_observed_holders_before_materialization(tmp
     with pytest.raises(ValueError, match='alias'): qualify(tmp_path, inputs)
     assert not (tmp_path / 'restored/exact').exists()
     assert json.loads((tmp_path / 'restored/restore-result.json').read_bytes())['result'] == 'FAIL'
+
+
+@pytest.mark.parametrize('limits', [dict(entries=3), dict(name_bytes=20)])
+def test_deep_prefix_amplification_stops_before_over_budget_insert(limits):
+    with sqlite3.connect(':memory:') as index:
+        names.create_name_index(index, case_sensitive=True, **limits)
+        with pytest.raises(ValueError, match='name index budget'):
+            names.reserve_name(index, '/'.join(['ab'] * 100), case_sensitive=True, guard=lambda: None)
+        count, size, max_count, max_size = index.execute('SELECT * FROM name_budget').fetchone()
+        assert count == index.execute('SELECT count(*) FROM path_names').fetchone()[0]
+        assert count <= max_count and size <= max_size
+
+
+def test_shared_prefixes_are_charged_once_and_unicode_uses_utf8_bytes():
+    with sqlite3.connect(':memory:') as index:
+        names.create_name_index(index, case_sensitive=False, entries=3, name_bytes=26)
+        for path in ('é/a', 'é/b', 'é/a'):
+            names.reserve_name(index, path, case_sensitive=False, guard=lambda: None)
+        assert index.execute('SELECT entries,bytes FROM name_budget').fetchone() == (3, 20)
+        with pytest.raises(ValueError, match='name index budget'):
+            names.reserve_name(index, 'é/c', case_sensitive=False, guard=lambda: None)
+
+
+def test_archive_name_budget_failure_precedes_materialization_and_is_receipted(tmp_path):
+    from dataclasses import replace
+    inputs = make_archive(tmp_path)
+    with pytest.raises(ValueError, match='name index budget'):
+        qualify(tmp_path, inputs, limits=replace(restore.Limits(), name_entries=1))
+    assert not (tmp_path / 'restored/exact').exists()
+    result = json.loads((tmp_path / 'restored/restore-result.json').read_bytes())
+    assert result['result'] == 'FAIL' and result['budgets']['name_entries'] == 1

@@ -45,6 +45,8 @@ class Limits:
     unpacked_bytes: int = 64 * 1024**3
     manifest_bytes: int = 256 * 1024**2
     files: int = 500000
+    name_entries: int = 2000000
+    name_bytes: int = 512 * 1024**2
     seconds: int = 3600
     free_space_floor: int = 1024**3
 
@@ -208,7 +210,8 @@ def qualify(archive, receipt_path, receipt_sha256, generation, workspace, *, lim
         (work / 'archive-receipt.json').write_bytes(receipt_raw)
         with audit_budget(guard.deadline), closing(sqlite3.connect(work / 'restore-index.sqlite')) as index:
             index.execute('PRAGMA cache_size=-4096'); index.execute('PRAGMA temp_store=FILE')
-            create_name_index(index, case_sensitive=names['case_sensitive'])
+            create_name_index(index, case_sensitive=names['case_sensitive'],
+                              entries=limits.name_entries, name_bytes=limits.name_bytes)
             with pinned_reader(archive) as (source, _):
                 sha = hashlib.sha256()
                 for block in iter(lambda: source.read(BLOCK), b''):
