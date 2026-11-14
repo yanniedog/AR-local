@@ -28,7 +28,7 @@ Workspace must not exist and its parent must already exist. Every `/srv/ar-local
 - `restore-result.json`: PASS/FAIL, generation/object/receipt/manifest hashes, file counts, byte counts and per-database integrity/FK/table counts. Failures preserve scratch evidence.
 - Matching `data/state/export-contracts-v2/DATE/GENERATION.json`, when present, is fully validated by the existing contract loader and crosschecked against date/generation. Absence is explicitly reported; generation remains bound only through retained receipt plus manifest fingerprint.
 
-Defaults: compressed16GiB, extracted64GiB, manifest256MiB,500000files,3600seconds, free-space floor1GiB. CLI `--max-archive-bytes`, `--max-unpacked-bytes`, `--max-manifest-bytes`, `--max-files`, `--max-seconds`, `--max-free-space-floor` set explicit integer budgets. Zstd window128MiB and PAX16KiB limits reuse reviewed restore guards. Manifest records stream into an on-disk index; casefold collisions are rejected. SQLite inventory is limited to10000databases,100000tables across all databases,4096-byte names and8MiB cumulative results, checked before accumulating table mappings. WAL header/frame checksums are verified; recycled old-salt tail is preserved and reported rather than counted as replayed committed data. Truncated or corrupt current WAL frames fail qualification.
+Defaults: compressed16GiB, extracted64GiB, manifest256MiB,500000files,3600seconds, free-space floor1GiB. CLI `--max-archive-bytes`, `--max-unpacked-bytes`, `--max-manifest-bytes`, `--max-files`, `--max-seconds`, `--max-free-space-floor` set explicit integer budgets. Zstd window128MiB and PAX16KiB limits reuse reviewed restore guards. Manifest records stream into an on-disk index; casefold collisions require the independently verified case-sensitive workspace described below. SQLite inventory is limited to10000databases,100000tables across all databases,4096-byte names and8MiB cumulative results, checked before accumulating table mappings. WAL header/frame checksums are verified; recycled old-salt tail is preserved and reported rather than counted as replayed committed data. Truncated or corrupt current WAL frames fail qualification.
 
 Time and disk guards are cooperative. Filesystem calls that never return need the existing external supervisor/timeout; this source does not claim a hard RSS or kernel I/O deadline. SQLite copies and committed views consume additional disk and remain subject to the free-space floor.
 
@@ -43,3 +43,27 @@ Focused verification: `python -m pytest tests/test_pi_daily_raw_restore.py tests
 - Complete independent review and final integrated exact-head CI; root owns integration PR/runtime authorization.
 - Locate an actual retained raw archive for independent runtime qualification; do not fabricate a production acceptance receipt.
 - Verify exact-head CI and feedback, then use the root/runtime owner's controlled read-back and execution path. Source merge is not restore acceptance.
+
+## Case-distinct Linux paths
+
+The verifier tests the newly created protected workspace and two newly created
+descendant directories with exclusive case-variant files. It verifies distinct
+file identities and original contents, and retains at most six tiny probe files
+and two directories as private evidence. It never deletes probe paths: a separate
+identity check followed by pathname deletion cannot exclude a replacement race.
+The receipt records each level's actual behavior and the probe nonce; operating-system
+names or a parent flag alone are insufficient evidence of inheritance.
+
+Only a fully verified case-sensitive workspace may restore distinct paths such
+as `AXIS Lending` and `Axis Lending`. Other filesystems retain conservative
+case-folded name checks, including directory-prefix aliases with different leaf
+filenames. Exact duplicate paths, file/directory conflicts, unsafe paths and links
+remain errors. All logical identities stay literal strings rather than
+case-folding Windows `Path` keys.
+
+The verifier never changes filesystem settings, requests elevation, renames
+original paths or merges provider metadata. On Windows, provisioning a suitable
+empty NTFS parent is a separate operator action; every subsequent restore still
+proves its own root and descendant behavior. Ambiguous or replaced probe files
+fail and are preserved. This support does not establish Linux ownership/mode
+restoration, cloud-backup verification or production deployment.
