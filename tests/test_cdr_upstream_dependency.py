@@ -195,3 +195,18 @@ def test_dependency_retry_after_is_bounded_by_remaining_logical_deadline(monkeyp
         timeout=5, max_retries=6, sleep_ms=0, max_total_seconds=4)
     assert waits == [4] and clock[0] == 4 and request.call_count == result.attempts == 1
     assert result.status == 401 and result.failure_category == CATEGORY
+
+
+@pytest.mark.parametrize('auth_status', [401, 403])
+def test_later_terminal_auth_supersedes_dependency_within_same_version(monkeypatch, auth_status):
+    auth = '{"error":"invalid_token"}'
+    request = Mock(side_effect=[
+        (406, '{"detail":"Unsupported Version; Available: 5"}', None),
+        (401, BODY, None), (auth_status, auth, None)])
+    monkeypatch.setattr(support, 'http_request', request)
+    monkeypatch.setattr(support.time, 'sleep', lambda _: None)
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[6, 5],
+        timeout=5, max_retries=2, sleep_ms=0)
+    assert [call.args[1]['x-v'] for call in request.call_args_list] == ['6', '5', '5']
+    assert result.status == auth_status and result.text == auth and not result.retryable
+    assert result.failure_category == 'public_endpoint_auth_required'

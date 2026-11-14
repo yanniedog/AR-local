@@ -32,7 +32,7 @@ No prior-day values are carried forward and finalized history is never rewritten
 
 Only CDR fetches admit HTTP401 to the existing full-body retry classifier.
 `cdr_upstream_dependency.py` requires the exact unambiguous EBAU001 tenant-token
-dependency envelope; ordinary, altered or mixed authentication errors and403
+dependency envelope; ordinary, altered or mixed authentication errors and 403
 remain terminal. No credentials are introduced. Caller-supplied retry predicates
 outside CDR fetch remain authoritative.
 

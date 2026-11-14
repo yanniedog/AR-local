@@ -101,6 +101,22 @@ def test_global_deadline_overrun_is_reported_without_starting_later_provider(tmp
     assert result['unattempted'] == [{'provider': 'DDH', 'reason': 'budget_exhausted'}]
 
 
+def test_attributed_worker_crash_remains_failed_without_blocking_unrelated_provider(tmp_path):
+    work = setup_failures(tmp_path, ['Cairns', 'DDH'])
+    def run(item, **kwargs):
+        if item[1] == 'Cairns':
+            # Production run_one catches a holder exception and records its
+            # attribution. This is failure evidence, not a corrupt journal.
+            support.append_failure(tmp_path, {'phase': 'holder', 'bank': 'Cairns',
+                'status': 'worker_crash', 'error': 'retained transport control'})
+    result = recover_transient_providers(tmp_path, work, run, log=lambda _: None,
+        clock=lambda: 0, sleep=lambda _: None)
+    assert result['result'] == 'completed' and result['attempted'] == ['Cairns', 'DDH']
+    rows = [json.loads(line) for line in (tmp_path / 'failures.jsonl').read_text().splitlines()]
+    assert result['remaining_failures'] == len(rows) == 3
+    assert {row['status'] for row in rows if row['bank'] == 'Cairns'} == {504, 'worker_crash'}
+
+
 @pytest.mark.parametrize('failure', ['crash', 'corrupt', 'foreign'])
 def test_fair_shares_do_not_continue_after_ambiguous_journal(tmp_path, failure):
     work = setup_failures(tmp_path, ['Cairns', 'DDH'])
