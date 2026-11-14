@@ -11,20 +11,30 @@ import pi_daily_raw_restore_names as names
 from tests.test_pi_daily_raw_restore import make_archive, qualify, rewrite_archive
 
 
-def test_actual_workspace_probe_records_nested_behavior_and_cleans_only_own_files(tmp_path):
+def test_actual_workspace_probe_records_nested_behavior_and_retains_evidence(tmp_path):
     keep = tmp_path / 'keep'; keep.write_bytes(b'original')
     result = names.workspace_case_capability(tmp_path, lambda: None)
     assert result['case_sensitive'] == all(result[key] for key in ('root', 'child', 'nested_child'))
     assert all(type(result[key]) is bool for key in ('root', 'child', 'nested_child'))
-    assert list(tmp_path.iterdir()) == [keep] and keep.read_bytes() == b'original'
+    assert result['artifacts_retained'] is True and len(result['probe_nonce']) == 32
+    assert keep.read_bytes() == b'original'
+    assert (tmp_path / ('.case-probe-' + result['probe_nonce']) / 'nested').is_dir()
+
+
+def test_probe_never_deletes_by_path_after_identity_checks(tmp_path, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError('pathname deletion cannot guarantee identity preservation')
+    monkeypatch.setattr(type(tmp_path), 'unlink', forbidden)
+    monkeypatch.setattr(type(tmp_path), 'rmdir', forbidden)
+    assert names.workspace_case_capability(tmp_path, lambda: None)['artifacts_retained']
 
 
 def test_parent_capability_never_assumes_child_inheritance(tmp_path, monkeypatch):
     monkeypatch.setattr(names, '_pair', lambda path, *_: path == tmp_path)
     result = names.workspace_case_capability(tmp_path, lambda: None)
-    assert result == dict(schema='ar-restore-case-capability-v1', case_sensitive=False,
-                          root=True, child=False, nested_child=False)
-    assert list(tmp_path.iterdir()) == []
+    assert {key: result[key] for key in ('case_sensitive', 'root', 'child', 'nested_child')} == dict(
+        case_sensitive=False, root=True, child=False, nested_child=False)
+    assert result['artifacts_retained'] is True
 
 
 def test_replaced_probe_is_preserved_and_never_becomes_insensitive_success(tmp_path, monkeypatch):

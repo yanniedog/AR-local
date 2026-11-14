@@ -52,7 +52,7 @@ def _pair(parent, nonce, files, guard):
 
 
 def workspace_case_capability(work, guard):
-    """Probe the protected new root and inherited descendants; clean only ours."""
+    """Probe the protected new root; retain bounded evidence without deletion."""
     work = Path(work); original = _identity(work, directory=True)
     nonce = uuid.uuid4().hex
     files, directories, levels = [], [], []
@@ -68,23 +68,17 @@ def workspace_case_capability(work, guard):
         if _identity(work, directory=True) != original:
             raise ValueError('restore case probe workspace changed')
         return dict(schema='ar-restore-case-capability-v1', case_sensitive=all(levels),
-                    root=levels[0], child=levels[1], nested_child=levels[2])
+                    root=levels[0], child=levels[1], nested_child=levels[2],
+                    probe_nonce=nonce, artifacts_retained=True)
     finally:
-        # A replacement/foreign entry fails cleanup and is preserved, not erased.
-        owned_directories = [(work, original), *directories]
-        def check_directories():
-            for path, identity in owned_directories:
-                if _identity(path, directory=True) != identity:
-                    raise ValueError('restore case probe directory replaced before cleanup')
-        check_directories()
-        for path, identity, body in reversed(files):
-            check_directories()
-            _read(path, identity, body)
-            path.unlink()
-        for path, identity in reversed(directories):
+        # A pathname check followed by unlink/rmdir is not identity-atomic.
+        # Keep at most six tiny files and two directories as private evidence.
+        # Replacements fail qualification and are never deleted by this probe.
+        for path, identity in [(work, original), *directories]:
             if _identity(path, directory=True) != identity:
-                raise ValueError('restore case probe directory replaced before cleanup')
-            path.rmdir()
+                raise ValueError('restore case probe directory replaced before verification')
+        for path, identity, body in files:
+            _read(path, identity, body)
 
 
 def create_name_index(index, *, case_sensitive):

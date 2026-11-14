@@ -48,8 +48,10 @@ Focused verification: `python -m pytest tests/test_pi_daily_raw_restore.py tests
 
 The verifier tests the newly created protected workspace and two newly created
 descendant directories with exclusive case-variant files. It verifies distinct
-file identities and original contents, then removes only identity-matched probe
-artifacts. The receipt records each level's actual behavior; operating-system
+file identities and original contents, and retains at most six tiny probe files
+and two directories as private evidence. It never deletes probe paths: a separate
+identity check followed by pathname deletion cannot exclude a replacement race.
+The receipt records each level's actual behavior and the probe nonce; operating-system
 names or a parent flag alone are insufficient evidence of inheritance.
 
 Only a fully verified case-sensitive workspace may restore distinct paths such
