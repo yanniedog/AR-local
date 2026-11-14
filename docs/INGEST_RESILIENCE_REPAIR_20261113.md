@@ -668,3 +668,15 @@ Held pure detached producer adapters committed cac760a976b8153af106232cc14617811
 
 New held work only: publication implements lazy UI/adoption metadata with explicit validated selectedhead state, bounded literal pages and cancellation; window implements default0 flags/status protocol, immutable optional candidate and read-only finalized source preparation/adoption. Existing daily/pending/transaction wiring remains untouched until separate review. Neither their tests nor new local source imply released/current/device acceptance. SMTP remains deferred. Next genuine natural cycle remains future.
 
+
+
+## Checkpoint 53 — 2026-11-14 13:20 Hobart — expanded shipping-app PASS; full D027 running
+
+Operational source remains frozen at 6c26aecdd334afe782dc78ec759365a1c209fa56; shipping app bf28a0c0139ddcce7b26c07a3daefc9f4335648e, v1.0.276/build332. Expanded isolated payload r2 completed PASS with 1,323,417,600-byte peak RSS, resource exit0/group clean and preserved production/live source. All ten actual assets transferred with identical before/after inventories and original hashes. Shipping-app audit PASS: ten assets,15 pass/3 expected history warnings,zero failures;3,508 details/3,204 priced/304 unpriced/zero missing details. Receipt SHA2aa1e8c5a13c580413f80d57e48f8cc342fa007d857acc8dfb6644822cb50efc; audit SHA72c964629f735ddf47f104a4f55bbe81739ea1bc56ef3ba2991f288f813f65a0. This is isolated qualification, not selected production/publication/Drive proof.
+
+One transient native SCP reset required a bounded read-only resume; no browser reauthentication was required. Original partial transfer and stderr retained. Copier verifies existing bytes before skipping and preserves each failed partial attempt; after-inventory identity must match. No production command was retried.
+
+Full D027 hosted run43544626096 dispatched once02:08:38UTC against exact6c26 and actual-validator-compatible retained audit cache. Operation /srv/ar-local/quality-operation-gh-43544626096-1, owned unit ar-local-quality-canary-b1d405617d66.service. At02:14UTC sequential tests reached module80, RSS121,389,056B; no terminal receipt yet. Do not duplicate dispatch, waive retained/current audits, or treat expanded PASS as D027 PASS. Activation/manual-safeguard installation/publication retry/full production capture/matching new Drive restore remain pending. Production remains8590/a23.
+
+Held optional evidence/adoption review found repeated full-source proof accounting would exhaust lifetime100k entry budget on actual9,959-artifact source. Fix is scoped to explicit finite proof phases, preserving absolute600s deadline and outer resources; independent review remains required. Also require externally retained preparation-receipt SHA and classify deeply malformed claimed-ready JSON as fatal. No optional source/app/service merge or runtime flag enablement is authorized while operational qualification is frozen. Current-facts memory scaling risk recorded at checkpoint52 remains open.
+
