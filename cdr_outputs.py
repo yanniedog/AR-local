@@ -16,6 +16,9 @@ from cdr_product_changes import diff_normalized_product_fact_groups
 from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
+from cdr_json_replay import write_json_object
+from cdr_replay_rows import ReplayRows, ReplayStore
+from cdr_product_change_stream import diff_current_store
 
 SCHEMA_VERSION = "9"
 
@@ -118,7 +121,7 @@ def write_json(path: Path, data: Mapping[str, Any]) -> None:
     temporary = path.parent / f".{path.name}.tmp"
     try:
         with temporary.open("w", encoding="utf-8") as stream:
-            json.dump(data, stream, indent=2, ensure_ascii=False)
+            write_json_object(stream, data)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -557,7 +560,7 @@ def _exclude_failed_missing_product_groups(
     unavailable_providers: Iterable[str] = (),
 ) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, Any]]:
     """Return filtered groups; the count is final after the iterable is exhausted."""
-    current_keys = {
+    current_keys = set(current_facts.product_presence()) if isinstance(current_facts, ReplayRows) else {
         (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
         for row in current_facts
     }
@@ -596,8 +599,15 @@ def build_outputs(
     previous_run_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     out_dir = (out_dir or (run_root / "_exports")).resolve()
+    from cdr_product_changes import _product_key, _fact_key
+    with ReplayStore(out_dir.parent, key_of=_product_key, validate_fact=_fact_key) as store:
+        return _build_outputs(run_root, out_dir, db_path, previous_run_root, store)
+
+
+def _build_outputs(run_root, out_dir, db_path, previous_run_root, store):
     run_date = run_root.name
-    banks = parse_banks_run(run_root)
+    banks = parse_banks_run(run_root, facts_sink=store.facts)
+    store.facts.seal()
     previous = previous_run_root or previous_finalized_run(run_root)
     if previous:
         previous_groups, suppression = _exclude_failed_missing_product_groups(
@@ -607,11 +617,11 @@ def build_outputs(
             current_providers=(str(row.get("provider") or "") for row in banks["products"]),
             unavailable_providers=(row['provider_dir'] for row in banks.get('prd_unavailable', [])),
         )
-        changes = diff_normalized_product_fact_groups(
-            previous_groups,
-            banks["product_facts"],
+        changes = diff_current_store(
+            previous_groups, store,
             previous_run_date=previous.name,
             current_run_date=run_date,
+            convert=lambda event: product_change_rows(dict(events=[event], run_date=run_date, previous_run_date=previous.name))[0],
         )
         suppressed_incomplete_products = suppression["suppressed"]
         suppression_reasons = suppression["reasons"]
@@ -624,9 +634,10 @@ def build_outputs(
             "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
             "events": [],
         }
+        store.changes.seal()
     changes["suppressed_incomplete_products"] = suppressed_incomplete_products
     changes["suppression_reasons"] = suppression_reasons
-    banks["product_changes"] = product_change_rows(changes)
+    banks["product_changes"] = store.changes
     banks["product_change_summary"] = {
         "schema_version": changes.get("schema_version", 1),
         "normalization_version": changes.get("normalization_version"),
