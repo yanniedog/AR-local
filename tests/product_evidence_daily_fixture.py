@@ -15,7 +15,7 @@ import pi_product_evidence_intent as intent
 def ready_source(source):
     fixture,_,contract=source;state=fixture['state']
     base=state/'original-base';shutil.copytree(fixture['root'],base);fixture['root']=base
-    current=open_source(fixture);evidence=state.parent/'prepared';evidence.mkdir()
+    current=open_source(fixture);evidence=state/'product-evidence-prepared-v1';evidence.mkdir()
     snapshot=prepare_source_snapshot(current,evidence/'snapshot',writer_revision=WRITER)
     binding=_checked_snapshot(current,snapshot,WRITER)
     facts=pack_snapshot(snapshot.root,evidence/'facts',expected_source=binding['source'],

@@ -18,7 +18,7 @@ from tests.product_evidence_finalized_fixture import finalized, WRITER, ENABLED
 
 @pytest.fixture
 def source(tmp_path, monkeypatch):
-    value=finalized(tmp_path);state=value['state']
+    value=finalized(tmp_path,dated_contract=True);state=value['state']
     pointer=intent.enrich_pointer(tmp_path,decode(value['pointer'].read_bytes()),enabled=ENABLED,revision=WRITER)
     monkeypatch.setattr(sync,'data_state_root',lambda _:state)
     monkeypatch.setattr(daily,'writer_revision',lambda _:WRITER)

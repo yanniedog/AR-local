@@ -132,10 +132,13 @@ def persist_delivery(state, frozen, expected_sha256, *, base_root, expected_mani
     """Explicit caller-pinned input only; full fresh adoption occurs at packaging."""
     state = Path(state).absolute()
     require(state.is_dir() and state.resolve() == state, 'existing canonical state root required')
+    from pi_product_evidence_locations import supported_location
+    for path in (base_root,evidence_root,capability_root): supported_location(state,path)
     require(type(frozen.raw) is bytes and len(frozen.raw) <= MAX_DESCRIPTOR
             and digest(frozen.raw) == expected_sha256, 'ready delivery differs from external pin')
-    # Prepared snapshots must be outside the original contract's directory.
-    # Data-root-relative readers allow a sibling of state without weakening that guard.
+    # Retain the existing data-relative wire paths, but keep all bytes under
+    # backed-up state. The dated original contract directory remains excluded
+    # by the separate source snapshot guard.
     base = _relative(state.parent, base_root); evidence = _relative(state.parent, evidence_root)
     capability = _relative(state.parent, capability_root)
     raw, _ = read_stable(Path(base_root) / 'manifest.json', 65536)
@@ -155,12 +158,14 @@ def read_delivery(state, pointer):
     if request is None or request['delivery'] is None: return None
     try:
         ready = request['delivery']; state = Path(state).absolute()
+        from pi_product_evidence_locations import delivery_locations
+        locations = delivery_locations(state,ready)
         raw, _ = read_stable(safe_path(state, ready['file']), MAX_DESCRIPTOR)
         require(len(raw) == ready['bytes'] and digest(raw) == ready['sha256'], 'frozen delivery bytes differ')
-        base = safe_path(state.parent, ready['base']['directory'])
+        base = locations['base']
         base_raw, _ = read_stable(base / 'manifest.json', 65536)
         require(digest(base_raw) == ready['base']['manifest_sha256'], 'frozen financial base changed')
-        return raw, base, safe_path(state.parent, ready['evidence_root'])
+        return raw, base, locations['evidence']
     except (OSError, ValueError, KeyError, TypeError, RecursionError) as error:
         raise MalformedReady('claimed-ready input could not be loaded') from error
 

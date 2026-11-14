@@ -19,13 +19,14 @@ RESPONSES = 'product_response_evidence_v1'
 ENABLED = (FACTS, RESPONSES)
 
 
-def finalized(tmp_path, *, observation_state='partial'):
+def finalized(tmp_path, *, observation_state='partial', dated_contract=False):
     captured = tmp_path / 'captured'; captured.mkdir()
     _, old_exports, old_contract, _, original = real_source(captured)
     exports = tmp_path / 'data/runs' / DAY / '_exports'
     exports.parent.mkdir(parents=True); shutil.copytree(old_exports, exports)
     state = tmp_path / 'data/state'; state.mkdir()
-    contract_path = state / 'contract.json'; shutil.copyfile(old_contract, contract_path)
+    contract_path = state / (f'export-contracts-v2/{DAY}/contract.json' if dated_contract else 'contract.json')
+    contract_path.parent.mkdir(parents=True,exist_ok=True); shutil.copyfile(old_contract, contract_path)
     contract = json.loads(contract_path.read_bytes())
     if observation_state != 'partial':
         # Complete-schema control uses the retained completed-provider subset;
@@ -42,7 +43,7 @@ def finalized(tmp_path, *, observation_state='partial'):
     assert rates > 0
     marker = dict(finalization_schema_version=2, ledger_state='finalized', run_date=DAY,
                   generation_id=contract['generation_id'], observation_state=contract['observation_state'],
-                  export_contract_path='contract.json', export_contract_digest=contract['contract_digest'],
+                  export_contract_path=contract_path.relative_to(state).as_posix(), export_contract_digest=contract['contract_digest'],
                   ledger_event_digest=event['event_digest'], banks_counts={'rates': rates})
     (state / contract['completion_marker_path']).write_bytes(canonical(marker))
     pointer = dict(schema_version=2, observation_date=DAY, generation_id=contract['generation_id'],
