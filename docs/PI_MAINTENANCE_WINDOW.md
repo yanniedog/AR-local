@@ -19,8 +19,9 @@ reserve. Backfill charges its entire configured process-tree lifetime and stop
 budget. Existing hash-bound individual authorizations can narrow the deadline
 but cannot extend it across the quiet period.
 
-The root-owned restricted CI helper has the same clock admission implemented
-locally; it never imports candidate code as root. The shared queue already
+The restricted CI helper source implements the same clock locally and never
+imports candidate code as root. A bounded native inventory on Nov14 found that
+bundle absent on this Pi; source implementation is not installation. The shared queue already
 reserves the 00:30 boundary, including stop/rollback grace and active ingest
 leases. Its generic 02:00 release is not a substitute for the manual operations'
 03:30 admission. No timers or queue protection were rescheduled by this change.
@@ -39,11 +40,12 @@ decision supersedes their older 22:00 **Pi maintenance** limit only.
 
 ## Activation and evidence
 
-Source implementation and tests do not prove runtime installation. In particular,
-the installed `/usr/local/lib/ar-local-ci/pi_ci_activate.py` must be updated
-through its owner-reviewed installer and validated against the exact approved
-source before the restricted route gains the new window. Other pinned helper
-bundles likewise need their ordinary exact-source installation gates. The
+Source implementation and tests do not prove runtime installation. The Nov14
+inventory found no restricted-CI runtime profile, login/control entrypoints,
+protected modules, recovery state or plans. There is no installed helper to
+upgrade. Initial restricted-CI commissioning requires its separate image/boot
+and protected-source gates; this repair uses the existing D027 owner-operated
+activation route. Other pinned helper bundles retain their ordinary exact-source installation gates. The
 repository source activation route and hosted canary workflow have separate
 deployment/CI prerequisites. No Pi access or runtime mutation was performed by
 the window implementation worker.
