@@ -92,6 +92,40 @@ def _provider_cohort(rows: Iterable[Mapping[str, Any]], predicate: Callable[[Map
     return result
 
 
+class BankSpreadHistory:
+    """Reduce the shared verified daily rows without retaining their catalogues."""
+
+    def __init__(self, dates, *, run_date, schema_version=1):
+        self.dates = list(dates)
+        if self.dates != sorted(set(self.dates)):
+            raise ValueError("Spread history dates must be unique and ordered")
+        self.run_date, self.schema_version = run_date, schema_version
+        self.day_values, self.providers = [], set()
+
+    def observe(self, day, rates):
+        position = len(self.day_values)
+        if position >= len(self.dates) or day != self.dates[position]:
+            raise ValueError("Spread observations differ from the declared dates")
+        cohorts = {
+            "mortgage": _provider_cohort(rates, _mortgage_member),
+            "savings": _provider_cohort(rates, _savings_member),
+        }
+        self.providers.update(cohorts["mortgage"])
+        self.providers.update(cohorts["savings"])
+        self.day_values.append(cohorts)
+
+    def observations(self, observations):
+        for day, rates in observations:
+            self.observe(day, rates)
+            yield day, rates
+
+    def finish(self):
+        if len(self.day_values) != len(self.dates):
+            raise ValueError("Spread observations are incomplete")
+        return _finish(self.dates, self.day_values, self.providers,
+                       run_date=self.run_date, schema_version=self.schema_version)
+
+
 def build_bank_spread_history(
     exports_dir: Path,
     *,
@@ -103,21 +137,17 @@ def build_bank_spread_history(
 ) -> Dict[str, Any]:
     """Create daily, provider-weighted cohort means from retained real snapshots."""
     dates = history_dates(exports_dir, run_date)
-    day_values: list[Dict[str, Dict[str, Dict[str, Any]]]] = []
-    providers: set[str] = set()
+    history = BankSpreadHistory(dates, run_date=run_date, schema_version=schema_version)
     for day in dates:
         path = banks_path(exports_dir, day)
         rates = [] if path is None else [
             row for row in (load_json(path).get("rates") or []) if isinstance(row, dict)
         ]
-        cohorts = {
-            "mortgage": _provider_cohort(rates, _mortgage_member),
-            "savings": _provider_cohort(rates, _savings_member),
-        }
-        providers.update(cohorts["mortgage"])
-        providers.update(cohorts["savings"])
-        day_values.append(cohorts)
+        history.observe(day, rates)
+    return history.finish()
 
+
+def _finish(dates, day_values, providers, *, run_date, schema_version):
     banks: Dict[str, Dict[str, list[Any]]] = {}
     for provider in sorted(providers):
         series = {
