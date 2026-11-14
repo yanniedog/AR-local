@@ -76,6 +76,17 @@ def test_insensitive_registry_rejects_case_aliased_parent_even_for_different_lea
             names.reserve_name(index, second, case_sensitive=False, guard=lambda: None)
 
 
+def test_sensitive_registry_preserves_literal_full_paths_and_directory_aliases():
+    paths = ['data/AXIS/a.json', 'data/Axis/a.json', 'data/AXIS/b.json', 'data/Axis/c.json',
+             'data/ß/x.json', 'data/ss/x.json']
+    with sqlite3.connect(':memory:') as index:
+        names.create_name_index(index, case_sensitive=True)
+        for path in paths:
+            names.reserve_name(index, path, case_sensitive=True, guard=lambda: None)
+            index.execute('INSERT INTO files VALUES(?,?,?)', (path, path.casefold(), '{}'))
+        assert [row[0] for row in index.execute('SELECT logical FROM files ORDER BY logical')] == sorted(paths)
+
+
 def add_actual_holder_case_names(members):
     # Exact observed holder names, technical bodies: no invented financial data.
     manifest = json.loads(members[0][1]); records = {row['logical_path']: row for row in manifest['files']}
