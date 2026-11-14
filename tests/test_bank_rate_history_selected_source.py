@@ -227,8 +227,8 @@ def test_rolling_tiers_reuse_aggregate_read_pass(tmp_path, banks, monkeypatch):
 
     monkeypatch.setattr(Path, "open", read)
     builder._compute_payload(exports)
-    # Current catalogue, combined tier/aggregate pass, and existing spread pass.
-    assert len(reads) == 3
+    # Current catalogue and one combined tier/aggregate/spread history pass.
+    assert len(reads) == 2
 
 
 def test_current_payload_rejects_an_unselected_export_before_building(tmp_path, banks):
