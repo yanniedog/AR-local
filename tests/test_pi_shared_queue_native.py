@@ -328,7 +328,8 @@ def test_native_lock_factory_cleans_sys_modules_on_missing_callable(tmp_path, mo
     fake_repo.mkdir()
     (fake_repo / 'ar_local_operation_lock.py').write_text('production_lock = 123\n', encoding='utf-8')
     monkeypatch.setattr(native, 'verify_native_deployment', lambda: None)
-    monkeypatch.delitem(sys.modules, '_shared_pi_native_lock', raising=False)
+    for dep in ('_shared_pi_native_lock', 'ar_local_backup_policy', 'cdr_file_lock', 'process_safety'):
+        monkeypatch.delitem(sys.modules, dep, raising=False)
     with pytest.raises(ValueError, match='deployed production lock function unavailable'):
         native.native_lock_factory(fake_repo)
     assert '_shared_pi_native_lock' not in sys.modules
