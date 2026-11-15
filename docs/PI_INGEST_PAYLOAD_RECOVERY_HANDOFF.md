@@ -37292,8 +37292,8 @@ and app compatibility gates), a root-approved plan hash, and the repository vari
 `AR_PI_CANARY_RELEASE_TAG` and `AR_PI_APPROVED_PLAN`. These are owner actions.
 `npm run verify:pi` needs a host on the tailnet; no workflow runs it.
 
-| Field | Value |
-| --- | --- |
+| Run | Commit | Result / Evidence | Note |
+| --- | --- | --- | --- |
 | 42392238731 | `91935f34` | sealed cache `gh-42351256502-1`; pytest PASS; audit reached 2026-10-21; `workload_swapped` 64.6 MiB at 78 min, 6.9 GB available | #1107 (canary workload swap recorded, not a stop) |
 | **42400482808** | **`96f3d17e`** | **PASS** with sealed cache `gh-42392238731-1` (`4de238ba...dad6`); `canary.json` sha256 `64b97493645e4f7545b46778eb1230e13ec8245f57cc5c0b2da3a01b15ff0748`, generation `obs-2026-11-08-78e3ec27d9cda8a9` | - |
 
