@@ -486,12 +486,11 @@ def cmd_heal(args: argparse.Namespace) -> int:
                 healed = True
         else:
             print("pi_runtime_health: tailscale heal skipped (cooldown)", file=sys.stderr)
-    patch = {
-        "last_check_at": state["last_check_at"],
-        "http_fail_streak": state["http_fail_streak"],
-        "tailscale_fail_streak": state["tailscale_fail_streak"],
-    }
+    patch: dict[str, Any] = {}
     for key in (
+        "last_check_at",
+        "http_fail_streak",
+        "tailscale_fail_streak",
         "last_http_heal_at",
         "http_heal_deferred_reason",
         "last_http_heal_deferred_at",
