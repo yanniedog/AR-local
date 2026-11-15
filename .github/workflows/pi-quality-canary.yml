@@ -430,6 +430,7 @@ jobs:
             local d="$1"
             if [ -e "$d" ]; then
               echo "exists: $d"
+              "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
             else
               local tmp="$d.tmp.$$"
               trap "rm -rf \"${tmp}\"" EXIT
@@ -443,8 +444,6 @@ jobs:
               "$tmp/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
               mv "$tmp" "$d"
               trap - EXIT
-            else
-              "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
             fi
             echo "PREPARED_PYTHON=$d/bin/python3"
           }
