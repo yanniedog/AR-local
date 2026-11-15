@@ -432,7 +432,7 @@ jobs:
               echo "exists: $d"
             else
               local tmp="$d.tmp.$$"
-              trap 'rm -rf "$tmp"' EXIT
+              trap "rm -rf \"${tmp}\"" EXIT
               local pybin
               pybin="$(command -v python3.13 || command -v python3)"
               nice -n 10 "$pybin" -m venv "$tmp"
@@ -493,16 +493,16 @@ jobs:
           fi
           echo "origin commit: $ORIG; source: $SRC; python: $PY"
           seal_cmd() {
+            local PY="$1" NEW="$2" SRC="$3" OP="$4" OUT="$5" ORIG="$6"
             test ! -e "$OUT" -a ! -L "$OUT" || { echo "cache $OUT already exists"; exit 1; }
-            trap 'rm -rf "$OUT"' ERR
+            trap "rm -rf \"${OUT}\"" ERR
             nice -n 10 "$PY" -B "$NEW/cdr_quality_cache.py" --source "$SRC" --operation "$OP" \
               --output "$OUT" --expected-commit "$ORIG" --attest-closed-protected-run
           }
           if [ -x /usr/local/bin/pi-shared-task ]; then
-            export PY NEW SRC OP OUT ORIG
-            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 1800 --wait-timeout 600 -- bash -c "set -euo pipefail; $(declare -f seal_cmd); seal_cmd"
+            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 1800 --wait-timeout 600 -- bash -c "set -euo pipefail; $(declare -f seal_cmd); seal_cmd \"\$@\"" _ "$PY" "$NEW" "$SRC" "$OP" "$OUT" "$ORIG"
           else
-            seal_cmd
+            seal_cmd "$PY" "$NEW" "$SRC" "$OP" "$OUT" "$ORIG"
           fi
           echo "VERIFIED_CACHE=$OUT/manifest.json"
           echo "VERIFIED_CACHE_SHA256=$(sha256sum "$OUT/manifest.json" | cut -d' ' -f1)"
