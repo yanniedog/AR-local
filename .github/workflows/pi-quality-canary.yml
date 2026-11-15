@@ -41,7 +41,7 @@ on:
           - "install-gate"
           - "operator-deploy"
       confirm:
-        description: "Type RUN_GUARDED_CANARY for canary mode"
+        description: "canary: RUN_GUARDED_CANARY; install-gate: INSTALL_GATE_BYTES; operator-deploy: DEPLOY_CANARY_PASSED_COMMIT"
         required: false
         default: ""
         type: string
@@ -293,10 +293,35 @@ jobs:
           for t in ar-local-drive-backup.timer ar-local-drive-backup-queue.timer; do
             echo "unit $t: enabled=$(systemctl is-enabled "$t" 2>&1 | head -1) active=$(systemctl is-active "$t" 2>&1 | head -1)"
           done
-          if test -e /etc/ar-local/drive-write-hold.json || test -L /etc/ar-local/drive-write-hold.json || sudo -n test -e /etc/ar-local/drive-write-hold.json 2>/dev/null; then echo "drive system hold: PRESENT"; else echo "drive system hold: not seen"; fi
-          if rd "$SPOOL/write-hold.json" >/dev/null || test -e "$SPOOL/write-hold.json"; then echo "drive spool hold: PRESENT"; else echo "drive spool hold: not seen"; fi
-          { ls -1 "$SPOOL/receipts" 2>/dev/null || sudo -n ls -1 "$SPOOL/receipts" 2>/dev/null; } | grep -E '^[0-9]{8}T[0-9]{6}-[0-9a-f]{12}\.(RUNNING|PASS|FAIL|BLOCKED)\.json$' | tail -8 | sed 's/^/drive receipt: /'
-          { journalctl -u ar-local-drive-backup.service -n 400 --no-pager -o short-iso 2>/dev/null || sudo -n journalctl -u ar-local-drive-backup.service -n 400 --no-pager -o short-iso 2>/dev/null; } | grep -o -E '^[0-9T:+-]+|Blocked|BLOCKED|hold|FAIL|PASS|Started|Finished|Failed' | paste -sd' ' | grep -o -E '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:+-]+( (Blocked|BLOCKED|hold|FAIL|PASS|Started|Finished|Failed))+' | tail -6 | sed 's/^/drive journal: /'
+          for m in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
+            if test -e "$m" || test -L "$m" || sudo -n test -e "$m" 2>/dev/null || sudo -n test -L "$m" 2>/dev/null; then
+              echo "drive system hold ($m): PRESENT"
+            elif test -r /etc/ar-local && test -x /etc/ar-local; then
+              echo "drive system hold ($m): not seen"
+            else
+              echo "drive system hold ($m): unknown (not readable)"
+            fi
+          done
+          if test -e "$SPOOL/write-hold.json" || test -L "$SPOOL/write-hold.json" || sudo -n test -e "$SPOOL/write-hold.json" 2>/dev/null || sudo -n test -L "$SPOOL/write-hold.json" 2>/dev/null; then
+            echo "drive spool hold: PRESENT"
+          else
+            echo "drive spool hold: not seen"
+          fi
+          receipts="$(ls -1 "$SPOOL/receipts" 2>/dev/null || sudo -n ls -1 "$SPOOL/receipts" 2>/dev/null || echo "__UNAVAILABLE__")"
+          if [ "$receipts" = "__UNAVAILABLE__" ]; then
+            echo "drive receipt: unavailable (not readable by this account)"
+          else
+            printf '%s\n' "$receipts" | grep -E '^[0-9]{8}T[0-9]{6}-[0-9a-f]{12}\.(RUNNING|PASS|FAIL|BLOCKED)\.json$' | sed -E 's/-[0-9a-f]{12}\././' | tail -8 | sed 's/^/drive receipt: /'
+          fi
+          jout="$(journalctl -u ar-local-drive-backup.service -n 400 --no-pager -o short-iso 2>/dev/null || true)"
+          if [ -z "$jout" ]; then
+            jout="$(sudo -n journalctl -u ar-local-drive-backup.service -n 400 --no-pager -o short-iso 2>/dev/null || echo "__UNAVAILABLE__")"
+          fi
+          if [ "$jout" = "__UNAVAILABLE__" ]; then
+            echo "drive journal: unavailable (not readable by this account)"
+          else
+            printf '%s\n' "$jout" | grep -o -E '^[0-9T:+-]+|Blocked|BLOCKED|hold|FAIL|PASS|Started|Finished|Failed' | paste -sd' ' | grep -o -E '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:+-]+( (Blocked|BLOCKED|hold|FAIL|PASS|Started|Finished|Failed))+' | tail -6 | sed 's/^/drive journal: /'
+          fi
           # Type, transport and size only: device names and mountpoints can carry identifiers.
           lsblk -d -n -o TYPE,TRAN,SIZE 2>&1 | sed 's/^/disk: /'
           mountpoint -q /mnt/ar-local-backup 2>/dev/null && echo "backup mount: mounted" || echo "backup mount: not mounted"
@@ -339,40 +364,42 @@ jobs:
           walk("", r)
           PY
           done
-          if [ -f "$OP/pytest-suite-failure.json" ]; then
+          if [ -f "$OP/pytest-suite-failure.json" ] && [ ! -L "$OP/pytest-suite-failure.json" ]; then
             echo "== pytest-suite-failure.json =="
             python3 - "$OP/pytest-suite-failure.json" <<'PY'
           import json, sys
           r = json.load(open(sys.argv[1]))
           for k in ("error_type", "detail", "elapsed_seconds"):
-              print(f"{k}: {str(r.get(k))[:400]}")
+              val = str(r.get(k))[:400]
+              if "disposition" in val.lower() or "reason_text" in val.lower():
+                  val = "[redacted]"
+              print(f"{k}: {val}")
           done = r.get("completed_modules") or []
           print(f"completed_modules: {len(done)}; last: {done[-1] if done else None}")
           PY
-            # Newest batch: failing test ids and the tail of its pytest output.
-            B="$(ls -1dt "$OP"/pytest-suite/*/ 2>/dev/null | head -1)"
-            if [ -n "$B" ]; then
-              echo "== newest pytest batch: $(basename "$B") =="
-              [ -f "$B/exit.json" ] && python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print("returncode:", r.get("returncode"))' "$B/exit.json"
-              [ -f "$B/report.json" ] && python3 - "$B/report.json" <<'PY'
+          fi
+          # Newest batch: failing test ids and the tail of its pytest output.
+          B="$(ls -1dt "$OP"/pytest-suite/*/ 2>/dev/null | head -1)"
+          if [ -n "$B" ] && [ ! -L "${B%/}" ]; then
+            echo "== newest pytest batch: $(basename "$B") =="
+            [ -f "$B/exit.json" ] && [ ! -L "$B/exit.json" ] && python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print("returncode:", r.get("returncode"))' "$B/exit.json"
+            [ -f "$B/report.json" ] && [ ! -L "$B/report.json" ] && python3 - "$B/report.json" <<'PY'
           import json, sys
           r = json.load(open(sys.argv[1]))
           print("exitstatus:", r.get("exitstatus"))
-          for t in r.get("tests") or []:
-              if t.get("outcome") not in ("passed", "skipped"):
-                  print("FAILED:", t.get("nodeid"))
-                  for phase in ("setup", "call", "teardown"):
-                      crash = ((t.get(phase) or {}).get("crash") or {})
-                      if crash:
-                          print("  ", phase, str(crash.get("message"))[:600])
+          for entry in r.get("reports") or []:
+              if entry.get("outcome") not in ("passed", "skipped"):
+                  print("FAILED:", entry.get("nodeid"), f"[{entry.get('when')}]")
+                  detail = str(entry.get("detail") or "")[:600]
+                  if detail and "disposition" not in detail.lower() and "reason_text" not in detail.lower():
+                      print("  ", detail)
           PY
-              [ -f "$B/output.txt" ] && tail -n 60 "$B/output.txt" | sed -E '/[Dd]isposition/s/.*/[redacted disposition line]/' | cut -c1-300
-            fi
+            [ -f "$B/output.txt" ] && [ ! -L "$B/output.txt" ] && tail -n 60 "$B/output.txt" | sed -E '/([Dd]isposition|reason_text)/s/.*/[redacted disposition line]/' | cut -c1-300
           fi
           for name in canary-service.txt; do
-            [ -f "$OP/$name" ] || continue
+            [ -f "$OP/$name" ] && [ ! -L "$OP/$name" ] || continue
             echo "== tail $name (disposition lines redacted) =="
-            tail -n 80 "$OP/$name" | sed -E '/[Dd]isposition/s/.*/[redacted disposition line]/' | cut -c1-400
+            tail -n 80 "$OP/$name" | sed -E '/([Dd]isposition|reason_text)/s/.*/[redacted disposition line]/' | cut -c1-400
           done
           REMOTE
 
@@ -392,16 +419,36 @@ jobs:
           set -euo pipefail
           ssh ar-local-pi5 bash -s -- "${TARGET_COMMIT:0:12}" <<'REMOTE'
           set -euo pipefail
+          NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
+          { [ "$NOW_HM" -ge 0330 ] || [ "$NOW_HM" -lt 0030 ]; } || { echo "inside 00:30-03:30 Hobart quiet window"; exit 1; }
+          test -d /srv -a ! -L /srv && test -d /srv/ar-local -a ! -L /srv/ar-local
           D="/srv/ar-local/quality-python-$1-$(TZ=Australia/Hobart date +%Y%m%d)"
-          if [ -e "$D" ]; then echo "exists: $D"; else
-            nice -n 10 /usr/bin/python3 -m venv "$D"
-            nice -n 10 "$D/bin/python3" -m pip install --quiet --no-cache-dir --disable-pip-version-check --only-binary=:all: \
-              pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 \
-              zstandard==0.25.0 fonttools==4.66.1 tzdata
-            chmod -R go-w "$D"
+          test ! -L "$D"
+          run_prep() {
+            local d="$1"
+            if [ -e "$d" ]; then
+              echo "exists: $d"
+            else
+              local tmp="$d.tmp.$$"
+              trap 'rm -rf "$tmp"' EXIT
+              local pybin
+              pybin="$(command -v python3.13 || command -v python3)"
+              nice -n 10 "$pybin" -m venv "$tmp"
+              nice -n 10 "$tmp/bin/python3" -m pip install --quiet --no-cache-dir --disable-pip-version-check --only-binary=:all: \
+                pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 \
+                zstandard==0.25.0 fonttools==4.66.1 tzdata
+              chmod -R go-w "$tmp"
+              mv "$tmp" "$d"
+              trap - EXIT
+            fi
+            "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
+            echo "PREPARED_PYTHON=$d/bin/python3"
+          }
+          if [ -x /usr/local/bin/pi-shared-task ]; then
+            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 900 --wait-timeout 600 -- bash -c "$(declare -f run_prep); run_prep \"\$1\"" _ "$D"
+          else
+            run_prep "$D"
           fi
-          "$D/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools")])'
-          echo "PREPARED_PYTHON=$D/bin/python3"
           REMOTE
 
       # Seal the completed source audits of a closed, failed or interrupted
@@ -421,20 +468,38 @@ jobs:
           ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" "$OP_ID" "$PY" <<'REMOTE'
           set -euo pipefail
           COMMIT="$1"; OP_ID="$2"; PY="$3"
+          NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
+          { [ "$NOW_HM" -ge 0330 ] || [ "$NOW_HM" -lt 0030 ]; } || { echo "inside 00:30-03:30 Hobart quiet window"; exit 1; }
           OP="/srv/ar-local/quality-operation-$OP_ID"
           OUT="/srv/ar-local/quality-audit-cache-$OP_ID"
           UNIT="$OP/canary-unit.json"
-          test -f "$UNIT" || { echo "no canary-unit.json in $OP"; exit 1; }
+          test -d "$OP" -a ! -L "$OP"
+          test -f "$UNIT" -a ! -L "$UNIT" || { echo "no canary-unit.json in $OP"; exit 1; }
+          test ! -L "$OP/source-audit/index.sqlite"
           ORIG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["expected_commit"])' "$UNIT")"
           SRC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$UNIT")"
           [[ "$ORIG" =~ ^[0-9a-f]{40}$ && "$SRC" = "/srv/ar-local/quality-candidate-${ORIG:0:12}" ]] || { echo "unexpected unit identity"; exit 1; }
           test -x "$PY" || { echo "interpreter $PY not found"; exit 1; }
           NEW="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
-          test -f "$NEW/cdr_quality_cache.py" || NEW="$SRC"
-          test ! -e "$OUT" || { echo "cache $OUT already exists"; exit 1; }
+          if [ -d "$NEW" ] && [ -f "$NEW/cdr_quality_cache.py" ]; then
+            test "$(git -C "$NEW" rev-parse HEAD)" = "$COMMIT"
+            test -z "$(git -C "$NEW" status --porcelain)"
+          else
+            NEW="$SRC"
+          fi
+          test ! -e "$OUT" -a ! -L "$OUT" || { echo "cache $OUT already exists"; exit 1; }
           echo "origin commit: $ORIG; source: $SRC; python: $PY"
-          nice -n 10 "$PY" -B "$NEW/cdr_quality_cache.py" --source "$SRC" --operation "$OP" \
-            --output "$OUT" --expected-commit "$ORIG" --attest-closed-protected-run
+          seal_cmd() {
+            trap 'rm -rf "$OUT"' ERR
+            nice -n 10 "$PY" -B "$NEW/cdr_quality_cache.py" --source "$SRC" --operation "$OP" \
+              --output "$OUT" --expected-commit "$ORIG" --attest-closed-protected-run
+          }
+          if [ -x /usr/local/bin/pi-shared-task ]; then
+            export PY NEW SRC OP OUT ORIG
+            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 1800 --wait-timeout 600 -- bash -c "$(declare -f seal_cmd); seal_cmd"
+          else
+            seal_cmd
+          fi
           echo "VERIFIED_CACHE=$OUT/manifest.json"
           echo "VERIFIED_CACHE_SHA256=$(sha256sum "$OUT/manifest.json" | cut -d' ' -f1)"
           REMOTE
@@ -487,28 +552,33 @@ jobs:
         env:
           TARGET_COMMIT: ${{ inputs.target_commit }}
           PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
         run: |
           set -euo pipefail
           PASSED="$(ssh ar-local-pi5 bash -s -- "$TARGET_COMMIT" <<'REMOTE'
           set -u
           for f in /srv/ar-local/quality-operation-gh-*/canary.json; do
-            python3 - "$f" "$1" <<'PY' && { echo "$f"; exit 0; }
+            op_dir="$(dirname "$f")"
+            [ -f "$f" ] && [ ! -L "$f" ] && [ -f "$op_dir/canary-unit.json" ] && [ ! -L "$op_dir/canary-unit.json" ] || continue
+            python3 - "$f" "$op_dir/canary-unit.json" "$1" <<'PY' && { echo "$f"; exit 0; }
           import json, sys
           r = json.load(open(sys.argv[1]))
-          sys.exit(0 if r.get("result") == "PASS" and r.get("target_commit") == sys.argv[2] else 1)
+          u = json.load(open(sys.argv[2]))
+          sys.exit(0 if r.get("result") == "PASS" and r.get("target_commit") == sys.argv[3] and u.get("expected_commit") == sys.argv[3] else 1)
           PY
           done
           exit 1
           REMOTE
           )" || { echo "::error::no guarded canary PASS recorded on the Pi for $TARGET_COMMIT"; exit 1; }
           echo "canary PASS evidence: $PASSED"
+          BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10/}"
           export AR_PI_SSH_HOST=ar-local-pi5 AR_PI_EXPECTED_COMMIT="$TARGET_COMMIT"
-          export AR_PI_BASE_URL="http://${PI_SSH_HOST}/"
+          export AR_PI_BASE_URL="$BASE_URL"
           export AR_PI_BACKUP_GATE_MODE="${{ inputs.backup_gate_mode }}"
           python3 pi_deploy_verify.py --deploy --dry-run
           python3 pi_deploy_verify.py --deploy
           python3 pi_deploy_verify.py --verify
-          python3 verify_local.py --base-url="http://${PI_SSH_HOST}/" --history-mode=series --history-timeout-seconds=90
+          python3 verify_local.py --base-url="$BASE_URL" --history-mode=series --history-timeout-seconds=90
 
       - name: Read-only discovery of canary inputs
         if: inputs.mode == 'discover'
