@@ -150,3 +150,21 @@ def test_parse_banks_run_and_outputs_populate_dim_providers(tmp_path):
     assert db_rows["360 MMS"] == ("51119531252", '["non-bank-lending"]', "", "NON_BANK_LENDER")
     cached = json.loads((out_dir / "dashboard-cache" / "2026-11-15" / "banks.json").read_text(encoding="utf-8"))
     assert len(cached["providers"]) == 2
+    assert rows["CommBank"]["data_holder_brand_id"] == rows["CommBank"]["brand_id"]
+
+
+def test_load_provider_dimensions_hybrid_and_corrupt_metadata(tmp_path):
+    from cdr_clean_export import load_provider_dimensions
+
+    banks_root = tmp_path / "banks"
+    holder = banks_root / "_holders" / "HybridCo"
+    holder.mkdir(parents=True)
+    (holder / "_register-brand.json").write_text(
+        json.dumps({"brand_name": "HybridCo", "industries": ["banking", "non-bank-lending"]}),
+        encoding="utf-8",
+    )
+    assert load_provider_dimensions(banks_root)[0]["entity_type"] == "HYBRID"
+
+    (holder / "_register-brand.json").write_text("{corrupt", encoding="utf-8")
+    with pytest.raises(ValueError, match="corrupt holder metadata"):
+        load_provider_dimensions(banks_root)

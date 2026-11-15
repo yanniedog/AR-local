@@ -170,11 +170,17 @@ def iter_banking_brands_from_payload(payload: Any, *, register_version: Optional
                 # the historical identity locator, but never request it when
                 # the authoritative register says no PRD endpoint is available.
                 # Unknown/historical versions retain their established fallback.
-                registration_id = item.get("dataHolderBrandId") or item.get("interimId")
-                if isinstance(registration_id, str) and registration_id.strip():
-                    brand["brand_id"] = registration_id.strip()
+                data_holder_brand_id = pick_text(item, ["dataHolderBrandId"])
+                interim_id = pick_text(item, ["interimId"])
+                if data_holder_brand_id:
+                    brand["data_holder_brand_id"] = data_holder_brand_id
+                if interim_id:
+                    brand["interim_id"] = interim_id
+                registration_id = data_holder_brand_id or interim_id
+                if registration_id:
+                    brand["brand_id"] = registration_id
                 if (register_version == 2 and item.get("productBaseUri") is None
-                        and isinstance(registration_id, str) and registration_id.strip()):
+                        and registration_id):
                     brand.update(prd_availability="UNAVAILABLE", register_version=2,
                                  registration_id=registration_id)
                 yield brand
