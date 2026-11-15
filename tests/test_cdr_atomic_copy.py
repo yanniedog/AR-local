@@ -128,12 +128,16 @@ def test_successful_copy_flushes_directory_after_sidecar_removal(tmp_path, monke
 
 
 @pytest.mark.parametrize('cleanup', ['unlink', 'fsync'])
-def test_copy_deadline_survives_cleanup_failure(tmp_path, monkeypatch, cleanup):
+@pytest.mark.parametrize('secondary_factory', [
+    lambda: OSError('cleanup storage failure'),
+    lambda: KeyboardInterrupt('cleanup cancelled'),
+])
+def test_copy_deadline_survives_cleanup_failure(tmp_path, monkeypatch, cleanup, secondary_factory):
     from cdr_attempt_evidence_promotion import _copy_record_create_once
     source = tmp_path / 'source'; source.mkdir()
     (source / 'evidence').write_bytes(b'original evidence')
     original = TimeoutError('copy deadline reached')
-    secondary = OSError('cleanup storage failure')
+    secondary = secondary_factory()
     def interrupted(*args):
         yield b'original'
         raise original
