@@ -343,6 +343,7 @@ def _guarded_tailscale_heal(
                 dry_run=dry_run,
                 role="runtime-health-network",
                 on_healed=on_healed,
+                queue_guarded=True,
             )
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         return None, "shared_queue_occupied_or_unavailable"
@@ -372,6 +373,7 @@ def _guarded_service_heal(
     dry_run: bool,
     role: str = "runtime-health",
     on_healed: Optional[Callable[[dict[str, Any]], None]] = None,
+    queue_guarded: bool = False,
 ) -> tuple[Optional[int], str]:
     reason = _production_activity_block_reason()
     if reason:
@@ -385,9 +387,16 @@ def _guarded_service_heal(
                 return None, reason
             code = restart(dry_run=False)
             if code == 0 and on_healed is not None:
-                current = load_state()
-                on_healed(current)
-                _write_state_unlocked(current)
+                try:
+                    with ExitStack() as stack:
+                        if not queue_guarded:
+                            stack.enter_context(_queue_network_guard())
+                        if not _production_activity_block_reason(include_ingest_lock=False):
+                            current = load_state()
+                            on_healed(current)
+                            _write_state_unlocked(current)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                    pass
             return code, ""
     except (OSError, RuntimeError):
         return None, "production_lock_unavailable"
@@ -477,8 +486,24 @@ def cmd_heal(args: argparse.Namespace) -> int:
                 healed = True
         else:
             print("pi_runtime_health: tailscale heal skipped (cooldown)", file=sys.stderr)
+    patch = {
+        "last_check_at": state["last_check_at"],
+        "http_fail_streak": state["http_fail_streak"],
+        "tailscale_fail_streak": state["tailscale_fail_streak"],
+    }
+    for key in (
+        "last_http_heal_at",
+        "http_heal_deferred_reason",
+        "last_http_heal_deferred_at",
+        "last_tailscale_heal_at",
+        "tailscale_heal_deferred_reason",
+        "last_tailscale_heal_deferred_at",
+    ):
+        if key in state:
+            patch[key] = state[key]
+
     def _merge_heal_state(current: dict[str, Any]) -> None:
-        current.update(state)
+        current.update(patch)
         if not deferred_reason:
             current.pop("http_heal_deferred_reason", None)
         if not tail_deferred_reason:

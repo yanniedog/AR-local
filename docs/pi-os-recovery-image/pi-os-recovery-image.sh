@@ -54,16 +54,22 @@ check_window() {
     fail "reached 00:15 Hobart pre-ingest cleanup reserve"
   fi
 }
+check_activity() {
+  local unit
+  for unit in ar-local-daily.service ar-local-ingest-now.service ar-local-drive-backup.service ar-local-day-archive-drain.service; do
+    systemctl is-active -q "$unit" && fail "$unit is active"
+  done
+  if systemctl list-units --type=service --state=active,activating,deactivating,reloading --no-legend 'shared-pi-task-*.service' 'ar-local-day-archive-run-*.service' 2>/dev/null | grep -q .; then
+    fail "shared-pi-task or archive worker service is active"
+  fi
+  local lockfile=/srv/ar-local/data/state/daily-ingest.lock
+  if [ -e "$lockfile" ] || [ -L "$lockfile" ]; then
+    fail "production daily-ingest.lock is present"
+  fi
+}
 now=$((10#$(date +%H) * 60 + 10#$(date +%M)))
 { [ "$now" -ge 215 ] && [ "$now" -le 1110 ]; } || fail "outside 03:35-18:30 Hobart start window (6h reserve before 00:30)"
-if systemctl list-units --state=active,activating --no-legend 'ar-local-*' 'pi-shared-task*' 2>/dev/null | grep -q .; then
-  fail "ar-local or pi-shared-task unit is active"
-fi
-LOCKFILE=/srv/ar-local/data/state/daily-ingest.lock
-if [ -d "$(dirname "$LOCKFILE")" ]; then
-  exec 9>"$LOCKFILE"
-  flock -n 9 || fail "production daily-ingest.lock is held"
-fi
+check_activity
 
 set -a; . "$ENVFILE"; set +a
 [ -n "${AR_LOCAL_DAY_ARCHIVE_REMOTE:-}" ] && [ -n "${RCLONE_CONFIG:-}" ] || fail "Drive remote not configured"
@@ -107,6 +113,7 @@ done
 
 pack() {  # pack <name> <output> <tar args...>
   check_window
+  check_activity
   local name=$1 out=$2; shift 2
   local start=$SECONDS rc=0
   log "BEGIN $name"
