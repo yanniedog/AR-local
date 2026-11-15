@@ -403,12 +403,14 @@ def append_bank_details(
 def _load_institution_dim() -> Dict[str, Any]:
     path = Path(__file__).resolve().parent / "au_institutions_dim.json"
     if not path.is_file():
-        return {}
+        raise FileNotFoundError(f"missing institution dimension file: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid institution dimension file: {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"institution dimension file must be a JSON object: {path}")
+    return data
 
 
 def load_provider_dimensions(banks_root: Path) -> List[Dict[str, str]]:
@@ -432,20 +434,21 @@ def load_provider_dimensions(banks_root: Path) -> List[Dict[str, str]]:
             continue
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"corrupt holder metadata: {meta_path}") from exc
         if not isinstance(meta, Mapping):
-            continue
+            raise ValueError(f"corrupt holder metadata: {meta_path}")
         raw_inds = meta.get("industries")
         industries = sorted({str(x).strip().lower() for x in raw_inds if str(x).strip()}) if isinstance(raw_inds, list) else []
         abn = text(meta.get("abn"))
         entry = by_abn.get(abn) if abn and isinstance(by_abn.get(abn), Mapping) else {}
         entity_type = text(entry.get("entity_type"))
         if not entity_type:
-            for ind in industries:
-                if ind in by_industry:
-                    entity_type = text(by_industry[ind])
-                    break
+            matched_types = {text(by_industry[ind]) for ind in industries if ind in by_industry and text(by_industry[ind])}
+            if len(matched_types) == 1:
+                entity_type = next(iter(matched_types))
+            elif len(matched_types) > 1:
+                entity_type = "HYBRID"
         rows.append({
             "provider": holder_dir.name,
             "brand_id": text(meta.get("brand_id") or meta.get("registration_id")),

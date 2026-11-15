@@ -326,7 +326,15 @@ def ingest_brand(
     holders_root.mkdir(parents=True, exist_ok=True)
 
     meta_path = holders_root / "_register-brand.json"
-    if not meta_path.exists():
+    if meta_path.exists():
+        try:
+            existing_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing_meta = {}
+        merged_meta = {**existing_meta, **brand} if isinstance(existing_meta, dict) else dict(brand)
+        if merged_meta != existing_meta:
+            meta_path.write_text(json.dumps(merged_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    else:
         meta_path.write_text(json.dumps(brand, indent=2, ensure_ascii=False), encoding="utf-8")
 
     if brand.get("prd_availability") == "UNAVAILABLE":
