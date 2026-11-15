@@ -151,6 +151,43 @@ def test_parse_banks_run_and_outputs_populate_dim_providers(tmp_path):
     cached = json.loads((out_dir / "dashboard-cache" / "2026-11-15" / "banks.json").read_text(encoding="utf-8"))
     assert len(cached["providers"]) == 2
     assert rows["CommBank"]["data_holder_brand_id"] == rows["CommBank"]["brand_id"]
+    interim_row = {**register["data"][0], "interimId": "interim-123"}
+    interim_row.pop("dataHolderBrandId", None)
+    interim_brand = next(support.iter_banking_brands_from_payload({"data": [interim_row]}))
+    assert interim_brand["interim_id"] == "interim-123"
+    assert interim_brand["brand_id"] == "interim-123"
+    assert "data_holder_brand_id" not in interim_brand
+
+
+def test_ingest_brand_merges_existing_register_metadata_on_resume(tmp_path):
+    from cdr_ingest_lib import ingest_brand
+
+    date_root = tmp_path / "banks"
+    holder_dir = date_root / "_holders" / "CommBank"
+    holder_dir.mkdir(parents=True)
+    meta_path = holder_dir / "_register-brand.json"
+    meta_path.write_text(json.dumps({"brand_name": "CommBank", "extra": "keep"}), encoding="utf-8")
+
+    ingest_brand(
+        date_root=date_root,
+        brand={
+            "brand_name": "CommBank",
+            "endpoint_url": "https://example.test/cds-au/v1/banking/products",
+            "industries": ["banking"],
+            "abn": "48123123124",
+            "brand_id": "brand-uuid",
+            "data_holder_brand_id": "brand-uuid",
+            "prd_availability": "UNAVAILABLE",
+        },
+        max_pages=1, max_products=None, fetch_unknown_detail=False,
+        timeout=1, max_retries=0, sleep_ms=0, resume=True,
+        bank_dir_name="CommBank", detail_workers=1, log=lambda _: None,
+    )
+    merged = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert merged["extra"] == "keep"
+    assert merged["industries"] == ["banking"]
+    assert merged["abn"] == "48123123124"
+    assert merged["data_holder_brand_id"] == "brand-uuid"
 
 
 def test_load_provider_dimensions_hybrid_and_corrupt_metadata(tmp_path):

@@ -128,10 +128,15 @@ def _daily_export_reconciliation(database: Path) -> dict[str, object]:
             actual[group] = connection.execute(
                 "SELECT COUNT(*) FROM bank_items WHERE item_group = ?", (group,)
             ).fetchone()[0]
-        if "providers" in expected and connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dim_providers'"
-        ).fetchone():
-            actual["providers"] = connection.execute("SELECT COUNT(*) FROM dim_providers").fetchone()[0]
+        if "providers" in expected:
+            has_dim = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dim_providers'"
+            ).fetchone()
+            actual["providers"] = (
+                connection.execute("SELECT COUNT(*) FROM dim_providers").fetchone()[0]
+                if has_dim
+                else None
+            )
     if len(run) != 1 or run[0][0] != run_date or json.loads(run[0][1]) != expected:
         raise ValueError("runs metadata does not match banks export")
     for key, count in actual.items():
