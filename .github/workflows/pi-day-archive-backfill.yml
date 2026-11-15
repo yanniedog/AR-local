@@ -65,6 +65,8 @@ jobs:
           case "$MODE" in status|backfill|dates|stop|merge-report|merge-apply) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
           if [ "$MODE" = "backfill" ]; then
             [[ "$MAX_DAYS" =~ ^[0-9]+$ ]] && [ "$MAX_DAYS" -ge 1 ] && [ "$MAX_DAYS" -le 40 ] || { echo "::error::max_days must be 1-40"; exit 1; }
+          else
+            MAX_DAYS="8"
           fi
           sel=""
           if [ "$MODE" = "dates" ]; then
@@ -144,9 +146,11 @@ jobs:
             if [ "$MODE" = "merge-apply" ]; then
               NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
               { [ "$NOW_HM" -ge 0330 ] || [ "$NOW_HM" -lt 0030 ]; } || { echo "inside 00:30-03:30 Hobart quiet window"; exit 1; }
+              [ -r /etc/ar-local ] && [ -x /etc/ar-local ] || { echo "/etc/ar-local unreadable; failing closed"; exit 1; }
               for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
                 [ ! -e "$f" ] && [ ! -L "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
               done
+              test -x /usr/local/bin/pi-shared-task || { echo "pi-shared-task missing; refusing merge-apply"; exit 1; }
             fi
             U="$(systemctl show -p User --value "$SVC")"; G="$(systemctl show -p Group --value "$SVC")"
             test -n "$U" || { echo "day-archive service user unknown"; exit 1; }
@@ -160,9 +164,12 @@ jobs:
           CONF="${RCLONE_CONFIG:?}"; NAME="${AR_LOCAL_DAY_ARCHIVE_REMOTE%%:*}"
           [[ "$NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "remote name invalid"; exit 1; }
           if [ "$MODE" = "merge-apply" ]; then
+            [ -r /etc/ar-local ] && [ -x /etc/ar-local ] || { echo "/etc/ar-local unreadable; failing closed"; exit 1; }
             for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock \
                      "${AR_LOCAL_DRIVE_BACKUP_SPOOL:-/var/lib/ar-local-drive-backup}/write-hold.json" \
-                     /var/lib/ar-local-day-archives/write-hold.json; do
+                     "${AR_LOCAL_DAY_ARCHIVE_SPOOL:-/var/lib/ar-local-day-archives}/write-hold.json"; do
+              d="$(dirname "$f")"
+              [ -r "$d" ] && [ -x "$d" ] || { echo "spool directory $d unreadable; failing closed"; exit 1; }
               [ ! -e "$f" ] && [ ! -L "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
             done
           fi
@@ -172,8 +179,9 @@ jobs:
           cp.read(sys.argv[1])
           sec = cp[sys.argv[2]]
           assert sec.get("type") == "drive", f"unexpected remote type: {sec.get('type')}"
-          assert sec.get("scope", "drive.file") == "drive.file", f"unexpected scope: {sec.get('scope')}"
+          assert sec.get("scope") == "drive.file", f"unexpected scope: {sec.get('scope')}"
           assert not sec.get("service_account_file"), "service_account_file not permitted"
+          assert not sec.get("service_account_credentials"), "service_account_credentials not permitted"
           PY
           R=(/usr/bin/rclone --config "$CONF" --drive-server-side-across-configs --retries 3 --low-level-retries 10)
           SRC="$NAME,root_folder_id=$SRC_ID:"; DST="$NAME,root_folder_id=$DST_ID:"
@@ -188,7 +196,6 @@ jobs:
           md5 = lambda r: (r.get("Hashes") or {}).get("md5") or (r.get("Hashes") or {}).get("MD5")
           move, dup, conflict = [], [], []
           for name, r in sorted(src.items()):
-              if "/" in name: conflict.append(name); continue
               if name not in dst: move.append(name)
               elif md5(r) and md5(r) == md5(dst[name]) and r["Size"] == dst[name]["Size"]: dup.append(name)
               else: conflict.append(name)
@@ -223,10 +230,17 @@ jobs:
                    -p EnvironmentFile=-/etc/ar-local/day-archive.env)
             [ -n "$G" ] && props+=(-p "Group=$G")
             rc=0
-            if [ "$MODE" = "merge-apply" ] && [ -x /usr/local/bin/pi-shared-task ]; then
-              /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 3600 --wait-timeout 600 -- \
-                sudo systemd-run --quiet --wait --pipe --collect --unit="ar-local-drive-merge-$RUN.service" "${props[@]}" \
-                /bin/bash "$MS" "$MODE" || rc=$?
+            if [ "$MODE" = "merge-apply" ]; then
+              /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 3600 --wait-timeout 600 -- bash -s -- "$RUN" "$MS" "$MODE" "${props[@]}" <<'QMERGE' || rc=$?
+              set -euo pipefail
+              RUN="$1"; MS="$2"; MODE="$3"; shift 3
+              QUNIT="$(sed -n 's#^0::.*/\([^/]*\.service\)$#\1#p' /proc/self/cgroup)"
+              [[ "$QUNIT" =~ ^[A-Za-z0-9@_.:-]+\.service$ ]] || { echo "queue unit unknown; refusing"; exit 1; }
+              UNIT="ar-local-drive-merge-$RUN.service"
+              trap 'sudo systemctl stop "$UNIT" >/dev/null 2>&1 || true' EXIT TERM INT
+              sudo systemd-run --quiet --wait --pipe --collect --unit="$UNIT" -p "BindsTo=$QUNIT" -p "After=$QUNIT" "$@" \
+                /bin/bash "$MS" "$MODE"
+              QMERGE
             else
               sudo systemd-run --quiet --wait --pipe --collect --unit="ar-local-drive-merge-$RUN.service" "${props[@]}" \
                 /bin/bash "$MS" "$MODE" || rc=$?
@@ -236,12 +250,12 @@ jobs:
           fi
           if [ "$MODE" = "stop" ]; then
             # Cancelling a run on GitHub does not stop its queued unit on the Pi.
-            units="$(systemctl list-units --type=service --state=active,activating,deactivating,reloading --no-legend --plain 'ar-local-day-archive-run-*' 'shared-pi-task-*' | awk '{print $1}')"
+            units="$(systemctl list-units --type=service --state=active,activating,deactivating,reloading --no-legend --plain 'ar-local-day-archive-run-*' 'shared-pi-task-*' 'ar-local-queue-task-*' | awk '{print $1}')"
             stopped=0
             for u in $units; do
               if [[ "$u" =~ ^ar-local-day-archive-run-[0-9]+-[0-9]+\.service$ ]]; then
                 echo "stopping $u"; sudo systemctl stop "$u"; stopped=$((stopped + 1))
-              elif [[ "$u" =~ ^shared-pi-task-[0-9a-f-]+\.service$ ]] && systemctl show -p ExecStart --value "$u" 2>/dev/null | grep -q 'day-archive-'; then
+              elif [[ "$u" =~ ^(shared-pi-task|ar-local-queue-task)-[0-9a-f-]+\.service$ ]] && systemctl show -p ExecStart --value "$u" 2>/dev/null | grep -q 'day-archive-'; then
                 echo "stopping queued wrapper $u"; sudo systemctl stop "$u"; stopped=$((stopped + 1))
               fi
             done
