@@ -20,7 +20,7 @@ from cdr_json_replay import write_json_object
 from cdr_replay_rows import ReplayRows, ReplayStore
 from cdr_product_change_stream import diff_current_store
 
-SCHEMA_VERSION = "9"
+SCHEMA_VERSION = "10"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json"],
