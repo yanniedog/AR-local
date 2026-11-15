@@ -1,0 +1,13 @@
+[Unit]
+Description=Alert on a failed or stale monthly Pi OS recovery image
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=AR_LOCAL_ALERT_SPOOL=/var/lib/ar-local-alerts
+EnvironmentFile=-/etc/ar-local/issue-alerts.env
+ExecStart=/usr/bin/python3 -B /usr/local/sbin/pi-os-recovery-image-check
+TimeoutStartSec=120
