@@ -306,50 +306,104 @@ def test_failure_template_loads_same_backup_locations_as_watchdog():
         assert actual == expected
 
 
-def _routine_state(tmp_path, monkeypatch, **coverage):
-    import app_payload_retained_policy as policy
-    monkeypatch.setattr(policy, 'retained_partial_allowed', lambda contract: contract.get('sealed') is True)
-    base = {'providers_attempted': 115, 'providers_registered': 115, 'providers_failed': 2,
-            'providers_partial': 8, 'failure_records': 13, 'products_discovered': 2809,
-            'failure_provenance_complete': True, 'corrupt_failure_records': 0,
-            'unattributed_failure_records': 0}
-    base.update(coverage)
+ROUTINE_NOW = datetime(2026, 11, 13, 6, 0, tzinfo=timezone.utc)
+ROUTINE_DUE = watch.latest_daily_due_utc(ROUTINE_NOW)
+ROUTINE_DAY = watch.expected_run_date_for_due(ROUTINE_DUE)
+ROUTINE_KEY = 'ingest:' + ROUTINE_DAY
+
+
+def _routine_state(tmp_path, mutate=None, tamper=None, pointer_generation=None):
+    """Real retained accounting sealed by the real export contract builder."""
+    from cdr_export_contract import build_contract
+    retained = json.loads((Path(__file__).parent / 'fixtures' /
+                           'publication-accounting-2026-09-22.json').read_bytes())
+    if mutate:
+        mutate(retained)
+    contract = build_contract(
+        tmp_path, observation_date=ROUTINE_DAY,
+        observed_at=f'{ROUTINE_DAY}T01:00:00+11:00', observation_state='partial',
+        source_path=f'runs/{ROUTINE_DAY}/_exports', completion_marker_path=f'{ROUTINE_DAY}.done.json',
+        coverage=retained['coverage'], provider_states=retained['provider_states'],
+        register_hashes=retained['register_hashes'], artifacts=[retained['artifact']],
+        normalization_version='protocol-policy-date-control')
+    if tamper:
+        tamper(contract)
+    generation = contract['generation_id']
     state = tmp_path / 'state'
     (state / 'observation-pointers-v2').mkdir(parents=True)
     (state / 'observation-pointers-v2' / 'latest-observation.json').write_text(json.dumps(
-        {'observation_date': '2026-09-13', 'marker_path': 'done.json'}), encoding='utf-8')
-    (state / 'done.json').write_text(json.dumps({'export_contract_path': 'contract.json'}), encoding='utf-8')
-    (state / 'contract.json').write_text(json.dumps({'sealed': True, 'coverage': base}), encoding='utf-8')
+        {'observation_date': ROUTINE_DAY, 'marker_path': 'done.json',
+         'generation_id': pointer_generation or generation}), encoding='utf-8')
+    (state / 'done.json').write_text(json.dumps(
+        {'export_contract_path': 'contract.json', 'generation_id': generation}), encoding='utf-8')
+    (state / 'contract.json').write_text(json.dumps(contract), encoding='utf-8')
     return state
 
 
-def test_routine_published_partial_does_not_alert(tmp_path, monkeypatch):
+def _check_routine(tmp_path, monkeypatch, state):
     monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
-    state = _routine_state(tmp_path, monkeypatch)
     store = AlertStore(tmp_path)
-    assert watch.ingest_checks(store, state, NOW, units(), timer_triggered=None)['status'] == 'PARTIAL'
-    row = store.read()['incidents'].get('ingest:2026-09-13')
-    assert row is None or row['active'] is False
+    title = 'Pi ingest needs attention: ' + ROUTINE_DAY
+    store.observe(ROUTINE_KEY, title, 'INGEST_PARTIAL', healthy=False)
+    assert store.read()['incidents'][ROUTINE_KEY]['active'] is True
+    result = watch.ingest_checks(store, state, ROUTINE_NOW, units(ROUTINE_DUE), timer_triggered=None)
+    assert result['status'] == 'PARTIAL'
+    return store.read()['incidents'][ROUTINE_KEY]
 
 
-@pytest.mark.parametrize('coverage', [
-    {'providers_partial': 20},                 # too many providers affected
-    {'failure_records': 100},                  # too many failed requests
-    {'failure_provenance_complete': False},    # evidence incomplete
-    {'providers_attempted': 100},              # not every registered provider attempted
-    {'providers_failed': None},                # malformed accounting
-])
-def test_material_or_unverifiable_partial_still_alerts(tmp_path, monkeypatch, coverage):
-    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
-    state = _routine_state(tmp_path, monkeypatch, **coverage)
-    store = AlertStore(tmp_path)
-    watch.ingest_checks(store, state, NOW, units(), timer_triggered=None)
-    row = store.read()['incidents']['ingest:2026-09-13']
+def test_routine_published_partial_closes_active_alert(tmp_path, monkeypatch):
+    row = _check_routine(tmp_path, monkeypatch, _routine_state(tmp_path))
+    assert row['active'] is False
+
+
+def _more_partial(retained):
+    changed = 0
+    for row in retained['provider_states']:
+        if row['state'] == 'complete' and changed < 10:
+            row.update(state='partial', failure_records=1, failure_categories={'transport': 1})
+            changed += 1
+    coverage = retained['coverage']
+    coverage.update(providers_partial=coverage['providers_partial'] + 10,
+                    providers_complete=coverage['providers_complete'] - 10,
+                    failure_records=coverage['failure_records'] + 10)
+
+
+def _unverified_population(retained):
+    retained['coverage']['provider_population_unverified'] = [
+        {'provider': f'Provider {n}', 'population_known': False,
+         'disposition': 'UNVERIFIED_SOURCE_ABSENCE'} for n in range(8)]
+
+
+def _register_unproven(contract):
+    contract['coverage']['register_provenance_complete'] = False
+
+
+def _understated(contract):
+    contract['coverage']['providers_partial'] = 1
+
+
+def _no_provider_rows(contract):
+    contract['provider_states'] = []
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'mutate': _more_partial},
+    {'mutate': _unverified_population},
+    {'tamper': _register_unproven},
+    {'tamper': _understated},
+    {'tamper': _no_provider_rows},
+    {'pointer_generation': 'obs-2026-11-13-0000000000000000'},
+], ids=['many-providers', 'unverified-population', 'register-unproven',
+        'understated-aggregate', 'no-provider-rows', 'pointer-moved'])
+def test_material_or_unverifiable_partial_keeps_alert(tmp_path, monkeypatch, kwargs):
+    row = _check_routine(tmp_path, monkeypatch, _routine_state(tmp_path, **kwargs))
     assert row['category'] == 'INGEST_PARTIAL' and row['active'] is True
 
 
-def test_unsealed_partial_still_alerts(tmp_path, monkeypatch):
-    state = _routine_state(tmp_path, monkeypatch)
-    (state / 'contract.json').write_text(json.dumps({'sealed': False, 'coverage': {}}), encoding='utf-8')
-    assert watch.routine_partial(state, '2026-09-13') is False
-    assert watch.routine_partial(state, '2026-09-14') is False
+def test_routine_partial_requires_current_partial_observation(tmp_path, monkeypatch):
+    state = _routine_state(tmp_path)
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'INVALID')
+    assert watch.routine_partial(state, ROUTINE_DAY) is False
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
+    assert watch.routine_partial(state, ROUTINE_DAY) is True
+    assert watch.routine_partial(state, '2026-11-14') is False
