@@ -304,3 +304,52 @@ def test_failure_template_loads_same_backup_locations_as_watchdog():
     for name in ('ar-local-issue-watchdog.service', 'ar-local-issue-failure@.service'):
         actual = [line for line in (root / name).read_text().splitlines() if line.startswith('EnvironmentFile=')]
         assert actual == expected
+
+
+def _routine_state(tmp_path, monkeypatch, **coverage):
+    import app_payload_retained_policy as policy
+    monkeypatch.setattr(policy, 'retained_partial_allowed', lambda contract: contract.get('sealed') is True)
+    base = {'providers_attempted': 115, 'providers_registered': 115, 'providers_failed': 2,
+            'providers_partial': 8, 'failure_records': 13, 'products_discovered': 2809,
+            'failure_provenance_complete': True, 'corrupt_failure_records': 0,
+            'unattributed_failure_records': 0}
+    base.update(coverage)
+    state = tmp_path / 'state'
+    (state / 'observation-pointers-v2').mkdir(parents=True)
+    (state / 'observation-pointers-v2' / 'latest-observation.json').write_text(json.dumps(
+        {'observation_date': '2026-09-13', 'marker_path': 'done.json'}), encoding='utf-8')
+    (state / 'done.json').write_text(json.dumps({'export_contract_path': 'contract.json'}), encoding='utf-8')
+    (state / 'contract.json').write_text(json.dumps({'sealed': True, 'coverage': base}), encoding='utf-8')
+    return state
+
+
+def test_routine_published_partial_does_not_alert(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
+    state = _routine_state(tmp_path, monkeypatch)
+    store = AlertStore(tmp_path)
+    assert watch.ingest_checks(store, state, NOW, units(), timer_triggered=None)['status'] == 'PARTIAL'
+    row = store.read()['incidents'].get('ingest:2026-09-13')
+    assert row is None or row['active'] is False
+
+
+@pytest.mark.parametrize('coverage', [
+    {'providers_partial': 20},                 # too many providers affected
+    {'failure_records': 100},                  # too many failed requests
+    {'failure_provenance_complete': False},    # evidence incomplete
+    {'providers_attempted': 100},              # not every registered provider attempted
+    {'providers_failed': None},                # malformed accounting
+])
+def test_material_or_unverifiable_partial_still_alerts(tmp_path, monkeypatch, coverage):
+    monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
+    state = _routine_state(tmp_path, monkeypatch, **coverage)
+    store = AlertStore(tmp_path)
+    watch.ingest_checks(store, state, NOW, units(), timer_triggered=None)
+    row = store.read()['incidents']['ingest:2026-09-13']
+    assert row['category'] == 'INGEST_PARTIAL' and row['active'] is True
+
+
+def test_unsealed_partial_still_alerts(tmp_path, monkeypatch):
+    state = _routine_state(tmp_path, monkeypatch)
+    (state / 'contract.json').write_text(json.dumps({'sealed': False, 'coverage': {}}), encoding='utf-8')
+    assert watch.routine_partial(state, '2026-09-13') is False
+    assert watch.routine_partial(state, '2026-09-14') is False

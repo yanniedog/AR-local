@@ -19,6 +19,14 @@ DAILY_TIMER = "ar-local-daily.timer"
 WATCHDOG_TITLE = "Pi ingest/publication check needs attention: "
 
 
+# A finalized partial capture that the standing retained-partial policy already
+# publishes, and whose gaps stay within these bounds, is routine: the same few
+# providers return invalid or withdrawn data every day. It is still disclosed in
+# the payload coverage block; it just does not page the operator.
+ROUTINE_PARTIAL_MAX_PROVIDER_RATIO = 0.15
+ROUTINE_PARTIAL_MAX_FAILURE_RATIO = 0.02
+
+
 class EvidenceLimit(ValueError):
     pass
 
@@ -243,6 +251,39 @@ def completion(state_root, date):
         return "INVALID"
 
 
+def routine_partial(state_root, date):
+    """True only for a publishable partial whose gaps are within routine bounds.
+
+    Fails closed: unreadable, unsealed or materially degraded coverage alerts.
+    """
+    from app_payload_retained_policy import retained_partial_allowed
+    try:
+        pointer = read_json(state_root, "observation-pointers-v2/latest-observation.json")
+        if pointer.get("observation_date") != date:
+            return False
+        marker = read_json(state_root, pointer.get("marker_path"))
+        contract = read_json(state_root, marker.get("export_contract_path"), maximum=8 * 1024 * 1024)
+        if not retained_partial_allowed(contract):
+            return False
+        coverage = contract["coverage"]
+        counts = {key: coverage.get(key) for key in (
+            "providers_attempted", "providers_registered", "providers_failed",
+            "providers_partial", "failure_records", "products_discovered")}
+        if any(type(value) is not int or value < 0 for value in counts.values()):
+            return False
+        attempted, products = counts["providers_attempted"], counts["products_discovered"]
+        if (attempted <= 0 or products <= 0 or attempted != counts["providers_registered"]
+                or coverage.get("failure_provenance_complete") is not True
+                or coverage.get("corrupt_failure_records") != 0
+                or coverage.get("unattributed_failure_records") != 0):
+            return False
+        affected = counts["providers_failed"] + counts["providers_partial"]
+        return (affected / attempted <= ROUTINE_PARTIAL_MAX_PROVIDER_RATIO
+                and counts["failure_records"] / products <= ROUTINE_PARTIAL_MAX_FAILURE_RATIO)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
 def ingest_checks(store, state_root, now, units=None, timer_triggered=None):
     due = latest_daily_due_utc(now); date = expected_run_date_for_due(due)
     if now < due + timedelta(minutes=30):
@@ -271,8 +312,9 @@ def ingest_checks(store, state_root, now, units=None, timer_triggered=None):
             store.observe("ingest:" + date, "Pi ingest needs attention: " + date, "INGEST_RUNTIME_EXCEEDED", healthy=False)
         return {"status": "STUCK" if stale else "RUNNING", "date": date}
     status = completion(state_root, date)
+    healthy = status == "COMPLETE" or (status == "PARTIAL" and routine_partial(state_root, date))
     store.observe("ingest:" + date, "Pi ingest needs attention: " + date,
-                  "INGEST_" + status, healthy=status == "COMPLETE")
+                  "INGEST_" + status, healthy=healthy)
     return {"status": status, "date": date}
 
 
