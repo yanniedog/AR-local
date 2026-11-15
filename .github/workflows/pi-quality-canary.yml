@@ -445,7 +445,7 @@ jobs:
             echo "PREPARED_PYTHON=$d/bin/python3"
           }
           if [ -x /usr/local/bin/pi-shared-task ]; then
-            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 900 --wait-timeout 600 -- bash -c "$(declare -f run_prep); run_prep \"\$1\"" _ "$D"
+            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 900 --wait-timeout 600 -- bash -c "set -euo pipefail; $(declare -f run_prep); run_prep \"\$1\"" _ "$D"
           else
             run_prep "$D"
           fi
@@ -487,16 +487,16 @@ jobs:
           else
             NEW="$SRC"
           fi
-          test ! -e "$OUT" -a ! -L "$OUT" || { echo "cache $OUT already exists"; exit 1; }
           echo "origin commit: $ORIG; source: $SRC; python: $PY"
           seal_cmd() {
+            test ! -e "$OUT" -a ! -L "$OUT" || { echo "cache $OUT already exists"; exit 1; }
             trap 'rm -rf "$OUT"' ERR
             nice -n 10 "$PY" -B "$NEW/cdr_quality_cache.py" --source "$SRC" --operation "$OP" \
               --output "$OUT" --expected-commit "$ORIG" --attest-closed-protected-run
           }
           if [ -x /usr/local/bin/pi-shared-task ]; then
             export PY NEW SRC OP OUT ORIG
-            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 1800 --wait-timeout 600 -- bash -c "$(declare -f seal_cmd); seal_cmd"
+            /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 1800 --wait-timeout 600 -- bash -c "set -euo pipefail; $(declare -f seal_cmd); seal_cmd"
           else
             seal_cmd
           fi
