@@ -407,3 +407,15 @@ def test_routine_partial_requires_current_partial_observation(tmp_path, monkeypa
     monkeypatch.setattr(watch, 'completion', lambda *_: 'PARTIAL')
     assert watch.routine_partial(state, ROUTINE_DAY) is True
     assert watch.routine_partial(state, '2026-11-14') is False
+
+
+def _unverified_already_counted(retained):
+    rows = [row for row in retained['provider_states'] if row['state'] == 'partial'][:8]
+    retained['coverage']['provider_population_unverified'] = [
+        {'provider': row['brand_name'], 'provider_uid': row['provider_uid'],
+         'population_known': False, 'disposition': 'UNVERIFIED_SOURCE_ABSENCE'} for row in rows]
+
+
+def test_unverified_population_already_counted_is_not_double_counted(tmp_path, monkeypatch):
+    row = _check_routine(tmp_path, monkeypatch, _routine_state(tmp_path, mutate=_unverified_already_counted))
+    assert row['active'] is False

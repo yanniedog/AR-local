@@ -303,8 +303,15 @@ def routine_partial(state_root, date):
                 or any(type(value) is not int or value < 0 for value in recorded)
                 or sum(recorded) != counts["failure_records"]):
             return False
-        # Providers whose population could not be verified count as affected.
-        affected = counts["providers_failed"] + counts["providers_partial"] + len(unverified)
+        # Providers whose population could not be verified count as affected,
+        # once each: population coverage already marks registered ones failed.
+        if any(type(row) is not dict for row in unverified):
+            return False
+        counted = {row.get(key) for row in states if row.get("state") in {"failed", "partial"}
+                   for key in ("provider_uid", "brand_name", "provider_dir")} - {None, ""}
+        extra = sum(1 for row in unverified
+                    if not ({row.get("provider_uid"), row.get("provider")} - {None, ""}) & counted)
+        affected = counts["providers_failed"] + counts["providers_partial"] + extra
         if (affected / attempted > ROUTINE_PARTIAL_MAX_PROVIDER_RATIO
                 or counts["failure_records"] / products > ROUTINE_PARTIAL_MAX_FAILURE_RATIO):
             return False
