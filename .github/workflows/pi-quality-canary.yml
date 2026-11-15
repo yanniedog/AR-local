@@ -564,18 +564,17 @@ jobs:
           for f in /srv/ar-local/quality-operation-gh-*/canary.json; do
             op_dir="$(dirname "$f")"
             [ -d "$op_dir" ] && [ ! -L "$op_dir" ] && [ -f "$f" ] && [ ! -L "$f" ] && [ -f "$op_dir/canary-unit.json" ] && [ ! -L "$op_dir/canary-unit.json" ] || continue
-            python3 - "$f" "$op_dir/canary-unit.json" "$1" "$(basename "$op_dir")" <<'PY' && { echo "$f"; exit 0; }
+            python3 - "$f" "$op_dir/canary-unit.json" "$1" "$op_dir" <<'PY' && { echo "$f"; exit 0; }
           import json, sys
           r = json.load(open(sys.argv[1]))
           u = json.load(open(sys.argv[2]))
-          commit, op_name = sys.argv[3], sys.argv[4]
-          op_id = op_name.removeprefix("quality-operation-")
+          commit, op_dir = sys.argv[3], sys.argv[4]
           ok = (
               r.get("result") == "PASS"
               and r.get("target_commit") == commit
               and u.get("schema_version") is not None
               and u.get("expected_commit") == commit
-              and u.get("operation") == op_id
+              and u.get("operation") == op_dir
               and u.get("source") == f"/srv/ar-local/quality-candidate-{commit[:12]}"
               and str(u.get("unit") or "").startswith("ar-local-quality-canary-")
           )
