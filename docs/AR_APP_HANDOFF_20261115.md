@@ -50,3 +50,14 @@ Opened PR `https://github.com/yanniedog/AR-app/pull/492` (`fix/handoff-20261115`
 **Local verification**:
 - Pre-rebase: `cd mobile && npm run check:ui-copy` (0 violations), `npm run ci:unit` (`tsc --noEmit` exit 0; Jest `487 passed` suites / `5,545 passed` tests).
 - Post-rebase (`8c14ccfe` on `origin/main`): `npm run check:ui-copy` (0 violations), `npm run typecheck` (exit 0), focused Jest on all 10 modified suites (`10 passed` suites / `189 passed` tests).
+
+## Final status — 2026-11-15 (`AR-app` PR #492 merged, v1.0.282 released)
+- **Merged PR**: `https://github.com/yanniedog/AR-app/pull/492` squash-merged cleanly to `main` at `2026-11-15T04:19:57Z` as commit `1a9acb406408991072269261189427ccc890b635` (PR head `2ac94943`).
+- **CI & Bot Review**: `mobile-ci` passed (`9m4s`, run `43675596186`), `bot-feedback-gate` passed (`16` review threads addressed and resolved across commits up to `2ac94943`), and CodeQL / auto-merge checks passed.
+- **Additional follow-up fixes landed in PR #492 before merge**:
+  - `mobile/src/data/bankResponseEvidence.ts`: bounded source-gap coverage at `min(eventDate, earliestRemoved)` (`bankResponseCoverage.test.ts`), and updated `mobile/scripts/audit-public-payload.test.mjs` expectation (`filteredHistory: 0, missingBaseline: 273`).
+  - `mobile/src/data/mortgageComparisonScenario.ts`, `RatesWorkspace.tsx`, `compare.tsx`, `product/[key].tsx`, `rate-receipt.tsx`: preserved cold-launch `80%` LVR / Owner occupied / P&I defaults across navigation (`mortgageComparisonScenario.test.ts`, `compareMortgageScenario.test.tsx`).
+  - `mobile/src/components/ProductCard.tsx`: added wrapping/shrinking (`flexShrink: 1, maxWidth: '100%'`) on compact metrics, facts container, and facet/tier cells (`compactProductRow.test.tsx`).
+  - `mobile/src/components/passthrough/BankResponseDashboard.tsx` & `BankRatesPanel.tsx`: preserved visible structured no-move status labels, honored explicit selection of `0%` rate banks, and added `bankResponseDashboard.test.tsx` + `BankRatesPanel.test.tsx` regression coverage.
+- **Android APK Release**: `mobile-android-apk` run `43676295308` (`https://github.com/yanniedog/AR-app/actions/runs/43676295308`) completed with `conclusion: success` for commit `1a9acb40`, publishing `app-v1.0.282` and `app-arm-v1.0.282` (`Australian Rates app – 1.0.282 (Android)`).
+- **Remaining open joint item**: Section 5 bullet 3 (`2,667` products / `16,183` rates vs `2,809` / `16,339` in source, and `116` `historical-quarantined-tiers`) remains open for joint `AR-local` / `AR-app` investigation.
