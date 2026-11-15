@@ -83,8 +83,24 @@ def test_real_captured_rows_roundtrip_and_source_unchanged(source, tmp_path):
     assert value["totals"]["facts"] == len(source[2])
     for product in value["products"]:
         key = product["identity"]["product_key"]
-        expected = {row["fact_id"]: fact({**row, "value_boolean": int(row["value_boolean"]) if row["value_boolean"] is not None else None})
-                    for row in source[2] if row["product_key"] == key}
+        expected = {
+            row["fact_id"]: {
+                "fact_id": row["fact_id"],
+                "kind": row["kind"],
+                "canonical_key": row["canonical_key"],
+                "value_type": row["value_type"],
+                "unit": row["unit"],
+                "mapping": row["mapping"],
+                "source_path": row["source_path"],
+                "source_pattern": row["source_pattern"],
+                "value": json.loads(row["value_json"]),
+                "source_value": json.loads(row["source_value_json"]),
+                "qualifiers": json.loads(row["qualifiers_json"]),
+                "min_value": row["min_value"],
+                "max_value": row["max_value"],
+            }
+            for row in source[2] if row["product_key"] == key
+        }
         assert {row["fact_id"]: row for row in evidence.iter_product_facts(output, key)} == expected
     assert [path.read_bytes() for path in source[:2]] == before
 
@@ -110,6 +126,9 @@ def test_deterministic_complete_bytes(source, tmp_path):
     ("UPDATE bank_product_facts SET product_name=''", ()),
     ("UPDATE bank_product_facts SET provider='changed' WHERE rowid=1", ()),
     ("UPDATE bank_product_facts SET mapping='invented'", ()),
+    ("UPDATE bank_product_facts SET kind='invented'", ()),
+    ("UPDATE bank_product_facts SET fact_id='not-20-hex' WHERE rowid=1", ()),
+    ("UPDATE bank_product_facts SET value_type='range', value_boolean=NULL, value_number=NULL, value_text=NULL, value_json='null', min_value=10, max_value=5 WHERE rowid=1", ()),
     ("DELETE FROM bank_product_facts", ()),
 ])
 def test_invalid_bound_database_never_completes(source, tmp_path, sql, values):
@@ -328,8 +347,8 @@ def test_pages_and_directory_are_synced_before_completion(source, tmp_path, monk
     monkeypatch.setattr(evidence, "_fsync_directory", lambda _: events.append("dir_sync"))
     monkeypatch.setattr(Path, "unlink", unlink)
     _, manifest = build(source, tmp_path)
-    assert events == ["file_sync"] * (manifest["totals"]["pages"] + 1) + [
-        "dir_sync", "link", "dir_sync", "unlink", "dir_sync"]
+    assert events == ["dir_sync"] + ["file_sync"] * (manifest["totals"]["pages"] + 1) + [
+        "dir_sync", "link", "dir_sync", "unlink", "dir_sync", "dir_sync"]
 
 
 @pytest.mark.parametrize("failure", ["page", "before_link", "after_link", "after_unlink"])
@@ -341,7 +360,7 @@ def test_sync_failure_propagates_without_claiming_success(source, tmp_path, monk
         monkeypatch.setattr(evidence.os, "fsync", failed_sync)
     else:
         calls = []
-        target = {"before_link": 1, "after_link": 2, "after_unlink": 3}[failure]
+        target = {"before_link": 2, "after_link": 3, "after_unlink": 4}[failure]
 
         def directory_sync(path):
             calls.append(path)

@@ -41,7 +41,7 @@ def controlled_queue(monkeypatch, *, running=False, trusted=True):
     class Store:
         def __init__(self, _root): pass
         @contextmanager
-        def transaction(self):
+        def transaction(self, *, timeout_seconds=None):
             assert not active['held']
             active['held'] = True; phases.append('enter')
             try: yield {'jobs': [{'state': 'running'}] if running else []}
@@ -136,17 +136,27 @@ def test_real_write_errors_propagate_and_release_guards(isolated, monkeypatch, w
 @pytest.mark.skipif(os.name != 'posix', reason='production queue uses Linux flock')
 def test_actual_queue_transaction_blocks_racing_admission_until_state_saved(isolated, monkeypatch):
     _, state, queue_root = isolated
-    attempted, admitted = threading.Event(), threading.Event()
+    entered_tx, admitted = threading.Event(), threading.Event()
     errors = []; threads = []
+    orig_tx = queue.Store.transaction
+
+    @contextmanager
+    def wrapped_tx(self, *args, **kwargs):
+        if threading.current_thread() is not threading.main_thread():
+            entered_tx.set()
+        with orig_tx(self, *args, **kwargs) as value:
+            yield value
+
+    monkeypatch.setattr(queue.Store, 'transaction', wrapped_tx)
+
     def admission():
-        attempted.set()
         try:
             with queue.Store(queue_root).transaction(): admitted.set()
         except BaseException as error: errors.append(error)
     def probe(_):
         assert (state / 'daily-ingest.lock').exists()
         thread = threading.Thread(target=admission, daemon=True); threads.append(thread); thread.start()
-        assert attempted.wait(2)
+        assert entered_tx.wait(2)
         assert not admitted.wait(0.1), 'queue admission entered during state write'
     monkeypatch.setattr(health, 'ensure_runtime_data_writable', probe)
     try:

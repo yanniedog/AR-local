@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack, contextmanager
+import inspect
 import json
 import socket
 import subprocess
@@ -14,7 +15,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ar_local_operation_lock import production_lock
 from ar_local_pi_runtime import (
@@ -70,6 +71,15 @@ def load_state() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _write_state_unlocked(state: dict[str, Any]) -> None:
+    ensure_runtime_data_writable(REPO_ROOT)
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
 def save_state(state: dict[str, Any]) -> bool:
     # Even the writability probes mutate production directory identities. Keep
     # them inside the same exclusion as the state replacement, before any mkdir.
@@ -77,12 +87,19 @@ def save_state(state: dict[str, Any]) -> bool:
         if reason:
             print(f"pi_runtime_health: state persistence deferred ({reason})")
             return False
-        ensure_runtime_data_writable(REPO_ROOT)
-        path = state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        tmp.replace(path)
+        _write_state_unlocked(state)
+    return True
+
+
+def update_state(mutator: Callable[[dict[str, Any]], None]) -> bool:
+    """Re-read and merge state under the write guard so concurrent checks do not clobber each other."""
+    with _state_write_guard() as reason:
+        if reason:
+            print(f"pi_runtime_health: state persistence deferred ({reason})")
+            return False
+        current = load_state()
+        mutator(current)
+        _write_state_unlocked(current)
     return True
 
 
@@ -269,17 +286,24 @@ def cmd_check(args: argparse.Namespace) -> int:
         for line in tail_msgs:
             print(f"pi_runtime_health: tailscale {line}")
     state = load_state()
-    state["last_check_at"] = _utc_iso()
-    state["http_fail_streak"] = 0 if http_ok else int(state.get("http_fail_streak") or 0) + 1
-    if tail_ok is not None:
-        state["tailscale_fail_streak"] = 0 if tail_ok else int(state.get("tailscale_fail_streak") or 0) + 1
-    save_state(state)
+    http_streak = 0 if http_ok else int(state.get("http_fail_streak") or 0) + 1
+    tail_streak = (
+        0 if tail_ok else int(state.get("tailscale_fail_streak") or 0) + 1
+    ) if tail_ok is not None else state.get("tailscale_fail_streak")
+
+    def _apply(current: dict[str, Any]) -> None:
+        current["last_check_at"] = _utc_iso()
+        current["http_fail_streak"] = 0 if http_ok else int(current.get("http_fail_streak") or 0) + 1
+        if tail_ok is not None:
+            current["tailscale_fail_streak"] = 0 if tail_ok else int(current.get("tailscale_fail_streak") or 0) + 1
+
+    update_state(_apply)
     if http_ok and (tail_ok is None or tail_ok):
         print("pi_runtime_health: check OK")
         return EXIT_OK
     print(
-        f"pi_runtime_health: check FAIL (http_streak={state.get('http_fail_streak')}, "
-        f"tailscale_streak={state.get('tailscale_fail_streak')})",
+        f"pi_runtime_health: check FAIL (http_streak={http_streak}, "
+        f"tailscale_streak={tail_streak})",
         file=sys.stderr,
     )
     return EXIT_UNHEALTHY
@@ -298,22 +322,36 @@ def _production_activity_block_reason(*, include_ingest_lock: bool = True) -> st
         return "production_activity_unavailable"
 
 
-def _guarded_dashboard_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
+def _guarded_dashboard_heal(
+    *,
+    dry_run: bool,
+    on_healed: Optional[Callable[[dict[str, Any]], None]] = None,
+) -> tuple[Optional[int], str]:
     """Serialize both service mutations with ingest, backup and deployment."""
-    return _guarded_service_heal(restart_dashboard_and_nginx, dry_run=dry_run)
+    return _guarded_service_heal(restart_dashboard_and_nginx, dry_run=dry_run, on_healed=on_healed)
 
 
-def _guarded_tailscale_heal(*, dry_run: bool) -> tuple[Optional[int], str]:
+def _guarded_tailscale_heal(
+    *,
+    dry_run: bool,
+    on_healed: Optional[Callable[[dict[str, Any]], None]] = None,
+) -> tuple[Optional[int], str]:
     """Serialize host-wide recovery with every occupied queue claim."""
     try:
         with _queue_network_guard():
-            return _guarded_service_heal(restart_tailscaled, dry_run=dry_run, role="runtime-health-network")
+            return _guarded_service_heal(
+                restart_tailscaled,
+                dry_run=dry_run,
+                role="runtime-health-network",
+                on_healed=on_healed,
+                queue_guarded=True,
+            )
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         return None, "shared_queue_occupied_or_unavailable"
 
 
 @contextmanager
-def _queue_network_guard():
+def _queue_network_guard(*, timeout_seconds: float = 5.0):
     root = QUEUE_ROOT
     # Legacy hosts without a commissioned queue retain their native lease.
     if not is_raspberry_pi() or not root.exists() and not root.is_symlink():
@@ -324,13 +362,21 @@ def _queue_network_guard():
     store = Store(root)
     # Keep admission excluded throughout the mutation, so a job cannot start
     # between the ownership readback and the Tailscale restart.
-    with store.transaction() as state:
+    tx_kwargs = {"timeout_seconds": timeout_seconds} if "timeout_seconds" in inspect.signature(store.transaction).parameters else {}
+    with store.transaction(**tx_kwargs) as state:
         if not store.reconcile(state) or any(job['state'] == 'running' for job in state['jobs']):
             raise RuntimeError('shared queue is occupied or ownership is unknown')
         yield
 
 
-def _guarded_service_heal(restart, *, dry_run: bool, role: str = "runtime-health") -> tuple[Optional[int], str]:
+def _guarded_service_heal(
+    restart,
+    *,
+    dry_run: bool,
+    role: str = "runtime-health",
+    on_healed: Optional[Callable[[dict[str, Any]], None]] = None,
+    queue_guarded: bool = False,
+) -> tuple[Optional[int], str]:
     reason = _production_activity_block_reason()
     if reason:
         return None, reason
@@ -341,7 +387,19 @@ def _guarded_service_heal(restart, *, dry_run: bool, role: str = "runtime-health
             reason = _production_activity_block_reason(include_ingest_lock=False)
             if reason:
                 return None, reason
-            return restart(dry_run=False), ""
+            code = restart(dry_run=False)
+            if code == 0 and on_healed is not None:
+                try:
+                    with ExitStack() as stack:
+                        if not queue_guarded:
+                            stack.enter_context(_queue_network_guard())
+                        if not _production_activity_block_reason(include_ingest_lock=False):
+                            current = load_state()
+                            on_healed(current)
+                            _write_state_unlocked(current)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                    pass
+            return code, ""
     except (OSError, RuntimeError):
         return None, "production_lock_unavailable"
 
@@ -364,14 +422,18 @@ def _heal_http(args: argparse.Namespace, state: dict[str, Any]) -> tuple[bool, b
     if not cooldown_elapsed(state, "last_http_heal_at", args.heal_cooldown):
         print("pi_runtime_health: HTTP heal skipped (cooldown)", file=sys.stderr)
         return http_ok, False, ""
-    code, reason = _guarded_dashboard_heal(dry_run=args.dry_run)
+    def _record_http_heal(target: dict[str, Any]) -> None:
+        target.pop("http_heal_deferred_reason", None)
+        target["last_http_heal_at"] = _utc_iso()
+        target["http_fail_streak"] = 0
+
+    code, reason = _guarded_dashboard_heal(dry_run=args.dry_run, on_healed=_record_http_heal)
     if reason:
         state["http_fail_streak"] = previous_streak
         return http_ok, False, reason
     if code != 0:
         return False, False, ""
-    state["last_http_heal_at"] = _utc_iso()
-    state["http_fail_streak"] = 0
+    _record_http_heal(state)
     if not args.dry_run:
         time.sleep(8)
         reason = _production_activity_block_reason()
@@ -404,23 +466,51 @@ def cmd_heal(args: argparse.Namespace) -> int:
     tail_streak = int(state.get("tailscale_fail_streak") or 0)
     if not tail_ok and tail_streak >= args.tailscale_fail_threshold:
         if cooldown_elapsed(state, "last_tailscale_heal_at", args.tailscale_heal_cooldown):
-            code, tail_deferred_reason = _guarded_tailscale_heal(dry_run=args.dry_run)
+            def _record_tailscale_heal(target: dict[str, Any]) -> None:
+                target.pop("tailscale_heal_deferred_reason", None)
+                target["last_tailscale_heal_at"] = _utc_iso()
+                target["tailscale_fail_streak"] = 0
+
+            code, tail_deferred_reason = _guarded_tailscale_heal(
+                dry_run=args.dry_run,
+                on_healed=_record_tailscale_heal,
+            )
             if tail_deferred_reason:
                 state["tailscale_fail_streak"] = previous_tail_streak
                 state["tailscale_heal_deferred_reason"] = tail_deferred_reason
                 state["last_tailscale_heal_deferred_at"] = _utc_iso()
                 print(f"pi_runtime_health: tailscale heal deferred ({tail_deferred_reason})")
             elif code != 0:
-                save_state(state)
+                update_state(lambda current: current.update(state))
                 return EXIT_UNHEALTHY
             else:
-                state.pop("tailscale_heal_deferred_reason", None)
-                state["last_tailscale_heal_at"] = _utc_iso()
-                state["tailscale_fail_streak"] = 0
+                _record_tailscale_heal(state)
                 healed = True
         else:
             print("pi_runtime_health: tailscale heal skipped (cooldown)", file=sys.stderr)
-    save_state(state)
+    patch: dict[str, Any] = {}
+    for key in (
+        "last_check_at",
+        "http_fail_streak",
+        "tailscale_fail_streak",
+        "last_http_heal_at",
+        "http_heal_deferred_reason",
+        "last_http_heal_deferred_at",
+        "last_tailscale_heal_at",
+        "tailscale_heal_deferred_reason",
+        "last_tailscale_heal_deferred_at",
+    ):
+        if key in state:
+            patch[key] = state[key]
+
+    def _merge_heal_state(current: dict[str, Any]) -> None:
+        current.update(patch)
+        if not deferred_reason:
+            current.pop("http_heal_deferred_reason", None)
+        if not tail_deferred_reason:
+            current.pop("tailscale_heal_deferred_reason", None)
+
+    update_state(_merge_heal_state)
     if tail_deferred_reason:
         print("pi_runtime_health: coordinated work active; tailscale heal deferred")
         return EXIT_OK

@@ -71,11 +71,15 @@ def test_unused_share_redistributes_without_extending_global_deadline(tmp_path):
 
 
 def test_all_eligible_providers_and_unattempted_cap_reasons_are_recorded(tmp_path):
-    names = [f'provider-{n:02}' for n in range(14)]
+    names = [
+        'ANZ', 'Bank of Queensland', 'Bank of Sydney', 'Bankwest', 'Bendigo Bank',
+        'Beyond Bank', 'Cairns bank', 'CBA', 'DDH Graham', 'Great Southern Bank',
+        'Heritage Bank', 'ING', 'Macquarie', 'Thriday',
+    ]
     work = setup_failures(tmp_path, names)
     result = recover_transient_providers(tmp_path, work[:-1], lambda *a, **k: None,
         log=lambda _: None, clock=lambda: 0, sleep=lambda _: None)
-    assert result['eligible_providers'] == names and len(result['attempted']) == 12
+    assert result['eligible_providers'] == sorted(names) and len(result['attempted']) == 12
     assert result['unattempted'] == [
         {'provider': names[12], 'reason': 'provider_limit'},
         {'provider': names[13], 'reason': 'provider_not_scheduled'}]
