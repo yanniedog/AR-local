@@ -140,7 +140,7 @@ def test_actual_queue_transaction_blocks_racing_admission_until_state_saved(isol
     errors = []; threads = []
     orig_tx = queue.Store.transaction
 
-    @contextlib.contextmanager
+    @contextmanager
     def wrapped_tx(self, *args, **kwargs):
         if threading.current_thread() is not threading.main_thread():
             entered_tx.set()

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack, contextmanager
+import inspect
 import json
 import socket
 import subprocess
@@ -361,7 +362,8 @@ def _queue_network_guard(*, timeout_seconds: float = 5.0):
     store = Store(root)
     # Keep admission excluded throughout the mutation, so a job cannot start
     # between the ownership readback and the Tailscale restart.
-    with store.transaction(timeout_seconds=timeout_seconds) as state:
+    tx_kwargs = {"timeout_seconds": timeout_seconds} if "timeout_seconds" in inspect.signature(store.transaction).parameters else {}
+    with store.transaction(**tx_kwargs) as state:
         if not store.reconcile(state) or any(job['state'] == 'running' for job in state['jobs']):
             raise RuntimeError('shared queue is occupied or ownership is unknown')
         yield
