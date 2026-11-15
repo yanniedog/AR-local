@@ -1,0 +1,15 @@
+[Unit]
+Description=Monthly Pi OS recovery image to Google Drive
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/ar-local/day-archive.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pi-os-recovery-image
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=300%
+MemoryMax=4G
+TimeoutStartSec=6h
+KillMode=control-group
