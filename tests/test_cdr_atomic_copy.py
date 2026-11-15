@@ -125,3 +125,48 @@ def test_successful_copy_flushes_directory_after_sidecar_removal(tmp_path, monke
     copying.copy_verified(source, target, size=source.stat().st_size,
                           sha256=hashlib.sha256(source.read_bytes()).hexdigest())
     assert synchronizations and synchronizations[-1] == []
+
+
+@pytest.mark.parametrize('cleanup', ['unlink', 'fsync'])
+def test_copy_deadline_survives_cleanup_failure(tmp_path, monkeypatch, cleanup):
+    from cdr_attempt_evidence_promotion import _copy_record_create_once
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'evidence').write_bytes(b'original evidence')
+    original = TimeoutError('copy deadline reached')
+    secondary = OSError('cleanup storage failure')
+    def interrupted(*args):
+        yield b'original'
+        raise original
+    def broken(*args, **kwargs):
+        raise secondary
+    monkeypatch.setattr(copying, 'chunks', interrupted)
+    if cleanup == 'fsync':
+        monkeypatch.setattr(copying, '_fsync_directory', broken)
+    else:
+        unlink = Path.unlink
+        def cleanup_unlink(path, *args, **kwargs):
+            if '.copy-' in path.name: raise secondary
+            return unlink(path, *args, **kwargs)
+        monkeypatch.setattr(Path, 'unlink', cleanup_unlink)
+    with pytest.raises(TimeoutError) as caught:
+        _copy_record_create_once(source, tmp_path / 'target', {'path': 'evidence',
+            'bytes': 17, 'sha256': hashlib.sha256(b'original evidence').hexdigest()})
+    assert caught.value is original and caught.value.__cause__ is secondary
+    assert (source / 'evidence').read_bytes() == b'original evidence'
+    assert not (tmp_path / 'target/evidence').exists()
+    remnants = list((tmp_path / 'target').glob('.*.copy-*'))
+    assert bool(remnants) == (cleanup == 'unlink')
+
+
+def test_successful_copy_cleanup_failure_is_not_success(tmp_path, monkeypatch):
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    source.write_bytes(b'complete copy'); calls = []
+    def fail_cleanup(parent):
+        calls.append(parent)
+        if len(calls) == 2: raise OSError('cleanup durability failure')
+    monkeypatch.setattr(copying, '_fsync_directory', fail_cleanup)
+    with pytest.raises(OSError, match='cleanup durability failure'):
+        copying.copy_verified(source, target, size=13,
+                              sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+    assert target.read_bytes() == source.read_bytes()
+    assert not list(tmp_path.glob('.*.copy-*'))

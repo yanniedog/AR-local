@@ -17,6 +17,10 @@ MAX_REQUESTS_PER_PROVIDER = 128
 MAX_RECOVERY_REQUESTS = 8192
 
 
+def _unavailable(row: dict) -> bool:
+    return row.get('state') == 'not_attempted' and row.get('prd_availability') == 'UNAVAILABLE'
+
+
 def add_recovery_requests(status: dict, banks_root: Path, bank_work: list) -> None:
     """Keep terminal failures discoverable without parsing the large data export.
 
@@ -38,6 +42,8 @@ def add_recovery_requests(status: dict, banks_root: Path, bank_work: list) -> No
     # Reconciliation may add retained identities after the fresh population.
     # Never zip these different populations or alter fresh-register counters.
     providers = captured_provider_directories(status, fresh)
+    unavailable_uids = {row['provider_uid'] for row in fresh.values()
+                        if _unavailable(row) and row.get('provider_uid')}
     identities = {name: row.get("provider_uid") for name, row in providers.items()}
     requests: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str]] = set()
@@ -63,10 +69,10 @@ def add_recovery_requests(status: dict, banks_root: Path, bank_work: list) -> No
                     provider = str(row.get("bank") or "")
                     brand = providers[provider]
                     current = fresh.get(provider) or {}
-                    if (current.get('state') == 'not_attempted'
-                            and current.get('prd_availability') == 'UNAVAILABLE'):
+                    if _unavailable(current) or brand.get('provider_uid') in unavailable_uids:
                         # Preserve the old failure journal, but do not turn its
-                        # requests into work for an unavailable current endpoint.
+                        # requests into work for an unavailable current endpoint,
+                        # including a proven retained UID whose directory moved.
                         complete = False
                         continue
                     phase = str(row.get("phase") or "")
