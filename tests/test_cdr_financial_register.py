@@ -105,3 +105,48 @@ def test_unclassified_brand_makes_register_incomplete_without_losing_other_rows(
     snapshot = support.collect_register_snapshot(timeout=1, max_retries=0, sleep_ms=0, holders_filter=None)
     assert snapshot.register_ok and len(snapshot.banking_brands) == 305
     assert not snapshot.register_provenance_complete
+
+
+def test_brand_preserves_industries_abn_brand_id_and_dim_lookup():
+    register = json.loads(retained("register.json"))
+    rows = {row["brand_name"]: row for row in support.iter_banking_brands_from_payload(register)}
+    assert rows["360 MMS"]["industries"] == ["non-bank-lending"]
+    assert rows["360 MMS"]["abn"] == "51119531252"
+    assert rows["360 MMS"]["brand_id"] == "36991b60-d1ba-f111-81be-000d3a799057"
+    assert rows["CommBank"]["industries"] == ["banking"]
+    dim = json.loads((Path(__file__).resolve().parent.parent / "au_institutions_dim.json").read_text(encoding="utf-8"))
+    assert dim["by_abn"][rows["CommBank"]["abn"]]["asx_ticker"] == "CBA"
+    assert dim["by_abn"][rows["Firstmac"]["abn"]]["entity_type"] == "NON_BANK_LENDER"
+
+
+def test_parse_banks_run_and_outputs_populate_dim_providers(tmp_path):
+    import sqlite3
+    from cdr_clean_export import parse_banks_run
+    from cdr_outputs import rebuild_run_db, write_dashboard_cache
+
+    register = json.loads(retained("register.json"))
+    rows = {row["brand_name"]: row for row in support.iter_banking_brands_from_payload(register)}
+    run_root = tmp_path / "2026-11-15"
+    for folder, name in (("CommBank", "CommBank"), ("360 MMS", "360 MMS")):
+        holder_dir = run_root / "banks" / "_holders" / folder
+        holder_dir.mkdir(parents=True, exist_ok=True)
+        (holder_dir / "_register-brand.json").write_text(json.dumps(rows[name]), encoding="utf-8")
+
+    banks = parse_banks_run(run_root)
+    assert len(banks["providers"]) == 2
+    out_dir = run_root / "_exports"
+    db_path = out_dir / "local-cdr.sqlite"
+    rebuild_run_db(db_path, "2026-11-15", banks)
+    write_dashboard_cache(out_dir, "2026-11-15", banks)
+
+    with sqlite3.connect(db_path) as con:
+        db_rows = {
+            r[0]: r[1:]
+            for r in con.execute(
+                "SELECT provider, abn, industries_json, asx_ticker, entity_type FROM dim_providers"
+            ).fetchall()
+        }
+    assert db_rows["CommBank"] == ("48123123124", '["banking"]', "CBA", "MAJOR_BANK")
+    assert db_rows["360 MMS"] == ("51119531252", '["non-bank-lending"]', "", "NON_BANK_LENDER")
+    cached = json.loads((out_dir / "dashboard-cache" / "2026-11-15" / "banks.json").read_text(encoding="utf-8"))
+    assert len(cached["providers"]) == 2

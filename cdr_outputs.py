@@ -98,6 +98,10 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "before_json", "after_json", "before_value_json", "after_value_json",
         "before_evidence_json", "after_evidence_json", "before_signature_json", "after_signature_json",
     ],
+    "dim_providers": [
+        "run_date", "provider", "brand_id", "brand_name",
+        "abn", "industries_json", "asx_ticker", "entity_type",
+    ],
 }
 
 RESET_TABLES = (
@@ -106,6 +110,7 @@ RESET_TABLES = (
     "bank_items",
     "bank_product_facts",
     "bank_product_changes",
+    "dim_providers",
     "runs",
     "schema_meta",
 )
@@ -304,6 +309,19 @@ def ensure_db(con: sqlite3.Connection) -> None:
           before_signature_json TEXT, after_signature_json TEXT,
           UNIQUE(run_date, event_id)
         );
+        CREATE TABLE IF NOT EXISTS dim_providers (
+          run_date TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          brand_id TEXT NOT NULL,
+          brand_name TEXT NOT NULL,
+          abn TEXT NOT NULL,
+          industries_json TEXT NOT NULL,
+          asx_ticker TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          UNIQUE(run_date, provider)
+        );
+        CREATE INDEX IF NOT EXISTS idx_dim_providers_lookup
+          ON dim_providers (run_date, provider);
         CREATE INDEX IF NOT EXISTS idx_bank_rates_taxonomy
           ON bank_rates (run_date, taxonomy_path);
         CREATE INDEX IF NOT EXISTS idx_bank_rates_lookup
@@ -411,6 +429,7 @@ def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> No
             insert_rows(con, "bank_items", with_run_date(add_group(banks[group], group), run_date))
         insert_rows(con, "bank_product_facts", with_run_date(banks["product_facts"], run_date))
         insert_rows(con, "bank_product_changes", banks.get("product_changes", []))
+        insert_rows(con, "dim_providers", with_run_date(banks.get("providers") or [], run_date))
         con.commit()
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
@@ -453,6 +472,7 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
         "run_date": run_date,
         "products": banks["products"],
         "rates": banks["rates"],
+        "providers": banks.get("providers", []),
         "counts": summary_counts(banks),
         "coverage": coverage_summary(banks, run_date),
     }

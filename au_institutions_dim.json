@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "default_entity_type_by_industry": {
+    "non-bank-lending": "NON_BANK_LENDER",
+    "banking": "ADI"
+  },
+  "by_abn": {
+    "48123123124": {"parent_name": "Commonwealth Bank of Australia", "asx_ticker": "CBA", "entity_type": "MAJOR_BANK"},
+    "33007457141": {"parent_name": "Westpac Banking Corporation", "asx_ticker": "WBC", "entity_type": "MAJOR_BANK"},
+    "12004044937": {"parent_name": "National Australia Bank", "asx_ticker": "NAB", "entity_type": "MAJOR_BANK"},
+    "11005357522": {"parent_name": "Australia and New Zealand Banking Group", "asx_ticker": "ANZ", "entity_type": "MAJOR_BANK"},
+    "66010831722": {"parent_name": "Suncorp Bank (ANZ Group)", "asx_ticker": "ANZ", "entity_type": "REGIONAL_ADI"},
+    "46008583542": {"parent_name": "Macquarie Bank Limited", "asx_ticker": "MQG", "entity_type": "MAJOR_BANK"},
+    "32009656740": {"parent_name": "Bank of Queensland Limited", "asx_ticker": "BOQ", "entity_type": "REGIONAL_ADI"},
+    "11068049178": {"parent_name": "Bendigo and Adelaide Bank", "asx_ticker": "BEN", "entity_type": "REGIONAL_ADI"},
+    "11615995581": {"parent_name": "Judo Bank", "asx_ticker": "JDO", "entity_type": "REGIONAL_ADI"},
+    "15081596009": {"parent_name": "AMP Bank", "asx_ticker": "AMP", "entity_type": "REGIONAL_ADI"},
+    "49103575042": {"parent_name": "Tyro Payments", "asx_ticker": "TYR", "entity_type": "NEOBANK"},
+    "55094317665": {"parent_name": "Pepper Money", "asx_ticker": "PPM", "entity_type": "NON_BANK_LENDER"},
+    "55095034003": {"parent_name": "Resimac Group", "asx_ticker": "RMC", "entity_type": "NON_BANK_LENDER"},
+    "42008583588": {"parent_name": "Latitude Group", "asx_ticker": "LFS", "entity_type": "NON_BANK_LENDER"},
+    "55077248983": {"parent_name": "Liberty Financial Group", "asx_ticker": "LFG", "entity_type": "NON_BANK_LENDER"},
+    "75117819084": {"parent_name": "Australian Finance Group", "asx_ticker": "AFG", "entity_type": "NON_BANK_LENDER"},
+    "59094145963": {"parent_name": "Firstmac", "asx_ticker": null, "entity_type": "NON_BANK_LENDER"}
+  }
+}

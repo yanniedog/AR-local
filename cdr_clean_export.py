@@ -400,6 +400,64 @@ def append_bank_details(
             )
 
 
+def _load_institution_dim() -> Dict[str, Any]:
+    path = Path(__file__).resolve().parent / "au_institutions_dim.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def load_provider_dimensions(banks_root: Path) -> List[Dict[str, str]]:
+    """Build compact per-holder institution metadata from _register-brand.json."""
+    holders_root = banks_root / "_holders"
+    if not holders_root.is_dir():
+        return []
+    dim = _load_institution_dim()
+    by_abn = dim.get("by_abn") if isinstance(dim.get("by_abn"), Mapping) else {}
+    by_industry = (
+        dim.get("default_entity_type_by_industry")
+        if isinstance(dim.get("default_entity_type_by_industry"), Mapping)
+        else {}
+    )
+    rows: List[Dict[str, str]] = []
+    for holder_dir in sorted(holders_root.iterdir()):
+        if not holder_dir.is_dir():
+            continue
+        meta_path = holder_dir / "_register-brand.json"
+        if not meta_path.is_file():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(meta, Mapping):
+            continue
+        raw_inds = meta.get("industries")
+        industries = sorted({str(x).strip().lower() for x in raw_inds if str(x).strip()}) if isinstance(raw_inds, list) else []
+        abn = text(meta.get("abn"))
+        entry = by_abn.get(abn) if abn and isinstance(by_abn.get(abn), Mapping) else {}
+        entity_type = text(entry.get("entity_type"))
+        if not entity_type:
+            for ind in industries:
+                if ind in by_industry:
+                    entity_type = text(by_industry[ind])
+                    break
+        rows.append({
+            "provider": holder_dir.name,
+            "brand_id": text(meta.get("brand_id") or meta.get("registration_id")),
+            "brand_name": text(meta.get("brand_name")),
+            "abn": abn,
+            "industries_json": json.dumps(industries, ensure_ascii=False),
+            "asx_ticker": text(entry.get("asx_ticker")),
+            "entity_type": entity_type,
+        })
+    return rows
+
+
 def parse_banks_run(run_root: Path, *, facts_sink=None) -> Dict[str, Any]:
     banks_root = run_root / "banks"
     dataset: Dict[str, Any] = {
@@ -412,6 +470,7 @@ def parse_banks_run(run_root: Path, *, facts_sink=None) -> Dict[str, Any]:
         "features": [],
         "eligibility": [],
         "constraints": [],
+        "providers": [],
         "product_facts": [] if facts_sink is None else facts_sink,
         "failures": read_failures(banks_root),
         "holder_attempts": [],
@@ -419,6 +478,7 @@ def parse_banks_run(run_root: Path, *, facts_sink=None) -> Dict[str, Any]:
     }
     if not banks_root.exists():
         return dataset
+    dataset["providers"] = load_provider_dimensions(banks_root)
     holders_root = banks_root / "_holders"
     if holders_root.exists():
         dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
