@@ -358,7 +358,7 @@ jobs:
               if isinstance(value, dict):
                   for k, v in value.items():
                       kl = k.lower()
-                      if "disposition" in kl or "reason_text" in kl or k in ("command", "environment"):
+                      if "disposition" in kl or "reason" in kl or k in ("command", "environment"):
                           continue
                       walk(f"{prefix}.{k}" if prefix else k, v, depth + 1)
               elif isinstance(value, (str, int, float, bool)) or value is None:
@@ -373,7 +373,7 @@ jobs:
           r = json.load(open(sys.argv[1]))
           for k in ("error_type", "detail", "elapsed_seconds"):
               val = str(r.get(k))[:400]
-              if "disposition" in val.lower() or "reason_text" in val.lower():
+              if "disposition" in val.lower() or "reason" in val.lower():
                   val = "[redacted]"
               print(f"{k}: {val}")
           done = r.get("completed_modules") or []
@@ -393,15 +393,15 @@ jobs:
               if entry.get("outcome") not in ("passed", "skipped"):
                   print("FAILED:", entry.get("nodeid"), f"[{entry.get('when')}]")
                   detail = str(entry.get("detail") or "")[:600]
-                  if detail and "disposition" not in detail.lower() and "reason_text" not in detail.lower():
+                  if detail and "disposition" not in detail.lower() and "reason" not in detail.lower():
                       print("  ", detail)
           PY
-            [ -f "$B/output.txt" ] && [ ! -L "$B/output.txt" ] && tail -n 60 "$B/output.txt" | sed -E '/([Dd]isposition|reason_text)/s/.*/[redacted disposition line]/' | cut -c1-300
+            [ -f "$B/output.txt" ] && [ ! -L "$B/output.txt" ] && tail -n 60 "$B/output.txt" | sed -E '/([Dd]isposition|reason_text|"reason":)/s/.*/[redacted disposition line]/' | cut -c1-300
           fi
           for name in canary-service.txt; do
             [ -f "$OP/$name" ] && [ ! -L "$OP/$name" ] || continue
             echo "== tail $name (disposition lines redacted) =="
-            tail -n 80 "$OP/$name" | sed -E '/([Dd]isposition|reason_text)/s/.*/[redacted disposition line]/' | cut -c1-400
+            tail -n 80 "$OP/$name" | sed -E '/([Dd]isposition|reason_text|"reason":)/s/.*/[redacted disposition line]/' | cut -c1-400
           done
           REMOTE
 
@@ -611,9 +611,13 @@ jobs:
           done
           echo "== dispositions files =="
           find $ROOTS -maxdepth 6 -type f -iname '*disposition*.json' 2>/dev/null | sort | while read -r f; do
-            n="$(python3 -c 'import json,sys
+            n="$(python3 -c 'import json,os,sys
+          p = sys.argv[1]
           try:
-              d=json.load(open(sys.argv[1])); print(len(d) if isinstance(d,dict) else type(d).__name__)
+              if os.path.getsize(p) > 4 * 1024 * 1024:
+                  print("too_large")
+              else:
+                  d=json.load(open(p)); print(len(d) if isinstance(d,dict) else type(d).__name__)
           except Exception as e: print("unreadable:"+type(e).__name__)' "$f" 2>/dev/null)"
             echo "$f sha256=$(sha256sum "$f" | cut -d' ' -f1) bytes=$(stat -c %s "$f") keys=$n mtime=$(stat -c %y "$f" | cut -d. -f1)"
           done
@@ -635,7 +639,7 @@ jobs:
           import json, os, sys
           op = sys.argv[1]
           out = [op]
-          for name in ("canary-unit.json", "canary.json", "seal.json"):
+          for name in ("canary-unit.json", "canary.json", "seal.json", "activation.json"):
               p = os.path.join(op, name)
               if not os.path.isfile(p):
                   continue
@@ -643,6 +647,9 @@ jobs:
                   r = json.load(open(p))
               except Exception as e:
                   out.append(f"{name}=unreadable:{type(e).__name__}")
+                  continue
+              if not isinstance(r, dict):
+                  out.append(f"{name}=non_object:{type(r).__name__}")
                   continue
               keep = {}
               for k, v in r.items():
@@ -653,7 +660,7 @@ jobs:
                       continue
                   if ("disposition" in kl and not (kl.endswith("path") or kl.endswith("sha256") or kl.endswith("digest"))):
                       continue
-                  if kl in ("result", "status", "source", "python", "expected_commit", "operation", "unit", "schema_version", "pressure_profile") \
+                  if kl in ("result", "status", "source", "python", "expected_commit", "target_commit", "operation", "unit", "schema_version", "pressure_profile") \
                      or kl.endswith("path") or kl.endswith("sha256") or kl.endswith("digest") or kl.endswith("_at"):
                       keep[k] = v
               out.append(f"{name}={json.dumps(keep, sort_keys=True)}")
@@ -767,14 +774,14 @@ jobs:
           # has no worktree files yet; only populated checkouts are checked here,
           # and every checkout is checked clean after the exact checkout below.
           if [ "$CREATED" = 0 ] && [ -n "$(find "$C" -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]; then
-            test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
+            test -z "$(git -C "$C" status --porcelain -uall)" || { echo "candidate checkout is dirty; refusing"; exit 1; }
           fi
           test ! -e "$OP" || { echo "operation $OP already exists"; exit 1; }
           git -C "$C" fetch --quiet origin main
           test "$(git -C "$C" rev-parse FETCH_HEAD)" = "$COMMIT" || { echo "fetched main != $COMMIT"; exit 1; }
           git -C "$C" checkout --quiet --detach "$COMMIT"
           test "$(git -C "$C" rev-parse HEAD)" = "$COMMIT"
-          test -z "$(git -C "$C" status --porcelain)" || { echo "candidate checkout is dirty after checkout; refusing"; exit 1; }
+          test -z "$(git -C "$C" status --porcelain -uall)" || { echo "candidate checkout is dirty after checkout; refusing"; exit 1; }
           DCOPY="$CTL/$OP_ID.dispositions.json"
           test ! -e "$DCOPY" || { echo "dispositions copy already exists"; exit 1; }
           case "$DISP" in /*) DSRC="$DISP" ;; *) DSRC="$C/$DISP" ;; esac
