@@ -44,12 +44,26 @@ finish() {
 trap 'finish "$?"' EXIT
 trap 'failure_reason="terminated"; exit 143' TERM
 
-# Stay clear of the protected ingest window (00:30-03:30) and of live ingest.
+# Stay clear of the protected ingest window (00:30-03:30) and of queued/live AR-local work.
+check_window() {
+  local m=$((10#$(date +%H) * 60 + 10#$(date +%M)))
+  if [ "$m" -ge 30 ] && [ "$m" -lt 215 ]; then
+    fail "entered protected 00:30-03:30 Hobart ingest window"
+  fi
+  if [ "$m" -ge 15 ] && [ "$m" -lt 30 ]; then
+    fail "reached 00:15 Hobart pre-ingest cleanup reserve"
+  fi
+}
 now=$((10#$(date +%H) * 60 + 10#$(date +%M)))
-{ [ "$now" -ge 215 ] && [ "$now" -le 1200 ]; } || fail "outside 03:35-20:00 Hobart start window"
-for unit in ar-local-daily.service ar-local-ingest-now.service; do
-  systemctl is-active -q "$unit" && fail "$unit is active"
-done
+{ [ "$now" -ge 215 ] && [ "$now" -le 1110 ]; } || fail "outside 03:35-18:30 Hobart start window (6h reserve before 00:30)"
+if systemctl list-units --state=active,activating --no-legend 'ar-local-*' 'pi-shared-task*' 2>/dev/null | grep -q .; then
+  fail "ar-local or pi-shared-task unit is active"
+fi
+LOCKFILE=/srv/ar-local/data/state/daily-ingest.lock
+if [ -d "$(dirname "$LOCKFILE")" ]; then
+  exec 9>"$LOCKFILE"
+  flock -n 9 || fail "production daily-ingest.lock is held"
+fi
 
 set -a; . "$ENVFILE"; set +a
 [ -n "${AR_LOCAL_DAY_ARCHIVE_REMOTE:-}" ] && [ -n "${RCLONE_CONFIG:-}" ] || fail "Drive remote not configured"
@@ -61,7 +75,13 @@ shared_owner=$(stat -c %u:%g:%a "$SHARED_RCLONE_CONFIG")
 install -m 600 "$SHARED_RCLONE_CONFIG" "$WORK/.rclone-private.conf"
 export RCLONE_CONFIG="$WORK/.rclone-private.conf"
 REMOTE="${AR_LOCAL_DAY_ARCHIVE_REMOTE%/*}/monthly-os-recovery/$STAMP-$(hostname)"
-if [ -n "$(rclone lsf "$REMOTE/_meta/COMPLETE.json" 2>/dev/null)" ]; then log "set $STAMP already complete on Drive"; exit 0; fi
+if [ -n "$(rclone lsf "$REMOTE/_meta/COMPLETE.json" 2>/dev/null)" ]; then
+  if rclone copyto "$REMOTE/_meta/COMPLETE.json" "$WORK/.last-result.tmp" 2>/dev/null; then
+    chmod 644 "$WORK/.last-result.tmp" && mv -f "$WORK/.last-result.tmp" "$WORK/last-result.json"
+  fi
+  log "set $STAMP already complete on Drive"
+  exit 0
+fi
 
 avail=$(df --output=avail -B1 "$WORK" | tail -1)
 [ "$avail" -gt $((40 * 1024 * 1024 * 1024)) ] || fail "less than 40 GiB free for staging"
@@ -86,6 +106,7 @@ for repo in /srv/ar-local/AR-local /srv/ar-local/australianrates; do
 done
 
 pack() {  # pack <name> <output> <tar args...>
+  check_window
   local name=$1 out=$2; shift 2
   local start=$SECONDS rc=0
   log "BEGIN $name"
@@ -121,7 +142,7 @@ pack os-rootfs "$SET/os/rootfs-$(basename "$DISK")p2.tar.zst" --one-file-system 
 
 # ---- AR-local: code, runtime state, last seven finalized days
 code=(AR-local australianrates)
-for dir in /srv/ar-local/quality-python-*; do [ -d "$dir" ] && code+=("$(basename "$dir")"); done
+for dir in /srv/ar-local/quality-python-* /srv/ar-local/alert-component-*; do [ -d "$dir" ] && code+=("$(basename "$dir")"); done
 pack ar-code "$SET/arlocal/srv-ar-local-code.tar.zst" -C /srv/ar-local "${code[@]}"
 pack ar-state "$SET/arlocal/srv-ar-local-data-state.tar.zst" -C /srv/ar-local/data state
 mapfile -t runs < <(cd /srv/ar-local/data/runs && ls -d 20??-??-?? 2>/dev/null | sort | tail -7)
@@ -151,6 +172,7 @@ RESTORE
 ( cd "$SET" && find os arlocal -type f -print0 | sort -z | xargs -0 sha256sum > _meta/SHA256SUMS )
 ( cd "$SET" && find os arlocal -type f -printf '%p\t%s\n' | sort > _meta/manifest.tsv )
 
+check_window
 log "uploading"
 rclone copy "$SET" "$REMOTE" --immutable --transfers 2 --drive-chunk-size 64M --log-file "$WORK/rclone-$STAMP.log" --log-level NOTICE \
   || fail "upload failed"

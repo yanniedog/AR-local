@@ -126,6 +126,42 @@ def _record_unattempted(report: dict, eligible: set, scheduled: set, admitted: s
     return report
 
 
+def _run_recovery_loop(
+    root: Path,
+    work: list,
+    rows: list[dict],
+    report: dict,
+    run_one: Callable,
+    *,
+    budget_seconds: float,
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+    log: Callable[[str], None],
+) -> None:
+    deadline = clock() + budget_seconds
+    sleep(min(5.0, max(0.0, budget_seconds / 10)))
+    path = root / "failures.jsonl"
+    for position, item in enumerate(work):
+        now = clock()
+        if now >= deadline:
+            report["result"] = "budget_exhausted"
+            break
+        # Recompute share so unused time remains available to later holders.
+        seconds = (deadline - now) / (len(work) - position)
+        provider_deadline = min(deadline, now + seconds)
+        log(f"[banks] bounded recovery: {item[1]}")
+        report["attempted"].append(item[1])
+        report["allocations"].append({"provider": item[1], "seconds": seconds})
+        try:
+            run_one(item, recovery_deadline=provider_deadline)
+            after = _read_failures(path)
+            rows = _reconcile(root, rows, after, item[1])
+            _write_failures(path, rows)
+        except Exception as exc:
+            report.update(result="recovery_error", error=type(exc).__name__)
+            break
+
+
 def recover_transient_providers(
     root: Path,
     bank_work: list,
@@ -138,7 +174,7 @@ def recover_transient_providers(
 ) -> dict:
     """Retry affected providers once, sequentially, under a shared deadline."""
     path = root / "failures.jsonl"
-    report = {"attempted": [], "budget_seconds": budget_seconds, "result": "not_needed"}
+    report = {"attempted": [], "allocations": [], "budget_seconds": budget_seconds, "result": "not_needed"}
     try:
         rows = _read_failures(path)
     except (OSError, ValueError):
@@ -161,34 +197,12 @@ def recover_transient_providers(
         with archive.open("xb") as stream:
             stream.write(original)
     report["initial_failure_sha256"] = digest
-    # ingest-status.json is hash-bound and promoted before the RAM tree is
-    # removed. Embed the exact small journal there, not only a staging path.
+    # Embed the exact small journal in ingest-status.json before RAM cleanup.
     report["initial_failure_journal"] = original.decode("utf-8")
-    report["allocations"] = []
-    deadline = clock() + budget_seconds
-    sleep(min(5.0, max(0.0, budget_seconds / 10)))
-    for position, item in enumerate(work):
-        now = clock()
-        if now >= deadline:
-            report["result"] = "budget_exhausted"
-            break
-        # A slow holder must not take later holders' entire recovery opportunity.
-        # Recompute the share so unused time remains available to later holders;
-        # keep the original global deadline and request/retry limits unchanged.
-        seconds = (deadline - now) / (len(work) - position)
-        provider_deadline = min(deadline, now + seconds)
-        log(f"[banks] bounded recovery: {item[1]}")
-        report["attempted"].append(item[1])
-        report["allocations"].append({"provider": item[1], "seconds": seconds})
-        # A failed/crashed callback leaves the initial failures in place.
-        try:
-            run_one(item, recovery_deadline=provider_deadline)
-            after = _read_failures(path)
-            rows = _reconcile(root, rows, after, item[1])
-            _write_failures(path, rows)
-        except Exception as exc:
-            report.update(result="recovery_error", error=type(exc).__name__)
-            break
+    _run_recovery_loop(
+        root, work, rows, report, run_one,
+        budget_seconds=budget_seconds, clock=clock, sleep=sleep, log=log,
+    )
     try:
         report["remaining_failures"] = len(_read_failures(path))
     except (OSError, ValueError):

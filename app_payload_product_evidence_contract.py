@@ -13,6 +13,8 @@ from cdr_product_facts import NORMALIZATION_VERSION
 SCHEMA = "ar-product-fact-snapshot-v1"
 SCOPE = "normalized_facts_only; raw_null_empty_and_transport_envelope_not_inventoried"
 SHA = re.compile(r"[0-9a-f]{64}")
+FACT_ID = re.compile(r"[0-9a-f]{20}")
+FACT_KINDS = frozenset({"attribute", "bundle", "condition", "constraint", "eligibility", "feature", "fee", "rate", "tier"})
 COLUMNS = (
     "run_date", "dataset", "provider", "product_id", "product_key", "product_name",
     "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number",
@@ -103,6 +105,8 @@ def fact(row):
 def validate_fact(value):
     fields(value, (*FACT_TEXT, "value", "source_value", "qualifiers", "min_value", "max_value"))
     require(all(type(value[key]) is str and value[key] for key in FACT_TEXT), "missing fact identity/provenance")
+    require(FACT_ID.fullmatch(value["fact_id"]) is not None, "invalid fact_id")
+    require(value["kind"] in FACT_KINDS, "unsupported fact kind")
     require(type(value["qualifiers"]) is dict, "fact qualifiers must be an object")
     require(value["mapping"] in {"canonical", "canonical_text", "preserved"}, "unknown fact mapping")
     kind, raw = value["value_type"], value["value"]
@@ -116,6 +120,8 @@ def validate_fact(value):
         require(bound is None or type(bound) in (int, float) and math.isfinite(bound), "invalid numeric bound")
     has_bound = value["min_value"] is not None or value["max_value"] is not None
     require(has_bound == (kind == "range"), "range requires a bound; scalar facts cannot have range bounds")
+    if value["min_value"] is not None and value["max_value"] is not None:
+        require(value["min_value"] <= value["max_value"], "inverted range bounds")
     canonical(value)
 
 

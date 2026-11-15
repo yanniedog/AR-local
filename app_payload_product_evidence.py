@@ -118,8 +118,22 @@ def open_database(path, source, budget):
                 "unsupported database schema or fact normalization")
         require({row[1] for row in connection.execute("PRAGMA table_info(bank_product_facts)")} == set(COLUMNS),
                 "unsupported fact columns")
-        index = connection.execute("PRAGMA index_info(sqlite_autoindex_bank_product_facts_1)").fetchmany(4)
-        require([row[2] for row in index] == ["run_date", "product_key", "fact_id"], "bounded product identity index required")
+        index = connection.execute("PRAGMA index_xinfo(sqlite_autoindex_bank_product_facts_1)").fetchmany(5)
+        key_cols = [row for row in index if row[5]]
+        require(
+            [row[2] for row in key_cols] == ["run_date", "product_key", "fact_id"]
+            and all(row[3] == 0 and row[4] == "BINARY" for row in key_cols),
+            "bounded product identity index required",
+        )
+        plan = " ".join(
+            str(row[3])
+            for row in connection.execute(
+                "EXPLAIN QUERY PLAN SELECT 1 FROM bank_product_facts INDEXED BY sqlite_autoindex_bank_product_facts_1 "
+                "WHERE run_date=? ORDER BY product_key, fact_id",
+                (source["observation_date"],),
+            ).fetchall()
+        )
+        require("USE TEMP B-TREE" not in plan.upper(), "bounded product identity index required")
         require(connection.execute("SELECT 1 FROM bank_product_facts WHERE run_date != ? OR run_date IS NULL LIMIT 1",
                                    (source["observation_date"],)).fetchone() is None, "database contains another observation date")
         connection.row_factory = sqlite3.Row
@@ -129,6 +143,16 @@ def open_database(path, source, budget):
         raise
 
 
+def _open_private_exclusive(path):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    try:
+        return os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        raise
 def write_page(output, source, product, sequence, rows, budget):
     raw = canonical(dict(schema=SCHEMA, source=source, product=product, sequence=sequence, facts=rows))
     require(len(raw) <= budget.limits.page_raw_bytes, "single fact/page exceeds raw budget")
@@ -140,7 +164,7 @@ def write_page(output, source, product, sequence, rows, budget):
     budget.charge(pages=1, raw_bytes=len(raw), compressed_bytes=len(compressed))
     checksum = digest(compressed)
     name = "facts-" + checksum + ".json.gz"
-    with (output / name).open("xb") as stream:
+    with _open_private_exclusive(output / name) as stream:
         stream.write(compressed)
         stream.flush()
         os.fsync(stream.fileno())
@@ -187,7 +211,8 @@ def prepare_snapshot(database, contract_path, output, *, limits=Limits()):
     no_journals(database)
     source = source_binding(database, contract_path, budget)
     with closing(open_database(database, source, budget)) as connection:
-        output.mkdir(parents=True, exist_ok=False)
+        output.mkdir(mode=0o700, parents=True, exist_ok=False)
+        _fsync_directory(output.parent)
         # Required existing index avoids a full-table in-memory sort/materialization.
         columns = ", ".join('"' + key + '"' for key in COLUMNS)
         rows = iter(connection.execute(f"SELECT {columns} FROM bank_product_facts INDEXED BY sqlite_autoindex_bank_product_facts_1 "
@@ -215,7 +240,7 @@ def prepare_snapshot(database, contract_path, output, *, limits=Limits()):
     require(len(encoded) <= limits.index_bytes, "snapshot index exceeds budget")
     budget.check()
     temporary = output / "snapshot.pending"
-    with temporary.open("xb") as stream:
+    with _open_private_exclusive(temporary) as stream:
         stream.write(encoded)
         stream.flush()
         os.fsync(stream.fileno())
@@ -225,6 +250,7 @@ def prepare_snapshot(database, contract_path, output, *, limits=Limits()):
     _fsync_directory(output)
     temporary.unlink()
     _fsync_directory(output)
+    _fsync_directory(output.parent)
     return manifest
 
 

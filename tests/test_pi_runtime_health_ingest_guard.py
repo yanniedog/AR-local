@@ -153,7 +153,10 @@ def test_later_idle_tick_clears_deferral_and_heals(staged, monkeypatch, capsys):
     monkeypatch.setattr(health, "run_http_probes", Mock(side_effect=[(False, ["fail"]), (True, ["OK"])]))
     assert health.cmd_heal(args) == health.EXIT_OK
     health.restart_dashboard_and_nginx.assert_called_once_with(dry_run=False)
-    assert "http_heal_deferred_reason" not in health.load_state()
+    receipt = health.load_state()
+    assert "http_heal_deferred_reason" not in receipt
+    assert receipt["http_fail_streak"] == 0
+    assert "last_http_heal_at" in receipt
 
 
 def test_pi_guard_reuses_actual_activity_inventory(staged, monkeypatch):

@@ -391,7 +391,7 @@ class Store:
                 os.unlink(name)
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, timeout_seconds: Optional[float] = None):
         import fcntl  # Linux only; importing this module on Windows is harmless.
         self._directory()
         fd = os.open(self.root / 'queue.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -399,7 +399,18 @@ class Store:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
                 raise ValueError('unsafe queue lock')
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            if timeout_seconds is None:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            else:
+                deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+                while True:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError('shared queue lock timed out')
+                        time.sleep(0.05)
             value = self._read()
             yield value
             self._write(value)
