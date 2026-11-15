@@ -360,9 +360,17 @@ def _compute_payload(
     if not run_date:
         raise ValueError("latest.json has no run_date")
     from app_payload_bank_rate_source import require_selected_current_export
-    if not archive_snapshot:
-        require_selected_current_export(exports_dir, run_date)
-    banks = _load_json(_find_banks_json(exports_dir, run_date))
+    selected_contract = None if archive_snapshot else require_selected_current_export(exports_dir, run_date)
+    from app_payload_banks_stream import read_banks
+    banks_path = _find_banks_json(exports_dir, run_date)
+    expected = None
+    if selected_contract is not None:
+        name = banks_path.relative_to(exports_dir).as_posix()
+        records = [item for item in selected_contract["artifacts"] if item["path"] == name]
+        if len(records) != 1:
+            raise ValueError("Current banks source is absent from selected contract")
+        expected = records[0]
+    banks, _, _ = read_banks(banks_path, expected=expected)
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
     from cdr_public_rates_legacy import annotate_legacy_rates
@@ -478,6 +486,10 @@ def _compute_payload(
         search_index = app_payload_mobile.build_search_index(
             all_core_rows, details["products"], run_date=run_date, schema_version=SCHEMA_VERSION
         )
+        spread = app_payload_bank_spread.BankSpreadHistory(
+            app_payload_mobile._history_dates(exports_dir, run_date),
+            run_date=run_date, schema_version=SCHEMA_VERSION,
+        )
         history_banks, bank_history = app_payload_mobile.build_history_assets(
             exports_dir,
             run_date=run_date,
@@ -486,16 +498,10 @@ def _compute_payload(
             normalized_rate_value=_normalized_rate_value,
             schema_version=SCHEMA_VERSION,
             rba_calendar=rba_decision_models,
-            observations=app_payload_bank_rates.bank_rate_history_rows(core, exports_dir),
+            observations=spread.observations(
+                app_payload_bank_rates.bank_rate_history_rows(core, exports_dir)),
         )
-        bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
-            exports_dir,
-            run_date=run_date,
-            history_dates=app_payload_mobile._history_dates,
-            banks_path=app_payload_mobile._banks,
-            load_json=_load_json,
-            schema_version=SCHEMA_VERSION,
-        )
+        bank_spread_history = spread.finish()
     else:
         app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
     counts = latest.get("banks_counts") or banks.get("counts") or {}

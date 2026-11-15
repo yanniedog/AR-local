@@ -16,11 +16,14 @@ MIB = 1024 * KIB
 
 MANIFEST_MAX_BYTES = 64 * KIB
 # Historical catalogues are a deferred optional capability, never critical core.
-CORE_MAX_BYTES = 512 * KIB
-DETAILS_MAX_BYTES = 4 * MIB
+# Expanded banking/non-bank capture measured 611,125 B core and 5,102,102 B
+# details (2026-11-14). Keep finite ceilings and history detached, without
+# dropping current products to meet the former banking-only transfer policy.
+CORE_MAX_BYTES = 1 * MIB
+DETAILS_MAX_BYTES = 8 * MIB
 SEARCH_INDEX_MAX_BYTES = 2 * MIB
 OTHER_ASSET_MAX_BYTES = 1 * MIB
-ROLLING_TOTAL_MAX_BYTES = 8 * MIB
+ROLLING_TOTAL_MAX_BYTES = 16 * MIB
 V2_PRODUCT_HISTORY_MAX_BYTES = 8 * MIB
 V2_ECONOMIC_OUTLOOK_MAX_BYTES = 1 * MIB
 V2_TOTAL_MAX_BYTES = 9 * MIB

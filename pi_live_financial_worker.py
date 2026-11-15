@@ -28,8 +28,8 @@ def evidence_bytes(path, *, budget=None):
         raise
 
 
-def archive_matches(path, generation, *, budget=None):
-    _, raw = evidence_bytes(path, budget=budget)
+def archive_proof(path, generation, *, budget=None):
+    evidence, raw = evidence_bytes(path, budget=budget)
     matched = False
     for line in raw.splitlines():
         if budget is not None:
@@ -37,7 +37,11 @@ def archive_matches(path, generation, *, budget=None):
         if line.strip():
             row = json.loads(line)
             matched |= row.get("result") == "PASS" and row.get("generation_id") == generation
-    return matched
+    return evidence if matched else None
+
+
+def archive_matches(path, generation, *, budget=None):
+    return archive_proof(path, generation, budget=budget) is not None
 
 
 def reconcile_register(exports, status, run_date, *, budget=None):
@@ -128,17 +132,20 @@ def worker(args):
     if report["capture"]["status"] != "PASS" or report["issues"]:
         raise ValueError("fresh live capture did not pass source/ledger/SQLite accounting")
     archives = op / "data/archive-spool/meta/raw-progress.jsonl"
-    if not archive_matches(archives, report["capture"]["generation_id"], budget=read_budget):
+    archive = archive_proof(archives, report["capture"]["generation_id"], budget=read_budget)
+    if archive is None:
         raise ValueError("matching local-only raw archive receipt missing")
     if clean_commit(args.source) != args.expected_commit or source_files(args.source) != intent["before"]["source_files"]:
         raise ValueError("source changed during live capture")
     audit_path = relative(op / "audit", read(op / "audit/latest.json")["path"])
     if read(audit_path) != report:
         raise ValueError("audit pointer does not identify the completed report")
+    archive.recheck(archives, archives.parent)
     result = {"schema": "ar-local-live-financial-worker-v1", "result": "PASS", "target_commit": args.expected_commit,
               "run_date": run_date, "generation_id": report["capture"]["generation_id"], "coverage": coverage,
               "concurrency": {"workers": DAILY_WORKER_COUNT, "detail_workers": detail_workers}, "staging": staging,
-              "ingest_status": record(exports / "ingest-status.json"), "archive_progress": record(archives),
+              "ingest_status": record(exports / "ingest-status.json"),
+              "archive_progress": {"path": str(archives), "sha256": archive.sha256},
               "audit_pointer": record(op / "audit/latest.json"), "audit": record(audit_path), "publication": "NOT_ATTEMPTED", "drive": "NOT_ATTEMPTED",
               "scope": "isolated full financial population attempted; upstream failures remain explicit"}
     write(op / "worker.json", result)

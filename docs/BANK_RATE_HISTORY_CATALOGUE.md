@@ -64,9 +64,12 @@ This local-only path does not publish, reserve revisions or alter source files.
 Production publication still belongs to the guarded Pi revision coordinator.
 
 The Sept26 proof with all 134 public observations, both history schemas and
-current rows is 55,482,003 decoded bytes and 2,718,749 gzip bytes. The core has a
-4 MiB compressed transfer cap; details, search and other per-asset caps and the
-8 MiB total remain enforced. Filters and bank selection reuse local packed data
+current rows is 55,482,003 decoded bytes and 2,718,749 gzip bytes. Those figures
+are historical benchmark evidence. The current detached-history policy has a
+1 MiB core, 8 MiB details, 2 MiB search and 16 MiB combined rolling transfer cap
+(`app_payload_network_budget.py`, updated for expanded coverage on 2026-11-14).
+The deferred archive and separate v2 limits remain unchanged. Filters and bank
+selection reuse local packed data
 after acquisition. Budget reports continue to disclose slow-network transfer
 times instead of describing the initial download as instantaneous.
 

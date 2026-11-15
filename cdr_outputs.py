@@ -16,8 +16,11 @@ from cdr_product_changes import diff_normalized_product_fact_groups
 from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
+from cdr_json_replay import write_json_object
+from cdr_replay_rows import ReplayRows, ReplayStore
+from cdr_product_change_stream import diff_current_store
 
-SCHEMA_VERSION = "9"
+SCHEMA_VERSION = "10"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json"],
@@ -95,6 +98,10 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "before_json", "after_json", "before_value_json", "after_value_json",
         "before_evidence_json", "after_evidence_json", "before_signature_json", "after_signature_json",
     ],
+    "dim_providers": [
+        "run_date", "provider", "brand_id", "brand_name",
+        "abn", "industries_json", "asx_ticker", "entity_type",
+    ],
 }
 
 RESET_TABLES = (
@@ -103,6 +110,7 @@ RESET_TABLES = (
     "bank_items",
     "bank_product_facts",
     "bank_product_changes",
+    "dim_providers",
     "runs",
     "schema_meta",
 )
@@ -118,7 +126,7 @@ def write_json(path: Path, data: Mapping[str, Any]) -> None:
     temporary = path.parent / f".{path.name}.tmp"
     try:
         with temporary.open("w", encoding="utf-8") as stream:
-            json.dump(data, stream, indent=2, ensure_ascii=False)
+            write_json_object(stream, data)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -301,6 +309,19 @@ def ensure_db(con: sqlite3.Connection) -> None:
           before_signature_json TEXT, after_signature_json TEXT,
           UNIQUE(run_date, event_id)
         );
+        CREATE TABLE IF NOT EXISTS dim_providers (
+          run_date TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          brand_id TEXT NOT NULL,
+          brand_name TEXT NOT NULL,
+          abn TEXT NOT NULL,
+          industries_json TEXT NOT NULL,
+          asx_ticker TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          UNIQUE(run_date, provider)
+        );
+        CREATE INDEX IF NOT EXISTS idx_dim_providers_lookup
+          ON dim_providers (run_date, provider);
         CREATE INDEX IF NOT EXISTS idx_bank_rates_taxonomy
           ON bank_rates (run_date, taxonomy_path);
         CREATE INDEX IF NOT EXISTS idx_bank_rates_lookup
@@ -408,6 +429,7 @@ def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> No
             insert_rows(con, "bank_items", with_run_date(add_group(banks[group], group), run_date))
         insert_rows(con, "bank_product_facts", with_run_date(banks["product_facts"], run_date))
         insert_rows(con, "bank_product_changes", banks.get("product_changes", []))
+        insert_rows(con, "dim_providers", with_run_date(banks.get("providers") or [], run_date))
         con.commit()
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
@@ -450,6 +472,7 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
         "run_date": run_date,
         "products": banks["products"],
         "rates": banks["rates"],
+        "providers": banks.get("providers", []),
         "counts": summary_counts(banks),
         "coverage": coverage_summary(banks, run_date),
     }
@@ -557,7 +580,7 @@ def _exclude_failed_missing_product_groups(
     unavailable_providers: Iterable[str] = (),
 ) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, Any]]:
     """Return filtered groups; the count is final after the iterable is exhausted."""
-    current_keys = {
+    current_keys = set(current_facts.product_presence()) if isinstance(current_facts, ReplayRows) else {
         (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
         for row in current_facts
     }
@@ -594,10 +617,23 @@ def build_outputs(
     out_dir: Optional[Path] = None,
     db_path: Optional[Path] = None,
     previous_run_root: Optional[Path] = None,
+    replay_parent: Optional[Path] = None,
 ) -> Dict[str, Any]:
     out_dir = (out_dir or (run_root / "_exports")).resolve()
+    from cdr_product_changes import _product_key, _fact_key
+    from cdr_replay_paths import private_replay_parent
+    if replay_parent is None: out_dir.parent.mkdir(parents=True, exist_ok=True)
+    replay_parent = private_replay_parent(replay_parent or out_dir.parent / '.cdr-replay-stage')
+    with ReplayStore(replay_parent, key_of=_product_key, validate_fact=_fact_key) as store:
+        result = _build_outputs(run_root, out_dir, db_path, previous_run_root, store)
+    result['replay_cleanup'] = store.cleanup_receipt
+    return result
+
+
+def _build_outputs(run_root, out_dir, db_path, previous_run_root, store):
     run_date = run_root.name
-    banks = parse_banks_run(run_root)
+    banks = parse_banks_run(run_root, facts_sink=store.facts)
+    store.facts.seal()
     previous = previous_run_root or previous_finalized_run(run_root)
     if previous:
         previous_groups, suppression = _exclude_failed_missing_product_groups(
@@ -607,11 +643,11 @@ def build_outputs(
             current_providers=(str(row.get("provider") or "") for row in banks["products"]),
             unavailable_providers=(row['provider_dir'] for row in banks.get('prd_unavailable', [])),
         )
-        changes = diff_normalized_product_fact_groups(
-            previous_groups,
-            banks["product_facts"],
+        changes = diff_current_store(
+            previous_groups, store,
             previous_run_date=previous.name,
             current_run_date=run_date,
+            convert=lambda event: product_change_rows(dict(events=[event], run_date=run_date, previous_run_date=previous.name))[0],
         )
         suppressed_incomplete_products = suppression["suppressed"]
         suppression_reasons = suppression["reasons"]
@@ -624,9 +660,10 @@ def build_outputs(
             "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
             "events": [],
         }
+        store.changes.seal()
     changes["suppressed_incomplete_products"] = suppressed_incomplete_products
     changes["suppression_reasons"] = suppression_reasons
-    banks["product_changes"] = product_change_rows(changes)
+    banks["product_changes"] = store.changes
     banks["product_change_summary"] = {
         "schema_version": changes.get("schema_version", 1),
         "normalization_version": changes.get("normalization_version"),

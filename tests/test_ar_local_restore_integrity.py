@@ -326,6 +326,6 @@ def test_version8_database_migrated_in_place_matches_reviewed_version9_form(tmp_
                   for name, sql in connection.execute(
                       "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name != 'sqlite_sequence'")}
         version = connection.execute("SELECT value FROM schema_meta WHERE key = 'version'").fetchone()[0]
-    assert version == "9"
-    assert schema == MIGRATED_DAILY_SCHEMA_SQL_SHA256["9"]
-    assert schema != HISTORICAL_DAILY_SCHEMA_SQL_SHA256["9"]
+    assert version == "10"
+    assert schema == MIGRATED_DAILY_SCHEMA_SQL_SHA256["10"]
+    assert schema != HISTORICAL_DAILY_SCHEMA_SQL_SHA256["10"]

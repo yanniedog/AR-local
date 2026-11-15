@@ -110,14 +110,15 @@ def test_missing_response_has_no_digest_but_received_empty_body_does(monkeypatch
     assert result.body_sha256 == expected and result.partial_index is None
 
 
-def test_dependency_outage_gets_one_inline_recovery_not_http_retry_sweeps(tmp_path, monkeypatch):
+def test_dependency_outage_retries_same_version_then_one_recovery_pass(tmp_path, monkeypatch):
     request = Mock(return_value=(401, BODY, None))
     monkeypatch.setattr(support, 'http_request', request)
-    monkeypatch.setattr(support.time, 'sleep', lambda _: pytest.fail('401 must not retry inline HTTP'))
+    monkeypatch.setattr(support.time, 'sleep', lambda _: None)
     result = support.fetch_cdr_json('https://api.cds.ddhgraham.com.au/cds-au/v1/banking/products',
         versions=[6, 5, 4], timeout=5, max_retries=6, sleep_ms=0)
     assert not result.ok and result.retryable and result.failure_category == CATEGORY
-    assert result.attempts == request.call_count == 1
+    assert result.attempts == request.call_count == 6  # Two fallback slots reserved, never swept.
+    assert {call.args[1]['x-v'] for call in request.call_args_list} == {'6'}
     support.append_failure(tmp_path, {'bank': 'DDH Graham', 'phase': 'products_index',
         'snippet': BODY, **ingest._fetch_failure_fields(result)})
     retry = Mock()
@@ -136,3 +137,76 @@ def test_dependency_is_publishable_partial_without_auth_exemption(contract):
     exclusions = authentication_exclusions(contract)
     assert provider['provider_uid'] not in {row['provider_uid'] for row in exclusions['providers']}
     assert contract['observation_state'] == 'partial'
+
+
+@pytest.mark.parametrize('budget,expected', [(2, [6, 5]), (4, [6, 5, 5, 5])])
+def test_negotiated_dependency_retry_stays_on_version_and_inside_shared_attempts(monkeypatch, budget, expected):
+    versions = []
+    def request(url, headers, *, timeout):
+        version = int(headers['x-v']); versions.append(version)
+        return (406, '{"detail":"Unsupported Version; Available: 5"}', None) if version == 6 else (401, BODY, None)
+    monkeypatch.setattr(support, 'http_request', request)
+    monkeypatch.setattr(support.time, 'sleep', lambda _: None)
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[6, 5],
+        timeout=5, max_retries=2, sleep_ms=0, max_total_attempts=budget)
+    assert versions == expected and result.attempts == len(expected)
+    assert result.status == 401 and result.text == BODY and result.failure_category == CATEGORY
+
+
+@pytest.mark.parametrize('status,body', [(401, '{"error":"invalid_token"}'), (403, BODY),
+    (401, BODY.replace('EBAU001', 'OTHER')), (401, BODY[:-1] + ',"error":"invalid_token"}')])
+def test_cdr_numeric_auth_admission_never_retries_unrecognized_or_mixed_auth(monkeypatch, status, body):
+    request = Mock(return_value=(status, body, None))
+    monkeypatch.setattr(support, 'http_request', request)
+    monkeypatch.setattr(support.time, 'sleep', lambda _: pytest.fail('authentication must remain terminal'))
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[6, 5],
+        timeout=5, max_retries=6, sleep_ms=0)
+    assert request.call_count == result.attempts == 1 and not result.retryable
+
+
+def test_dependency_retry_does_not_override_an_explicit_caller_predicate(monkeypatch):
+    request = Mock(return_value=(401, BODY, None))
+    monkeypatch.setattr(support, 'http_request', request)
+    result = support.fetch_with_retries('https://holder.example/products', {}, timeout=1,
+        max_retries=6, sleep_ms=0, retry_on=lambda _: False)
+    assert request.call_count == result.attempts == 1
+
+
+def test_dependency_retry_can_recover_a_real_valid_index(monkeypatch):
+    captured = json.loads((Path(__file__).parent / 'fixtures/cdr-september7/defence.json').read_text())
+    body = json.dumps(captured['products_index']['body'])
+    request = Mock(side_effect=[(401, BODY, None), (200, body, None)])
+    monkeypatch.setattr(support, 'http_request', request)
+    monkeypatch.setattr(support.time, 'sleep', lambda _: None)
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[5],
+        timeout=5, max_retries=1, sleep_ms=0, attempt_context={'phase': 'products_index'})
+    assert result.ok and result.attempts == 2 and result.version == 5 and result.text == body
+
+
+def test_dependency_retry_after_is_bounded_by_remaining_logical_deadline(monkeypatch):
+    clock, waits = [0.0], []
+    request = Mock(return_value=(401, BODY, 10))
+    def sleep(seconds):
+        waits.append(seconds); clock[0] += seconds
+    monkeypatch.setattr(support, 'http_request', request)
+    monkeypatch.setattr(support.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(support.time, 'sleep', sleep)
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[5],
+        timeout=5, max_retries=6, sleep_ms=0, max_total_seconds=4)
+    assert waits == [4] and clock[0] == 4 and request.call_count == result.attempts == 1
+    assert result.status == 401 and result.failure_category == CATEGORY
+
+
+@pytest.mark.parametrize('auth_status', [401, 403])
+def test_later_terminal_auth_supersedes_dependency_within_same_version(monkeypatch, auth_status):
+    auth = '{"error":"invalid_token"}'
+    request = Mock(side_effect=[
+        (406, '{"detail":"Unsupported Version; Available: 5"}', None),
+        (401, BODY, None), (auth_status, auth, None)])
+    monkeypatch.setattr(support, 'http_request', request)
+    monkeypatch.setattr(support.time, 'sleep', lambda _: None)
+    result = support.fetch_cdr_json('https://holder.example/products', versions=[6, 5],
+        timeout=5, max_retries=2, sleep_ms=0)
+    assert [call.args[1]['x-v'] for call in request.call_args_list] == ['6', '5', '5']
+    assert result.status == auth_status and result.text == auth and not result.retryable
+    assert result.failure_category == 'public_endpoint_auth_required'

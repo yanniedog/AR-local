@@ -157,16 +157,22 @@ def iter_banking_brands_from_payload(payload: Any, *, register_version: Optional
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
             if inds & FINANCIAL_PRD_INDUSTRIES:
-                brand = {
+                brand: Dict[str, Any] = {
                     "brand_name": brand_name,
                     "legal_entity_name": legal_name,
                     "endpoint_url": normalize_banking_products_url(base),
+                    "industries": sorted(inds & FINANCIAL_PRD_INDUSTRIES),
                 }
+                abn = pick_text(item, ["abn"])
+                if abn:
+                    brand["abn"] = abn
                 # V2 explicitly distinguishes public discovery from PRD. Keep
                 # the historical identity locator, but never request it when
                 # the authoritative register says no PRD endpoint is available.
                 # Unknown/historical versions retain their established fallback.
                 registration_id = item.get("dataHolderBrandId") or item.get("interimId")
+                if isinstance(registration_id, str) and registration_id.strip():
+                    brand["brand_id"] = registration_id.strip()
                 if (register_version == 2 and item.get("productBaseUri") is None
                         and isinstance(registration_id, str) and registration_id.strip()):
                     brand.update(prd_availability="UNAVAILABLE", register_version=2,
@@ -565,7 +571,9 @@ def fetch_cdr_json(
             timeout=timeout,
             max_retries=per_version_retries,
             sleep_ms=sleep_ms,
-            retry_on=retryable_status,
+            # The full-body classifier still rejects ordinary authentication
+            # failures. Only its exact tenant-dependency 401 evidence is retryable.
+            retry_on=lambda status: retryable_status(status) or status == 401,
             deadline=deadline,
             attempt_journal=attempt_journal,
             attempt_context={

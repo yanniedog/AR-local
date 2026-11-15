@@ -42,12 +42,14 @@ def parse_supported_versions(body: str) -> list[int]:
         text, re.I,
     )
     if match:
-        return _versions(match.group(1))
+        versions = _versions(match.group(1))
+        if versions:
+            return versions
     # An open-ended advertisement proves its minimum, not an arbitrary upper
     # version. Require an affirmative endpoint/API clause and an explicit v
     # marker; never turn "v7 and above" into a speculative 7..99 sweep.
     minimum = re.search(
-        r"(?:^|[\"'\n.!?:])\s*(?:this\s+)?(?:endpoint|api)\s+supports\s+"
+        r"(?:^|[\"'\n.!?:])\s*(?:(?:this|the)\s+)?(?:endpoint|api)\s+supports\s+"
         r"(?:v\s*|versions?\s+)([1-9][0-9]?)\s+(?:and|or)\s+(?:above|higher|later)\b",
         text, re.I,
     )
