@@ -32,7 +32,7 @@ invalid or oversized present metadata; it never truncates quotes. Source export
 capture retains the full envelope even when a later package must reject its size.
 The active v1 transfer limits also reject details exceeding 8 MiB of compressed
 (or encrypted compressed) asset bytes and total assets exceeding 16 MiB; see
-`STORAGE_AND_PAYLOAD_BUDGETS.md` for the complete current policy. A failed
+[STORAGE_AND_PAYLOAD_BUDGETS.md](STORAGE_AND_PAYLOAD_BUDGETS.md) for the complete current policy. A failed
 budget leaves candidate assets for diagnosis but does not write a new manifest.
 
 Old clients can ignore the optional field; all existing product fields and the

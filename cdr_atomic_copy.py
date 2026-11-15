@@ -51,7 +51,7 @@ def copy_verified(source: Path, target: Path, *, size: int, sha256: str) -> None
         try:
             temporary.unlink(missing_ok=True)
             _fsync_directory(target.parent)
-        except OSError as cleanup_error:
+        except BaseException as cleanup_error:
             if failure is None:
                 raise
             # Keep cancellation/deadline semantics, with cleanup failure visible.
