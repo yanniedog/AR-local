@@ -10,6 +10,12 @@
 # Press Ctrl-C to stop watching; the ingest keeps running in the background.
 set -uo pipefail
 
+# Refuse before starting a service (and its stop hooks); the child rechecks
+# after any queue/lock wait. Missing reviewed source also fails closed.
+repo="$(systemctl show ar-local-ingest-now.service -p WorkingDirectory --value)" || exit 1
+[[ "$repo" = /* && -f "$repo/pi_manual_ingest_window.py" ]] || { echo "[cdr-ingest] manual admission helper unavailable" >&2; exit 1; }
+/usr/bin/python3 "$repo/pi_manual_ingest_window.py" || exit $?
+
 echo "[cdr-ingest] Fresh CDR ingest for $(date +%F): fetch -> publish to GitHub -> dashboard. (~10-20 min)"
 sudo systemctl reset-failed ar-local-ingest-now.service 2>/dev/null || true
 if ! sudo systemctl start --no-block ar-local-ingest-now.service; then

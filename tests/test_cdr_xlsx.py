@@ -108,3 +108,55 @@ def test_partition_keeps_streaming_memory_bound(tmp_path, monkeypatch):
     finally:
         tracemalloc.stop()
     assert peak < 4_000_000
+
+
+@pytest.mark.parametrize('existing', [True, False])
+def test_replay_budget_failure_during_sheet_write_never_replaces_workbook(tmp_path, existing):
+    from dataclasses import replace
+    from cdr_product_changes import _product_key, _fact_key
+    from cdr_replay_rows import ReplayStore, ReplayLimits, ReplayLimitError, encoded
+    values = [dict(provider='Technical', product_id='control', dataset='Savings', fact_id=str(i), text='x'*100) for i in range(3)]
+    first_pass = sum(len(encoded(value)) for value in values)
+    target = tmp_path / 'facts.xlsx'
+    if existing: write_workbook(target, {'original': [{'kept': 'original bytes'}]})
+    original = target.read_bytes() if existing else None
+    limits = replace(ReplayLimits(), read_bytes=first_pass + len(encoded(values[0])))
+    with pytest.raises(ReplayLimitError, match='read/row budget'):
+        with ReplayStore(tmp_path, key_of=_product_key, validate_fact=_fact_key, limits=limits) as spool:
+            spool.facts.extend(values); spool.facts.seal()
+            write_workbook(target, {'facts': spool.facts})
+    assert (target.read_bytes() if target.exists() else None) == original
+    assert not list(tmp_path.glob('.facts.xlsx.tmp-*'))
+
+
+def test_workbook_replaces_only_complete_archive_and_preserves_mode(tmp_path, monkeypatch):
+    import os
+    import stat
+    target = tmp_path / 'facts.xlsx'; target.write_bytes(b'original'); target.chmod(0o600)
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    replace = cdr_xlsx.os.replace; observed = []
+    def checked(source, destination):
+        assert target.read_bytes() == b'original'
+        with zipfile.ZipFile(source) as archive: assert archive.testzip() is None
+        observed.append(source); replace(source, destination)
+    monkeypatch.setattr(cdr_xlsx.os, 'replace', checked)
+    write_workbook(target, {'complete': [{'value': 1}]})
+    assert len(observed) == 1 and not observed[0].exists()
+    assert stat.S_IMODE(target.stat().st_mode) == original_mode
+
+
+@pytest.mark.skipif(cdr_xlsx.os.name != 'posix', reason='actual POSIX directory fsync')
+def test_replaced_workbook_parent_is_fsynced_after_atomic_replace(tmp_path, monkeypatch):
+    import os
+    import stat
+    target = tmp_path / 'durable.xlsx'
+    sync = cdr_xlsx.os.fsync; replace = cdr_xlsx.os.replace; events = []
+    def record_sync(descriptor):
+        events.append('directory_sync' if stat.S_ISDIR(os.fstat(descriptor).st_mode) else 'file_sync')
+        sync(descriptor)
+    def record_replace(source, destination):
+        replace(source, destination); events.append('replace')
+    monkeypatch.setattr(cdr_xlsx.os, 'fsync', record_sync)
+    monkeypatch.setattr(cdr_xlsx.os, 'replace', record_replace)
+    write_workbook(target, {'complete': [{'value': 1}]})
+    assert events == ['file_sync', 'replace', 'directory_sync']

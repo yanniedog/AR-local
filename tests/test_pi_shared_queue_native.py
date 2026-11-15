@@ -289,3 +289,48 @@ def test_deadline_arm_failure_never_enters_native_guard_or_spawns(monkeypatch):
     with pytest.raises(ValueError):
         queue.run_supervised(store, record(resources=['host']), ['command'], 10,
                              queue.Cancellation(), lambda store: pytest.fail('native guard entered'))
+
+
+def test_deployed_operation_lock_imports_without_sys_modules_entry(tmp_path, monkeypatch):
+    import importlib.util
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.delitem(sys.modules, '_shared_pi_native_lock', raising=False)
+    monkeypatch.syspath_prepend(str(repo))
+    spec = importlib.util.spec_from_file_location('_shared_pi_native_lock', repo / 'ar_local_operation_lock.py')
+    module = importlib.util.module_from_spec(spec)
+    # Match the pinned root queue bridge, which omits sys.modules[spec.name] on load.
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, '_current_boot_id', lambda: '11111111-1111-4111-8111-111111111111')
+    with module.production_lock(tmp_path / 'daily-ingest.lock', 'shared-pi-host-task:test') as lease:
+        assert isinstance(lease, module.OwnedProductionLock)
+        assert isinstance(hash(lease), int)
+        assert module.OwnedProductionLock.__match_args__ == module.OwnedProductionLock.__slots__
+        assert lease.verified_record()['role'] == 'shared-pi-host-task:test'
+        with pytest.raises(AttributeError):
+            lease.role = 'mutated'
+
+
+def test_native_lock_factory_loads_repo_operation_lock(tmp_path, monkeypatch):
+    import pi_shared_queue_native as native
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(native, 'verify_native_deployment', lambda: None)
+    monkeypatch.delitem(sys.modules, '_shared_pi_native_lock', raising=False)
+    try:
+        factory = native.native_lock_factory(repo)
+        assert callable(factory)
+        assert sys.modules['_shared_pi_native_lock'].production_lock is factory
+    finally:
+        sys.modules.pop('_shared_pi_native_lock', None)
+
+
+def test_native_lock_factory_cleans_sys_modules_on_missing_callable(tmp_path, monkeypatch):
+    import pi_shared_queue_native as native
+    fake_repo = tmp_path / 'repo'
+    fake_repo.mkdir()
+    (fake_repo / 'ar_local_operation_lock.py').write_text('production_lock = 123\n', encoding='utf-8')
+    monkeypatch.setattr(native, 'verify_native_deployment', lambda: None)
+    for dep in ('_shared_pi_native_lock', 'ar_local_backup_policy', 'cdr_file_lock', 'process_safety'):
+        monkeypatch.delitem(sys.modules, dep, raising=False)
+    with pytest.raises(ValueError, match='deployed production lock function unavailable'):
+        native.native_lock_factory(fake_repo)
+    assert '_shared_pi_native_lock' not in sys.modules

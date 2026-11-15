@@ -48,12 +48,12 @@ def test_complete_real_history_cannot_be_put_on_legacy_startup_path() -> None:
     manifest = {"files": {key: {"bytes": size + OVERHEAD} for key, size in sizes.items()}}
     with pytest.raises(ValueError, match="core bytes"):
         validate_payload_network_budget(manifest, manifest_bytes=4_000)
-    assert CORE_MAX_BYTES == 512 * 1024
+    assert CORE_MAX_BYTES == 1024 * 1024
 
 
 def test_total_budget_still_rejects_growth_even_when_each_asset_fits() -> None:
     manifest = _manifest(CORE_MAX_BYTES, DETAILS_MAX_BYTES)
-    manifest["files"].update({f"optional_{i}": {"bytes": 1024 * 1024} for i in range(3)})
+    manifest["files"].update({f"optional_{i}": {"bytes": 1024 * 1024} for i in range(7)})
     with pytest.raises(ValueError, match="total bytes"):
         validate_payload_network_budget(manifest, manifest_bytes=3_000)
 
@@ -73,3 +73,14 @@ def test_v2_history_is_on_demand_but_still_has_a_transfer_time_budget() -> None:
         manifest_bytes=1_200,
     )
     assert report["capabilities"]["product_history"]["seconds"]["1_mbps"] == 1.0
+
+
+def test_measured_expanded_current_assets_fit_without_changing_other_limits():
+    from app_payload_network_budget import ROLLING_TOTAL_MAX_BYTES, SEARCH_INDEX_MAX_BYTES, OTHER_ASSET_MAX_BYTES, V2_TOTAL_MAX_BYTES
+    manifest = _manifest(core=611125, details=5102102)
+    manifest["files"]["search_index"]["bytes"] = 808444
+    report = validate_payload_network_budget(manifest, manifest_bytes=6000)
+    assert report["journeys"]["current_standard_home"]["bytes"] == 5713227
+    assert CORE_MAX_BYTES == 1024**2 and DETAILS_MAX_BYTES == 8 * 1024**2
+    assert ROLLING_TOTAL_MAX_BYTES == 16 * 1024**2
+    assert (SEARCH_INDEX_MAX_BYTES, OTHER_ASSET_MAX_BYTES, V2_TOTAL_MAX_BYTES) == (2 * 1024**2, 1024**2, 9 * 1024**2)

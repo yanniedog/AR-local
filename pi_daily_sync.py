@@ -620,6 +620,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Fill coverage gaps using verified source responses from today's selected observation.",
     )
     parser.add_argument("--quality-recapture", action="store_true", help="Full current-day recapture after a verified quality repair; requires --force.")
+    parser.add_argument("--manual-ingest", action="store_true", help="Apply the legacy manual-service window and full lifetime reserve.")
     parser.add_argument("--date", default="", help="Run date YYYY-MM-DD; defaults to cdr_daily.py local date.")
     parser.add_argument("--banks-only", action="store_true", help="Run the daily banking ingest only.")
     parser.add_argument(
@@ -638,6 +639,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         parser.error("--resume-same-day requires --force")
     if args.quality_recapture and (not args.force or args.resume_same_day):
         parser.error("--quality-recapture requires --force and cannot reuse --resume-same-day")
+    if args.manual_ingest and (not args.force or args.quality_recapture or args.resume_same_day):
+        parser.error("--manual-ingest requires --force and cannot use a bounded recovery mode")
     if args.publish_existing_payload and (args.force or args.date or args.banks_only):
         parser.error("--publish-existing-payload cannot be combined with ingest options")
     return args
@@ -646,6 +649,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[list[str]] = None) -> int:
     effective_argv = list(argv) if argv is not None else sys.argv[1:]
     args = parse_args(effective_argv)
+    from pi_manual_ingest_window import manual_service, require_window
+    manual = args.manual_ingest or manual_service()
+    if manual:
+        require_window()
     exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     ensure_runtime_data_writable(REPO_ROOT)
     if args.publish_existing_payload and (reason := payload_retry_window_reason()):
@@ -655,6 +662,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         lock_context = DailyIngestLock(lock_path)
         with lock_context:
+            if manual:
+                require_window()  # Recheck after queue admission and lock acquisition.
             if getattr(args, "resume_same_day", False) or getattr(args, "quality_recapture", False):
                 from pi_cdr_recovery import assert_recovery_start_safe
 

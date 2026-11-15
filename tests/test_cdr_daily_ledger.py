@@ -270,8 +270,9 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
     }), encoding="utf-8")
     captured = {}
 
-    def fake_build(run_root, out_dir, db_path, *, previous_run_root=None):
+    def fake_build(run_root, out_dir, db_path, *, previous_run_root=None, replay_parent=None):
         captured["previous"] = previous_run_root
+        assert replay_parent == runs.parent / '.daily-replay-stage'
         return {"run_date": TODAY, "out_dir": str(out_dir), "banks": {"rates": 1}}
 
     monkeypatch.setattr(cdr_daily, "build_outputs", fake_build)

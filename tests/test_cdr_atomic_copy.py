@@ -85,3 +85,43 @@ def test_interrupted_stream_never_installs_partial_file(tmp_path, monkeypatch):
     assert not target.exists()
     assert source.read_bytes() == b'data'
     assert not list(tmp_path.glob('.*.copy-*'))
+
+
+def test_verified_existing_target_needs_no_second_temporary_copy(tmp_path, monkeypatch):
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    source.write_bytes(b'exact byte-copy control'); target.write_bytes(source.read_bytes())
+    original = copying.os.open
+    def no_create(path, flags, *args, **kwargs):
+        if flags & copying.os.O_CREAT:
+            pytest.fail('existing verified destination must not allocate another copy')
+        return original(path, flags, *args, **kwargs)
+    monkeypatch.setattr(copying.os, 'open', no_create)
+    copying.copy_verified(source, target, size=source.stat().st_size,
+                          sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+    source.write_bytes(b'changed-source')
+    with pytest.raises(ValueError, match='source changed'):
+        copying.copy_verified(source, target, size=target.stat().st_size,
+                              sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+
+
+def test_promotion_copy_preserves_budget_timeout_type(tmp_path, monkeypatch):
+    from cdr_attempt_evidence_promotion import _copy_record_create_once
+    source = tmp_path / 'source'; source.mkdir(); (source / 'evidence').write_bytes(b'bytes')
+    error = TimeoutError('original copy deadline')
+    def expired(*args, **kwargs): raise error
+    monkeypatch.setattr(copying, 'copy_verified', expired)
+    with pytest.raises(TimeoutError) as caught:
+        _copy_record_create_once(source, tmp_path / 'target',
+                                 {'path': 'evidence', 'bytes': 5, 'sha256': 'a' * 64})
+    assert caught.value is error
+
+
+def test_successful_copy_flushes_directory_after_sidecar_removal(tmp_path, monkeypatch):
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    source.write_bytes(b'copy durability control')
+    synchronizations = []
+    monkeypatch.setattr(copying, '_fsync_directory',
+        lambda parent: synchronizations.append(sorted(p.name for p in parent.glob('.*.copy-*'))))
+    copying.copy_verified(source, target, size=source.stat().st_size,
+                          sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+    assert synchronizations and synchronizations[-1] == []

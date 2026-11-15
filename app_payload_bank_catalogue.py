@@ -169,6 +169,32 @@ def retained_evidence(products, *, cache=None):
     return result
 
 
+class StreamedRetainedEvidence:
+    """Same conflict/unknown semantics without retaining source product records."""
+
+    def __init__(self, *, cache=None, max_bytes=64 * 1024 * 1024, max_products=20000):
+        self.cache, self.max_bytes, self.max_products = cache, max_bytes, max_products
+        self.result, self.signatures, self.conflicts, self.bytes = {}, {}, set(), 0
+
+    def consume(self, product):
+        key = product.get("product_key") if isinstance(product, dict) else None
+        if not isinstance(key, str) or not key.strip() or key in self.conflicts:
+            return
+        value = (self.cache or _retained_product_evidence)(product)
+        encoded = canonical(value).encode("utf-8")
+        signature = hashlib.sha256(encoded).digest()
+        if key in self.signatures:
+            if self.signatures[key] != signature:
+                self.conflicts.add(key)
+                self.result.pop(key, None)
+            return
+        self.bytes += len(encoded) + len(key.encode("utf-8"))
+        if self.bytes > self.max_bytes or len(self.signatures) >= self.max_products:
+            raise ValueError("Historical product evidence exceeds projection budget")
+        self.signatures[key] = signature
+        self.result[key] = value
+
+
 def historical_descriptor(row):
     """Project CSV's explicit boolean encoding without changing source evidence."""
     result = {key: value for key, value in row.items() if key not in OBSERVATION_FIELDS}

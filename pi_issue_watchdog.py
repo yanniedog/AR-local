@@ -19,6 +19,14 @@ DAILY_TIMER = "ar-local-daily.timer"
 WATCHDOG_TITLE = "Pi ingest/publication check needs attention: "
 
 
+# A finalized partial capture that the standing retained-partial policy already
+# publishes, and whose gaps stay within these bounds, is routine: the same few
+# providers return invalid or withdrawn data every day. It is still disclosed in
+# the payload coverage block; it just does not page the operator.
+ROUTINE_PARTIAL_MAX_PROVIDER_RATIO = 0.15
+ROUTINE_PARTIAL_MAX_FAILURE_RATIO = 0.02
+
+
 class EvidenceLimit(ValueError):
     pass
 
@@ -243,6 +251,75 @@ def completion(state_root, date):
         return "INVALID"
 
 
+def routine_partial(state_root, date):
+    """True only for a publishable partial whose gaps are within routine bounds.
+
+    Fails closed: unreadable, unsealed, unreconciled or materially degraded
+    coverage alerts. The decision is bound to one selected observation: the
+    pointer must name the same generation before and after every read.
+    """
+    from collections import Counter
+    from app_payload_retained_policy import retained_partial_allowed
+    try:
+        pointer = read_json(state_root, "observation-pointers-v2/latest-observation.json")
+        if pointer.get("observation_date") != date or completion(state_root, date) != "PARTIAL":
+            return False
+        marker = read_json(state_root, pointer.get("marker_path"))
+        contract = read_json(state_root, marker.get("export_contract_path"), maximum=8 * 1024 * 1024)
+        generation = contract.get("generation_id")
+        if (not generation or generation != pointer.get("generation_id")
+                or generation != marker.get("generation_id")
+                or contract.get("observation_date") != date
+                or not retained_partial_allowed(contract)):
+            return False
+        coverage = contract["coverage"]
+        names = ("providers_attempted", "providers_registered", "providers_failed",
+                 "providers_partial", "failure_records", "products_discovered")
+        counts = {key: coverage.get(key) for key in names}
+        counts["providers_prd_unavailable"] = coverage.get("providers_prd_unavailable", 0)
+        if any(type(value) is not int or value < 0 for value in counts.values()):
+            return False
+        attempted, products = counts["providers_attempted"], counts["products_discovered"]
+        unverified = coverage.get("provider_population_unverified", [])
+        states = contract.get("provider_states")
+        if (attempted <= 0 or products <= 0 or type(unverified) is not list
+                or type(states) is not list or any(type(row) is not dict for row in states)
+                or coverage.get("failure_provenance_complete") is not True
+                or coverage.get("register_provenance_complete") is not True
+                or coverage.get("corrupt_failure_records") != 0
+                or coverage.get("unattributed_failure_records") != 0):
+            return False
+        # Aggregates are only trusted when the per-provider rows reproduce them.
+        # A provider may be unattempted solely because the register advertises
+        # no product endpoint for it; any other unattempted provider alerts.
+        tally = Counter(row.get("state") for row in states)
+        recorded = [row.get("failure_records", 0) for row in states]
+        if (set(tally) - {"complete", "partial", "failed", "not_attempted"}
+                or len(states) != counts["providers_registered"]
+                or tally["failed"] != counts["providers_failed"]
+                or tally["partial"] != counts["providers_partial"]
+                or tally["not_attempted"] != counts["providers_prd_unavailable"]
+                or attempted != counts["providers_registered"] - tally["not_attempted"]
+                or any(type(value) is not int or value < 0 for value in recorded)
+                or sum(recorded) != counts["failure_records"]):
+            return False
+        # Providers whose population could not be verified count as affected,
+        # once each: population coverage already marks registered ones failed.
+        if any(type(row) is not dict for row in unverified):
+            return False
+        counted = {row.get(key) for row in states if row.get("state") in {"failed", "partial"}
+                   for key in ("provider_uid", "brand_name", "provider_dir")} - {None, ""}
+        extra = sum(1 for row in unverified
+                    if not ({row.get("provider_uid"), row.get("provider")} - {None, ""}) & counted)
+        affected = counts["providers_failed"] + counts["providers_partial"] + extra
+        if (affected / attempted > ROUTINE_PARTIAL_MAX_PROVIDER_RATIO
+                or counts["failure_records"] / products > ROUTINE_PARTIAL_MAX_FAILURE_RATIO):
+            return False
+        return read_json(state_root, "observation-pointers-v2/latest-observation.json") == pointer
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
 def ingest_checks(store, state_root, now, units=None, timer_triggered=None):
     due = latest_daily_due_utc(now); date = expected_run_date_for_due(due)
     if now < due + timedelta(minutes=30):
@@ -270,9 +347,14 @@ def ingest_checks(store, state_root, now, units=None, timer_triggered=None):
         if stale:
             store.observe("ingest:" + date, "Pi ingest needs attention: " + date, "INGEST_RUNTIME_EXCEEDED", healthy=False)
         return {"status": "STUCK" if stale else "RUNNING", "date": date}
+    # Sampled before evidence is read: a routine verdict from an older check
+    # cannot clear a failure that a newer check recorded after this point.
+    sampled = datetime.now(timezone.utc)
     status = completion(state_root, date)
+    routine = status == "PARTIAL" and routine_partial(state_root, date)
     store.observe("ingest:" + date, "Pi ingest needs attention: " + date,
-                  "INGEST_" + status, healthy=status == "COMPLETE")
+                  "INGEST_" + status, healthy=status == "COMPLETE" or routine,
+                  **({"recovery_started_at": sampled} if routine else {}))
     return {"status": status, "date": date}
 
 

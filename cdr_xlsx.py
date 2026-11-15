@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import html
+import os
 import re
+import stat
+import uuid
 import zipfile
 from itertools import islice
 from pathlib import Path
@@ -242,7 +245,24 @@ def write_workbook(path: Path, sheets: Mapping[str, Sequence[Mapping[str, Any]]]
             count = min(capacity, len(rows) - start)
             named_sheets.append((sheet_name(raw_name, used), islice(iterator, count), columns, count))
     names = [name for name, _, _, _ in named_sheets]
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    temporary = path.with_name('.' + path.name + '.tmp-' + uuid.uuid4().hex)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    try:
+        with os.fdopen(descriptor, 'wb') as stream:
+            _write_archive(stream, names, named_sheets)
+            stream.flush(); os.fsync(stream.fileno())
+        if path.exists(): os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+        os.replace(temporary, path)
+        if os.name == 'posix':
+            parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try: os.fsync(parent)
+            finally: os.close(parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _write_archive(stream, names, named_sheets):
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml(len(names)))
         zf.writestr("_rels/.rels", root_rels_xml())
         zf.writestr("xl/workbook.xml", workbook_xml(names))

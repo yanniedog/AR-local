@@ -29,6 +29,8 @@ DEFENCE = json.loads((Path(__file__).parent / "fixtures" / "cdr-september7" /
     ("This ENDPOINT supports V8 and above.", [8]),
     ("Endpoint supports version 1 and higher.", [1]),
     ("API supports versions 99 or later.", [99]),
+    ("The API supports v7 and above.", [7]),
+    ("The endpoint supports version 8 or higher.", [8]),
     ("Unsupported version: This endpoint supports v12 and above.", [12]),
 ])
 def test_only_advertised_minimum_is_negotiable(body, expected):
@@ -47,6 +49,8 @@ def test_only_advertised_minimum_is_negotiable(body, expected):
     "This endpoint does not support v7 and above.",
     "This endpoint no longer supports v7 and above.",
     "No endpoint supports v7 and above.",
+    "The API does not support v7 and above.",
+    "The API no longer supports v7 and above.",
     "Requested x-v7 and above is unsupported.",
     pytest.param("x" * 65536 + RETAINED_406, id="outside-64KiB-response-bound"),
 ])

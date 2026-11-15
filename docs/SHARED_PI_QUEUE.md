@@ -152,6 +152,14 @@ using the stable producer's dependencies and existing environment. Its Tailscale
 recovery holds queue admission closed while checking all occupied claims and
 acquiring the native production lease. Any running job or uncertain ownership
 defers the restart, including non-AR jobs without a `host` resource.
+Health-state persistence uses the same queue exclusion, then the native
+production lease and a fresh activity check. This covers writability probes as
+well as the atomic state replacement: their temporary files change production
+directory identities and otherwise invalidate concurrent evidence snapshots.
+Occupied or uncertain ownership logs `state persistence deferred` without
+touching the data directories; read-only probes continue. The previous health
+state remains the last persisted observation, not a new successful check.
+Installing a producer checkout alone does not update this standalone script.
 Install `deploy/pi/shared-queue-health.conf` as the health service's
 `98-shared-queue.conf`; reload definitions without starting or enabling its timer.
 An invocation cancelled before execution cannot restart an incumbent's paused
