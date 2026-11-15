@@ -3,6 +3,8 @@ Description=Monthly Pi OS recovery image to Google Drive
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/etc/ar-local/day-archive.env
+OnFailure=pi-os-recovery-image-check.service
+OnSuccess=pi-os-recovery-image-check.service
 
 [Service]
 Type=oneshot

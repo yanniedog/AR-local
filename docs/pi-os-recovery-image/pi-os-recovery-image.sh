@@ -18,10 +18,10 @@ LEVEL=19
 THREADS=3
 
 log() { echo "$(date -Is) $*" | tee -a "$WORK/run.log"; }
-fail() { log "FAILED: $*"; echo "{\"date\":\"$STAMP\",\"result\":\"FAILED\",\"reason\":\"$*\",\"at\":\"$(date -Is)\"}" > "$WORK/last-result.json"; exit 1; }
+fail() { log "FAILED: $*"; echo "{\"date\":\"$STAMP\",\"result\":\"FAILED\",\"reason\":\"$*\",\"at\":\"$(date -Is)\"}" > "$WORK/last-result.json"; chmod 644 "$WORK/last-result.json"; exit 1; }
 
 [ "$(id -u)" = 0 ] || { echo "must run as root" >&2; exit 2; }
-mkdir -p "$WORK"
+mkdir -p "$WORK"; chmod 755 "$WORK"
 
 # Stay clear of the protected ingest window (00:30-03:30) and of live ingest.
 now=$((10#$(date +%H) * 60 + 10#$(date +%M)))
@@ -32,8 +32,16 @@ done
 
 set -a; . "$ENVFILE"; set +a
 [ -n "${AR_LOCAL_DAY_ARCHIVE_REMOTE:-}" ] && [ -n "${RCLONE_CONFIG:-}" ] || fail "Drive remote not configured"
+# rclone rewrites its config when it refreshes the token. As root that turned the
+# shared credential root-owned and broke the hourly day-archive drain (user pi) on
+# 2026-11-15. Work from a private copy; the shared file is never opened for writing.
+SHARED_RCLONE_CONFIG=$RCLONE_CONFIG
+shared_owner=$(stat -c %u:%g:%a "$SHARED_RCLONE_CONFIG")
+install -m 600 "$SHARED_RCLONE_CONFIG" "$WORK/.rclone-private.conf"
+export RCLONE_CONFIG="$WORK/.rclone-private.conf"
+trap 'rm -f "$WORK/.rclone-private.conf"; [ "$(stat -c %u:%g:%a "$SHARED_RCLONE_CONFIG")" = "$shared_owner" ] || echo "$(date -Is) WARNING shared rclone config ownership changed" >> "$WORK/run.log"' EXIT
 REMOTE="${AR_LOCAL_DAY_ARCHIVE_REMOTE%/*}/monthly-os-recovery/$STAMP-$(hostname)"
-if rclone lsf "$REMOTE/_meta/COMPLETE.json" >/dev/null 2>&1; then log "set $STAMP already complete on Drive"; exit 0; fi
+if [ -n "$(rclone lsf "$REMOTE/_meta/COMPLETE.json" 2>/dev/null)" ]; then log "set $STAMP already complete on Drive"; exit 0; fi
 
 avail=$(df --output=avail -B1 "$WORK" | tail -1)
 [ "$avail" -gt $((40 * 1024 * 1024 * 1024)) ] || fail "less than 40 GiB free for staging"
@@ -84,7 +92,7 @@ excludes=(--exclude=./srv/ar-local --exclude=./var/lib/ar-local-drive-backup
   --exclude=./var/lib/pi-os-recovery-image --exclude=./var/cache --exclude='./var/tmp/*'
   --exclude='./tmp/*' --exclude='./home/*/.cache' --exclude=./var/log/journal
   --exclude=./var/swap --exclude=./swapfile --exclude=./lost+found)
-for secret in "${RCLONE_CONFIG:-}" "${RESTIC_PASSWORD_FILE:-}"; do
+for secret in "$SHARED_RCLONE_CONFIG" "${RESTIC_PASSWORD_FILE:-}"; do
   [ -n "$secret" ] && excludes+=("--exclude=.$secret")
 done
 restic_secret=$(sed -n 's/^RESTIC_PASSWORD_FILE=//p' /etc/ar-local/drive-backup.env 2>/dev/null | tr -d '"' | head -1)
@@ -140,5 +148,5 @@ rclone copyto "$M/COMPLETE.json" "$REMOTE/_meta/COMPLETE.json" || fail "completi
 # Keep only the small metadata locally; the archives now live on Drive.
 rm -rf "$SET/os" "$SET/arlocal"
 find "$WORK" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??' ! -name "$STAMP" -mtime +200 -exec rm -rf {} +
-cp "$M/COMPLETE.json" "$WORK/last-result.json"
+cp "$M/COMPLETE.json" "$WORK/last-result.json"; chmod 644 "$WORK/last-result.json"
 log "DONE bytes=$total remote=$REMOTE"
