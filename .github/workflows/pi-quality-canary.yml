@@ -41,7 +41,7 @@ on:
           - "install-gate"
           - "operator-deploy"
       confirm:
-        description: "canary: RUN_GUARDED_CANARY; install-gate: INSTALL_GATE_BYTES; operator-deploy: DEPLOY_CANARY_PASSED_COMMIT"
+        description: "canary: RUN_GUARDED_CANARY; prepare-python: PREPARE_PYTHON; seal-cache: SEAL_AUDIT_CACHE; install-gate: INSTALL_GATE_BYTES; operator-deploy: DEPLOY_CANARY_PASSED_COMMIT"
         required: false
         default: ""
         type: string
@@ -304,8 +304,10 @@ jobs:
           done
           if test -e "$SPOOL/write-hold.json" || test -L "$SPOOL/write-hold.json" || sudo -n test -e "$SPOOL/write-hold.json" 2>/dev/null || sudo -n test -L "$SPOOL/write-hold.json" 2>/dev/null; then
             echo "drive spool hold: PRESENT"
-          else
+          elif { test -r "$SPOOL" && test -x "$SPOOL"; } || sudo -n test -r "$SPOOL" -a -x "$SPOOL" 2>/dev/null; then
             echo "drive spool hold: not seen"
+          else
+            echo "drive spool hold: unknown (not readable)"
           fi
           receipts="$(ls -1 "$SPOOL/receipts" 2>/dev/null || sudo -n ls -1 "$SPOOL/receipts" 2>/dev/null || echo "__UNAVAILABLE__")"
           if [ "$receipts" = "__UNAVAILABLE__" ]; then
@@ -345,7 +347,7 @@ jobs:
           [ -d "$OP" ] && [ ! -L "$OP" ] || { echo "operation $OP not found"; exit 1; }
           echo "== files =="; ls -la "$OP" | sed -n '1,60p'
           for name in resources.json canary-unit.json canary.json; do
-            [ -f "$OP/$name" ] || continue
+            [ -f "$OP/$name" ] && [ ! -L "$OP/$name" ] || continue
             echo "== $name =="
             python3 - "$OP/$name" <<'PY'
           import json, sys
@@ -438,10 +440,12 @@ jobs:
                 pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 \
                 zstandard==0.25.0 fonttools==4.66.1 tzdata
               chmod -R go-w "$tmp"
+              "$tmp/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
               mv "$tmp" "$d"
               trap - EXIT
+            else
+              "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
             fi
-            "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
             echo "PREPARED_PYTHON=$d/bin/python3"
           }
           if [ -x /usr/local/bin/pi-shared-task ]; then
@@ -481,7 +485,7 @@ jobs:
           [[ "$ORIG" =~ ^[0-9a-f]{40}$ && "$SRC" = "/srv/ar-local/quality-candidate-${ORIG:0:12}" ]] || { echo "unexpected unit identity"; exit 1; }
           test -x "$PY" || { echo "interpreter $PY not found"; exit 1; }
           NEW="/srv/ar-local/quality-candidate-${COMMIT:0:12}"
-          if [ -d "$NEW" ] && [ -f "$NEW/cdr_quality_cache.py" ]; then
+          if [ -d "$NEW" ] && [ ! -L "$NEW" ] && [ -f "$NEW/cdr_quality_cache.py" ] && [ ! -L "$NEW/cdr_quality_cache.py" ]; then
             test "$(git -C "$NEW" rev-parse HEAD)" = "$COMMIT"
             test -z "$(git -C "$NEW" status --porcelain)"
           else
@@ -559,12 +563,23 @@ jobs:
           set -u
           for f in /srv/ar-local/quality-operation-gh-*/canary.json; do
             op_dir="$(dirname "$f")"
-            [ -f "$f" ] && [ ! -L "$f" ] && [ -f "$op_dir/canary-unit.json" ] && [ ! -L "$op_dir/canary-unit.json" ] || continue
-            python3 - "$f" "$op_dir/canary-unit.json" "$1" <<'PY' && { echo "$f"; exit 0; }
+            [ -d "$op_dir" ] && [ ! -L "$op_dir" ] && [ -f "$f" ] && [ ! -L "$f" ] && [ -f "$op_dir/canary-unit.json" ] && [ ! -L "$op_dir/canary-unit.json" ] || continue
+            python3 - "$f" "$op_dir/canary-unit.json" "$1" "$(basename "$op_dir")" <<'PY' && { echo "$f"; exit 0; }
           import json, sys
           r = json.load(open(sys.argv[1]))
           u = json.load(open(sys.argv[2]))
-          sys.exit(0 if r.get("result") == "PASS" and r.get("target_commit") == sys.argv[3] and u.get("expected_commit") == sys.argv[3] else 1)
+          commit, op_name = sys.argv[3], sys.argv[4]
+          op_id = op_name.removeprefix("quality-operation-")
+          ok = (
+              r.get("result") == "PASS"
+              and r.get("target_commit") == commit
+              and u.get("schema_version") is not None
+              and u.get("expected_commit") == commit
+              and u.get("operation") == op_id
+              and u.get("source") == f"/srv/ar-local/quality-candidate-{commit[:12]}"
+              and str(u.get("unit") or "").startswith("ar-local-quality-canary-")
+          )
+          sys.exit(0 if ok else 1)
           PY
           done
           exit 1
