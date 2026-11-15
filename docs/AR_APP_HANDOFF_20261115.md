@@ -27,3 +27,26 @@ Source: device audit `audit-e03d6fb91a1ab9e2` (app 1.0.277 / build 333, Android,
 - Every day is a disclosed partial capture: roughly 8 of 115 providers fail upstream daily (Thriday, DDH Graham, Aussie Home Loans, CommFCU, MoveBank, plus single products at BoQ, ME Go, Bank of Sydney). `coverage-reconciliation` will stay `warn` (2 failed / 8 partial on this run). Treat disclosed partial coverage as informational, not a warning.
 - Published 2,667 products / 16,183 rates versus 2,809 / 16,339 in the source, and 116 `historical-quarantined-tiers` on 2026-11-15. Not yet attributed to app or publisher; needs a joint look.
 - The optional packed bank-history asset is omitted when it exceeds its size budget (it did on 2026-11-15); the app must keep working from the per-date history assets.
+
+## Progress update — 2026-11-15 (`AR-app` PR #492, commit `8c14ccfe`)
+Opened PR `https://github.com/yanniedog/AR-app/pull/492` (`fix/handoff-20261115` -> `main`, CI/bot review in progress):
+
+1. **Executable disclosures (`EligibilityAssessment`, `MortgagePeriodCalculation`, `SavingsPeriodCalculation`, `ActivityPeriodCalculation`, `FixedDepositCalculation`)**:
+   - Separated three states: `Not published` when the manifest omits executable contracts (no `Retry`), `Unavailable` when indexed/published without a verified match for the product (no `Retry`), and verified/load failure (keeps `Retry`). Preserved compact disclosure rendering.
+2. **Physical list visibility & focus readiness (`useFocusMeasurement`, `usePhysicalListVisibility`, `RatesWorkspace`)**:
+   - Fixed layout/focus measurement and scroll-restore gating behind pending `rates.results` / `search.list` probes and `display-visible` failures.
+3. **Audit instrumentation (`display-model`, `display-logo`, `bank-rates-chart`, `storeEnsure`, `externalLinkAudit`, `PerformanceAuditRunner`, `auditHttpCheckSummary`)**:
+   - Added `expectedCount`/`actualCount` (and `fallbackCount` for logos) across remaining `data` and `logo` probes (`LenderRaceChart`, `HistoryExplorer`, `research`, `MarketOverview`, `compare`, `RatesWorkspace`, `RateCheckWorkspace`, `ProjectionWorkspace`, `HierarchyView`, `NavigationHub`, route screens).
+   - Updated `storeEnsure` so omitting the optional packed `bank-history` asset sets `historyBanksError: null` instead of `'history unavailable in this publication'`.
+   - Marked `bank-rates-chart` required only when active (`BankResponseDashboard`).
+   - Added outer `timeoutMs` / chained `AbortController` bounds in `externalLinkAudit`, bounded concurrent live link checks in `PerformanceAuditRunner`, kept synchronous URL validation (`Trusted external URL` fail on invalid URLs), and aggregated remaining unchecked live links into a single `external-link-unverified` check instead of 2,340 per-link `warn` rows.
+4. **Bank-response coverage (`bankResponseEvidence`, `bankResponseCoverage`)**:
+   - Preserved incomplete source window reasons (`missing-history`, `missing-baseline`, `history-gap`, `no-products`) evaluated up to removal/end date when `source !== payload` instead of overwriting them with `filtered-history`.
+   - Retained `bankInsights.ts` mixed-catalogue withholding guard (explicitly asserted by existing `bankInsights.test.ts`).
+5. **Coverage reconciliation & data tolerance (`dataQuality`)**:
+   - Updated `coverage-reconciliation` so reconciled disclosed upstream provider failures/partial captures (`unaccountedProviders === 0 && !invalidCounts`) report `pass` instead of `warn`.
+   - Remaining joint item from §5 bullet 3 (`2,667 / 16,183` vs `2,809 / 16,339` and `116 historical-quarantined-tiers`) was not modified in `AR-app` and remains open for joint publisher/app investigation.
+
+**Local verification**:
+- Pre-rebase: `cd mobile && npm run check:ui-copy` (0 violations), `npm run ci:unit` (`tsc --noEmit` exit 0; Jest `487 passed` suites / `5,545 passed` tests).
+- Post-rebase (`8c14ccfe` on `origin/main`): `npm run check:ui-copy` (0 violations), `npm run typecheck` (exit 0), focused Jest on all 10 modified suites (`10 passed` suites / `189 passed` tests).
