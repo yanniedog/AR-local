@@ -52,6 +52,16 @@ HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
         "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
         "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
+    "10": {
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_product_changes": "ec8fd2a618bd34c04e84e8e28401ed9f3c848e00bb27e3e5b20f03f225062049",
+        "bank_product_facts": "2b4ab300506dc67339d0982de038042c8cde0cd3cc8dc9b8d51ec0b1a4c2f788",
+        "bank_products": "f549986e40e4db7fa9fca63b44b7bd6d417e4073962cf46e85b8effea0ffcfc4",
+        "bank_rates": "9daac7b6d9062a0e6469dd2b0500b007e98665a22b6dc035f17639569bd1305b",
+        "dim_providers": "b86e83650bb368e3dd720413c755f4601e7f11d5d8aef4141d0c3bf683e088dd",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
+    },
 }
 # A version-8 database reopened by the version-9 initializer gains the two
 # public-pricing columns by ALTER TABLE, so SQLite keeps different CREATE text
@@ -63,6 +73,16 @@ MIGRATED_DAILY_SCHEMA_SQL_SHA256 = {
         "bank_product_facts": "2b4ab300506dc67339d0982de038042c8cde0cd3cc8dc9b8d51ec0b1a4c2f788",
         "bank_products": "92bb0b349682e2dfb4eae077bf732b039e25fb60e0363ed8fdbeed8fd5092ee7",
         "bank_rates": "3a6d0430c135f2d47cad4440ab9d970616f9c5fad32c639d2bafb84003cb80ac",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
+    },
+    "10": {
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_product_changes": "ec8fd2a618bd34c04e84e8e28401ed9f3c848e00bb27e3e5b20f03f225062049",
+        "bank_product_facts": "2b4ab300506dc67339d0982de038042c8cde0cd3cc8dc9b8d51ec0b1a4c2f788",
+        "bank_products": "92bb0b349682e2dfb4eae077bf732b039e25fb60e0363ed8fdbeed8fd5092ee7",
+        "bank_rates": "3a6d0430c135f2d47cad4440ab9d970616f9c5fad32c639d2bafb84003cb80ac",
+        "dim_providers": "b86e83650bb368e3dd720413c755f4601e7f11d5d8aef4141d0c3bf683e088dd",
         "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
         "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
@@ -85,6 +105,13 @@ HISTORICAL_EXPORT_POPULATIONS = {
     "9": (
         _LEGACY_CORE_POPULATIONS
         | {"product_facts", "product_changes", "holder_attempts"},
+    ),
+    # Version 10 adds dim_providers and the per-provider dimensions population.
+    "10": (
+        _LEGACY_CORE_POPULATIONS
+        | {"product_facts", "product_changes", "holder_attempts"},
+        _LEGACY_CORE_POPULATIONS
+        | {"product_facts", "product_changes", "holder_attempts", "providers"},
     ),
 }
 
@@ -205,6 +232,10 @@ def daily_reconciliation_bounded(
         if "bank_product_changes" in tables:
             actual["product_changes"] = connection.execute(
                 "SELECT COUNT(*) FROM bank_product_changes"
+            ).fetchone()[0]
+        if "dim_providers" in tables and "providers" in exported:
+            actual["providers"] = connection.execute(
+                "SELECT COUNT(*) FROM dim_providers"
             ).fetchone()[0]
         for group in ("fees", "features", "eligibility", "constraints"):
             actual[group] = connection.execute(

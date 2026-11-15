@@ -15,10 +15,18 @@ sys.path.insert(0, str(ROOT))
 import pi_runtime_health  # noqa: E402
 
 
-@pytest.fixture
-def isolated_state(tmp_path, monkeypatch):
+@pytest.fixture(params=[False, pytest.param(True, marks=pytest.mark.skipif(
+    sys.platform == "win32", reason="Pi queue uses POSIX file locks"))], ids=["non-pi", "pi"])
+def isolated_state(tmp_path, monkeypatch, request):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(mode=0o700)
+    # A canary legitimately owns the host queue. Exercise both platform paths
+    # against isolated admission state, never the machine running these tests.
+    monkeypatch.setattr(pi_runtime_health, "QUEUE_ROOT", queue_dir)
+    monkeypatch.setattr(pi_runtime_health, "is_raspberry_pi", lambda: request.param)
+    monkeypatch.setattr(pi_runtime_health, "_production_activity_block_reason", lambda **_: "")
     monkeypatch.setattr(pi_runtime_health, "data_state_root", lambda _repo: state_dir)
     monkeypatch.setattr(pi_runtime_health, "ensure_runtime_data_writable", lambda _repo: None)
     return state_dir
