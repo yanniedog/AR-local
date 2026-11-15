@@ -1,0 +1,9 @@
+[Unit]
+Description=Monthly Pi OS recovery image to Google Drive (1st of month, 04:15 Hobart)
+
+[Timer]
+OnCalendar=*-*-01 04:15:00 Australia/Hobart
+Persistent=true
+
+[Install]
+WantedBy=timers.target
