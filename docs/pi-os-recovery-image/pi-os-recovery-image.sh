@@ -18,10 +18,31 @@ LEVEL=19
 THREADS=3
 
 log() { echo "$(date -Is) $*" | tee -a "$WORK/run.log"; }
-fail() { log "FAILED: $*"; echo "{\"date\":\"$STAMP\",\"result\":\"FAILED\",\"reason\":\"$*\",\"at\":\"$(date -Is)\"}" > "$WORK/last-result.json"; chmod 644 "$WORK/last-result.json"; exit 1; }
+fail() { failure_reason=$*; exit 1; }
 
 [ "$(id -u)" = 0 ] || { echo "must run as root" >&2; exit 2; }
 mkdir -p "$WORK"; chmod 755 "$WORK"
+failure_reason="unexpected command failure"
+shared_owner=
+finish() {
+  local rc=$1
+  trap - EXIT
+  set +e
+  rm -f "$WORK/.rclone-private.conf"
+  if [ -n "$shared_owner" ] && [ "$(stat -c %u:%g:%a "$SHARED_RCLONE_CONFIG")" != "$shared_owner" ]; then
+    log "WARNING shared rclone config ownership changed"
+  fi
+  if [ "$rc" -ne 0 ]; then
+    log "FAILED: $failure_reason (exit $rc)"
+    printf '{"date":"%s","result":"FAILED","reason":"%s","at":"%s"}\n' \
+      "$STAMP" "$failure_reason" "$(date -Is)" > "$WORK/.last-result.tmp" &&
+      chmod 644 "$WORK/.last-result.tmp" &&
+      mv -f "$WORK/.last-result.tmp" "$WORK/last-result.json"
+  fi
+  exit "$rc"
+}
+trap 'finish "$?"' EXIT
+trap 'failure_reason="terminated"; exit 143' TERM
 
 # Stay clear of the protected ingest window (00:30-03:30) and of live ingest.
 now=$((10#$(date +%H) * 60 + 10#$(date +%M)))
@@ -39,7 +60,6 @@ SHARED_RCLONE_CONFIG=$RCLONE_CONFIG
 shared_owner=$(stat -c %u:%g:%a "$SHARED_RCLONE_CONFIG")
 install -m 600 "$SHARED_RCLONE_CONFIG" "$WORK/.rclone-private.conf"
 export RCLONE_CONFIG="$WORK/.rclone-private.conf"
-trap 'rm -f "$WORK/.rclone-private.conf"; [ "$(stat -c %u:%g:%a "$SHARED_RCLONE_CONFIG")" = "$shared_owner" ] || echo "$(date -Is) WARNING shared rclone config ownership changed" >> "$WORK/run.log"' EXIT
 REMOTE="${AR_LOCAL_DAY_ARCHIVE_REMOTE%/*}/monthly-os-recovery/$STAMP-$(hostname)"
 if [ -n "$(rclone lsf "$REMOTE/_meta/COMPLETE.json" 2>/dev/null)" ]; then log "set $STAMP already complete on Drive"; exit 0; fi
 
