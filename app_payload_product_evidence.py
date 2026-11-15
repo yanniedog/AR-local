@@ -113,8 +113,8 @@ def open_database(path, source, budget):
         rows = connection.execute("SELECT key, value FROM schema_meta WHERE key IN ('version', 'normalization_version') LIMIT 3").fetchmany(3)
         meta = dict(rows)
         require(len(rows) == len(meta) == 2, "ambiguous database metadata")
-        # Versions 8/9 share the exact fact columns; other exported tables differ.
-        require(meta.get("version") in {"8", "9"} and meta.get("normalization_version") == NORMALIZATION_VERSION,
+        # Version 10 adds provider dimensions without changing the fact table.
+        require(meta.get("version") in {"8", "9", "10"} and meta.get("normalization_version") == NORMALIZATION_VERSION,
                 "unsupported database schema or fact normalization")
         require({row[1] for row in connection.execute("PRAGMA table_info(bank_product_facts)")} == set(COLUMNS),
                 "unsupported fact columns")

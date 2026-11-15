@@ -24,8 +24,9 @@ complete export JSON, fact table or full-table sort is loaded into memory. Datab
 and contract identities/hashes are rechecked before completion. Symlink paths,
 existing destinations and destinations overlapping source trees are refused.
 
-Accepted database schemas 8 and 9 have identical fact columns; the exact columns
-and `cdr-product-facts-2` normalization are checked. The broader export contract's
+Accepted database schemas 8, 9, and 10 have identical fact columns. Version 10
+adds provider dimensions. The exact columns and `cdr-product-facts-2`
+normalization are checked. The broader export contract's
 normalization version is a distinct field and can legitimately be `legacy-v1`.
 Unknown schema/mapping/typed-value interpretations fail visibly rather than
 silently losing evidence. Unknown original scalar fields already retained by
