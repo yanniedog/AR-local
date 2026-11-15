@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily check of the monthly Pi OS recovery image (09:10 Hobart)
+
+[Timer]
+OnCalendar=*-*-* 09:10:00 Australia/Hobart
+Persistent=true
+
+[Install]
+WantedBy=timers.target
