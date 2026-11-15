@@ -63,13 +63,17 @@ jobs:
         run: |
           set -euo pipefail
           case "$MODE" in status|backfill|dates|stop|merge-report|merge-apply) ;; *) echo "::error::unknown mode"; exit 1 ;; esac
-          [[ "$MAX_DAYS" =~ ^[0-9]+$ ]] && [ "$MAX_DAYS" -ge 1 ] && [ "$MAX_DAYS" -le 40 ] || { echo "::error::max_days must be 1-40"; exit 1; }
+          if [ "$MODE" = "backfill" ]; then
+            [[ "$MAX_DAYS" =~ ^[0-9]+$ ]] && [ "$MAX_DAYS" -ge 1 ] && [ "$MAX_DAYS" -le 40 ] || { echo "::error::max_days must be 1-40"; exit 1; }
+          fi
           sel=""
-          for d in $DATES; do
-            [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -d "$d" +%F >/dev/null || { echo "::error::invalid date $d"; exit 1; }
-            sel="$sel $d"
-          done
-          [ "$MODE" != "dates" ] || [ -n "${sel// /}" ] || { echo "::error::dates mode needs dates"; exit 1; }
+          if [ "$MODE" = "dates" ]; then
+            for d in $DATES; do
+              [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -d "$d" +%F >/dev/null || { echo "::error::invalid date $d"; exit 1; }
+              sel="$sel $d"
+            done
+            [ -n "${sel// /}" ] || { echo "::error::dates mode needs dates"; exit 1; }
+          fi
           { echo "mode=$MODE"; echo "max_days=$MAX_DAYS"; echo "dates=$sel"; } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -137,12 +141,13 @@ jobs:
             # Owner request 2026-11-07: one daily-cdr-raw-records folder. Folder
             # 1FmECs... (created 2026-10-26) holds a second copy of the series;
             # merge it server-side into the worker's live folder 1uL7kr....
-            # Unique names move; byte-identical (MD5) duplicates go to Drive
-            # trash (recoverable for 30 days); same-name different-content files
-            # move into a conflicts subfolder. Nothing is permanently deleted.
-            for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
-              [ ! -e "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
-            done
+            if [ "$MODE" = "merge-apply" ]; then
+              NOW_HM="$(TZ=Australia/Hobart date +%H%M)"
+              { [ "$NOW_HM" -ge 0330 ] || [ "$NOW_HM" -lt 0030 ]; } || { echo "inside 00:30-03:30 Hobart quiet window"; exit 1; }
+              for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock; do
+                [ ! -e "$f" ] && [ ! -L "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
+              done
+            fi
             U="$(systemctl show -p User --value "$SVC")"; G="$(systemctl show -p Group --value "$SVC")"
             test -n "$U" || { echo "day-archive service user unknown"; exit 1; }
             MS="/srv/ar-local/payload-waiver-control/drive-merge-$RUN.sh"
@@ -154,11 +159,27 @@ jobs:
           DST_ID=1uL7krdRZYwiPcmMqZyiQ5y-Fs46vnSju
           CONF="${RCLONE_CONFIG:?}"; NAME="${AR_LOCAL_DAY_ARCHIVE_REMOTE%%:*}"
           [[ "$NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "remote name invalid"; exit 1; }
+          if [ "$MODE" = "merge-apply" ]; then
+            for f in /etc/ar-local/drive-write-hold.json /etc/ar-local/.drive-write-hold-activation.lock \
+                     "${AR_LOCAL_DRIVE_BACKUP_SPOOL:-/var/lib/ar-local-drive-backup}/write-hold.json" \
+                     /var/lib/ar-local-day-archives/write-hold.json; do
+              [ ! -e "$f" ] && [ ! -L "$f" ] || { echo "Drive write hold present ($f); refusing"; exit 1; }
+            done
+          fi
+          python3 -I - "$CONF" "$NAME" <<'PY'
+          import configparser, sys
+          cp = configparser.ConfigParser()
+          cp.read(sys.argv[1])
+          sec = cp[sys.argv[2]]
+          assert sec.get("type") == "drive", f"unexpected remote type: {sec.get('type')}"
+          assert sec.get("scope", "drive.file") == "drive.file", f"unexpected scope: {sec.get('scope')}"
+          assert not sec.get("service_account_file"), "service_account_file not permitted"
+          PY
           R=(/usr/bin/rclone --config "$CONF" --drive-server-side-across-configs --retries 3 --low-level-retries 10)
           SRC="$NAME,root_folder_id=$SRC_ID:"; DST="$NAME,root_folder_id=$DST_ID:"
           W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
-          "${R[@]}" lsjson --files-only --hash --hash-type md5 --no-mimetype "$SRC" > "$W/src.json"
-          "${R[@]}" lsjson --files-only --hash --hash-type md5 --no-mimetype "$DST" > "$W/dst.json"
+          "${R[@]}" lsjson -R --files-only --hash --hash-type md5 --no-mimetype "$SRC" > "$W/src.json"
+          "${R[@]}" lsjson -R --files-only --hash --hash-type md5 --no-mimetype "$DST" > "$W/dst.json"
           python3 -I - "$W" <<'PY'
           import json, sys, pathlib
           w = pathlib.Path(sys.argv[1])
@@ -176,6 +197,8 @@ jobs:
           days = lambda rows: sorted({n.split(".")[0] for n in rows if n[:4].isdigit()})
           print(json.dumps({"MERGE_PLAN": {"source_files": len(src), "dest_files": len(dst),
               "move": len(move), "identical_duplicates": len(dup), "conflicts": conflict,
+              "move_entries": [[n, md5(src[n])] for n in move],
+              "duplicate_entries": [[n, md5(src[n])] for n in dup],
               "move_days": [days(move)[:1], days(move)[-1:], len(days(move))],
               "duplicate_days": days(dup)}}))
           PY
@@ -189,9 +212,10 @@ jobs:
           if [ -s "$W/dup.txt" ]; then
             "${R[@]}" delete --drive-use-trash=true --files-from-raw "$W/dup.txt" "$SRC"
           fi
-          left="$("${R[@]}" lsf --files-only "$SRC" | wc -l)"
+          left="$("${R[@]}" lsf -R --files-only "$SRC" | wc -l)"
           echo "MERGE_DONE source_files_left=$left"
-          "${R[@]}" lsjson --files-only --hash --hash-type md5 --no-mimetype "$DST" > "$W/after.json"
+          [ "$left" -eq 0 ] || { echo "MERGE_ERROR source_files_left=$left"; exit 1; }
+          "${R[@]}" lsjson -R --files-only --hash --hash-type md5 --no-mimetype "$DST" > "$W/after.json"
           python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); n=sorted({x["Path"].split(".")[0] for x in r if x["Path"][:4].isdigit() and x["Path"].endswith(".tar.zst")}); print("MERGE_DEST_DAYS", len(n), n[:1], n[-1:])' "$W/after.json"
           MERGE
             chmod 0555 "$MS"
@@ -199,23 +223,31 @@ jobs:
                    -p EnvironmentFile=-/etc/ar-local/day-archive.env)
             [ -n "$G" ] && props+=(-p "Group=$G")
             rc=0
-            sudo systemd-run --quiet --wait --pipe --collect --unit="ar-local-drive-merge-$RUN.service" "${props[@]}" \
-              /bin/bash "$MS" "$MODE" || rc=$?
+            if [ "$MODE" = "merge-apply" ] && [ -x /usr/local/bin/pi-shared-task ]; then
+              /usr/local/bin/pi-shared-task --project ar-local --resource ar-local --cpu-slots 1 --max-runtime 3600 --wait-timeout 600 -- \
+                sudo systemd-run --quiet --wait --pipe --collect --unit="ar-local-drive-merge-$RUN.service" "${props[@]}" \
+                /bin/bash "$MS" "$MODE" || rc=$?
+            else
+              sudo systemd-run --quiet --wait --pipe --collect --unit="ar-local-drive-merge-$RUN.service" "${props[@]}" \
+                /bin/bash "$MS" "$MODE" || rc=$?
+            fi
             rm -f "$MS"
             exit "$rc"
           fi
           if [ "$MODE" = "stop" ]; then
             # Cancelling a run on GitHub does not stop its queued unit on the Pi.
-            # Stop only this workflow's worker units; the queued script then
-            # records status and exits, releasing the shared queue claim.
-            units="$(systemctl list-units --type=service --state=active --no-legend --plain 'ar-local-day-archive-run-*' | awk '{print $1}')"
-            [ -n "$units" ] || { echo "no running day-archive backfill unit"; exit 0; }
+            units="$(systemctl list-units --type=service --state=active,activating,deactivating,reloading --no-legend --plain 'ar-local-day-archive-run-*' 'shared-pi-task-*' | awk '{print $1}')"
+            stopped=0
             for u in $units; do
-              [[ "$u" =~ ^ar-local-day-archive-run-[0-9]+-[0-9]+\.service$ ]] || continue
-              echo "stopping $u"; sudo systemctl stop "$u"
+              if [[ "$u" =~ ^ar-local-day-archive-run-[0-9]+-[0-9]+\.service$ ]]; then
+                echo "stopping $u"; sudo systemctl stop "$u"; stopped=$((stopped + 1))
+              elif [[ "$u" =~ ^shared-pi-task-[0-9a-f-]+\.service$ ]] && systemctl show -p ExecStart --value "$u" 2>/dev/null | grep -q 'day-archive-'; then
+                echo "stopping queued wrapper $u"; sudo systemctl stop "$u"; stopped=$((stopped + 1))
+              fi
             done
+            [ "$stopped" -gt 0 ] || { echo "no running day-archive backfill unit"; exit 0; }
             for _ in $(seq 1 60); do
-              left="$(systemctl list-units --type=service --state=active --no-legend --plain 'ar-local-day-archive-run-*' | wc -l)"
+              left="$(systemctl list-units --type=service --state=active,activating,deactivating,reloading --no-legend --plain 'ar-local-day-archive-run-*' | wc -l)"
               [ "$left" -eq 0 ] && { echo "day-archive backfill stopped"; exit 0; }
               sleep 2
             done
