@@ -79,8 +79,15 @@ publication or backups**, and no irretrievable data loss.
   rclone rewrote the credentials file as root-owned and
   `ar-local-day-archive.service` failed at 20:15. Fixed 21:08 with
   `chown pi:pi` on that one file. Never run rclone with sudo (section D1).
-- 2026-11-16 **P2 round 1 DONE (quarantine only).** By owner instruction the
-  wait for an intervening 01:00 ingest was waived; candidates were
+- 2026-11-16 **P2 round 1 QUARANTINED — acceptance PENDING.** Exception to
+  P2 step 3: the owner explicitly instructed in the operating session
+  (2026-11-16, about 21:45 Pi time) that the wait for an intervening 01:00
+  ingest be overridden; this was not a schedule-pressure decision by the
+  executor. Compensating evidence is the reversibility of a rename, the
+  restore map, the post-checks below, and the acceptance step that follows.
+  The round is accepted only after the first natural ingest following the
+  move finalizes and section 6 passes; record that here. Until then treat it
+  as provisional; candidates were
   `UNREFERENCED` in two inventories taken about two hours apart (19:50 first
   tool version, 21:43 current tool) with mtime <= 2026-11-01. 494 of 548
   entries (about 19 G) were renamed into `/srv/ar-local/_quarantine/20261116/`
@@ -89,7 +96,8 @@ publication or backups**, and no irretrievable data loss.
   `/srv/ar-local/_quarantine/20261116/RESTORE_MAP.tsv`. Post-checks passed
   (dashboard active, `/api/latest` 200, `npm run verify:pi` OK, no new failed
   unit). Nothing was deleted, so no space is freed until O4. If the next
-  natural ingest fails, run the section 7 rollback first.
+  natural ingest fails, run the section 7 rollback first. Later rounds use
+  the full two-inventory procedure with an intervening ingest.
 - 2026-11-16 **C2 DONE** in the same PR as the tool fixes. **O1–O6, G1** await the owner.
 
 ---
