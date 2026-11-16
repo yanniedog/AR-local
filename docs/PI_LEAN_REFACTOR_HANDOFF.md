@@ -79,9 +79,37 @@ publication or backups**, and no irretrievable data loss.
   rclone rewrote the credentials file as root-owned and
   `ar-local-day-archive.service` failed at 20:15. Fixed 21:08 with
   `chown pi:pi` on that one file. Never run rclone with sudo (section D1).
-- 2026-11-16 **P2** inventory A saved as `/home/pi/lean-refactor/inv-A.tsv`
-  (made with the first tool version; re-run it with the current tool).
-- 2026-11-16 **C2 DONE** in the same PR as the tool fixes. **O1–O6, G1** await the owner.
+- 2026-11-16 **P2 round 1 QUARANTINED — acceptance PENDING.** Exception to
+  P2 step 3: the owner explicitly instructed in the operating session
+  (2026-11-16, about 21:45 Pi time) that the wait for an intervening 01:00
+  ingest be overridden; this was not a schedule-pressure decision by the
+  executor. Compensating evidence is the reversibility of a rename, the
+  restore map, the post-checks below, and the acceptance step that follows.
+  The round is accepted only after the first natural ingest following the
+  move finalizes and section 6 passes; record that here. Until then treat it
+  as provisional; candidates were
+  `UNREFERENCED` in two inventories taken about two hours apart (19:50 first
+  tool version, 21:43 current tool) with mtime <= 2026-11-01. 494 of 548
+  entries (about 19 G) were renamed into `/srv/ar-local/_quarantine/20261116/`
+  through the queue with the host lease; 54 were skipped (root-owned or
+  already gone; list in `/home/pi/lean-refactor/p2-run.txt`). Restore map:
+  `/srv/ar-local/_quarantine/20261116/RESTORE_MAP.tsv`. Post-checks passed
+  (dashboard active, `/api/latest` 200, `npm run verify:pi` OK, no new failed
+  unit). Nothing was deleted, so no space is freed until O4. If the next
+  natural ingest fails, run the section 7 rollback first. Later rounds use
+  the full two-inventory procedure with an intervening ingest.
+- 2026-11-16 **C2 DONE** in the same PR as the tool fixes.
+- 2026-11-16 **O1 DONE (owner decision: delete).** At 22:16 the eight named
+  spool leftovers in `/var/lib/ar-local-drive-backup` were removed through the
+  shared queue with the host lease, as user pi, by literal path; free space
+  991 G -> 1137 G. Pre-checks: no reference in `latest-verified.json` or
+  `requests/`, no open file or process cwd inside them, backup and reclaim
+  services inactive. Post-checks: dashboard active, `/api/latest` 200, no new
+  failed unit, `credentials/` untouched. Known consequence:
+  `recovery-seeded-drive-seed-717-20260914-a.json` still names
+  `restore-hmeddep8` as a local restore seed; a restore that asks for that
+  seed will not find it and must fetch from Drive instead.
+  **O2–O6, G1** await the owner.
 
 ---
 
@@ -93,7 +121,7 @@ Disk: one NVMe ext4 filesystem, 1.8 T total, 849 G used, 891 G free.
 | --- | ---: | --- | --- |
 | `/srv/ar-local/data/runs` | 374 G | Irreplaceable daily evidence, 183 days | never touched (G1 is design only) |
 | `/srv/ar-local/data/.daily-export-stage` | 118 G | Byte-identical leftover copies of finalized exports, 40 days | **P1** |
-| `/var/lib/ar-local-drive-backup` | 153 G | 108 G `restore-hmeddep8`, 36 G `freeze-*`, 4 G `restore-vnv24r2g`, 2 G `recovery-index-*`, all dated 2026-09-13/14 | **O1** (owner) |
+| `/var/lib/ar-local-drive-backup` | 153 G | 108 G `restore-hmeddep8`, 36 G `freeze-*`, 4 G `restore-vnv24r2g`, 2 G `recovery-index-*`, all dated 2026-09-13/14 | **O1** — deleted 2026-11-16 |
 | `/srv/ar-local/canary` | 90 G | 301 canary operation directories; 242 unreferenced = 51 G | **P2** |
 | other `/srv/ar-local/*` entries | ~75 G | ~550 test/candidate/evidence entries; 495 unreferenced = 27 G | **P2** |
 | `/var/tmp/ar-local-native-restore-20261114-*` | 16.5 G | two restore proofs from the in-flight D027 work | **O2** (owner) |
@@ -287,6 +315,7 @@ a later P2 round once the directories that link to them are gone. Repeat P2
   manifests and `recovery-seeded-drive-seed-717-20260914-a.json` name them, and
   `pi_drive_backup_seed.py` can consume a `restore-XXXXXXXX` directory. Removal
   is a backup-design decision under the Drive hold.
+  **Decided and done 2026-11-16: deleted (see Status log).**
 - **O2 `/var/tmp/ar-local-native-restore-20261114-*` (16.5 G).** Belongs to the
   unfinished D027 activation (handoff checkpoint 79). Remove only after that
   activation is accepted. `/var/tmp/avalon-*` belongs to another project.
