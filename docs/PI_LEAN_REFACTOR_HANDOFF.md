@@ -79,8 +79,17 @@ publication or backups**, and no irretrievable data loss.
   rclone rewrote the credentials file as root-owned and
   `ar-local-day-archive.service` failed at 20:15. Fixed 21:08 with
   `chown pi:pi` on that one file. Never run rclone with sudo (section D1).
-- 2026-11-16 **P2** inventory A saved as `/home/pi/lean-refactor/inv-A.tsv`
-  (made with the first tool version; re-run it with the current tool).
+- 2026-11-16 **P2 round 1 DONE (quarantine only).** By owner instruction the
+  wait for an intervening 01:00 ingest was waived; candidates were
+  `UNREFERENCED` in two inventories taken about two hours apart (19:50 first
+  tool version, 21:43 current tool) with mtime <= 2026-11-01. 494 of 548
+  entries (about 19 G) were renamed into `/srv/ar-local/_quarantine/20261116/`
+  through the queue with the host lease; 54 were skipped (root-owned or
+  already gone; list in `/home/pi/lean-refactor/p2-run.txt`). Restore map:
+  `/srv/ar-local/_quarantine/20261116/RESTORE_MAP.tsv`. Post-checks passed
+  (dashboard active, `/api/latest` 200, `npm run verify:pi` OK, no new failed
+  unit). Nothing was deleted, so no space is freed until O4. If the next
+  natural ingest fails, run the section 7 rollback first.
 - 2026-11-16 **C2 DONE** in the same PR as the tool fixes. **O1–O6, G1** await the owner.
 
 ---
