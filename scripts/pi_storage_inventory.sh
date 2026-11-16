@@ -8,6 +8,7 @@
 # Usage on the Pi:  sudo bash pi_storage_inventory.sh [--sizes]
 set -u
 export LC_ALL=C
+[ "$(hostname)" = pi5 ] || { echo "STOP: wrong host $(hostname)"; exit 2; }
 SIZES=0; [ "${1:-}" = "--sizes" ] && SIZES=1
 PROD=/srv/ar-local/AR-local
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -33,11 +34,12 @@ git -C "$PROD" grep -IhoE "$PAT" HEAD -- . ':!docs' ':!tests' 2>/dev/null \
 # 3. Symlinks pointing into the scan roots.
 #    symlink-system: link lives in host config/home. symlink-sibling: link
 #    lives inside another /srv/ar-local or /var/lib entry (often other junk).
+#    Targets are resolved with realpath -m so relative links count too.
 find /etc /usr/local /home /root -maxdepth 6 -xdev \
-  -type l -printf '%l\n' 2>/dev/null | grep -E "^$PAT" \
+  -type l -print0 2>/dev/null | xargs -0 -r realpath -m 2>/dev/null | grep -E "^$PAT" \
   | sed 's/^/symlink-system\t/' >>"$REFS"
 find /srv/ar-local /var/lib -maxdepth 4 -xdev \
-  -type l -printf '%l\n' 2>/dev/null | grep -E "^$PAT" \
+  -type l -print0 2>/dev/null | xargs -0 -r realpath -m 2>/dev/null | grep -E "^$PAT" \
   | sed 's/^/symlink-sibling\t/' >>"$REFS"
 
 # 4. Running processes: cwd, exe, command line, open files.

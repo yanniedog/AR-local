@@ -20,7 +20,9 @@ publication or backups**, and no irretrievable data loss.
 - **R2 No pattern deletes.** Never type `rm`, `find -delete`, `git clean`,
   `truncate`, `shred`, `mv` or `>` against any Pi path unless the exact command
   is printed in this file. Never use a wildcard (`*`, `?`, `[..]`) or a variable
-  you built yourself in a destructive command.
+  you built yourself in a destructive command. The loop variables inside the
+  P2 quarantine and section 7 rollback commands are the only exception: run
+  those commands exactly as printed, never edited.
 - **R3 Names lie.** Directories that look like junk are live. Verified examples
   that are wired into production systemd units today:
   `/srv/ar-local/terms-evidence-20260918`,
@@ -60,6 +62,26 @@ publication or backups**, and no irretrievable data loss.
 - **R11 No sudo** except where a command in this file starts with `sudo`.
 - **R12 One task per session.** Finish its verification (section 6) before
   starting the next task.
+
+---
+
+## Status log
+
+- 2026-11-16 **P1 DONE.** 38 staged days (2026-09-19 … 2026-11-14) deleted
+  after byte comparison; free space 891 G → 991 G. All 20 recorded generations
+  (2026-10-29 … 2026-11-16) had a PASS raw-day archive, so no archive retry
+  depends on a removed stage. 2026-11-15/16 remain staged (too recent).
+  That run used the first version of the tool, merged before bot review had
+  cleared; the review then found missing guards (ingest lock, backup services,
+  marker verification, archive PASS, queue claim). They are fixed in the
+  current tool. Repeat P1 monthly with the current tool only.
+- 2026-11-16 **Incident.** Planning ran `sudo rclone` for read-only sizing;
+  rclone rewrote the credentials file as root-owned and
+  `ar-local-day-archive.service` failed at 20:15. Fixed 21:08 with
+  `chown pi:pi` on that one file. Never run rclone with sudo (section D1).
+- 2026-11-16 **P2** inventory A saved as `/home/pi/lean-refactor/inv-A.tsv`
+  (made with the first tool version; re-run it with the current tool).
+- 2026-11-16 **C2 DONE** in the same PR as the tool fixes. **O1–O6, G1** await the owner.
 
 ---
 
@@ -172,7 +194,10 @@ every staged file against the finalized copy before removing anything. The
 production code already treats a missing stage directory as "cleaned"
 (`cdr_daily_archive_gate.py`, `if not stage.exists(): return CLEANED`) and the
 backup scope lists the directory as transient
-(`ar_local_backup_scope.py: TRANSIENT_EMPTY_DIRS`). On 2026-11-16 the dry run
+(`ar_local_backup_scope.py: TRANSIENT_EMPTY_DIRS`). The archive retry only
+needs the stage while a generation has no PASS archive
+(`pi_daily_cdr_day_archive_ingest.py::cached_generation_upload`); the tool
+keeps any day whose generations are not all PASS. On 2026-11-16 the dry run
 verified these days as identical (record your own run; do not trust this list):
 see section 9.
 
@@ -189,7 +214,7 @@ Steps (Pi, user `pi`):
    kept) but include the KEEP lines in your report.
 4. Delete verified days through the shared queue (this is the only mutating
    command of P1):
-   `pi-shared-task --project ar-local --resource ar-local --mode exclusive --cpu-slots 1 --max-runtime 7200 --wait-timeout 1800 -- /bin/bash /home/pi/lean-refactor/pi_export_stage_dedupe.sh --delete-verified 2>&1 | tee /home/pi/lean-refactor/p1-delete.txt`
+   `pi-shared-task --project ar-local --resource ar-local --resource host --mode exclusive --cpu-slots 1 --max-runtime 7200 --wait-timeout 1800 -- /bin/bash /home/pi/lean-refactor/pi_export_stage_dedupe.sh --delete-verified 2>&1 | tee /home/pi/lean-refactor/p1-delete.txt`
    Start it between 04:00 and 21:00 only (it may run up to two hours and the
    queue refuses jobs that could reach 00:30). Expected: `DELETED` and `KEEP`
    lines, then `SUMMARY mode=delete …`. If the job is cut off before the
@@ -243,7 +268,7 @@ Never `/var/lib`, `/var/tmp`, `/usr/local`.
 6. Show the list to the owner and get a written "yes, quarantine these" in
    chat. No yes = STOP.
 7. Quarantine (one queue job; creates a restore map):
-   `pi-shared-task --project ar-local --resource ar-local --mode exclusive --cpu-slots 1 --max-runtime 1800 --wait-timeout 1800 -- /bin/bash -c 'set -eu; Q=/srv/ar-local/_quarantine/$(date +%Y%m%d); mkdir -p "$Q/canary"; while IFS= read -r p; do case "$p" in /srv/ar-local/canary/*) d="$Q/canary/$(basename "$p")";; *) d="$Q/$(basename "$p")";; esac; [ -e "$p" ] && [ ! -e "$d" ] || { echo "SKIP $p"; continue; }; mv -n -- "$p" "$d" && printf "%s\t%s\n" "$p" "$d" >> "$Q/RESTORE_MAP.tsv"; done < /home/pi/lean-refactor/p2-candidates.txt; wc -l "$Q/RESTORE_MAP.tsv"'`
+   `pi-shared-task --project ar-local --resource ar-local --resource host --mode exclusive --cpu-slots 1 --max-runtime 1800 --wait-timeout 1800 -- /bin/bash -c 'set -eu; Q=/srv/ar-local/_quarantine/$(date +%Y%m%d); mkdir -p "$Q/canary"; while IFS= read -r p; do case "$p" in /srv/ar-local/canary/*) d="$Q/canary/$(basename "$p")";; *) d="$Q/$(basename "$p")";; esac; [ -e "$p" ] && [ ! -e "$d" ] || { echo "SKIP $p"; continue; }; mv -n -- "$p" "$d" && printf "%s\t%s\n" "$p" "$d" >> "$Q/RESTORE_MAP.tsv"; done < /home/pi/lean-refactor/p2-candidates.txt; wc -l "$Q/RESTORE_MAP.tsv"'`
    If `mv` reports "Permission denied" for root-owned entries, those entries
    are simply skipped; list them in the report. Do not use sudo.
 8. Run section 6 verification now, and again after each of the next 14 natural
@@ -308,9 +333,12 @@ keep-N policy when it passes 12 snapshots. Quarterly measurement (read-only,
 run on the Pi, exactly as printed):
 
 ```bash
-sudo rclone --config /var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf --tpslimit 4 size "ar_local_drive_dedicated_20260913:AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412"
+rclone --config /var/lib/ar-local-drive-backup/credentials/dedicated-20260913-ready3/rclone-verified-ready3.conf --tpslimit 4 size "ar_local_drive_dedicated_20260913:AR-local Pi Backups Dedicated 20260913-326040d72fbc405ea2e9b2dacea6b412"
 ```
 
+Run it as user `pi`, **never with sudo**: rclone rewrites its config file when
+it refreshes the token, and a root run leaves the file root-owned so every
+`pi` service that uses Drive fails (this happened on 2026-11-16).
 Expected `Total size` below 150 GiB. Above that: report to the owner. Never run
 any other rclone verb.
 
@@ -326,6 +354,8 @@ Files: `docs/PI_LEAN_REFACTOR_HANDOFF.md`, `scripts/pi_storage_inventory.sh`,
 
 ### C2 — delete five unreferenced root scripts
 
+Status: DONE in the PR that contains this line (2026-11-16). Listed for the record.
+
 Exactly these files and nothing else: `strip_bank_sprite.py`,
 `verify_account_class.py`, `verify_email_notify.py`, `verify_ingest_sanity.py`,
 `verify_lvr_parsing.py`. Evidence: no import, test, workflow, npm script,
@@ -337,7 +367,7 @@ For each file, immediately before deleting, this must print `0`; any other
 number = skip that file and report it:
 
 ```bash
-git grep -l -w -e verify_lvr_parsing -- . ':!verify_lvr_parsing.py' ':!docs/evidence' | wc -l
+git grep -l -w -e verify_lvr_parsing -- . ':!verify_lvr_parsing.py' ':!docs/evidence' ':!docs/PI_LEAN_REFACTOR_HANDOFF.md' | wc -l
 ```
 
 (substitute each module name in both places). Then `git rm <file>`, run
@@ -393,7 +423,7 @@ Restore every quarantined path of one dated quarantine (replace `YYYYMMDD`
 with the literal directory name shown by `ls /srv/ar-local/_quarantine`):
 
 ```bash
-pi-shared-task --project ar-local --resource ar-local --mode exclusive --cpu-slots 1 --max-runtime 1800 --wait-timeout 1800 -- /bin/bash -c 'set -eu; while IFS=$(printf "\t") read -r orig q; do [ -e "$q" ] && [ ! -e "$orig" ] && mv -n -- "$q" "$orig" && echo "RESTORED $orig"; done < /srv/ar-local/_quarantine/YYYYMMDD/RESTORE_MAP.tsv'
+pi-shared-task --project ar-local --resource ar-local --resource host --mode exclusive --cpu-slots 1 --max-runtime 1800 --wait-timeout 1800 -- /bin/bash -c 'set -eu; while IFS=$(printf "\t") read -r orig q; do [ -e "$q" ] && [ ! -e "$orig" ] && mv -n -- "$q" "$orig" && echo "RESTORED $orig"; done < /srv/ar-local/_quarantine/YYYYMMDD/RESTORE_MAP.tsv'
 ```
 
 Then run section 6 again and report.

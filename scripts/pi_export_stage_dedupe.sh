@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Remove leftover /srv/ar-local/data/.daily-export-stage/<date> directories
-# ONLY when every staged file is byte-identical to the finalized copy recorded
-# in that date's completion or revision marker. Default mode changes nothing.
+# ONLY when (1) the production verifier accepts that date's completion marker,
+# (2) every recorded generation of that date has a PASS raw-day archive, and
+# (3) every staged file exists byte-identically in a finalized directory named
+# by that date's completion or revision marker (staged is a subset: the
+# finalized directory may hold extra post-install reports).
+# Default mode changes nothing. Delete mode runs only inside a shared-queue
+# job (pi-shared-task) and only 04:00-23:30.
 #
 #   bash pi_export_stage_dedupe.sh                    # dry run (read-only)
 #   bash pi_export_stage_dedupe.sh --delete-verified  # delete VERIFIED only
@@ -13,6 +18,8 @@ export LC_ALL=C
 DATA=/srv/ar-local/data
 STAGE=$DATA/.daily-export-stage
 STATE=$DATA/state
+PROD=/srv/ar-local/AR-local
+RAW_PROGRESS=/var/lib/ar-local-day-archives/meta/raw-progress.jsonl
 LOCKNAME=._exports.attempt-evidence-promotion.lock
 MODE=dry
 case "${1:-}" in
@@ -26,11 +33,17 @@ stop() { echo "STOP: $1"; exit 2; }
 guard() {
   [ "$(id -un)" = pi ] || stop "run as user pi, not $(id -un)"
   [ "$(hostname)" = pi5 ] || stop "wrong host $(hostname)"
-  local hm; hm=$((10#$(date +%H%M)))
-  if [ "$hm" -ge 30 ] && [ "$hm" -lt 330 ]; then stop "ingest quiet window 00:30-03:30"; fi
+  if [ "$MODE" = delete ]; then
+    local hm; hm=$((10#$(date +%H%M)))
+    if [ "$hm" -lt 400 ] || [ "$hm" -gt 2330 ]; then stop "delete allowed only 04:00-23:30"; fi
+    grep -q 'ar-local-queue-task-' /proc/self/cgroup \
+      || stop "delete mode must run inside a pi-shared-task queue job"
+  fi
+  [ ! -e "$STATE/daily-ingest.lock" ] || stop "daily-ingest.lock present"
   local u
   for u in ar-local-daily.service ar-local-ingest-now.service \
-           ar-local-queue-task-daily-repair.service ar-local-day-archive.service; do
+           ar-local-queue-task-daily-repair.service ar-local-day-archive.service \
+           ar-local-drive-backup.service ar-local-drive-reclaim.service; do
     case "$(systemctl is-active "$u" 2>/dev/null || true)" in
       active|activating|deactivating|reloading) stop "$u is running" ;;
     esac
@@ -50,6 +63,33 @@ for p in paths:
         continue
     if isinstance(v, str) and v.startswith("/srv/ar-local/data/runs/" + day + "/"):
         print(v)
+PY
+}
+
+authorized() { # marker verifies AND every recorded generation archived PASS
+  PYTHONPATH=$PROD PYTHONDONTWRITEBYTECODE=1 python3 - "$STATE" "$1" "$RAW_PROGRESS" <<'PY'
+import glob, json, sys
+from pathlib import Path
+state, day, progress = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+try:
+    from cdr_finalization import verify_completion_marker
+    marker = json.loads((state / (day + ".done.json")).read_text())
+    if verify_completion_marker(marker, state, day) is not True:
+        sys.exit(3)
+    passed = set()
+    for line in open(progress, encoding="utf-8"):
+        if line.strip():
+            row = json.loads(line)
+            if row.get("result") == "PASS":
+                passed.add((row.get("date"), row.get("generation_id")))
+    for path in glob.glob(str(state / (day + ".*.ram-stage-ownership.json"))):
+        own = json.loads(Path(path).read_text())
+        if (own.get("date"), own.get("generation_id")) not in passed:
+            sys.exit(4)
+except SystemExit:
+    raise
+except BaseException:
+    sys.exit(5)
 PY
 }
 
@@ -79,12 +119,13 @@ for dir in "$STAGE"/*; do
   elif [ ! -d "$dir/_exports" ] || [ -L "$dir/_exports" ]; then reason=no-exports-directory
   elif [ -n "$(find "$dir" ! -type f ! -type d -print -quit)" ]; then reason=contains-symlink-or-special-file
   elif [ -z "$(find "$dir/_exports" -type f -print -quit)" ]; then reason=empty-exports
+  elif ! authorized "$day"; then reason=marker-unverified-or-archive-not-passed
   else
     match=""
     while IFS= read -r cand; do
       if identical_subset "$dir/_exports" "$cand"; then match=$cand; break; fi
     done < <(out_dirs "$day")
-    [ -n "$match" ] || reason=no-byte-identical-finalized-copy
+    [ -n "$match" ] || reason=staged-file-missing-or-different-in-finalized
   fi
 
   if [ -n "$reason" ]; then
@@ -95,9 +136,9 @@ for dir in "$STAGE"/*; do
   if [ "$MODE" = delete ]; then
     guard
     rm -rf --one-file-system -- "$STAGE/$day"
-    echo "DELETED   $day  $((kb / 1024)) MB  identical-to $match"
+    echo "DELETED   $day  $((kb / 1024)) MB  subset-of $match"
   else
-    echo "VERIFIED  $day  $((kb / 1024)) MB  identical-to $match"
+    echo "VERIFIED  $day  $((kb / 1024)) MB  subset-of $match"
   fi
 done
 
