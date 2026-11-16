@@ -31,16 +31,28 @@ grep -rIhoE "$PAT" /srv/ar-local/data/state 2>/dev/null \
 git -C "$PROD" grep -IhoE "$PAT" HEAD -- . ':!docs' ':!tests' 2>/dev/null \
   | sed 's/^/prodcode\t/' >>"$REFS"
 
-# 3. Symlinks pointing into the scan roots.
+# 3. Symlinks pointing into the scan roots. For each link record every hop
+#    of its chain (immediate target, intermediate links, final destination),
+#    so a directory that only carries an intermediate link stays referenced.
 #    symlink-system: link lives in host config/home. symlink-sibling: link
 #    lives inside another /srv/ar-local or /var/lib entry (often other junk).
-#    Targets are resolved with realpath -m so relative links count too.
-find /etc /usr/local /home /root -maxdepth 6 -xdev \
-  -type l -print0 2>/dev/null | xargs -0 -r realpath -m 2>/dev/null | grep -E "^$PAT" \
-  | sed 's/^/symlink-system\t/' >>"$REFS"
-find /srv/ar-local /var/lib -maxdepth 4 -xdev \
-  -type l -print0 2>/dev/null | xargs -0 -r realpath -m 2>/dev/null | grep -E "^$PAT" \
-  | sed 's/^/symlink-sibling\t/' >>"$REFS"
+link_targets() { # $1 label, remaining args: find roots and depth options
+  local label=$1 link cur target hop
+  shift
+  find "$@" -xdev -type l -print0 2>/dev/null | while IFS= read -r -d '' link; do
+    cur=$link
+    for hop in 1 2 3 4 5 6 7 8; do
+      [ -L "$cur" ] || break
+      target=$(readlink -- "$cur") || break
+      case "$target" in /*) ;; *) target=$(dirname -- "$cur")/$target ;; esac
+      cur=$(realpath -ms -- "$target") || break
+      printf '%s\n' "$cur"
+    done
+    realpath -m -- "$link" 2>/dev/null
+  done | grep -E "^$PAT" | sed "s/^/$label\t/" >>"$REFS"
+}
+link_targets symlink-system /etc /usr/local /home /root -maxdepth 6
+link_targets symlink-sibling /srv/ar-local /var/lib -maxdepth 4
 
 # 4. Running processes: cwd, exe, command line, open files.
 for p in /proc/[0-9]*; do
@@ -71,7 +83,7 @@ printf 'status\treasons\tmtime\tsize_mb\tpath\n'
   case "$e" in
     /srv/ar-local/AR-local|/srv/ar-local/data|/srv/ar-local/australianrates|/srv/ar-local/canary|/srv/ar-local/_quarantine)
       st=$'LIVE\tprotected-root' ;;
-    *) st=$(classify "$e") ;;
+    *) if [ -L "$e" ]; then st=$'LIVE\tis-symlink'; else st=$(classify "$e"); fi ;;
   esac
   sz=-; [ "$SIZES" = 1 ] && sz=$(du -sxBM "$e" 2>/dev/null | cut -f1 | tr -d M)
   printf '%s\t%s\t%s\t%s\n' "$st" "$(date -r "$e" +%F 2>/dev/null)" "$sz" "$e"

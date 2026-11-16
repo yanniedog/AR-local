@@ -36,12 +36,13 @@ guard() {
   if [ "$MODE" = delete ]; then
     local hm; hm=$((10#$(date +%H%M)))
     if [ "$hm" -lt 400 ] || [ "$hm" -gt 2330 ]; then stop "delete allowed only 04:00-23:30"; fi
-    grep -q 'ar-local-queue-task-' /proc/self/cgroup \
+    grep -Eq '/ar-local-queue-task-[0-9a-f]{32}\.service$' /proc/self/cgroup \
       || stop "delete mode must run inside a pi-shared-task queue job"
   fi
   [ ! -e "$STATE/daily-ingest.lock" ] || stop "daily-ingest.lock present"
   local u
-  for u in ar-local-daily.service ar-local-ingest-now.service \
+  for u in ar-local-daily.service ar-local-daily-watchdog.service \
+           ar-local-ingest-now.service ar-local-boot-recovery.service \
            ar-local-queue-task-daily-repair.service ar-local-day-archive.service \
            ar-local-drive-backup.service ar-local-drive-reclaim.service; do
     case "$(systemctl is-active "$u" 2>/dev/null || true)" in
@@ -50,19 +51,32 @@ guard() {
   done
 }
 
-out_dirs() { # print every finalized out_dir recorded for day $1
-  python3 - "$STATE" "$1" <<'PY'
+out_dirs() { # finalized out_dir of every VERIFIED marker recorded for day $1
+  PYTHONPATH=$PROD PYTHONDONTWRITEBYTECODE=1 python3 - "$STATE" "$1" <<'PY'
 import glob, json, os, sys
-state, day = sys.argv[1], sys.argv[2]
-paths = [os.path.join(state, day + ".done.json")]
-paths += sorted(glob.glob(os.path.join(state, day + ".revision.*.json")))
-for p in paths:
+from pathlib import Path
+state, day = Path(sys.argv[1]), sys.argv[2]
+try:
+    from cdr_finalization import verify_completion_marker
+except BaseException:
+    sys.exit(0)
+root = os.path.realpath("/srv/ar-local/data/runs/" + day)
+paths = [state / (day + ".done.json")]
+paths += sorted(Path(p) for p in glob.glob(str(state / (day + ".revision.*.json"))))
+for path in paths:
     try:
-        v = json.load(open(p)).get("out_dir")
-    except (OSError, ValueError):
+        marker = json.loads(path.read_text())
+        if verify_completion_marker(marker, state, day) is not True:
+            continue
+        out = marker.get("out_dir")
+        if not isinstance(out, str) or not os.path.isabs(out):
+            continue
+        real = os.path.realpath(out)
+        if real != out or os.path.commonpath([real, root]) != root or real == root:
+            continue
+        print(out)
+    except BaseException:
         continue
-    if isinstance(v, str) and v.startswith("/srv/ar-local/data/runs/" + day + "/"):
-        print(v)
 PY
 }
 
