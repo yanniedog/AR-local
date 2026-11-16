@@ -98,7 +98,18 @@ publication or backups**, and no irretrievable data loss.
   unit). Nothing was deleted, so no space is freed until O4. If the next
   natural ingest fails, run the section 7 rollback first. Later rounds use
   the full two-inventory procedure with an intervening ingest.
-- 2026-11-16 **C2 DONE** in the same PR as the tool fixes. **O1–O6, G1** await the owner.
+- 2026-11-16 **C2 DONE** in the same PR as the tool fixes.
+- 2026-11-16 **O1 DONE (owner decision: delete).** At 22:16 the eight named
+  spool leftovers in `/var/lib/ar-local-drive-backup` were removed through the
+  shared queue with the host lease, as user pi, by literal path; free space
+  991 G -> 1137 G. Pre-checks: no reference in `latest-verified.json` or
+  `requests/`, no open file or process cwd inside them, backup and reclaim
+  services inactive. Post-checks: dashboard active, `/api/latest` 200, no new
+  failed unit, `credentials/` untouched. Known consequence:
+  `recovery-seeded-drive-seed-717-20260914-a.json` still names
+  `restore-hmeddep8` as a local restore seed; a restore that asks for that
+  seed will not find it and must fetch from Drive instead.
+  **O2–O6, G1** await the owner.
 
 ---
 
@@ -110,7 +121,7 @@ Disk: one NVMe ext4 filesystem, 1.8 T total, 849 G used, 891 G free.
 | --- | ---: | --- | --- |
 | `/srv/ar-local/data/runs` | 374 G | Irreplaceable daily evidence, 183 days | never touched (G1 is design only) |
 | `/srv/ar-local/data/.daily-export-stage` | 118 G | Byte-identical leftover copies of finalized exports, 40 days | **P1** |
-| `/var/lib/ar-local-drive-backup` | 153 G | 108 G `restore-hmeddep8`, 36 G `freeze-*`, 4 G `restore-vnv24r2g`, 2 G `recovery-index-*`, all dated 2026-09-13/14 | **O1** (owner) |
+| `/var/lib/ar-local-drive-backup` | 153 G | 108 G `restore-hmeddep8`, 36 G `freeze-*`, 4 G `restore-vnv24r2g`, 2 G `recovery-index-*`, all dated 2026-09-13/14 | **O1** — deleted 2026-11-16 |
 | `/srv/ar-local/canary` | 90 G | 301 canary operation directories; 242 unreferenced = 51 G | **P2** |
 | other `/srv/ar-local/*` entries | ~75 G | ~550 test/candidate/evidence entries; 495 unreferenced = 27 G | **P2** |
 | `/var/tmp/ar-local-native-restore-20261114-*` | 16.5 G | two restore proofs from the in-flight D027 work | **O2** (owner) |
@@ -304,6 +315,7 @@ a later P2 round once the directories that link to them are gone. Repeat P2
   manifests and `recovery-seeded-drive-seed-717-20260914-a.json` name them, and
   `pi_drive_backup_seed.py` can consume a `restore-XXXXXXXX` directory. Removal
   is a backup-design decision under the Drive hold.
+  **Decided and done 2026-11-16: deleted (see Status log).**
 - **O2 `/var/tmp/ar-local-native-restore-20261114-*` (16.5 G).** Belongs to the
   unfinished D027 activation (handoff checkpoint 79). Remove only after that
   activation is accepted. `/var/tmp/avalon-*` belongs to another project.
