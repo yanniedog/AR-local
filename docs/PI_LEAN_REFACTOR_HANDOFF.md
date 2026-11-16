@@ -121,7 +121,7 @@ publication or backups**, and no irretrievable data loss.
   2026-10-28 copy of the Drive credentials); the live credentials directory
   was not touched. Post-checks: dashboard active, `/api/latest` 200, no new
   failed unit.
-- 2026-11-16 **O5 inspected, recommendation: keep.** The 12 worktrees measured
+- 2026-11-16 **O5 inspected, recommendation: keep.** All 12 stale worktrees
   total about 430 MB, all clean; 9 hold commits that are on no remote branch
   and not in `main`, so removal could lose work for almost no space.
   **O2, O4–O6, G1** await the owner.
@@ -341,7 +341,8 @@ a later P2 round once the directories that link to them are gone. Repeat P2
 - **O4 Delete quarantine.** After 14 clean ingests, the owner (not the
   executor) approves and runs deletion of one dated quarantine directory by its
   literal full path.
-- **O5 13 stale git worktrees** registered in the production checkout
+- **O5 12 stale git worktrees** registered in the production checkout
+  (`git worktree list` shows 13 entries; one is the production checkout itself)
   (`terms-candidate-*-20260919`, `terms-bounded-logs-proof-r29`,
   `publication-r67-8c5621ec-20260922`, `canary/prep-0d8cd36a478a-20261026`).
   They are `LIVE` (worktree) in the inventory; removing them is
