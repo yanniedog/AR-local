@@ -75,32 +75,56 @@ guard() {
   done
 }
 
-out_dirs() { # finalized out_dir of every VERIFIED marker recorded for day $1
-  PYTHONPATH=$PROD PYTHONDONTWRITEBYTECODE=1 python3 - "$STATE" "$1" <<'PY'
+out_dirs() { # print every finalized marker path and its recorded out_dir
+  python3 - "$STATE" "$1" <<'PY'
 import glob, json, os, sys
-from pathlib import Path
-state, day = Path(sys.argv[1]), sys.argv[2]
-try:
-    from cdr_finalization import verify_completion_marker
-except BaseException:
-    sys.exit(0)
-root = os.path.realpath("/srv/ar-local/data/runs/" + day)
-paths = [state / (day + ".done.json")]
-paths += sorted(Path(p) for p in glob.glob(str(state / (day + ".revision.*.json"))))
-for path in paths:
+state, day = sys.argv[1], sys.argv[2]
+paths = [os.path.join(state, day + ".done.json")]
+paths += sorted(glob.glob(os.path.join(state, day + ".revision.*.json")))
+for p in paths:
     try:
-        marker = json.loads(path.read_text())
-        if verify_completion_marker(marker, state, day) is not True:
-            continue
-        out = marker.get("out_dir")
-        if not isinstance(out, str) or not os.path.isabs(out):
-            continue
-        real = os.path.realpath(out)
-        if real != out or os.path.commonpath([real, root]) != root or real == root:
-            continue
-        print(out)
-    except BaseException:
+        with open(p, encoding="utf-8") as marker_file:
+            marker = json.load(marker_file)
+    except (OSError, ValueError):
         continue
+    if isinstance(marker, dict) and isinstance(marker.get("out_dir"), str):
+        sys.stdout.write(p + "\0" + marker["out_dir"] + "\0")
+PY
+}
+
+verified_out_dir() { # print canonical out_dir only when its marker verifies
+  PYTHONPATH=$PROD PYTHONDONTWRITEBYTECODE=1 python3 - \
+    "$STATE" "$1" "$2" "$3" <<'PY'
+import json, re, sys
+from pathlib import Path
+from cdr_finalization import verify_completion_marker
+
+state = Path(sys.argv[1]).resolve(strict=True)
+day, marker_name, recorded_path = sys.argv[2:]
+if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day):
+    sys.exit(1)
+marker_path = Path(marker_name)
+if (marker_path.parent != state
+        or (marker_path.name != day + ".done.json"
+            and not re.fullmatch(re.escape(day) + r"\.revision\..+\.json", marker_path.name))
+        or marker_path.is_symlink() or not marker_path.is_file()):
+    sys.exit(1)
+try:
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    if (not isinstance(marker, dict)
+            or marker.get("out_dir") != recorded_path
+            or verify_completion_marker(marker, state, day) is not True):
+        sys.exit(1)
+    runs_root = Path("/srv/ar-local/data/runs").resolve(strict=True)
+    day_root = (runs_root / day).resolve(strict=True)
+    candidate = Path(recorded_path).resolve(strict=True)
+    if (day_root.parent != runs_root or candidate == day_root
+            or day_root not in candidate.parents
+            or not candidate.is_dir()):
+        sys.exit(1)
+except (OSError, ValueError, TypeError, RuntimeError):
+    sys.exit(1)
+print(candidate)
 PY
 }
 
@@ -160,8 +184,11 @@ for dir in "$STAGE"/*; do
   elif ! authorized "$day"; then reason=marker-unverified-or-archive-not-passed
   else
     match=""
-    while IFS= read -r cand; do
-      if identical_subset "$dir/_exports" "$cand"; then match=$cand; break; fi
+    while IFS= read -r -d '' marker && IFS= read -r -d '' cand; do
+      candidate=$(verified_out_dir "$day" "$marker" "$cand") || continue
+      if identical_subset "$dir/_exports" "$candidate"; then
+        match=$candidate; break
+      fi
     done < <(out_dirs "$day")
     [ -n "$match" ] || reason=staged-file-missing-or-different-in-finalized
   fi

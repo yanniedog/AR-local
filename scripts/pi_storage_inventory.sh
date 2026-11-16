@@ -40,6 +40,7 @@ link_targets() { # $1 label, remaining args: find roots and depth options
   local label=$1 link cur target hop
   shift
   find "$@" -xdev -type l -print0 2>/dev/null | while IFS= read -r -d '' link; do
+    printf '%s\n' "$link"
     cur=$link
     for hop in 1 2 3 4 5 6 7 8; do
       [ -L "$cur" ] || break
