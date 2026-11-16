@@ -30,16 +30,40 @@ esac
 
 stop() { echo "STOP: $1"; exit 2; }
 
+lease_check() {
+  # The ingest lock must be absent for a dry run. For delete it must be the
+  # host lease of the queue supervisor that launched this job (a
+  # "pi-shared-task --resource host" job): role shared-pi-host-task and a pid
+  # in the same queue unit as this process. Any other holder means ingest work.
+  local lock=$STATE/daily-ingest.lock holder role
+  if [ ! -e "$lock" ]; then
+    [ "$MODE" = dry ] && return 0
+    stop "no queue host lease: submit with pi-shared-task --resource ar-local --resource host"
+  fi
+  [ "$MODE" = delete ] || stop "daily-ingest.lock present"
+  [ -f "$lock" ] && [ ! -L "$lock" ] || stop "daily-ingest.lock is not a regular file"
+  holder=$(grep -E "^pid=[0-9]+$" "$lock" | head -n 1 | cut -d= -f2)
+  role=$(sed -n 's/^role=//p' "$lock" | head -n 1)
+  case "$role" in shared-pi-host-task:*) ;; *) stop "daily-ingest.lock held by another role" ;; esac
+  [ -n "$holder" ] || stop "daily-ingest.lock has no pid"
+  # Supervisor and job live in the same queue unit (possibly sub-cgroups).
+  local unit='ar-local-queue-task-[0-9a-f]{32}\.service' mine theirs
+  mine=$(grep -Eo "$unit" /proc/self/cgroup | head -n 1)
+  theirs=$(grep -Eo "$unit" "/proc/$holder/cgroup" 2>/dev/null | head -n 1 || true)
+  [ -n "$mine" ] && [ "$mine" = "$theirs" ] && return 0
+  stop "daily-ingest.lock is held by a process that is not this job's supervisor"
+}
+
 guard() {
   [ "$(id -un)" = pi ] || stop "run as user pi, not $(id -un)"
   [ "$(hostname)" = pi5 ] || stop "wrong host $(hostname)"
   if [ "$MODE" = delete ]; then
     local hm; hm=$((10#$(date +%H%M)))
     if [ "$hm" -lt 400 ] || [ "$hm" -gt 2330 ]; then stop "delete allowed only 04:00-23:30"; fi
-    grep -Eq '/ar-local-queue-task-[0-9a-f]{32}\.service$' /proc/self/cgroup \
+    grep -Eq '/ar-local-queue-task-[0-9a-f]{32}\.service(/|$)' /proc/self/cgroup \
       || stop "delete mode must run inside a pi-shared-task queue job"
   fi
-  [ ! -e "$STATE/daily-ingest.lock" ] || stop "daily-ingest.lock present"
+  lease_check
   local u
   for u in ar-local-daily.service ar-local-daily-watchdog.service \
            ar-local-ingest-now.service ar-local-boot-recovery.service \
