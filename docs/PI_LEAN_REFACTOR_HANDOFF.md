@@ -109,7 +109,22 @@ publication or backups**, and no irretrievable data loss.
   `recovery-seeded-drive-seed-717-20260914-a.json` still names
   `restore-hmeddep8` as a local restore seed; a restore that asks for that
   seed will not find it and must fetch from Drive instead.
-  **O2–O6, G1** await the owner.
+- 2026-11-16 **O3 DONE (owner decision: delete).** At 22:24 the two O3
+  directories were removed by literal path through the shared queue with the
+  host lease (`sudo rm`, both sat in root-owned parents); free space
+  1137 G -> 1154 G. Pre-checks: nothing outside the run's own control and
+  handoff records named them, no mount, open file or process cwd inside, no
+  file newer than 2026-10-28, backup services inactive. The plain-backup run
+  was a `Blocked` attempt from 2026-10-24; its control and handoff records
+  were left in place. The OS backup also held a 2 KB
+  `credentials-pi-only/drive-backup-credentials-PRIVATE.tar.zst` (a
+  2026-10-28 copy of the Drive credentials); the live credentials directory
+  was not touched. Post-checks: dashboard active, `/api/latest` 200, no new
+  failed unit.
+- 2026-11-16 **O5 inspected, recommendation: keep.** The 12 worktrees measured
+  total about 430 MB, all clean; 9 hold commits that are on no remote branch
+  and not in `main`, so removal could lose work for almost no space.
+  **O2, O4–O6, G1** await the owner.
 
 ---
 
@@ -322,6 +337,7 @@ a later P2 round once the directories that link to them are gone. Repeat P2
 - **O3** `/var/lib/ar-local-plain-backup-work/391eacd7290a4df5b12acdb5af1fae59`
   (8.5 G) and `/var/lib/ar-local-os-backup-20261028-n7f3a1` (8.3 G; a copy
   exists on Drive, 8.1 GiB).
+  **Decided and done 2026-11-16: both deleted (see Status log).**
 - **O4 Delete quarantine.** After 14 clean ingests, the owner (not the
   executor) approves and runs deletion of one dated quarantine directory by its
   literal full path.
