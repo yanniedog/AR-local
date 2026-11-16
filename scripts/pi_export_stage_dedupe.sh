@@ -60,7 +60,7 @@ guard() {
   if [ "$MODE" = delete ]; then
     local hm; hm=$((10#$(date +%H%M)))
     if [ "$hm" -lt 400 ] || [ "$hm" -gt 2330 ]; then stop "delete allowed only 04:00-23:30"; fi
-    grep -Eq '/ar-local-queue-task-[0-9a-f]{32}\.service(/|$)' /proc/self/cgroup \
+    grep -Eq '/ar-local-queue-task-[0-9a-f]{32}\.service$' /proc/self/cgroup \
       || stop "delete mode must run inside a pi-shared-task queue job"
   fi
   lease_check
