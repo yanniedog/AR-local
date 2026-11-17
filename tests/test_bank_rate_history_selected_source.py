@@ -195,7 +195,6 @@ def test_standalone_dated_and_rolling_payloads_have_identical_lazy_history(tmp_p
     import app_payload_build as builder
     from app_payload_bank_history_asset import decode_envelope
     exports = save_export(tmp_path, banks)
-    monkeypatch.setattr(builder.cdr_brand_logos, "fetch_register_logos", lambda **_: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     results = []
     for tag in ("app-payload-" + DAY, "app-payload-latest"):
@@ -214,7 +213,6 @@ def test_standalone_dated_and_rolling_payloads_have_identical_lazy_history(tmp_p
 def test_rolling_tiers_reuse_aggregate_read_pass(tmp_path, banks, monkeypatch):
     import app_payload_build as builder
     exports = save_export(tmp_path, banks)
-    monkeypatch.setattr(builder.cdr_brand_logos, "fetch_register_logos", lambda **_: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     target = exports / "dashboard-cache" / DAY / "banks.json"
     reads = []

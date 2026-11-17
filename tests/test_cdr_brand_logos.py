@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import cdr_brand_logos
-from app_payload import build_brands
 
 REGISTER = {
     "amp bank": "https://amp.example/amp.png",
@@ -92,28 +91,3 @@ def test_fetch_uses_cache_and_survives_failure(tmp_path: Path) -> None:
 
     os.utime(cache, (stale, stale))
     assert cdr_brand_logos.fetch_register_logos(cache, fetcher=broken) == first
-
-
-def test_build_brands_attaches_register_uri_only_without_embedded_logo() -> None:
-    brands = build_brands(
-        ["MyState Bank", "ING"],
-        shortcodes={},
-        logos={"ing": "data:image/png;base64,abc"},
-        register_logos=REGISTER,
-    )
-    assert brands["MyState Bank"]["logo_uri"] == "https://mystate.example/logo.png"
-    assert "logo_uri" not in brands["ING"]
-    assert brands["ING"]["logo"] == "data:image/png;base64,abc"
-
-
-def test_build_brands_routes_svg_register_uri_to_logo_svg_uri() -> None:
-    register = dict(REGISTER, **{"svg only bank": "https://svg.example/logo.svg"})
-    brands = build_brands(
-        ["SVG Only Bank", "MyState Bank"],
-        shortcodes={},
-        register_logos=register,
-    )
-    assert brands["SVG Only Bank"]["logo_svg_uri"] == "https://svg.example/logo.svg"
-    assert "logo_uri" not in brands["SVG Only Bank"]
-    assert brands["MyState Bank"]["logo_uri"] == "https://mystate.example/logo.png"
-    assert "logo_svg_uri" not in brands["MyState Bank"]

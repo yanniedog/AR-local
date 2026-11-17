@@ -215,35 +215,24 @@ def test_build_brands_shortcodes_and_color():
     assert brands["Some New Bank"]["color"] == app_payload.build_brands(["Some New Bank"], {})["Some New Bank"]["color"]
 
 
-def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
-    dashboard = tmp_path / "dashboard"
-    logos = tmp_path / "banks"
-    dashboard.mkdir()
-    logos.mkdir()
-    (dashboard / "ar-bank-brand.js").write_text(
-        "'ANZ': {\n"
-        "  short: 'ANZ',\n"
-        "  icon: '/assets/banks/anz.png',\n"
-        "  aliases: ['ANZ Bank'],\n"
-        "},\n"
-        "'Huge Bank': { short: 'Huge', icon: '/assets/banks/huge.png' },\n",
-        encoding="utf-8",
-    )
-    (logos / "anz.png").write_bytes(b"\x89PNG\r\n\x1a\nsmall")
-    (logos / "huge.png").write_bytes(b"x" * (app_payload.MAX_EMBEDDED_LOGO_BYTES + 1))
+def test_provider_logos_are_embedded_for_known_and_new_providers():
+    import base64
+    from app_payload_brands import load_provider_logos
 
-    loaded = app_payload.load_brand_logos(dashboard, logos)
-
-    assert set(loaded) == {"anz", "anz bank"}
-    assert loaded["anz"].startswith("data:image/png;base64,")
-    brands = app_payload.build_brands(
-        ["ANZ Bank Australia Limited", "No Logo Bank"],
-        {"anz": "ANZ"},
-        loaded,
-    )
-    assert brands["ANZ Bank Australia Limited"]["logo"] == loaded["anz"]
-    assert brands["ANZ Bank Australia Limited"]["short"] == "ANZ"
-    assert "logo" not in brands["No Logo Bank"]
+    logos = load_provider_logos(app_payload.BASE_DIR / "dashboard")
+    providers = ["Bank of Queensland Limited", "Queensland Country Bank", "New Lender"]
+    brands = app_payload.build_brands(providers, {}, logos)
+    assert set(brands) == set(providers)
+    boq, qcb, lender = (brands[provider] for provider in providers)
+    assert boq["logo_source"] == qcb["logo_source"] == "artwork"
+    assert boq["logo"] != qcb["logo"]
+    assert lender["logo_source"] == "monogram"
+    for brand in brands.values():
+        prefix, encoded = brand["logo"].split(",", 1)
+        assert prefix == "data:image/png;base64"
+        assert base64.b64decode(encoded, validate=True).startswith(b"\x89PNG\r\n\x1a\n")
+        assert "logo_uri" not in brand and "logo_svg_uri" not in brand
+    assert brands == app_payload.build_brands(reversed(providers), {}, logos)
 
 
 def test_build_dates_index_sorted_and_bounded():

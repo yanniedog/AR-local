@@ -104,7 +104,6 @@ def test_actual_reexport_builds_25_td_payload_rows(reexport, monkeypatch):
     run, banks = reexport
     # External logo/macro fetches are irrelevant to rate classification. The
     # source product/rate records and shipping export/payload code remain real.
-    monkeypatch.setattr("cdr_brand_logos.fetch_register_logos", lambda **kwargs: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     exports, output = run / "_exports", run / "payload"
     write_dashboard_cache(exports, "2026-09-12", banks)

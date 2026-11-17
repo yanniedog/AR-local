@@ -81,7 +81,6 @@ def test_shared_spread_unresolved_source_is_gap_without_legacy_fallback(tmp_path
 
 def test_production_builder_shares_unfiltered_verified_rows_once(tmp_path, banks, monkeypatch):
     exports = save_export(tmp_path, banks)
-    monkeypatch.setattr(builder.cdr_brand_logos, "fetch_register_logos", lambda **_: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     original = spread.BankSpreadHistory.observe
     observed = []
@@ -100,6 +99,24 @@ def test_production_builder_shares_unfiltered_verified_rows_once(tmp_path, banks
     assert result["bank_spread_history"]["banks"]["Bankwest"]["savings_mean"] == [0.02825]
 
 
+def test_production_package_embeds_logo_for_provider_without_current_rates(tmp_path, banks, monkeypatch):
+    import gzip
+    from urllib import request
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Payload logo packaging must not contact the network")
+
+    monkeypatch.setattr(request, "urlopen", forbidden)
+    monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
+    exports = save_export(tmp_path, {**banks, "rates": []})
+    output = tmp_path / "payload"
+    manifest = builder.build_payload(exports, output, tag="app-payload-" + DAY)
+    core = json.loads(gzip.decompress((output / manifest["files"]["core"]["name"]).read_bytes()))
+    assert all(not section["rates"] for section in core["sections"].values())
+    assert core["brands"]["Bankwest"]["logo_source"] == "artwork"
+    assert core["brands"]["Bankwest"]["logo"].startswith("data:image/png;base64,")
+
+
 def test_production_spread_preserves_unresolved_prior_day_gap(tmp_path, banks, monkeypatch):
     exports = save_export(tmp_path, banks, finalize=False)
     prior = json.loads(FIXTURE.read_bytes())["observations"][-2]
@@ -110,7 +127,6 @@ def test_production_spread_preserves_unresolved_prior_day_gap(tmp_path, banks, m
         folder.mkdir(parents=True)
         (folder / "banks.json").write_text(json.dumps({
             "run_date": day, "rates": prior["queries"]["bank_rates"]["rows"]}), encoding="utf-8")
-    monkeypatch.setattr(builder.cdr_brand_logos, "fetch_register_logos", lambda **_: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     result = builder._compute_payload(exports)
     history = result["bank_spread_history"]
