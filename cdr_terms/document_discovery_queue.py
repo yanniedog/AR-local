@@ -4,6 +4,7 @@ No network, scheduler activation or publication occurs here. An obligation with
 no official seed stays explicit instead of inventing a lender URL from its name.
 """
 import json
+import time
 
 from .identity import canonical_json, digest, timestamp, utc_now
 from .product_documents import discovery_plan, describe_reference
@@ -43,13 +44,17 @@ def reconcile_capture_discovery(store, receipt):
         raise ValueError("Discovery reconciliation product budget exceeded")
     count = 0
     observed = utc_now()
+    deadline, consumed = time.monotonic() + 120, 0
     for source in receipt["sources"]:
+        if time.monotonic() >= deadline:
+            raise ValueError("Discovery reconciliation deadline exceeded")
         existing = store.db.execute("SELECT 1 FROM product_document_discovery WHERE observation_id=? AND policy=?",
                                     (source["observation_id"], POLICY)).fetchone()
         if existing:
             continue
         body = store.read_blob(source["sha256"])
-        if len(body) > 16 * 1024**2:
+        consumed += len(body)
+        if len(body) > 16 * 1024**2 or consumed > 512 * 1024**2:
             raise ValueError("Discovery reconciliation source byte budget exceeded")
         register_discovery(store, source["observation_id"], json.loads(body), now=observed)
         AcquisitionQueue(store).enqueue(source["observation_id"], ingest_id=receipt["generation_id"], now=observed)
