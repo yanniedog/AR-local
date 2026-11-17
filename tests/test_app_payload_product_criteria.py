@@ -143,3 +143,21 @@ def test_writer_targets_small_shards_and_reports_larger_indivisible_products(tmp
     assert prepared['layout']['largest_product_key']
     assert prepared['layout']['index_decoded_bytes'] > 0
     assert verify_criteria(output, manifest)['coverage']['complete']
+
+
+def test_optional_feature_locator_preserves_legacy_semantics_and_refuses_ambiguity():
+    from app_payload_product_criteria import scoped_feature_facts
+    from app_payload_feature_facts import feature_facts
+    retained = json.loads((Path(__file__).parent / 'fixtures/product_facts_real_2026-05-19.json').read_bytes())['products'][0]
+    record = json.loads(detail_json(retained['record']))
+    legacy = feature_facts(record, 'Up|retained', record.get('description'))
+    located = scoped_feature_facts(record, 'Up|retained')
+    assert located and all(item.get('sourcePathBasis') == 'raw-cdr' for item in located)
+    assert [{key: value for key, value in item.items() if key not in {'sourcePath', 'sourcePathBasis'}} for item in located] == legacy
+    assert {item['sourcePath'] for item in located} == {'/features/0', '/features/1', '/features/2'}
+    duplicate = deepcopy(record)
+    duplicate['features'].append(deepcopy(duplicate['features'][0]))
+    assert all('sourcePath' not in item for item in scoped_feature_facts(duplicate, 'Up|retained')
+               if item.get('sourceType') == duplicate['features'][0]['featureType'])
+    record.pop('_sourcePaths')
+    assert scoped_feature_facts(record, 'Up|retained') == legacy

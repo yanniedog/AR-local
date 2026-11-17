@@ -57,3 +57,9 @@ generation and export-contract digest; unrelated/newer products cannot supply
 current document checks. No fetch, interpretation or writable evidence-store
 initialization occurs during optional packaging. Corrupt optional archives fail
 only that optional attempt. Captured availability is distinct from applicability.
+
+Optional feature facts preserve the legacy ID and every semantic field. Only a
+unique exact featureType match with an existing raw `_sourcePaths` entity
+locator gains sourcePath/sourcePathBasis metadata. Repeated feature types and
+legacy exports without the map remain unannotated. The primary detail asset
+and its conservative feature-presence guards remain unchanged.

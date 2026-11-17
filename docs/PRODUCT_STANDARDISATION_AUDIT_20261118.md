@@ -59,6 +59,12 @@ decoded and2.27MB compressed. It is not a current3596-product budget proof.
 The136 historical zero-link products have unique active official-directory
 website matches; this establishes discovery starting points, not acquired terms.
 
+The retained full normalized `cdr-product-facts-2` lane still has a known
+minimum/maximum-income numeric-unit classification defect. New comparable
+criteria use monetary units and raw response values remain exact. Correcting
+the full lane requires a separately reviewed normalization-version migration;
+existing version-2 receipts must retain their original interpretation.
+
 Activation still requires exact-head producer and consumer CI, substantive
 feedback closure, current whole-catalogue recursive inventory and mobile budget
 qualification, immutable source checks, guarded Pi runtime/canary qualification,

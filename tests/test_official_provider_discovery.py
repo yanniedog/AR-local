@@ -78,8 +78,8 @@ def test_accepted_directory_queues_exact_website_without_network_or_model(tmp_pa
         queue.validate_receipt(outcome)
         websites = [row[0] for row in store.db.execute("SELECT source_url FROM applicability a JOIN documents d USING(document_id) "
             "WHERE a.observation_id=? AND a.source_path='/discovery/official-provider-directory'", (observation,))]
-        assert 'https://www.bankofmelbourne.com.au/sitemap.xml' in websites
-        assert 'https://www.bankofmelbourne.com.au/' in websites
+        assert set(websites) == {DIRECTORY_URL, 'https://www.bankofmelbourne.com.au/sitemap.xml',
+                                 'https://www.bankofmelbourne.com.au/'}
         inventory = discovery_inventory(store, 'Bank of Melbourne|BOMHLBasic')
         assert all(item['url'] != DIRECTORY_URL for item in inventory['documents'])
         website = next(item for item in inventory['documents'] if item['url'] == 'https://www.bankofmelbourne.com.au/')

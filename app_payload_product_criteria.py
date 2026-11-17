@@ -81,6 +81,26 @@ def compact_documents(documents, product_key):
             for key in sorted(groups)]
 
 
+def scoped_feature_facts(record, product_key):
+    """Add only proven raw locators; preserve legacy feature semantics and IDs."""
+    facts = feature_facts(record, product_key, record.get('description'))
+    source, paths = record.get('features'), record.get('_sourcePaths')
+    if not isinstance(source, list) or not isinstance(paths, dict):
+        return facts
+    by_type = {}
+    for index, item in enumerate(source):
+        if isinstance(item, dict) and isinstance(item.get('featureType'), str):
+            by_type.setdefault(item['featureType'], []).append(index)
+    for fact in facts:
+        indices = by_type.get(fact.get('sourceType'), [])
+        if len(indices) != 1:
+            continue
+        pointer = paths.get(f'/features/{indices[0]}')
+        if isinstance(pointer, str) and re.fullmatch(r'/features/[0-9]+', pointer):
+            fact.update(sourcePath=pointer, sourcePathBasis='raw-cdr')
+    return facts
+
+
 def prepare_criteria(database, contract_path, output, *, run_date, evidence_documents=None):
     """Return ordinary manifest file descriptors, without URLs or authority.
 
@@ -148,7 +168,7 @@ here. Without it, original CDR reference descriptors remain candidates only.
             # Current rate/tier facets already live in exact core rows; all
             # original rate/tier evidence remains in the full lazy fact lane.
             # Global filters never need a second copy of those scoped prices.
-            facts = feature_facts(record, key, record.get('description')) + [
+            facts = scoped_feature_facts(record, key) + [
                 fact for fact in criteria_facts(record, key) if fact['kind'] not in {'rate', 'tier'}]
             # The legacy cleaner already removed nested URI fields. Classify
             # preserved raw references first, then add official adapter seeds;
