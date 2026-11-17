@@ -8,6 +8,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import time
@@ -18,7 +19,7 @@ from app_payload_criteria import criteria_facts
 from app_payload_feature_facts import feature_facts, source_documents
 from app_payload_product_evidence import Budget, file_digest, no_journals, regular, signature, source_binding
 from app_payload_product_evidence_contract import Limits, canonical, decode, require
-from cdr_atomic import atomic_write_json
+from cdr_atomic import atomic_write_json, _fsync_directory
 
 INDEX_RAW = 8 * 1024**2
 SHARD_RAW = 4 * 1024**2
@@ -38,6 +39,7 @@ def _descriptor(output, kind, raw):
     with (output / name).open('xb') as stream:
         stream.write(blob)
         stream.flush()
+        os.fsync(stream.fileno())
     return dict(name=name, sha256=sha, bytes=len(blob))
 
 
@@ -133,6 +135,7 @@ here. Without it, original CDR reference descriptors remain candidates only.
     result = dict(schema='ar-product-criteria-prepared-v1', source=source, run_date=run_date,
                   files=files, coverage=coverage, decoded_bytes=raw_total, compressed_bytes=compressed_total,
                   publication_authorized=False)
+    _fsync_directory(output)
     atomic_write_json(output / 'prepared.json', result, create_once=True)
     return result
 
@@ -194,7 +197,7 @@ def _product(value):
 
 def decimal_value(value):
     from app_payload_criteria import decimal_text
-    return decimal_text(value) is not None
+    return re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?', value) is not None and decimal_text(value) is not None
 
 
 def verify_criteria(root, manifest):
