@@ -99,3 +99,29 @@ capture. Bounded append-only `product_document_discovery_failures` records retai
 the failed obligation and cause. A successful plan is not fabricated, so a later
 reconciliation can retry it without deleting failures or rewriting the original
 capture receipt. Diagnostic storage failure is logged and remains nonfatal too.
+
+## Optional OCR adapter: disabled pending runtime qualification
+
+Textless PDF pages explicitly report `ocr_unavailable` by default. The optional
+`pdf_ocr.qualified_ocr(OCRRuntime(...), priority_guard=...)` controller context
+can enable page extraction inside the existing admitted, supervised extraction
+child. There is no ingest flag, PATH lookup, package installation, automatic
+worker activation or source-controlled permission to select native tools.
+The controller must qualify absolute pdftoppm/tesseract paths and English trained
+data, pin their SHA256 hashes, and supply a live priority guard. Native library
+qualification and actual runtime/canary acceptance remain outstanding.
+
+The adapter uses private per-page temporary files, no shell or inherited console,
+four attempted pages per document, a shared 20-second deadline including cleanup
+reserve, 1600-pixel raster sizing, 8MiB raster, 64KiB native log and 100,000-byte
+text caps. Aggregate worker memory and descendant supervision remain mandatory.
+Unverified direct-child cleanup stops subsequent OCR launches for the document.
+Tool/hash failures remain unavailable; operational deferrals and resource limits
+remain pending. OCR text retains original document hash, page ordinal, text hash
+and runtime hashes, and is marked partial/review-required. It cannot verify legal
+applicability or convert missing pages into complete evidence.
+
+Injected process-boundary controls test provenance, caps, disabled defaults and
+failure handling; they do not prove real OCR accuracy or native runtime safety.
+Tesseract is not commissioned locally or on the Pi. The native dependencies must
+be separately qualified and canary-tested before a controller enables this API.
