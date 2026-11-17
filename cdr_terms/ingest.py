@@ -102,6 +102,8 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
             if timing and (receipt["observed_at"] != timing[0] or receipt.get("source_provenance") != timing[1]):
                 raise ValueError("source_observation_legacy_capture_requires_explicit_review")
             _complete_capture(store, receipt_path, receipt)
+            from .document_discovery_queue import reconcile_capture_discovery
+            reconcile_capture_discovery(store, receipt)
             _capture_public_pricing(store, run_root, receipt)
             return receipt
         observation_time, provenance, contract_body = timing or source_time(finalized, state_dir=state_dir, observed_at=observed_at)
@@ -136,6 +138,8 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
                 # Source-context failure is reported by the separate public
                 # lane; it cannot invalidate the accepted original capture.
                 pass
+            from .document_discovery_queue import register_discovery
+            register_discovery(store, observation_id, payload, now=captured_at)
             acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=captured_at))
             raw_versions = store.db.execute("SELECT v.document_version_id FROM applicability a JOIN document_versions v USING(document_id) "
                                             "WHERE a.observation_id=? AND a.relation='cdr_source' AND v.content_sha256=?",

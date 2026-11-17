@@ -362,3 +362,14 @@ CREATE TABLE IF NOT EXISTS executable_review_predecessors (
     review_id TEXT PRIMARY KEY REFERENCES executable_reviews(review_id),
     previous_review_id TEXT REFERENCES executable_reviews(review_id)
 );
+
+-- One immutable discovery obligation for every observed product and policy.
+-- Candidate seeds share acquisition leases; these records grant no applicability.
+CREATE TABLE IF NOT EXISTS product_document_discovery (
+    observation_id TEXT NOT NULL REFERENCES observations(observation_id),
+    policy TEXT NOT NULL,
+    plan_sha256 TEXT NOT NULL CHECK(length(plan_sha256)=64),
+    plan_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(observation_id, policy)
+);
