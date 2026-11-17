@@ -29,7 +29,7 @@ def provider_avatar(short: str, color: str) -> str:
     """Encode a raster image supported by the existing offline app renderer."""
     text = re.sub(r"[^A-Z0-9]", "", short.upper())[:4] or "?"
     glyphs = [bytes.fromhex(_GLYPHS[letter]) for letter in text]
-    size, scale = 56, 2
+    size, scale = 112, 4
     left = (size - (len(glyphs) * 6 - 1) * scale) // 2
     top = (size - 7 * scale) // 2
     pixels = [bytearray(size) for _ in range(size)]

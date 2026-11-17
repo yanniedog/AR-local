@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from app_payload_common import MAX_EMBEDDED_LOGO_BYTES
 from app_payload_provider_avatar import provider_avatar
+from app_payload_logo_acquisition import logo_key
 
 _BRAND_ENTRY_RE = re.compile(r"""['"]([^'"]+)['"]\s*:\s*\{([^}]*)\}""")
 _BRAND_SHORT_IN_ENTRY_RE = re.compile(r"""short\s*:\s*['"]([^'"]+)['"]""")
@@ -99,32 +100,40 @@ def _brand_color(provider: str) -> str:
     return _BRAND_PALETTE[int(digest[:8], 16) % len(_BRAND_PALETTE)]
 
 
-def _logo_key(provider: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", provider.lower()).strip("-")
-
-
 def load_provider_logos(dashboard_dir: Path) -> Dict[str, str]:
     """Read the producer-owned pack, checking assets against their provenance."""
     root = dashboard_dir / "assets" / "provider-logos"
     catalog = root / "sources.json"
-    manifest = json.loads(catalog.read_text(encoding="utf-8"))
+    try:
+        manifest = json.loads(catalog.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(manifest, dict):
+        return {}
     logos: Dict[str, str] = {}
-    for entry in manifest["brands"]:
-        filename = entry["file"]
-        if Path(filename).name != filename or not filename.endswith(".png"):
-            raise ValueError(f"Invalid provider logo filename: {filename!r}")
-        image = (root / filename).read_bytes()
+    entries = manifest.get("brands")
+    for entry in entries if isinstance(entries, list) else ():
+        if not isinstance(entry, dict):
+            continue
+        filename, key, provider = (entry.get(field) for field in ("file", "key", "provider"))
+        if (not all(isinstance(value, str) for value in (filename, key, provider))
+                or Path(filename).name != filename or not filename.endswith(".png")
+                or logo_key(provider) != key or key in logos):
+            continue
+        try:
+            with (root / filename).open("rb") as stream:
+                image = stream.read(MAX_EMBEDDED_LOGO_BYTES + 1)
+        except OSError:
+            continue
         if (len(image) > MAX_EMBEDDED_LOGO_BYTES or not image.startswith(b"\x89PNG\r\n\x1a\n")
-                or hashlib.sha256(image).hexdigest() != entry["sha256"]):
-            raise ValueError(f"Invalid provider logo: {filename}")
-        key = entry["key"]
-        if key != _logo_key(entry["provider"]) or key in logos:
-            raise ValueError(f"Invalid or duplicate provider logo key: {key}")
+                or hashlib.sha256(image).hexdigest() != entry.get("sha256")):
+            continue
         logos[key] = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
-    for alias, key in manifest["aliases"].items():
-        if alias in logos or key not in logos:
-            raise ValueError(f"Invalid provider logo alias: {alias} -> {key}")
-        logos[alias] = logos[key]
+    aliases = manifest.get("aliases")
+    if isinstance(aliases, dict):
+        for alias, key in aliases.items():
+            if isinstance(key, str) and alias not in logos and key in logos:
+                logos[alias] = logos[key]
     return logos
 
 
@@ -138,7 +147,7 @@ def build_brands(
     for provider in sorted({p for p in providers if p}):
         short = _get_brand_lookup(shortcodes, provider) or _derive_short(provider)
         color = _brand_color(provider)
-        logo = logos.get(_logo_key(provider))
+        logo = logos.get(logo_key(provider))
         brands[provider] = {
             "short": short,
             "color": color,

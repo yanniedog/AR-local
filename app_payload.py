@@ -225,7 +225,11 @@ def _cmd_build(args: argparse.Namespace) -> int:
             raise ValueError('source observation requires the selected generation_id')
         if args.publish and not args.dry_run:
             raise ValueError('Public catalogue CLI builds are review-only; use the controlled immutable revision publisher')
-    manifest = build_payload(exports_dir, out_dir, repo=args.repo, tag=args.tag,
+    from app_payload_mobile import _runs_root
+
+    runs_root = _runs_root(exports_dir)
+    logo_state_dir = (runs_root.parent / "state" if runs_root else out_dir) if args.publish and not args.dry_run else None
+    manifest = build_payload(exports_dir, out_dir, repo=args.repo, tag=args.tag, logo_state_dir=logo_state_dir,
                              public_rates_root=public_rates, source_observation=observation,
                              public_rates_receipt=Path(args.public_rates_receipt).resolve() if getattr(args, 'public_rates_receipt', '') else None)
     core = manifest["files"]["core"]
