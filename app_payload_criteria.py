@@ -79,11 +79,38 @@ def _base(record, key, path, kind, canonical, code, *, parent=None, condition=No
         value['parentId'] = parent
     if condition:
         value['condition'] = str(condition)
-    value['evidenceState'] = 'conditional' if condition else 'observed'
+    value['evidenceState'] = 'conditional' if condition or _qualified(record, path, source, basis) else 'observed'
+    for field in ('effectiveFrom', 'effectiveTo'):
+        if isinstance(record.get(field), str) and record[field].strip():
+            value[field] = record[field]
     # Entity groups intentionally exclude indexes; duplicate occurrences get
     # distinct fact IDs below without collapsing their source paths.
     value['groupId'] = _identity(key, [kind, canonical, parent, condition])[:16]
     return value
+
+
+def _qualified(record, path, source, basis):
+    """A scoped document or unassessed effective date may qualify a scalar."""
+    if any(record.get(field) not in (None, '') for field in ('effectiveFrom', 'effectiveTo')):
+        return True
+    current = record
+    try:
+        for part in path.strip('/').split('/'):
+            current = current[int(part)] if isinstance(current, list) else current[part]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return True
+    if isinstance(current, dict) and any(current.get(field) for field in ('discounts', 'applicabilityConditions')):
+        return True
+    references = record.get('sourceDocuments')
+    for reference in references if isinstance(references, list) else []:
+        pointer = reference.get('sourcePath') if isinstance(reference, dict) else None
+        if not isinstance(pointer, str):
+            continue
+        if basis == 'raw-cdr' and (pointer == source or pointer.startswith(source + '/')):
+            return True
+        if basis != 'raw-cdr' and pointer.startswith('/' + path.strip('/').split('/')[0] + '/'):
+            return True  # Legacy compaction cannot identify which entity it qualifies.
+    return False
 
 
 def _value(fact, raw, unit, value_type):

@@ -69,6 +69,21 @@ def test_missing_bound_never_becomes_boolean_eligible():
     assert fact['evidenceState'] == 'unknown'
 
 
+def test_external_qualification_and_effective_dates_never_become_unconditional_filters():
+    raw = deepcopy(captured()[0]['record'])
+    code = raw['constraints'][0]['constraintType']
+    # URI-only protocol qualification leaves every retained financial value intact.
+    raw['constraints'][0]['additionalInfoUri'] = 'https://up.com.au/docs/Up-Home-Loan-Booklet.pdf'
+    cleaned = json.loads(detail_json(raw))
+    fact = next(item for item in criteria_facts(cleaned, 'up-home')
+                if item['kind'] == 'constraint' and item['sourceType'] == code)
+    assert fact['evidenceState'] == 'conditional'
+    raw['effectiveFrom'] = '2099-01-01T00:00:00Z'  # Future-boundary protocol control.
+    dated = criteria_facts(json.loads(detail_json(raw)), 'up-home')
+    assert all(item['evidenceState'] != 'observed' for item in dated)
+    assert all(item['effectiveFrom'] == raw['effectiveFrom'] for item in dated)
+
+
 def test_exact_decimal_conversion_and_invalid_protocol_values():
     assert decimal_text('9007199254740993.000000000001') == '9007199254740993.000000000001'
     assert decimal_text('5.70000000000000000001', 100) == '0.0570000000000000000001'
