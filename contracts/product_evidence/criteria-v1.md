@@ -48,3 +48,12 @@ index/shard route before calling a whole-catalogue filter complete. Loading,
 missing routes, conflicting values, unsupported units and conditional criteria
 remain unknown. Documents need their own specificity/relevance/check evidence;
 presence in this transport alone grants no legal applicability.
+
+Document descriptors classify the preserved raw URI references before any
+rediscovery of cleaned fields. Reviewed provider-adapter candidates supplement
+them without claiming retrieval. When `AR_LOCAL_TERMS_ROOT` is configured, the
+optional retry reads only the completed terms archive for the exact accepted
+generation and export-contract digest; unrelated/newer products cannot supply
+current document checks. No fetch, interpretation or writable evidence-store
+initialization occurs during optional packaging. Corrupt optional archives fail
+only that optional attempt. Captured availability is distinct from applicability.

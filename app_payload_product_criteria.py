@@ -17,6 +17,7 @@ import zlib
 
 from app_payload_criteria import criteria_facts
 from app_payload_feature_facts import feature_facts, source_documents
+from cdr_terms.product_documents import describe_reference, describe_product_sources
 from app_payload_product_evidence import Budget, file_digest, no_journals, regular, signature, source_binding
 from app_payload_product_evidence_contract import Limits, canonical, decode, require
 from cdr_atomic import atomic_write_json, _fsync_directory
@@ -96,10 +97,10 @@ here. Without it, original CDR reference descriptors remain candidates only.
         db.execute('PRAGMA mmap_size=0')
         db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, SHARD_RAW)
         db.set_progress_handler(lambda: int(time.monotonic() >= budget.deadline), 10000)
-        rows = db.execute('SELECT product_key,details_json FROM bank_products '
+        rows = db.execute('SELECT product_key,details_json,provider FROM bank_products '
                           'WHERE run_date=? ORDER BY product_key', (run_date,))
         pending_size = 0
-        for key, details in rows:
+        for key, details, provider in rows:
             budget.check()
             require(isinstance(key, str) and key and key not in routes and key not in pending,
                     'duplicate or missing criteria product identity')
@@ -110,8 +111,18 @@ here. Without it, original CDR reference descriptors remain candidates only.
             # Global filters never need a second copy of those scoped prices.
             facts = feature_facts(record, key, record.get('description')) + [
                 fact for fact in criteria_facts(record, key) if fact['kind'] not in {'rate', 'tier'}]
-            documents = (evidence_documents.get(key, []) if evidence_documents is not None
-                         else source_documents(record) or [])
+            # The legacy cleaner already removed nested URI fields. Classify
+            # preserved raw references first, then add official adapter seeds;
+            # rediscovery from cleaned fields alone would lose those citations.
+            documents = {(item['url'], item['sourcePath']):
+                         describe_reference(item, record, product_key=key)
+                         for item in source_documents(record) or []}
+            for item in describe_product_sources(record, key, provider):
+                documents.setdefault((item['url'], item['sourcePath']), item)
+            for item in (evidence_documents or {}).get(key, []):
+                require(item.get('productKey') == key, 'document inventory belongs to another product')
+                documents[(item['url'], item['sourcePath'])] = item
+            documents = [documents[identity] for identity in sorted(documents)]
             value = dict(facts=facts, sourceDocuments=documents)
             size = len(canonical({key: value}))
             require(size + len(canonical({**header, 'products': {}})) <= SHARD_RAW,
@@ -174,7 +185,7 @@ def _read_asset(root, entry, maximum):
     return decode(raw), len(raw)
 
 
-def _product(value):
+def _product(value, product_key):
     require(isinstance(value, dict) and set(value) == {'facts', 'sourceDocuments'}, 'invalid criteria product')
     require(isinstance(value['facts'], list) and isinstance(value['sourceDocuments'], list),
             'invalid criteria product collections')
@@ -196,8 +207,9 @@ def _product(value):
                     require(field not in fact or isinstance(fact[field], str)
                             and decimal_value(fact[field]), 'invalid exact decimal criterion')
     for reference in value['sourceDocuments']:
-        require(isinstance(reference, dict) and all(isinstance(reference.get(field), str)
-                for field in ('url', 'sourcePath', 'relation')), 'invalid criteria source reference')
+        require(isinstance(reference, dict) and reference.get('productKey') == product_key
+                and all(isinstance(reference.get(field), str)
+                        for field in ('url', 'sourcePath', 'relation')), 'invalid criteria source reference')
 
 
 def decimal_value(value):
@@ -237,7 +249,7 @@ def verify_criteria(root, manifest):
         for product, value in values.items():
             require(product not in seen and products.get(product) == key, 'criteria product route differs')
             seen.add(product)
-            _product(value)
+            _product(value, product)
     require(seen == set(products) and raw_total <= TOTAL_RAW
             and sum(entry['bytes'] for entry in files.values()) <= TOTAL_COMPRESSED,
             'criteria aggregate inventory or budget differs')

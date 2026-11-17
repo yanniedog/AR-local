@@ -1,5 +1,7 @@
 """Real retained source criteria are optional assets, never financial content."""
 from copy import deepcopy
+import gzip
+import json
 
 import pytest
 
@@ -30,6 +32,15 @@ def test_criteria_frozen_after_financial_release_are_in_complete_inventory(optio
     assert (fixture['root'] / 'manifest.json').read_bytes() == original
     inventory = dict(complete_assets(manifest, root=root))
     assert all(inventory[key] == descriptor for key, descriptor in files.items())
+    index = json.loads(gzip.decompress((root / files['product_criteria_index']['name']).read_bytes()))
+    products = {}
+    for shard in set(index['products'].values()):
+        products.update(json.loads(gzip.decompress((root / files[shard]['name']).read_bytes()))['products'])
+    references = [reference for product in products.values() for reference in product['sourceDocuments']]
+    assert any(reference['url'].endswith('Up-Home-Loan-Booklet.pdf')
+               and reference['verification'] == 'discovery-candidate' for reference in references)
+    assert all(reference['productKey'] == key for key, product in products.items()
+               for reference in product['sourceDocuments'])
     verify_stage(root, expected_manifest_sha256=digest((root / 'manifest.json').read_bytes()))
     import app_payload_product_criteria
     monkeypatch.setattr(app_payload_product_criteria, 'prepare_criteria',
@@ -74,3 +85,19 @@ def test_financial_projection_removes_only_reserved_exact_file_keys():
     assert financial_manifest(manifest) == {'files': {'core': {'sha256': 'financial'},
         'product_criteria_shard_000_extra': {'sha256': 'unknown'}}}
     assert manifest == original
+
+
+def test_readonly_document_inventory_uses_exact_ready_generation_and_contract(optional, monkeypatch, tmp_path):
+    fixture, _, value = worker(optional)
+    import cdr_terms.document_discovery_queue
+    calls = []
+    def documents(root, generation, keys, *, expected_contract_digest):
+        calls.append((root, generation, keys, expected_contract_digest))
+        return {key: [] for key in keys}
+    monkeypatch.setenv('AR_LOCAL_TERMS_ROOT', str(tmp_path / 'optional-terms'))
+    monkeypatch.setattr(cdr_terms.document_discovery_queue, 'publication_document_inventory', documents)
+    value.resume()
+    assert len(calls) == 1
+    assert calls[0][1] == value.source['generation_id']
+    assert calls[0][3] == value.source['contract_digest']
+    assert calls[0][2] and len(set(calls[0][2])) == len(calls[0][2])

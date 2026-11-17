@@ -147,7 +147,6 @@ class FinancialEvidence:
         if self.request['delivery'] is not None:
             accepted, prepared, evidence = self._ready(base); outcomes = accepted['lanes']
         projected = apply_status(manifest, self.request['enabled'], outcomes)
-        if self.pin_store is not None: self.pin_store.validate_candidate(projected)
         root = self._attempt(); deadline = time.monotonic() + 600; charged = 0; entries = 0
         for name in ('base', 'candidate'): (root / name).mkdir(mode=0o700)
         def install(destination, raw):
@@ -166,6 +165,7 @@ class FinancialEvidence:
         if prepared is not None:
             self._install_ready(root / 'candidate', projected, prepared, evidence, install)
             self._install_criteria(root, projected, install)
+        if self.pin_store is not None: self.pin_store.validate_candidate(projected)
         projected_raw = canonical(projected); install(root / 'candidate/manifest.json', projected_raw)
         _verify(root / 'base', digest(base_raw)); _verify(root / 'candidate', digest(projected_raw))
         require(read_stable(base / 'manifest.json', 65536) == (base_raw, manifest_identity)
@@ -193,8 +193,22 @@ class FinancialEvidence:
         require(source is not None, 'criteria requires an independently accepted ready source')
         source.recheck()
         output = root / 'criteria'
+        documents = None
+        import os
+        terms_root = os.environ.get('AR_LOCAL_TERMS_ROOT', '').strip()
+        if terms_root:
+            from cdr_terms.document_discovery_queue import publication_document_inventory
+            from contextlib import closing
+            import sqlite3
+            database = source.exports / 'local-cdr.sqlite'
+            with closing(sqlite3.connect(database.as_uri() + '?mode=ro&immutable=1', uri=True, timeout=1)) as connection:
+                keys = [row[0] for row in connection.execute(
+                    'SELECT product_key FROM bank_products WHERE run_date=? ORDER BY product_key',
+                    (manifest['run_date'],))]
+            documents = publication_document_inventory(terms_root, self.source['generation_id'], keys,
+                expected_contract_digest=self.source['contract_digest'])
         prepared = prepare_criteria(source.exports / 'local-cdr.sqlite', source.contract_path,
-                                    output, run_date=manifest['run_date'])
+                                    output, run_date=manifest['run_date'], evidence_documents=documents)
         require(prepared['source'] == {key: self.source[key] for key in ('generation_id', 'contract_digest')},
                 'criteria source differs from accepted optional source')
         prefix = f"https://github.com/{manifest['repo']}/releases/download/{manifest['tag']}/"
