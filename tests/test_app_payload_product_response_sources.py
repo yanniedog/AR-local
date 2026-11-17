@@ -12,7 +12,7 @@ from app_payload_product_evidence import prepare_snapshot
 from app_payload_product_evidence_contract import canonical, digest
 from app_payload_product_response_sources import ResponseSources, exported_projection, version
 from cdr_attempt_evidence_promotion import promote_attempt_evidence
-from cdr_clean_export import bank_product_key
+from cdr_clean_export import bank_product_key, detail_json
 from cdr_export_contract import build_contract
 from cdr_outputs import ensure_db, insert_rows
 from cdr_product_facts import clean_fact_rows
@@ -52,7 +52,8 @@ def real_source(tmp_path, *, mode='normal'):
             base['product_key'] = bank_product_key(base)
             insert_rows(connection, 'bank_product_facts', [dict(run_date=DAY, **row) for row in clean_fact_rows(raw, base)])
             insert_rows(connection, 'bank_products', [dict(run_date=DAY, **base, source_file='retained-real-fixture',
-                        last_updated='', details_json=json.dumps(exported_projection({'data': raw}), ensure_ascii=False))])
+                        last_updated='', details_json=(detail_json(raw) if mode == 'source-paths' else
+                                      json.dumps(exported_projection({'data': raw}), ensure_ascii=False)))])
             record(canonical({'data': {'products': [raw]}}), provider, pid, 'products_index')
             body = b'{ "data" : ' + json.dumps(raw, ensure_ascii=False).encode('utf-8') + b' }\n'
             original_bodies[base['product_key']] = body
@@ -201,3 +202,16 @@ def test_new_cleaner_provenance_does_not_redefine_retained_legacy_projection(mon
     assert result['legacy-v1-detail-json-with-source-documents'] == legacy
     assert result['v2-detail-json-with-source-paths'] == current
     assert '_sourcePaths' not in result['legacy-v1-clean-value-with-official-links']
+
+
+def test_actual_new_source_path_projection_matches_original_and_packs(tmp_path):
+    from app_payload_product_response_transport import pack_responses
+    values = real_source(tmp_path, mode='source-paths')
+    source = reader(values)
+    products = list(source.products())
+    matched = [product for product in products if product['state'] == 'matched']
+    assert matched
+    assert all('v2-detail-json-with-source-paths' in detail['projection_variants']
+               for product in matched for detail in product['details'] if detail['matches_export'])
+    result = pack_responses(source, tmp_path / 'packed-new-projection')
+    assert result['capability']['products'] == len(products)

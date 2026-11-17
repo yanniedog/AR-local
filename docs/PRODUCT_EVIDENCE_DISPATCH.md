@@ -27,6 +27,18 @@ only. Its retained parent revision metadata does not make this projection a
 selected edition. A later optional publication receives a new revision through
 the existing transaction, with an exact published predecessor check.
 
+## Compact criteria in the optional revision
+
+A ready, separately admitted retry with the normalized-fact lane also prepares
+`product_criteria_index` and `product_criteria_shard_NNN` assets from the exact
+accepted source database and contract. All criteria bytes are fully verified and
+frozen before revision reservation; retry uses those same bytes. Criteria failure
+fails only that optional attempt, leaving the already published financial edition
+unchanged. Existing financial projections exclude only these exact reserved file
+keys. Whole bundle identity, archive, upload and readback include every criteria
+asset, with full index/shard/source/product/budget verification. This does not
+activate the dormant launcher or enable either delivery flag.
+
 ## Existing opportunities and finite stages
 
 Only an otherwise healthy existing watchdog invocation attempts work, after

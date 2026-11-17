@@ -9,7 +9,8 @@ from app_payload_product_response_journal import MAX_BODY, instant
 SCHEMA = 'ar-product-response-evidence-v1'
 SCOPE = 'original_http_decoded_utf8_body; not_wire_bytes_or_population_completeness'
 CHUNK = 256 * 1024
-PROJECTIONS = {'legacy-v1-clean-value-with-official-links', 'legacy-v1-detail-json-with-source-documents'}
+PROJECTIONS = {'legacy-v1-clean-value-with-official-links', 'legacy-v1-detail-json-with-source-documents',
+               'v2-detail-json-with-source-paths'}
 
 
 @dataclass(frozen=True)
