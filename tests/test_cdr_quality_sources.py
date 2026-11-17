@@ -76,10 +76,11 @@ def test_old_audit_version_cannot_supply_new_detail_equality_proof(tmp_path):
             result["key"], result["run_date"], result["fingerprint"], 4,
             zlib.compress(json.dumps(result).encode())))
         index.db.commit()
-        assert AUDIT_VERSION == 5
+        assert AUDIT_VERSION > 4
         assert index.get("retained", "unchanged") is None
-        index.put(result)
-        assert index.get("retained", "unchanged") == result
+        current = {**result, "excluded_rate_evidence": [], "products_without_published_rate_evidence": []}
+        index.put(current)
+        assert index.get("retained", "unchanged") == current
     finally:
         index.close()
 

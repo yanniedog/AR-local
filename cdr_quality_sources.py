@@ -22,7 +22,7 @@ from pi_cdr_quality_read_io import dropbehind_required
 # Cached v1 success did not prove that SQLite details matched publication JSON.
 # v3 accepts valid negative RateString values; v4 accounts for evidenced TD reclassification.
 # v5 binds source routing fields before deriving export/public coverage.
-AUDIT_VERSION = 5
+AUDIT_VERSION = 6
 
 
 def hash_file(path: Path, *, budget=None) -> str:
@@ -336,7 +336,9 @@ class AuditIndex:
                 return None
             result = json.loads(raw)
             if (not isinstance(result, dict) or result.get("key") != key
-                    or result.get("fingerprint") != fingerprint):
+                    or result.get("fingerprint") != fingerprint
+                    or not isinstance(result.get("excluded_rate_evidence"), list)
+                    or not isinstance(result.get("products_without_published_rate_evidence"), list)):
                 return None
             return result
         except (ValueError, UnicodeError, zlib.error):

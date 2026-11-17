@@ -120,6 +120,9 @@ def audit_rows(products: list[dict], rates: list[dict]) -> dict:
                                       if k not in {"id", "run_date", "source_file"}})}
     invalid, orphan, malformed_details, missing_taxonomy = [], [], [], []
     row_hashes: Counter[str] = Counter()
+    products_with_rates: set[str] = set()
+    exclusions_by_product: dict[str, Counter[str]] = defaultdict(Counter)
+    excluded_rows = []
     for number, row in enumerate(rates):
         provider = by_provider[str(row.get("provider") or "")]
         provider["rates"] += 1
@@ -128,8 +131,15 @@ def audit_rows(products: list[dict], rates: list[dict]) -> dict:
         row_hashes[canonical_digest(row)] += 1
         if (row.get("dataset"), row.get("provider"), row.get("product_id")) not in identities:
             orphan.append(number)
+        product_key = str(row.get("product_key") or "")
         if reason is not None:
+            exclusions_by_product[product_key][reason] += 1
+            excluded_rows.append({
+                "row": number, "dataset": row.get("dataset"), "provider": row.get("provider"),
+                "product_key": product_key, "rate_index": row.get("rate_index"), "reason": reason,
+            })
             continue
+        products_with_rates.add(product_key)
         try:
             number_rate = float(row.get("rate"))
             # CDR RateString permits negative rates and percentages above 100%.
@@ -153,6 +163,13 @@ def audit_rows(products: list[dict], rates: list[dict]) -> dict:
         "products": fingerprints, "duplicate_product_keys": {k: n for k, n in product_counts.items() if n > 1},
         "missing_product_keys": product_counts.get("", 0), "duplicate_exact_rate_rows": sum(n - 1 for n in row_hashes.values()),
         "invalid_rate_rows": invalid, "orphan_rate_rows": orphan,
+        "excluded_rate_evidence": excluded_rows,
+        # Missing captured rows cannot establish what a lender publishes.
+        "products_without_published_rate_evidence": [
+            {"product_key": key, "captured_rate_exclusions": dict(sorted(exclusions_by_product.get(key, {}).items())),
+             "status": "captured_rates_excluded" if key in exclusions_by_product else "no_captured_rate_rows"}
+            for key in sorted(set(product_counts) - products_with_rates - {""})
+        ],
         "malformed_product_details": malformed_details, "missing_taxonomy_rows": missing_taxonomy,
     }
 
