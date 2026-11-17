@@ -130,3 +130,16 @@ def test_shared_document_metadata_factors_without_losing_scoped_citations():
     assert {item['label'] for item in citations.values()} == {'Fee reference', 'Eligibility reference'}
     changed = {**second, 'contentSha256': 'f' * 64}
     assert len(compact_documents([first, changed], 'Up|up-home')) == 2
+
+
+def test_writer_targets_small_shards_and_reports_larger_indivisible_products(tmp_path, monkeypatch):
+    import app_payload_product_criteria as criteria
+    # A smaller write target exercises splitting using unchanged real products.
+    monkeypatch.setattr(criteria, 'WRITE_SHARD_RAW', 1)
+    *_, output, prepared, manifest = build(tmp_path)
+    assert len(prepared['files']) == 4  # Three whole products plus the index.
+    assert prepared['layout']['products_exceeding_target'] == 3
+    assert 1 < prepared['layout']['max_shard_decoded_bytes'] <= criteria.SHARD_RAW
+    assert prepared['layout']['largest_product_key']
+    assert prepared['layout']['index_decoded_bytes'] > 0
+    assert verify_criteria(output, manifest)['coverage']['complete']

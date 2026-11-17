@@ -24,6 +24,7 @@ from cdr_atomic import atomic_write_json, _fsync_directory
 
 INDEX_RAW = 8 * 1024**2
 SHARD_RAW = 4 * 1024**2
+WRITE_SHARD_RAW = 512 * 1024
 FILE_COMPRESSED = 1024**2
 TOTAL_RAW = 32 * 1024**2
 TOTAL_COMPRESSED = 16 * 1024**2
@@ -103,9 +104,11 @@ here. Without it, original CDR reference descriptors remain candidates only.
     output.mkdir(parents=True, exist_ok=False)
     files, routes, pending = {}, {}, {}
     raw_total = compressed_total = count = 0
+    max_shard_raw = largest_product_bytes = oversized_products = 0
+    largest_product_key = None
 
     def flush(values):
-        nonlocal raw_total, compressed_total
+        nonlocal raw_total, compressed_total, max_shard_raw
         if not values:
             return
         require(len(files) < MAX_SHARDS, 'criteria shard count exceeded')
@@ -120,6 +123,7 @@ here. Without it, original CDR reference descriptors remain candidates only.
         key = f'product_criteria_shard_{len(files):03d}'
         descriptor = _descriptor(output, f'shard-{len(files):03d}', raw)
         files[key] = descriptor
+        max_shard_raw = max(max_shard_raw, len(raw))
         raw_total += len(raw); compressed_total += descriptor['bytes']
         require(raw_total <= TOTAL_RAW and compressed_total <= TOTAL_COMPRESSED,
                 'criteria aggregate budget exceeded')
@@ -167,7 +171,11 @@ here. Without it, original CDR reference descriptors remain candidates only.
             size = len(canonical({key: value}))
             require(size + len(canonical({**header, 'products': {}})) <= SHARD_RAW,
                     'single criteria product exceeds shard budget')
-            if pending and pending_size + size + len(canonical({**header, 'products': {}})) > SHARD_RAW:
+            if size > largest_product_bytes:
+                largest_product_bytes, largest_product_key = size, key
+            if size > WRITE_SHARD_RAW:
+                oversized_products += 1
+            if pending and pending_size + size + len(canonical({**header, 'products': {}})) > WRITE_SHARD_RAW:
                 flush(pending); pending = {}; pending_size = 0
             pending[key] = value; pending_size += size; count += 1
             require(count <= MAX_PRODUCTS, 'criteria product count exceeded')
@@ -190,6 +198,10 @@ here. Without it, original CDR reference descriptors remain candidates only.
     verify_criteria(output, dict(run_date=run_date, source_observation=source, files=files))
     result = dict(schema='ar-product-criteria-prepared-v1', source=source, run_date=run_date,
                   files=files, coverage=coverage, decoded_bytes=raw_total, compressed_bytes=compressed_total,
+                  layout=dict(target_shard_decoded_bytes=WRITE_SHARD_RAW, index_decoded_bytes=len(raw),
+                              max_shard_decoded_bytes=max_shard_raw, largest_product_key=largest_product_key,
+                              largest_product_decoded_bytes=largest_product_bytes,
+                              products_exceeding_target=oversized_products),
                   publication_authorized=False)
     _fsync_directory(output)
     atomic_write_json(output / 'prepared.json', result, create_once=True)
