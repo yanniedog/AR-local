@@ -105,6 +105,18 @@ def test_retained_amp_additional_value_is_not_invented_loan_term():
     assert loc['evidenceState'] == 'conditional'
 
 
+def test_retained_macquarie_minimum_income_is_money_with_source_qualification():
+    payload = json.loads((FIXTURE.parent / 'macquarie-income-real-20260519.json').read_bytes())
+    raw = payload.get('data', payload)
+    fact = next(item for item in criteria_facts(json.loads(detail_json(raw)), 'macquarie-real')
+                if item['canonicalKey'] == 'eligibility.min_income')
+    assert fact['value'] == '50000.00'
+    assert fact['unit'] == 'AUD' and fact['valueType'] == 'decimal'
+    assert fact['evidenceState'] == 'conditional'
+    assert fact['sourcePath'] == '/eligibility/0'
+    assert 'per annum' in fact['condition']
+
+
 def test_exact_decimal_conversion_and_invalid_protocol_values():
     assert decimal_text('9007199254740993.000000000001') == '9007199254740993.000000000001'
     assert decimal_text('5.70000000000000000001', 100) == '0.0570000000000000000001'
