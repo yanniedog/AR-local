@@ -219,7 +219,7 @@ def _rates(record, key):
                 value = decimal_text(value, '.1')  # Match the existing export convention.
             yield _value(fact, value, 'fraction', 'decimal')
             for field, suffix, unit in (('comparisonRate', 'comparison', 'fraction'),
-                                         ('additionalValue', 'term', 'duration'),
+                                         ('additionalValue', 'additional_value', 'duration'),
                                          ('calculationFrequency', 'calculation_frequency', 'duration')):
                 if rate.get(field) not in (None, ''):
                     child = _base(record, key, f'/{name}/{index}', 'rate',
@@ -227,7 +227,8 @@ def _rates(record, key):
                                   parent=fact['groupId'], condition=rate.get('additionalInfo'))
                     child['evidenceState'] = 'conditional'
                     raw = decimal_text(rate[field], divisor) if unit == 'fraction' else str(rate[field])
-                    yield _value(child, raw, unit, 'decimal' if unit == 'fraction' else 'duration')
+                    typed_unit = unit if unit != 'duration' or _DURATION.fullmatch(str(raw)) else 'text'
+                    yield _value(child, raw, typed_unit, 'decimal' if unit == 'fraction' else typed_unit)
             yield from _nested(record, key, rate, f'/{name}/{index}', fact['groupId'])
 
 

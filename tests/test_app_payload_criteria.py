@@ -84,6 +84,27 @@ def test_external_qualification_and_effective_dates_never_become_unconditional_f
     assert all(item['effectiveFrom'] == raw['effectiveFrom'] for item in dated)
 
 
+def test_retained_arab_bank_uri_only_constraint_stays_conditional():
+    payload = json.loads((FIXTURE.parent / 'arab-bank-constraint-doc-real-20260519.json').read_bytes())
+    raw = payload.get('data', payload)
+    assert raw['constraints'][0]['additionalValue'] == '50000.00'
+    fact = next(item for item in criteria_facts(json.loads(detail_json(raw)), 'arab-bank-real')
+                if item['canonicalKey'] == 'constraint.min_limit')
+    assert fact['value'] == '50000.00' and fact['unit'] == 'AUD'
+    assert fact['evidenceState'] == 'conditional'
+    assert fact['sourcePath'] == '/constraints/0'
+
+
+def test_retained_amp_additional_value_is_not_invented_loan_term():
+    payload = json.loads((FIXTURE.parent / 'amp-rate-scope-real-20260519.json').read_bytes())
+    raw = payload.get('data', payload)
+    facts = criteria_facts(json.loads(detail_json(raw)), 'amp-real')
+    loc = next(item for item in facts if str(item.get('value', '')).strip() == 'Line of Credit')
+    assert loc['canonicalKey'].endswith('.additional_value')
+    assert loc['unit'] == loc['valueType'] == 'text'
+    assert loc['evidenceState'] == 'conditional'
+
+
 def test_exact_decimal_conversion_and_invalid_protocol_values():
     assert decimal_text('9007199254740993.000000000001') == '9007199254740993.000000000001'
     assert decimal_text('5.70000000000000000001', 100) == '0.0570000000000000000001'
