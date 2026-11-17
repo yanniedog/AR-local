@@ -39,7 +39,7 @@ def test_criteria_frozen_after_financial_release_are_in_complete_inventory(optio
     references = [reference for product in products.values() for reference in product['sourceDocuments']]
     assert any(reference['url'].endswith('Up-Home-Loan-Booklet.pdf')
                and reference['verification'] == 'discovery-candidate' for reference in references)
-    assert all(reference['productKey'] == key for key, product in products.items()
+    assert all(reference.get('productKey', key) == key for key, product in products.items()
                for reference in product['sourceDocuments'])
     verify_stage(root, expected_manifest_sha256=digest((root / 'manifest.json').read_bytes()))
     import app_payload_product_criteria

@@ -387,7 +387,10 @@ def test_normal_outputs_include_facts_json_xlsx_and_sqlite(tmp_path: Path):
     assert exported["product_facts"]
     assert exported["product_change_summary"]["normalization_version"] == "cdr-product-facts-2"
     workbook = openpyxl.load_workbook(out / "banks-2026-05-19.xlsx", read_only=True)
-    assert "product_facts" in workbook.sheetnames
+    try:
+        assert "product_facts" in workbook.sheetnames
+    finally:
+        workbook.close()
     with sqlite3.connect(out / "local-cdr.sqlite") as con:
         assert con.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0] == len(exported["product_facts"])
 
@@ -414,7 +417,10 @@ def test_normal_outputs_index_previous_run_product_changes(tmp_path: Path):
     assert exported["product_change_summary"]["change_count"] == len(exported["product_changes"])
     assert exported["product_changes"]
     workbook = openpyxl.load_workbook(current / "_exports" / "banks-2026-05-19.xlsx", read_only=True)
-    assert {"product_changes", "change_summary"} <= set(workbook.sheetnames)
+    try:
+        assert {"product_changes", "change_summary"} <= set(workbook.sheetnames)
+    finally:
+        workbook.close()
     with sqlite3.connect(current / "_exports" / "local-cdr.sqlite") as con:
         assert con.execute("SELECT COUNT(*) FROM bank_product_changes").fetchone()[0] == len(exported["product_changes"])
         plan = con.execute(

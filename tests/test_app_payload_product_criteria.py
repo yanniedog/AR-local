@@ -105,3 +105,28 @@ def test_legacy_financial_detail_assets_stay_identical_without_opt_in():
     assert 'facts' not in legacy
     assert richer['facts']
     assert legacy == {key: value for key, value in richer.items() if key != 'facts'}
+
+
+def test_shared_document_metadata_factors_without_losing_scoped_citations():
+    from app_payload_product_criteria import compact_documents
+    from cdr_terms.product_documents import describe_product_sources
+    captured = json.loads((Path(__file__).parent / 'fixtures/product_facts_real_2026-05-19.json').read_bytes())['products'][0]
+    reference = next(item for item in describe_product_sources(captured['record'], 'Up|up-home', 'Up')
+                     if item['url'].endswith('.pdf'))
+    # Source paths/roles are protocol controls over one retained official link;
+    # they assert no lender fee, eligibility or legal applicability.
+    first = {**reference, 'sourcePath': '/fees/0/additionalInfoUri', 'relation': 'fees',
+             'label': 'Fee reference', 'sourceUrl': reference['url'], 'citations': []}
+    second = {**reference, 'sourcePath': '/eligibility/0/additionalInfoUri', 'relation': 'eligibility',
+              'label': 'Eligibility reference', 'sourceUrl': reference['url'] + '#page=3', 'citations': []}
+    rows = compact_documents([first, second, deepcopy(first)], 'Up|up-home')
+    assert len(rows) == 1
+    assert 'productKey' not in rows[0] and 'checkedAt' not in rows[0]
+    citations = {item['sourcePath']: item for item in rows[0]['citations']}
+    assert set(citations) == {first['sourcePath'], second['sourcePath']}
+    assert citations[first['sourcePath']]['relation'] == 'fees'
+    assert 'sourceUrl' not in citations[first['sourcePath']]  # Exact document URL is implicit.
+    assert citations[second['sourcePath']]['sourceUrl'].endswith('#page=3')
+    assert {item['label'] for item in citations.values()} == {'Fee reference', 'Eligibility reference'}
+    changed = {**second, 'contentSha256': 'f' * 64}
+    assert len(compact_documents([first, changed], 'Up|up-home')) == 2

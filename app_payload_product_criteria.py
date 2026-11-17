@@ -45,6 +45,41 @@ def _descriptor(output, kind, raw):
     return dict(name=name, sha256=sha, bytes=len(blob))
 
 
+_CITATION_FIELDS = ('sourcePath', 'relation', 'sourceUrl', 'originalSourceUrl',
+                    'sourceNormalization', 'label')
+
+
+def compact_documents(documents, product_key):
+    """Factor shared document metadata without losing scoped source references.
+
+    Product identity is the containing route. Equal URLs with conflicting check,
+    applicability or version metadata remain separate. A citation's absent
+    sourceUrl means the document URL itself, rather than a guessed new address.
+    """
+    groups, seen = {}, {}
+    for document in documents:
+        require(document.get('productKey', product_key) == product_key,
+                'document inventory belongs to another product')
+        common = {key: value for key, value in document.items()
+                  if key not in (*_CITATION_FIELDS, 'citations', 'productKey') and value is not None}
+        identity = canonical(common)
+        group = groups.setdefault(identity, {**common, 'sourcePath': document['sourcePath'],
+                                            'relation': document['relation'], 'citations': []})
+        top = {key: document[key] for key in _CITATION_FIELDS if document.get(key) is not None}
+        citations = document.get('citations') or [{'sourcePath': document['sourcePath']}]
+        for supplied in citations:
+            citation = {**(top if supplied.get('sourcePath') == document['sourcePath'] else {}), **supplied}
+            citation = {key: value for key, value in citation.items() if value is not None}
+            if citation.get('sourceUrl') == common['url']:
+                citation.pop('sourceUrl')
+            token = canonical(citation)
+            if token not in seen.setdefault(identity, set()):
+                seen[identity].add(token)
+                group['citations'].append(citation)
+    return [{**groups[key], 'citations': sorted(groups[key]['citations'], key=canonical)}
+            for key in sorted(groups)]
+
+
 def prepare_criteria(database, contract_path, output, *, run_date, evidence_documents=None):
     """Return ordinary manifest file descriptors, without URLs or authority.
 
@@ -114,15 +149,20 @@ here. Without it, original CDR reference descriptors remain candidates only.
             # The legacy cleaner already removed nested URI fields. Classify
             # preserved raw references first, then add official adapter seeds;
             # rediscovery from cleaned fields alone would lose those citations.
-            documents = {(item['url'], item['sourcePath']):
+            documents = {(item['url'], item['sourcePath'], item.get('sourceUrl')):
                          describe_reference(item, record, product_key=key)
                          for item in source_documents(record) or []}
             for item in describe_product_sources(record, key, provider):
-                documents.setdefault((item['url'], item['sourcePath']), item)
+                documents.setdefault((item['url'], item['sourcePath'], item.get('sourceUrl')), item)
             for item in (evidence_documents or {}).get(key, []):
                 require(item.get('productKey') == key, 'document inventory belongs to another product')
-                documents[(item['url'], item['sourcePath'])] = item
-            documents = [documents[identity] for identity in sorted(documents)]
+                matching = [identity for identity in documents if identity[:2] == (item['url'], item['sourcePath'])]
+                if matching:
+                    for identity in matching:
+                        documents[identity] = {**documents[identity], **item}
+                else:
+                    documents[(item['url'], item['sourcePath'], item.get('sourceUrl'))] = item
+            documents = compact_documents(documents.values(), key)
             value = dict(facts=facts, sourceDocuments=documents)
             size = len(canonical({key: value}))
             require(size + len(canonical({**header, 'products': {}})) <= SHARD_RAW,
@@ -207,7 +247,7 @@ def _product(value, product_key):
                     require(field not in fact or isinstance(fact[field], str)
                             and decimal_value(fact[field]), 'invalid exact decimal criterion')
     for reference in value['sourceDocuments']:
-        require(isinstance(reference, dict) and reference.get('productKey') == product_key
+        require(isinstance(reference, dict) and reference.get('productKey', product_key) == product_key
                 and all(isinstance(reference.get(field), str)
                         for field in ('url', 'sourcePath', 'relation')), 'invalid criteria source reference')
 
