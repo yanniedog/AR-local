@@ -275,6 +275,9 @@ def _conditions(record, key, parent, path, parent_id):
 def criteria_facts(record, product_key):
     """Add comparable descriptions without weakening conservative feature facts."""
     facts = [*_boundaries(record, product_key), *_fee_facts(record, product_key), *_rates(record, product_key)]
+    if type(record.get('isTailored')) is bool:
+        fact = _base(record, product_key, '/isTailored', 'attribute', 'product.tailored', 'TAILORED')
+        facts.append(_value(fact, record['isTailored'], 'boolean', 'boolean'))
     for index, bundle in _items(record, 'bundles'):
         if isinstance(bundle, dict):
             fact = _base(record, product_key, f'/bundles/{index}', 'bundle', 'bundle.linked', 'BUNDLE',
