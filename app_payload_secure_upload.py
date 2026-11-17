@@ -41,10 +41,13 @@ ASSET = re.compile(
 )
 
 
+EVIDENCE_ASSET = re.compile(r'product-(?:evidence|response)-(?:capability|index|shard)-[a-f0-9]{64}\.json\.gz')
+
+
 def classify_asset(name: str) -> str:
     if name == 'publication-status.json':
         return 'operational_receipt'
-    if (name in DOCUMENTS or name in LEGACY_CDR_ARTIFACTS or ASSET.fullmatch(name)
+    if (name in DOCUMENTS or name in LEGACY_CDR_ARTIFACTS or ASSET.fullmatch(name) or EVIDENCE_ASSET.fullmatch(name)
             or re.fullmatch(r"[a-f0-9]{64}\.json(?:\.gz)?", name)):
         return "cdr_domain"
     raise TransportError("unknown release asset classification")

@@ -31,6 +31,8 @@ def digest(data: bytes) -> str:
 def read_bundle(root: Path) -> tuple[dict, dict, dict]:
     raw = (root / 'manifest.json').read_bytes()
     manifest = json.loads(raw)
+    from cdr_product_evidence_acceptance import reject_unsupported_report
+    reject_unsupported_report(manifest)
     payloads, evidence = {}, {'manifest_sha256': digest(raw), 'assets': {}}
     for kind, asset in manifest['files'].items():
         name = asset['name']
