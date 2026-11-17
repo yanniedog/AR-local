@@ -49,6 +49,20 @@ def test_real_business_products_do_not_enter_residential_or_deposit_sections(pub
     assert accounting["source_rates"] == accounting["published_rates"] + accounting["excluded_rates"]
 
 
+def test_rate_gap_evidence_distinguishes_excluded_rows_from_uncaptured_rates(public):
+    rows = source_rows(public[0])
+    row = next(row for row in rows if row["category"] == "BUSINESS_LOANS")
+    key = row["product_key"]
+    result = audit_rows([{"product_key": key}, {"product_key": "uncaptured"}], [row])
+    assert result["excluded_rate_evidence"] == [{
+        "row": 0, "dataset": row["dataset"], "provider": row["provider"],
+        "product_key": key, "rate_index": row.get("rate_index"), "reason": "out_of_section_category",
+    }]
+    by_key = {item["product_key"]: item for item in result["products_without_published_rate_evidence"]}
+    assert by_key[key]["status"] == "captured_rates_excluded"
+    assert by_key["uncaptured"]["status"] == "no_captured_rate_rows"
+
+
 def test_financial_digest_detects_same_count_rate_replacement(public):
     rows = public[0]["sections"]["Mortgage"]["rates"][:2]
     changed = copy.deepcopy(rows)
