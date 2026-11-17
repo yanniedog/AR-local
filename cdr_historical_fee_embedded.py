@@ -55,6 +55,12 @@ PUBLIC_PRICING_PROJECTION_SOURCES = {
     **FEATURE_EVIDENCE_PROJECTION_SOURCES,
     'app_payload_common.py': '9913ae8b1a0324ad5037e542bbc7486412fa4cb273e1f82015bf4b16abae4671',
 }
+# Additive reviewed identity: granular criteria are opt-in and default False.
+# All four fee helpers remain source-identical; retain every historical pair.
+PRODUCT_CRITERIA_PROJECTION_SOURCES = {
+    **PUBLIC_PRICING_PROJECTION_SOURCES,
+    'app_payload_details.py': '1278f314e49bf21becf452446161e91051ad77527409da0a25d1e915542b5277',
+}
 DIRECT_FIELDS = frozenset(('amount', 'currency', 'additionalValue', 'balanceRate', 'transactionRate',
                           'accruedRate', 'accrualFrequency', 'feeCap', 'feeCapPeriod', 'feeMethodUType',
                           'fixedAmount', 'variable', 'rateBased', 'discounts'))
@@ -66,7 +72,8 @@ def verify_projection():
     observed = {name: sha(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n'))
                 for name in PROJECTION_SOURCES}
     reviewed = (PROJECTION_SOURCES, CURRENT_PROJECTION_SOURCES, SOURCE_LABEL_PROJECTION_SOURCES,
-                FEATURE_EVIDENCE_PROJECTION_SOURCES, PUBLIC_PRICING_PROJECTION_SOURCES)
+                FEATURE_EVIDENCE_PROJECTION_SOURCES, PUBLIC_PRICING_PROJECTION_SOURCES,
+                PRODUCT_CRITERIA_PROJECTION_SOURCES)
     if not any(observed == identity for identity in reviewed):
         raise ValueError('fee_projection_changed_requires_review')
     return observed

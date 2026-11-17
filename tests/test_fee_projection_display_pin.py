@@ -9,8 +9,8 @@ import cdr_historical_fee_embedded as projection
 
 def test_current_observed_identity_and_historical_pin_remain_distinct():
     observed=projection.verify_projection()
-    assert observed==projection.PUBLIC_PRICING_PROJECTION_SOURCES
-    assert observed['app_payload_details.py']==projection.FEATURE_EVIDENCE_PROJECTION_SOURCES['app_payload_details.py']
+    assert observed==projection.PRODUCT_CRITERIA_PROJECTION_SOURCES
+    assert projection.PUBLIC_PRICING_PROJECTION_SOURCES['app_payload_details.py']==projection.FEATURE_EVIDENCE_PROJECTION_SOURCES['app_payload_details.py']
     assert observed['app_payload_common.py']=='9913ae8b1a0324ad5037e542bbc7486412fa4cb273e1f82015bf4b16abae4671'
     assert projection.SOURCE_LABEL_PROJECTION_SOURCES['app_payload_details.py']=='1840dca75863f9e094f488966bbc1261f5f5dc0dbd4959c68cc7e163e1f1d7c1'
     assert projection.PROJECTION_SOURCES['app_payload_details.py']=='6963791b2d12805d74b963124a264c4bb33075dc78a4f283f01c0a27c1650126'
@@ -45,7 +45,8 @@ def test_opt_in_filter_is_the_only_change_to_the_frozen_default_common_source():
 
 
 @pytest.mark.parametrize('identity', ['PROJECTION_SOURCES', 'CURRENT_PROJECTION_SOURCES',
-                                     'SOURCE_LABEL_PROJECTION_SOURCES', 'FEATURE_EVIDENCE_PROJECTION_SOURCES'])
+                                     'SOURCE_LABEL_PROJECTION_SOURCES', 'FEATURE_EVIDENCE_PROJECTION_SOURCES',
+                                     'PUBLIC_PRICING_PROJECTION_SOURCES'])
 def test_previously_reviewed_complete_pairs_remain_accepted(monkeypatch, identity):
     expected = getattr(projection, identity)
     values = iter(expected[name] for name in projection.PROJECTION_SOURCES)
@@ -84,3 +85,20 @@ def test_feature_evidence_keeps_reviewed_fee_functions_unchanged():
     actual = {node.name: hashlib.sha256(ast.get_source_segment(source, node).encode()).hexdigest()
               for node in functions}
     assert actual == expected
+
+
+def test_optional_criteria_is_the_only_change_to_the_reviewed_details_source():
+    source = Path(projection.__file__).with_name('app_payload_details.py').read_bytes().replace(b'\r\n', b'\n')
+    changes = (
+        (b'from app_payload_criteria import criteria_facts\n', b''),
+        (b'def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = True,\n'
+         b'                  include_criteria: bool = False) -> Dict[str, Dict[str, Any]]:',
+         b'def build_details(products: List[Dict[str, Any]], *, include_source_documents: bool = True) -> Dict[str, Dict[str, Any]]:'),
+        (b'"facts": feature_facts(record, key, product.get("description")) + (\n'
+         b'                    criteria_facts(record, key) if include_criteria else []),',
+         b'"facts": feature_facts(record, key, product.get("description")),')
+    )
+    for added, previous in changes:
+        assert source.count(added) == 1
+        source = source.replace(added, previous)
+    assert hashlib.sha256(source).hexdigest() == projection.PUBLIC_PRICING_PROJECTION_SOURCES['app_payload_details.py']
