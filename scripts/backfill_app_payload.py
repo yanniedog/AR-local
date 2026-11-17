@@ -121,6 +121,7 @@ def _refresh_rolling_latest_locked(
         out_dir,
         repo=repo,
         tag=app_payload.DEFAULT_TAG,
+        logo_state_dir=resolve_state_root(runs_root),
         contract_coverage=gate.contract_coverage(contract),
     )
     our_gen = str(manifest.get("generated_at") or "")
@@ -230,6 +231,7 @@ def _backfill_locked(
                     out_dir,
                     repo=repo,
                     tag=tag,
+                    logo_state_dir=resolve_state_root(runs_root),
                     contract_coverage=gate.contract_coverage(contract),
                 )
                 row["core"] = manifest["files"]["core"]["name"]

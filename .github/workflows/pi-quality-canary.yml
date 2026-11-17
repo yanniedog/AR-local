@@ -430,7 +430,7 @@ jobs:
             local d="$1"
             if [ -e "$d" ]; then
               echo "exists: $d"
-              "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
+              "$d/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","Pillow","fonttools","tzdata")])'
             else
               local tmp="$d.tmp.$$"
               trap "rm -rf \"${tmp}\"" EXIT
@@ -439,9 +439,9 @@ jobs:
               nice -n 10 "$pybin" -m venv "$tmp"
               nice -n 10 "$tmp/bin/python3" -m pip install --quiet --no-cache-dir --disable-pip-version-check --only-binary=:all: \
                 pytest==9.1.1 jsonschema==4.26.0 pypdf==6.21.2 cryptography==43.0.0 openpyxl==3.1.5 \
-                zstandard==0.25.0 fonttools==4.66.1 tzdata
+                zstandard==0.25.0 Pillow==12.3.0 fonttools==4.66.1 tzdata
               chmod -R go-w "$tmp"
-              "$tmp/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","fonttools","tzdata")])'
+              "$tmp/bin/python3" -I -c 'import sys, importlib.metadata as m; print(sys.version.split()[0], *[n + "=" + m.version(n) for n in ("pypdf","pytest","cryptography","openpyxl","jsonschema","zstandard","Pillow","fonttools","tzdata")])'
               mv "$tmp" "$d"
               trap - EXIT
             fi

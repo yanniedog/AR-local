@@ -187,11 +187,11 @@ def test_archive_snapshot_avoids_mutable_inputs_and_other_dates(tmp_path, monkey
     def forbidden(*_, **__):
         pytest.fail("Archive snapshot touched external history, network, or mutable metadata")
 
-    monkeypatch.setattr(subject.cdr_brand_logos, "fetch_register_logos", forbidden)
     monkeypatch.setattr(subject.rba_decisions, "calendar_payload", forbidden)
     monkeypatch.setattr(subject.rba_official, "load_calendar", forbidden)
     monkeypatch.setattr(subject.app_payload_bank_rates, "embed_bank_rate_history", forbidden)
     monkeypatch.setattr(subject, "load_brand_shortcodes", forbidden)
+    monkeypatch.setattr(subject, "load_provider_logos", forbidden)
     monkeypatch.setattr("app_payload_bank_rate_source.require_selected_current_export", forbidden)
     data = subject._compute_payload(tmp_path / "exports", archive_snapshot=True)
     assert data["core"]["run_date"] == DAY

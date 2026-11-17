@@ -18,7 +18,8 @@ from pi_cdr_pytest_partition import collection_inventory, discovery_inventory, p
 from pi_cdr_pytest_proof import command, inventory, require
 
 DIRECT_VERSIONS = {"pytest": "9.1.1", "jsonschema": "4.26.0", "pypdf": "6.21.2",
-                   "cryptography": "43.0.0", "openpyxl": "3.1.5", "zstandard": "0.25.0"}
+                   "cryptography": "43.0.0", "openpyxl": "3.1.5", "zstandard": "0.25.0",
+                   "Pillow": "12.3.0"}
 
 
 def source_inventory(source, listing):

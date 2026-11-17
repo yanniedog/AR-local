@@ -91,7 +91,6 @@ def test_real_sqlite_and_payload_keep_rate_conditions_and_ordinary_sibling(reexp
         assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         assert connection.execute("SELECT rate,account_class,term_months FROM bank_rates WHERE rate='0.115'").fetchone() == ("0.115", "non_standard", "4")
         assert connection.execute("SELECT rate,account_class FROM bank_rates WHERE rate='0.05'").fetchone() == ("0.05", "standard")
-    monkeypatch.setattr("cdr_brand_logos.fetch_register_logos", lambda **kwargs: {})
     monkeypatch.setenv("AR_LOCAL_RBA_OFFICIAL_FETCH", "0")
     exports, output = run / "_exports", run / "payload"
     write_dashboard_cache(exports, "2026-09-13", banks)

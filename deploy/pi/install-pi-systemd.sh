@@ -32,7 +32,7 @@ case "$run_home" in
 esac
 
 sudo apt-get update
-sudo apt-get install -y git python3 python3-jsonschema gh rsync avahi-daemon nginx curl
+sudo apt-get install -y git python3 python3-jsonschema python3-pil librsvg2-bin gh rsync avahi-daemon nginx curl
 /usr/bin/python3 -c 'from jsonschema import Draft202012Validator, FormatChecker'
 
 # Node.js 24 via NodeSource (distro nodejs is too old; NodeSource bundles npm)

@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 import os
-import shutil
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -16,7 +15,6 @@ from typing import Any, Callable, ContextManager, Dict, Iterable, List, Mapping,
 import app_payload_mobile
 import app_payload_bank_rates
 import app_payload_bank_spread
-import cdr_brand_logos
 import payload_crypto
 import rba_decisions
 import rba_official
@@ -28,7 +26,7 @@ from app_payload_contracts import validate_coverage
 
 from app_payload_brands import (
     build_brands,
-    load_brand_logos,
+    load_provider_logos,
     load_brand_shortcodes,
     load_rba_holds,
     load_rba_series,
@@ -83,6 +81,36 @@ def _gzip_bytes(obj: Any) -> bytes:
     raw = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     # mtime=0 keeps output stable across runs for the same input.
     return gzip.compress(raw, compresslevel=9, mtime=0)
+
+
+def _core_with_logo_budget(core, available_bytes):
+    """Keep rates and details publishable when artwork would exceed the core cap."""
+    wire = _gzip_bytes(core)
+    if len(wire) <= available_bytes:
+        return core, wire
+    from app_payload_provider_avatar import provider_avatar
+
+    artwork = sorted(
+        (name for name, brand in core.get("brands", {}).items() if brand.get("logo_source") == "artwork"),
+        key=lambda name: (-len(core["brands"][name]["logo"]), name),
+    )
+    if not artwork:
+        return core, wire
+    brands = core["brands"].copy()
+    compact_core = {**core, "brands": brands}
+    start, batch = 0, max(1, len(artwork) // 16)
+    while start < len(artwork):
+        end = min(start + batch, len(artwork))
+        for name in artwork[start:end]:
+            brand = brands[name]
+            brands[name] = {**brand, "logo": provider_avatar(brand["short"], brand["color"]),
+                            "logo_source": "monogram"}
+        wire = _gzip_bytes(compact_core)
+        if len(wire) <= available_bytes:
+            break
+        start, batch = end, batch * 2
+    print(f"[app_payload] core byte budget replaced {end} artwork entries with monograms", flush=True)
+    return compact_core, wire
 
 
 def _asset(
@@ -216,6 +244,7 @@ def build_payload(
     repo: str = DEFAULT_REPO,
     tag: str = DEFAULT_TAG,
     dashboard_dir: Path = BASE_DIR / "dashboard",
+    logo_state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
     source_observation: Optional[Mapping[str, Any]] = None,
     terms_root: Optional[Path] = None,
@@ -235,6 +264,7 @@ def build_payload(
     data = _compute_payload(
         exports_dir,
         dashboard_dir=dashboard_dir,
+        logo_state_dir=logo_state_dir,
         include_history=is_rolling_tag(tag),
         contract_coverage=contract_coverage,
         public_rates_enabled=public_rates_root is not None,
@@ -344,7 +374,7 @@ def _compute_payload(
     *,
     dashboard_dir: Path = BASE_DIR / "dashboard",
     include_history: bool = True,
-    state_dir: Optional[Path] = None,
+    logo_state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
     public_rates_enabled: bool = False,
     archive_snapshot: bool = False,
@@ -390,7 +420,11 @@ def _compute_payload(
         coverage["counts"]["providers_complete"] = contract_coverage["providers_complete"]
 
     sections: Dict[str, Any] = {}
-    providers_seen: set[str] = set()
+    providers_seen = {str(row["provider"]) for row in products if row.get("provider")}
+    providers_seen.update(
+        str(row["brand_name"]) for row in coverage.get("provider_observations", ())
+        if row.get("brand_name")
+    )
     for section in VALID_SECTIONS:
         section_rows = [r for r in rates if r.get("dataset") == section and section_filter(section, r, require_absolute=public_rates_enabled)]
         for r in section_rows:
@@ -416,21 +450,6 @@ def _compute_payload(
             "search_index": None, "history_banks": None, "bank_history": None,
         }
 
-    shortcodes = load_brand_shortcodes(dashboard_dir)
-    logos = load_brand_logos(dashboard_dir)
-    # NB: no wall-clock field inside core/details. They are content-hashed (sha256
-    # in the manifest) and the app skips re-download when the hash is unchanged, so
-    # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
-    # v2: cache name bumped when SVG logoUris started being kept, so a fresh
-    # raster-only cache can't suppress SVG entries for up to 7 days.
-    legacy_logo_cache = exports_dir / "cdr-brand-logos-v2.json"
-    logo_cache = legacy_logo_cache
-    if state_dir is not None:
-        logo_cache = state_dir / "register-logos" / run_date / "cdr-brand-logos-v2.json"
-        if not logo_cache.exists() and legacy_logo_cache.is_file():
-            logo_cache.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(legacy_logo_cache, logo_cache)
-    register_logos = cdr_brand_logos.fetch_register_logos(cache_path=logo_cache)
     rba_calendar = rba_decisions.calendar_payload()
     fetch_official = os.environ.get(
         "AR_LOCAL_RBA_OFFICIAL_FETCH",
@@ -464,7 +483,6 @@ def _compute_payload(
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
-        "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
         "rba": sorted(series_by_date.values(), key=lambda item: item["date"]),
         "rba_holds": sorted(rba_holds),
         "coverage": coverage,
@@ -504,6 +522,24 @@ def _compute_payload(
         bank_spread_history = spread.finish()
     else:
         app_payload_bank_rates.embed_bank_rate_history(core, exports_dir)
+    from app_payload_logo_acquisition import resolve_provider_logos
+
+    logos = load_provider_logos(dashboard_dir)
+    logos.update(resolve_provider_logos(providers_seen, logos, logo_state_dir))
+    catalogue = core.get("bank_rate_history_catalogue") or {}
+    providers_seen.update(
+        tier["row"]["provider"]
+        for section in catalogue.get("sections", {}).values()
+        for tier in section
+        if tier["row"].get("provider")
+    )
+    core["brands"] = build_brands(
+        providers_seen, load_brand_shortcodes(dashboard_dir), logos
+    )
+    monograms = [name for name, brand in core["brands"].items() if brand["logo_source"] == "monogram"]
+    if monograms:
+        print(f"[app_payload] provider artwork missing run_date={run_date}: {json.dumps(monograms)}", flush=True)
+
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
         "core": core,
@@ -593,9 +629,11 @@ def _package(
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     from app_payload_bank_history_asset import ASSET_KIND, NAMESPACE, critical_core, encode_envelope
     catalogue = core.get(NAMESPACE)
-    core = critical_core(core)
+    from app_payload_network_budget import CORE_MAX_BYTES
+
+    core, core_wire = _core_with_logo_budget(critical_core(core), CORE_MAX_BYTES)
     files: Dict[str, Any] = {
-        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base, enc_key),
+        "core": _asset(out_dir, "core", run_date, core_wire, release_base, enc_key),
         "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base, enc_key),
     }
     if is_rolling_tag(tag) and search_index and search_index.get("products"):
@@ -748,7 +786,9 @@ def build_and_publish(
 ) -> Tuple[Dict[str, Any], bool]:
     """Build + publish to a single release tag (legacy / CI helper)."""
     out_dir = out_dir or (exports_dir / "app-payload")
-    manifest = build_payload(exports_dir, out_dir, repo=repo, tag=tag)
+    runs_root = app_payload_mobile._runs_root(exports_dir)
+    logo_state_dir = runs_root.parent / "state" if runs_root else out_dir
+    manifest = build_payload(exports_dir, out_dir, repo=repo, tag=tag, logo_state_dir=logo_state_dir)
     published = publish_payload(out_dir, repo=repo, tag=tag)
     return manifest, published
 
@@ -815,7 +855,7 @@ def build_and_publish_dual(
     data = _app_payload("_compute_payload")(
         exports_dir,
         include_history=need_latest or revisions,
-        state_dir=state_dir,
+        logo_state_dir=state_dir,
         contract_coverage=contract_coverage,
         public_rates_enabled=public_rates_root is not None,
     )

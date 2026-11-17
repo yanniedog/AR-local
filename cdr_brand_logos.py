@@ -1,13 +1,7 @@
-"""Brand logo URIs from the public CDR Register.
+"""Helpers for inspecting logo URIs from the public CDR Register.
 
-The register's data-holder brand summary publishes a regulator-maintained
-``logoUri`` for every banking brand (117 at last check), which closes the gap
-left by the 16-PNG canonical pack: providers without an embedded logo get a
-``logo_uri`` in ``core.brands`` that the app loads remotely (monogram stays
-the offline fallback).
-
-Stdlib-only, cached on disk, and non-fatal: any fetch/parse problem simply
-yields an empty map and the payload builds exactly as before.
+Mobile payloads embed the producer's checked-in artwork instead of using
+register URIs at runtime.
 """
 from __future__ import annotations
 
@@ -22,10 +16,6 @@ REGISTER_URL = "https://api.cdr.gov.au/cdr-register/v1/banking/data-holders/bran
 CACHE_MAX_AGE_SEC = 7 * 24 * 3600
 FETCH_TIMEOUT_SEC = 30
 
-# RN <Image> can't render SVG (and .ashx handlers are unpredictable). Raster
-# URIs ship as ``logo_uri``; SVG URIs travel in a separate ``logo_svg_uri``
-# field that raster-only app builds ignore and newer builds render via
-# react-native-svg.
 _RASTER_RE = re.compile(r"\.(png|jpe?g|gif|webp)(\?[^#]*)?$", re.IGNORECASE)
 _SVG_RE = re.compile(r"\.svg(\?[^#]*)?$", re.IGNORECASE)
 

@@ -3,18 +3,17 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import os
+import json
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import cdr_brand_logos
-
-from app_payload_common import MAX_EMBEDDED_LOGO_BYTES, compact
+from app_payload_common import MAX_EMBEDDED_LOGO_BYTES
+from app_payload_provider_avatar import provider_avatar
+from app_payload_logo_acquisition import logo_key
 
 _BRAND_ENTRY_RE = re.compile(r"""['"]([^'"]+)['"]\s*:\s*\{([^}]*)\}""")
 _BRAND_SHORT_IN_ENTRY_RE = re.compile(r"""short\s*:\s*['"]([^'"]+)['"]""")
-_BRAND_ICON_IN_ENTRY_RE = re.compile(r"""icon\s*:\s*['"]/assets/banks/([^'"]+\.png)['"]""")
 _BRAND_ALIASES_IN_ENTRY_RE = re.compile(r"""aliases\s*:\s*\[([^\]]*)\]""")
 _QUOTED_VALUE_RE = re.compile(r"""['"]([^'"]+)['"]""")
 
@@ -85,52 +84,6 @@ def load_brand_shortcodes(rba_dir: Path) -> Dict[str, str]:
     return out
 
 
-def find_bank_logo_dir(dashboard_dir: Path) -> Optional[Path]:
-    """Find the canonical logo pack (vendored in-repo; legacy site checkouts as fallback)."""
-    configured = os.environ.get("AR_LOCAL_SITE_ROOT") or os.environ.get("AR_SITE_ROOT")
-    candidates = [dashboard_dir / "assets" / "banks"]
-    if configured:
-        root = Path(configured).expanduser()
-        candidates.extend((root / "assets" / "banks", root / "site" / "assets" / "banks"))
-    repo_dir = dashboard_dir.parent
-    candidates.extend(
-        (
-            repo_dir.parent / "australianrates" / "site" / "assets" / "banks",
-            repo_dir.parent / "AustralianRates" / "site" / "assets" / "banks",
-            repo_dir / "site" / "assets" / "banks",
-        )
-    )
-    for path in candidates:
-        if path.is_dir():
-            return path
-    return None
-
-
-def load_brand_logos(dashboard_dir: Path, logo_dir: Optional[Path] = None) -> Dict[str, str]:
-    """Extract ``lower(name) -> data:image/png`` for locally available canonical logos."""
-    brand_path = dashboard_dir / "ar-bank-brand.js"
-    logo_dir = logo_dir or find_bank_logo_dir(dashboard_dir)
-    if not brand_path.exists() or not logo_dir:
-        return {}
-    text = brand_path.read_text(encoding="utf-8", errors="ignore")
-    out: Dict[str, str] = {}
-    for name, body in _BRAND_ENTRY_RE.findall(text):
-        icon_match = _BRAND_ICON_IN_ENTRY_RE.search(body)
-        if not icon_match:
-            continue
-        filename = icon_match.group(1)
-        path = logo_dir / Path(filename).name
-        if not path.is_file() or path.stat().st_size > MAX_EMBEDDED_LOGO_BYTES:
-            continue
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        _put_brand_lookup(
-            out,
-            _brand_entry_names(name, body),
-            f"data:image/png;base64,{encoded}",
-        )
-    return out
-
-
 def _derive_short(provider: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9 ]", " ", provider).strip()
     words = [w for w in cleaned.split() if w]
@@ -147,33 +100,60 @@ def _brand_color(provider: str) -> str:
     return _BRAND_PALETTE[int(digest[:8], 16) % len(_BRAND_PALETTE)]
 
 
+def load_provider_logos(dashboard_dir: Path) -> Dict[str, str]:
+    """Read the producer-owned pack, checking assets against their provenance."""
+    root = dashboard_dir / "assets" / "provider-logos"
+    catalog = root / "sources.json"
+    try:
+        manifest = json.loads(catalog.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(manifest, dict):
+        return {}
+    logos: Dict[str, str] = {}
+    entries = manifest.get("brands")
+    for entry in entries if isinstance(entries, list) else ():
+        if not isinstance(entry, dict):
+            continue
+        filename, key, provider = (entry.get(field) for field in ("file", "key", "provider"))
+        if (not all(isinstance(value, str) for value in (filename, key, provider))
+                or Path(filename).name != filename or not filename.endswith(".png")
+                or logo_key(provider) != key or key in logos):
+            continue
+        try:
+            with (root / filename).open("rb") as stream:
+                image = stream.read(MAX_EMBEDDED_LOGO_BYTES + 1)
+        except OSError:
+            continue
+        if (len(image) > MAX_EMBEDDED_LOGO_BYTES or not image.startswith(b"\x89PNG\r\n\x1a\n")
+                or hashlib.sha256(image).hexdigest() != entry.get("sha256")):
+            continue
+        logos[key] = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+    aliases = manifest.get("aliases")
+    if isinstance(aliases, dict):
+        for alias, key in aliases.items():
+            if isinstance(key, str) and alias not in logos and key in logos:
+                logos[alias] = logos[key]
+    return logos
+
+
 def build_brands(
     providers: Iterable[str],
     shortcodes: Dict[str, str],
     logos: Optional[Dict[str, str]] = None,
-    register_logos: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Dict[str, str]]:
     brands: Dict[str, Dict[str, str]] = {}
     logos = logos or {}
-    register_logos = register_logos or {}
     for provider in sorted({p for p in providers if p}):
         short = _get_brand_lookup(shortcodes, provider) or _derive_short(provider)
-        embedded = _get_brand_lookup(logos, provider)
-        # Register URI only when there is no embedded logo: the app prefers
-        # embedded/bundled art, so shipping both wastes bytes. SVG URIs ride a
-        # separate field — RN <Image> can't render SVG, so raster-only builds
-        # ignore it while newer builds render it via react-native-svg.
-        register_uri = None if embedded else cdr_brand_logos.logo_uri_for(provider, register_logos)
-        register_is_svg = register_uri is not None and cdr_brand_logos.is_svg_uri(register_uri)
-        brands[provider] = compact(
-            {
-                "short": short,
-                "color": _brand_color(provider),
-                "logo": embedded,
-                "logo_uri": None if register_is_svg else register_uri,
-                "logo_svg_uri": register_uri if register_is_svg else None,
-            }
-        )
+        color = _brand_color(provider)
+        logo = logos.get(logo_key(provider))
+        brands[provider] = {
+            "short": short,
+            "color": color,
+            "logo": logo or provider_avatar(short, color),
+            "logo_source": "artwork" if logo else "monogram",
+        }
     return brands
 
 
