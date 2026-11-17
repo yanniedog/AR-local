@@ -56,7 +56,9 @@ def test_retained_whole_product_inventory_and_readback_preserve_originals(tmp_pa
     shard_key = next(iter(index['products'].values()))
     shard = json.loads(gzip.decompress((output / prepared['files'][shard_key]['name']).read_bytes()))
     facts = [fact for product in shard['products'].values() for fact in product['facts']]
-    assert {'feature', 'fee', 'eligibility', 'constraint', 'rate', 'tier'} <= {fact['kind'] for fact in facts}
+    assert {'feature', 'fee', 'eligibility', 'constraint'} <= {fact['kind'] for fact in facts}
+    assert index['scope'] == 'product-filter-facets-v1'
+    assert not {'rate', 'tier'} & {fact['kind'] for fact in facts}
     assert prepared['publication_authorized'] is False
     assert (database.read_bytes(), contract.read_bytes()) == original
 

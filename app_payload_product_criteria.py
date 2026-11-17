@@ -28,6 +28,7 @@ TOTAL_RAW = 32 * 1024**2
 TOTAL_COMPRESSED = 16 * 1024**2
 MAX_PRODUCTS = 20000
 MAX_SHARDS = 256
+SCOPE = 'product-filter-facets-v1'
 CRITERIA_FILE = re.compile(r'^product_criteria_(?:index|shard_[0-9]{3})$')
 
 
@@ -62,7 +63,7 @@ here. Without it, original CDR reference descriptors remain candidates only.
     binding = source_binding(database, contract_path, budget)
     require(binding['observation_date'] == run_date, 'criteria date differs from selected source')
     source = dict(generation_id=binding['generation_id'], contract_digest=binding['contract_digest'])
-    header = dict(schema_version=1, run_date=run_date, source=source)
+    header = dict(schema_version=1, run_date=run_date, source=source, scope=SCOPE)
     output.mkdir(parents=True, exist_ok=False)
     files, routes, pending = {}, {}, {}
     raw_total = compressed_total = count = 0
@@ -104,7 +105,11 @@ here. Without it, original CDR reference descriptors remain candidates only.
                     'duplicate or missing criteria product identity')
             record = decode((details or '{}').encode('utf-8'))
             require(isinstance(record, dict), 'criteria product detail is not an object')
-            facts = feature_facts(record, key, record.get('description')) + criteria_facts(record, key)
+            # Current rate/tier facets already live in exact core rows; all
+            # original rate/tier evidence remains in the full lazy fact lane.
+            # Global filters never need a second copy of those scoped prices.
+            facts = feature_facts(record, key, record.get('description')) + [
+                fact for fact in criteria_facts(record, key) if fact['kind'] not in {'rate', 'tier'}]
             documents = (evidence_documents.get(key, []) if evidence_documents is not None
                          else source_documents(record) or [])
             value = dict(facts=facts, sourceDocuments=documents)
@@ -210,7 +215,7 @@ def verify_criteria(root, manifest):
     source = {key: observed.get(key) for key in ('generation_id', 'contract_digest')}
     require(all(isinstance(value, str) and value for value in source.values()), 'criteria source missing')
     index, raw_total = _read_asset(root, files['product_criteria_index'], INDEX_RAW)
-    header = dict(schema_version=1, run_date=manifest.get('run_date'), source=source)
+    header = dict(schema_version=1, run_date=manifest.get('run_date'), source=source, scope=SCOPE)
     require(isinstance(index, dict) and set(index) == {*header, 'products', 'coverage'}
             and all(index.get(key) == value for key, value in header.items()), 'criteria index source differs')
     products, coverage = index['products'], index['coverage']

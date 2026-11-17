@@ -9,11 +9,15 @@ No criteria error may block or roll back that initial financial publication.
 
 ## Wire and integrity
 
-Index: `{schema_version:1,run_date,source:{generation_id,contract_digest},
+Index: `{schema_version:1,run_date,scope:product-filter-facets-v1,source:{generation_id,contract_digest},
 products:{productKey:shardFileKey},coverage:{productsExpected,productsObserved,
 complete:true}}`. Shards carry the same header and
 `products:{productKey:{facts,sourceDocuments}}`.
 
+The compact scope contains global product-filter facts: feature, eligibility,
+constraint, fee, condition and bundle. Current rate/tier filtering uses existing
+exact core rows; original rate/tier facts remain in the full lazy fact archive.
+This avoids duplicate prices and unbounded full-evidence work on global filters.
 Coverage concerns all captured database product routes, including products
 without rates; it does not certify upstream population, semantic interpretation,
 document acquisition or legal completeness. Missing facts remain unknown.
