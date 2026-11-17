@@ -20,6 +20,8 @@ _DURATION = re.compile(r"^P(?:[0-9.]+[YMWD])+(?:T(?:[0-9.]+[HMS])+)?$", re.I)
 _MONEY = {"MIN_BALANCE", "MAX_BALANCE", "OPENING_BALANCE", "MIN_LIMIT", "MAX_LIMIT", "MIN_AMOUNT", "MAX_AMOUNT",
           "MINIMUM_BALANCE", "MAXIMUM_BALANCE", "MINIMUM_AMOUNT", "MAXIMUM_AMOUNT"}
 _AGES = {"MIN_AGE", "MAX_AGE"}
+_ENUMS = {'RESIDENCY_STATUS', 'RESIDENCY', 'EMPLOYMENT_STATUS', 'CUSTOMER_TYPE',
+          'BORROWER_TYPE', 'LOAN_PURPOSE', 'REPAYMENT_TYPE'}
 
 
 def decimal_text(raw, divisor=1):
@@ -59,7 +61,7 @@ def _pointer(record, path):
 def _typed(raw, code, *, currency='AUD'):
     if isinstance(raw, bool):
         return raw, 'boolean', 'boolean'
-    if raw is None or raw == '':
+    if raw is None or raw == '' or isinstance(raw, str) and raw.strip().lower() in {'null', 'none'}:
         return None, 'text', 'text'
     unit = ('year' if code in _AGES else currency if code in _MONEY else
             'fraction' if 'LVR' in code else 'count')
@@ -68,6 +70,8 @@ def _typed(raw, code, *, currency='AUD'):
     value = decimal_text(raw)
     if value is not None:
         return value, unit, 'decimal'
+    if code in _ENUMS and isinstance(raw, str) and _CODE.fullmatch(raw):
+        return raw, 'enum', 'enum'
     return str(raw), 'text', 'text'
 
 
@@ -80,6 +84,8 @@ def _base(record, key, path, kind, canonical, code, *, parent=None, condition=No
     if condition:
         value['condition'] = str(condition)
     value['evidenceState'] = 'conditional' if condition or _qualified(record, path, source, basis) else 'observed'
+    if code == 'OTHER':
+        value['evidenceState'] = 'unknown'  # Unmapped source enums are not comparable definitions.
     for field in ('effectiveFrom', 'effectiveTo'):
         if isinstance(record.get(field), str) and record[field].strip():
             value[field] = record[field]
