@@ -324,6 +324,12 @@ def process_next_acquisition(store: EvidenceStore, *, registry_context: Mapping[
     previous = store.last_success(request["document_id"])
     check_id = digest([request["request_id"], request["lease_id"]])
     check = acquire_document(store, request["document_id"], check_id=check_id, policy=policy)
+    from .provider_websites import is_directory_request
+    if is_directory_request(store, request):
+        queue.finish(request, check_id, defer_processing=True)
+        return {"result": "INCOMPLETE", "request_id": request['request_id'], 'check_id': check_id,
+                'analysis_job_id': None, 'error': check['error_code'], 'graph_progress': progress,
+                'network_called': True, 'codex_called': False}
     processing_error = None
     job_id = None
     if check["status"] in {"fetched", "unchanged"}:

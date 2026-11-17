@@ -373,3 +373,14 @@ CREATE TABLE IF NOT EXISTS product_document_discovery (
     created_at TEXT NOT NULL,
     PRIMARY KEY(observation_id, policy)
 );
+-- Failed optional discovery is retained independently of successful raw capture.
+-- No successful plan row is invented: reconciliation can retry this observation.
+CREATE TABLE IF NOT EXISTS product_document_discovery_failures (
+    failure_id TEXT PRIMARY KEY CHECK(length(failure_id)=64),
+    observation_id TEXT NOT NULL REFERENCES observations(observation_id),
+    policy TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status='discovery-failed'),
+    failed_at TEXT NOT NULL,
+    error_code TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK(length(reason)<=256)
+);

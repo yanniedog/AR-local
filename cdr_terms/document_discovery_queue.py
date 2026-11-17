@@ -4,6 +4,7 @@ No network, scheduler activation or publication occurs here. An obligation with
 no official seed stays explicit instead of inventing a lender URL from its name.
 """
 import json
+import logging
 import time
 
 from .identity import canonical_json, digest, timestamp, utc_now
@@ -32,6 +33,32 @@ def register_discovery(store, observation_id, record, *, now):
     return {"status": plan["status"], "plan_sha256": digest(plan), "seeds": len(plan["seeds"])}
 
 
+def capture_discovery(store, observation_id, record, *, now):
+    """Optional discovery cannot invalidate the independently captured raw body."""
+    try:
+        return register_discovery(store, observation_id, record, now=now)
+    except Exception as error:
+        return _failed_discovery(store, observation_id, error, now)
+
+
+def _failed_discovery(store, observation_id, error, now):
+    from .product_documents import POLICY
+    code, reason = type(error).__name__, str(error)[:256]
+    identity = digest([observation_id, POLICY, code, reason])
+    recorded = False
+    try:
+        with store.db:
+            store.db.execute('INSERT OR IGNORE INTO product_document_discovery_failures VALUES (?,?,?,?,?,?,?)',
+                (identity, observation_id, POLICY, 'discovery-failed', timestamp(now), code, reason))
+        recorded = True
+    except Exception as diagnostic_error:
+        # A failed optional diagnostic cannot reverse capture/publication.
+        logging.getLogger(__name__).warning('Document discovery diagnostic unavailable: %s', type(diagnostic_error).__name__)
+    logging.getLogger(__name__).warning('Optional document discovery failed: %s', code)
+    return {'status': 'discovery-failed', 'diagnostic_id': identity, 'diagnostic_recorded': recorded,
+            'error_code': code, 'network_called': False}
+
+
 def reconcile_capture_discovery(store, receipt):
     """Reconcile a pre-upgrade complete capture without rewriting its receipt.
 
@@ -41,24 +68,29 @@ def reconcile_capture_discovery(store, receipt):
     from .acquisitions_queue import AcquisitionQueue
     from .product_documents import POLICY
     if len(receipt["sources"]) > 20000:
-        raise ValueError("Discovery reconciliation product budget exceeded")
+        logging.getLogger(__name__).warning('Optional discovery reconciliation product budget exceeded')
+        return 0
     count = 0
     observed = utc_now()
     deadline, consumed = time.monotonic() + 120, 0
     for source in receipt["sources"]:
-        if time.monotonic() >= deadline:
-            raise ValueError("Discovery reconciliation deadline exceeded")
-        existing = store.db.execute("SELECT 1 FROM product_document_discovery WHERE observation_id=? AND policy=?",
-                                    (source["observation_id"], POLICY)).fetchone()
-        if existing:
-            continue
-        body = store.read_blob(source["sha256"])
-        consumed += len(body)
-        if len(body) > 16 * 1024**2 or consumed > 512 * 1024**2:
-            raise ValueError("Discovery reconciliation source byte budget exceeded")
-        register_discovery(store, source["observation_id"], json.loads(body), now=observed)
-        AcquisitionQueue(store).enqueue(source["observation_id"], ingest_id=receipt["generation_id"], now=observed)
-        count += 1
+        try:
+            if time.monotonic() >= deadline:
+                raise ValueError("Discovery reconciliation deadline exceeded")
+            existing = store.db.execute("SELECT 1 FROM product_document_discovery WHERE observation_id=? AND policy=?",
+                                        (source["observation_id"], POLICY)).fetchone()
+            if existing:
+                continue
+            body = store.read_blob(source["sha256"])
+            consumed += len(body)
+            if len(body) > 16 * 1024**2 or consumed > 512 * 1024**2:
+                raise ValueError("Discovery reconciliation source byte budget exceeded")
+            capture_discovery(store, source["observation_id"], json.loads(body), now=observed)
+            AcquisitionQueue(store).enqueue(source["observation_id"], ingest_id=receipt["generation_id"], now=observed)
+            count += 1
+        except Exception as error:
+            _failed_discovery(store, source['observation_id'], error, observed)
+            break  # Bounded retry can resume absent obligations next invocation.
     return count
 
 
@@ -75,9 +107,20 @@ def discovery_inventory(store, product_key):
     descriptors = []
     for row in store.db.execute("SELECT a.*,d.source_url FROM applicability a JOIN documents d USING(document_id) "
                                 "WHERE observation_id=? AND relation!='cdr_source' ORDER BY applicability_id", (observation["observation_id"],)):
+        from .provider_websites import DIRECTORY_URL
+        if row['source_url'] == DIRECTORY_URL:
+            continue  # Official identity bootstrap is not product/legal evidence.
         check = selected_check(store, observation, row["document_id"])
         descriptor = describe_reference({"url": row["source_url"], "sourcePath": row["source_path"],
                                          "relation": row["relation"]}, raw, product_key=product_key)
+        context = json.loads(row['context_json'])
+        if context.get('seedKind') == 'accepted-official-provider-website':
+            from .provider_websites import validate_website_binding
+            validate_website_binding(store, observation, context, row['source_url'])
+            descriptor['origin'] = 'accepted-official-provider-website'
+            descriptor['directorySource'] = {'url': DIRECTORY_URL,
+                'checkId': context['directoryCheckId'], 'sha256': context['directorySha256'],
+                'sourcePaths': context['directoryPaths']}
         descriptors.append(_checked(store, descriptor, check))
     roots = store.db.execute("SELECT DISTINCT r.root_id FROM document_graph_roots r JOIN document_graph_scopes s USING(root_id) "
                              "JOIN applicability a USING(applicability_id) WHERE a.observation_id=? ORDER BY r.root_id", (observation["observation_id"],))

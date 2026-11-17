@@ -67,3 +67,35 @@ A repeated pre-upgrade completed capture can reconcile absent obligations from
 its verified retained bytes without rewriting its old receipt. The new obligation
 and acquisition request use today's actual reconciliation timestamp, while the
 source observation retains its original date. No historical capture is redated.
+
+
+## Official directory bootstrap (policy 2)
+
+When a product has no usable declared web host or reviewed provider adapter,
+policy2 queues the fixed ACCC public provider directory URL once per ingest,
+shared across affected products. The normal optional collector fetches it under
+its existing resource/network/lease controls. No directory network request runs
+in finalization or financial publication.
+
+Offline processing requires the exact accepted directory check and final URL,
+then matches an exact, active Data Holder brand name to one unique HTTPS website.
+It retains original directory pointers, content/version/check identities, and
+transactionally queues the provider website plus same-origin sitemap. Ambiguous,
+missing, revoked or non-HTTPS mappings remain unresolved. A CDR API hostname,
+logo CDN or downloaded arbitrary hyperlink cannot grant the provider web host.
+Directory metadata bypasses the model interpretation lane. The processing
+receipt independently revalidates the retained brand mapping and accepted lease.
+
+Public source inventories exclude the identity-directory JSON. A derived website
+source includes its accepted directory provenance, but remains navigation or
+candidate evidence; it does not establish product-specific legal applicability.
+The read-only publisher re-proves the source mapping before including it.
+A current directory feasibility check matched all136 historical May19 zero-link
+products across7 providers exactly; this is not proof of acquired product
+contracts, current whole-catalogue coverage or scheduler commissioning.
+
+Discovery exceptions, including seed/byte/deadline limits, cannot abort raw source
+capture. Bounded append-only `product_document_discovery_failures` records retain
+the failed obligation and cause. A successful plan is not fabricated, so a later
+reconciliation can retry it without deleting failures or rewriting the original
+capture receipt. Diagnostic storage failure is logged and remains nonfatal too.

@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 
 from .discovery import discover_references, document_url
 
-POLICY = "product-document-discovery-1"
+POLICY = "product-document-discovery-2"
 _COLLECTION = re.compile(r"/(?:terms(?:andconditions)?|terms-and-conditions|disclosure-documents|product-tcs|legal|documents)/?$", re.I)
 _TYPES = (("pds", "pds"), ("product disclosure", "pds"), ("supplement", "supplement"),
           ("product schedule", "product-schedule"), ("fee schedule", "fee-schedule"), ("fees", "fee-schedule"),
@@ -122,6 +122,10 @@ def discovery_plan(record, *, provider=""):
     if len(seeds) > 16:
         # No silently incomplete plan can be sealed as a complete obligation.
         raise ValueError("Product discovery seed budget exceeded")
+    if needs_fallback and not seeds:
+        from .provider_websites import DIRECTORY_URL
+        seeds[DIRECTORY_URL] = {'url': DIRECTORY_URL, 'sourcePath': '/discovery/official-provider-directory',
+                                'relation': 'discovery_navigation', 'seedKind': 'official-provider-directory'}
     return {"policy": POLICY, "status": "queued" if seeds else "declared-references" if references else "missing-official-source",
             "declaredReferences": len(references), "seeds": sorted(seeds.values(), key=lambda item: item["url"]),
             "legalCompleteness": "unknown", "networkCalled": False}

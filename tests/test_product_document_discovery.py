@@ -38,6 +38,32 @@ def test_every_ingest_has_an_immutable_discovery_obligation_without_network(tmp_
             store.db.execute('DELETE FROM product_document_discovery')
 
 
+def test_discovery_seed_overflow_preserves_raw_capture_and_retryable_diagnostic(tmp_path, monkeypatch):
+    record = up_record()
+    # URI count fault only: the retained real Up product/rate facts are intact.
+    record['additionalInformation'] = {'termsUri': [f'https://host-{i}.example/' for i in range(17)]}
+    body = json.dumps({'data': record}).encode()
+    run, _, finalized = source_generation(tmp_path, '2026-09-07', OBSERVED, body=body)
+    root = tmp_path / 'derived'
+    receipt = capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=OBSERVED)
+    assert receipt['status'] == 'CAPTURED_AND_QUEUED' and receipt['products'] == 1
+    again = capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=OBSERVED)
+    assert again == receipt
+    with EvidenceStore(root) as store:
+        assert store.read_blob(receipt['sources'][0]['sha256']) == body
+        assert store.db.execute('SELECT COUNT(*) FROM product_document_discovery').fetchone()[0] == 0
+        failed = store.db.execute('SELECT * FROM product_document_discovery_failures').fetchall()
+        assert len(failed) == 1 and failed[0]['status'] == 'discovery-failed'
+        assert store.db.execute('SELECT COUNT(*) FROM ingest_captures').fetchone()[0] == 1
+    # A later successful retry adds a plan without overwriting prior failure.
+    monkeypatch.setattr('cdr_terms.document_discovery_queue.discovery_plan', lambda *a, **kw:
+        {'policy': 'recovery-protocol', 'status': 'queued', 'seeds': [], 'networkCalled': False})
+    capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=OBSERVED)
+    with EvidenceStore(root) as store:
+        assert store.db.execute('SELECT COUNT(*) FROM product_document_discovery').fetchone()[0] == 1
+        assert store.db.execute('SELECT COUNT(*) FROM product_document_discovery_failures').fetchone()[0] == 1
+
+
 def test_no_reference_product_uses_reviewed_official_adapter_and_existing_queue(tmp_path):
     record = up_record()
     assert describe_references(record, product_key='Up|up-home') == []
@@ -62,7 +88,9 @@ def test_unknown_official_host_is_disclosed_not_invented():
     # This retained sparse product has no source URL; no domain is inferred.
     record = json.loads((FIXTURES / 'product_facts_real_2026-05-19.json').read_bytes())['products'][1]['record']
     plan = discovery_plan(record, provider='Unknown host protocol boundary')
-    assert plan['status'] == 'missing-official-source' and plan['seeds'] == []
+    assert plan['status'] == 'queued'
+    assert [seed['url'] for seed in plan['seeds']] == ['https://api.cdr.gov.au/public-register/v1/participants']
+    assert all(seed['seedKind'] == 'official-provider-directory' for seed in plan['seeds'])
 
 
 def test_preupgrade_reconciliation_uses_current_time_without_rewriting_old_capture(tmp_path, monkeypatch):

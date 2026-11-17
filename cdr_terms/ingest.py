@@ -138,8 +138,8 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
                 # Source-context failure is reported by the separate public
                 # lane; it cannot invalidate the accepted original capture.
                 pass
-            from .document_discovery_queue import register_discovery
-            register_discovery(store, observation_id, payload, now=captured_at)
+            from .document_discovery_queue import capture_discovery
+            capture_discovery(store, observation_id, payload, now=captured_at)
             acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=captured_at))
             raw_versions = store.db.execute("SELECT v.document_version_id FROM applicability a JOIN document_versions v USING(document_id) "
                                             "WHERE a.observation_id=? AND a.relation='cdr_source' AND v.content_sha256=?",
