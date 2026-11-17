@@ -63,6 +63,21 @@ def test_rate_gap_evidence_distinguishes_excluded_rows_from_uncaptured_rates(pub
     assert by_key["uncaptured"]["status"] == "no_captured_rate_rows"
 
 
+def test_source_audit_cache_rejects_pre_evidence_results(tmp_path):
+    index = AuditIndex(tmp_path / "audit.sqlite")
+    identity = {"key": "source", "run_date": "2026-11-17", "fingerprint": "fingerprint"}
+    try:
+        index.put(identity)
+        assert index.get("source", "fingerprint") is None
+        fresh = {**audit_rows([], []), **identity}
+        index.put(fresh)
+        assert index.get("source", "fingerprint") == fresh
+        index.db.execute("UPDATE audits SET version=5")
+        assert index.get("source", "fingerprint") is None
+    finally:
+        index.close()
+
+
 def test_financial_digest_detects_same_count_rate_replacement(public):
     rows = public[0]["sections"]["Mortgage"]["rates"][:2]
     changed = copy.deepcopy(rows)
