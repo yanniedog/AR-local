@@ -95,3 +95,21 @@ changed from SCAN plus temporary sort to the exact-version index. These are
 local historical measurements, not accumulated-history/current3596/Pi proof.
 The live timeout remains unresolved until a bounded actual retry succeeds;
 retain its raw stage and do not raise limits or infer release qualification.
+
+## Verified expanded Nov14 dictionary-wire replay
+
+The hash-verified selective Nov14 replay contains3508 products and45,483 scoped
+citations. Version1 projection consumed49,389,737 decoded bytes and exceeded
+the unchanged32MiB cap. Version2 dictionary wire preserves every canonical
+expanded fact, document and citation while consuming22,540,959 decoded wire
+bytes and4,304,062 gzip bytes across96 shards plus one index. Maximum shard
+size is299,332 decoded bytes/61,324 gzip bytes. The complete producer verifier
+accepted the97-file inventory. Total detail nodes are1,840,633; maxima per
+shard are21,520 nodes,30 field names and1150 pooled strings. No fields were
+dropped and no existing wire budget was increased. Version1 remains readable.
+
+This establishes bounded selective retained-source sizing and lossless wire
+round trips for Nov14, not a full restore, latest Nov18 population, phone
+performance, live capture timeout, legal completeness or deployment acceptance.
+The consumer must independently verify and admit the same complete replay.
+Private measurement and hash-pinned scripts remain outside the repository.

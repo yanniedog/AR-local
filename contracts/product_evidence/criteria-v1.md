@@ -63,3 +63,32 @@ unique exact featureType match with an existing raw `_sourcePaths` entity
 locator gains sourcePath/sourcePathBasis metadata. Repeated feature types and
 legacy exports without the map remain unannotated. The primary detail asset
 and its conservative feature-presence guards remain unchanged.
+
+## Version 2 lossless wire encoding
+
+Readers accept index/shard schema_version1 or2; writers emit2. Header source,
+scope, coverage and raw product route keys retain the version1 meanings. Each
+version2 shard additionally declares `keyTable` and `stringTable`. Only nested
+product detail trees use dictionaries. Every object field name is replaced by
+its keyTable index in canonical lowercase base36 (zero is `0`, no leading zeros).
+A string beginning with `~` is escaped by one leading `~`; a beneficial repeated
+string may instead be `~` followed by its canonical stringTable index. Table
+entries are literal strings and are never interpreted recursively. Other values
+and array ordering remain exact. No field or citation is dropped.
+
+Tables are bounded to256 unique field names of at most256 UTF8 bytes and65536
+unique string entries of at most8192 UTF8 bytes. Longer ordinary string values
+remain untruncated literals within the existing wire budget. Object field names
+`__proto__`, `prototype` and `constructor` are forbidden. Indices must be canonical
+and in range. Decoding uses safe own objects, with depth at most64 and500000
+value nodes per shard, counting its products root as depth0/node1. The complete
+catalogue is bounded to4000000 value nodes. Pooled text is reused, not expanded
+into a serialized JSON copy. Headers and dictionaries have their separate wire
+budgets; string pooling never grants semantic authority.
+
+The existing32MiB total decoded wire,16MiB compressed,4MiB per shard and1MiB
+compressed-per-file limits remain unchanged. The writer encodes bounded logical
+batches once and halves oversized encoded batches; ordinary encoded shards stay
+below the512KiB write target, with whole large products still subject to the
+4MiB hard bound. Verification reconstructs and validates every detail tree after
+hash and source checks, then validates complete routing and aggregate budgets.

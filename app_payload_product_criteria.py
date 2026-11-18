@@ -21,6 +21,7 @@ from cdr_terms.product_documents import describe_reference, describe_product_sou
 from app_payload_product_evidence import Budget, file_digest, no_journals, regular, signature, source_binding
 from app_payload_product_evidence_contract import Limits, canonical, decode, require
 from cdr_atomic import atomic_write_json, _fsync_directory
+from app_payload_criteria_wire import encode_products, decode_products, node_count, MAX_TOTAL_NODES
 
 INDEX_RAW = 8 * 1024**2
 SHARD_RAW = 4 * 1024**2
@@ -120,7 +121,7 @@ here. Without it, original CDR reference descriptors remain candidates only.
     binding = source_binding(database, contract_path, budget)
     require(binding['observation_date'] == run_date, 'criteria date differs from selected source')
     source = dict(generation_id=binding['generation_id'], contract_digest=binding['contract_digest'])
-    header = dict(schema_version=1, run_date=run_date, source=source, scope=SCOPE)
+    header = dict(schema_version=2, run_date=run_date, source=source, scope=SCOPE)
     output.mkdir(parents=True, exist_ok=False)
     files, routes, pending = {}, {}, {}
     raw_total = compressed_total = count = 0
@@ -132,7 +133,10 @@ here. Without it, original CDR reference descriptors remain candidates only.
         if not values:
             return
         require(len(files) < MAX_SHARDS, 'criteria shard count exceeded')
-        raw = canonical({**header, 'products': values})
+        raw = canonical({**header, **encode_products(values)})
+        if len(raw) > WRITE_SHARD_RAW and len(values) > 1:
+            items = list(values.items()); middle = len(items) // 2
+            flush(dict(items[:middle])); flush(dict(items[middle:])); return
         require(len(raw) <= SHARD_RAW, 'criteria shard decoded budget exceeded')
         blob = gzip.compress(raw, mtime=0)
         if len(blob) > FILE_COMPRESSED and len(values) > 1:
@@ -299,7 +303,10 @@ def verify_criteria(root, manifest):
     source = {key: observed.get(key) for key in ('generation_id', 'contract_digest')}
     require(all(isinstance(value, str) and value for value in source.values()), 'criteria source missing')
     index, raw_total = _read_asset(root, files['product_criteria_index'], INDEX_RAW)
-    header = dict(schema_version=1, run_date=manifest.get('run_date'), source=source, scope=SCOPE)
+    require(isinstance(index, dict) and type(index.get('schema_version')) is int
+            and index['schema_version'] in (1, 2), 'unsupported criteria wire version')
+    version = index['schema_version']
+    header = dict(schema_version=version, run_date=manifest.get('run_date'), source=source, scope=SCOPE)
     require(isinstance(index, dict) and set(index) == {*header, 'products', 'coverage'}
             and all(index.get(key) == value for key, value in header.items()), 'criteria index source differs')
     products, coverage = index['products'], index['coverage']
@@ -310,13 +317,15 @@ def verify_criteria(root, manifest):
             'criteria coverage differs')
     shards = set(files) - {'product_criteria_index'}
     require(set(products.values()) == shards, 'criteria index/shard inventory differs')
-    seen = set()
+    seen, total_nodes = set(), 0
     for key in sorted(shards):
         shard, size = _read_asset(root, files[key], SHARD_RAW)
         raw_total += size
-        require(isinstance(shard, dict) and set(shard) == {*header, 'products'}
+        require(isinstance(shard, dict) and set(shard) == ({*header, 'products', 'keyTable', 'stringTable'} if version == 2 else {*header, 'products'})
                 and all(shard.get(field) == value for field, value in header.items()), 'criteria shard source differs')
-        values = shard['products']
+        values = decode_products(shard) if version == 2 else shard['products']
+        total_nodes += node_count(values)
+        require(total_nodes <= MAX_TOTAL_NODES, 'criteria aggregate node budget')
         require(isinstance(values, dict) and values, 'criteria shard empty or malformed')
         for product, value in values.items():
             require(product not in seen and products.get(product) == key, 'criteria product route differs')

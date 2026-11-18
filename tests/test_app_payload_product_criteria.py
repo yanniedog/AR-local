@@ -9,6 +9,7 @@ import sqlite3
 import pytest
 
 from app_payload_product_criteria import prepare_criteria, verify_criteria
+from app_payload_criteria_wire import decode_products
 from app_payload_product_evidence_contract import canonical, digest
 from cdr_clean_export import bank_product_key, detail_json
 from cdr_outputs import ensure_db, insert_rows
@@ -55,7 +56,7 @@ def test_retained_whole_product_inventory_and_readback_preserve_originals(tmp_pa
     assert set(index['products']) == {row['product_key'] for row in rows}
     shard_key = next(iter(index['products'].values()))
     shard = json.loads(gzip.decompress((output / prepared['files'][shard_key]['name']).read_bytes()))
-    facts = [fact for product in shard['products'].values() for fact in product['facts']]
+    facts = [fact for product in decode_products(shard).values() for fact in product['facts']]
     assert {'feature', 'fee', 'eligibility', 'constraint'} <= {fact['kind'] for fact in facts}
     assert index['scope'] == 'product-filter-facets-v1'
     assert not {'rate', 'tier'} & {fact['kind'] for fact in facts}
@@ -161,3 +162,20 @@ def test_optional_feature_locator_preserves_legacy_semantics_and_refuses_ambigui
                if item.get('sourceType') == duplicate['features'][0]['featureType'])
     record.pop('_sourcePaths')
     assert scoped_feature_facts(record, 'Up|retained') == legacy
+
+
+def test_v1_retained_wire_still_verifies_without_dictionary_tables(tmp_path):
+    import hashlib
+    *_, output, prepared, manifest = build(tmp_path)
+    for key, entry in list(manifest['files'].items()):
+        value = json.loads(gzip.decompress((output / entry['name']).read_bytes()))
+        if key != 'product_criteria_index':
+            value['products'] = decode_products(value)
+            value.pop('keyTable'); value.pop('stringTable')
+        value['schema_version'] = 1
+        blob = gzip.compress(canonical(value), mtime=0)
+        sha = hashlib.sha256(blob).hexdigest()
+        name = f'product-criteria-legacy-{sha}.json.gz'
+        (output / name).write_bytes(blob)
+        manifest['files'][key] = {'name': name, 'sha256': sha, 'bytes': len(blob)}
+    assert verify_criteria(output, manifest)['coverage']['complete']

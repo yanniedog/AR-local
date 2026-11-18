@@ -1,5 +1,6 @@
 """Real retained source criteria are optional assets, never financial content."""
 from copy import deepcopy
+from app_payload_criteria_wire import decode_products
 import gzip
 import json
 
@@ -35,7 +36,7 @@ def test_criteria_frozen_after_financial_release_are_in_complete_inventory(optio
     index = json.loads(gzip.decompress((root / files['product_criteria_index']['name']).read_bytes()))
     products = {}
     for shard in set(index['products'].values()):
-        products.update(json.loads(gzip.decompress((root / files[shard]['name']).read_bytes()))['products'])
+        products.update(decode_products(json.loads(gzip.decompress((root / files[shard]['name']).read_bytes()))))
     references = [reference for product in products.values() for reference in product['sourceDocuments']]
     assert any(reference['url'].endswith('Up-Home-Loan-Booklet.pdf')
                and reference['verification'] == 'discovery-candidate' for reference in references)
