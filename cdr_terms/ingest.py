@@ -118,14 +118,18 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
         acquisition_ids: set[str] = set()
         analysis_ids: set[str] = set()
         total_bytes = 0
+        banks_resolved = banks.resolve()
+        acquisition_queue = AcquisitionQueue(store)
+        context = None
         for path in sorted(banks.rglob("product-detail.json")):
-            if (path.is_symlink() or banks.resolve() not in path.resolve().parents
+            if (path.is_symlink() or banks_resolved not in path.resolve().parents
                     or len(sources) >= max_products or time.monotonic() - started > max_seconds):
                 raise ValueError("complete_terms_capture_exceeds_safe_bounds")
             size = path.stat().st_size
             if size > 16 * 1024 * 1024 or total_bytes + size > max_total_bytes:
                 raise ValueError("complete_terms_capture_exceeds_byte_budget")
             body = path.read_bytes()
+            body_sha = byte_digest(body)
             payload = json.loads(body)
             record = inner_record(payload)
             base = bank_base_row(path, banks, record)
@@ -140,15 +144,17 @@ def capture_finalized(run_root: Path, finalized: Mapping[str, Any], root: Path, 
                 pass
             from .document_discovery_queue import capture_discovery
             capture_discovery(store, observation_id, payload, now=captured_at)
-            acquisition_ids.update(AcquisitionQueue(store).enqueue(observation_id, ingest_id=generation, now=captured_at))
+            acquisition_ids.update(acquisition_queue.enqueue(observation_id, ingest_id=generation, now=captured_at))
             raw_versions = store.db.execute("SELECT v.document_version_id FROM applicability a JOIN document_versions v USING(document_id) "
                                             "WHERE a.observation_id=? AND a.relation='cdr_source' AND v.content_sha256=?",
-                                            (observation_id, byte_digest(body))).fetchall()
+                                            (observation_id, body_sha)).fetchall()
             for version in raw_versions:
+                if context is None:
+                    context = registry_context()
                 analysis_ids.add(enqueue_interpretation(store, version[0], [observation_id], priority=1,
-                                                        registry_context=registry_context()))
+                                                        registry_context=context))
             total_bytes += len(body)
-            sources.append({"relative_path": path.relative_to(run_root).as_posix(), "sha256": byte_digest(body),
+            sources.append({"relative_path": path.relative_to(run_root).as_posix(), "sha256": body_sha,
                             "observation_id": observation_id, "product_key": base["product_key"]})
         if not sources:
             raise ValueError("complete_terms_capture_has_no_products")

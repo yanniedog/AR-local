@@ -77,6 +77,8 @@ class EvidenceStore:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.executescript(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
+        from .capture_indexes import install as install_capture_indexes
+        install_capture_indexes(self.db)
         from .public_rates_migration import install as install_public_rates
         install_public_rates(self.db)
         tables = self.db.execute(

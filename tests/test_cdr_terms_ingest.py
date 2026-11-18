@@ -165,3 +165,61 @@ def test_public_pricing_lane_failures_never_fail_the_original_capture(tmp_path, 
     # An unwritable receipt location is also non-fatal.
     (tmp_path / "ro").write_text("file, not a directory")
     ingest_module._capture_public_pricing(types.SimpleNamespace(root=tmp_path / "ro"), tmp_path, receipt)
+
+
+def test_capture_reuses_registry_context_across_distinct_real_products(source_tree, monkeypatch):
+    import cdr_terms.ingest as ingest
+    run, root, finalized, original = source_tree
+    body = (ROOT / 'tests/fixtures/cdr-canary-2026-09-07/Border Bank-null-detail.json').read_bytes()
+    record = json.loads(body)['data']
+    second = run / 'banks' / 'Mortgage' / record['brand'] / record['name'] / record['productId'] / 'product-detail.json'
+    second.parent.mkdir(parents=True)
+    second.write_bytes(body)
+    calls = []
+    actual = ingest.registry_context
+    monkeypatch.setattr(ingest, 'registry_context', lambda: calls.append(True) or actual())
+    receipt = capture_finalized(run, {**finalized, 'banks': {'products': 2}}, root,
+                                forbidden_roots=[run.parent], observed_at=OBSERVED)
+    assert receipt['products'] == 2 and receipt['analysis_jobs'] == 2
+    assert len(calls) == 1
+    assert second.read_bytes() == body and original.read_bytes() == FIXTURE.read_bytes()
+
+
+def test_existing_store_gains_version_lookup_index_without_rewriting_evidence(source_tree):
+    run, root, finalized, _ = source_tree
+    receipt = capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=OBSERVED)
+    query = ('SELECT * FROM acquisition_checks WHERE document_version_id=? '
+             'ORDER BY checked_at DESC,sequence DESC LIMIT 1')
+    with EvidenceStore(root) as store:
+        previous = [tuple(row) for row in store.db.execute('SELECT * FROM acquisition_checks ORDER BY sequence')]
+        store.db.execute('DROP INDEX acquisition_version_observed')
+        old = [row[3] for row in store.db.execute('EXPLAIN QUERY PLAN ' + query, ('version',))]
+        assert any('SCAN acquisition_checks' in plan for plan in old)
+    with EvidenceStore(root) as store:
+        new = [row[3] for row in store.db.execute('EXPLAIN QUERY PLAN ' + query, ('version',))]
+        assert any('SEARCH acquisition_checks USING INDEX acquisition_version_observed' in plan for plan in new)
+        assert not any('TEMP B-TREE' in plan for plan in new)
+        assert [tuple(row) for row in store.db.execute('SELECT * FROM acquisition_checks ORDER BY sequence')] == previous
+        assert store.read_blob(receipt['sources'][0]['sha256']) == FIXTURE.read_bytes()
+    assert capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=NOW) == receipt
+
+
+def test_optional_index_interruption_preserves_archive_and_connection(source_tree, monkeypatch):
+    import cdr_terms.capture_indexes as indexes
+    run, root, finalized, _ = source_tree
+    capture_finalized(run, finalized, root, forbidden_roots=[run.parent], observed_at=OBSERVED)
+    with EvidenceStore(root) as store:
+        store.db.execute('DROP INDEX acquisition_version_observed')
+        before = store.db.execute('SELECT COUNT(*) FROM acquisition_checks').fetchone()[0]
+        clock = iter([0, 6])
+        monkeypatch.setattr(indexes.time, 'monotonic', lambda: next(clock, 6))
+        # Fire the real SQLite progress callback on each VM instruction.
+        actual = store.db.set_progress_handler
+        class Connection:
+            in_transaction = False
+            def execute(self, *args): return store.db.execute(*args)
+            def set_progress_handler(self, callback, count): actual(callback, 1 if callback else 0)
+        indexes.install(Connection())
+        assert store.db.execute('PRAGMA busy_timeout').fetchone()[0] == 20000
+        assert store.db.execute('SELECT COUNT(*) FROM acquisition_checks').fetchone()[0] == before
+        assert not store.db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (indexes.INDEX,)).fetchone()

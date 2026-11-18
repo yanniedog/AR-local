@@ -76,3 +76,22 @@ Relevant implementation boundaries are documented in
 [criteria-v1.md](../contracts/product_evidence/criteria-v1.md),
 [PRODUCT_DOCUMENT_DISCOVERY.md](PRODUCT_DOCUMENT_DISCOVERY.md) and
 [PRODUCT_EVIDENCE_DISPATCH.md](PRODUCT_EVIDENCE_DISPATCH.md).
+
+## Capture timeout mitigation and remaining proof
+
+The November16 handoff records `complete_terms_capture_exceeds_safe_bounds`
+with raw stages preserved. Capture now reuses one parameter registry context
+and acquisition queue per invocation. An exact-version acquisition-check index
+removes a repeated full-history scan and sort. Its optional installation permits
+100ms lock waits and five seconds of SQLite VM work, restores the original
+connection limits and logs interruption without invalidating accepted evidence.
+The product/byte/deadline limits and immutable receipt rules remain unchanged.
+
+Two separate fresh Windows stores captured all 1618 retained May19 products
+(18,744,763 original bytes): before66.859s, after67.156s under profiling. This
+is no demonstrated first-day speed improvement. Across their1534 actual raw
+versions, exact-check lookups took0.172s before versus0.016s after; query plans
+changed from SCAN plus temporary sort to the exact-version index. These are
+local historical measurements, not accumulated-history/current3596/Pi proof.
+The live timeout remains unresolved until a bounded actual retry succeeds;
+retain its raw stage and do not raise limits or infer release qualification.
