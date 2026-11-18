@@ -32,6 +32,8 @@ def read_file(path, limit):
 def read_bundle(root):
     raw = read_file(root / 'manifest.json', 1024**2)
     manifest = json.loads(raw)
+    from cdr_product_evidence_acceptance import reject_unsupported_report
+    reject_unsupported_report(manifest)
     files = list(iter_payload_assets(manifest))
     if not 2 <= len(files) <= 128 or len({kind for kind, _ in files}) != len(files):
         raise ValueError('Report asset inventory invalid')

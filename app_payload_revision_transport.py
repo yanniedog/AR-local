@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 
 from app_payload_common import DEFAULT_TAG
-from app_payload_optional_assets import iter_payload_assets, executable_asset_url
+from app_payload_publication_assets import complete_assets, asset_url
 from app_payload_revisions_state import RevisionError, MAX_DOCUMENT_BYTES, decode_document, bundle_sha256
 from release_transport import PlaintextTransportError
 
@@ -18,9 +18,9 @@ def encrypted_selection(store, manifest: dict, root: Path, index_bytes: bytes,
     """
     objects = [(store.url(manifest['tag'], 'manifest.json'), root / 'manifest.json'),
                (store.url(DEFAULT_TAG, 'dates-index.json'), index_bytes)]
-    for key, entry in iter_payload_assets(manifest):
-        url = (executable_asset_url(manifest, entry, repo=store.repo)
-               if key.startswith(('executable_v2_', 'monetary_v3_', 'monetary_v4_')) else entry['url'])
+    inventory = complete_assets(manifest, root=root)
+    for key, entry in inventory:
+        url = asset_url(manifest, key, entry, repo=store.repo, inventory=inventory)
         objects.append((url, root / entry['name']))
     encrypted = True
     for url, source in objects:

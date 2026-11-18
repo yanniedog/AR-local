@@ -127,6 +127,8 @@ def extract_pdf(body: bytes, source_url: str):
     except Exception:
         coverage['pdf_uri_base_requires_review'] = True
     fragments, offset = [], 0
+    from .pdf_ocr import OCRSession
+    ocr = OCRSession(body)
     for index in range(min(count, MAX_PAGES)):
         if MAX_TEXT_CHARACTERS - offset - len(SEPARATOR) <= 0:
             break
@@ -142,10 +144,23 @@ def extract_pdf(body: bytes, source_url: str):
             reason = 'page_text_limit'
         except Exception:
             reason = 'page_extraction_failed'
+        method = 'pdf-text'
+        if state == 'textless_review_required':
+            result = ocr.page(index + 1, max_characters=min(MAX_PAGE_CHARACTERS, MAX_TEXT_CHARACTERS - offset))
+            coverage.setdefault('ocr_pages', []).append({key: value for key, value in result.items() if key != 'text'})
+            if result['status'] == 'partial':
+                text, state, reason, method = result['text'], 'text_available', 'ocr_text_requires_review', 'ocr'
+                coverage['ocr_status'] = 'partial'
+                coverage['ocr_policy_version'] = result['policy']
+            else:
+                coverage.setdefault('ocr_pending_pages', []).append(index + 1)
+                coverage['ocr_availability'] = 'ocr_unavailable' if result['status'] == 'unavailable' else 'pending'
         span = {'page': index + 1, 'start': offset, 'end': offset + len(text),
                 'text_sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(),
                 'status': state, 'reason': reason,
                 'replacement_character_present': '\ufffd' in text}
+        if method == 'ocr':
+            span['extraction_method'] = 'ocr'
         coverage['page_spans'].append(span)
         if state != 'text_available':
             coverage['unreadable_pages'].append(index + 1)

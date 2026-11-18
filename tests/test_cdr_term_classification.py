@@ -61,6 +61,8 @@ def test_real_reexport_recovers_all_25_rows_with_source_rates_unchanged(reexport
         source_detail = json.loads(original["product"]["details_json"])
         cleaned = json.loads(product["details_json"])
         references = cleaned.pop("sourceDocuments", [])
+        source_paths = cleaned.pop("_sourcePaths")
+        assert source_paths and all(key.startswith("/") and value.startswith("/") for key, value in source_paths.items())
         # Only additive provenance may differ; retain whole original equality.
         assert "sourceDocuments" not in source_detail
         assert cleaned == source_detail

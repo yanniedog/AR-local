@@ -23,7 +23,7 @@ from pi_cdr_quality_telemetry import MEMORY_FIELDS, VM_FIELDS, counter_context, 
 GIB = 1024**3
 SCHEMA = "ar-local-quality-resources-v2"
 PRESSURE_SCHEMA = "ar-local-quality-resources-v6"
-UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker|ar-local-live-capture-[0-9a-f]{12})\.service")
+UNIT = re.compile(r"(?:ar-local-quality-(?:canary|resource-test)-[a-z0-9]+|ar-local-terms-worker|ar-local-live-capture-[0-9a-f]{12}|ar-local-product-evidence-[0-9a-f]{32})\.service")
 
 
 # Quality canary: the workload's own swap is recorded as a non-negative peak, not

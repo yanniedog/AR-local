@@ -102,8 +102,11 @@ def app_checks(value: dict, canary: dict) -> None:
             or audit.get("manifest_url") is not None or audit.get("dates_index_sha256") is not None
             or not audit.get("checks") or any(row.get("status") not in {"pass", "warn"} for row in audit["checks"])):
         raise ValueError("app audit does not prove the exact private canary payload")
-    from app_payload_optional_assets import iter_payload_assets
-    assets = dict(iter_payload_assets(manifest))
+    from cdr_product_evidence_acceptance import verified_inventory, validate_private_app_receipt
+    assets, optional = verified_inventory(manifest_path.parent,manifest,canary['candidate_manifest']['sha256'])
+    if optional is not None:
+        validate_private_app_receipt(audit.get('optional_product_evidence'),manifest,
+                                     canary['candidate_manifest']['sha256'],assets)
     if set(audit.get("assets", {})) != set(assets):
         raise ValueError("app audit asset inventory differs from the candidate")
     for name, descriptor in assets.items():

@@ -5,7 +5,7 @@ import json
 import re
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from .discovery import document_url
 from .identity import utc_now
@@ -76,6 +76,9 @@ def extract_document(body: bytes, media_type: str, source_url: str) -> tuple[str
     mime = media_type.split(";", 1)[0].strip().lower()
     if body.startswith(b"%PDF-") or mime == "application/pdf":
         return extract_pdf(body, source_url)
+    if mime in {"application/xml", "text/xml"} or urlsplit(source_url).path.lower().endswith("sitemap.xml"):
+        from .sitemap import extract_sitemap
+        return extract_sitemap(body, source_url)
     if mime in {"text/html", "application/xhtml+xml"}:
         charset_match = re.search(r"charset=([^;\s]+)", media_type, re.I)
         charset = charset_match.group(1).strip("\"'") if charset_match else "utf-8"

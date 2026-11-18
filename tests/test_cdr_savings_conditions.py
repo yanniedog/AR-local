@@ -41,6 +41,8 @@ def test_real_reexport_changes_only_prize_rate_facets(reexport, evidence):
     original = evidence["products"][0]["details_json"]
     cleaned = json.loads(banks["products"][0]["details_json"])
     references = cleaned.pop("sourceDocuments")
+    source_paths = cleaned.pop("_sourcePaths")
+    assert source_paths and all(key.startswith("/") and value.startswith("/") for key, value in source_paths.items())
     # Only additive provenance may differ; every original field stays exact.
     assert "sourceDocuments" not in original
     assert cleaned == original
