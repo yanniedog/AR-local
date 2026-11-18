@@ -49,3 +49,12 @@ def test_detail_node_budget_includes_products_root(monkeypatch):
     with pytest.raises(ValueError, match='budget'): wire.encode_products(products)
     with pytest.raises(ValueError, match='budget'):
         wire.decode_products({'keyTable': ['value'], 'stringTable': [], 'products': {'route': {'0': 1}}})
+
+
+@pytest.mark.parametrize('field', ['', '__proto__', 'constructor', 'prototype'])
+def test_empty_or_hostile_dictionary_names_and_routes_are_rejected(field):
+    with pytest.raises(ValueError): wire.encode_products({'route': {field: 'control'}})
+    with pytest.raises(ValueError): wire.decode_products({'keyTable': [field], 'stringTable': [], 'products': {'route': {'0': 'control'}}})
+    if field:
+        with pytest.raises(ValueError): wire.encode_products({field: {'value': 'control'}})
+        with pytest.raises(ValueError): wire.decode_products({'keyTable': ['value'], 'stringTable': [], 'products': {field: {'0': 'control'}}})

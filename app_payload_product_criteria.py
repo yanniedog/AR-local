@@ -21,7 +21,7 @@ from cdr_terms.product_documents import describe_reference, describe_product_sou
 from app_payload_product_evidence import Budget, file_digest, no_journals, regular, signature, source_binding
 from app_payload_product_evidence_contract import Limits, canonical, decode, require
 from cdr_atomic import atomic_write_json, _fsync_directory
-from app_payload_criteria_wire import encode_products, decode_products, node_count, MAX_TOTAL_NODES
+from app_payload_criteria_wire import encode_products, decode_products, node_count, MAX_TOTAL_NODES, FORBIDDEN
 
 INDEX_RAW = 8 * 1024**2
 SHARD_RAW = 4 * 1024**2
@@ -311,7 +311,8 @@ def verify_criteria(root, manifest):
             and all(index.get(key) == value for key, value in header.items()), 'criteria index source differs')
     products, coverage = index['products'], index['coverage']
     require(isinstance(products, dict) and 0 < len(products) <= MAX_PRODUCTS
-            and all(isinstance(key, str) and key and isinstance(route, str) for key, route in products.items()),
+            and all(isinstance(key, str) and key and len(key) <= 2048 and key not in FORBIDDEN
+                    and isinstance(route, str) for key, route in products.items()),
             'invalid criteria product routing')
     require(coverage == dict(productsExpected=len(products), productsObserved=len(products), complete=True),
             'criteria coverage differs')

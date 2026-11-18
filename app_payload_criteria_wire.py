@@ -48,6 +48,8 @@ def node_count(products):
 
 
 def encode_products(products):
+    require(isinstance(products, dict) and all(isinstance(key, str) and key and len(key) <= 2048
+            and key not in FORBIDDEN for key in products), 'invalid criteria product routes')
     keys, strings = set(), Counter()
     def collect(value):
         if isinstance(value, dict) and value is not products:
@@ -58,7 +60,7 @@ def encode_products(products):
     count = _walk(products, collect)
     require(count <= MAX_NODES, 'criteria detail traversal budget')
     key_table = sorted(keys)
-    require(len(keys) <= MAX_KEYS and all(isinstance(key, str) and key not in FORBIDDEN
+    require(len(keys) <= MAX_KEYS and all(isinstance(key, str) and key and key not in FORBIDDEN
             and len(key.encode('utf-8')) <= 256 for key in keys), 'invalid criteria key table')
     key_indices = {key: base36(index) for index, key in enumerate(key_table)}
     # A conservative fixed reference cost (up to four base36 digits) accounts
@@ -84,13 +86,14 @@ def encode_products(products):
 def decode_products(shard):
     keys, strings = shard.get('keyTable'), shard.get('stringTable')
     require(isinstance(keys, list) and len(keys) <= MAX_KEYS
-        and all(isinstance(key, str) and key not in FORBIDDEN and len(key.encode('utf-8')) <= 256 for key in keys)
+        and all(isinstance(key, str) and key and key not in FORBIDDEN and len(key.encode('utf-8')) <= 256 for key in keys)
         and len(set(keys)) == len(keys), 'invalid criteria key table')
     require(isinstance(strings, list) and len(strings) <= MAX_STRINGS
         and all(isinstance(value, str) and len(value.encode('utf-8')) <= 8192 for value in strings)
         and len(set(strings)) == len(strings), 'invalid criteria string table')
     products = shard.get('products')
-    require(isinstance(products, dict), 'invalid criteria product routes')
+    require(isinstance(products, dict) and all(isinstance(key, str) and key and len(key) <= 2048
+            and key not in FORBIDDEN for key in products), 'invalid criteria product routes')
     nodes = 1
     def decode(value, depth=0):
         nonlocal nodes
