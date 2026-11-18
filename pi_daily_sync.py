@@ -238,6 +238,9 @@ def _mark_payload_publication_pending(
     app-payload-latest sat two ingest cycles behind the dated releases on
     2026-08-15. Keeping the pointer lets the retry go back for the right day.
     """
+    if isinstance(pointer, dict) and 'optional_product_evidence_intent' in pointer:
+        from pi_product_evidence_intent import validate_pointer
+        validate_pointer(pointer)
     path = payload_publication_pending_path(repo_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = read_payload_publication_pending(repo_root)
@@ -256,6 +259,9 @@ def _mark_payload_publication_pending(
                        if allow_policy_supersession else None)
         if replacement is not None:
             record = replacement
+            if any(key in previous for key in ('optional_candidate_pins','optional_product_evidence_intents')):
+                from pi_product_evidence_intent import preserve_pending_references
+                record = preserve_pending_references(previous, record)
         else:
             queued = list(previous.get("queued_pointers") or [])
             if pointer and pointer != previous["pointer"] and pointer not in queued:
@@ -291,6 +297,27 @@ def _clear_payload_publication_pending(repo_root: Path, pointer: Optional[dict])
     path = payload_publication_pending_path(repo_root)
     record = read_payload_publication_pending(repo_root)
     queued = list(record.get("queued_pointers") or [])
+    settled = pointer or record.get('pointer')
+    if settled and (settled == record.get('pointer') or settled in queued) and any(
+            key in record for key in ('optional_candidate_pins','optional_product_evidence_intents')):
+        try:
+            from pi_product_evidence_intent import settled_candidate_pin
+            record = settled_candidate_pin(record, settled)
+        except Exception as optional_error:
+            # Optional metadata cannot keep an already published financial
+            # observation pending. Preserve its original record for diagnosis;
+            # no optional ready package is accepted through this failure path.
+            try:
+                import hashlib
+                from cdr_atomic import atomic_write_json, canonical_json_bytes
+                checksum = hashlib.sha256(canonical_json_bytes(record)).hexdigest()
+                retained = path.parent / 'product-evidence-pending-errors' / (checksum + '.json')
+                retained.parent.mkdir(exist_ok=True)
+                if not retained.exists():
+                    atomic_write_json(retained, record, create_once=True)
+            except Exception:
+                pass  # Diagnostic storage failure cannot reverse publication.
+            print('[pi_daily_sync] optional pending cleanup failed reason=' + type(optional_error).__name__)
     if pointer and record.get("pointer") and record["pointer"] != pointer:
         record["queued_pointers"] = [item for item in queued if item != pointer]
         atomic_replace_json(path, record)
@@ -332,7 +359,7 @@ def _bounded_partial_v1_allowed(contract: dict) -> bool:
     return contract.get("observation_state") == "partial" and gate.publication_allowed(contract)[0]
 
 
-def current_publication_pointer(repo_root: Path) -> dict:
+def current_publication_pointer(repo_root: Path, *, evidence_delivery=None) -> dict:
     """The observation this run would publish: today's partial, else latest complete."""
     runtime_state = data_state_root(repo_root)
     latest_observation = _read_observation_pointer(
@@ -343,11 +370,16 @@ def current_publication_pointer(repo_root: Path) -> dict:
     if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
         from cdr_public_rates_runtime import enrich_publication_pointer
         try:
-            return enrich_publication_pointer(repo_root, pointer)
+            pointer = enrich_publication_pointer(repo_root, pointer)
         except (OSError, ValueError, KeyError, TypeError) as error:
             # Missing pricing evidence cannot fail the completed bank ingest.
             # The publication worker fails closed and keeps its retry intent.
             print(f'[pi_daily_sync] public pricing pointer unavailable: {error}', file=sys.stderr)
+    # Only explicit already-prepared callers enrich here. Ordinary optional
+    # setup belongs inside the nonfatal publication boundary, after pending CAS.
+    if evidence_delivery is not None:
+        from pi_product_evidence_intent import enrich_pointer
+        pointer = enrich_pointer(repo_root, pointer, delivery=evidence_delivery)
     return pointer
 
 
@@ -460,6 +492,9 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
         if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':
             from cdr_public_rates_runtime import publication_kwargs
             pricing_kwargs = publication_kwargs(repo_root, contract, pointer)
+        # Optional capture, configuration and package validation run only after
+        # verified financial publication. Even a retained claimed-ready package
+        # must use the separate revision/retry route, never gate today's rates.
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
             exports,
@@ -586,6 +621,16 @@ def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -
         elif rolling_confirmed and pricing_kwargs:
             from cdr_public_rates_runtime import acknowledge_warning_publication
             acknowledge_warning_publication(pricing_kwargs['public_rates_root'], manifest)
+        if outcome == PUBLISH_PUBLISHED:
+            # Preparation is separate from this frozen financial transaction.
+            # A setup failure cannot undo success or skip terminal backup.
+            try:
+                from pi_product_evidence_dispatch import enqueue_after_financial
+                optional_queue = enqueue_after_financial(repo_root, manifest)
+                if optional_queue.get('status') != 'disabled':
+                    print('[pi_daily_sync] optional evidence preparation ' + json.dumps(optional_queue, sort_keys=True))
+            except Exception as optional_error:
+                print('[pi_daily_sync] optional evidence enqueue failed reason=' + type(optional_error).__name__)
         return outcome
     except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
         if os.environ.get('AR_LOCAL_PUBLIC_RATES_PUBLISH', '0') == '1':

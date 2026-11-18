@@ -25,7 +25,7 @@ from app_payload_revisions_state import (
     validate_index, validate_manifest,
 )
 from ar_local_operation_lock import production_lock
-from app_payload_optional_assets import iter_payload_assets
+from app_payload_publication_assets import complete_assets, has_evidence, verify_publication_root, checked_asset_bytes
 from app_payload_bank_history_asset import retag_namespace
 
 
@@ -77,6 +77,8 @@ def _load_selected(
         raise RevisionError("selected manifest hash verification failed")
     manifest = decode_document(raw)
     validate_manifest(manifest)
+    if has_evidence(manifest) and store.read_url(head['manifest_url'], len(raw), require_encrypted=True) != raw:
+        raise RevisionError('selected evidence manifest lacks exact encrypted readback')
     identity = manifest.get("payload_revision", {})
     if (manifest["run_date"] != run_date or identity.get("schema_version") != 1
             or identity.get("revision") != head["revision"]
@@ -85,11 +87,12 @@ def _load_selected(
             or bundle_sha256(manifest) != head["bundle_sha256"]):
         raise RevisionError("selected manifest identity differs from its index head")
     if any(entry["url"] != store.url(tag, entry["name"])
-           for _, entry in iter_payload_assets(manifest) if "url" in entry):
+           for _, entry in complete_assets(manifest, store=store) if "url" in entry):
         raise RevisionError("selected asset URL leaves its immutable revision")
     destination = root / "selected" / tag
     write_once(destination / "manifest.json", raw)
     download_manifest_assets(store, manifest, destination)
+    verify_publication_root(destination, manifest)
     return destination, manifest
 
 
@@ -121,9 +124,10 @@ def _preserve_alias(
         "schema_version": 1, "source_manifest_sha256": digest(raw),
         "source_tag": alias, "source_manifest_file": "source-manifest.json",
     }))
-    paths = [destination / entry["name"] for _, entry in iter_payload_assets(original)]
+    paths = [destination / entry["name"] for _, entry in complete_assets(original, root=destination)]
     paths.extend([destination / "source-manifest.json", destination / "preservation.json",
                   destination / "manifest.json"])
+    verify_publication_root(destination, archived)
     store.archive(tag, paths)
     return destination, original
 
@@ -148,9 +152,12 @@ def _prepare_archive(
         archived = decode_document(existing.read_bytes())
         if archived.get("payload_revision") != identity or bundle_sha256(archived) != reservation["bundle_sha256"]:
             raise RevisionError("reserved archive identity differs from staged bytes")
-    for _, entry in iter_payload_assets(manifest):
-        write_once(destination / entry["name"], (payload_dir / entry["name"]).read_bytes())
+    for _, entry in complete_assets(manifest, root=payload_dir):
+        raw = (checked_asset_bytes(payload_dir, entry) if has_evidence(manifest)
+               else (payload_dir / entry['name']).read_bytes())
+        write_once(destination / entry["name"], raw)
     write_once(existing, canonical(archived))
+    verify_publication_root(destination, archived)
     return archived
 
 
@@ -160,6 +167,7 @@ def publish_revision_bundle(
     migrate_encryption: bool = False,
     pre_promotion_guard: Callable[[], None] | None = None,
     pre_promotion_fence: Callable[[], ContextManager] | None = None,
+    expected_predecessor: dict[str, Any] | None = None,
 ) -> RevisionPublication:
     """Archive, independently verify, then advance one date's selected head.
 
@@ -173,6 +181,10 @@ transaction has already preserved all prior dates and revision heads.
     if type(migrate_encryption) is not bool:
         raise RevisionError("encryption migration requires an explicit boolean")
     consumer = _consumer_commit(consumer_commit)
+    if expected_predecessor is not None:
+        if not isinstance(expected_predecessor, dict):
+            raise RevisionError('expected predecessor must be an exact selected head')
+        expected_predecessor = decode_document(canonical(expected_predecessor))
     manifest = decode_document((payload_dir / "manifest.json").read_bytes())
     validate_manifest(manifest, payload_dir)
     _timestamp(manifest)
@@ -182,7 +194,8 @@ transaction has already preserved all prior dates and revision heads.
         result = _publish_locked(payload_dir, manifest, state_dir, backend, consumer, repo,
                                  migrate_encryption=migrate_encryption,
                                  pre_promotion_guard=pre_promotion_guard,
-                                 pre_promotion_fence=pre_promotion_fence)
+                                 pre_promotion_fence=pre_promotion_fence,
+                                 expected_predecessor=expected_predecessor)
         # Canonical ARE2 releases are delivered through Cloudflare. Historical
         # direct-delivery metadata never adds a public-branch publication dependency.
         return result
@@ -193,6 +206,7 @@ def _publish_locked(
     *, migrate_encryption: bool = False,
     pre_promotion_guard: Callable[[], None] | None = None,
     pre_promotion_fence: Callable[[], ContextManager] | None = None,
+    expected_predecessor: dict[str, Any] | None = None,
 ) -> RevisionPublication:
     run_date = manifest["run_date"]
     prior_raw = store.read(DEFAULT_TAG, "dates-index.json")
@@ -201,11 +215,18 @@ def _publish_locked(
     index = decode_document(prior_raw) if prior_raw is not None else _empty_index()
     validate_index(index, repo=repo)
     head = index.get("revision_heads", {}).get(run_date)
+    changed_predecessor = expected_predecessor is not None and canonical(head) != canonical(expected_predecessor)
+    if changed_predecessor and (not head or head.get('bundle_sha256') != bundle_sha256(manifest)):
+        raise RevisionError('selected predecessor changed before revision reservation')
     previous_root, previous = _load_selected(store, head, run_date, root) if head else (None, None)
+    if changed_predecessor:
+        from app_payload_publication_predecessor import verify_completed_predecessor
+        verify_completed_predecessor(root/'revisions'/run_date/f"r{head['revision']:06d}",
+                                     previous, head, expected_predecessor)
     from app_payload_revision_transport import encrypted_selection
     same_bundle = bool(head and head["bundle_sha256"] == bundle_sha256(manifest))
     if (same_bundle
-            and (not migrate_encryption or encrypted_selection(
+            and ((not migrate_encryption and not has_evidence(manifest)) or encrypted_selection(
                 store, previous, previous_root, prior_raw,
                 root / 'revisions' / run_date / f"r{head['revision']:06d}"))):
         with pre_promotion_fence() if pre_promotion_fence else nullcontext():
@@ -252,7 +273,8 @@ def _publish_locked(
             "candidate_manifest_sha256": digest((payload_dir / "manifest.json").read_bytes()),
             "bundle_sha256": reservation["bundle_sha256"],
         }))
-    paths = [destination / entry["name"] for _, entry in iter_payload_assets(archived)]
+    verify_publication_root(destination, archived)
+    paths = [destination / entry["name"] for _, entry in complete_assets(archived, root=destination)]
     paths.extend([destination / "revision-delta.json", destination / "publication-provenance.json",
                   destination / "manifest.json"])
     store.archive(archived["tag"], paths)

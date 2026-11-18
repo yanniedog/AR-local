@@ -142,7 +142,13 @@ def official_product_links(record: Mapping[str, Any]) -> Dict[str, str]:
 
 
 def detail_json(record: Mapping[str, Any]) -> str:
+    from cdr_source_paths import source_paths
+
     cleaned = clean_value(dict(record))
+    # Raw document pointers must not be matched to an index after empty source
+    # entries were removed. Existing immutable exports without this map retain
+    # unknown pointer provenance; only newly cleaned records gain this evidence.
+    cleaned['_sourcePaths'] = source_paths(dict(record))
     links = official_product_links(record)
     if links:
         # Generic cleaning intentionally removes arbitrary URLs. Restore only the

@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-11-18",
+  "sourceUrl": "https://up.com.au/home-loans/home-loan-booklet/",
+  "sourceSha256": "5b9ea01a4501eb9597404a30ab2a066f41deb38f4eac0c867bb76e2d080377d2",
+  "sourceBytes": 285091,
+  "scope": "One verbatim official-page anchor; not a complete page or legal corpus",
+  "html": "<a target=\"_blank\" href=\"/docs/Up-Home-Loan-Booklet.pdf\">Download the Up <!-- -->Home Booklet</a>",
+  "documentUrl": "https://up.com.au/docs/Up-Home-Loan-Booklet.pdf",
+  "documentSha256": "cddbd88bc90d816df64aad49c9c61b3343c6ecc934c7c38405e92779b3985667",
+  "documentBytes": 408390,
+  "documentMediaType": "application/pdf"
+}

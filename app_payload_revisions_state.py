@@ -75,6 +75,13 @@ def revision_tag(run_date: str, revision: int) -> str:
 
 
 def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> None:
+    from app_payload_publication_assets import has_evidence, validate_root, verify_publication_root
+    if has_evidence(manifest):
+        # Structural admission is not transitive byte verification.
+        validate_manifest(validate_root(manifest), root)
+        if root is not None:
+            verify_publication_root(root, manifest)
+        return
     if manifest.get("schema_version") != 1:
         raise RevisionError("revision protocol requires a v1 manifest")
     validate_date(manifest.get("run_date"))
@@ -118,18 +125,8 @@ def validate_manifest(manifest: dict[str, Any], root: Path | None = None) -> Non
 
 def bundle_sha256(manifest: dict[str, Any]) -> str:
     validate_manifest(manifest)
-    value = {key: val for key, val in manifest.items()
-             if key not in {"generated_at", "tag", "payload_revision", "files"}}
-    value["files"] = {key: {k: v for k, v in entry.items() if k != "url"}
-                      for key, entry in manifest["files"].items()}
-    if NAMESPACE in value:
-        namespace = value[NAMESPACE]
-        value[NAMESPACE] = {**namespace, "file": {
-            key: val for key, val in namespace["file"].items() if key != "url"}}
-    if "public_rate_catalogue" in value:
-        from app_payload_public_rates import identity_namespace
-        value["public_rate_catalogue"] = identity_namespace(value["public_rate_catalogue"])
-    return digest(canonical(value))
+    from app_payload_bundle_identity import manifest_bundle_sha256
+    return manifest_bundle_sha256(manifest)
 
 
 def reserve_revision(
@@ -247,8 +244,9 @@ def revision_delta(
     new_rates = _rates(root, manifest)
     old_products = _products(previous_root, previous) if previous_root and previous else {}
     old_rates = _rates(previous_root, previous) if previous_root and previous else Counter()
-    old_files = dict(iter_payload_assets(previous)) if previous else {}
-    new_files = dict(iter_payload_assets(manifest))
+    from app_payload_publication_assets import complete_assets
+    old_files = dict(complete_assets(previous, root=previous_root)) if previous else {}
+    new_files = dict(complete_assets(manifest, root=root))
     return {
         "schema_version": 1, "run_date": manifest["run_date"],
         "comparison": "previous_selected_revision" if previous else "initial",

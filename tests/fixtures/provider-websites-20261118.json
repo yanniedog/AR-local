@@ -1,0 +1,43 @@
+{
+  "provenance": {
+    "url": "https://api.cdr.gov.au/public-register/v1/participants",
+    "capturedAt": "2026-11-18",
+    "sha256": "ecfdd2f7474cd86e36cf397c668c146596004cd069006e16159f8f345c9bbdd8",
+    "bytes": 604535,
+    "scope": "Selected verbatim public brand fields; protocol envelope, not full directory bytes"
+  },
+  "value": [
+    {
+      "brands": [
+        {
+          "brandName": "Up",
+          "participantType": "Data Holder",
+          "status": "ACTIVE",
+          "website": "https://up.com.au/",
+          "originalSourcePath": "/value/54/brands/6"
+        },
+        {
+          "brandName": "Bank Australia",
+          "participantType": "Data Holder",
+          "status": "ACTIVE",
+          "website": "https://www.bankaust.com.au/",
+          "originalSourcePath": "/value/59/brands/1"
+        },
+        {
+          "brandName": "Bank of Melbourne",
+          "participantType": "Data Holder",
+          "status": "ACTIVE",
+          "website": "https://www.bankofmelbourne.com.au",
+          "originalSourcePath": "/value/71/brands/2"
+        },
+        {
+          "brandName": "Arab Bank Australia Limited",
+          "participantType": "Data Holder",
+          "status": "ACTIVE",
+          "website": "https://www.arabbank.com.au/",
+          "originalSourcePath": "/value/102/brands/0"
+        }
+      ]
+    }
+  ]
+}

@@ -8,9 +8,10 @@ import tempfile
 from pathlib import Path
 
 from app_payload_common import DEFAULT_REPO, DEFAULT_TAG
-from app_payload_revisions_github import GitHubRevisionStore, download_manifest_assets
+from app_payload_revisions_github import GitHubRevisionStore, download_manifest_assets, write_once
 from app_payload_revisions_state import decode_document, digest, validate_index, validate_manifest
-from app_payload_optional_assets import iter_payload_assets
+from cdr_product_evidence_acceptance import verified_inventory, receipt
+from app_payload_publication_assets import has_evidence
 from cdr_quality_accounting import SECTIONS, rate_rows_digest, reconcile_public_core
 
 
@@ -32,8 +33,18 @@ def audit_public(current: dict, *, repo: str = DEFAULT_REPO, store=None) -> dict
         raise ValueError("public payload does not match the current observation date")
     with tempfile.TemporaryDirectory(prefix="cdr-public-audit-") as temporary:
         root = Path(temporary)
+        write_once(root / 'manifest.json', raw)
         download_manifest_assets(backend, manifest, root)
-        validate_manifest(manifest, root)
+        if not has_evidence(manifest): validate_manifest(manifest, root)
+        assets, optional = verified_inventory(root,manifest,digest(raw))
+        if optional is not None:
+            revision = manifest.get('payload_revision') or {}
+            if (not head or optional['bundle_sha256'] != head['bundle_sha256']
+                    or any(revision.get(key) != head.get(key) for key in ('revision','generation_id','bundle_sha256'))
+                    or head['manifest_url'] != backend.url(manifest['tag'],'manifest.json')
+                    or backend.read(DEFAULT_TAG,'dates-index.json',require_encrypted=True) != index_raw
+                    or backend.read_url(head['manifest_url'],require_encrypted=True) != raw):
+                raise ValueError('complete optional public audit lacks stable encrypted selected roots')
         if manifest.get("enc"):
             raise ValueError("encrypted public data requires the shipping app audit; no plaintext fallback")
         core_raw = (root / manifest["files"]["core"]["name"]).read_bytes()
@@ -56,5 +67,7 @@ def audit_public(current: dict, *, repo: str = DEFAULT_REPO, store=None) -> dict
             issues.append({"code": "PUBLIC_OBSERVATION_IDENTITY_MISMATCH"})
     return {"status": "FAIL" if issues else "PASS", "run_date": manifest["run_date"],
             "manifest_sha256": digest(raw), "index_sha256": digest(index_raw), "revision": head,
-            "assets_verified": {key: {"sha256": row["sha256"], "bytes": row["bytes"]} for key, row in iter_payload_assets(manifest)},
+            "assets_verified": {key: {"sha256": row["sha256"], "bytes": row["bytes"]} for key, row in assets.items()},
+            **({'optional_product_evidence': receipt(manifest,digest(raw),assets,scope='public_selected',
+                 selected_head_verified=True,public_transport_verified=True)} if optional is not None else {}),
             "issues": issues}

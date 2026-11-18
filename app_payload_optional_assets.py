@@ -19,6 +19,9 @@ def iter_payload_assets(manifest):
     Callers retain their transport trust checks. This iterator invents no URLs
     and does not modify the manifest or change no-namespace bundle identities.
     """
+    if (any(str(key).startswith(('product_evidence_', 'product_response_evidence_')) for key in manifest)
+            or 'optional_product_evidence_status' in manifest):
+        raise ValueError('Optional product evidence requires the complete publication inventory adapter')
     files = manifest.get('files')
     if not isinstance(files, dict):
         raise ValueError('Payload files must be an object')

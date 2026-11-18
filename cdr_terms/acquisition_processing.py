@@ -129,15 +129,19 @@ class ProcessingQueue:
         check = self._receipt_capture(value)
         outcome = value['outcome']
         if event['status'] != 'complete':
-            if 'analysis_job_id' in outcome or 'graph' in outcome:
+            if 'analysis_job_id' in outcome or 'graph' in outcome or 'provider_discovery' in outcome:
                 raise ValueError('Failed processing cannot claim completed outputs')
             return
-        if set(outcome) - {'analysis_job_id', 'graph', 'legal_completeness'} or outcome.get('legal_completeness') != 'unknown':
+        if set(outcome) - {'analysis_job_id', 'graph', 'provider_discovery', 'legal_completeness'} or outcome.get('legal_completeness') != 'unknown':
             raise ValueError('Unrecognized processing completion output')
         if 'analysis_job_id' in outcome:
             self._receipt_job(value, check)
         if 'graph' in outcome:
             self._receipt_graph(value)
+        if 'provider_discovery' in outcome:
+            from .provider_websites import validate_directory_receipt
+            validate_directory_receipt(self.store, outcome['provider_discovery'],
+                request_id=value['request_id'], check_id=value['check_id'])
 
     def _receipt_capture(self, value: dict):
         row = self.store.db.execute(
@@ -365,10 +369,15 @@ class ProcessingQueue:
                     post_write_guard=lambda expansion: self._complete_expansion(task, expansion, request, check, registry_context, receipt))
             else:
                 if observations:
-                    DocumentGraph(self.store).seed(request, check)
-                    receipt["analysis_job_id"] = enqueue_interpretation(self.store, check["document_version_id"], observations,
-                        priority=self.analysis_priority(request, check), registry_context=registry_context,
-                        completion_guard=lambda: self.assert_lease(task, observation_ids=observations))
+                    from .provider_websites import is_directory_request, process_directory
+                    if is_directory_request(self.store, request):
+                        receipt['provider_discovery'] = process_directory(self.store, request, check, observations,
+                            guard=lambda: self.assert_lease(task, observation_ids=observations))
+                    else:
+                        DocumentGraph(self.store).seed(request, check)
+                        receipt["analysis_job_id"] = enqueue_interpretation(self.store, check["document_version_id"], observations,
+                            priority=self.analysis_priority(request, check), registry_context=registry_context,
+                            completion_guard=lambda: self.assert_lease(task, observation_ids=observations))
         except ProcessingGuardFailure:
             raise
         except (OSError, ValueError, RuntimeError, AssertionError) as exc:

@@ -30,7 +30,7 @@ from app_payload_revisions_state import (
     MAX_ASSET_BYTES, MAX_DOCUMENT_BYTES, RevisionError, digest,
 )
 from pi_payload_freshness import fresh_document_url
-from app_payload_optional_assets import iter_payload_assets, executable_asset_url
+from app_payload_publication_assets import complete_assets, asset_url, has_evidence
 
 
 def write_once(path: Path, raw: bytes) -> None:
@@ -233,9 +233,12 @@ class GitHubRevisionStore:
 def download_manifest_assets(
     store: Any, manifest: dict[str, Any], destination: Path,
 ) -> None:
-    for key, entry in iter_payload_assets(manifest):
-        url = executable_asset_url(manifest, entry, repo=store.repo) if key.startswith(('executable_v2_','monetary_v3_','monetary_v4_')) else entry['url']
-        raw = store.read_url(url, entry["bytes"])
+    inventory = complete_assets(manifest, store=store)
+    for key, entry in inventory:
+        from app_payload_common import DEFAULT_REPO
+        url = asset_url(manifest, key, entry, repo=getattr(store, 'repo', DEFAULT_REPO), inventory=inventory)
+        kwargs = {'require_encrypted': True} if has_evidence(manifest) else {}
+        raw = store.read_url(url, entry["bytes"], **kwargs)
         if raw is None or len(raw) != entry["bytes"] or digest(raw) != entry["sha256"]:
             raise RevisionError(f"source asset fails hash verification: {entry['name']}")
         write_once(destination / entry["name"], raw)
