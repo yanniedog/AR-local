@@ -19,3 +19,10 @@ def test_distinct_entries_survive():
                        {'name': 'Annual fee', 'feeType': 'PERIODIC', 'amount': '0.00'}]}
     detail = build_details([{'product_key': 'bank|x|y|z', 'details_json': record}])['bank|x|y|z']
     assert len(detail['fees']) == 2
+
+
+def test_records_differing_in_unprojected_fields_are_kept():
+    record = {'features': [{'featureType': 'OFFSET', 'additionalInfoUri': 'https://a.example/1'},
+                           {'featureType': 'OFFSET', 'additionalInfoUri': 'https://a.example/2'}]}
+    detail = build_details([{'product_key': 'bank|x|y|z', 'details_json': record}])['bank|x|y|z']
+    assert len(detail['features']) == 2
