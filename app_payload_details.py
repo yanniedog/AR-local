@@ -22,6 +22,18 @@ def _rate_conditions(product: Dict[str, Any]) -> Dict[str, Any] | None:
     validate_rate_conditions(value)
     return value
 
+def _unique(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop byte-identical repeats; the bank listing the same entry twice is one fact."""
+    seen = set()
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        key = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
 def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[str, Any]]:
     items = record.get(key)
     if not isinstance(items, list):
@@ -41,7 +53,7 @@ def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[
                 }
             )
         )
-    return out
+    return _unique(out)
 
 
 def _present(value: Any) -> bool:
@@ -129,7 +141,7 @@ def _fee_items(record: Dict[str, Any]) -> List[Dict[str, Any]]:
                 }
             )
         )
-    return out
+    return _unique(out)
 
 
 def _detail_links(record: Dict[str, Any]) -> Dict[str, str]:
